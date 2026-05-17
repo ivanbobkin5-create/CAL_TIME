@@ -1,10 +1,12 @@
 
-// Mock Firebase implementation using localStorage
+// Custom Firebase-like implementation backed by Postgres API
+
+const API_BASE = "/api/firebase";
 
 // Simple UUID generator
 const generateId = () => Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
 
-// --- Auth Mocks ---
+// --- Auth ---
 class MockUser {
   uid: string;
   email: string | null;
@@ -14,7 +16,7 @@ class MockUser {
   providerData: any[];
 
   constructor(data: any) {
-    this.uid = data.uid || generateId();
+    this.uid = data.uid;
     this.email = data.email || null;
     this.emailVerified = true;
     this.isAnonymous = false;
@@ -28,7 +30,7 @@ class MockAuth {
   listeners: ((user: MockUser | null) => void)[] = [];
 
   constructor() {
-    const savedUser = localStorage.getItem('mock_auth_user');
+    const savedUser = localStorage.getItem('auth_user');
     if (savedUser) {
       try {
         this.currentUser = new MockUser(JSON.parse(savedUser));
@@ -44,9 +46,9 @@ class MockAuth {
 
   save() {
     if (this.currentUser) {
-      localStorage.setItem('mock_auth_user', JSON.stringify(this.currentUser));
+      localStorage.setItem('auth_user', JSON.stringify(this.currentUser));
     } else {
-      localStorage.removeItem('mock_auth_user');
+      localStorage.removeItem('auth_user');
     }
   }
 }
@@ -56,7 +58,6 @@ export const auth = new MockAuth() as any;
 export const onAuthStateChanged = (authObj: any, callback: any) => {
   const authInstance = authObj as any;
   authInstance.listeners.push(callback);
-  // Immediate call
   setTimeout(() => callback(authInstance.currentUser), 0);
   return () => {
     authInstance.listeners = authInstance.listeners.filter((l: any) => l !== callback);
@@ -64,18 +65,30 @@ export const onAuthStateChanged = (authObj: any, callback: any) => {
 };
 
 export const signInWithEmailAndPassword = async (authObj: any, email: string, pass: string) => {
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password: pass })
+  });
+  if (!res.ok) throw new Error("Invalid credentials");
+  const data = await res.json();
   const authInstance = authObj as any;
-  const user = { uid: 'user_' + btoa(email).substring(0, 10), email };
-  authInstance.currentUser = new MockUser(user);
+  authInstance.currentUser = new MockUser(data);
   authInstance.save();
   authInstance.updateListeners();
   return { user: authInstance.currentUser };
 };
 
 export const createUserWithEmailAndPassword = async (authObj: any, email: string, pass: string) => {
+  const res = await fetch("/api/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password: pass })
+  });
+  if (!res.ok) throw new Error("Failed to register");
+  const data = await res.json();
   const authInstance = authObj as any;
-  const user = { uid: 'user_' + btoa(email).substring(0, 10), email };
-  authInstance.currentUser = new MockUser(user);
+  authInstance.currentUser = new MockUser(data);
   authInstance.save();
   authInstance.updateListeners();
   return { user: authInstance.currentUser };
@@ -107,15 +120,18 @@ export const doc = (parent: any, path: string, ...rest: string[]) => {
   return { type: 'doc', path: fullPath };
 };
 
-const getStorageKey = (path: string) => path ? `mock_db_${path.replace(/\//g, '_')}` : '';
-
 export const getDoc = async (docRef: any) => {
   const path = docRef?.path;
   if (!path) return { exists: () => false, data: () => null, id: '' } as any;
-  const data = localStorage.getItem(getStorageKey(path));
+  
+  const res = await fetch(`${API_BASE}/doc/${path}`);
+  if (!res.ok) {
+    return { exists: () => false, data: () => null, id: path.split('/').pop() } as any;
+  }
+  const data = await res.json();
   return {
-    exists: () => data !== null,
-    data: () => data ? JSON.parse(data) : null,
+    exists: () => true,
+    data: () => data,
     id: path.split('/').pop()
   } as any;
 };
@@ -123,34 +139,27 @@ export const getDoc = async (docRef: any) => {
 export const getDocFromServer = getDoc;
 
 export const setDoc = async (docRef: any, data: any, options: any = {}) => {
-  let finalData = data;
-  if (options.merge) {
-    const existing = localStorage.getItem(getStorageKey(docRef.path));
-    if (existing) {
-      finalData = { ...JSON.parse(existing), ...data };
-    }
-  }
-  localStorage.setItem(getStorageKey(docRef.path), JSON.stringify(finalData));
+  await fetch(`${API_BASE}/doc/${docRef.path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ data, merge: options.merge })
+  });
   
-  // Trigger onSnapshot listeners
   const collectionPath = docRef.path.split('/').slice(0, -1).join('/');
   notifyListeners(collectionPath);
   notifyListeners(docRef.path);
 };
 
 export const updateDoc = async (docRef: any, data: any) => {
-  const existing = localStorage.getItem(getStorageKey(docRef.path));
-  if (existing) {
-    const updated = { ...JSON.parse(existing), ...data };
-    localStorage.setItem(getStorageKey(docRef.path), JSON.stringify(updated));
-    
-    const collectionPath = docRef.path.split('/').slice(0, -1).join('/');
-    notifyListeners(collectionPath);
-    notifyListeners(docRef.path);
-  } else {
-    // If it doesn't exist, just set it (be forgiving in local mock)
-    await setDoc(docRef, data);
-  }
+  await fetch(`${API_BASE}/doc/${docRef.path}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ data })
+  });
+  
+  const collectionPath = docRef.path.split('/').slice(0, -1).join('/');
+  notifyListeners(collectionPath);
+  notifyListeners(docRef.path);
 };
 
 export const addDoc = async (colRef: any, data: any) => {
@@ -161,7 +170,9 @@ export const addDoc = async (colRef: any, data: any) => {
 };
 
 export const deleteDoc = async (docRef: any) => {
-  localStorage.removeItem(getStorageKey(docRef.path));
+  await fetch(`${API_BASE}/doc/${docRef.path}`, {
+    method: "DELETE"
+  });
   const collectionPath = docRef.path.split('/').slice(0, -1).join('/');
   notifyListeners(collectionPath);
   notifyListeners(docRef.path);
@@ -169,36 +180,28 @@ export const deleteDoc = async (docRef: any) => {
 
 const listeners: Record<string, ((snapshot: any) => void)[]> = {};
 
-const notifyListeners = (path: string) => {
+const notifyListeners = async (path: string) => {
   if (!path) return;
   if (listeners[path]) {
-    // Collect all documents in this collection for collection listeners
-    const allKeys = Object.keys(localStorage);
-    const prefix = `mock_db_${path.replace(/\//g, '_')}_`;
-    
-    listeners[path].forEach(async (cb) => {
+    for (const cb of listeners[path]) {
         if (path.split('/').filter(Boolean).length % 2 === 0) {
             // Document listener
             const snap = await getDoc({path});
             cb(snap);
         } else {
             // Collection listener
-            const docs: any[] = [];
-            allKeys.forEach(key => {
-                if (key.startsWith(prefix)) {
-                    const data = localStorage.getItem(key);
-                    if (data) {
-                        const parsed = JSON.parse(data);
-                        docs.push({
-                            data: () => parsed,
-                            id: key.replace(prefix, '')
-                        });
-                    }
-                }
-            });
-            cb({ docs } as any);
+            const res = await fetch(`${API_BASE}/col/${path}`);
+            if (res.ok) {
+                const docsData = await res.json();
+                const docs = docsData.map((d: any) => ({
+                    id: d.id,
+                    data: () => d.data,
+                    exists: () => true
+                }));
+                cb({ docs } as any);
+            }
         }
-    });
+    }
   }
 };
 
@@ -212,23 +215,16 @@ export const onSnapshot = (ref: any, callback: any, errorCallback?: any) => {
   if (path.split('/').filter(Boolean).length % 2 === 0) {
       getDoc(ref).then(callback);
   } else {
-      // Collection snapshot
-      const allKeys = Object.keys(localStorage);
-      const prefix = `mock_db_${path.replace(/\//g, '_')}_`;
-      const docs: any[] = [];
-      allKeys.forEach(key => {
-          if (key.startsWith(prefix)) {
-              const data = localStorage.getItem(key);
-              if (data) {
-                  const parsed = JSON.parse(data);
-                  docs.push({
-                      data: () => parsed,
-                      id: key.replace(prefix, '')
-                  });
-              }
-          }
+      fetch(`${API_BASE}/col/${path}`).then(r => r.json()).then(docsData => {
+         const docs = docsData.map((d: any) => ({
+             id: d.id,
+             data: () => d.data,
+             exists: () => true
+         }));
+         callback({ docs } as any);
+      }).catch(e => {
+        if(errorCallback) errorCallback(e);
       });
-      callback({ docs } as any);
   }
 
   return () => {
@@ -269,23 +265,17 @@ export enum OperationType {
 export const getDocs = async (ref: any) => {
   const path = ref?.path;
   if (!path) return { docs: [], forEach: () => {}, empty: true, size: 0 } as any;
-  const allKeys = Object.keys(localStorage);
-  const prefix = `mock_db_${path.replace(/\//g, '_')}_`;
-  const docs: any[] = [];
-  allKeys.forEach(key => {
-      // Check if it's a direct child of the collection
-      if (key.startsWith(prefix) && key.split('_').length === (prefix.split('_').length)) {
-          const data = localStorage.getItem(key);
-          if (data) {
-              const parsed = JSON.parse(data);
-              docs.push({
-                  data: () => parsed,
-                  id: key.replace(prefix, ''),
-                  exists: () => true
-              });
-          }
-      }
-  });
+  
+  const res = await fetch(`${API_BASE}/col/${path}`);
+  if (!res.ok) return { docs: [], forEach: () => {}, empty: true, size: 0 } as any;
+  
+  const docsData = await res.json();
+  const docs = docsData.map((d: any) => ({
+      id: d.id,
+      data: () => d.data,
+      exists: () => true
+  }));
+  
   return {
     docs,
     forEach: (cb: any) => docs.forEach(cb),
@@ -314,3 +304,4 @@ export const getAuth = () => auth;
 export const initializeFirestore = () => db;
 export const persistentLocalCache = () => ({});
 export const persistentMultipleTabManager = () => ({});
+

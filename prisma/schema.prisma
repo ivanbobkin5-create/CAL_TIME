@@ -4,16 +4,29 @@
 // Get a free hosted Postgres database in seconds: `npx create-db`
 
 generator client {
-  provider = "prisma-client"
-  output   = "../generated/prisma"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
 }
 
-model User {
-  id    String @id @default(uuid())
-  email String @unique
-  name  String?
+model DbDocument {
+  id         String   @id @default(uuid())
+  path       String   @unique // The full firestore path like "companies/123/projects/456"
+  collection String   // The collection path like "companies/123/projects"
+  docId      String   // The document ID like "456"
+  data       Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([collection])
 }
+
+model AuthUser {
+  uid       String   @id @default(uuid())
+  email     String   @unique
+  password  String   // Hashed password
+  createdAt DateTime @default(now())
+}
+

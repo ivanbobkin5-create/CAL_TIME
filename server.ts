@@ -18,30 +18,91 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
-  app.get("/api/users", async (req, res) => {
+  app.post("/api/auth/register", async (req, res) => {
+    const { email, password } = req.body;
     try {
-      const users = await prisma.user.findMany();
-      res.json(users);
+      const user = await prisma.authUser.create({
+        data: { email: email.toLowerCase(), password }
+      });
+      res.json({ uid: user.uid, email: user.email });
     } catch (e) {
-      console.error(e);
-      res.status(500).json({ error: "Failed to load users" });
+      if ((e as any).code === 'P2002') return res.status(400).json({ code: 'auth/email-already-in-use' });
+      res.status(500).json({ error: "Failed to create user" });
     }
   });
 
-  app.post("/api/users", async (req, res) => {
+  app.post("/api/auth/login", async (req, res) => {
+    const { email, password } = req.body;
     try {
-      const { email, name } = req.body;
-      const user = await prisma.user.create({
-        data: {
-          email,
-          name,
-        },
-      });
-      res.json(user);
+      const user = await prisma.authUser.findUnique({ where: { email: email.toLowerCase() }});
+      if (!user || user.password !== password) return res.status(401).json({ error: "Invalid credentials" });
+      res.json({ uid: user.uid, email: user.email });
     } catch (e) {
-      console.error(e);
-      res.status(500).json({ error: "Failed to create user" });
+      res.status(500).json({ error: "Failed to login" });
     }
+  });
+
+  // Firestore-like Document API
+  app.get("/api/firebase/doc/*", async (req, res) => {
+    const docPath = req.params[0];
+    const doc = await prisma.dbDocument.findUnique({ where: { path: docPath } });
+    if (doc) res.json(doc.data);
+    else res.status(404).json({ error: "Not found" });
+  });
+
+  app.get("/api/firebase/col/*", async (req, res) => {
+    const colPath = req.params[0];
+    const docs = await prisma.dbDocument.findMany({ where: { collection: colPath } });
+    res.json(docs.map(d => ({ id: d.docId, data: d.data, path: d.path })));
+  });
+
+  app.post("/api/firebase/doc/*", async (req, res) => {
+    const docPath = req.params[0];
+    const parts = docPath.split('/');
+    const docId = parts.pop()!;
+    const collection = parts.join('/');
+    const { data, merge } = req.body;
+
+    if (merge) {
+      const existing = await prisma.dbDocument.findUnique({ where: { path: docPath } });
+      const newData = existing ? { ...(existing.data as object), ...data } : data;
+      await prisma.dbDocument.upsert({
+        where: { path: docPath },
+        create: { path: docPath, collection, docId, data: newData },
+        update: { data: newData }
+      });
+    } else {
+      await prisma.dbDocument.upsert({
+        where: { path: docPath },
+        create: { path: docPath, collection, docId, data },
+        update: { data }
+      });
+    }
+    res.json({ status: "ok" });
+  });
+
+  app.patch("/api/firebase/doc/*", async (req, res) => {
+    const docPath = req.params[0];
+    const { data } = req.body;
+    const existing = await prisma.dbDocument.findUnique({ where: { path: docPath } });
+    if (existing) {
+      const newData = { ...(existing.data as object), ...data };
+      await prisma.dbDocument.update({ where: { path: docPath }, data: { data: newData } });
+    } else {
+      const parts = docPath.split('/');
+      const docId = parts.pop()!;
+      const collection = parts.join('/');
+      await prisma.dbDocument.create({
+        data: { path: docPath, collection, docId, data }
+      });
+    }
+    res.json({ status: "ok" });
+  });
+
+  app.delete("/api/firebase/doc/*", async (req, res) => {
+    const docPath = req.params[0];
+    await prisma.dbDocument.deleteMany({ where: { path: docPath } });
+    res.json({ status: "ok" });
   });
 
   // Vite middleware for development
