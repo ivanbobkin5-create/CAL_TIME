@@ -13124,7 +13124,6 @@ export default function App() {
         const superAdminEmails = [
           "ivanbobkin5@gmail.com",
           "lk.ivanbobkin@gmail.com",
-          "lk.ivabobkin@gmail.com",
         ];
         const isSuper = superAdminEmails.includes(user.email || "");
         setIsAppAdmin(isSuper);
