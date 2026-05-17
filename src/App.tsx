@@ -13611,8 +13611,10 @@ export default function App() {
       setIsLoading(false);
       
     } catch (error) {
-      console.error("error during register:", error);
-      showAlert("Ошибка регистрации", (error as Error).message);
+      console.error("CRITICAL registration error:", error);
+      const message = (error as Error).message || String(error);
+      showAlert("Ошибка регистрации", message);
+      throw error;
     }
   };
 

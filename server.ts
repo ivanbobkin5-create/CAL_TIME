@@ -4,6 +4,7 @@ import path from "path";
 import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import { PrismaClient } from "@prisma/client";
+import bcrypt from "bcryptjs";
 
 const prisma = new PrismaClient();
 
@@ -22,8 +23,9 @@ async function startServer() {
   app.post("/api/auth/register", async (req, res) => {
     const { email, password } = req.body;
     try {
+      const hashedPassword = await bcrypt.hash(password, 10);
       const user = await prisma.authUser.create({
-        data: { email: email.toLowerCase(), password }
+        data: { email: email.toLowerCase(), password: hashedPassword }
       });
       res.json({ uid: user.uid, email: user.email });
     } catch (e) {
@@ -60,11 +62,23 @@ async function startServer() {
 
   app.post("/api/auth/login", async (req, res) => {
     const { email, password } = req.body;
+    console.log("Login attempt for:", email);
     try {
       const user = await prisma.authUser.findUnique({ where: { email: email.toLowerCase() }});
-      if (!user || user.password !== password) return res.status(401).json({ error: "Invalid credentials" });
+      if (!user) {
+        console.log("User not found:", email);
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      console.log("User found, checking password...");
+      const isValid = await bcrypt.compare(password, user.password);
+      if (!isValid) {
+        console.log("Password mismatch for:", email);
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      console.log("Login successful for:", email);
       res.json({ uid: user.uid, email: user.email });
     } catch (e) {
+      console.error("Failed to login:", e);
       res.status(500).json({ error: "Failed to login" });
     }
   });
