@@ -4,11 +4,7 @@ import { cn } from '../../lib/utils';
 import { db, createUserWithEmailAndPassword } from '../../firebase';
 import { collection, onSnapshot, doc, setDoc, deleteDoc, getDoc, query, where } from 'firebase/firestore';
 
-// Mock auth for employee management
-const secondaryAuth = { 
-  signOut: async () => {},
-  createUserWithEmailAndPassword: createUserWithEmailAndPassword 
-};
+// Employee management
 
 interface Employee {
   id: string;
@@ -110,17 +106,22 @@ export const AdminSettingsView = ({
         const trimmedEmail = newEmployee.email.trim().toLowerCase();
         let uid = editingId;
 
-        // If it's a new employee, create them in Firebase Auth first
+        // If it's a new employee, create them in our database first
         if (!editingId) {
           try {
-            const userCredential = await createUserWithEmailAndPassword(
-              secondaryAuth,
-              trimmedEmail,
-              '123456' // Default password
-            );
-            uid = userCredential.user.uid;
-            // Sign out from secondary app immediately to avoid session conflicts
-            await secondaryAuth.signOut();
+            const res = await fetch("/api/auth/register", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ email: trimmedEmail, password: "password123" })
+            });
+            const data = await res.json();
+            if (!res.ok) {
+              if (data.code === 'auth/email-already-in-use' || data.error?.includes('unique constraint')) {
+                 throw { code: 'auth/email-already-in-use' };
+              }
+              throw new Error(data.error || "Failed to register employee");
+            }
+            uid = data.uid;
           } catch (authError: any) {
             if (authError.code === 'auth/email-already-in-use') {
               setError('Пользователь с таким Email уже существует в системе. Если вы хотите привязать его, используйте существующий UID или обратитесь в поддержку.');
@@ -201,13 +202,19 @@ export const AdminSettingsView = ({
       try {
         const trimmedEmail = employee.email.trim().toLowerCase();
         try {
-          const userCredential = await createUserWithEmailAndPassword(
-            secondaryAuth,
-            trimmedEmail,
-            '123456'
-          );
-          const uid = userCredential.user.uid;
-          await secondaryAuth.signOut();
+          const res = await fetch("/api/auth/register", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email: trimmedEmail, password: "password123" })
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            if (data.code === 'auth/email-already-in-use' || data.error?.includes('unique constraint')) {
+              throw { code: 'auth/email-already-in-use' };
+            }
+            throw new Error(data.error || "Failed to register employee");
+          }
+          const uid = data.uid;
 
           // Update UID if it changed (though it shouldn't if we use email as key)
           const employeeData = {

@@ -54,6 +54,7 @@ import {
   ShoppingBag,
   Package,
   Plus,
+  Cloud,
   Wrench,
   Truck,
   MapPin,
@@ -7628,7 +7629,7 @@ const SettingsView = ({
   productionFormat: string;
   productionSettings: any;
   companyType?: string;
-  onSaveSettings: () => void;
+  onSaveSettings: (silent?: boolean) => void;
   salonsUsingMe: any[];
   salonsInTable: any[];
   toggleSpecialCondition: (id: string) => void;
@@ -7673,6 +7674,27 @@ const SettingsView = ({
     designer: 1.3,
     standardSalon: 1.2,
   });
+
+  // Auto-save settings on change
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      onSaveSettings(true);
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [
+    coefficients,
+    calcMode,
+    trimming,
+    hardwareKitPrice,
+    assemblyPercentage,
+    assemblyIncludes,
+    deliveryTariffs,
+    mapLink,
+    productCategories,
+    defaultCuttingType,
+    companyInfo,
+    catalogMaterials,
+  ]);
 
   const categories = [
     { id: "ldsp", label: "ЛДСП / МДФ" },
@@ -7884,16 +7906,16 @@ const SettingsView = ({
               Настройки системы
             </h2>
             <p className="text-sm text-gray-500 font-medium font-sans">
-              Конфигурация параметров вашей компании
+              Изменения сохраняются автоматически
             </p>
           </div>
         </div>
         <button
-          onClick={onSaveSettings}
+          onClick={() => onSaveSettings(false)}
           className="px-6 py-2.5 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all flex items-center gap-2 active:scale-95"
         >
           <CheckCircle2 className="w-5 h-5" />
-          Сохранить всё
+          Сохранить вручную
         </button>
       </div>
 
@@ -9485,16 +9507,6 @@ const SettingsView = ({
             </section>
           </div>
         )}
-
-        <div className="pt-6 border-t border-gray-100 flex justify-end">
-          <button
-            onClick={onSaveSettings}
-            className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all flex items-center gap-2"
-          >
-            <CheckCircle2 className="w-5 h-5" />
-            Сохранить настройки
-          </button>
-        </div>
 
         <div className="pt-6 border-t border-gray-100">
           <p className="text-xs text-gray-400 leading-relaxed italic">
@@ -13313,10 +13325,7 @@ export default function App() {
   const [selectedSalonId, setSelectedSalonId] = useState<string>("");
   const [currentProjectTotal, setCurrentProjectTotal] = useState(0);
   const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
-  const [autoSaveEnabled, setAutoSaveEnabled] = useState<boolean>(() => {
-    const saved = localStorage.getItem("mebcalc_autosave");
-    return saved === null ? true : saved === "true";
-  });
+  const [autoSaveEnabled, setAutoSaveEnabled] = useState<boolean>(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [quotaExceeded, setQuotaExceeded] = useState(false);
   const [lastSavedHash, setLastSavedHash] = useState<string>("");
@@ -14223,6 +14232,44 @@ export default function App() {
     }
   };
 
+  // Auto-save logic for calculator
+  useEffect(() => {
+    if (isFirstLoad.current) {
+      isFirstLoad.current = false;
+      return;
+    }
+
+    if (!autoSaveEnabled || !currentProjectId || !currentProjectName) return;
+
+    const stableTotal = Math.round((currentProjectTotal || 0) * 100);
+    const rawState = {
+      total: stableTotal,
+      results,
+      selectedDecor,
+      addedProducts,
+      addedServices,
+    };
+    
+    // Custom stringifier to deal with circular refs (shouldn't be any, but just in case)
+    const currentStateHash = JSON.stringify(rawState);
+
+    if (currentStateHash !== lastSavedHash) {
+      const timer = setTimeout(() => {
+        saveProject(currentProjectName, true);
+      }, 5000); // 5 sec debounce
+      return () => clearTimeout(timer);
+    }
+  }, [
+    autoSaveEnabled,
+    currentProjectTotal,
+    results,
+    selectedDecor,
+    addedProducts,
+    addedServices,
+    currentProjectId,
+    currentProjectName,
+  ]);
+
   const finalizeSet = async (setData: any, optionalProjectsList?: any[]) => {
     if (!companyData?.id || !userData?.uid) return;
     try {
@@ -14530,7 +14577,7 @@ export default function App() {
     setAddedProducts((prev) => prev.filter((p) => p.id !== productId));
   };
 
-  const saveGeneralSettings = async () => {
+  const saveGeneralSettings = async (silent: boolean = false) => {
     if (!companyData?.id) return;
     try {
       await setDoc(
@@ -14572,7 +14619,24 @@ export default function App() {
         );
       }
 
-      showAlert("Успех", "Настройки успешно сохранены");
+      // Sync specific fields to the main company doc
+      if (companyInfo && companyInfo.name) {
+        await setDoc(
+          doc(db, "companies", companyData.id),
+          {
+            name: companyInfo.name,
+            phone: companyInfo.phone || "",
+            city: companyInfo.city || companyData.city || "",
+          },
+          { merge: true }
+        );
+        // Also update local state so sidebar reflects it immediately
+        setCompanyData((prev: any) => prev ? { ...prev, name: companyInfo.name } : prev);
+      }
+
+      if (!silent) {
+        showAlert("Успех", "Настройки успешно сохранены");
+      }
     } catch (error) {
       handleFirestoreError(
         error,
@@ -15947,35 +16011,16 @@ export default function App() {
                         <div className="flex flex-col min-w-0">
                           <span className={cn(
                             "text-[10px] font-bold truncate",
-                            quotaExceeded ? "text-red-600" : "text-gray-700"
+                            quotaExceeded ? "text-red-600" : isSyncing ? "text-blue-500" : "text-gray-700"
                           )}>
-                            {quotaExceeded ? "Квота превышена" : autoSaveEnabled ? "Авто-сохранение" : "Ручной режим"}
+                            {quotaExceeded ? "Квота превышена" : isSyncing ? "Сохранение..." : "Автосохранение"}
                           </span>
                           <span className="text-[8px] text-gray-400">
-                             {lastSyncedAt ? `Обновлено: ${lastSyncedAt.toLocaleTimeString()}` : "Нет синхронизации"}
+                             {lastSyncedAt ? `Обновлено: ${lastSyncedAt.toLocaleTimeString()}` : "Сохранено на сервере"}
                           </span>
                         </div>
                         <div className="flex items-center gap-1">
-                          <button
-                            onClick={() => setAutoSaveEnabled(!autoSaveEnabled)}
-                            className={cn(
-                              "p-1 rounded transition-colors",
-                              autoSaveEnabled ? "bg-blue-50 text-blue-600" : "bg-gray-50 text-gray-400"
-                            )}
-                            title={autoSaveEnabled ? "Выключить автосохранение" : "Включить автосохранение"}
-                          >
-                             {autoSaveEnabled ? <ToggleRight className="w-4 h-4" /> : <ToggleLeft className="w-4 h-4" />}
-                          </button>
-                          <button
-                            onClick={() => saveProject(currentProjectName || "Новый проект")}
-                            disabled={isSyncing || !currentProjectName}
-                            className={cn(
-                              "p-1 rounded transition-colors bg-blue-600 text-white hover:bg-blue-700 disabled:bg-gray-100 disabled:text-gray-400"
-                            )}
-                            title="Синхронизировать сейчас"
-                          >
-                             <Save className="w-4 h-4" />
-                          </button>
+                             <Cloud className="w-4 h-4 text-blue-500" />
                         </div>
                       </div>
                    </div>
