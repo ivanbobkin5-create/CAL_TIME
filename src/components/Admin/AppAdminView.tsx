@@ -17,7 +17,8 @@ import {
   Target,
   Factory,
   MapPin,
-  Tag
+  Tag,
+  Trash2
 } from 'lucide-react';
 import { db, handleFirestoreError, OperationType } from '../../firebase';
 import { 
@@ -27,6 +28,7 @@ import {
   updateDoc, 
   getDocs, 
   getDoc,
+  deleteDoc,
   query, 
   where 
 } from 'firebase/firestore';
@@ -238,6 +240,45 @@ export const AppAdminView = () => {
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `users/${uid}`);
+    }
+  };
+
+  const deleteCompany = async (companyId: string) => {
+    if (!window.confirm("Вы уверены, что хотите ПОЛНОСТЬЮ УДАЛИТЬ компанию и всех ее сотрудников? Это действие необратимо!")) return;
+    
+    try {
+      const companyUsers = users.filter(u => u.companyId === companyId);
+      for (const u of companyUsers) {
+        await deleteDoc(doc(db, 'companies', companyId, 'employees', u.uid));
+        await deleteDoc(doc(db, 'users', u.uid));
+        await fetch(`/api/auth/user/${u.uid}`, { method: 'DELETE' });
+      }
+      await deleteDoc(doc(db, 'companies', companyId));
+    } catch (error) {
+      console.error("Error deleting company:", error);
+      alert("Ошибка при удалении компании");
+    }
+  };
+
+  const deleteUser = async (uid: string, companyId: string) => {
+    if (!window.confirm("Вы уверены, что хотите удалить этого пользователя? Это также удалит его учетную запись для входа!")) return;
+    
+    try {
+      // 1. Delete from company if ID is valid
+      if (companyId && companyId !== 'none') {
+        try {
+          await deleteDoc(doc(db, 'companies', companyId, 'employees', uid));
+        } catch (e) {
+          console.warn("Could not delete from company subcollection", e);
+        }
+      }
+      // 2. Delete from global users
+      await deleteDoc(doc(db, 'users', uid));
+      // 3. Delete from Auth (Prisma)
+      await fetch(`/api/auth/user/${uid}`, { method: 'DELETE' });
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      alert("Ошибка при удалении пользователя");
     }
   };
 
@@ -473,6 +514,13 @@ export const AppAdminView = () => {
                         {company.isBlocked ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
                         {company.isBlocked ? "Разблокировать" : "Заблокировать"}
                       </button>
+                      <button 
+                        onClick={() => deleteCompany(company.id)}
+                        className="p-3 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 rounded-2xl transition-all"
+                        title="Удалить компанию и всех ее сотрудников"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
                     </div>
                   </div>
 
@@ -523,16 +571,27 @@ export const AppAdminView = () => {
                               <p className="text-xs text-gray-500 truncate">{user.email}</p>
                             </div>
                           </div>
-                          <button 
-                            onClick={() => toggleUserBlock(user.uid, !!user.isBlocked)}
-                            className={cn(
-                              "p-2 rounded-xl transition-all",
-                              user.isBlocked ? "text-green-600 hover:bg-green-100" : "text-gray-400 hover:text-red-600 hover:bg-red-50"
+                          <div className="flex items-center gap-1">
+                            <button 
+                              onClick={() => toggleUserBlock(user.uid, !!user.isBlocked)}
+                              className={cn(
+                                "p-2 rounded-xl transition-all",
+                                user.isBlocked ? "text-green-600 hover:bg-green-100" : "text-gray-400 hover:text-red-600 hover:bg-red-50"
+                              )}
+                              title={user.isBlocked ? "Разблокировать" : "Заблокировать"}
+                            >
+                              {user.isBlocked ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
+                            </button>
+                            {user.uid !== company.ownerUid && (
+                              <button
+                                onClick={() => deleteUser(user.uid, company.id)}
+                                className="p-2 rounded-xl transition-all text-gray-400 hover:text-red-600 hover:bg-red-50"
+                                title="Удалить сотрудника"
+                              >
+                                <Trash2 className="w-5 h-5" />
+                              </button>
                             )}
-                            title={user.isBlocked ? "Разблокировать" : "Заблокировать"}
-                          >
-                            {user.isBlocked ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
-                          </button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -540,6 +599,45 @@ export const AppAdminView = () => {
                 </div>
               ))}
             </div>
+
+            {/* Orphaned Users cleanup */}
+            {users.filter(u => !u.companyId || !companies.find(c => c.id === u.companyId)).length > 0 && (
+              <div className="mt-12 pt-12 border-t-2 border-dashed border-gray-200">
+                <div className="flex items-center justify-between mb-8">
+                  <div>
+                    <h2 className="text-2xl font-black text-gray-900 tracking-tight">
+                      Пользователи без компании
+                    </h2>
+                    <p className="text-sm text-gray-500 font-medium font-sans">
+                      Записи, которые не привязаны ни к одной организации
+                    </p>
+                  </div>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {users.filter(u => !u.companyId || !companies.find(c => c.id === u.companyId)).map(user => (
+                    <div key={user.uid} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex items-center justify-between">
+                      <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 bg-gray-100 text-gray-500 rounded-2xl flex items-center justify-center font-bold">
+                          {user.displayName?.charAt(0) || 'U'}
+                        </div>
+                        <div>
+                          <p className="font-bold text-gray-900">{user.displayName || 'Без имени'}</p>
+                          <p className="text-xs text-gray-500">{user.email}</p>
+                        </div>
+                      </div>
+                      <button 
+                         onClick={() => deleteUser(user.uid, user.companyId || 'none')}
+                         className="p-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-2xl transition-all"
+                         title="Удалить аккаунт"
+                      >
+                        <Trash2 className="w-5 h-5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

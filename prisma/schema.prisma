@@ -8,8 +8,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider = "sqlite"
+  url      = "file:./dev.db"
 }
 
 model DbDocument {
@@ -17,7 +17,7 @@ model DbDocument {
   path       String   @unique // The full firestore path like "companies/123/projects/456"
   collection String   // The collection path like "companies/123/projects"
   docId      String   // The document ID like "456"
-  data       Json
+  data       String
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 

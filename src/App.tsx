@@ -452,8 +452,47 @@ const ProductionView = ({
     );
   }, [allCompanies, contractConfig.city]);
 
+  const [activePhoto, setActivePhoto] = useState<string | null>(null);
+  const [activeProductsView, setActiveProductsView] = useState<'all' | 'moderation'>('all');
+
+  const ProductionGallery = () => (
+    <AnimatePresence>
+      {activePhoto && (
+        <motion.div 
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4"
+          onClick={() => setActivePhoto(null)}
+        >
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.9, opacity: 0 }}
+            className="relative max-w-4xl w-full aspect-video"
+            onClick={e => e.stopPropagation()}
+          >
+            <img 
+              src={activePhoto} 
+              alt="Production" 
+              className="w-full h-full object-contain rounded-2xl shadow-2xl"
+              referrerPolicy="no-referrer"
+            />
+            <button 
+              onClick={() => setActivePhoto(null)}
+              className="absolute -top-12 right-0 p-2 text-white/50 hover:text-white transition-colors"
+            >
+              <X className="w-8 h-8" />
+            </button>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-8">
+      <ProductionGallery />
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-gray-800">Производство</h2>
         <p className="text-sm text-gray-500">
@@ -938,8 +977,9 @@ const ProductionView = ({
                         <img
                           src={photo}
                           alt=""
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform"
                           referrerPolicy="no-referrer"
+                          onClick={() => setActivePhoto(photo)}
                         />
                         <button
                           onClick={() =>
@@ -977,11 +1017,42 @@ const ProductionView = ({
                               );
                             }
 
+                            const compressImage = (base64: string, maxWidth = 1000, maxHeight = 1000): Promise<string> => {
+                              return new Promise((resolve) => {
+                                const img = new Image();
+                                img.onload = () => {
+                                  const canvas = document.createElement('canvas');
+                                  let width = img.width;
+                                  let height = img.height;
+                                  if (width > height) {
+                                    if (width > maxWidth) {
+                                      height *= maxWidth / width;
+                                      width = maxWidth;
+                                    }
+                                  } else {
+                                    if (height > maxHeight) {
+                                      width *= maxHeight / height;
+                                      height = maxHeight;
+                                    }
+                                  }
+                                  canvas.width = width;
+                                  canvas.height = height;
+                                  const ctx = canvas.getContext('2d');
+                                  ctx?.drawImage(img, 0, 0, width, height);
+                                  resolve(canvas.toDataURL('image/jpeg', 0.8));
+                                };
+                                img.src = base64;
+                              });
+                            };
+
                             const loadFile = (file: File): Promise<string> => {
                               return new Promise((resolve) => {
                                 const reader = new FileReader();
-                                reader.onload = (event) =>
-                                  resolve(event.target?.result as string);
+                                reader.onload = async (event) => {
+                                  const base64 = event.target?.result as string;
+                                  const compressed = await compressImage(base64);
+                                  resolve(compressed);
+                                };
                                 reader.readAsDataURL(file);
                               });
                             };
@@ -2049,6 +2120,95 @@ const FacadePriceGrid = ({
   );
 };
 
+const PriceHistoryView = ({
+  materialId,
+  companyId,
+  onClose
+}: {
+  materialId: string;
+  companyId: string;
+  onClose: () => void;
+}) => {
+  const [history, setHistory] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(
+      collection(db, "companies", companyId, "priceHistory"),
+      where("materialId", "==", materialId)
+    );
+    return onSnapshot(q, (snapshot) => {
+      const docs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      setHistory(docs.sort((a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+      setLoading(false);
+    });
+  }, [materialId, companyId]);
+
+  return (
+    <div className="fixed inset-0 z-[100] bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="bg-white w-full max-w-lg rounded-[2rem] shadow-2xl border border-gray-100 overflow-hidden animate-in fade-in zoom-in duration-300">
+        <div className="px-6 py-4 bg-gray-50 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h3 className="font-black text-gray-900 uppercase tracking-wider text-sm flex items-center gap-2">
+              <History className="w-4 h-4 text-blue-600" />
+              История цен
+            </h3>
+            <p className="text-[10px] text-gray-400 font-bold uppercase">{materialId}</p>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition-colors text-gray-400">
+             <X className="w-5 h-5" />
+          </button>
+        </div>
+        
+        <div className="max-h-[60vh] overflow-y-auto p-6">
+          {loading ? (
+             <div className="flex justify-center p-12">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+             </div>
+          ) : history.length === 0 ? (
+             <div className="text-center py-12 text-gray-500 font-medium italic">
+                История изменений пуста
+             </div>
+          ) : (
+             <div className="space-y-4">
+                {history.map((item, idx) => (
+                   <div key={item.id} className="relative pl-6 pb-4 border-l-2 border-gray-100 last:pb-0">
+                      <div className="absolute left-[-5px] top-1.5 w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.5)]" />
+                      <div className="flex flex-col">
+                         <div className="flex items-center justify-between gap-4 mb-1">
+                            <span className="text-xs font-black text-gray-400 uppercase tracking-widest leading-none">
+                               {new Date(item.timestamp).toLocaleString()}
+                            </span>
+                         </div>
+                         <div className="flex items-center gap-2 mb-1.5">
+                            <span className="text-sm font-bold text-gray-400">{item.oldPrice} ₽</span>
+                            <ChevronRight className="w-4 h-4 text-gray-300" />
+                            <span className="text-sm font-black text-blue-600">{item.newPrice} ₽</span>
+                         </div>
+                         <div className="flex items-center gap-2 text-[10px] text-gray-500 font-bold bg-gray-50 px-2 py-1 rounded-lg w-fit">
+                            <User className="w-3 h-3" />
+                            {item.userName}
+                         </div>
+                      </div>
+                   </div>
+                ))}
+             </div>
+          )}
+        </div>
+        
+        <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end">
+           <button 
+             onClick={onClose}
+             className="px-6 py-2 bg-white border border-gray-200 text-gray-600 font-bold rounded-xl hover:bg-gray-100 transition-all text-sm"
+           >
+             Закрыть
+           </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const PriceView = ({
   calcMode,
   prices,
@@ -2070,6 +2230,10 @@ const PriceView = ({
   setOwnProductionConfig,
   onSave,
   setCatalogServices,
+  onShowHistory,
+  logPriceChange,
+  db,
+  auth,
 }: {
   calcMode: string;
   prices: Record<string, number>;
@@ -2100,6 +2264,10 @@ const PriceView = ({
   >;
   onSave?: () => Promise<void>;
   setCatalogServices: React.Dispatch<React.SetStateAction<any[]>>;
+  onShowHistory: (id: string) => void;
+  logPriceChange: (id: string, old: number, newVal: number) => void;
+  db: any;
+  auth: any;
 }) => {
   const [priceSearch, setPriceSearch] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -3006,19 +3174,30 @@ const PriceView = ({
                                   >
                                     {decor}
                                   </div>
-                                  <div className={cn(
-                                    (brand.includes("AGT") || brand.includes("Evosoft")) ? "w-32" : "w-full"
-                                  )}>
-                                    <PriceInputWithSave 
-                                      priceKey={priceKey}
-                                      value={prices[priceKey] || 0}
-                                      setPrices={setPrices}
-                                      db={db}
-                                      auth={auth}
-                                      userRole={userRole}
-                                      canEdit={canEdit}
-                                      prices={prices}
-                                    />
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className={cn(
+                                      (brand.includes("AGT") || brand.includes("Evosoft")) ? "w-32" : "w-full"
+                                    )}>
+                                      <PriceInputWithSave 
+                                        priceKey={priceKey}
+                                        value={prices[priceKey] || 0}
+                                        setPrices={setPrices}
+                                        db={db}
+                                        auth={auth}
+                                        userRole={userRole}
+                                        canEdit={canEdit}
+                                        prices={prices}
+                                        onShowHistory={onShowHistory}
+                                        logPriceChange={logPriceChange}
+                                      />
+                                    </div>
+                                    <button 
+                                      onClick={() => onShowHistory(priceKey)}
+                                      className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                                      title="История цен"
+                                    >
+                                      <History className="w-3.5 h-3.5" />
+                                    </button>
                                   </div>
                                 </div>
                               );
@@ -7136,25 +7315,52 @@ const SummaryView = ({
                           <span>₽</span>
                         </div>
                       ) : row.type === "material" && row.isManual ? (
-                        <div className="flex items-center justify-end gap-2">
-                          <input
-                            type="text"
-                            inputMode="decimal"
-                            value={prices[row.priceKey!] || ""}
-                            onFocus={(e) => e.target.select()}
-                            onChange={(e) => {
-                              const v = e.target.value.replace(",", ".");
-                              if (v === "" || /^\d*\.?\d*$/.test(v)) {
-                                setPrices((prev) => ({
-                                  ...prev,
-                                  [row.priceKey!]: v === "" ? 0 : parseFloat(v),
-                                }));
-                              }
-                            }}
-                            placeholder="0"
-                            className="w-20 p-1 border border-blue-200 rounded text-right text-sm outline-none focus:ring-1 focus:ring-blue-500 bg-blue-50/50"
-                          />
-                          <span>₽</span>
+                        <div className="flex flex-col items-end gap-1">
+                          <div className="flex items-center justify-end gap-2 group/price-warn relative">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={prices[row.priceKey!] || ""}
+                              onFocus={(e) => e.target.select()}
+                              onChange={(e) => {
+                                const v = e.target.value.replace(",", ".");
+                                if (v === "" || /^\d*\.?\d*$/.test(v)) {
+                                  setPrices((prev) => ({
+                                    ...prev,
+                                    [row.priceKey!]: v === "" ? 0 : parseFloat(v),
+                                  }));
+                                }
+                              }}
+                              onBlur={async () => {
+                                // AUTO-SAVE MANUAL DECOR PRICE TO MAIN DATABASE if user is manufacturer admin
+                                const cleanKey = row.decor.replace(/ /g, "|");
+                                const newPrice = prices[row.priceKey!] || 0;
+                                if (newPrice > 0 && cleanKey && productionFormat === 'own' && userRole === 'admin') {
+                                  const companyId = (auth.currentUser as any)?.companyId;
+                                  if (companyId) {
+                                    await setDoc(doc(db, "companies", companyId, "settings", "prices"), {
+                                      prices: { ...prices, [cleanKey]: newPrice }
+                                    }, { merge: true });
+                                    showAlert("База обновлена", `Цена для ${row.decor} сохранена в основные настройки`);
+                                  }
+                                }
+                              }}
+                              placeholder="0"
+                              className={cn(
+                                "w-20 p-1 border rounded text-right text-sm outline-none transition-all",
+                                row.price > 0 && row.rawPrice > 0 && Math.abs(row.price / row.rawPrice - 1) > 0.15
+                                  ? "border-red-400 bg-red-50 focus:ring-red-400"
+                                  : "border-blue-200 focus:ring-blue-500 bg-blue-50/50"
+                              )}
+                            />
+                            <span>₽</span>
+                            
+                            {row.price > 0 && row.rawPrice > 0 && Math.abs(row.price / row.rawPrice - 1) > 0.15 && (
+                              <div className="absolute right-full mr-2 opacity-0 group-hover/price-warn:opacity-100 transition-opacity bg-red-600 text-white text-[9px] py-1 px-2 rounded whitespace-nowrap z-10 shadow-lg font-bold">
+                                Отклонение &gt; 15% от базовой цены ({row.rawPrice} ₽)
+                              </div>
+                            )}
+                          </div>
                         </div>
                       ) : (
                         `${(row.price ?? 0).toLocaleString()} ₽`
@@ -10404,6 +10610,7 @@ const ProductsView = ({
   setSelectedCategory,
   showAlert,
   showPrompt,
+  userData,
 }: {
   onAddProduct: (product: any, qty: number) => void;
   catalogProducts: any[];
@@ -10439,6 +10646,7 @@ const ProductsView = ({
     defaultValue: string,
     onConfirm: (value: string) => void,
   ) => void;
+  userData?: any;
 }) => {
   const [showChecklistWindow, setShowChecklistWindow] = useState(false);
 
@@ -10709,6 +10917,7 @@ const ProductsView = ({
 
   const [selectedProductForDetail, setSelectedProductForDetail] =
     useState<any>(null);
+  const [activeProductsView, setActiveProductsView] = useState<'catalog' | 'moderation'>('catalog');
 
   const handleCreateProduct = () => {
     if (!newProduct.name || newProduct.purchasePrice < 0) return;
@@ -10720,6 +10929,8 @@ const ProductsView = ({
       id: editingProduct?.id || Date.now().toString(),
       price: finalPrice,
       image: newProduct.images[0] || "", // Keep for legacy compatibility
+      status: userRole === 'admin' ? 'approved' : (editingProduct?.status || 'pending'),
+      addedBy: editingProduct?.addedBy || userData?.uid,
       updatedAt: new Date().toISOString(),
     };
 
@@ -10810,6 +11021,19 @@ const ProductsView = ({
   };
 
   const filteredProducts = catalogProducts.filter((p) => {
+    // Stage 1: Moderation / Status filtering
+    if (activeProductsView === 'moderation') {
+      return p.status === 'pending';
+    }
+    
+    // In Catalog view:
+    // If pending, only show to admin or the person who added it
+    if (p.status === 'pending') {
+      return userRole === 'admin' || p.addedBy === userData?.uid;
+    }
+    
+    return true; // Show approved products normally
+  }).filter((p) => {
     const searchTerms = switchLayout(search);
     const checkMatch = (field: string) => {
       const val = (field || "").toLowerCase();
@@ -11047,6 +11271,33 @@ const ProductsView = ({
           </p>
         </div>
         <div className="flex flex-col sm:flex-row w-full md:w-auto gap-3">
+          {(userRole === 'admin' || userRole === 'manager') && (
+            <div className="flex bg-gray-100 p-1 rounded-xl items-center mr-2 shadow-inner">
+               <button 
+                 onClick={() => setActiveProductsView('catalog')}
+                 className={cn(
+                   "px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all",
+                   activeProductsView === 'catalog' ? "bg-white text-blue-600 shadow-sm" : "text-gray-400 font-bold"
+                 )}
+               >
+                 Весь каталог
+               </button>
+               <button 
+                 onClick={() => setActiveProductsView('moderation')}
+                 className={cn(
+                   "px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                   activeProductsView === 'moderation' ? "bg-white text-orange-600 shadow-sm" : "text-gray-400 font-bold"
+                 )}
+               >
+                 Модерация
+                 {catalogProducts.filter(p => p.status === 'pending').length > 0 && (
+                   <span className="w-4 h-4 bg-orange-500 text-white rounded-full flex items-center justify-center text-[8px]">
+                     {catalogProducts.filter(p => p.status === 'pending').length}
+                   </span>
+                 )}
+               </button>
+            </div>
+          )}
           <button
             onClick={() => setShowChecklistWindow(true)}
             className="flex items-center justify-center gap-2 px-6 h-10 bg-indigo-50 text-indigo-700 font-bold rounded-xl hover:bg-indigo-100 transition-all border border-indigo-100 shadow-sm"
@@ -12620,6 +12871,12 @@ const ProductsView = ({
 
                   {/* Overlay Badges */}
                   <div className="absolute top-4 left-4 flex flex-col gap-2">
+                    {product.status === 'pending' && (
+                      <div className="flex items-center gap-1.5 px-2 py-1 bg-orange-500 text-white text-[9px] font-black uppercase tracking-widest rounded-lg shadow-lg animate-pulse z-10">
+                        <Clock className="w-2.5 h-2.5" />
+                        Ожидание
+                      </div>
+                    )}
                     <span className="px-2 py-1 bg-white/95 backdrop-blur shadow-sm text-[10px] font-bold uppercase tracking-wider text-blue-600 rounded-lg">
                       {product.category}
                     </span>
@@ -12763,13 +13020,41 @@ const ProductsView = ({
                       </div>
                     </div>
 
-                    <button
-                      onClick={() => handleAdd(product)}
-                      className="w-full py-3 bg-blue-50 text-blue-600 font-bold rounded-2xl hover:bg-blue-600 hover:text-white transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2 group/btn"
-                    >
-                      <ShoppingBag className="w-5 h-5 group-hover/btn:scale-110 transition-transform" />
-                      Добавить в проект
-                    </button>
+                    {product.status === 'pending' && (userRole === 'admin' || userRole === 'manager') ? (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSaveProduct({ ...product, status: 'approved' });
+                        }}
+                        className="w-full py-3 bg-green-600 text-white font-black uppercase tracking-widest rounded-2xl hover:bg-green-700 transition-all flex items-center justify-center gap-2 shadow-lg shadow-green-100 shadow-sm"
+                      >
+                        <CheckCircle2 className="w-5 h-5" />
+                        Одобрить и добавить
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleAdd(product)}
+                        disabled={product.status === 'pending'}
+                        className={cn(
+                          "w-full py-3 font-bold rounded-2xl transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2 group/btn",
+                          product.status === 'pending' 
+                            ? "bg-gray-100 text-gray-400 cursor-not-allowed" 
+                            : "bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white"
+                        )}
+                      >
+                        {product.status === 'pending' ? (
+                          <>
+                            <Clock className="w-5 h-5" />
+                            На модерации
+                          </>
+                        ) : (
+                          <>
+                            <ShoppingBag className="w-5 h-5 group-hover/btn:scale-110 transition-transform" />
+                            Добавить в проект
+                          </>
+                        )}
+                      </button>
+                    )}
                   </div>
                 </div>
               </div>
@@ -12900,6 +13185,9 @@ const PriceInputWithSave = ({
         }}
         onBlur={async () => {
           const newPrice = localVal === "" ? 0 : parseFloat(localVal);
+          if (newPrice !== value) {
+            logPriceChange(priceKey, value, newPrice);
+          }
           const companyId = (auth.currentUser as any)?.companyId || auth.currentUser?.uid;
           if (companyId && (userRole === "admin" || userRole === "manager")) {
             await setDoc(
@@ -13366,6 +13654,22 @@ export default function App() {
   } | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [prices, setPrices] = useState<Record<string, number>>({});
+  const [historyMaterialId, setHistoryMaterialId] = useState<string | null>(null);
+  const logPriceChange = async (materialId: string, oldPrice: number, newPrice: number) => {
+    if (!companyData?.id || !userData?.uid || oldPrice === newPrice) return;
+    try {
+      await addDoc(collection(db, "companies", companyData.id, "priceHistory"), {
+        materialId,
+        oldPrice,
+        newPrice,
+        userId: userData.uid,
+        userName: userData.displayName || userData.email,
+        timestamp: new Date().toISOString()
+      });
+    } catch (err) {
+      console.error("Error logging price change", err);
+    }
+  };
   const [results, setResults] = useState<any>(null);
 
   useEffect(() => {
@@ -13882,13 +14186,17 @@ export default function App() {
       (snapshot) => {
         if (snapshot.exists()) {
           const data = snapshot.data();
-          if ("productionId" in data || "city" in data) {
+          // Improved check: if it has common contract fields, it's a contract config
+          const isContract = ("productionId" in data && data.productionId) || ("city" in data && data.city);
+          
+          if (isContract) {
             setContractConfig(data as ContractConfig);
           } else {
             setOwnProductionConfig((prev) => {
               const migrated = {
                 ...prev,
                 ...data,
+                photos: data.photos || prev.photos || [],
                 specialConditionIds: (data as any).specialConditionIds || [],
                 standardCoefficients: (data as any).standardCoefficients || {},
                 salonCoefficients: (data as any).salonCoefficients || {},
@@ -14388,17 +14696,37 @@ export default function App() {
   };
 
   const saveProduct = async (product: any) => {
-    if (!companyData?.id) return;
+    if (!companyData?.id || !userData?.uid) return;
     try {
+      const isNew = !product.id;
+      const pId = product.id || Math.random().toString(36).substr(2, 9);
+      
+      const finalProduct = {
+        ...product,
+        id: pId,
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (isNew) {
+        finalProduct.status = userRole === 'admin' ? 'approved' : 'pending';
+        finalProduct.addedBy = userData.uid;
+      }
+
       await setDoc(
-        doc(db, "companies", companyData.id, "products", product.id.toString()),
-        product,
+        doc(db, "companies", companyData.id, "products", pId),
+        finalProduct,
       );
+
+      if (isNew && finalProduct.status === 'pending') {
+        showAlert("На проверке", "Товар отправлен на модерацию администратору");
+      } else {
+        showAlert("Успех", "Товар сохранен в каталоге");
+      }
     } catch (error) {
       handleFirestoreError(
         error,
         OperationType.WRITE,
-        `companies/${companyData.id}/products/${product.id}`,
+        `companies/${companyData.id}/products`,
       );
     }
   };
@@ -15876,9 +16204,7 @@ export default function App() {
                           (name) => {
                             if (name.trim()) {
                               setCurrentProjectName(name.trim());
-                              if (currentProjectId) {
-                                saveProject(name.trim()); // Save instantly if already exists
-                              }
+                              saveProject(name.trim()); // Save instantly
                             }
                           },
                         );
@@ -15989,7 +16315,44 @@ export default function App() {
               </div>
             </nav>
 
-            {/* BOTTOM CLOUD SYNC & PROFILE SECTION */}
+            <div className="mt-auto border-t border-gray-100/50 bg-gray-50/10">
+              {isSidebarOpen ? (
+                <div className="px-5 py-3 flex items-center justify-between gap-3 group/cloud">
+                   <div className="flex flex-col min-w-0">
+                      <div className="flex items-center gap-1.5 leading-none mb-0.5">
+                         {isSyncing ? (
+                           <div className="animate-spin rounded-full h-2 w-2 border-b-2 border-blue-600"></div>
+                         ) : quotaExceeded ? (
+                           <AlertTriangle className="w-2.5 h-2.5 text-red-500" />
+                         ) : (
+                           <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]"></div>
+                         )}
+                         <span className={cn(
+                           "text-[9px] font-black uppercase tracking-tighter",
+                           quotaExceeded ? "text-red-600" : isSyncing ? "text-blue-500" : "text-gray-400"
+                         )}>
+                           {quotaExceeded ? "Квота превышена" : isSyncing ? "Синхр." : "Облако активно"}
+                         </span>
+                      </div>
+                      <span className="text-[8px] text-gray-400 font-bold">
+                         {lastSyncedAt ? `Обн. ${lastSyncedAt.toLocaleTimeString()}` : "Сохранено"}
+                      </span>
+                   </div>
+                   <Cloud className={cn(
+                     "w-4 h-4",
+                     isSyncing ? "text-blue-500 animate-pulse" : "text-gray-300 group-hover/cloud:text-blue-400 transition-colors"
+                   )} />
+                </div>
+              ) : (
+                <div className="py-4 flex justify-center">
+                   <div className={cn(
+                     "w-1.5 h-1.5 rounded-full",
+                     isSyncing ? "bg-blue-500 animate-pulse" : "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]"
+                   )} />
+                </div>
+              )}
+            </div>
+
             <div className="px-3 pb-3 pt-2 bg-gray-50/50 space-y-1">
               {isSidebarOpen && (
                 <div className="mb-2 px-3">
@@ -16475,6 +16838,16 @@ export default function App() {
               ownProductionConfig={ownProductionConfig}
               setOwnProductionConfig={setOwnProductionConfig}
               onSave={saveGeneralSettings}
+              onShowHistory={(id) => setHistoryMaterialId(id)}
+              logPriceChange={logPriceChange}
+              db={db}
+              auth={auth}
+            />
+          ) : historyMaterialId && companyData ? (
+            <PriceHistoryView
+              materialId={historyMaterialId}
+              companyId={companyData.id}
+              onClose={() => setHistoryMaterialId(null)}
             />
           ) : activeTab === "production" && userRole === "admin" ? (
             <ProductionView
@@ -16506,6 +16879,7 @@ export default function App() {
               showAlert={showAlert}
               showConfirm={showConfirm}
               showPrompt={showPrompt}
+              userData={userData}
             />
           ) : activeTab === "settings" && userRole === "admin" ? (
             <SettingsView
@@ -16563,6 +16937,28 @@ export default function App() {
             <ProjectSpecificationView
               project={selectedProjectForSpec}
               onClose={() => setActiveTab("projects")}
+              onPrint={(project) => {
+                const singleProjectData = {
+                  contractNumber: project.id.slice(0, 8),
+                  contractDate: project.sentAt || new Date().toISOString(),
+                  readyDate: project.readyDate || null,
+                  summary: project.data?.summary || {
+                    totalMaterialsPrice: project.totalPrice || 0,
+                    totalHardwarePrice: 0,
+                    totalServicesPrice: 0,
+                    materials: project.data?.summaryRows?.filter((r: any) => r.type === 'material') || [],
+                    hardware: project.data?.summaryRows?.filter((r: any) => r.type === 'hardware' || r.type === 'product') || [],
+                    services: project.data?.summaryRows?.filter((r: any) => r.type === 'service') || [],
+                    totalDeliveryPrice: 0,
+                    totalAssemblyPrice: 0,
+                  },
+                  sketches: project.sketches || [],
+                };
+                setPrintSetData({ 
+                  projects: [project], 
+                  data: singleProjectData 
+                });
+              }}
               userRole={userRole || "worker"}
               companyId={companyData?.id || ""}
               manufacturerId={companyData?.manufacturerId}

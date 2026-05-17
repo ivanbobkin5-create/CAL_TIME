@@ -610,13 +610,20 @@ export const ProjectsView = ({
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 text-xs text-gray-400">
-                      <Calendar className="w-3 h-3" />
-                      {new Date(project.createdAt).toLocaleDateString("ru-RU", {
-                        day: "numeric",
-                        month: "short",
-                        year: "numeric",
-                      })}
+                    <div className="flex flex-col gap-1 mt-1">
+                      <div className="flex items-center gap-2 text-[10px] text-gray-400">
+                        <Calendar className="w-3 h-3" />
+                        {new Date(project.createdAt).toLocaleDateString("ru-RU", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </div>
+                      {(!project.status || project.status === "draft") && (
+                        <div className="flex items-center gap-2 text-[10px] text-orange-500 font-medium">
+                          Срок хранения: {Math.max(0, 90 - Math.floor((Date.now() - new Date(project.createdAt).getTime()) / (1000 * 60 * 60 * 24)))} дней
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

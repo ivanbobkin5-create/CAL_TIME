@@ -8,7 +8,7 @@ async function test() {
     });
     console.log(user);
     const doc = await prisma.dbDocument.create({
-      data: { path: "users/" + user.uid, collection: "users", docId: user.uid, data: { name: "Test User" } }
+      data: { path: "users/" + user.uid, collection: "users", docId: user.uid, data: JSON.stringify({ name: "Test User" }) }
     });
     console.log(doc);
   } catch (e) {

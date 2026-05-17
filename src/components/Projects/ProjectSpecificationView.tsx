@@ -26,17 +26,21 @@ interface Project {
   specification?: any;
   companyId?: string;
   totalPrice?: number;
+  sentAt?: string;
+  readyDate?: string;
 }
 
 export const ProjectSpecificationView = ({ 
   project, 
   onClose, 
+  onPrint,
   userRole,
   companyId,
   manufacturerId
 }: { 
   project: Project; 
   onClose: () => void;
+  onPrint?: (project: Project) => void;
   userRole: string;
   companyId: string;
   manufacturerId?: string;
@@ -352,8 +356,7 @@ export const ProjectSpecificationView = ({
             <div className="flex items-center gap-3 w-full sm:w-auto">
               <button 
                 onClick={() => {
-                  // PDF export logic
-                  console.log('Export PDF');
+                  if (onPrint) onPrint(project);
                 }}
                 className="px-6 py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700"
               >

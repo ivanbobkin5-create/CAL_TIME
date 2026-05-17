@@ -18,14 +18,14 @@ async function main() {
           path: "users/" + user.uid,
           collection: "users",
           docId: user.uid,
-          data: {
+          data: JSON.stringify({
             uid: user.uid,
             email: e,
             displayName: "Super Admin",
             role: "admin",
             companyId: "system",
             createdAt: new Date().toISOString()
-          }
+          })
         }
       });
       console.log("Created doc:", doc);

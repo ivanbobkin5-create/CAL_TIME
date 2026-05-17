@@ -33,6 +33,31 @@ async function startServer() {
     }
   });
 
+  app.get("/api/auth/lookup", async (req, res) => {
+    const { email } = req.query;
+    try {
+      if (typeof email !== "string") return res.status(400).json({ error: "Invalid email" });
+      const user = await prisma.authUser.findUnique({ where: { email: email.toLowerCase() }});
+      if (user) {
+        res.json({ uid: user.uid, email: user.email });
+      } else {
+        res.status(404).json({ error: "Not found" });
+      }
+    } catch (e) {
+      res.status(500).json({ error: "Lookup failed" });
+    }
+  });
+
+  app.delete("/api/auth/user/:uid", async (req, res) => {
+    const { uid } = req.params;
+    try {
+      await prisma.authUser.delete({ where: { uid } });
+      res.json({ status: "ok" });
+    } catch (e) {
+      res.status(500).json({ error: "Failed to delete auth user" });
+    }
+  });
+
   app.post("/api/auth/login", async (req, res) => {
     const { email, password } = req.body;
     try {
@@ -48,14 +73,14 @@ async function startServer() {
   app.get("/api/firebase/doc/*", async (req, res) => {
     const docPath = req.params[0];
     const doc = await prisma.dbDocument.findUnique({ where: { path: docPath } });
-    if (doc) res.json(doc.data);
+    if (doc) res.json(JSON.parse(doc.data));
     else res.status(404).json({ error: "Not found" });
   });
 
   app.get("/api/firebase/col/*", async (req, res) => {
     const colPath = req.params[0];
     const docs = await prisma.dbDocument.findMany({ where: { collection: colPath } });
-    res.json(docs.map(d => ({ id: d.docId, data: d.data, path: d.path })));
+    res.json(docs.map(d => ({ id: d.docId, data: JSON.parse(d.data), path: d.path })));
   });
 
   app.post("/api/firebase/doc/*", async (req, res) => {
@@ -68,17 +93,18 @@ async function startServer() {
 
       if (merge) {
         const existing = await prisma.dbDocument.findUnique({ where: { path: docPath } });
-        const newData = existing ? { ...(existing.data as object), ...data } : data;
+        const existingData = existing ? JSON.parse(existing.data) : {};
+        const newData = { ...existingData, ...data };
         await prisma.dbDocument.upsert({
           where: { path: docPath },
-          create: { path: docPath, collection, docId, data: newData },
-          update: { data: newData }
+          create: { path: docPath, collection, docId, data: JSON.stringify(newData) },
+          update: { data: JSON.stringify(newData) }
         });
       } else {
         await prisma.dbDocument.upsert({
           where: { path: docPath },
-          create: { path: docPath, collection, docId, data },
-          update: { data }
+          create: { path: docPath, collection, docId, data: JSON.stringify(data) },
+          update: { data: JSON.stringify(data) }
         });
       }
       res.json({ status: "ok" });
@@ -94,14 +120,15 @@ async function startServer() {
       const { data } = req.body;
       const existing = await prisma.dbDocument.findUnique({ where: { path: docPath } });
       if (existing) {
-        const newData = { ...(existing.data as object), ...data };
-        await prisma.dbDocument.update({ where: { path: docPath }, data: { data: newData } });
+        const existingData = JSON.parse(existing.data);
+        const newData = { ...existingData, ...data };
+        await prisma.dbDocument.update({ where: { path: docPath }, data: { data: JSON.stringify(newData) } });
       } else {
         const parts = docPath.split('/');
         const docId = parts.pop()!;
         const collection = parts.join('/');
         await prisma.dbDocument.create({
-          data: { path: docPath, collection, docId, data }
+          data: { path: docPath, collection, docId, data: JSON.stringify(data) }
         });
       }
       res.json({ status: "ok" });

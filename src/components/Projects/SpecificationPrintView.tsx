@@ -15,25 +15,36 @@ export const SpecificationPrintView = ({
   const contentRef = useRef<HTMLDivElement>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
-  const handleSavePdf = async () => {
+  const handleSavePdf = () => {
     if (!contentRef.current) return;
     setIsGeneratingPdf(true);
-    try {
-      const opt = {
-        margin: [5, 5, 5, 5] as [number, number, number, number], // top, right, bottom, left
-        filename: `Спецификация_${setData.contractNumber || "Заказ"}.pdf`,
-        image: { type: "jpeg" as const, quality: 0.98 },
-        html2canvas: { scale: 2, useCORS: true },
-        jsPDF: {
-          unit: "mm" as const,
-          format: "a4" as const,
-          orientation: "portrait" as const,
-        },
-      };
-      await html2pdf().from(contentRef.current).set(opt).save();
-    } finally {
-      setIsGeneratingPdf(false);
-    }
+    
+    // Give UI a chance to render spinner
+    setTimeout(async () => {
+      try {
+        const opt = {
+          margin:       [5, 5, 5, 5] as [number, number, number, number], // top, left, right, bottom
+          filename:     `Спецификация_${setData.contractNumber || "Заказ"}.pdf`,
+          image:        { type: "jpeg" as const, quality: 0.98 },
+          html2canvas:  { scale: 2, useCORS: true, allowTaint: true, logging: false },
+          jsPDF: {
+            unit: "mm" as const,
+            format: "a4" as const,
+            orientation: "portrait" as const,
+          },
+        };
+        const pdf = html2pdf().from(contentRef.current).set(opt);
+        await Promise.race([
+          pdf.save(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout")), 30000))
+        ]);
+      } catch (err) {
+        console.error('PDF generation error:', err);
+        alert('Не удалось сгенерировать PDF (возможно тяжелые изображения или проблемы с сетью). Пожалуйста, используйте кнопку "Печать" -> "Сохранить как PDF" в браузере.');
+      } finally {
+        setIsGeneratingPdf(false);
+      }
+    }, 100);
   };
 
   return (
@@ -102,7 +113,7 @@ export const SpecificationPrintView = ({
             {new Date(setData.contractDate).toLocaleDateString("ru-RU")}
           </h1>
 
-          <div className="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-200 grid grid-cols-2 gap-8 text-sm break-inside-avoid">
+          <div className="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-200 grid grid-cols-2 gap-8 text-sm break-inside-avoid shadow-sm">
             <div>
               <p className="text-gray-500 mb-1">Сумма по договору:</p>
               <p className="font-bold text-xl">
@@ -154,7 +165,7 @@ export const SpecificationPrintView = ({
 
           {/* Projects Breakdown */}
           {projects.length > 0 && (
-            <div className="mb-6 break-inside-avoid">
+            <div className="mb-6 page-break-after-always">
               <p className="font-bold mb-3 text-sm text-gray-700">
                 Состав комплекта:
               </p>

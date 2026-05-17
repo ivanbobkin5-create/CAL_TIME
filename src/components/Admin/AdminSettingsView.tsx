@@ -124,11 +124,21 @@ export const AdminSettingsView = ({
             uid = data.uid;
           } catch (authError: any) {
             if (authError.code === 'auth/email-already-in-use') {
-              setError('Пользователь с таким Email уже существует в системе. Если вы хотите привязать его, используйте существующий UID или обратитесь в поддержку.');
-              setIsLoading(false);
-              return;
+              // Lookup existing user UID
+              const lookupRes = await fetch(`/api/auth/lookup?email=${encodeURIComponent(trimmedEmail)}`);
+              const lookupData = await lookupRes.json();
+              
+              if (lookupRes.ok && lookupData.uid) {
+                uid = lookupData.uid;
+                // We'll proceed with this uid and add them to the company
+              } else {
+                setError('Пользователь с таким Email уже существует в системе, но получить его UID не удалось.');
+                setIsLoading(false);
+                return;
+              }
+            } else {
+              throw authError;
             }
-            throw authError;
           }
         }
 
@@ -205,18 +215,27 @@ export const AdminSettingsView = ({
           const res = await fetch("/api/auth/register", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: trimmedEmail, password: "password123" })
+            body: JSON.stringify({ email: trimmedEmail, password: "password123" }) // use standard password from prompt
           });
           const data = await res.json();
+          let uid = data.uid;
+          
           if (!res.ok) {
             if (data.code === 'auth/email-already-in-use' || data.error?.includes('unique constraint')) {
-              throw { code: 'auth/email-already-in-use' };
+               const lookupRes = await fetch(`/api/auth/lookup?email=${encodeURIComponent(trimmedEmail)}`);
+               const lookupData = await lookupRes.json();
+               if (lookupRes.ok && lookupData.uid) {
+                 uid = lookupData.uid;
+                 showAlert('Информация', 'Учетная запись уже существует. Доступ восстановлен к существующему аккаунту.');
+               } else {
+                 throw new Error("User exists but could not lookup UID");
+               }
+            } else {
+              throw new Error(data.error || "Failed to register employee");
             }
-            throw new Error(data.error || "Failed to register employee");
           }
-          const uid = data.uid;
 
-          // Update UID if it changed (though it shouldn't if we use email as key)
+          // Update UID if it changed
           const employeeData = {
             uid: uid,
             name: employee.name,
@@ -225,14 +244,19 @@ export const AdminSettingsView = ({
             companyId: companyId,
             createdAt: new Date().toISOString()
           };
-          await setDoc(doc(db, 'users', uid), employeeData);
-          showAlert('Успех', 'Доступ успешно восстановлен. Пароль: 123456');
-        } catch (authError: any) {
-          if (authError.code === 'auth/email-already-in-use') {
-            showAlert('Информация', 'Учетная запись уже существует. Попробуйте войти с паролем 123456 или сбросить его через Firebase Console.');
+          await setDoc(doc(db, 'users', uid), employeeData, { merge: true });
+          if (uid !== employee.id) {
+            await deleteDoc(doc(db, 'companies', companyId, 'employees', employee.id));
+            await setDoc(doc(db, 'companies', companyId, 'employees', uid), employeeData);
           } else {
-            throw authError;
+            await setDoc(doc(db, 'companies', companyId, 'employees', uid), employeeData, { merge: true });
           }
+          
+          if (res.ok) {
+             showAlert('Успех', 'Доступ успешно восстановлен. Пароль по умолчанию: password123');
+          }
+        } catch (authError: any) {
+          throw authError;
         }
       } catch (error: any) {
         console.error("Error restoring access:", error);
