@@ -13224,18 +13224,21 @@ export default function App() {
 
   const handleRegister = async (data: RegistrationData) => {
     try {
+      console.log("Starting register...");
       const userCredential = await createUserWithEmailAndPassword(
         auth,
         data.adminEmail,
         data.adminPassword,
       );
       const user = userCredential.user;
+      console.log("Created user:", user);
 
       const companyId = Math.random().toString(36).substr(2, 9);
 
       const expirationDate = new Date();
       expirationDate.setDate(expirationDate.getDate() + 14);
 
+      console.log("Creating company doc...");
       // Create company
       await setDoc(doc(db, "companies", companyId), {
         name: data.companyName,
@@ -13245,6 +13248,7 @@ export default function App() {
         tariffExpiration: expirationDate.toISOString(),
       });
 
+      console.log("Creating user doc...");
       // Create user
       await setDoc(doc(db, "users", user.uid), {
         uid: user.uid,
@@ -13255,6 +13259,7 @@ export default function App() {
         createdAt: new Date().toISOString(),
       });
 
+      console.log("Creating settings doc...");
       // Initialize settings
       await setDoc(doc(db, "companies", companyId, "settings", "categories"), {
         categories: INITIAL_PRODUCT_CATEGORIES,
@@ -13263,7 +13268,30 @@ export default function App() {
           {},
         ),
       });
+      
+      console.log("Registration finished! Forcing authenticated state...");
+      
+      // Force app state to authenticated immediately to fix the non-responsive button
+      setCompanyData({
+        id: companyId,
+        name: data.companyName,
+        type: data.companyType,
+        city: data.city,
+        ownerUid: user.uid,
+      });
+      setUserData({
+        uid: user.uid,
+        email: data.adminEmail,
+        displayName: data.adminName,
+        role: "admin",
+        companyId: companyId,
+      });
+      setUserRole("admin");
+      setIsAuthenticated(true);
+      setIsLoading(false);
+      
     } catch (error) {
+      console.error("error during register:", error);
       showAlert("Ошибка регистрации", (error as Error).message);
     }
   };

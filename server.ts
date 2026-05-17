@@ -1,4 +1,5 @@
 import express from "express";
+import "dotenv/config";
 import path from "path";
 import cors from "cors";
 import { createServer as createViteServer } from "vite";
@@ -26,8 +27,9 @@ async function startServer() {
       });
       res.json({ uid: user.uid, email: user.email });
     } catch (e) {
+      console.error("Error creating user:", e);
       if ((e as any).code === 'P2002') return res.status(400).json({ code: 'auth/email-already-in-use' });
-      res.status(500).json({ error: "Failed to create user" });
+      res.status(500).json({ error: String(e) });
     }
   });
 

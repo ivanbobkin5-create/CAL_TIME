@@ -85,7 +85,10 @@ export const createUserWithEmailAndPassword = async (authObj: any, email: string
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password: pass })
   });
-  if (!res.ok) throw new Error("Failed to register");
+  if (!res.ok) {
+    const errorData = await res.text();
+    throw new Error(`Failed to register: ${res.status} ${errorData}`);
+  }
   const data = await res.json();
   const authInstance = authObj as any;
   authInstance.currentUser = new MockUser(data);
