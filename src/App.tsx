@@ -13148,7 +13148,7 @@ export default function App() {
               }
 
               // Listen to company document
-              if (uData.companyId) {
+              if (uData.companyId && uData.companyId !== "system") {
                 if (unsubscribeCompany) unsubscribeCompany();
                 unsubscribeCompany = onSnapshot(
                   doc(db, "companies", uData.companyId),
@@ -13168,6 +13168,9 @@ export default function App() {
                       if (cData.productionFormat) {
                         setProductionFormat(cData.productionFormat);
                       }
+                    } else if (isSuper) {
+                      setShowAdminPanel(true);
+                      setIsAuthenticated(true);
                     }
                     setIsLoading(false);
                   },
@@ -13177,6 +13180,7 @@ export default function App() {
                   },
                 );
               } else if (isSuper) {
+                setShowAdminPanel(true);
                 setIsAuthenticated(true);
                 setIsLoading(false);
               }
@@ -13239,6 +13243,7 @@ export default function App() {
       expirationDate.setDate(expirationDate.getDate() + 14);
 
       console.log("Creating company doc...");
+      const prodFormat = data.companyType === "Мебельное производство" ? "own" : "contract";
       // Create company
       await setDoc(doc(db, "companies", companyId), {
         name: data.companyName,
@@ -13246,6 +13251,7 @@ export default function App() {
         city: data.city,
         ownerUid: user.uid,
         tariffExpiration: expirationDate.toISOString(),
+        productionFormat: prodFormat,
       });
 
       console.log("Creating user doc...");
@@ -13352,6 +13358,16 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [prices, setPrices] = useState<Record<string, number>>({});
   const [results, setResults] = useState<any>(null);
+
+  useEffect(() => {
+    if (companyData?.type) {
+      if (companyData.type === "Мебельное производство") {
+        setProductionFormat("own");
+      } else {
+        setProductionFormat("contract");
+      }
+    }
+  }, [companyData?.type]);
   const [rotations, setRotations] = useState<Record<string, boolean>>({});
   const [edgeToEdge, setEdgeToEdge] = useState<Record<string, boolean>>({});
   const [sheetConfigs, setSheetConfigs] = useState<Record<string, SheetConfig>>(
