@@ -13311,6 +13311,20 @@ export default function App() {
     });
   };
 
+  useEffect(() => {
+    const handler = (event: PromiseRejectionEvent) => {
+      // Ignore known benign Vite HMR WebSocket errors in dev environment
+      if (
+        event.reason instanceof Error &&
+        event.reason.message === "WebSocket closed without opened."
+      ) {
+        event.preventDefault();
+      }
+    };
+    window.addEventListener("unhandledrejection", handler);
+    return () => window.removeEventListener("unhandledrejection", handler);
+  }, []);
+
   const [companyData, setCompanyData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAppAdmin, setIsAppAdmin] = useState(false);
