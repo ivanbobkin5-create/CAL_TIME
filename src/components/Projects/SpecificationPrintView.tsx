@@ -235,123 +235,92 @@ export const SpecificationPrintView = ({
             </div>
 
             {/* Materials Block */}
-            {projects.some((p: any) =>
-              p.data?.summaryRows?.some(
-                (r: any) => r.type === "material" || r.type === "edge",
-              ),
-            ) && (
+            {summary.materials && summary.materials.length > 0 && (
               <div className="mb-4 break-inside-avoid">
                 <div className="bg-blue-50 font-bold p-2 px-3 text-xs text-blue-900 rounded-t-xl border border-b-0 border-blue-100 flex items-center gap-2">
                   <div className="w-1.5 h-3 bg-blue-500 rounded-full"></div>
                   Материалы, кромка и фасады
                 </div>
                 <div className="border border-gray-200 rounded-b-xl px-4 py-3 bg-white text-[10px] space-y-3">
-                  {projects.map((p: any, idx: number) => {
-                    const mList: any[] = [];
-                    
-                    if (p.data?.summaryRows) {
-                      const items = p.data.summaryRows;
-                      const materials = items.filter(
-                        (r: any) => r.type === "material",
-                      );
-                      const edges = items.filter((r: any) => r.type === "edge");
-                      const pEdges = items.filter(
-                        (r: any) => r.type === "product_edge",
-                      );
-
-                      materials.forEach((m: any) => {
-                        if (m.name === "Комплект метизов") return;
-                        let kind = "ЛДСП/МДФ (Корпус)";
-                        if (m.name?.includes("Фасад")) {
-                          kind =
-                            "Фасады (" +
-                            m.name.replace("Фасад ", "").replace(/[()]/g, "") +
-                            ")";
-                        } else if (
-                          m.name?.toLowerCase().includes("хдф") ||
-                          m.sub?.toLowerCase().includes("хдф")
-                        ) {
-                          kind = "ХДФ (Задняя стенка)";
-                        } else if (m.name?.toLowerCase().includes("столешница")) {
-                          kind = "Столешница/Панель";
-                        }
-
-                        const decorValue =
-                          m.decor && m.decor !== "-" ? m.decor : m.sub || "";
-                        mList.push({ kind, value: decorValue });
-                      });
-
-                      if (edges.length > 0) {
-                        const edgeValues = Array.from(
-                          new Set(
-                            edges.map((e: any) =>
-                              e.decor && e.decor !== "-" ? e.decor : e.name,
-                            ),
-                          ),
-                        ).join(", ");
-                        mList.push({ kind: "Кромка", value: edgeValues });
-                      }
-
-                      if (pEdges.length > 0) {
-                        const pEdgeValues = Array.from(
-                          new Set(
-                            pEdges.map((e: any) =>
-                              e.decor && e.decor !== "-" ? e.decor : e.name,
-                            ),
-                          ),
-                        ).join(", ");
-                        mList.push({
-                          kind: "Кромка (Столешница/Панель)",
-                          value: pEdgeValues,
+                     {Object.entries((() => {
+                        const groups: Record<string, any> = {};
+                        projects.forEach(p => {
+                           groups[p.name] = { body: [], back: [], facades: [] };
                         });
-                      }
-                    } else if (p.data) {
-                      // Fallback if summaryRows are missing
-                      if (p.data.selectedDecor) {
-                        mList.push({ kind: "ЛДСП/МДФ (Корпус)", value: p.data.selectedDecor });
-                      }
-                      if (p.data.edgeDecor) {
-                        mList.push({ kind: "Кромка", value: p.data.edgeDecor });
-                      }
-                      if (p.data.facadeType) {
-                        mList.push({ kind: "Фасады", value: p.data.facadeType });
-                      }
-                    }
 
-                    // Sort materials: LDSP, HDF, Facades, Worktop, Edge
-                    mList.sort((a, b) => {
-                      const getWeight = (k: string) => {
-                        const lower = k.toLowerCase();
-                        if (lower.includes("лдсп") || lower.includes("мдф")) return 10;
-                        if (lower.includes("хдф")) return 20;
-                        if (lower.includes("фасад")) return 30;
-                        if (lower.includes("столешниц")) return 40;
-                        if (lower.includes("кромка")) return 50;
-                        return 100;
-                      };
-                      return getWeight(a.kind) - getWeight(b.kind);
-                    });
-
-                    if (mList.length === 0) return null;
-
-                    return (
-                      <div key={p.id}>
-                        <div className="font-bold text-gray-800 mb-1">
-                          {p.name}:
-                        </div>
-                        <ul className="list-disc pl-5 text-gray-600 space-y-0.5">
-                          {mList.map((item, i) => (
-                            <li key={i}>
-                              <span className="font-medium text-gray-700">
-                                {item.kind}:
-                              </span>{" "}
-                              {item.value}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    );
-                  })}
+                        let lastCategory: "body" | "facades" | "back" | null = null;
+                        summary.materials.forEach((m: any) => {
+                           const proj = m.projectName;
+                           if (!groups[proj]) return;
+                           const name = (m.name || "").toLowerCase();
+                           const decor = m.decor || m.brand || "Не указан";
+                           const sub = m.sub || "";
+                           const qty = m.qty || "";
+                           
+                           if (m.type === "product_edge" || m.type === "edge" || name.includes("кромка")) {
+                              const edgeStr = `${m.name}${decor !== "Не указан" ? ` ${decor}` : ""} — ${qty}`;
+                              let targetArr = groups[proj].body;
+                              if (lastCategory && groups[proj][lastCategory]) {
+                                 targetArr = groups[proj][lastCategory];
+                              }
+                              if (targetArr.length > 0) {
+                                 targetArr[targetArr.length - 1] += ` (+ ${edgeStr.trim()})`;
+                              } else {
+                                 groups[proj].body.push(edgeStr.trim());
+                              }
+                           } else {
+                              const itemStr = `${m.name}${decor !== "Не указан" ? ` ${decor}` : ""}${sub ? ` (${sub})` : ""} — ${qty}`;
+                              if (m.type === "facade" || name.includes("фасад")) {
+                                 groups[proj].facades.push(itemStr);
+                                 lastCategory = "facades";
+                              } else if (name.includes("хдф") || name.includes("двп") || (m.sub || "").toLowerCase().includes("задняя")) {
+                                 groups[proj].back.push(itemStr);
+                                 lastCategory = "back";
+                              } else {
+                                 groups[proj].body.push(itemStr);
+                                 lastCategory = "body";
+                              }
+                           }
+                        });
+                        return groups;
+                     })()).map(([projName, items]: [string, any]) => {
+                        const hasItems = items.body.length > 0 || items.back.length > 0 || items.facades.length > 0;
+                        if (!hasItems) return null;
+                        
+                        return (
+                          <div key={projName}>
+                             <div className="font-bold text-gray-800 mb-1">
+                                {projName}:
+                             </div>
+                             <div className="pl-2 space-y-2">
+                                {items.body.length > 0 && (
+                                   <div>
+                                      <span className="font-bold text-blue-800 uppercase text-[9px] tracking-wider block mb-0.5">Корпус:</span>
+                                      <ul className="list-disc pl-4 text-gray-700">
+                                         {items.body.map((s: string, i: number) => <li key={i}>{s}</li>)}
+                                      </ul>
+                                   </div>
+                                )}
+                                {items.back.length > 0 && (
+                                   <div>
+                                      <span className="font-bold text-gray-500 uppercase text-[9px] tracking-wider block mb-0.5">Задняя стенка:</span>
+                                      <ul className="list-disc pl-4 text-gray-700">
+                                         {items.back.map((s: string, i: number) => <li key={i}>{s}</li>)}
+                                      </ul>
+                                   </div>
+                                )}
+                                {items.facades.length > 0 && (
+                                   <div>
+                                      <span className="font-bold text-blue-800 uppercase text-[9px] tracking-wider block mb-0.5">Фасады:</span>
+                                      <ul className="list-disc pl-4 text-gray-700">
+                                         {items.facades.map((s: string, i: number) => <li key={i}>{s}</li>)}
+                                      </ul>
+                                   </div>
+                                )}
+                             </div>
+                          </div>
+                        );
+                     })}
                 </div>
               </div>
             )}

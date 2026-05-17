@@ -95,6 +95,7 @@ export const ProjectSetCheckoutModal = ({
   const [sketches, setSketches] = useState<string[]>(
     editingSet?.sketches || [],
   );
+  const [expandMaterials, setExpandMaterials] = useState(false);
   const [expandHardware, setExpandHardware] = useState(false);
   const [expandServices, setExpandServices] = useState(false);
   const [isAnnotating, setIsAnnotating] = useState(false);
@@ -210,15 +211,52 @@ export const ProjectSetCheckoutModal = ({
       } else {
         // Fallback for older projects without summaryRows
         const results = p.data.results || {};
-        Object.values(results).forEach((r: any) => {
+        const selectedDecor = p.data.selectedDecor || {};
+        const edgeToEdge = p.data.edgeToEdge || {};
+        const edgeThickness = p.data.edgeThickness || {};
+        const edgeDecor = p.data.edgeDecor || {};
+
+        Object.entries(results).forEach(([key, r]: [string, any]) => {
           totalMaterialsPrice += r.totalPrice || 0;
           materials.push({
             projectName: p.name,
+            name: r.name || r.type,
             category: r.category,
-            brand: r.brand,
-            decor: r.decor,
-            price: r.totalPrice,
+            brand: (selectedDecor[key] || "Не указан").split("|")[0],
+            decor: (selectedDecor[key] || "Не указан"),
+            qty: r.area ? `${r.area.toFixed(2)} м²` : (r.details?.length ? `Деталей: ${r.details.length}` : "1 шт"),
+            total: r.totalPrice,
+            type: "material"
           });
+
+          // Basic edge fallback
+          if (r.details) {
+            let edgeLen = 0;
+            if (edgeToEdge[key] || r.type === "Фасад") {
+               edgeLen = r.details.reduce((sum: number, d: any) => sum + (d.width + d.height) * 2, 0) / 1000;
+            } else {
+               edgeLen = r.details.reduce((sum: number, d: any) => {
+                 const s = d.edgeSides || { top: false, bottom: false, left: false, right: false };
+                 let sideLen = 0;
+                 if (s.top) sideLen += d.width;
+                 if (s.bottom) sideLen += d.width;
+                 if (s.left) sideLen += d.height;
+                 if (s.right) sideLen += d.height;
+                 return sum + sideLen;
+               }, 0) / 1000;
+            }
+            if (edgeLen > 0) {
+              materials.push({
+                projectName: p.name,
+                name: "Кромка",
+                decor: edgeDecor[key] || "По умолчанию",
+                sub: `${edgeThickness[key] || "0.4"} мм`,
+                qty: `${Math.ceil(edgeLen)} м`,
+                total: 0, // Fallback price unknown
+                type: "product_edge"
+              });
+            }
+          }
         });
 
         (p.data.addedProducts || []).forEach((item: any) => {
@@ -282,7 +320,7 @@ export const ProjectSetCheckoutModal = ({
     );
     if (
       !projects.every(
-        (p) => p.data.summaryRows && p.data.summaryRows.length > 0,
+        (p) => p.data?.summaryRows && p.data.summaryRows.length > 0,
       ) &&
       sumOfProjectTotals > overall
     ) {
@@ -509,80 +547,117 @@ export const ProjectSetCheckoutModal = ({
               </div>
 
               {/* Breakdown Sections */}
-              <div className="space-y-6">
-                {/* Projects in Set */}
-                <div className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-                  <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest mb-4 flex items-center gap-2">
-                    <Package className="w-4 h-4 text-blue-500" /> Состав заказа
-                  </h3>
-                  <div className="space-y-3">
-                    {projects.map((p) => (
-                      <div
-                        key={p.id}
-                        className="flex items-center justify-between p-4 bg-gray-50 rounded-2xl border border-gray-100"
-                      >
-                        <span className="font-black text-gray-800">
-                          {p.name}
-                        </span>
-                        <span className="text-sm font-bold text-blue-600">
-                          {(p.totalPrice || 0).toLocaleString()} ₽
-                        </span>
+                {/* Materials, Edges and Facades (New Unified Section) */}
+                <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm overflow-hidden">
+                   <div className="px-8 py-5 border-b border-gray-50 flex items-center gap-3 bg-blue-50/30">
+                      <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                         <Package className="w-4 h-4 text-white" />
                       </div>
-                    ))}
-                  </div>
+                      <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">
+                         Материалы, кромка и фасады
+                      </h3>
+                   </div>
+                   <div className="p-8 space-y-8">
+                     {Object.entries((() => {
+                        const groups: Record<string, any> = {};
+                        projects.forEach(p => {
+                           groups[p.name] = { body: [], back: [], facades: [], hardwareAndOthers: [] };
+                        });
+
+                        let lastCategory: "body" | "facades" | "back" | null = null;
+                        summary.materials.forEach((m: any) => {
+                           const proj = m.projectName;
+                           if (!groups[proj]) return;
+                           const name = (m.name || "").toLowerCase();
+                           const decor = m.decor || m.brand || "Не указан";
+                           const sub = m.sub || "";
+                           const qty = m.qty || "";
+                           
+                           if (m.type === "product_edge" || m.type === "edge" || name.includes("кромка")) {
+                              const edgeStr = `${m.name}${decor !== "Не указан" ? ` ${decor}` : ""} — ${qty}`;
+                              let targetArr = groups[proj].body;
+                              if (lastCategory && groups[proj][lastCategory]) {
+                                 targetArr = groups[proj][lastCategory];
+                              }
+                              if (targetArr.length > 0) {
+                                 targetArr[targetArr.length - 1] += ` (+ ${edgeStr.trim()})`;
+                              } else {
+                                 groups[proj].body.push(edgeStr.trim());
+                              }
+                           } else {
+                              const itemStr = `${m.name}${decor !== "Не указан" ? ` ${decor}` : ""}${sub ? ` (${sub})` : ""} — ${qty}`;
+                              // Only change category if it's not an edge
+                              if (m.type === "facade" || name.includes("фасад")) {
+                                 groups[proj].facades.push(itemStr);
+                                 lastCategory = "facades";
+                              } else if (name.includes("хдф") || name.includes("двп") || (m.sub || "").toLowerCase().includes("задняя")) {
+                                 groups[proj].back.push(itemStr);
+                                 lastCategory = "back";
+                              } else {
+                                 groups[proj].body.push(itemStr);
+                                 lastCategory = "body";
+                              }
+                           }
+                        });
+
+                        summary.hardware.forEach((h: any) => {
+                           const proj = h.projectName;
+                           if (!groups[proj]) return;
+                           const qty = h.qty || 1;
+                           const unit = h.unit || "шт";
+                           const itemStr = `${h.display_name || h.name} — ${qty} ${unit}`;
+                           groups[proj].hardwareAndOthers.push(itemStr);
+                        });
+
+                        return groups;
+                     })()).map(([projName, items]: [string, any]) => (
+                        <div key={projName} className="space-y-4">
+                           <div className="flex items-center gap-2 mb-2">
+                              <div className="w-1.5 h-4 bg-blue-500 rounded-full" />
+                              <h4 className="text-xs font-black text-gray-900 uppercase tracking-widest">
+                                 {projName}
+                              </h4>
+                           </div>
+                           <div className="ml-4 space-y-4">
+                              {items.body.length > 0 && (
+                                 <div className="mb-2">
+                                    <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest block mb-1">Корпус:</span>
+                                    <ul className="list-disc pl-5 text-sm text-gray-700">
+                                       {items.body.map((s: string, i: number) => <li key={i}>{s}</li>)}
+                                    </ul>
+                                 </div>
+                              )}
+                              {items.back.length > 0 && (
+                                 <div className="mb-2">
+                                    <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Задняя стенка:</span>
+                                    <ul className="list-disc pl-5 text-sm text-gray-700">
+                                       {items.back.map((s: string, i: number) => <li key={i}>{s}</li>)}
+                                    </ul>
+                                 </div>
+                              )}
+                              {items.facades.length > 0 && (
+                                 <div className="mb-2">
+                                    <span className="text-[10px] font-black text-orange-600 uppercase tracking-widest block mb-1">Фасады:</span>
+                                    <ul className="list-disc pl-5 text-sm text-gray-700">
+                                       {items.facades.map((s: string, i: number) => <li key={i}>{s}</li>)}
+                                    </ul>
+                                 </div>
+                              )}
+                               {items.hardwareAndOthers.length > 0 && (
+                                 <div className="mb-2">
+                                    <span className="text-[10px] font-black text-green-600 uppercase tracking-widest block mb-1">Фурнитура и комплектующие:</span>
+                                    <ul className="list-disc pl-5 text-sm text-gray-700">
+                                       {items.hardwareAndOthers.map((s: string, i: number) => <li key={i}>{s}</li>)}
+                                    </ul>
+                                 </div>
+                              )}
+                           </div>
+                        </div>
+                     ))}
+                   </div>
                 </div>
 
-                {/* Hardware List (Expandable) */}
-                <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-                  <button
-                    onClick={() => setExpandHardware(!expandHardware)}
-                    className="w-full p-6 flex items-center justify-between hover:bg-gray-50 transition-colors"
-                  >
-                    <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest flex items-center gap-2">
-                      <Save className="w-4 h-4 text-orange-500" /> Фурнитура и
-                      товары
-                    </h3>
-                    {expandHardware ? (
-                      <ChevronUp className="w-5 h-5 text-gray-400" />
-                    ) : (
-                      <ChevronDown className="w-5 h-5 text-gray-400" />
-                    )}
-                  </button>
-                  {expandHardware && (
-                    <div className="px-6 pb-6 space-y-2 border-t border-gray-50 pt-4">
-                      {summary.hardware.map((item, idx) => (
-                        <div
-                          key={idx}
-                          className="flex items-center justify-between text-sm py-2 border-b border-gray-50 last:border-0"
-                        >
-                          <div className="flex flex-col">
-                            <span className="font-bold text-gray-800">
-                              {item.name}
-                            </span>
-                            <span className="text-[10px] text-gray-400">
-                              Проект: {item.projectName}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-4 min-w-[120px] justify-end">
-                            <span className="text-gray-500 font-medium">
-                              {parseFloat(item.qty || 1)}{" "}
-                              {/шт|м|усл|л./.test(String(item.qty))
-                                ? ""
-                                : item.unit || "шт"}
-                            </span>
-                            <span className="font-black text-gray-900">
-                              {(
-                                item.total ||
-                                (item.price || 0) * parseFloat(item.qty || 1)
-                              ).toLocaleString()}{" "}
-                              ₽
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <div className="space-y-6">
 
                 {/* Services List (Expandable) */}
                 <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
@@ -601,35 +676,45 @@ export const ProjectSetCheckoutModal = ({
                     )}
                   </button>
                   {expandServices && (
-                    <div className="px-6 pb-6 space-y-2 border-t border-gray-50 pt-4">
-                      {summary.services.map((item, idx) => (
-                        <div
-                          key={idx}
-                          className="flex items-center justify-between text-sm py-2 border-b border-gray-50 last:border-0"
-                        >
-                          <div className="flex flex-col">
-                            <span className="font-bold text-gray-800">
-                              {item.name}
-                            </span>
-                            <span className="text-[10px] text-gray-400">
-                              Проект: {item.projectName}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-4 min-w-[120px] justify-end">
-                            <span className="text-gray-500 font-medium">
-                              {parseFloat(item.qty || 1)}{" "}
-                              {/шт|м|усл|л./.test(String(item.qty))
-                                ? ""
-                                : item.unit || "усл"}
-                            </span>
-                            <span className="font-black text-gray-900">
-                              {(
-                                item.total ||
-                                (item.price || 0) * parseFloat(item.qty || 1)
-                              ).toLocaleString()}{" "}
-                              ₽
-                            </span>
-                          </div>
+                    <div className="px-6 pb-6 space-y-4 border-t border-gray-50 pt-4">
+                      {Object.entries(
+                        summary.services.reduce((acc: any, item: any) => {
+                          if (!acc[item.projectName]) acc[item.projectName] = [];
+                          acc[item.projectName].push(item);
+                          return acc;
+                        }, {})
+                      ).map(([projName, items]: [string, any]) => (
+                        <div key={projName} className="space-y-2">
+                          <h4 className="text-[10px] font-black text-green-400 uppercase tracking-widest mb-1">
+                            Проект: {projName}
+                          </h4>
+                          {items.map((item: any, idx: number) => (
+                            <div
+                              key={idx}
+                              className="flex items-center justify-between text-sm py-2 border-b border-gray-50 last:border-0"
+                            >
+                              <div className="flex flex-col">
+                                <span className="font-bold text-gray-800">
+                                  {item.name}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-4 min-w-[120px] justify-end">
+                                <span className="text-gray-500 font-medium">
+                                  {parseFloat(item.qty || 1)}{" "}
+                                  {/шт|м|усл|л./.test(String(item.qty))
+                                    ? ""
+                                    : item.unit || "усл"}
+                                </span>
+                                <span className="font-black text-gray-900">
+                                  {(
+                                    item.total ||
+                                    (item.price || 0) * parseFloat(item.qty || 1)
+                                  ).toLocaleString()}{" "}
+                                  ₽
+                                </span>
+                              </div>
+                            </div>
+                          ))}
                         </div>
                       ))}
                     </div>

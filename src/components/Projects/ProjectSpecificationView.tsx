@@ -9,7 +9,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
-  Plus
+  Plus,
+  Package
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { db, handleFirestoreError, OperationType } from '../../firebase';
@@ -24,6 +25,7 @@ interface Project {
   sketches?: string[];
   specification?: any;
   companyId?: string;
+  totalPrice?: number;
 }
 
 export const ProjectSpecificationView = ({ 
@@ -183,15 +185,129 @@ export const ProjectSpecificationView = ({
               </div>
             )}
 
-            {/* Specification Content */}
-            <section>
-              <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest mb-4">Детализация заказа</h3>
-              <div className="bg-gray-50 rounded-3xl border border-gray-100 p-6">
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
-                  <SpecItem label="Материал" value={project.data?.decor || 'Не указан'} />
-                  <SpecItem label="Кромка" value={project.data?.edge || 'Не указана'} />
-                  <SpecItem label="Фасады" value={project.data?.facades || 'Не указаны'} />
-                  <SpecItem label="Фурнитура" value="Комплект метизов" />
+            {/* Materials, Edges and Facades Section (New Styled Format) */}
+            <section className="space-y-6">
+              <div className="bg-[#f0f7ff] rounded-[1.5rem] border border-[#e0eefc] p-6 shadow-sm">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-4 bg-blue-600 rounded-full" />
+                    <h3 className="text-sm font-bold text-[#003580]">Материалы, кромка и фасады</h3>
+                  </div>
+                  {project.totalPrice && (
+                    <div className="text-right">
+                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Итоговая сумма:</span>
+                      <span className="text-xl font-black text-blue-600">{project.totalPrice.toLocaleString()} ₽</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-6">
+                  {/* Группировка по проекту */}
+                  {Object.entries((() => {
+                    const materials: any[] = [];
+                    const data = project.data || {};
+                    const summary = data.summary || {};
+                    
+                    // Если есть предобработанные данные из заказа (Set)
+                    if (summary.materials) {
+                      materials.push(...summary.materials.map((m: any) => ({ ...m, type: m.type || 'material' })));
+                    }
+                    if (summary.hardware) {
+                      materials.push(...summary.hardware.map((h: any) => ({ ...h, type: 'hardware' })));
+                    }
+                    
+                    // Если нет предобработанных, берем из summaryRows (для одиночного проекта)
+                    if (materials.length === 0 && data.summaryRows) {
+                      materials.push(...data.summaryRows);
+                    }
+
+                    return materials.reduce((acc: any, row: any) => {
+                      const proj = row.projectName || project.name;
+                      if (!acc[proj]) {
+                         acc[proj] = { body: [], back: [], facades: [], hardware: [] };
+                         acc[proj]._lastCategory = "body"; // keep track per project
+                      }
+                      
+                      const type = row.type;
+                      const name = (row.name || "").toLowerCase();
+                      const decor = row.decor || row.brand || "Не указан";
+                      const sub = row.sub || "";
+                      const qty = row.qty || row.totalQty || row.quantity || "";
+                      const qtyNormalized = typeof qty === 'number' && type !== 'edge' ? `${qty} шт` : qty;
+                      
+                      const isEdge = type === "product_edge" || type === "edge" || name.includes("кромка");
+                      if (isEdge) {
+                        const edgeStr = `${row.name}${decor !== "Не указан" ? ` ${decor}` : ""} - ${qtyNormalized}`;
+                        const targetArr = acc[proj][acc[proj]._lastCategory] || acc[proj].body;
+                        if (targetArr.length > 0) {
+                           targetArr[targetArr.length - 1] += ` (+ ${edgeStr.trim()})`;
+                        } else {
+                           acc[proj].body.push(edgeStr.trim());
+                        }
+                      } else {
+                        const itemStr = `${row.name}${decor !== "Не указан" ? ` ${decor}` : ""}${sub ? ` (${sub})` : ""} - ${qtyNormalized}`;
+                        if (type === "facade" || name.includes("фасад")) {
+                          acc[proj].facades.push(itemStr);
+                          acc[proj]._lastCategory = "facades";
+                        } else if (name.includes("хдф") || name.includes("двп") || (row.sub || "").toLowerCase().includes("задняя")) {
+                          acc[proj].back.push(itemStr);
+                          acc[proj]._lastCategory = "back";
+                        } else if (type === "hardware" || type === "product") {
+                          acc[proj].hardware.push(itemStr);
+                          // Dont change last category for hardware
+                        } else {
+                          // Falls back to body
+                          acc[proj].body.push(itemStr);
+                          acc[proj]._lastCategory = "body";
+                        }
+                      }
+                      return acc;
+                    }, {});
+                  })()).map(([projName, groups]: [string, any]) => (
+                    <div key={projName} className="pl-2 border-l-2 border-blue-100 mb-6 last:mb-0">
+                      <h4 className="text-sm font-bold text-gray-800 mb-3 flex items-center gap-2">
+                        <Package className="w-4 h-4 text-blue-400" />
+                        {projName}:
+                      </h4>
+                      <div className="space-y-4 ml-2">
+                        {groups.body.length > 0 && (
+                          <div>
+                            <span className="font-bold text-gray-800 uppercase text-[10px] tracking-wider">Корпус:</span> 
+                            <ul className="list-disc pl-5 mt-1 text-gray-700">
+                              {groups.body.map((str: string, i: number) => <li key={i}>{str}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                        {groups.back.length > 0 && (
+                          <div>
+                            <span className="font-bold text-gray-800 uppercase text-[10px] tracking-wider">Задняя стенка:</span> 
+                            <ul className="list-disc pl-5 mt-1 text-gray-700">
+                              {groups.back.map((str: string, i: number) => <li key={i}>{str}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                        {groups.facades.length > 0 && (
+                          <div>
+                            <span className="font-bold text-gray-800 uppercase text-[10px] tracking-wider">Фасады:</span> 
+                            <ul className="list-disc pl-5 mt-1 text-gray-700">
+                              {groups.facades.map((str: string, i: number) => <li key={i}>{str}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                        {groups.hardware.length > 0 && (
+                          <div>
+                            <span className="font-bold text-gray-800 uppercase text-[10px] tracking-wider">Фурнитура и комплектующие:</span> 
+                            <ul className="list-disc pl-5 mt-1 text-gray-700">
+                              {groups.hardware.map((str: string, i: number) => <li key={i}>{str}</li>)}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  {(project.data?.summaryRows?.length === 0 && !project.data?.summary?.materials) && (
+                    <p className="text-xs text-gray-400 italic">Данные о материалах не найдены</p>
+                  )}
                 </div>
               </div>
             </section>

@@ -83,10 +83,12 @@ import {
   RotateCcw,
   RotateCw,
   TableProperties,
+  Layout,
   Globe,
   Send,
   ClipboardList,
   ClipboardCheck,
+  Check,
   UserX,
   Maximize2,
   Building2,
@@ -126,6 +128,21 @@ import {
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 import { FURNITURE_CHECKLISTS, FurnitureType } from "./checklistData";
+
+const BRAND_TO_TYPE: Record<string, string> = {
+  Egger: "ЛДСП",
+  Kronospan: "ЛДСП",
+  Lamarty: "ЛДСП",
+  Nordeco: "ЛДСП",
+  Uvadrev: "ЛДСП",
+  AGT: "МДФ",
+  "AGT SUPRAMATT": "МДФ",
+  Evosoft: "МДФ",
+  Evogloss: "МДФ",
+  Arkopa: "МДФ",
+  ХДФ: "ХДФ",
+  ДВП: "ХДФ",
+};
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -1292,6 +1309,14 @@ const FACADE_BRANDS: Record<string, SheetConfig> = {
   Arkopa: { width: 2800, height: 1220 },
 };
 
+const findBrandConfig = (searchName: string) => {
+  if (!searchName) return null;
+  const ldspMatch = LDSP_BRANDS.find(b => b.name.toLowerCase().includes(searchName.toLowerCase()));
+  if (ldspMatch) return ldspMatch;
+  const facadeMatch = Object.entries(FACADE_BRANDS).find(([k]) => k.toLowerCase() === searchName.toLowerCase());
+  return facadeMatch ? facadeMatch[1] : null;
+};
+
 // Optimized Packing Algorithm with 'First Fit' across all sheets
 const packDetails = (
   details: Detail[],
@@ -1940,7 +1965,7 @@ const FacadePriceGrid = ({
                           }
                           onFocus={(e) => e.target.select()}
                           onChange={(e) => {
-                            const val = e.target.value.replace(/[^0-9.]/g, "");
+                            const val = e.target.value.replace(",", ".").replace(/[^0-9.]/g, "");
                             onUpdate((prev) => ({
                               ...prev,
                               priceGrid: {
@@ -2119,14 +2144,15 @@ const PriceView = ({
 
       if (cat.title === "Фасады заказные") {
         const customFacadeBrands: string[] = [];
-        if (ownProductionConfig.facadeSettings?.displayName)
-          customFacadeBrands.push(
-            ownProductionConfig.facadeSettings.displayName,
-          );
-        if (ownProductionConfig.enamelSettings?.displayName)
-          customFacadeBrands.push(
-            ownProductionConfig.enamelSettings.displayName,
-          );
+        // User requested to hide these if they have separate tables
+        // if (ownProductionConfig.facadeSettings?.displayName)
+        //   customFacadeBrands.push(
+        //     ownProductionConfig.facadeSettings.displayName,
+        //   );
+        // if (ownProductionConfig.enamelSettings?.displayName)
+        //   customFacadeBrands.push(
+        //     ownProductionConfig.enamelSettings.displayName,
+        //   );
         ownProductionConfig.extraFacadeTypes?.forEach((t) => {
           if (t.displayName) customFacadeBrands.push(t.displayName);
         });
@@ -2930,7 +2956,11 @@ const PriceView = ({
 
                       {expandedBrands.has(brand) && (
                         <div className="p-4 bg-white">
-                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3">
+                          <div className={cn(
+                            (brand.includes("AGT") || brand.includes("Evosoft"))
+                              ? "flex flex-col gap-2"
+                              : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3"
+                          )}>
                             {filtered.map((decor) => {
                               const priceKey = isServices
                                 ? decor
@@ -2938,7 +2968,12 @@ const PriceView = ({
                               return (
                                 <div
                                   key={decor}
-                                  className="p-2 border border-gray-100 rounded-lg hover:border-blue-200 transition-colors group bg-white shadow-sm relative"
+                                  className={cn(
+                                    "border border-gray-100 rounded-lg hover:border-blue-200 transition-colors group bg-white shadow-sm relative",
+                                    (brand.includes("AGT") || brand.includes("Evosoft")) 
+                                      ? "flex items-center justify-between p-3" 
+                                      : "p-2"
+                                  )}
                                 >
                                   {!isServices && isProduction && (
                                     <button
@@ -2962,21 +2997,28 @@ const PriceView = ({
                                     </button>
                                   )}
                                   <div
-                                    className="text-[10px] font-bold text-gray-500 mb-1.5 truncate leading-tight"
+                                    className={cn(
+                                      "font-bold text-gray-500 truncate leading-tight",
+                                      (brand.includes("AGT") || brand.includes("Evosoft")) ? "text-sm text-gray-700" : "text-[10px] mb-1.5"
+                                    )}
                                     title={decor}
                                   >
                                     {decor}
                                   </div>
-                                  <PriceInputWithSave 
-                                    priceKey={priceKey}
-                                    value={prices[priceKey] || 0}
-                                    setPrices={setPrices}
-                                    db={db}
-                                    auth={auth}
-                                    userRole={userRole}
-                                    canEdit={canEdit}
-                                    prices={prices}
-                                  />
+                                  <div className={cn(
+                                    (brand.includes("AGT") || brand.includes("Evosoft")) ? "w-32" : "w-full"
+                                  )}>
+                                    <PriceInputWithSave 
+                                      priceKey={priceKey}
+                                      value={prices[priceKey] || 0}
+                                      setPrices={setPrices}
+                                      db={db}
+                                      auth={auth}
+                                      userRole={userRole}
+                                      canEdit={canEdit}
+                                      prices={prices}
+                                    />
+                                  </div>
                                 </div>
                               );
                             })}
@@ -3306,6 +3348,8 @@ const CalculatorView = ({
   onNewProject,
   showPrompt,
   showConfirm,
+  setActiveWorktopForCut,
+  worktopCuts,
   productionFormat,
   productionSettings,
   ownProductionConfig,
@@ -3380,6 +3424,8 @@ const CalculatorView = ({
     onConfirm: (value: string) => void,
   ) => void;
   showConfirm: (title: string, message: string, onConfirm: () => void) => void;
+  setActiveWorktopForCut: React.Dispatch<React.SetStateAction<any | null>>;
+  worktopCuts: Record<string, WorktopCut>;
   productionFormat: ProductionFormat;
   productionSettings: any;
   ownProductionConfig: OwnProductionConfig;
@@ -3561,12 +3607,14 @@ const CalculatorView = ({
               </div>
               <div className="grid gap-4">
                 {Object.keys(results)
-                  .filter(
-                    (key) =>
-                      results[key].type === "ЛДСП" ||
-                      results[key].type === "МДФ" ||
-                      results[key].type === "ХДФ",
-                  )
+                  .filter((key) => {
+                    const item = results[key];
+                    const type = (item.type || "").trim().toUpperCase();
+                    const name = (item.name || "").toLowerCase();
+                    const isAllowed = ["ЛДСП", "МДФ", "ХДФ", "ДВП"].some(t => type.includes(t));
+                    const isModule = name.includes("модуль") || type.toLowerCase().includes("модуль");
+                    return isAllowed && !isModule;
+                  })
                   .map((key) => {
                     const item = results[key];
                     return (
@@ -3579,7 +3627,7 @@ const CalculatorView = ({
                             <div
                               className={cn(
                                 "w-10 h-10 rounded-lg flex items-center justify-center",
-                                item.type === "ХДФ"
+                                item.type === "ХДФ" || item.type === "ДВП"
                                   ? "bg-orange-50 text-orange-600"
                                   : "bg-blue-50 text-blue-600",
                               )}
@@ -3602,28 +3650,88 @@ const CalculatorView = ({
                                 type="text"
                                 placeholder="Поиск ..."
                                 value={selectedDecor[key] || ""}
-                                onChange={(e) => {
-                                  const val = e.target.value;
-                                  setSelectedDecor((prev) => ({
-                                    ...prev,
-                                    [key]: val,
-                                  }));
-                                  setSearchQuery(val);
-                                }}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setSelectedDecor((prev) => ({
+                                  ...prev,
+                                  [key]: val,
+                                }));
+                                setSearchQuery(val);
+
+                                // Auto-detect brand from manual typing
+                                const brandsToCheck = ["Egger", "Kronospan", "Lamarty", "Nordeco", "Uvadrev", "AGT", "Evosoft", "Evogloss", "Arkopa"];
+                                const foundBrand = brandsToCheck.find(b => val.toLowerCase().includes(b.toLowerCase()));
+                                if (foundBrand) {
+                                  const configToUse = productionFormat === "contract" && productionSettings?.production
+                                    ? productionSettings.production
+                                    : ownProductionConfig;
+
+                                  const customBrand = configToUse?.ldspBrands?.find((b: any) => val.toLowerCase().includes(b.brand.toLowerCase()));
+                                  
+                                  let brandConfig: any = null;
+                                  if (customBrand && customBrand.format) {
+                                    const [w, h] = customBrand.format.split("x").map((n: string) => parseInt(n));
+                                    if (w && h) brandConfig = { name: customBrand.brand, width: w, height: h };
+                                  }
+                                  
+                                  if (!brandConfig) {
+                                    // Match legacy brands by base name
+                                    const legacyMatch = LDSP_BRANDS.find(lb => lb.name.toLowerCase().includes(foundBrand.toLowerCase()));
+                                    if (legacyMatch) {
+                                      brandConfig = legacyMatch;
+                                    } else {
+                                      brandConfig = findBrandConfig(foundBrand);
+                                    }
+                                  }
+
+                                  if (brandConfig) updateSheetConfig(key, brandConfig);
+                                }
+                              }}
                                 className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                               />
                               {searchQuery &&
                                 selectedDecor[key] === searchQuery && (
                                   <div className="absolute top-full left-0 right-0 z-20 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
-                                    {(item.type === "ХДФ"
+                                    {(item.type === "ХДФ" || item.type === "ДВП"
                                       ? filteredHdfDecors
-                                      : filteredDecors
+                                      : filteredDecors.filter((d) => {
+                                          const iType = (item.type || "")
+                                            .trim()
+                                            .toUpperCase();
+
+                                          // Check our type map
+                                          let brandType =
+                                            BRAND_TO_TYPE[d.brand] || "ЛДСП";
+
+                                          // Also check config for this brand
+                                          const configBrands =
+                                            (productionFormat === "contract" &&
+                                            productionSettings?.production
+                                              ? productionSettings.production
+                                                  .ldspBrands
+                                              : ownProductionConfig.ldspBrands) ||
+                                            [];
+                                          const configBrand = configBrands.find(
+                                            (cb) => cb.brand === d.brand,
+                                          );
+                                          if (configBrand) {
+                                            brandType = (
+                                              configBrand.type || ""
+                                            )
+                                              .trim()
+                                              .toUpperCase();
+                                          }
+
+                                          return (
+                                            brandType.toUpperCase() === iType
+                                          );
+                                        })
                                     ).map((d) => (
                                       <button
                                         key={`${d.brand}|${d.name}`}
                                         onClick={() => {
                                           const selectedType =
-                                            item.type === "ХДФ" &&
+                                            (item.type === "ХДФ" || item.type === "ДВП") &&
                                             sheetConfigs[key]?.name
                                               ? sheetConfigs[key].name
                                               : d.brand;
@@ -3635,14 +3743,15 @@ const CalculatorView = ({
                                           setSearchQuery("");
 
                                           // Auto set sheet config
-                                          const brandConfig = LDSP_BRANDS.find(
-                                            (b) => b.name.includes(d.brand),
-                                          );
+                                          let brandConfig = findBrandConfig(d.brand);
+                                          
+                                          // If not found in simple map, look in legacy brands
+                                          if (!brandConfig) {
+                                            brandConfig = LDSP_BRANDS.find(lb => lb.name.toLowerCase().startsWith(d.brand.toLowerCase())) || null;
+                                          }
+                                          
                                           if (brandConfig)
                                             updateSheetConfig(key, brandConfig);
-
-                                          // If we merged this material as a target of a facade, we should probably update facades too or vice versa
-                                          // But let's keep it simple for now and just set decor.
 
                                           // Auto set edge decor
                                           if (
@@ -3672,8 +3781,8 @@ const CalculatorView = ({
                                         className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 border-b border-gray-50 last:border-0"
                                       >
                                         <span className="font-bold text-blue-600">
-                                          {item.type === "ХДФ"
-                                            ? sheetConfigs[key]?.name || "ХДФ"
+                                          {(item.type === "ХДФ" || item.type === "ДВП")
+                                            ? sheetConfigs[key]?.name || item.type
                                             : d.brand}
                                         </span>{" "}
                                         {d.name}
@@ -3685,21 +3794,94 @@ const CalculatorView = ({
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-4 border-t border-gray-100">
+                        {/* Merge Logic for regular materials */}
+                        {(selectedDecor[key] || item.color) && (
+                          <div className="pt-2">
+                            {Object.keys(results)
+                              .filter(
+                                (lk) => {
+                                  if (lk === key) return false;
+                                  if (mergedMaterials[lk] || mergedMaterials[key]) return false;
+                                  
+                                  const lkItem = results[lk];
+                                  const sameType = lkItem.type === item.type;
+                                  const sameThickness = lkItem.thickness === item.thickness;
+                                  const sameColor = lkItem.color?.trim().toLowerCase() === item.color?.trim().toLowerCase();
+                                  const sameDecor = selectedDecor[lk] && selectedDecor[key] && selectedDecor[lk] === selectedDecor[key];
+                                  
+                                  // Suggest merge if colors are same OR if user selected same decor
+                                  return sameThickness && sameType && (sameColor || sameDecor);
+                                }
+                              )
+                              .map((lk) => (
+                                <div
+                                  key={lk}
+                                  className="flex items-center justify-between p-3 bg-blue-50 rounded-xl border border-blue-100 mb-2"
+                                >
+                                  <div className="flex items-center gap-2 text-sm text-blue-900">
+                                    <Combine className="w-4 h-4 text-blue-600" />
+                                    <span>
+                                      Материал совпадает с <strong>"{results[lk].color}"</strong> ({results[lk].thickness}мм).
+                                      Объединить листы в один раскрой?
+                                    </span>
+                                  </div>
+                                  <div className="flex gap-2">
+                                    <button
+                                      onClick={() =>
+                                        setMergedMaterials((prev) => ({
+                                          ...prev,
+                                          [lk]: key,
+                                        }))
+                                      }
+                                      className="px-4 py-1 bg-blue-600 text-white rounded-lg text-xs font-bold hover:bg-blue-700 shadow-sm"
+                                    >
+                                      Объединить
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            {mergedMaterials[key] && (
+                                <div className="flex items-center justify-between p-3 bg-green-50 rounded-xl border border-green-100 mb-2">
+                                  <div className="flex items-center gap-2 text-sm text-green-900">
+                                    <Check className="w-4 h-4 text-green-600" />
+                                    <span>
+                                      Материал объединен с <strong>"{results[mergedMaterials[key]].color}"</strong>.
+                                    </span>
+                                  </div>
+                                  <button
+                                    onClick={() =>
+                                      setMergedMaterials((prev) => {
+                                        const next = { ...prev };
+                                        delete next[key];
+                                        return next;
+                                      })
+                                    }
+                                    className="px-3 py-1 bg-white text-green-600 border border-green-200 rounded-lg text-xs font-bold hover:bg-green-100"
+                                  >
+                                    Отменить
+                                  </button>
+                                </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pt-4 border-t border-gray-100">
                           <div>
                             <label className="block text-xs font-bold text-gray-400 uppercase mb-2">
-                              {item.type === "ХДФ"
+                              {item.type === "ХДФ" || item.type === "ДВП"
                                 ? "Тип плиты"
-                                : "Бренд плиты"}
+                                : item.type === "Столешница" || item.type === "Стеновая панель"
+                                  ? "Тип изделия"
+                                  : "Бренд плиты"}
                             </label>
                             <select
                               value={sheetConfigs[key]?.name || ""}
                               onChange={(e) => {
-                                if (item.type === "ХДФ") {
+                                if (item.type === "ХДФ" || item.type === "ДВП" || item.type === "Столешница" || item.type === "Стеновая панель") {
                                   updateSheetConfig(key, {
                                     name: e.target.value,
-                                    width: sheetConfigs[key]?.width || 2800,
-                                    height: sheetConfigs[key]?.height || 2070,
+                                    width: sheetConfigs[key]?.width || (item.type === "Столешница" ? 3000 : 2800),
+                                    height: sheetConfigs[key]?.height || (item.type === "Столешница" ? 600 : 2070),
                                   });
                                 } else {
                                   const brandConfig =
@@ -3734,41 +3916,83 @@ const CalculatorView = ({
                               }}
                               className="w-full p-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white font-bold text-blue-600"
                             >
-                              {item.type === "ХДФ" ? (
+                              {item.type === "ХДФ" || item.type === "ДВП" ? (
                                 <>
                                   <option value="">Выберите тип...</option>
                                   <option value="ХДФ">ХДФ</option>
                                   <option value="ДВП">ДВП</option>
                                 </>
+                              ) : item.type === "Столешница" ? (
+                                <>
+                                  <option value="">Выберите...</option>
+                                  <option value="Столешница 38мм">Столешница 38мм</option>
+                                  <option value="Столешница 26мм">Столешница 26мм</option>
+                                </>
+                              ) : item.type === "Стеновая панель" ? (
+                                <>
+                                  <option value="">Выберите...</option>
+                                  <option value="Стеновая панель">Стеновая панель</option>
+                                </>
                               ) : (
                                 <>
                                   <option value="">Выберите бренд...</option>
-                                  {(productionFormat === "contract" &&
-                                  productionSettings?.production
-                                    ? productionSettings.production.ldspBrands
-                                    : ownProductionConfig.ldspBrands
-                                  )?.map((b: any) => (
-                                    <option key={b.brand} value={b.brand}>
-                                      {b.brand}
-                                    </option>
-                                  ))}
-                                  {LDSP_BRANDS.map((b) => (
-                                    <option key={b.name} value={b.name}>
-                                      {b.name.split(" ")[0]}
-                                    </option>
-                                  ))}
+                                  {(() => {
+                                    const configBrands = (productionFormat === "contract" &&
+                                      productionSettings?.production
+                                        ? productionSettings.production.ldspBrands
+                                        : ownProductionConfig.ldspBrands) || [];
+                                    
+                                    const results: any[] = [];
+                                    const seen = new Set();
+                                    
+                                    // 1. First show brands from configuration (they have correct types)
+                                    configBrands.forEach((b: any) => {
+                                      // Normalize type for comparison
+                                      const bType = (b.type || "").trim().toUpperCase();
+                                      const iType = (item.type || "").trim().toUpperCase();
+                                      
+                                      if (bType === iType && !seen.has(b.brand)) {
+                                        results.push(
+                                          <option key={`config-${b.brand}`} value={b.brand}>
+                                            {b.brand}
+                                          </option>
+                                        );
+                                        seen.add(b.brand);
+                                      }
+                                    });
+                                    
+                                    // 2. Then show legacy brands, but filter by type to avoid mixing LDSP/MDF
+                                    LDSP_BRANDS.forEach((b: any) => {
+                                      const brandBaseName = b.name.split(" ")[0];
+                                      
+                                      // Use our type map
+                                      const bType = BRAND_TO_TYPE[brandBaseName] || "ЛДСП";
+                                      
+                                      const iType = (item.type || "").trim().toUpperCase();
+                                      if (bType.toUpperCase() === iType && !seen.has(brandBaseName)) {
+                                        results.push(
+                                          <option key={`legacy-${b.name}`} value={b.name}>
+                                            {brandBaseName}
+                                          </option>
+                                        );
+                                        seen.add(brandBaseName);
+                                      }
+                                    });
+                                    
+                                    return results;
+                                  })()}
                                 </>
                               )}
                             </select>
                             <div className="mt-2 flex items-center gap-1">
                               <input
                                 type="number"
-                                value={sheetConfigs[key]?.width || 2800}
+                                value={sheetConfigs[key]?.width || ""}
                                 onChange={(e) =>
                                   updateSheetConfig(key, {
-                                    width: parseInt(e.target.value) || 0,
-                                    height: sheetConfigs[key]?.height || 2070,
-                                    name: "Custom",
+                                    width: e.target.value === "" ? 0 : parseInt(e.target.value),
+                                    height: sheetConfigs[key]?.height || (item.type === "Столешница" ? 600 : 2070),
+                                    name: sheetConfigs[key]?.name || "Custom",
                                   })
                                 }
                                 className="w-1/2 p-1 border border-gray-100 rounded text-[10px] font-bold text-center focus:border-blue-300 outline-none"
@@ -3779,12 +4003,12 @@ const CalculatorView = ({
                               </span>
                               <input
                                 type="number"
-                                value={sheetConfigs[key]?.height || 2070}
+                                value={sheetConfigs[key]?.height || ""}
                                 onChange={(e) =>
                                   updateSheetConfig(key, {
-                                    width: sheetConfigs[key]?.width || 2800,
-                                    height: parseInt(e.target.value) || 0,
-                                    name: "Custom",
+                                    width: sheetConfigs[key]?.width || (item.type === "Столешница" ? 3000 : 2800),
+                                    height: e.target.value === "" ? 0 : parseInt(e.target.value),
+                                    name: sheetConfigs[key]?.name || "Custom",
                                   })
                                 }
                                 className="w-1/2 p-1 border border-gray-100 rounded text-[10px] font-bold text-center focus:border-blue-300 outline-none"
@@ -3832,6 +4056,17 @@ const CalculatorView = ({
                                 />
                               </div>
                             </>
+                          )}
+                          {(item.type === "Столешница" || item.type === "Стеновая панель") && (
+                            <div className="flex items-end">
+                              <button
+                                onClick={() => setActiveWorktopForCut({ ...item, id: key })}
+                                className="w-full h-[38px] bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-all flex items-center justify-center gap-2 shadow-sm active:scale-95"
+                              >
+                                <Layout className="w-4 h-4" />
+                                {worktopCuts[key] ? "Изменить раскрой" : "Раскроить"}
+                              </button>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -3931,16 +4166,27 @@ const CalculatorView = ({
                                   className="w-full p-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white font-bold text-blue-600"
                                 >
                                   <option value="">Выберите бренд...</option>
-                                  {LDSP_BRANDS.map((b) => (
-                                    <option key={b.name} value={b.name}>
-                                      {b.name.split(" ")[0]}
-                                    </option>
-                                  ))}
-                                  {Object.keys(FACADE_BRANDS).map((b) => (
-                                    <option key={b} value={b}>
-                                      {b}
-                                    </option>
-                                  ))}
+                                  {(() => {
+                                    const seen = new Set();
+                                    const results: any[] = [];
+                                    
+                                    LDSP_BRANDS.forEach(b => {
+                                      const name = b.name.split(" ")[0];
+                                      if (!seen.has(name)) {
+                                        results.push(<option key={b.name} value={b.name}>{name}</option>);
+                                        seen.add(name);
+                                      }
+                                    });
+                                    
+                                    Object.keys(FACADE_BRANDS).forEach(b => {
+                                      if (!seen.has(b)) {
+                                        results.push(<option key={b} value={b}>{b}</option>);
+                                        seen.add(b);
+                                      }
+                                    });
+                                    
+                                    return results;
+                                  })()}
                                 </select>
                                 <div className="mt-2 flex items-center gap-1">
                                   <input
@@ -4000,6 +4246,29 @@ const CalculatorView = ({
                                         [key]: val,
                                       }));
                                       setFacadeSearchQuery(val);
+
+                                      // Auto-detect brand from manual typing
+                                      const brandsToCheck = ["Egger", "Kronospan", "Lamarty", "Nordeco", "Uvadrev", "AGT", "Evosoft", "Evogloss", "Arkopa"];
+                                      const foundBrand = brandsToCheck.find(b => val.toLowerCase().includes(b.toLowerCase()));
+                                      if (foundBrand) {
+                                        const configToUse = productionFormat === "contract" && productionSettings?.production
+                                          ? productionSettings.production
+                                          : ownProductionConfig;
+
+                                        const customBrand = configToUse?.ldspBrands?.find((b: any) => val.toLowerCase().includes(b.brand.toLowerCase()));
+                                        
+                                        let brandConfig: any = null;
+                                        if (customBrand && customBrand.format) {
+                                          const [w, h] = customBrand.format.split("x").map((n: string) => parseInt(n));
+                                          if (w && h) brandConfig = { name: customBrand.brand, width: w, height: h };
+                                        }
+                                        
+                                        if (!brandConfig) {
+                                          brandConfig = findBrandConfig(foundBrand);
+                                        }
+
+                                        if (brandConfig) updateSheetConfig(key, brandConfig);
+                                      }
                                     }}
                                     className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                                   />
@@ -4007,7 +4276,7 @@ const CalculatorView = ({
                                     selectedDecor[key] ===
                                       facadeSearchQuery && (
                                       <div className="absolute top-full left-0 right-0 z-20 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
-                                        {filteredFacadeDecors.map((d) => (
+                                        {filteredFacadeDecors.filter(d => (BRAND_TO_TYPE[d.brand] || "ЛДСП") !== "ХДФ").map((d) => (
                                           <button
                                             key={`${d.brand}|${d.name}`}
                                             onClick={() => {
@@ -4052,10 +4321,7 @@ const CalculatorView = ({
                                               }
 
                                               if (!brandConfig) {
-                                                brandConfig =
-                                                  LDSP_BRANDS.find((b) =>
-                                                    b.name.includes(d.brand),
-                                                  ) || FACADE_BRANDS[d.brand];
+                                                brandConfig = findBrandConfig(d.brand);
                                               }
 
                                               if (brandConfig)
@@ -4450,9 +4716,12 @@ const CalculatorView = ({
                                               onClick={() => {
                                                 setSelectedDecor((prev) => ({
                                                   ...prev,
-                                                  [key]: d.name,
+                                                  [key]: d.brand + " " + d.name,
                                                 }));
                                                 setFacadeSearchQuery("");
+                                                
+                                                const brandConfig = findBrandConfig(d.brand);
+                                                if (brandConfig) updateSheetConfig(key, brandConfig);
                                               }}
                                               className="w-full text-left px-4 py-2 text-sm hover:bg-blue-50 border-b border-gray-50 last:border-0"
                                             >
@@ -4492,7 +4761,42 @@ const CalculatorView = ({
                   Результаты раскроя
                 </h2>
               </div>
-              {Object.entries(results).map(([key, item]: any) => {
+              {Object.entries(results)
+                .filter(([key]) => {
+                  const item = results[key];
+                  const type = (item.type || "").trim().toUpperCase();
+                  const name = (item.name || "").toLowerCase();
+                  const allowedTypes = ["ЛДСП", "МДФ", "ХДФ", "ДВП", "Фасад", "Столешница", "Стеновая панель"];
+                  const isAllowedType = allowedTypes.some((t) => type.includes(t));
+                  const isModule = name.includes("модуль") || type.toLowerCase().includes("модуль");
+                  return isAllowedType && !isModule;
+                })
+                .map(([key, item]: any) => {
+                  if (mergedMaterials[key]) {
+                    const targetKey = mergedMaterials[key];
+                    const targetItem = results[targetKey];
+                    return (
+                      <div key={key} className="mb-4 p-4 bg-gray-50 border border-dashed border-gray-300 rounded-xl flex items-center justify-between opacity-80">
+                         <div className="flex items-center gap-3">
+                            <Combine className="w-5 h-5 text-gray-400" />
+                            <div>
+                               <h3 className="font-bold text-gray-700">{item.name} ({item.color})</h3>
+                               <p className="text-sm text-gray-500">Объединено с <strong>{targetItem?.color || "другим листом"}</strong></p>
+                            </div>
+                         </div>
+                         <button
+                            onClick={() => setMergedMaterials(prev => {
+                               const next = { ...prev };
+                               delete next[key];
+                               return next;
+                            })}
+                            className="bg-white px-4 py-2 border border-gray-200 rounded-lg text-sm font-bold text-gray-600 hover:bg-gray-50 transition-colors shadow-sm"
+                         >
+                            Отменить объединение
+                         </button>
+                      </div>
+                    );
+                  }
                 return (
                   <div
                     key={key}
@@ -4505,7 +4809,7 @@ const CalculatorView = ({
                             "w-10 h-10 rounded-lg flex items-center justify-center",
                             item.type === "Фасад"
                               ? "bg-purple-50 text-purple-600"
-                              : item.type === "ХДФ"
+                              : item.type === "ХДФ" || item.type === "ДВП"
                                 ? "bg-orange-50 text-orange-600"
                                 : "bg-blue-50 text-blue-600",
                           )}
@@ -4521,16 +4825,30 @@ const CalculatorView = ({
                             {item.name} ({item.color})
                           </h3>
                           <p className="text-sm text-gray-500">
-                            Площадь: {item.area.toFixed(2)} м²
-                            {item.type !== "ХДФ" &&
+                            Площадь: {(() => {
+                              let totalArea = item.area;
+                              Object.entries(mergedMaterials).forEach(([mKey, targetKey]) => {
+                                if (targetKey === key && results[mKey]) totalArea += results[mKey].area;
+                              });
+                              return totalArea.toFixed(2);
+                            })()} м²
+                            {item.type !== "ХДФ" && item.type !== "ДВП" &&
                               (item.type !== "Фасад" ||
                                 (facadeType[key] || "sheet") === "sheet") &&
-                              `, Кромка: ${edgeToEdge[key] || item.type === "Фасад" ? (item.details.reduce((sum: any, d: any) => sum + (d.width + d.height) * 2, 0) / 1000).toFixed(2) : item.edgeLength.toFixed(2)} м`}
+                              `, Кромка: ${(() => {
+                                const clusterKeys = [key, ...Object.entries(mergedMaterials).filter(([_, target]) => target === key).map(([mK]) => mK)];
+                                const totalEdge = clusterKeys.reduce((sum, ck) => {
+                                  const cItem = results[ck];
+                                  if (!cItem) return sum;
+                                  return sum + (edgeToEdge[ck] || cItem.type === "Фасад" ? (cItem.details.reduce((s: any, d: any) => s + (d.width + d.height) * 2, 0) / 1000) : cItem.edgeLength);
+                                }, 0);
+                                return totalEdge.toFixed(2);
+                              })()} м`}
                           </p>
                         </div>
                       </div>
                       <div className="flex gap-2">
-                        {item.type !== "ХДФ" && item.type !== "Фасад" && (
+                        {item.type !== "ХДФ" && item.type !== "ДВП" && item.type !== "Фасад" && (
                           <button
                             onClick={() => toggleEdgeToEdge(key)}
                             className={cn(
@@ -4562,8 +4880,16 @@ const CalculatorView = ({
                               sheetConfigs[key].width - trimming * 2;
                             const sheetH =
                               sheetConfigs[key].height - trimming * 2;
+                            
+                            const combinedDetails = [...item.details];
+                            Object.entries(mergedMaterials).forEach(([mKey, targetKey]) => {
+                              if (targetKey === key && results[mKey]) {
+                                combinedDetails.push(...results[mKey].details);
+                              }
+                            });
+
                             return packDetails(
-                              item.details,
+                              combinedDetails,
                               sheetW,
                               sheetH,
                               kerf,
@@ -5052,12 +5378,13 @@ const WorktopCutModal = ({
                   Кол-во частей
                 </span>
                 <input
-                  type="number"
-                  min="1"
-                  max="10"
-                  value={numParts}
+                  type="text"
+                  value={numParts === 0 ? "" : numParts}
                   onFocus={(e) => e.target.select()}
-                  onChange={(e) => setNumParts(parseInt(e.target.value) || 1)}
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/[^0-9]/g, "");
+                    setNumParts(val === "" ? 0 : parseInt(val));
+                  }}
                   className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                 />
               </label>
@@ -5066,12 +5393,13 @@ const WorktopCutModal = ({
                   Цена кромки (за м)
                 </span>
                 <input
-                  type="number"
-                  value={edgePrice}
+                  type="text"
+                  value={edgePrice === 0 ? "" : edgePrice}
                   onFocus={(e) => e.target.select()}
-                  onChange={(e) =>
-                    setEdgePrice(parseFloat(e.target.value) || 0)
-                  }
+                  onChange={(e) => {
+                    const val = e.target.value.replace(",", ".").replace(/[^0-9.]/g, "");
+                    setEdgePrice(val === "" ? 0 : parseFloat(val));
+                  }}
                   className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
                 />
               </label>
@@ -5120,15 +5448,16 @@ const WorktopCutModal = ({
                           Ширина
                         </span>
                         <input
-                          type="number"
-                          value={part.width}
-                          onChange={(e) =>
+                          type="text"
+                          value={part.width === 0 ? "" : part.width}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(",", ".").replace(/[^0-9]/g, "");
                             updatePart(
                               part.id,
                               "width",
-                              parseInt(e.target.value) || 0,
-                            )
-                          }
+                              val === "" ? 0 : parseInt(val),
+                            );
+                          }}
                           className="w-24 px-2 py-1 border border-gray-300 rounded bg-white text-sm"
                         />
                       </label>
@@ -5137,15 +5466,16 @@ const WorktopCutModal = ({
                           Длина
                         </span>
                         <input
-                          type="number"
-                          value={part.height}
-                          onChange={(e) =>
+                          type="text"
+                          value={part.height === 0 ? "" : part.height}
+                          onChange={(e) => {
+                            const val = e.target.value.replace(",", ".").replace(/[^0-9]/g, "");
                             updatePart(
                               part.id,
                               "height",
-                              parseInt(e.target.value) || 0,
-                            )
-                          }
+                              val === "" ? 0 : parseInt(val),
+                            );
+                          }}
                           className="w-24 px-2 py-1 border border-gray-300 rounded bg-white text-sm"
                         />
                       </label>
@@ -5531,15 +5861,13 @@ const SummaryView = ({
   const [activeWorktopForCut, setActiveWorktopForCut] = useState<any | null>(
     null,
   );
+  const [showChecklistWindow, setShowChecklistWindow] = useState(false);
 
-  const hardwareKitPrice = hardwareKitPriceProps;
-  if (!results && addedProducts.length === 0 && addedServices.length === 0)
-    return (
-      <div className="flex flex-col items-center justify-center h-64 text-gray-400">
-        <Calculator className="w-12 h-12 mb-4" />
-        <p>Загрузите файл отчета из Pro100 для получения итогового расчета</p>
-      </div>
-    );
+  const currentHardwareKitPriceLocal = (() => {
+    const price = hardwareKitPriceProps as any;
+    if (typeof price === "number") return price;
+    return price[customerType] || 500;
+  })();
 
   let totalCost = 0;
   let allDataEntered = true;
@@ -5552,7 +5880,29 @@ const SummaryView = ({
       : ownProductionConfig;
 
   const materialKeys = results ? Object.keys(results) : [];
-  const sortedMaterialKeys = materialKeys.sort((a, b) => {
+  const allowedTypes = [
+    "ЛДСП", "LDSP", "МДФ", "MDF", "ХДФ", "HDF", "ДВП", "DVP", 
+    "ФАСАД", "FACADE", "СТОЛЕШНИЦ", "WORKTOP", "BACKSPLASH", "СТЕНОВАЯ"
+  ];
+  const filteredMaterialKeys = materialKeys.filter((key) => {
+    const item = results[key];
+    const type = (item.type || "").trim();
+    const name = (item.name || "").toLowerCase();
+    const color = (item.color || "").toLowerCase();
+    
+    // 1. MUST be in the allowed whitelist
+    const isAllowedType = allowedTypes.some(t => 
+      type.toUpperCase().includes(t.toUpperCase()) ||
+      name.toUpperCase().includes(t.toUpperCase())
+    );
+    
+    // 2. MUST NOT contain "модуль" accurately
+    const isModule = name.includes("модуль") || type.toLowerCase().includes("модуль") || color.includes("модуль");
+
+    return isAllowedType && !isModule;
+  });
+
+  const sortedMaterialKeys = filteredMaterialKeys.sort((a, b) => {
     const itemA = results[a];
     const itemB = results[b];
     const getOrderWeight = (item: any) => {
@@ -5584,6 +5934,105 @@ const SummaryView = ({
           ? !configToUse.prices?.[basePriceKey] ||
             configToUse.prices?.[basePriceKey] === 0
           : true;
+
+        const worktopRows: any[] = [];
+        if (worktopCuts[key]) {
+          const cut = worktopCuts[key];
+          const isBacksplash = item.type === "Стеновая панель";
+
+          let cutEdgeLen = 0;
+          let radiiCount = 0;
+          cut.parts.forEach((p: any) => {
+            if (p.edges[0]) cutEdgeLen += p.width / 1000;
+            if (p.edges[1]) cutEdgeLen += p.height / 1000;
+            if (p.edges[2]) cutEdgeLen += p.width / 1000;
+            if (p.edges[3]) cutEdgeLen += p.height / 1000;
+            const partRadii = (p.corners || []).filter((c: any) => c).length;
+            radiiCount += partRadii;
+          });
+
+          const transverseMeters = ((cut.parts.length + 1) * 600) / 1000;
+          let longitudinalMeters = 0;
+          const anyWidthReduced = cut.parts.some((p: any) => p.width < 600);
+          if (anyWidthReduced) {
+            longitudinalMeters =
+              cut.parts.reduce((sum: number, p: any) => sum + p.height, 0) /
+              1000;
+          }
+          const totalCuttingMeters = transverseMeters + longitudinalMeters;
+          const salesEdgeQty = Math.ceil(cutEdgeLen / 5) * 5;
+
+          const cuttingServiceName = isBacksplash
+            ? "Распил стеновой панели, п.м."
+            : "Распил столешницы, п.м.";
+          const edgeServiceName =
+            cut.edgeType === "Самоклеющаяся"
+              ? "Обработка самоклеющейся кромкой столешницы, п.м."
+              : "Обработка ABC кромкой столешницы, п.м.";
+
+          const cuttingPrice = prices[cuttingServiceName] || 100;
+          const edgeServicePrice = prices[edgeServiceName] || 150;
+
+          if (totalCuttingMeters > 0) {
+            worktopRows.push({
+              type: "service",
+              name: cuttingServiceName,
+              sub: `Для: ${item.name} (${cut.isExact ? "Точный размер" : "Примерный размер"})`,
+              decor: "-",
+              qty: `${totalCuttingMeters.toFixed(2)} м`,
+              price: cuttingPrice,
+              total: Math.round(cuttingPrice * totalCuttingMeters),
+              coef: 1,
+              isManual: true,
+            });
+          }
+
+          if (cutEdgeLen > 0) {
+            worktopRows.push({
+              type: "service",
+              name: edgeServiceName,
+              sub: `Для: ${item.name} (${cutEdgeLen.toFixed(2)} м)`,
+              decor: cut.edgeDecor || "Не указан",
+              qty: `${cutEdgeLen.toFixed(2)} м`,
+              price: edgeServicePrice,
+              total: Math.round(edgeServicePrice * cutEdgeLen),
+              coef: 1,
+              isManual: true,
+            });
+
+            if (cut.edgePrice > 0) {
+              const wtCoef = 1.35;
+              worktopRows.push({
+                type: "edge",
+                name: "Кромка для столешницы",
+                sub: `Для: ${item.name} (Мат-ал)`,
+                decor: cut.edgeDecor || "Не указан",
+                qty: `${salesEdgeQty} м`,
+                price: Math.round(cut.edgePrice * wtCoef),
+                total: Math.round(cut.edgePrice * wtCoef * salesEdgeQty),
+                coef: wtCoef,
+                isManual: true,
+                productId: key,
+              });
+            }
+          }
+
+          if (radiiCount > 0) {
+            const radiusServiceName = "Изготовление радиуса на столешнице";
+            const radiusPrice = prices[radiusServiceName] || 500;
+            worktopRows.push({
+              type: "service",
+              name: radiusServiceName,
+              sub: `Для: ${item.name} (${radiiCount} шт)`,
+              decor: "-",
+              qty: `${radiiCount} шт`,
+              price: radiusPrice,
+              total: Math.round(radiusPrice * radiiCount),
+              coef: 1,
+              isManual: true,
+            });
+          }
+        }
 
         // If manual, use a unique key for this specific material row to avoid price sharing
         const priceKey = isManualMaterial ? `manual_${key}` : basePriceKey;
@@ -5668,16 +6117,13 @@ const SummaryView = ({
           itemCost = calculatedArea * rawPrice * facadeCoef;
           qtyText = `${calculatedArea.toFixed(2)} м²${actualArea < minVol ? " (мин.)" : ""}`;
 
-          // Always show selling price (with coefficient) in the summary table to avoid confusion with the total
-          const displayPrice = Math.round(rawPrice * facadeCoef);
-
           rows.push({
             type: "material",
             name: `Фасад (${customType})`,
             sub: `${thickness} мм${category ? `, ${category}` : ""}${milling ? `, ${milling}` : ""}`,
             decor: decor || "Не выбран",
             qty: qtyText,
-            price: displayPrice,
+            price: rawPrice,
             rawPrice: rawPrice,
             priceKey: priceKey,
             total: Math.round(itemCost),
@@ -5708,14 +6154,13 @@ const SummaryView = ({
           }
 
           if (calcMode === "area") {
-            itemCost = sheetCount * sheetArea * price * coef;
+            const totalArea = sheetCount * sheetArea;
+            itemCost = totalArea * price * coef;
+            qtyText = `${totalArea.toFixed(2)} м²`;
           } else {
             itemCost = sheetCount * price * coef;
+            qtyText = `${sheetCount} л.`;
           }
-          qtyText = `${sheetCount} л.`;
-
-          // Always show selling price (with coefficient) in the summary table to avoid confusion with the total
-          const displayPrice = Math.round(price * coef);
 
           rows.push({
             type: "material",
@@ -5726,7 +6171,7 @@ const SummaryView = ({
             sub: item.color,
             decor: decor || "Не выбран",
             qty: qtyText,
-            price: displayPrice,
+            price: price,
             rawPrice: price,
             priceKey: priceKey,
             total: Math.round(itemCost),
@@ -5734,6 +6179,9 @@ const SummaryView = ({
             key: key,
             isManual: isManualMaterial,
           });
+
+          // Add worktop specific service rows right after the material
+          rows.push(...worktopRows);
         }
 
         if (price === 0) allDataEntered = false;
@@ -5804,13 +6252,40 @@ const SummaryView = ({
             gluedEdgeLength = perimeterSum / 2;
           }
 
-          let edgeLenActual =
-            edgeToEdge[ck] || isFacade
-              ? cItem.details.reduce(
-                  (sum: any, d: any) => sum + (d.width + d.height) * 2,
-                  0,
-                ) / 1000
-              : cItem.edgeLength;
+          let edgeLenActual = 0;
+          if (edgeToEdge[ck] || isFacade) {
+            edgeLenActual =
+              cItem.details.reduce(
+                (sum: any, d: any) => sum + (d.width + d.height) * 2,
+                0,
+              ) / 1000;
+          } else if (worktopCuts[ck]) {
+            // Use edges from worktop cut if present
+            const cut = worktopCuts[ck];
+            cut.parts.forEach((p: any) => {
+              if (p.edges[0]) edgeLenActual += p.width / 1000;
+              if (p.edges[1]) edgeLenActual += p.height / 1000;
+              if (p.edges[2]) edgeLenActual += p.width / 1000;
+              if (p.edges[3]) edgeLenActual += p.height / 1000;
+            });
+          } else {
+            // Calculate from individual detail edgeSides
+            edgeLenActual =
+              cItem.details.reduce((sum: any, d: any) => {
+                const s = d.edgeSides || {
+                  top: false,
+                  bottom: false,
+                  left: false,
+                  right: false,
+                };
+                let sideLen = 0;
+                if (s.top) sideLen += d.width;
+                if (s.bottom) sideLen += d.width;
+                if (s.left) sideLen += d.height;
+                if (s.right) sideLen += d.height;
+                return sum + sideLen;
+              }, 0) / 1000;
+          }
 
           edgeLenActual = Math.max(
             0,
@@ -5819,7 +6294,6 @@ const SummaryView = ({
 
           const thickness = isFacade ? "1.0" : edgeThickness[ck] || "0.4";
           const decor = edgeDecor[ck] || "Не указан";
-          const price = edgePrices[ck] || 0;
 
           const itemsInBoardDecor =
             typeof selectedDecor[ck] === "string"
@@ -5831,11 +6305,30 @@ const SummaryView = ({
           const groupKey = `${thickness}|${decor}`;
 
           if (!edgeGroups[groupKey]) {
+            // Find base price if missing in edgePrices
+            let basePrice = edgePrices[ck] || 0;
+            if (basePrice === 0 && decor !== "Не указан") {
+              // Try variations of decor string to find in price list
+              const possibleKeys = [
+                decor,
+                decor.replace(/ /g, "|"),
+                decor.toUpperCase(),
+                decor.toLowerCase()
+              ];
+              
+              for (const pk of possibleKeys) {
+                if (configToUse.prices?.[pk]) {
+                  basePrice = configToUse.prices[pk];
+                  break;
+                }
+              }
+            }
+
             edgeGroups[groupKey] = {
               thickness,
               decor,
               qty: 0,
-              price,
+              price: basePrice,
               key: ck,
               coef,
               totalLength: 0,
@@ -5908,9 +6401,10 @@ const SummaryView = ({
 
           const showPurchasePrice =
             userRole === "admin" || companyType === "Дизайнер";
-          const displayPrice = showPurchasePrice
-            ? group.price
-            : Math.round(group.price * group.coef);
+          
+          // Column "Price" should show the BASE price (per unit)
+          // Column "Total" shows unit * qty * coef
+          const displayPrice = group.price;
 
           rows.push({
             type: "edge",
@@ -5921,6 +6415,7 @@ const SummaryView = ({
             decor: group.decor,
             qty: displayQty,
             price: displayPrice,
+            rawPrice: group.price,
             total: Math.round(eCost),
             isEdge: true,
             key: group.key,
@@ -5935,7 +6430,7 @@ const SummaryView = ({
 
   const currentCoefficients = coefficients;
 
-  const kitCost = totalLdspSheets * hardwareKitPrice;
+  const kitCost = totalLdspSheets * currentHardwareKitPriceLocal;
   if (totalLdspSheets > 0) {
     summaryRows.push({
       type: "hardware",
@@ -5943,7 +6438,7 @@ const SummaryView = ({
       sub: `На ${totalLdspSheets} л. ЛДСП`,
       decor: "-",
       qty: `${totalLdspSheets} шт`,
-      price: hardwareKitPrice,
+      price: currentHardwareKitPriceLocal,
       total: Math.round(kitCost),
       coef: 1,
     });
@@ -5951,15 +6446,20 @@ const SummaryView = ({
 
   // Add Added Products
   addedProducts.forEach((product) => {
+    const coeff = resolveBrandCoefficient(`cat_${product.category}`, "");
+    const displayPrice = product.purchasePrice
+      ? Math.round(product.purchasePrice * coeff)
+      : product.price;
+
     summaryRows.push({
       type: "product",
       name: product.name,
       sub: product.category,
       decor: "-",
       qty: `${product.quantity} шт`,
-      price: product.price,
-      total: product.price * product.quantity,
-      coef: 1,
+      price: displayPrice,
+      total: displayPrice * product.quantity,
+      coef: coeff,
       id: product.id,
       key: String(product.id),
     });
@@ -6077,8 +6577,11 @@ const SummaryView = ({
 
   // Add Added Services
   addedServices.forEach((service) => {
-    const price =
-      service.price !== undefined ? service.price : prices[service.name] || 0;
+    const coeff = resolveBrandCoefficient("services", ""); // Fallback to general service markup
+    const displayPrice = service.purchasePrice
+      ? Math.round(service.purchasePrice * coeff)
+      : service.price;
+
     const isManualService =
       service.price === undefined &&
       (!configToUse.prices?.[service.name] ||
@@ -6092,9 +6595,9 @@ const SummaryView = ({
         : "Услуги производства",
       decor: "-",
       qty: `${service.quantity} ${service.unit}`,
-      price: price,
-      total: price * service.quantity,
-      coef: 1,
+      price: displayPrice,
+      total: displayPrice * service.quantity,
+      coef: coeff,
       isManual: isManualService,
     });
   });
@@ -6108,7 +6611,7 @@ const SummaryView = ({
       .reduce((sum, row) => sum + row.total, 0);
     const assemblyCoef = currentCoefficients.assembly || 1.5;
     const assemblyFee = Math.round(
-      productsSubtotal * (assemblyPercentage / 100) * assemblyCoef,
+      productsSubtotal * (assemblyPercentage / 100),
     );
     summaryRows.push({
       type: "service",
@@ -6159,7 +6662,7 @@ const SummaryView = ({
       deliveryFee += deliveryTariffs?.extraLoaderPrice || 0;
     }
 
-  const finalDeliveryFee = Math.round(deliveryFee * deliveryCoef);
+    const finalDeliveryFee = Math.round(deliveryFee);
     summaryRows.push({
       type: "service",
       name: "Доставка на объект",
@@ -6168,7 +6671,7 @@ const SummaryView = ({
       qty: "1 усл",
       price: finalDeliveryFee,
       total: finalDeliveryFee,
-      coef: deliveryCoef,
+      coef: 1,
     });
     totalCost += finalDeliveryFee;
   }
@@ -6176,8 +6679,6 @@ const SummaryView = ({
   const materialsSubtotalValue = summaryRows
     .filter((r) => ["material", "edge", "hardware"].includes(r.type))
     .reduce((sum, r) => sum + r.total, 0);
-
-  const [showChecklistWindow, setShowChecklistWindow] = useState(false);
 
   // Function to determine if an item is present in the summary rows
   const isItemPresent = (itemName: string) => {
@@ -6248,6 +6749,15 @@ const SummaryView = ({
       onSummaryCalculated(finalTotal, JSON.parse(stringifiedRows));
     }
   }, [finalTotal, stringifiedRows]);
+
+  if (!results && addedProducts.length === 0 && addedServices.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 text-gray-400">
+        <Calculator className="w-12 h-12 mb-4" />
+        <p>Загрузите файл отчета из Pro100 для получения итогового расчета</p>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-8">
@@ -6523,27 +7033,26 @@ const SummaryView = ({
               )
               .map((row, idx) => {
                 const isMaterial = row.type === "material";
-                const isFirst = idx === 0;
-                const stableKey = `${row.type}-${row.key}-${idx}`;
+                const stableKey = `${row.type}-${row.key}-${idx}-${row.name}`;
 
                 return (
                   <tr
                     key={stableKey}
                     className={cn(
                       "hover:bg-gray-50 transition-colors",
-                      row.isEdge && "bg-gray-50/20",
-                      isMaterial && !isFirst && "border-t border-gray-200/60",
+                      row.type === "edge" && "bg-gray-50/20",
+                      isMaterial && idx > 0 && "border-t border-gray-200/60",
                     )}
                   >
                     <td className="px-6 py-2">
                       <div
                         className={cn(
                           "font-medium text-gray-900",
-                          row.isEdge &&
+                          row.type === "edge" &&
                             "pl-6 flex items-center gap-2 text-gray-600 text-sm",
                         )}
                       >
-                        {row.isEdge && (
+                        {row.type === "edge" && (
                           <div className="w-3 h-3 border-l-2 border-b-2 border-gray-300 rounded-bl-md -mt-1.5" />
                         )}
                         {row.name}
@@ -6551,7 +7060,7 @@ const SummaryView = ({
                       <div
                         className={cn(
                           "text-xs text-gray-500",
-                          row.isEdge && "pl-11",
+                          row.type === "edge" && "pl-11",
                         )}
                       >
                         {row.sub}
@@ -6581,7 +7090,7 @@ const SummaryView = ({
                               row.decor === "Не указан"
                               ? "text-gray-400 italic"
                               : "text-blue-600",
-                            row.isEdge &&
+                            row.type === "edge" &&
                               "pl-6 text-xs text-gray-500 font-normal",
                           )}
                         >
@@ -6591,18 +7100,18 @@ const SummaryView = ({
                     </td>
                     <td className="px-6 py-2 text-right text-sm font-medium">
                       <span
-                        className={cn(row.isEdge && "text-xs text-gray-500")}
+                        className={cn(row.type === "edge" && "text-xs text-gray-500")}
                       >
                         {row.qty}
                       </span>
                     </td>
                     <td className="px-6 py-2 text-right text-sm font-medium">
-                      {row.isEdge ? (
+                      {row.type === "edge" ? (
                         <div className="flex items-center justify-end gap-2">
                           <input
                             type="text"
                             inputMode="decimal"
-                            value={edgePrices[row.priceKey || row.key!] || ""}
+                            value={edgePrices[row.priceKey || row.key!] || row.rawPrice || ""}
                             onFocus={(e) => e.target.select()}
                             onChange={(e) => {
                               const v = e.target.value.replace(",", ".");
@@ -6653,7 +7162,7 @@ const SummaryView = ({
                     <td className="px-6 py-2 text-right font-bold text-gray-900 whitespace-nowrap">
                       <span
                         className={cn(
-                          row.isEdge && "text-sm font-medium text-gray-600",
+                          row.type === "edge" && "text-sm font-medium text-gray-600",
                         )}
                       >
                         {(row.total ?? 0).toLocaleString()} ₽
@@ -7644,7 +8153,7 @@ const SettingsView = ({
                                   : coefficients.retail[item.id]
                               }
                               onChange={(e) => {
-                                const val = e.target.value.replace(
+                                const val = e.target.value.replace(",", ".").replace(
                                   /[^0-9.]/g,
                                   "",
                                 );
@@ -7670,7 +8179,7 @@ const SettingsView = ({
                                   : coefficients.wholesale[item.id]
                               }
                               onChange={(e) => {
-                                const val = e.target.value.replace(
+                                const val = e.target.value.replace(",", ".").replace(
                                   /[^0-9.]/g,
                                   "",
                                 );
@@ -7696,7 +8205,7 @@ const SettingsView = ({
                                   : coefficients.designer[item.id]
                               }
                               onChange={(e) => {
-                                const val = e.target.value.replace(
+                                const val = e.target.value.replace(",", ".").replace(
                                   /[^0-9.]/g,
                                   "",
                                 );
@@ -9224,7 +9733,7 @@ const ServiceItem = ({
               placeholder="Цена"
               value={customPrice}
               onChange={(e) => {
-                const val = e.target.value.replace(/[^0-9.]/g, "");
+                const val = e.target.value.replace(",", ".").replace(/[^0-9.]/g, "");
                 setCustomPrice(val);
               }}
               className="w-24 px-3 py-1 border border-gray-200 rounded-lg text-sm font-bold text-blue-600 focus:ring-2 focus:ring-blue-500 outline-none"
@@ -9328,7 +9837,7 @@ const ServicesView = ({
   };
 
   const handlePriceChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value.replace(/[^0-9.]/g, "");
+    const val = e.target.value.replace(",", ".").replace(/[^0-9.]/g, "");
     setNewService((prev) => ({
       ...prev,
       price: val === "" ? 0 : parseFloat(val),
@@ -12618,7 +13127,10 @@ export default function App() {
         ];
         const isSuper = superAdminEmails.includes(user.email || "");
         setIsAppAdmin(isSuper);
-
+        
+        // As a super admin you can also be an employee for a specific company
+        // If a user doc is found, we will still extract the company.
+        
         // Listen to user document
         unsubscribeUser = onSnapshot(
           doc(db, "users", user.uid),
@@ -12669,8 +13181,9 @@ export default function App() {
                 setIsLoading(false);
               }
             } else if (isSuper) {
-              // Super admin might not have a user doc yet, create it if needed or just allow access
+              // Super admin might not have a user doc yet, let them view the admin panel by default
               setIsAppAdmin(true);
+              setShowAdminPanel(true);
               setIsAuthenticated(true);
               setIsLoading(false);
             } else {
@@ -12824,6 +13337,215 @@ export default function App() {
   const [currentProjectName, setCurrentProjectName] = useState<string | null>(
     null,
   );
+  
+  const [activeWorktopForCut, setActiveWorktopForCut] = useState<any | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  const [facadeSearchQuery, setFacadeSearchQuery] = useState("");
+  const [selectedDecor, setSelectedDecor] = useState<Record<string, string>>(
+    {},
+  );
+  const [edgeThickness, setEdgeThickness] = useState<Record<string, string>>(
+    {},
+  );
+  const [edgeDecor, setEdgeDecor] = useState<Record<string, string>>({});
+  const [facadeType, setFacadeType] = useState<
+    Record<string, "sheet" | "custom">
+  >({});
+  const [facadeCustomType, setFacadeCustomType] = useState<
+    Record<string, string>
+  >({});
+  const [facadeCategory, setFacadeCategory] = useState<Record<string, string>>(
+    {},
+  );
+  const [facadeMilling, setFacadeMilling] = useState<Record<string, string>>(
+    {},
+  );
+  const [facadeThicknessOverride, setFacadeThicknessOverride] = useState<
+    Record<string, string>
+  >({});
+  const [edgePrices, setEdgePrices] = useState<Record<string, number>>({});
+  const [mergedMaterials, setMergedMaterials] = useState<
+    Record<string, string>
+  >({});
+  const [calcMode, setCalcMode] = useState<"sheet" | "area">("sheet");
+  const [coefficients, setCoefficients] = useState({
+    retail: {
+      ldsp: 4,
+      hdf: 4,
+      edge: 4,
+      facadeSheet: 1.8,
+      facadeCustom: 1.5,
+      hardware: 1.5,
+      assembly: 1.5,
+      delivery: 1.5,
+      products: INITIAL_PRODUCT_CATEGORIES.reduce(
+        (acc, cat) => ({ ...acc, [cat]: 1.5 }),
+        {} as Record<string, number>,
+      ),
+    },
+    wholesale: {
+      ldsp: 2,
+      hdf: 2,
+      edge: 2,
+      facadeSheet: 1.2,
+      facadeCustom: 1.2,
+      hardware: 1.2,
+      assembly: 1.2,
+      delivery: 1.2,
+      products: INITIAL_PRODUCT_CATEGORIES.reduce(
+        (acc, cat) => ({ ...acc, [cat]: 1.2 }),
+        {} as Record<string, number>,
+      ),
+    },
+    designer: {
+      ldsp: 2.5,
+      hdf: 2.5,
+      edge: 2.5,
+      facadeSheet: 1.3,
+      facadeCustom: 1.3,
+      hardware: 1.3,
+      assembly: 1.3,
+      delivery: 1.3,
+      products: INITIAL_PRODUCT_CATEGORIES.reduce(
+        (acc, cat) => ({ ...acc, [cat]: 1.3 }),
+        {} as Record<string, number>,
+      ),
+    },
+  });
+  const [hardwareKitPrice, setHardwareKitPrice] = useState<{
+    retail: number;
+    wholesale: number;
+    designer: number;
+  }>({ retail: 500, wholesale: 400, designer: 450 });
+  const [customerType, setCustomerType] = useState<
+    "retail" | "wholesale" | "designer"
+  >("retail");
+
+  const currentHardwareKitPrice = useMemo(() => {
+    const price = hardwareKitPrice as any;
+    if (typeof price === "number") return price;
+    return price[customerType] || 500;
+  }, [hardwareKitPrice, customerType]);
+
+  const filteredDecors = useMemo(() => {
+    const allDecors: { brand: string; name: string }[] = [];
+    Object.entries(LDSP_DATABASE).forEach(([brand, decors]) => {
+      decors.forEach((name) => allDecors.push({ brand, name }));
+    });
+    return allDecors.filter(
+      (d) =>
+        d.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        d.brand.toLowerCase().includes(searchQuery.toLowerCase()),
+    );
+  }, [searchQuery]);
+
+  const filteredHdfDecors = useMemo(() => {
+    return (catalogMaterials["ХДФ"] || [])
+      .filter((name) => name.toLowerCase().includes(searchQuery.toLowerCase()))
+      .map((name) => ({ brand: "ХДФ", name }));
+  }, [searchQuery]);
+
+  const filteredFacadeDecors = useMemo(() => {
+    const allDecors: { brand: string; name: string }[] = [];
+    Object.entries(LDSP_DATABASE).forEach(([brand, decors]) => {
+      decors.forEach((name) => allDecors.push({ brand, name }));
+    });
+    return allDecors.filter(
+      (d) =>
+        d.name.toLowerCase().includes(facadeSearchQuery.toLowerCase()) ||
+        d.brand.toLowerCase().includes(facadeSearchQuery.toLowerCase()),
+    );
+  }, [facadeSearchQuery]);
+
+  const handleNewProject = () => {
+    localStorage.removeItem("mebcalc_draft");
+    setCurrentProjectId(null);
+    setCurrentProjectName(null);
+    setResults(null);
+    setSelectedDecor({});
+    setPrices({});
+    setFacadeType({});
+    setFacadeCustomType({});
+    setFacadeCategory({});
+    setFacadeMilling({});
+    setFacadeThicknessOverride({});
+    setSheetConfigs({});
+    setTrimming(10);
+    setKerf(4);
+    setRotations({});
+    setCuttingType("saw");
+    setEdgeToEdge({});
+    setEdgePrices({});
+    setMergedMaterials({});
+    setEdgeThickness({});
+    setEdgeDecor({});
+    setAddedProducts([]);
+    setAddedServices([]);
+    setFurnitureType("");
+    setChecklistRefused({});
+    setWorktopCuts({});
+    setGluedEdgeDecor({});
+    setCurrentSummaryRows([]);
+  };
+
+  const toggleRotated = (key: string) => {
+    setRotations((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const toggleIndividualRotation = (key: string, detailId: string) => {
+    setResults((prev: any) => {
+      if (!prev || !prev[key]) return prev;
+      return {
+        ...prev,
+        [key]: {
+          ...prev[key],
+          details: prev[key].details.map((d: any) =>
+            d.id === detailId ? { ...d, rotated: !d.rotated } : d,
+          ),
+        },
+      };
+    });
+  };
+
+  const toggleEdgeToEdge = (key: string) => {
+    setEdgeToEdge((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const toggleExpanded = (key: string) => {
+    setExpandedResults((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const onAddProduct = (product: any, quantity: number = 1) => {
+    setAddedProducts((prev) => {
+      const existing = prev.find((p) => p.id === product.id);
+      if (existing) {
+        return prev.map((p) =>
+          p.id === product.id ? { ...p, quantity: p.quantity + quantity } : p,
+        );
+      }
+      return [...prev, { ...product, quantity }];
+    });
+    setActiveTab("summary");
+  };
+
+  const onAddService = (service: any, quantity: number = 1) => {
+    setAddedServices((prev) => {
+      const existing = prev.find((s) => s.id === service.id);
+      if (existing) {
+        return prev.map((s) =>
+          s.id === service.id ? { ...s, quantity: s.quantity + quantity } : s,
+        );
+      }
+      return [...prev, { ...service, quantity }];
+    });
+    setActiveTab("summary");
+  };
 
   // Custom Modal State
   const [modal, setModal] = useState<{
@@ -13457,15 +14179,16 @@ export default function App() {
     }
   };
 
-  const finalizeSet = async (setData: any) => {
+  const finalizeSet = async (setData: any, optionalProjectsList?: any[]) => {
     if (!companyData?.id || !userData?.uid) return;
     try {
+      const activeProjects = optionalProjectsList || selectedProjectsForCheckout;
       const setId = setData.id || `set-${Date.now()}`;
       const batch = writeBatch(db);
       const setDocRef = doc(db, "companies", companyData.id, "sets", setId);
 
       // Verify all projects have data before saving
-      for (const p of selectedProjectsForCheckout) {
+      for (const p of activeProjects) {
         if (!p.data || !p.id) {
           throw new Error(
             `Данные проекта ${p.name || p.id} повреждены или отсутствуют`,
@@ -13508,7 +14231,7 @@ export default function App() {
       await batch.commit();
 
       setIsCheckoutModalOpen(false);
-      setPrintSetData({ projects: selectedProjectsForCheckout, data: setData });
+      setPrintSetData({ projects: activeProjects, data: setData });
       setSelectedProjectsForCheckout([]);
       showAlert("Успех", "Спецификация заказа успешно создана и сохранена");
 
@@ -13901,337 +14624,8 @@ export default function App() {
     });
   };
 
-  const toggleEdgeToEdge = (key: string) => {
-    setEdgeToEdge((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
 
-  const toggleExpanded = (key: string) => {
-    setExpandedResults((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
-  const onAddProduct = (product: any, quantity: number = 1) => {
-    setAddedProducts((prev) => {
-      const existing = prev.find((p) => p.id === product.id);
-      if (existing) {
-        return prev.map((p) =>
-          p.id === product.id ? { ...p, quantity: p.quantity + quantity } : p,
-        );
-      }
-      return [...prev, { ...product, quantity }];
-    });
-    setActiveTab("summary");
-  };
-
-  const onAddService = (service: any, quantity: number = 1) => {
-    setAddedServices((prev) => {
-      const existing = prev.find((s) => s.id === service.id);
-      if (existing) {
-        return prev.map((s) =>
-          s.id === service.id ? { ...s, quantity: s.quantity + quantity } : s,
-        );
-      }
-      return [...prev, { ...service, quantity }];
-    });
-    setActiveTab("summary");
-  };
-
-  const [searchQuery, setSearchQuery] = useState("");
-  const [facadeSearchQuery, setFacadeSearchQuery] = useState("");
-  const [selectedDecor, setSelectedDecor] = useState<Record<string, string>>(
-    {},
-  );
-  const [edgeThickness, setEdgeThickness] = useState<Record<string, string>>(
-    {},
-  );
-  const [edgeDecor, setEdgeDecor] = useState<Record<string, string>>({});
-  const [facadeType, setFacadeType] = useState<
-    Record<string, "sheet" | "custom">
-  >({});
-  const [facadeCustomType, setFacadeCustomType] = useState<
-    Record<string, string>
-  >({});
-  const [facadeCategory, setFacadeCategory] = useState<Record<string, string>>(
-    {},
-  );
-  const [facadeMilling, setFacadeMilling] = useState<Record<string, string>>(
-    {},
-  );
-  const [facadeThicknessOverride, setFacadeThicknessOverride] = useState<
-    Record<string, string>
-  >({});
-  const [edgePrices, setEdgePrices] = useState<Record<string, number>>({});
-  const [mergedMaterials, setMergedMaterials] = useState<
-    Record<string, string>
-  >({});
-  const [calcMode, setCalcMode] = useState<"sheet" | "area">("area");
-  const [coefficients, setCoefficients] = useState({
-    retail: {
-      ldsp: 4,
-      hdf: 4,
-      edge: 4,
-      facadeSheet: 1.8,
-      facadeCustom: 1.5,
-      hardware: 1.5,
-      assembly: 1.5,
-      delivery: 1.5,
-      products: INITIAL_PRODUCT_CATEGORIES.reduce(
-        (acc, cat) => ({ ...acc, [cat]: 1.5 }),
-        {} as Record<string, number>,
-      ),
-    },
-    wholesale: {
-      ldsp: 2,
-      hdf: 2,
-      edge: 2,
-      facadeSheet: 1.2,
-      facadeCustom: 1.2,
-      hardware: 1.2,
-      assembly: 1.2,
-      delivery: 1.2,
-      products: INITIAL_PRODUCT_CATEGORIES.reduce(
-        (acc, cat) => ({ ...acc, [cat]: 1.2 }),
-        {} as Record<string, number>,
-      ),
-    },
-    designer: {
-      ldsp: 2.5,
-      hdf: 2.5,
-      edge: 2.5,
-      facadeSheet: 1.3,
-      facadeCustom: 1.3,
-      hardware: 1.3,
-      assembly: 1.3,
-      delivery: 1.3,
-      products: INITIAL_PRODUCT_CATEGORIES.reduce(
-        (acc, cat) => ({ ...acc, [cat]: 1.3 }),
-        {} as Record<string, number>,
-      ),
-    },
-  });
-  const [hardwareKitPrice, setHardwareKitPrice] = useState<{
-    retail: number;
-    wholesale: number;
-    designer: number;
-  }>({ retail: 500, wholesale: 400, designer: 450 });
-  const [customerType, setCustomerType] = useState<
-    "retail" | "wholesale" | "designer"
-  >("retail");
-
-  const currentHardwareKitPrice = useMemo(() => {
-    const price = hardwareKitPrice as any;
-    if (typeof price === "number") return price;
-    return price[customerType] || 500;
-  }, [hardwareKitPrice, customerType]);
-
-  const filteredDecors = useMemo(() => {
-    const allDecors: { brand: string; name: string }[] = [];
-    Object.entries(LDSP_DATABASE).forEach(([brand, decors]) => {
-      decors.forEach((name) => allDecors.push({ brand, name }));
-    });
-    return allDecors.filter(
-      (d) =>
-        d.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        d.brand.toLowerCase().includes(searchQuery.toLowerCase()),
-    );
-  }, [searchQuery]);
-
-  const filteredHdfDecors = useMemo(() => {
-    return (catalogMaterials["ХДФ"] || [])
-      .filter((name) => name.toLowerCase().includes(searchQuery.toLowerCase()))
-      .map((name) => ({ brand: "ХДФ", name }));
-  }, [searchQuery]);
-
-  const filteredFacadeDecors = useMemo(() => {
-    const allDecors: { brand: string; name: string }[] = [];
-    Object.entries(LDSP_DATABASE).forEach(([brand, decors]) => {
-      decors.forEach((name) => allDecors.push({ brand, name }));
-    });
-    return allDecors.filter(
-      (d) =>
-        d.name.toLowerCase().includes(facadeSearchQuery.toLowerCase()) ||
-        d.brand.toLowerCase().includes(facadeSearchQuery.toLowerCase()),
-    );
-  }, [facadeSearchQuery]);
-
-  const handleNewProject = () => {
-    localStorage.removeItem("mebcalc_draft");
-    setCurrentProjectId(null);
-    setCurrentProjectName(null);
-    setResults(null);
-    setSelectedDecor({});
-    setPrices({});
-    setFacadeType({});
-    setFacadeCustomType({});
-    setFacadeCategory({});
-    setFacadeMilling({});
-    setFacadeThicknessOverride({});
-    setSheetConfigs({});
-    setTrimming(10);
-    setKerf(4);
-    setRotations({});
-    setCuttingType("saw");
-    setEdgeToEdge({});
-    setEdgePrices({});
-    setMergedMaterials({});
-    setEdgeThickness({});
-    setEdgeDecor({});
-    setAddedProducts([]);
-    setAddedServices([]);
-    setFurnitureType("");
-    setChecklistRefused({});
-    setServiceData({
-      address: {
-        street: "",
-        house: "",
-        apartment: "",
-        floor: "",
-        elevator: "none",
-      },
-      delivery: false,
-      assembly: false,
-      distance: 0,
-      extraLoader: false,
-    });
-    showAlert("Новый проект", "Вы начали новый проект");
-  };
-
-  // Initialize draft from localStorage
-  useEffect(() => {
-    const savedDraft = localStorage.getItem("mebcalc_draft");
-    if (savedDraft) {
-      try {
-        const d = JSON.parse(savedDraft);
-        if (d.results) setResults(d.results);
-        if (d.selectedDecor) setSelectedDecor(d.selectedDecor);
-        if (d.prices) setPrices(d.prices);
-        if (d.facadeType) setFacadeType(d.facadeType);
-        if (d.sheetConfigs) setSheetConfigs(d.sheetConfigs);
-        if (d.trimming !== undefined) setTrimming(d.trimming);
-        if (d.kerf !== undefined) setKerf(d.kerf);
-        if (d.rotations) setRotations(d.rotations);
-        if (d.cuttingType) setCuttingType(d.cuttingType);
-        if (d.calcMode) setCalcMode(d.calcMode);
-        if (d.edgeToEdge) setEdgeToEdge(d.edgeToEdge);
-        if (d.edgePrices) setEdgePrices(d.edgePrices);
-        if (d.edgeThickness) setEdgeThickness(d.edgeThickness);
-        if (d.edgeDecor) setEdgeDecor(d.edgeDecor);
-        if (d.facadeCustomType) setFacadeCustomType(d.facadeCustomType);
-        if (d.facadeCategory) setFacadeCategory(d.facadeCategory);
-        if (d.facadeMilling) setFacadeMilling(d.facadeMilling);
-        if (d.facadeThicknessOverride)
-          setFacadeThicknessOverride(d.facadeThicknessOverride);
-        if (d.addedProducts) setAddedProducts(d.addedProducts);
-        if (d.addedServices) setAddedServices(d.addedServices);
-        if (d.serviceData) setServiceData(d.serviceData);
-        if (d.furnitureType) setFurnitureType(d.furnitureType);
-        if (d.checklistRefused) setChecklistRefused(d.checklistRefused);
-        if (d.mergedMaterials) setMergedMaterials(d.mergedMaterials);
-        if (d.currentProjectId) setCurrentProjectId(d.currentProjectId);
-        if (d.currentProjectName) setCurrentProjectName(d.currentProjectName);
-      } catch (e) {
-        console.error("Failed to parse draft calculation", e);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    if (results || addedProducts.length > 0 || addedServices.length > 0 || currentProjectName) {
-      // Stabilize total for hashing
-      const stableTotal = Math.round((currentProjectTotal || 0) * 100);
-      
-      const currentStateHash = JSON.stringify({
-        total: stableTotal,
-        // Only hash critical data, and ensure IDs are stable
-        results,
-        selectedDecor,
-        addedProducts,
-        addedServices,
-      });
-
-      const draftState = {
-        results,
-        selectedDecor,
-        prices,
-        facadeType,
-        sheetConfigs,
-        trimming,
-        kerf,
-        rotations,
-        cuttingType,
-        calcMode,
-        edgeToEdge,
-        edgePrices,
-        edgeThickness,
-        edgeDecor,
-        facadeCustomType,
-        facadeCategory,
-        facadeMilling,
-        facadeThicknessOverride,
-        addedProducts,
-        addedServices,
-        serviceData,
-        currentProjectId,
-        currentProjectName,
-        mergedMaterials,
-        furnitureType,
-        checklistRefused,
-      };
-      localStorage.setItem("mebcalc_draft", JSON.stringify(draftState));
-      
-      if (isFirstLoad.current) {
-        setLastSavedHash(currentStateHash);
-        isFirstLoad.current = false;
-        return;
-      }
-
-      let timer: NodeJS.Timeout | null = null;
-      if (currentProjectName && autoSaveEnabled && !quotaExceeded && currentStateHash !== lastSavedHash && !isSyncing) {
-        // Increase debounce to 180 seconds (3 minutes) to significantly save quota
-        timer = setTimeout(() => {
-          saveProject(currentProjectName, true);
-        }, 180000);
-      }
-      
-      return () => {
-        if (timer) clearTimeout(timer);
-      };
-    }
-  }, [
-    results,
-    selectedDecor,
-    prices,
-    facadeType,
-    sheetConfigs,
-    trimming,
-    kerf,
-    rotations,
-    cuttingType,
-    calcMode,
-    edgeToEdge,
-    edgePrices,
-    edgeThickness,
-    edgeDecor,
-    facadeCustomType,
-    facadeCategory,
-    facadeMilling,
-    facadeThicknessOverride,
-    addedProducts,
-    addedServices,
-    serviceData,
-    currentProjectId,
-    currentProjectName,
-    furnitureType,
-    checklistRefused,
-    lastSavedHash,
-    quotaExceeded,
-    autoSaveEnabled,
-    currentProjectTotal
-  ]);
+  // Start of core calculation and utility functions
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -14254,9 +14648,19 @@ export default function App() {
         decodedText = cp1251Decoder.decode(buffer);
       }
 
+      // Auto-detect semicolon if it's common in the first few lines
+      let delimiter = "";
+      const firstLines = decodedText.split("\n").slice(0, 5);
+      const semiCount = (firstLines.join("").match(/;/g) || []).length;
+      const commaCount = (firstLines.join("").match(/,/g) || []).length;
+      if (semiCount > commaCount && semiCount > 5) {
+        delimiter = ";";
+      }
+
       Papa.parse(decodedText, {
         skipEmptyLines: true,
         header: false,
+        delimiter,
         complete: (results) => {
           const rawData = results.data as string[][];
           if (rawData.length === 0) return;
@@ -14279,179 +14683,160 @@ export default function App() {
           const headerRow = headerRowIdx !== -1 ? rawData[headerRowIdx] : null;
 
           // 2. Identify Column Indices
-          let nameIdx = 0;
-          let heightIdx = 1;
-          let edgeIdx = 2;
-          let widthIdx = 3;
-          let thickIdx = 5;
-          let qtyIdx = 6;
-          let colorIdx = 7;
-          let materialIdx = -1; // Specific material column if exists
+          let nameIdx = -1;
+          let heightIdx = -1;
+          let widthIdx = -1;
+          let thickIdx = -1;
+          let qtyIdx = -1;
+          let colorIdx = -1;
+          let materialIdx = -1;
+          const edgeCols: number[] = [];
 
           if (headerRow) {
             headerRow.forEach((cell, idx) => {
-              const h = cell.toLowerCase().trim();
-              if (/название|имя|^имя|^name$/i.test(h)) nameIdx = idx;
+              const h = (cell || "").toString().toLowerCase().trim();
+              if (/название|имя|^имя|^name$/i.test(h)) { if (nameIdx === -1) nameIdx = idx; }
               else if (/высота|height/i.test(h)) heightIdx = idx;
-              else if (/ширина|длина|длинна|width|length/i.test(h))
-                widthIdx = idx;
+              else if (/ширина|длина|width|length/i.test(h) && h !== "высота") widthIdx = idx;
               else if (/толщина|thickness/i.test(h)) thickIdx = idx;
-              else if (/кол-во|количество|qty|count/i.test(h)) qtyIdx = idx;
-              else if (/цвет|color|декор|image/i.test(h)) colorIdx = idx;
-              else if (/кромка|edge|облик|оклейка|кромление/i.test(h))
-                edgeIdx = idx;
-              else if (/материал|тип|плита|material|type/i.test(h))
-                materialIdx = idx;
+              else if (/кол-во|количество|qty|quantity/i.test(h)) qtyIdx = idx;
+              else if (/цвет|color/i.test(h)) colorIdx = idx;
+              else if (/кромка|edge/i.test(h)) {
+                if (!edgeCols.includes(idx)) edgeCols.push(idx);
+              }
+              else if (/материал|material/i.test(h)) materialIdx = idx;
             });
           }
 
-          // 3. Process Data Rows
-          const dataRows =
-            headerRowIdx !== -1 ? rawData.slice(headerRowIdx + 1) : rawData;
+          // Fallbacks for common indices if not found by header
+          if (nameIdx === -1) nameIdx = 0;
+          if (heightIdx === -1) heightIdx = 1;
+          if (widthIdx === -1) widthIdx = 3;
+          if (thickIdx === -1) thickIdx = 5;
+          if (qtyIdx === -1) qtyIdx = 6;
+          if (colorIdx === -1) colorIdx = 7;
+          
+          // If no edge columns found, assume they are at indices 2 and 4 (common for this software)
+          if (edgeCols.length === 0) {
+            edgeCols.push(2);
+            edgeCols.push(4);
+          }
 
-          const parsedDetails: Detail[] = dataRows
+          const parsedDetails = rawData
+            .slice(headerRowIdx + 1)
             .map((row) => {
-              if (!row || row.length < 2) return null;
+              if (row.length < 3) return null;
+              const name = (row[nameIdx] || "Без имени").toString();
+              const height = parseFloat((row[heightIdx]?.toString() || "0").replace(",", "."));
+              const width = parseFloat((row[widthIdx]?.toString() || "0").replace(",", "."));
+              const thickness = parseFloat((row[thickIdx]?.toString() || "0").replace(",", "."));
+              const qty = parseInt(row[qtyIdx] || "1");
+              const color = (row[colorIdx] || (materialIdx !== -1 ? row[materialIdx] : "Default")).toString();
+              
+              const isOneEdge = (s: any) => {
+                if (s === undefined || s === null) return false;
+                const p = s.toString().toLowerCase().trim();
+                // Handle various dashes: regular, en-dash, em-dash
+                return p === "1" || p === "." || p === "-" || p === "—" || p === "–";
+              };
+              
+              const isTwoEdges = (s: any) => {
+                if (s === undefined || s === null) return false;
+                const p = s.toString().toLowerCase().trim();
+                return p === "2" || p === ":" || p === "=" || p === "==" || p === "4";
+              };
 
-              const name = (row[nameIdx] || "").trim();
-              const materialVal =
-                materialIdx !== -1 ? (row[materialIdx] || "").trim() : "";
+              const edgeSides = { top: false, bottom: false, left: false, right: false };
 
-              // Width/Height logic: Usually Length is the first dimension
-              // Try to handle strings with 'mm' or other garbage
-              const parseVal = (v: string) =>
-                parseFloat(v.replace(/[^\d.,]/g, "").replace(",", ".")) || 0;
+              // Logic for multiple edge columns or complex strings
+              if (edgeCols.length >= 4) {
+                 // Format: L1, L2, W1, W2
+                 if (isOneEdge(row[edgeCols[0]]) || isTwoEdges(row[edgeCols[0]])) edgeSides.left = true;
+                 if (isOneEdge(row[edgeCols[1]]) || isTwoEdges(row[edgeCols[1]])) edgeSides.right = true;
+                 if (isOneEdge(row[edgeCols[2]]) || isTwoEdges(row[edgeCols[2]])) edgeSides.top = true;
+                 if (isOneEdge(row[edgeCols[3]]) || isTwoEdges(row[edgeCols[3]])) edgeSides.bottom = true;
+              } else if (edgeCols.length === 2) {
+                 // Format: H, W
+                 const hE = row[edgeCols[0]];
+                 if (isTwoEdges(hE)) { edgeSides.left = true; edgeSides.right = true; }
+                 else if (isOneEdge(hE)) { edgeSides.left = true; }
+                 
+                 const wE = row[edgeCols[1]];
+                 if (isTwoEdges(wE)) { edgeSides.top = true; edgeSides.bottom = true; }
+                 else if (isOneEdge(wE)) { edgeSides.top = true; }
+              } else if (edgeCols.length === 1 || edgeCols.length > 0) {
+                 // Format: Single string or mixed
+                 const p = (row[edgeCols[0] || 0] || "").toString().toLowerCase().trim();
+                 const separator = p.includes(".") ? "." : p.includes(":") ? ":" : p.includes(",") ? "," : p.includes("|") ? "|" : p.includes(" ") ? " " : null;
+                 
+                 if (separator) {
+                    const segments = p.split(separator).map(s => s.trim());
+                    if (segments.length >= 4) {
+                       edgeSides.left = isOneEdge(segments[0]) || isTwoEdges(segments[0]);
+                        edgeSides.right = isOneEdge(segments[1]) || isTwoEdges(segments[1]);
+                        edgeSides.top = isOneEdge(segments[2]) || isTwoEdges(segments[2]);
+                        edgeSides.bottom = isOneEdge(segments[3]) || isTwoEdges(segments[3]);
 
-              let height = parseVal(row[heightIdx]);
-              let width = parseVal(row[widthIdx]);
-              const thickness = parseVal(row[thickIdx]);
-              const qty = parseVal(row[qtyIdx]);
-              const color = (row[colorIdx] || "").trim();
-              const edgeProc = (row[edgeIdx] || "").trim();
+                     } else if (segments.length >= 2) {
+                        if (isTwoEdges(segments[0])) { edgeSides.left = true; edgeSides.right = true; }
+                        else if (isOneEdge(segments[0])) { edgeSides.left = true; }
+                        
+                        if (isTwoEdges(segments[1])) { edgeSides.top = true; edgeSides.bottom = true; }
+                        else if (isOneEdge(segments[1])) { edgeSides.top = true; }
+                     }
+                  } else {
+                     if (p.length === 4) {
+                        edgeSides.left = isOneEdge(p[0]);
+                        edgeSides.right = isOneEdge(p[1]);
+                        edgeSides.top = isOneEdge(p[2]);
+                        edgeSides.bottom = isOneEdge(p[3]);
+                     } else if (isTwoEdges(p)) {
+                        edgeSides.left = true; edgeSides.right = true;
+                     } else if (isOneEdge(p)) {
+                        edgeSides.left = true;
+                     }
+                  }
+               }
 
-              // Валидация - исключаем все что не имеет физических размеров или количества
-              if (qty <= 0 || height <= 0 || width <= 0) return null;
+               const edgeLength = ((edgeSides.top ? width : 0) + (edgeSides.bottom ? width : 0) + (edgeSides.left ? height : 0) + (edgeSides.right ? height : 0)) / 1000;
 
-              // Определение типа материала - СТРОГОЕ
-              let type = "";
-              const fullSearch = (
-                name +
-                " " +
-                materialVal +
-                " " +
-                color
-              ).toLowerCase();
+               const area = (height * width) / 1000000;
+               let type: Detail["type"] = "ЛДСП";
+               const lName = name.toLowerCase();
+               const lColor = color.toLowerCase();
+               const lMaterial = (materialIdx !== -1 && row[materialIdx] ? row[materialIdx].toLowerCase() : "");
 
-              // Исключаем модули, сборки и группы (которые часто попадают из PRO100)
-              const isAssembly =
-                /модуль|сборка|группа|unit|module|assembly|group/i.test(
-                  fullSearch,
-                );
-              if (isAssembly) return null;
+               if (thickness < 10 || lName.includes("хдф") || lName.includes("двп") || lColor.includes("хдф") || lColor.includes("двп")) {
+                 type = "ХДФ";
+               } else if (lName.includes("фасад") || lColor.includes("фасад") || lMaterial.includes("фасад")) {
+                 type = "Фасад";
+               } else if (lName.includes("мдф") || lColor.includes("мдф") || lMaterial.includes("мдф")) {
+                 type = "МДФ";
+               } else if (lName.includes("столешница") || lName.includes("worktop") || lColor.includes("столешница") || lMaterial.includes("столешница")) {
 
-              if (fullSearch.includes("фасад") || fullSearch.includes("мдф")) {
-                type = "Фасад";
-              } else if (
-                fullSearch.includes("двп") ||
-                fullSearch.includes("хдф") ||
-                (thickness > 0 && thickness < 6)
-              ) {
-                type = "ХДФ";
-              } else if (
-                fullSearch.includes("лдсп") ||
-                fullSearch.includes("дсп")
-              ) {
-                type = "ЛДСП";
-              } else if (
-                thickness >= 10 &&
-                (fullSearch.includes("деталь") ||
-                  (!fullSearch.includes("петля") &&
-                    !fullSearch.includes("ручка") &&
-                    !fullSearch.includes("опора") &&
-                    !fullSearch.includes("шуруп") &&
-                    !fullSearch.includes("винт")))
-              ) {
-                // Если толщина плиты и нет признаков фурнитуры в названии
+
+
+
+
+
+
+
+                type = "Столешница";
+              } else if (lName.includes("стеновая") || lName.includes("backsplash") || lColor.includes("стеновая") || lMaterial.includes("стеновая")) {
+                type = "Стеновая панель";
+              } else if (lName.includes("лдсп") || lColor.includes("лдсп") || lMaterial.includes("лдсп")) {
                 type = "ЛДСП";
               }
 
-              // Если тип не определен как плита - игнорируем
-              if (!type) return null;
-
-              const area = (height * width) / 1000000;
-
-              // Edge parsing logic
-              const getEdgeSides = (proc: string, t: string) => {
-                const sides = {
-                  top: false,
-                  bottom: false,
-                  left: false,
-                  right: false,
-                };
-                if (t === "ХДФ") return sides;
-                const s = proc.trim();
-                if (!s || s === "." || s === "0000") return sides;
-                if (s === "=" || s === "++" || s === "2222" || s === "1111")
-                  return { top: true, bottom: true, left: true, right: true };
-
-                // Heuristic for symbols
-                if (s.includes("||")) {
-                  sides.left = true;
-                  sides.right = true;
-                } else if (s.includes("|")) {
-                  sides.left = true;
-                }
-
-                if (s.includes("--") || s.includes("==")) {
-                  sides.top = true;
-                  sides.bottom = true;
-                } else if (s.includes("-")) {
-                  sides.top = true;
-                }
-
-                // Support formats like "1100" (top, bottom, left, right)
-                if (/^[012]{4}$/.test(s)) {
-                  if (s[0] !== "0") sides.top = true;
-                  if (s[1] !== "0") sides.bottom = true;
-                  if (s[2] !== "0") sides.left = true;
-                  if (s[3] !== "0") sides.right = true;
-                }
-
-                // Fallback for non-empty
-                if (
-                  s &&
-                  !sides.top &&
-                  !sides.bottom &&
-                  !sides.left &&
-                  !sides.right
-                ) {
-                  if (s === "1") {
-                    sides.left = true;
-                  } else if (s === "2") {
-                    sides.left = true;
-                    sides.right = true;
-                  } else {
-                    // If it looks like a name or complex string, skip it or default?
-                    // For PRO100 often it's just count or dots
-                  }
-                }
-                return sides;
-              };
-
-              const edgeSides = getEdgeSides(edgeProc, type);
-              const edgeLength =
-                ((edgeSides.top ? width : 0) +
-                  (edgeSides.bottom ? width : 0) +
-                  (edgeSides.left ? height : 0) +
-                  (edgeSides.right ? height : 0)) /
-                1000;
+              // Final check for Module - if it contains Module anywhere, we might want to flag it for exclusion later
+              if (lName.includes("модуль") || lColor.includes("модуль") || lMaterial.includes("модуль")) return null;
 
               return {
                 id: Math.random().toString(36).substring(2, 9),
                 type,
                 name,
                 height,
-                edgeProc,
+                edgeProc: "", // Legacy field
                 width,
                 thickness,
                 qty,
@@ -14727,6 +15112,10 @@ export default function App() {
           ? "designer"
           : "wholesale";
 
+    const baseMarkup = categoryId.startsWith("cat_")
+      ? currentCoefficients.products[categoryId.replace("cat_", "")] ?? 1.5
+      : (currentCoefficients as any)[categoryId] ?? 1.5;
+
     // Check brand-specific overrides first
     if (ownProductionConfig.brandCoefficients) {
       const match = ownProductionConfig.brandCoefficients.find(
@@ -14748,31 +15137,7 @@ export default function App() {
       }
     }
 
-    // Fallback to standard coefficients
-    if (
-      customerType === "wholesale" &&
-      companyData?.type === "Мебельное производство"
-    ) {
-      if (
-        selectedSalonId &&
-        ownProductionConfig.salonCoefficients?.[selectedSalonId]?.[categoryId]
-      ) {
-        return ownProductionConfig.salonCoefficients[selectedSalonId][
-          categoryId
-        ];
-      }
-      if (ownProductionConfig.standardCoefficients?.[categoryId]) {
-        return ownProductionConfig.standardCoefficients[categoryId];
-      }
-    }
-
-    // Default global coefficients
-    const myMarkup = (coefficients[role] || {}) as any;
-    if (categoryId.startsWith("cat_")) {
-      const catName = categoryId.replace("cat_", "");
-      return myMarkup.products?.[catName] ?? myMarkup[catName] ?? 1.5;
-    }
-    return myMarkup[categoryId] ?? 1.5;
+    return baseMarkup;
   };
 
   const totalCostForService = useMemo(() => {
@@ -14785,7 +15150,14 @@ export default function App() {
         : ownProductionConfig;
 
     let total = 0;
+    let productsOnlyTotal = 0;
+    let totalLdspSheets = 0;
+
+    // Boards calculation
     Object.entries(results).forEach(([key, item]: any) => {
+      // Skip if it's merged INTO another material (SummaryView consistency)
+      if (mergedMaterials[key]) return;
+
       const decor = selectedDecor[key];
       const itemsInDecor = typeof decor === "string" ? decor.split("|") : [];
       const brand = itemsInDecor[0] || "";
@@ -14814,6 +15186,7 @@ export default function App() {
       else if (isCustomFacade)
         coef = resolveBrandCoefficient("facadeCustom", brand);
 
+      let itemFinalCost = 0;
       if (isCustomFacade) {
         const customType = facadeCustomType[key] || "Пленка";
         const category = facadeCategory[key] || "";
@@ -14860,12 +15233,19 @@ export default function App() {
         const minVol = settings?.minOrderVolume || 0;
         const calculatedArea = actualArea < minVol ? minVol : actualArea;
 
-        total += calculatedArea * finalRawPrice * coef;
+        itemFinalCost = calculatedArea * finalRawPrice * coef;
       } else {
+        const combinedDetails = [...item.details];
+        Object.entries(mergedMaterials).forEach(([mKey, targetKey]) => {
+          if (targetKey === key && results[mKey]) {
+            combinedDetails.push(...results[mKey].details);
+          }
+        });
+
         const sheetW = (sheetConfigs[key]?.width || 2800) - trimming * 2;
         const sheetH = (sheetConfigs[key]?.height || 2070) - trimming * 2;
         const sheets = packDetails(
-          item.details,
+          combinedDetails,
           sheetW,
           sheetH,
           kerf,
@@ -14873,26 +15253,103 @@ export default function App() {
           cuttingType,
         );
         const sheetCount = sheets.length;
-        const sheetArea =
-          ((sheetConfigs[key]?.width || 2800) *
-            (sheetConfigs[key]?.height || 2070)) /
-          1000000;
-
+        if (item.type === "ЛДСП" || item.type === "МДФ") {
+          totalLdspSheets += sheetCount;
+        }
         if (calcMode === "area") {
-          total += sheetCount * sheetArea * price * coef;
+          const sheetArea =
+            ((sheetConfigs[key]?.width || 2800) *
+              (sheetConfigs[key]?.height || 2070)) /
+            1000000;
+          itemFinalCost = sheetCount * sheetArea * price * coef;
         } else {
-          total += sheetCount * price * coef;
+          itemFinalCost = sheetCount * price * coef;
         }
       }
+      total += itemFinalCost;
+      productsOnlyTotal += itemFinalCost;
     });
 
-    addedProducts.forEach((p) => (total += p.price * p.quantity));
+    // Add hardware kit cost
+    const hwKitPrice = currentHardwareKitPrice || 0;
+    const hwKitTotal = totalLdspSheets * hwKitPrice;
+    total += hwKitTotal;
+    productsOnlyTotal += hwKitTotal;
+
+    // Edges calculation (Grouped to match SummaryView)
+    const edgeGroupsForTotal: Record<string, any> = {};
+
+    Object.keys(results).forEach((ck) => {
+      const cItem = results[ck];
+      if (!cItem || !cItem.details) return;
+
+      const itemsInBoardDecor = typeof selectedDecor[ck] === "string" ? selectedDecor[ck].split("|") : [];
+      const boardBrand = itemsInBoardDecor[0] || "";
+
+      const isFacade = cItem.type === "Фасад";
+      let eLen = 0;
+      if (edgeToEdge[ck] || isFacade) {
+        eLen = cItem.details.reduce((sum: any, d: any) => sum + (d.width+d.height)*2, 0) / 1000;
+      } else if (worktopCuts[ck]) {
+        const cut = worktopCuts[ck];
+        cut.parts.forEach((p: any) => {
+          if (p.edges[0]) eLen += p.width/1000; if (p.edges[1]) eLen += p.height/1000; if (p.edges[2]) eLen += p.width/1000; if (p.edges[3]) eLen += p.height/1000;
+        });
+      } else {
+        eLen = cItem.details.reduce((sum: any, d: any) => {
+          const s = d.edgeSides || { top: false, bottom: false, left: false, right: false };
+          let sl = 0; if (s.top) sl += d.width; if (s.bottom) sl += d.width; if (s.left) sl += d.height; if (s.right) sl += d.height;
+          return sum + sl;
+        }, 0) / 1000;
+      }
+      
+      const thick = isFacade ? "1.0" : (edgeThickness[ck] || "0.4");
+      const dec = edgeDecor[ck] || "Не указан";
+      const gK = `${thick}|${dec}`;
+      
+      if (!edgeGroupsForTotal[gK]) {
+        let eP = edgePrices[ck] || 0;
+        if (eP === 0 && dec !== "Не указан") {
+          const variations = [dec, dec.replace(/ /g, "|"), dec.toUpperCase(), dec.toLowerCase()];
+          for (const v of variations) { if (configToUse.prices?.[v]) { eP = configToUse.prices[v]; break; } }
+        }
+        edgeGroupsForTotal[gK] = { len: 0, price: eP, coef: resolveBrandCoefficient("edge", boardBrand), brand: boardBrand };
+      }
+      edgeGroupsForTotal[gK].len += eLen;
+    });
+
+    Object.entries(edgeGroupsForTotal).forEach(([gK, g]) => {
+      const [thick, dec] = gK.split("|");
+      const multiplicity = configToUse.edgeMultiplicity?.[`${g.brand}:${thick}`] || 0;
+      const sQty = multiplicity > 0 ? Math.ceil(g.len / multiplicity) * multiplicity : Math.ceil(g.len);
+      const edgeCost = Math.round(sQty * g.price * g.coef);
+      total += edgeCost;
+      productsOnlyTotal += edgeCost;
+    });
+
+    addedProducts.forEach((p) => {
+      const coeff = resolveBrandCoefficient(`cat_${p.category}`, "");
+      const displayPrice = p.purchasePrice
+        ? Math.round(p.purchasePrice * coeff)
+        : p.price;
+      const itemCost = displayPrice * p.quantity;
+      total += itemCost;
+      productsOnlyTotal += itemCost;
+    });
+
     addedServices.forEach((s) => {
-      const p = s.price !== undefined ? s.price : prices[s.name] || 0;
-      total += p * s.quantity;
+      const basePrice =
+        s.purchasePrice ||
+        (s.price !== undefined ? s.price : prices[s.name] || 0);
+      const coeff = resolveBrandCoefficient("services", "");
+      const displayPrice = s.purchasePrice
+        ? Math.round(s.purchasePrice * coeff)
+        : basePrice;
+      total += displayPrice * s.quantity;
     });
 
-    return total;
+    // We return productsOnlyTotal as the base for assembly percentage preview
+    return Math.round(productsOnlyTotal);
   }, [
     results,
     selectedDecor,
@@ -15613,7 +16070,7 @@ export default function App() {
             isSidebarOpen ? "ml-14 lg:ml-64" : "ml-14 lg:ml-20",
           )}
         >
-          {activeTab === "calculator" ? (
+          {activeTab === "calculator" && (
             <CalculatorView
               handleFileUpload={handleFileUpload}
               handleCuttingTypeChange={handleCuttingTypeChange}
@@ -15660,6 +16117,8 @@ export default function App() {
               onNewProject={handleNewProject}
               showPrompt={showPrompt}
               showConfirm={showConfirm}
+              setActiveWorktopForCut={setActiveWorktopForCut}
+              worktopCuts={worktopCuts}
               productionFormat={productionFormat}
               productionSettings={productionSettings}
               ownProductionConfig={ownProductionConfig}
@@ -15670,126 +16129,131 @@ export default function App() {
               selectedForGlue={selectedForGlue}
               setSelectedForGlue={setSelectedForGlue}
             />
-          ) : activeTab === "summary" || activeTab === "checkout_current" ? (
-            <>
-              <SummaryView
-                onSummaryCalculated={(t, r) => {
-                  setCurrentProjectTotal(t);
-                  if (r) setCurrentSummaryRows(r);
+          )}
+
+          <div className={cn(activeTab === "summary" || activeTab === "checkout_current" ? "block" : "hidden")}>
+            <SummaryView
+              onSummaryCalculated={(t, r) => {
+                setCurrentProjectTotal(t);
+                if (r) setCurrentSummaryRows(r);
+              }}
+              results={results}
+              selectedDecor={selectedDecor}
+              prices={prices}
+              facadeType={facadeType}
+              sheetConfigs={sheetConfigs}
+              trimming={trimming}
+              kerf={kerf}
+              rotations={rotations}
+              cuttingType={cuttingType}
+              calcMode={calcMode}
+              coefficients={currentCoefficients}
+              edgeToEdge={edgeToEdge}
+              edgePrices={edgePrices}
+              setEdgePrices={setEdgePrices}
+              edgeThickness={edgeThickness}
+              edgeDecor={edgeDecor}
+              facadeCustomType={facadeCustomType}
+              facadeCategory={facadeCategory}
+              facadeMilling={facadeMilling}
+              facadeThicknessOverride={facadeThicknessOverride}
+              hardwareKitPrice={currentHardwareKitPrice}
+              addedProducts={addedProducts}
+              addedServices={addedServices}
+              serviceData={serviceData}
+              assemblyPercentage={assemblyPercentage}
+              deliveryTariffs={deliveryTariffs}
+              canEditCabinet={canEditCabinet}
+              canEditFacades={canEditFacades}
+              canEditHardware={canEditHardware}
+              canEditAssembly={canEditAssembly}
+              canEditDelivery={canEditDelivery}
+              customerType={customerType}
+              setCustomerType={setCustomerType}
+              selectedSalonId={selectedSalonId}
+              setSelectedSalonId={setSelectedSalonId}
+              salonsUsingMe={salonsUsingMe}
+              isProduction={companyData?.type === "Мебельное производство"}
+              ownProductionConfig={ownProductionConfig}
+              productionFormat={productionFormat}
+              productionSettings={productionSettings}
+              userRole={userRole}
+              companyType={companyData?.type}
+              setPrices={setPrices}
+              mergedMaterials={mergedMaterials}
+              selectedForGlue={selectedForGlue}
+              furnitureType={furnitureType}
+              setFurnitureType={setFurnitureType}
+              checklistRefused={checklistRefused}
+              setChecklistRefused={setChecklistRefused}
+              worktopCuts={worktopCuts}
+              setWorktopCuts={setWorktopCuts}
+              gluedEdgeDecor={gluedEdgeDecor}
+              setGluedEdgeDecor={setGluedEdgeDecor}
+              updateAddedProductQty={updateAddedProductQty}
+              setAddedProductQty={setAddedProductQty}
+              removeAddedProduct={removeAddedProduct}
+              setActiveTab={setActiveTab}
+              showAlert={showAlert}
+              showConfirm={showConfirm}
+              catalogMaterials={catalogMaterials}
+              resolveBrandCoefficient={resolveBrandCoefficient}
+            />
+            {activeTab === "checkout_current" && (() => {
+              const activeProject = {
+                id: currentProjectId || "temp",
+                name: currentProjectName || "Новый проект",
+                createdAt: new Date().toISOString(),
+                data: {
+                  summaryRows: currentSummaryRows,
+                  results,
+                  selectedDecor,
+                  prices,
+                  facadeType,
+                  sheetConfigs,
+                  trimming,
+                  kerf,
+                  rotations,
+                  cuttingType,
+                  calcMode,
+                  edgeToEdge,
+                  edgePrices,
+                  edgeThickness,
+                  edgeDecor,
+                  addedProducts,
+                  addedServices,
+                  serviceData,
+                  worktopCuts,
+                  gluedEdgeDecor,
+                  furnitureType,
+                  checklistRefused,
+                  facadeCustomType,
+                  facadeCategory,
+                  facadeMilling,
+                  facadeThicknessOverride,
+                },
+                totalPrice: currentProjectTotal,
+              };
+              
+              return (
+              <ProjectSetCheckoutModal
+                projects={[activeProject]}
+                onClose={() => setActiveTab("summary")}
+                onSave={async (setData) => {
+                  // First save the project to get a proper ID
+                  const projId = currentProjectId || Date.now().toString();
+                  activeProject.id = projId; // Update id
+                  await saveProject(currentProjectName || "Новый проект", true);
+                  // Then finalize checkout
+                  await finalizeSet({ ...setData, projectIds: [projId] }, [activeProject]);
                 }}
-                results={results}
-                selectedDecor={selectedDecor}
-                prices={prices}
-                facadeType={facadeType}
-                sheetConfigs={sheetConfigs}
-                trimming={trimming}
-                kerf={kerf}
-                rotations={rotations}
-                cuttingType={cuttingType}
-                calcMode={calcMode}
-                coefficients={currentCoefficients}
-                edgeToEdge={edgeToEdge}
-                edgePrices={edgePrices}
-                setEdgePrices={setEdgePrices}
-                edgeThickness={edgeThickness}
-                edgeDecor={edgeDecor}
-                facadeCustomType={facadeCustomType}
-                facadeCategory={facadeCategory}
-                facadeMilling={facadeMilling}
-                facadeThicknessOverride={facadeThicknessOverride}
-                hardwareKitPrice={currentHardwareKitPrice}
-                addedProducts={addedProducts}
-                addedServices={addedServices}
-                serviceData={serviceData}
-                assemblyPercentage={assemblyPercentage}
-                deliveryTariffs={deliveryTariffs}
-                canEditCabinet={canEditCabinet}
-                canEditFacades={canEditFacades}
-                canEditHardware={canEditHardware}
-                canEditAssembly={canEditAssembly}
-                canEditDelivery={canEditDelivery}
-                customerType={customerType}
-                setCustomerType={setCustomerType}
-                selectedSalonId={selectedSalonId}
-                setSelectedSalonId={setSelectedSalonId}
-                salonsUsingMe={salonsUsingMe}
-                isProduction={companyData?.type === "Мебельное производство"}
-                ownProductionConfig={ownProductionConfig}
-                productionFormat={productionFormat}
-                productionSettings={productionSettings}
-                userRole={userRole}
-                companyType={companyData?.type}
-                setPrices={setPrices}
-                mergedMaterials={mergedMaterials}
-                selectedForGlue={selectedForGlue}
-                furnitureType={furnitureType}
-                setFurnitureType={setFurnitureType}
-                checklistRefused={checklistRefused}
-                setChecklistRefused={setChecklistRefused}
-                worktopCuts={worktopCuts}
-                setWorktopCuts={setWorktopCuts}
-                gluedEdgeDecor={gluedEdgeDecor}
-                setGluedEdgeDecor={setGluedEdgeDecor}
-                updateAddedProductQty={updateAddedProductQty}
-                setAddedProductQty={setAddedProductQty}
-                removeAddedProduct={removeAddedProduct}
-                setActiveTab={setActiveTab}
-                showAlert={showAlert}
-                showConfirm={showConfirm}
-                catalogMaterials={catalogMaterials}
-                resolveBrandCoefficient={resolveBrandCoefficient}
+                productionCycle={ownProductionConfig.productionCycle || "working"}
               />
-              {activeTab === "checkout_current" && (
-                <ProjectSetCheckoutModal
-                  projects={[
-                    {
-                      id: currentProjectId || "temp",
-                      name: currentProjectName || "Новый проект",
-                      createdAt: new Date().toISOString(),
-                      data: {
-                        summaryRows: currentSummaryRows,
-                        results,
-                        selectedDecor,
-                        prices,
-                        facadeType,
-                        sheetConfigs,
-                        trimming,
-                        kerf,
-                        rotations,
-                        cuttingType,
-                        calcMode,
-                        edgeToEdge,
-                        edgePrices,
-                        edgeThickness,
-                        edgeDecor,
-                        addedProducts,
-                        addedServices,
-                        serviceData,
-                        worktopCuts,
-                        gluedEdgeDecor,
-                        furnitureType,
-                        checklistRefused,
-                        facadeCustomType,
-                        facadeCategory,
-                        facadeMilling,
-                        facadeThicknessOverride,
-                      },
-                      totalPrice: currentProjectTotal,
-                    },
-                  ]}
-                  onClose={() => setActiveTab("summary")}
-                  onSave={async (setData) => {
-                    // First save the project to get a proper ID
-                    const projId = currentProjectId || Date.now().toString();
-                    await saveProject(currentProjectName || "Новый проект", true);
-                    // Then finalize checkout
-                    await finalizeSet({ ...setData, projectIds: [projId] });
-                  }}
-                  productionCycle={ownProductionConfig.productionCycle || "working"}
-                />
-              )}
-            </>
-          ) : activeTab === "projects" ? (
+              );
+            })()}
+          </div>
+
+          {activeTab === "projects" ? (
             <ProjectsView
               companyId={companyData?.id}
               userId={userData?.uid}
@@ -15798,9 +16262,14 @@ export default function App() {
                 loadProject(project);
               }}
               onOpenSpecification={(project) => {
-                setSelectedProjectsForCheckout([project]);
-                setEditingSet(null);
-                setIsCheckoutModalOpen(true);
+                if (project.status === 'sent' || project.status === 'transferred') {
+                  setSelectedProjectForSpec(project);
+                  setActiveTab("specification");
+                } else {
+                  setSelectedProjectsForCheckout([project]);
+                  setEditingSet(null);
+                  setIsCheckoutModalOpen(true);
+                }
               }}
               onCreateSet={(projects, set) => {
                 setSelectedProjectsForCheckout(projects);
@@ -16009,64 +16478,7 @@ export default function App() {
               companyId={companyData?.id || ""}
               manufacturerId={companyData?.manufacturerId}
             />
-          ) : (
-            <CalculatorView
-              handleFileUpload={handleFileUpload}
-              handleCuttingTypeChange={handleCuttingTypeChange}
-              cuttingType={cuttingType}
-              kerf={kerf}
-              setKerf={setKerf}
-              results={results}
-              selectedDecor={selectedDecor}
-              setSelectedDecor={setSelectedDecor}
-              searchQuery={searchQuery}
-              setSearchQuery={setSearchQuery}
-              filteredDecors={filteredDecors}
-              updateSheetConfig={updateSheetConfig}
-              setEdgeDecor={setEdgeDecor}
-              facadeType={facadeType}
-              setFacadeType={setFacadeType}
-              facadeSearchQuery={facadeSearchQuery}
-              setFacadeSearchQuery={setFacadeSearchQuery}
-              filteredFacadeDecors={filteredFacadeDecors}
-              edgeDecor={edgeDecor}
-              edgeToEdge={edgeToEdge}
-              toggleEdgeToEdge={toggleEdgeToEdge}
-              expandedResults={expandedResults}
-              toggleExpanded={toggleExpanded}
-              sheetConfigs={sheetConfigs}
-              trimming={trimming}
-              rotations={rotations}
-              toggleRotation={toggleRotation}
-              toggleDetailRotation={toggleDetailRotation}
-              edgeThickness={edgeThickness}
-              setEdgeThickness={setEdgeThickness}
-              facadeCustomType={facadeCustomType}
-              setFacadeCustomType={setFacadeCustomType}
-              facadeCategory={facadeCategory}
-              setFacadeCategory={setFacadeCategory}
-              facadeMilling={facadeMilling}
-              setFacadeMilling={setFacadeMilling}
-              facadeThicknessOverride={facadeThicknessOverride}
-              setFacadeThicknessOverride={setFacadeThicknessOverride}
-              filteredHdfDecors={filteredHdfDecors}
-              onSaveProject={saveProject}
-              currentProjectId={currentProjectId}
-              currentProjectName={currentProjectName}
-              onNewProject={handleNewProject}
-              showPrompt={showPrompt}
-              showConfirm={showConfirm}
-              productionFormat={productionFormat}
-              productionSettings={productionSettings}
-              ownProductionConfig={ownProductionConfig}
-              mergedMaterials={mergedMaterials}
-              setMergedMaterials={setMergedMaterials}
-              isGluingMode={isGluingMode}
-              setIsGluingMode={setIsGluingMode}
-              selectedForGlue={selectedForGlue}
-              setSelectedForGlue={setSelectedForGlue}
-            />
-          )}
+          ) : null}
         </main>
 
         {/* Custom Modal */}

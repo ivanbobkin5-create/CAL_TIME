@@ -664,8 +664,8 @@ export const ProjectsView = ({
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
-                        // Normal open behavior (usually click on card handles it, but explicit button is good)
-                        onOpenSpecification(project);
+                        // Normal open behavior: load the project into the editor
+                        onLoadProject(project);
                       }}
                       className="flex items-center gap-1 px-2 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-bold hover:bg-blue-100 transition-all group/open ml-1"
                     >
