@@ -57,52 +57,67 @@ async function startServer() {
   });
 
   app.post("/api/firebase/doc/*", async (req, res) => {
-    const docPath = req.params[0];
-    const parts = docPath.split('/');
-    const docId = parts.pop()!;
-    const collection = parts.join('/');
-    const { data, merge } = req.body;
-
-    if (merge) {
-      const existing = await prisma.dbDocument.findUnique({ where: { path: docPath } });
-      const newData = existing ? { ...(existing.data as object), ...data } : data;
-      await prisma.dbDocument.upsert({
-        where: { path: docPath },
-        create: { path: docPath, collection, docId, data: newData },
-        update: { data: newData }
-      });
-    } else {
-      await prisma.dbDocument.upsert({
-        where: { path: docPath },
-        create: { path: docPath, collection, docId, data },
-        update: { data }
-      });
-    }
-    res.json({ status: "ok" });
-  });
-
-  app.patch("/api/firebase/doc/*", async (req, res) => {
-    const docPath = req.params[0];
-    const { data } = req.body;
-    const existing = await prisma.dbDocument.findUnique({ where: { path: docPath } });
-    if (existing) {
-      const newData = { ...(existing.data as object), ...data };
-      await prisma.dbDocument.update({ where: { path: docPath }, data: { data: newData } });
-    } else {
+    try {
+      const docPath = req.params[0];
       const parts = docPath.split('/');
       const docId = parts.pop()!;
       const collection = parts.join('/');
-      await prisma.dbDocument.create({
-        data: { path: docPath, collection, docId, data }
-      });
+      const { data, merge } = req.body;
+
+      if (merge) {
+        const existing = await prisma.dbDocument.findUnique({ where: { path: docPath } });
+        const newData = existing ? { ...(existing.data as object), ...data } : data;
+        await prisma.dbDocument.upsert({
+          where: { path: docPath },
+          create: { path: docPath, collection, docId, data: newData },
+          update: { data: newData }
+        });
+      } else {
+        await prisma.dbDocument.upsert({
+          where: { path: docPath },
+          create: { path: docPath, collection, docId, data },
+          update: { data }
+        });
+      }
+      res.json({ status: "ok" });
+    } catch (e) {
+      console.error("Error in POST /api/firebase/doc/*:", e);
+      res.status(500).json({ error: String(e) });
     }
-    res.json({ status: "ok" });
+  });
+
+  app.patch("/api/firebase/doc/*", async (req, res) => {
+    try {
+      const docPath = req.params[0];
+      const { data } = req.body;
+      const existing = await prisma.dbDocument.findUnique({ where: { path: docPath } });
+      if (existing) {
+        const newData = { ...(existing.data as object), ...data };
+        await prisma.dbDocument.update({ where: { path: docPath }, data: { data: newData } });
+      } else {
+        const parts = docPath.split('/');
+        const docId = parts.pop()!;
+        const collection = parts.join('/');
+        await prisma.dbDocument.create({
+          data: { path: docPath, collection, docId, data }
+        });
+      }
+      res.json({ status: "ok" });
+    } catch (e) {
+      console.error("Error in PATCH /api/firebase/doc/*:", e);
+      res.status(500).json({ error: String(e) });
+    }
   });
 
   app.delete("/api/firebase/doc/*", async (req, res) => {
-    const docPath = req.params[0];
-    await prisma.dbDocument.deleteMany({ where: { path: docPath } });
-    res.json({ status: "ok" });
+    try {
+      const docPath = req.params[0];
+      await prisma.dbDocument.deleteMany({ where: { path: docPath } });
+      res.json({ status: "ok" });
+    } catch (e) {
+      console.error("Error in DELETE /api/firebase/doc/*:", e);
+      res.status(500).json({ error: String(e) });
+    }
   });
 
   // Vite middleware for development

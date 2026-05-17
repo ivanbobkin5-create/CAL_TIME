@@ -139,11 +139,15 @@ export const getDoc = async (docRef: any) => {
 export const getDocFromServer = getDoc;
 
 export const setDoc = async (docRef: any, data: any, options: any = {}) => {
-  await fetch(`${API_BASE}/doc/${docRef.path}`, {
+  const res = await fetch(`${API_BASE}/doc/${docRef.path}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ data, merge: options.merge })
   });
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Failed to set document: ${res.status} ${errorText}`);
+  }
   
   const collectionPath = docRef.path.split('/').slice(0, -1).join('/');
   notifyListeners(collectionPath);
@@ -151,11 +155,15 @@ export const setDoc = async (docRef: any, data: any, options: any = {}) => {
 };
 
 export const updateDoc = async (docRef: any, data: any) => {
-  await fetch(`${API_BASE}/doc/${docRef.path}`, {
+  const res = await fetch(`${API_BASE}/doc/${docRef.path}`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ data })
   });
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Failed to update document: ${res.status} ${errorText}`);
+  }
   
   const collectionPath = docRef.path.split('/').slice(0, -1).join('/');
   notifyListeners(collectionPath);
@@ -170,9 +178,13 @@ export const addDoc = async (colRef: any, data: any) => {
 };
 
 export const deleteDoc = async (docRef: any) => {
-  await fetch(`${API_BASE}/doc/${docRef.path}`, {
+  const res = await fetch(`${API_BASE}/doc/${docRef.path}`, {
     method: "DELETE"
   });
+  if (!res.ok) {
+    const errorText = await res.text();
+    throw new Error(`Failed to delete document: ${res.status} ${errorText}`);
+  }
   const collectionPath = docRef.path.split('/').slice(0, -1).join('/');
   notifyListeners(collectionPath);
   notifyListeners(docRef.path);
