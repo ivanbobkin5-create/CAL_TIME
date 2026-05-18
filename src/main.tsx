@@ -5,6 +5,13 @@ import './index.css';
 // @ts-ignore
 import { registerSW } from 'virtual:pwa-register';
 
+window.addEventListener("unhandledrejection", (event) => {
+  const reasonString = String(event.reason);
+  if (reasonString.includes("WebSocket closed without opened.")) {
+    event.preventDefault();
+  }
+});
+
 const appVersion = "1.0.1";
 console.log("App version: ", appVersion);
 

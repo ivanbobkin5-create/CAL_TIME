@@ -13313,18 +13313,6 @@ export default function App() {
     });
   };
 
-  useEffect(() => {
-    const handler = (event: PromiseRejectionEvent) => {
-      // Ignore known benign Vite HMR WebSocket errors in dev environment
-      const reasonString = String(event.reason);
-      if (reasonString.includes("WebSocket closed without opened.")) {
-        event.preventDefault();
-      }
-    };
-    window.addEventListener("unhandledrejection", handler);
-    return () => window.removeEventListener("unhandledrejection", handler);
-  }, []);
-
   const [companyData, setCompanyData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isAppAdmin, setIsAppAdmin] = useState(false);
@@ -14578,6 +14566,16 @@ export default function App() {
       );
     }
   };
+
+  // Auto-save logic for production config
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (activeTab === "production") {
+        saveProductionConfig();
+      }
+    }, 3000); // 3 sec debounce                
+    return () => clearTimeout(timer);
+  }, [ownProductionConfig, activeTab]);
 
   // Auto-save logic for calculator
   useEffect(() => {
