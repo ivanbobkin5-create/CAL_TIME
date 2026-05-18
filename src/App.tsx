@@ -33,6 +33,8 @@ import {
   RegistrationData,
 } from "./components/Auth/RegistrationForm";
 import { LoginForm } from "./components/Auth/LoginForm";
+import { AdminLoginForm } from "./components/Admin/AdminLoginForm";
+import { AdminProductsApprovalView } from "./components/Admin/AdminProductsApprovalView";
 import { AdminSettingsView } from "./components/Admin/AdminSettingsView";
 import { AppAdminView } from "./components/Admin/AppAdminView";
 import { LandingPage } from "./components/Landing/LandingPage";
@@ -13329,6 +13331,8 @@ export default function App() {
   const [isLoading, setIsLoading] = useState(true);
   const [isAppAdmin, setIsAppAdmin] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
 
   const [productionFormat, setProductionFormat] =
@@ -15951,10 +15955,24 @@ export default function App() {
   if (!isAuthenticated) {
     if (authMode === "landing") {
       return (
-        <LandingPage
-          onLogin={() => setAuthMode("login")}
-          onRegister={() => setAuthMode("register")}
-        />
+        <>
+          <LandingPage
+            onLogin={() => setAuthMode("login")}
+            onRegister={() => setAuthMode("register")}
+          />
+          <button onClick={() => setShowAdminLogin(true)} className="fixed px-2 py-1 text-xs text-gray-500 bg-white rounded bottom-4 right-4 shadow-sm border border-gray-200">Админ</button>
+
+          {showAdminLogin && !isAdminAuthenticated && (
+            <AdminLoginForm onLogin={(pass) => {
+              if (pass === "Admin123!") { 
+                setIsAdminAuthenticated(true);
+                setShowAdminLogin(false);
+              }
+            }} />
+          )}
+
+          {isAdminAuthenticated && <AdminProductsApprovalView />}
+        </>
       );
     }
     return (
@@ -16351,45 +16369,6 @@ export default function App() {
                 </div>
               </div>
             </nav>
-
-            <div className="mt-auto border-t border-gray-100/50 bg-gray-50/10">
-              {isSidebarOpen ? (
-                <div className="px-5 py-3 flex items-center justify-between gap-3 group/cloud">
-                   <div className="flex flex-col min-w-0">
-                      <div className="flex items-center gap-1.5 leading-none mb-0.5">
-                         {isSyncing ? (
-                           <div className="animate-spin rounded-full h-2 w-2 border-b-2 border-blue-600"></div>
-                         ) : quotaExceeded ? (
-                           <AlertTriangle className="w-2.5 h-2.5 text-red-500" />
-                         ) : (
-                           <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]"></div>
-                         )}
-                         <span className={cn(
-                           "text-[9px] font-black uppercase tracking-tighter",
-                           quotaExceeded ? "text-red-600" : isSyncing ? "text-blue-500" : "text-gray-400"
-                         )}>
-                           {quotaExceeded ? "Квота превышена" : isSyncing ? "Синхр." : "Облако активно"}
-                         </span>
-                      </div>
-                      <span className="text-[8px] text-gray-400 font-bold">
-                         {lastSyncedAt ? `Обн. ${lastSyncedAt.toLocaleTimeString()}` : "Сохранено"}
-                      </span>
-                   </div>
-                   <Cloud className={cn(
-                     "w-4 h-4",
-                     isSyncing ? "text-blue-500 animate-pulse" : "text-gray-300 group-hover/cloud:text-blue-400 transition-colors"
-                   )} />
-                </div>
-              ) : (
-                <div className="py-4 flex justify-center">
-                   <div className={cn(
-                     "w-1.5 h-1.5 rounded-full",
-                     isSyncing ? "bg-blue-500 animate-pulse" : "bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.4)]"
-                   )} />
-                </div>
-              )}
-            </div>
-
             <div className="px-3 pb-3 pt-2 bg-gray-50/50 space-y-1">
               {isSidebarOpen && (
                 <div className="mb-2 px-3">
@@ -17002,6 +16981,10 @@ export default function App() {
             />
           ) : null}
         </main>
+        
+        <div className="fixed bottom-0 left-0 right-0 p-1 bg-white border-t border-gray-200 text-[10px] text-gray-400 flex items-center justify-center gap-2 z-50">
+           {isSyncing ? "Синхронизация..." : "Облако активно"}
+        </div>
 
         {/* Custom Modal */}
         {isCheckoutModalOpen && (

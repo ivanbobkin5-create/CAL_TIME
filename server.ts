@@ -163,6 +163,42 @@ async function startServer() {
     }
   });
 
+  // --- Продукты (DbProduct) ---
+  app.get("/api/products", async (req, res) => {
+    try {
+      const products = await prisma.dbProduct.findMany();
+      res.json(products);
+    } catch (e) {
+      res.status(500).json({ error: "Failed to fetch products" });
+    }
+  });
+
+  app.post("/api/products", async (req, res) => {
+    try {
+      const { name, description, price, ownerCompanyId } = req.body;
+      const product = await prisma.dbProduct.create({
+        data: { name, description, price, ownerCompanyId, status: "PENDING" }
+      });
+      res.json(product);
+    } catch (e) {
+      res.status(500).json({ error: "Failed to create product" });
+    }
+  });
+
+  app.patch("/api/products/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status, name, description, price } = req.body;
+      const product = await prisma.dbProduct.update({
+        where: { id },
+        data: { status, name, description, price }
+      });
+      res.json(product);
+    } catch (e) {
+      res.status(500).json({ error: "Failed to update product" });
+    }
+  });
+
   // Vite middleware for development
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
