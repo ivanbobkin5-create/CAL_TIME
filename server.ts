@@ -173,11 +173,23 @@ async function startServer() {
     }
   });
 
+  app.get("/api/products/:id/history", async (req, res) => {
+    try {
+      const history = await prisma.priceHistory.findMany({
+        where: { productId: req.params.id },
+        orderBy: { createdAt: 'desc' }
+      });
+      res.json(history);
+    } catch (e) {
+      res.status(500).json({ error: "Failed to fetch price history" });
+    }
+  });
+
   app.post("/api/products", async (req, res) => {
     try {
-      const { name, description, price, ownerCompanyId } = req.body;
+      const { name, description, price, ownerCompanyId, photos } = req.body;
       const product = await prisma.dbProduct.create({
-        data: { name, description, price, ownerCompanyId, status: "PENDING" }
+        data: { name, description, price, ownerCompanyId, photos, status: "PENDING" }
       });
       res.json(product);
     } catch (e) {
@@ -188,11 +200,26 @@ async function startServer() {
   app.patch("/api/products/:id", async (req, res) => {
     try {
       const { id } = req.params;
-      const { status, name, description, price } = req.body;
+      const { status, name, description, price, photos, changedBy } = req.body;
+      
+      const oldProduct = await prisma.dbProduct.findUnique({ where: { id } });
+      
       const product = await prisma.dbProduct.update({
         where: { id },
-        data: { status, name, description, price }
+        data: { status, name, description, price, photos }
       });
+
+      if (price !== undefined && oldProduct?.price !== price) {
+        await prisma.priceHistory.create({
+          data: {
+            productId: id,
+            oldPrice: oldProduct?.price,
+            newPrice: price,
+            changedBy: changedBy || "admin"
+          }
+        });
+      }
+      
       res.json(product);
     } catch (e) {
       res.status(500).json({ error: "Failed to update product" });

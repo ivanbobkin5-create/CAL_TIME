@@ -31,8 +31,20 @@ model DbProduct {
   price       Float?
   status      String   @default("PENDING") // PENDING, APPROVED
   ownerCompanyId String
+  photos      Json? // Array of photo URLs
+  priceHistory PriceHistory[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model PriceHistory {
+  id        String   @id @default(uuid())
+  productId String
+  product   DbProduct @relation(fields: [productId], references: [id])
+  oldPrice  Float?
+  newPrice  Float
+  changedBy String   // email or uid
+  createdAt DateTime @default(now())
 }
 
 model AuthUser {
