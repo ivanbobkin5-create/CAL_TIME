@@ -2,19 +2,9 @@ import {StrictMode, Component, ErrorInfo, ReactNode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
-// @ts-ignore
-import { registerSW } from 'virtual:pwa-register';
 
 const appVersion = "1.0.1";
 console.log("App version: ", appVersion);
-
-// Регистрируем Service Worker для оффлайн работы
-const updateSW = registerSW({ 
-  immediate: true,
-  onNeedRefresh() {
-    updateSW(true);
-  }
-});
 
 class ErrorBoundary extends Component<{children: ReactNode}, {hasError: boolean, error: any}> {
   constructor(props: {children: ReactNode}) {
