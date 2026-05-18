@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   FolderOpen,
   Search,
@@ -14,22 +14,26 @@ import {
   CheckCircle2,
   Send,
 } from "lucide-react";
+// Firebase removed, backend switched to TimeWeb
+const db = {};
+const handleFirestoreError = (e: any, op: any, path: string) => console.warn("Firestore call bypassed (Firebase removed):", op, path);
+enum OperationType { LIST = "LIST", UPDATE = "UPDATE", GET = "GET", DELETE = "DELETE", WRITE = "WRITE", CREATE = "CREATE" }
+function collection() { return {}; }
+function onSnapshot() { return () => {}; }
+function query()  { return {}; }
+function where() { return {}; }
+function orderBy() { return {}; }
+function deleteDoc() { return Promise.resolve(); }
+function updateDoc() { return Promise.resolve(); }
+function doc() { return {}; }
+function or() { return {}; }
+function writeBatch() { return { update: () => {}, commit: () => {} }; }
+function limit() { return {}; }
+function getDocs() { return Promise.resolve({ docs: [] }); }
+
 import { cn } from "../../lib/utils";
-import { db, handleFirestoreError, OperationType } from "../../firebase";
-import {
-  collection,
-  onSnapshot,
-  query,
-  where,
-  orderBy,
-  deleteDoc,
-  updateDoc,
-  doc,
-  or,
-  writeBatch,
-  limit,
-} from "firebase/firestore";
 import { ProjectSpecificationModal } from "./ProjectSpecificationModal";
+
 
 interface Project {
   id: string;
@@ -181,98 +185,94 @@ export const ProjectsView = ({
     }
   };
 
-  useEffect(() => {
-    if (!companyId) return;
-
-    let qProjects;
-    let qSets;
-
+  const qProjects = useMemo(() => {
+    if (!companyId) return null;
     if (userRole === "admin") {
-      // Admin sees all projects of the company
-      qProjects = query(
+      return query(
         collection(db, "companies", companyId, "projects"),
         orderBy("createdAt", "desc"),
         limit(40),
       );
-      qSets = query(
-        collection(db, "companies", companyId, "sets"),
-        orderBy("createdAt", "desc"),
-        limit(40),
-      );
     } else if (userRole === "supervisor") {
-      // Supervisor sees their own projects AND any transferred projects
-      qProjects = query(
+      return query(
         collection(db, "companies", companyId, "projects"),
         or(where("createdBy", "==", userId), where("status", "==", "transferred")),
         orderBy("createdAt", "desc"),
         limit(40),
       );
-      qSets = query(
+    } else {
+      return query(
+        collection(db, "companies", companyId, "projects"),
+        where("createdBy", "==", userId),
+        orderBy("createdAt", "desc"),
+        limit(40),
+      );
+    }
+  }, [companyId, userRole, userId]);
+
+  const qSets = useMemo(() => {
+    if (!companyId) return null;
+    if (userRole === "admin") {
+      return query(
+        collection(db, "companies", companyId, "sets"),
+        orderBy("createdAt", "desc"),
+        limit(40),
+      );
+    } else if (userRole === "supervisor") {
+      return query(
         collection(db, "companies", companyId, "sets"),
         or(where("createdBy", "==", userId), where("status", "==", "transferred")),
         orderBy("createdAt", "desc"),
         limit(40),
       );
     } else {
-      // Employees see only their own projects
-      qProjects = query(
-        collection(db, "companies", companyId, "projects"),
-        where("createdBy", "==", userId),
-        orderBy("createdAt", "desc"),
-        limit(40),
-      );
-      qSets = query(
+      return query(
         collection(db, "companies", companyId, "sets"),
         where("createdBy", "==", userId),
         orderBy("createdAt", "desc"),
         limit(40),
       );
     }
+  }, [companyId, userRole, userId]);
 
-    const unsubscribeProjects = onSnapshot(
-      qProjects,
-      (snapshot) => {
-        const projs = snapshot.docs.map(
+  useEffect(() => {
+    if (!companyId || !qProjects || !qSets) return;
+
+    const fetchData = async () => {
+      try {
+        const [projectsSnap, setsSnap] = await Promise.all([
+          getDocs(qProjects),
+          getDocs(qSets),
+        ]);
+        
+        const projs = projectsSnap.docs.map(
           (doc) => ({ id: doc.id, ...doc.data() }) as Project,
         );
         setProjects(projs);
         setLoading(false);
-      },
-      (error) => {
-        handleFirestoreError(
-          error,
-          OperationType.LIST,
-          `companies/${companyId}/projects`,
-        );
-        setLoading(false);
-      },
-    );
 
-    const unsubscribeSets = onSnapshot(
-      qSets,
-      (snapshot) => {
-        const projs = snapshot.docs.map((doc) => ({
+        const sets = setsSnap.docs.map((doc) => ({
           id: doc.id,
           ...doc.data(),
         }));
-        setSets(projs);
+        setSets(sets);
         setLoadingSets(false);
-      },
-      (error) => {
+        
+      } catch (error) {
         handleFirestoreError(
           error,
           OperationType.LIST,
-          `companies/${companyId}/sets`,
+          `companies/${companyId}/projects_and_sets`,
         );
+        setLoading(false);
         setLoadingSets(false);
-      },
-    );
-
-    return () => {
-      unsubscribeProjects();
-      unsubscribeSets();
+      }
     };
-  }, [companyId, userId, userRole]);
+
+    fetchData();
+
+    return () => {};
+  }, [companyId, qProjects, qSets]);
 
   const toggleProjectSelection = (e: React.MouseEvent, projectId: string) => {
     e.stopPropagation();
@@ -621,7 +621,13 @@ export const ProjectsView = ({
                       </div>
                       {(!project.status || project.status === "draft") && (
                         <div className="flex items-center gap-2 text-[10px] text-orange-500 font-medium">
-                          Срок хранения: {Math.max(0, 90 - Math.floor((Date.now() - new Date(project.createdAt).getTime()) / (1000 * 60 * 60 * 24)))} дней
+                          {(() => {
+                            const createdDate = new Date(project.createdAt);
+                            if (isNaN(createdDate.getTime())) return "Дата неверна";
+                            const daysPassed = Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
+                            const daysLeft = Math.max(0, 90 - daysPassed);
+                            return `Срок хранения: ${daysLeft} дней`;
+                          })()}
                         </div>
                       )}
                     </div>

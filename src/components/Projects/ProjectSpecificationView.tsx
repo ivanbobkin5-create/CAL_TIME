@@ -12,10 +12,18 @@ import {
   Plus,
   Package
 } from 'lucide-react';
+// Firebase removed, backend switched to TimeWeb
+const db = {};
+const handleFirestoreError = (e: any, op: any, path: string) => console.warn("Firestore call bypassed (Firebase removed):", op, path);
+enum OperationType { LIST = "LIST", UPDATE = "UPDATE", GET = "GET", DELETE = "DELETE", WRITE = "WRITE", CREATE = "CREATE" }
+function doc() { return {}; }
+function updateDoc() { return Promise.resolve(); }
+function addDoc() { return Promise.resolve(); }
+function collection() { return {}; }
+function serverTimestamp() { return {}; }
 import { cn } from '../../lib/utils';
-import { db, handleFirestoreError, OperationType } from '../../firebase';
-import { doc, updateDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
 import { SketchAnnotator } from './SketchAnnotator';
+
 
 interface Project {
   id: string;

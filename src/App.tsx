@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import * as ReactDOM from "react-dom";
 import { formatPhoneNumber } from "./lib/utils";
@@ -102,25 +102,6 @@ import {
   Layers,
   Target,
 } from "lucide-react";
-import { auth, db, handleFirestoreError, OperationType } from "./firebase";
-import {
-  onAuthStateChanged,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  signOut,
-} from "firebase/auth";
-import {
-  doc,
-  getDoc,
-  setDoc,
-  collection,
-  onSnapshot,
-  query,
-  where,
-  getDocFromServer,
-  deleteDoc,
-  writeBatch,
-} from "firebase/firestore";
 import {
   LDSP_DATABASE,
   NORDECO_EDGE_MAPPING,
@@ -6859,7 +6840,11 @@ const SummaryView = ({
   }
 
   const materialsSubtotalValue = summaryRows
-    .filter((r) => ["material", "edge", "hardware"].includes(r.type))
+    .filter((r) => ["material", "edge"].includes(r.type))
+    .reduce((sum, r) => sum + r.total, 0);
+
+  const hardwareSubtotalValue = summaryRows
+    .filter((r) => r.type === "hardware")
     .reduce((sum, r) => sum + r.total, 0);
 
   // Function to determine if an item is present in the summary rows
@@ -7391,6 +7376,20 @@ const SummaryView = ({
               <td className="px-6 py-3 text-right">
                 <span className="text-lg font-black text-blue-600">
                   {materialsSubtotalValue.toLocaleString()} ₽
+                </span>
+              </td>
+            </tr>
+
+            {/* Итого по фурнитуре */}
+            <tr className="bg-blue-50/20 border-t border-gray-200">
+              <td colSpan={4} className="px-6 py-3 text-right">
+                <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">
+                  Итого по фурнитуре:
+                </span>
+              </td>
+              <td className="px-6 py-3 text-right">
+                <span className="text-lg font-black text-blue-600">
+                  {hardwareSubtotalValue.toLocaleString()} ₽
                 </span>
               </td>
             </tr>
@@ -10921,8 +10920,12 @@ const ProductsView = ({
     useState<any>(null);
   const [activeProductsView, setActiveProductsView] = useState<'catalog' | 'moderation'>('catalog');
 
-  const handleCreateProduct = () => {
-    if (!newProduct.name || newProduct.purchasePrice < 0) return;
+  const handleCreateProduct = async () => {
+    console.log("handleCreateProduct called, newProduct:", newProduct);
+    if (!newProduct.name || newProduct.purchasePrice < 0) {
+      console.log("Validation failed: name:", newProduct.name, "purchasePrice:", newProduct.purchasePrice);
+      return;
+    }
     const coeff = coefficients.products?.[newProduct.category] || 1.5;
     const finalPrice = newProduct.purchasePrice * coeff;
 
@@ -10936,8 +10939,15 @@ const ProductsView = ({
       updatedAt: new Date().toISOString(),
     };
 
-    onSaveProduct(product);
-    resetForm();
+    try {
+      console.log("Saving product:", product);
+      await onSaveProduct(product);
+      console.log("Product saved, resetting form");
+      resetForm();
+    } catch (e) {
+      console.error("Failed to save product", e);
+      alert("Ошибка при сохранении товара: " + (e instanceof Error ? e.message : "Неизвестная ошибка"));
+    }
   };
 
   const resetForm = () => {
@@ -11272,22 +11282,22 @@ const ProductsView = ({
             Управление фурнитурой и аксессуарами
           </p>
         </div>
-        <div className="flex flex-col sm:flex-row w-full md:w-auto gap-3">
+        <div className="flex flex-row items-center w-full gap-2 md:gap-3 flex-nowrap">
           {(userRole === 'admin' || userRole === 'manager') && (
-            <div className="flex bg-gray-100 p-1 rounded-xl items-center mr-2 shadow-inner">
+            <div className="flex bg-gray-100 p-1 rounded-xl items-center mr-2 shadow-inner flex-shrink-0">
                <button 
                  onClick={() => setActiveProductsView('catalog')}
                  className={cn(
-                   "px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all",
+                   "h-8 px-4 rounded-lg text-xs font-black uppercase tracking-widest transition-all flex items-center",
                    activeProductsView === 'catalog' ? "bg-white text-blue-600 shadow-sm" : "text-gray-400 font-bold"
                  )}
                >
-                 Весь каталог
+                 Каталог
                </button>
                <button 
                  onClick={() => setActiveProductsView('moderation')}
                  className={cn(
-                   "px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                   "h-8 px-4 rounded-lg text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2",
                    activeProductsView === 'moderation' ? "bg-white text-orange-600 shadow-sm" : "text-gray-400 font-bold"
                  )}
                >
@@ -11302,12 +11312,12 @@ const ProductsView = ({
           )}
           <button
             onClick={() => setShowChecklistWindow(true)}
-            className="flex items-center justify-center gap-2 px-6 h-10 bg-indigo-50 text-indigo-700 font-bold rounded-xl hover:bg-indigo-100 transition-all border border-indigo-100 shadow-sm"
+            className="flex items-center justify-center gap-2 px-6 h-10 bg-indigo-50 text-indigo-700 font-bold rounded-xl hover:bg-indigo-100 transition-all border border-indigo-100 shadow-sm flex-shrink-0"
           >
             <ShieldCheck className="w-5 h-5" />
             Чек-лист
           </button>
-          <div className="relative w-full md:w-80">
+          <div className="relative w-full md:w-80 flex-shrink-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
             <input
               type="text"
@@ -11319,7 +11329,7 @@ const ProductsView = ({
           </div>
           <button
             onClick={() => setIsAddingProduct(true)}
-            className="flex items-center justify-center gap-2 px-6 h-10 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-md shadow-blue-100"
+            className="flex items-center justify-center gap-2 px-6 h-10 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-md shadow-blue-100 flex-shrink-0"
           >
             <Plus className="w-5 h-5" />
             Добавить товар
@@ -13420,106 +13430,8 @@ export default function App() {
 
   // Firebase Auth Listener
   useEffect(() => {
-    let unsubscribeUser: (() => void) | null = null;
-    let unsubscribeCompany: (() => void) | null = null;
-
-    const unsubscribeAuth = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        const superAdminEmails = [
-          "ivanbobkin5@gmail.com",
-          "lk.ivanbobkin@gmail.com",
-        ];
-        const isSuper = superAdminEmails.includes(user.email || "");
-        setIsAppAdmin(isSuper);
-        
-        // As a super admin you can also be an employee for a specific company
-        // If a user doc is found, we will still extract the company.
-        
-        // Listen to user document
-        unsubscribeUser = onSnapshot(
-          doc(db, "users", user.uid),
-          async (userDoc) => {
-            if (userDoc.exists()) {
-              const uData = userDoc.data();
-              setUserData({ uid: user.uid, ...uData });
-              setUserRole(uData.role);
-
-              if (uData.isBlocked) {
-                setIsBlocked(true);
-                setIsAuthenticated(false);
-                setIsLoading(false);
-                return;
-              }
-
-              // Listen to company document
-              if (uData.companyId && uData.companyId !== "system") {
-                if (unsubscribeCompany) unsubscribeCompany();
-                unsubscribeCompany = onSnapshot(
-                  doc(db, "companies", uData.companyId),
-                  (companyDoc) => {
-                    if (companyDoc.exists()) {
-                      const cData = companyDoc.data();
-                      setCompanyData({ id: companyDoc.id, ...cData });
-
-                      if (cData.isBlocked) {
-                        setIsBlocked(true);
-                        setIsAuthenticated(false);
-                      } else {
-                        setIsBlocked(false);
-                        setIsAuthenticated(true);
-                      }
-
-                      if (cData.productionFormat) {
-                        setProductionFormat(cData.productionFormat);
-                      }
-                    } else if (isSuper) {
-                      setShowAdminPanel(true);
-                      setIsAuthenticated(true);
-                    }
-                    setIsLoading(false);
-                  },
-                  (error) => {
-                    console.error("Company snapshot error:", error);
-                    setIsLoading(false);
-                  },
-                );
-              } else if (isSuper) {
-                setShowAdminPanel(true);
-                setIsAuthenticated(true);
-                setIsLoading(false);
-              }
-            } else if (isSuper) {
-              // Super admin might not have a user doc yet, let them view the admin panel by default
-              setIsAppAdmin(true);
-              setShowAdminPanel(true);
-              setIsAuthenticated(true);
-              setIsLoading(false);
-            } else {
-              setIsLoading(false);
-            }
-          },
-          (error) => {
-            console.error("User snapshot error:", error);
-            setIsLoading(false);
-          },
-        );
-      } else {
-        if (unsubscribeUser) unsubscribeUser();
-        if (unsubscribeCompany) unsubscribeCompany();
-        setIsAuthenticated(false);
-        setIsAppAdmin(false);
-        setIsBlocked(false);
-        setUserRole(null);
-        setCompanyData(null);
-        setIsLoading(false);
-      }
-    });
-
-    return () => {
-      unsubscribeAuth();
-      if (unsubscribeUser) unsubscribeUser();
-      if (unsubscribeCompany) unsubscribeCompany();
-    };
+    // Auth and Firestore functionality removed as per user request to move all backend logic to TimesWeb.
+    setIsLoading(false);
   }, []);
 
   const handleLogin = async (data: any) => {
@@ -14113,8 +14025,8 @@ export default function App() {
       collection(db, "companies", companyId, "products"),
       (snapshot) => {
         const products = snapshot.docs.map((doc) => ({
+          id: doc.id,
           ...doc.data(),
-          source: "own",
         }));
         console.log("Loaded own products:", products);
         setOwnProducts(products);
@@ -14127,85 +14039,62 @@ export default function App() {
         ),
     );
 
-    // Sync Manufacturer Products if in contract mode
-    let manufacturerProductsUnsubscribe = () => {};
-    if (productionFormat === "contract" && companyData.manufacturerId) {
-      manufacturerProductsUnsubscribe = onSnapshot(
-        collection(db, "companies", companyData.manufacturerId, "products"),
+    // Sync Categories
+    const categoriesUnsubscribe = onSnapshot(
+        doc(db, "companies", companyId, "settings", "categories"),
         (snapshot) => {
-          const products = snapshot.docs.map((doc) => ({
-            ...doc.data(),
-            source: "manufacturer",
-          }));
-          console.log("Loaded manufacturer products:", products);
-          setManufacturerProducts(products);
-        },
-        (error) => {
-          // It's okay if we can't read it yet or if it doesn't exist
-          console.warn("Could not load manufacturer products:", error);
-          setManufacturerProducts([]);
-        },
-      );
-    } else {
-      setManufacturerProducts([]);
-    }
-
-    // Sync Categories & Coefficients
-    const settingsUnsubscribe = onSnapshot(
-      doc(db, "companies", companyId, "settings", "categories"),
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          let cats = data.categories || INITIAL_PRODUCT_CATEGORIES;
-
-          // Ensure new system categories are present even for old users
-          const mandatoryCategories = ["Кухонные модули", "Освещение"];
-          let hasNew = false;
-          mandatoryCategories.forEach((mc) => {
-            if (!cats.includes(mc)) {
-              cats = [...cats, mc];
-              hasNew = true;
-            }
-          });
-
-          setProductCategories(cats);
-          setCoefficients((prev) => ({
-            ...prev,
-            products: data.coefficients || {},
-          }));
-
-          // Auto-save if we added mandatory categories
-          if (hasNew && userRole === "admin") {
-            setDoc(
-              doc(db, "companies", companyId, "settings", "categories"),
-              {
-                categories: cats,
-                coefficients: data.coefficients || {},
-              },
-              { merge: true },
-            );
-          }
-        } else {
-          // If no settings exist, initialize with defaults
-          setProductCategories(INITIAL_PRODUCT_CATEGORIES);
-          if (userRole === "admin") {
-            setDoc(doc(db, "companies", companyId, "settings", "categories"), {
-              categories: INITIAL_PRODUCT_CATEGORIES,
-              coefficients: INITIAL_PRODUCT_CATEGORIES.reduce(
-                (acc, cat) => ({ ...acc, [cat]: 1.5 }),
-                {},
-              ),
+          if (snapshot.exists()) {
+            const data = snapshot.data();
+            let cats = data.categories || INITIAL_PRODUCT_CATEGORIES;
+  
+            // Ensure new system categories are present even for old users
+            const mandatoryCategories = ["Кухонные модули", "Освещение"];
+            let hasNew = false;
+            mandatoryCategories.forEach((mc) => {
+              if (!cats.includes(mc)) {
+                cats = [...cats, mc];
+                hasNew = true;
+              }
             });
+  
+            setProductCategories(cats);
+            setCoefficients((prev) => ({
+              ...prev,
+              products: data.coefficients || {},
+            }));
+  
+            // Auto-save if we added mandatory categories
+            if (hasNew && userRole === "admin") {
+              setDoc(
+                doc(db, "companies", companyId, "settings", "categories"),
+                {
+                  categories: cats,
+                  coefficients: data.coefficients || {},
+                },
+                { merge: true },
+              );
+            }
+          } else {
+            // If no settings exist, initialize with defaults
+            setProductCategories(INITIAL_PRODUCT_CATEGORIES);
+            if (userRole === "admin") {
+              setDoc(doc(db, "companies", companyId, "settings", "categories"), {
+                categories: INITIAL_PRODUCT_CATEGORIES,
+                coefficients: INITIAL_PRODUCT_CATEGORIES.reduce(
+                  (acc, cat) => ({ ...acc, [cat]: 1.5 }),
+                  {},
+                ),
+              });
+            }
           }
-        }
-      },
-      (error) =>
-        handleFirestoreError(
-          error,
-          OperationType.GET,
-          `companies/${companyId}/settings/categories`,
-        ),
-    );
+        },
+        (error) =>
+          handleFirestoreError(
+            error,
+            OperationType.GET,
+            `companies/${companyId}/settings/categories`,
+          ),
+      );
 
     // Sync Production Config
     const productionUnsubscribe = onSnapshot(
@@ -14568,14 +14457,23 @@ export default function App() {
   };
 
   // Auto-save logic for production config
+  const lastSavedConfig = useRef<any>(null);
   useEffect(() => {
-    const timer = setTimeout(() => {
-      if (activeTab === "production") {
-        saveProductionConfig(ownProductionConfig);
+    if (!ownProductionConfig || !companyData?.id) return;
+    
+    // Only save if config changed
+    if (JSON.stringify(lastSavedConfig.current) === JSON.stringify(ownProductionConfig)) return;
+
+    const timer = setTimeout(async () => {
+      try {
+        lastSavedConfig.current = ownProductionConfig;
+        await saveProductionConfig(ownProductionConfig, true);
+      } catch (e) {
+        console.error("Auto-save production failed", e);
       }
-    }, 3000); // 3 sec debounce                
+    }, 15000); // 15 sec debounce
     return () => clearTimeout(timer);
-  }, [ownProductionConfig, activeTab]);
+  }, [ownProductionConfig, companyData?.id]);
 
   // Auto-save logic for calculator
   useEffect(() => {
@@ -14615,64 +14513,101 @@ export default function App() {
     currentProjectName,
   ]);
 
-  const finalizeSet = async (setData: any, optionalProjectsList?: any[]) => {
+  const finalizeSet = async (
+    setData: any,
+    optionalProjectsList?: any[],
+    isFinal: boolean = true,
+  ) => {
+    console.log("DEBUG: finalizeSet called with:", setData);
     if (!companyData?.id || !userData?.uid) return;
     try {
       const activeProjects = optionalProjectsList || selectedProjectsForCheckout;
-      const setId = setData.id || `set-${Date.now()}`;
+      const isSingleProject = activeProjects.length === 1 && !setData.id; // Heuristic? Or should I pass a flag?
+      // Let's pass isSingleProject explicitly in the future, for now let's enhance it.
+      
       const batch = writeBatch(db);
-      const setDocRef = doc(db, "companies", companyData.id, "sets", setId);
 
-      // Verify all projects have data before saving
-      for (const p of activeProjects) {
-        if (!p.data || !p.id) {
-          throw new Error(
-            `Данные проекта ${p.name || p.id} повреждены или отсутствуют`,
-          );
-        }
+      // Check if it's a single project and it's not a set record yet
+      if (activeProjects.length === 1 && !setData.id) {
+          // Update single project directly
+          const p = activeProjects[0];
+          const projectDocRef = doc(db, "companies", companyData.id, "projects", p.id);
+          
+          batch.update(projectDocRef, {
+              contractNumber: setData.contractNumber,
+              contractDate: setData.contractDate,
+              leadTimeDays: setData.leadTimeDays,
+              readyDate: setData.readyDate,
+              sketches: setData.sketches,
+              status: isFinal ? "sent" : "draft",
+          }, { merge: true });
+          
+          await batch.commit();
+      } else {
+          // Normal set logic
+          const setId = setData.id || `set-${Date.now()}`;
+          const setDocRef = doc(db, "companies", companyData.id, "sets", setId);
+
+          // Verify all projects have data before saving
+          for (const p of activeProjects) {
+            if (!p.data || !p.id) {
+              throw new Error(
+                `Данные проекта ${p.name || p.id} повреждены или отсутствуют`,
+              );
+            }
+          }
+
+          const setRecord: FurnitureSet = {
+            id: setId,
+            name: setData.contractNumber
+              ? `Заказ №${setData.contractNumber}`
+              : "Новый комплект",
+            contractNumber: setData.contractNumber,
+            contractDate: setData.contractDate,
+            leadTimeDays: setData.leadTimeDays,
+            readyDate: setData.readyDate,
+            productionCycle: setData.productionCycle,
+            projectIds: setData.projectIds,
+            totalPrice: setData.totalPrice,
+            clientName: setData.summary.clientName || "",
+            sketches: setData.sketches || [],
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+
+          batch.set(setDocRef, setRecord);
+
+          // Update individual projects status
+          for (const pId of setData.projectIds) {
+            const projectDocRef = doc(db, "companies", companyData.id, "projects", pId);
+            const statusUpdate: any = {
+                setId: setId,
+            };
+            if (isFinal) {
+                statusUpdate.status = "sent";
+            }
+            batch.update(projectDocRef, statusUpdate, { merge: true });
+          }
+
+          await batch.commit();
+
+          // Update local state to keep it in sync
+          if (!isFinal) {
+            setEditingSet(setRecord);
+          }
       }
-
-      const setRecord: FurnitureSet = {
-        id: setId,
-        name: setData.contractNumber
-          ? `Заказ №${setData.contractNumber}`
-          : "Новый комплект",
-        contractNumber: setData.contractNumber,
-        contractDate: setData.contractDate,
-        leadTimeDays: setData.leadTimeDays,
-        readyDate: setData.readyDate,
-        productionCycle: setData.productionCycle,
-        projectIds: setData.projectIds,
-        totalPrice: setData.totalPrice,
-        clientName: setData.summary.clientName || "",
-        sketches: setData.sketches || [],
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      batch.set(setDocRef, setRecord);
-
-      // Update individual projects status
-      for (const pId of setData.projectIds) {
-        batch.set(
-          doc(db, "companies", companyData.id, "projects", pId),
-          {
-            status: "sent",
-            setId: setId,
-          },
-          { merge: true },
-        );
-      }
-
-      await batch.commit();
-
+      
       setIsCheckoutModalOpen(false);
-      setPrintSetData({ projects: activeProjects, data: setData });
+      
+      if (!isFinal) {
+          setPrintSetData(null);
+          showAlert("Сохранено", "Комплект сохранен как черновик");
+      } else {
+          setPrintSetData({ projects: activeProjects, data: setData }); 
+          showAlert("Успех", "Спецификация заказа успешно создана и сохранена");
+          setActiveTab("projects");
+      }
       setSelectedProjectsForCheckout([]);
-      showAlert("Успех", "Спецификация заказа успешно создана и сохранена");
-
-      // Refresh to projects tab
-      setActiveTab("projects");
     } catch (error) {
       handleFirestoreError(
         error,
@@ -14733,10 +14668,15 @@ export default function App() {
   };
 
   const saveProduct = async (product: any) => {
-    if (!companyData?.id || !userData?.uid) return;
+    console.log("saveProduct called, companyData?.id:", companyData?.id, "userData?.uid:", userData?.uid, "product:", product);
+    if (!companyData?.id || !userData?.uid) {
+      console.log("saveProduct failed: missing companyData or userData");
+      return;
+    }
     try {
       const isNew = !product.id;
       const pId = product.id || Math.random().toString(36).substr(2, 9);
+      console.log("Saving product, pId:", pId, "isNew:", isNew);
       
       const finalProduct = {
         ...product,
@@ -14749,10 +14689,12 @@ export default function App() {
         finalProduct.addedBy = userData.uid;
       }
 
+      console.log("Final product to save:", finalProduct);
       await setDoc(
         doc(db, "companies", companyData.id, "products", pId),
         finalProduct,
       );
+      console.log("setDoc completed successfully");
 
       if (isNew && finalProduct.status === 'pending') {
         showAlert("На проверке", "Товар отправлен на модерацию администратору");
@@ -14760,6 +14702,7 @@ export default function App() {
         showAlert("Успех", "Товар сохранен в каталоге");
       }
     } catch (error) {
+      console.error("Error in saveProduct:", error);
       handleFirestoreError(
         error,
         OperationType.WRITE,
@@ -14871,7 +14814,7 @@ export default function App() {
     );
   };
 
-  const saveProductionConfig = async (configToSave?: any) => {
+  const saveProductionConfig = async (configToSave?: any, silent: boolean = false) => {
     if (!companyData?.id) return;
     try {
       const isOwn =
@@ -14894,7 +14837,9 @@ export default function App() {
         { merge: true },
       );
 
-      showAlert("Успех", "Настройки производства сохранены");
+      if (!silent) {
+        showAlert("Успех", "Настройки производства сохранены");
+      }
     } catch (error) {
       handleFirestoreError(
         error,
@@ -16366,41 +16311,7 @@ export default function App() {
               </div>
             </nav>
             <div className="px-3 pb-3 pt-2 bg-gray-50/50 space-y-1">
-              {isSidebarOpen && (
-                <div className="mb-2 px-3">
-                   <div className="flex flex-col gap-1.5 p-2 bg-white rounded-lg border border-gray-100 shadow-sm">
-                      <div className="flex items-center justify-between">
-                         <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none">
-                            Облако
-                         </span>
-                         {isSyncing ? (
-                           <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-600"></div>
-                         ) : quotaExceeded ? (
-                           <AlertTriangle className="w-3 h-3 text-red-500" />
-                         ) : (
-                           <CheckCircle2 className="w-3 h-3 text-green-500" />
-                         )}
-                      </div>
-                      
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex flex-col min-w-0">
-                          <span className={cn(
-                            "text-[10px] font-bold truncate",
-                            quotaExceeded ? "text-red-600" : isSyncing ? "text-blue-500" : "text-gray-700"
-                          )}>
-                            {quotaExceeded ? "Квота превышена" : isSyncing ? "Сохранение..." : "Автосохранение"}
-                          </span>
-                          <span className="text-[8px] text-gray-400">
-                             {lastSyncedAt ? `Обновлено: ${lastSyncedAt.toLocaleTimeString()}` : "Сохранено на сервере"}
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-1">
-                             <Cloud className="w-4 h-4 text-blue-500" />
-                        </div>
-                      </div>
-                   </div>
-                </div>
-              )}
+
               {isSidebarOpen && (
                 <div className="mb-2">
                   <div className="flex flex-col px-3 gap-0.5">
@@ -16709,7 +16620,13 @@ export default function App() {
                   activeProject.id = projId; // Update id
                   await saveProject(currentProjectName || "Новый проект", true);
                   // Then finalize checkout
-                  await finalizeSet({ ...setData, projectIds: [projId] }, [activeProject]);
+                  await finalizeSet({ ...setData, projectIds: [projId] }, [activeProject], true);
+                }}
+                onSaveDraft={async (setData) => {
+                  const projId = currentProjectId || Date.now().toString();
+                  activeProject.id = projId;
+                  await saveProject(currentProjectName || "Новый проект", true);
+                  await finalizeSet({ ...setData, id: editingSet?.id, projectIds: [projId] }, [activeProject], false);
                 }}
                 productionCycle={ownProductionConfig.productionCycle || "working"}
               />
@@ -16979,7 +16896,6 @@ export default function App() {
         </main>
         
         <div className="fixed bottom-0 left-0 right-0 p-1 bg-white border-t border-gray-200 text-[10px] text-gray-400 flex items-center justify-center gap-2 z-50">
-           {isSyncing ? "Синхронизация..." : "Облако активно"}
         </div>
 
         {/* Custom Modal */}
@@ -16987,7 +16903,8 @@ export default function App() {
           <ProjectSetCheckoutModal
             projects={selectedProjectsForCheckout}
             onClose={() => setIsCheckoutModalOpen(false)}
-            onSave={finalizeSet}
+            onSave={(data) => finalizeSet(data, undefined, true)}
+            onSaveDraft={(data) => finalizeSet(data, undefined, false)}
             productionCycle={ownProductionConfig.productionCycle || "working"}
             editingSet={editingSet}
           />

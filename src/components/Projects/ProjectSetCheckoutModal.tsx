@@ -74,12 +74,14 @@ export const ProjectSetCheckoutModal = ({
   projects,
   onClose,
   onSave,
+  onSaveDraft,
   productionCycle = "working",
   editingSet,
 }: {
   projects: Project[];
   onClose: () => void;
   onSave: (data: any) => void;
+  onSaveDraft?: (data: any) => void;
   productionCycle?: "working" | "calendar";
   editingSet?: any;
 }) => {
@@ -95,10 +97,21 @@ export const ProjectSetCheckoutModal = ({
   const [sketches, setSketches] = useState<string[]>(
     editingSet?.sketches || [],
   );
+
+  useEffect(() => {
+    if (editingSet) {
+      console.log("DEBUG: editingSet updated in modal:", editingSet);
+      setContractNumber(editingSet.contractNumber || "");
+      setContractDate(editingSet.contractDate || new Date().toISOString().split("T")[0]);
+      setLeadTimeDays(editingSet.leadTimeDays || 30);
+      setSketches(editingSet.sketches || []);
+    }
+  }, [editingSet]);
   const [expandMaterials, setExpandMaterials] = useState(false);
   const [expandHardware, setExpandHardware] = useState(false);
   const [expandServices, setExpandServices] = useState(false);
   const [isAnnotating, setIsAnnotating] = useState(false);
+  const [selectedSketchIndex, setSelectedSketchIndex] = useState<number | null>(null);
   const [useSeparateDates, setUseSeparateDates] = useState(false);
   const [useSeparateDelivery, setUseSeparateDelivery] = useState(false);
   const [projectLeadTimeDays, setProjectLeadTimeDays] = useState<
@@ -377,17 +390,29 @@ export const ProjectSetCheckoutModal = ({
             <div className="flex-1 min-h-[500px] relative bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-sm">
               <div className="absolute inset-0 overflow-auto">
                 <SketchAnnotator
-                  imageUrl={""}
+                  imageUrl={selectedSketchIndex !== null ? sketches[selectedSketchIndex] : ""}
                   onSave={(data) => {
-                    setSketches((prev) => [...prev, data]);
+                    if (selectedSketchIndex !== null) {
+                        setSketches(prev => {
+                            const next = [...prev];
+                            next[selectedSketchIndex] = data;
+                            return next;
+                        });
+                    } else {
+                        setSketches((prev) => [...prev, data]);
+                    }
                     setIsAnnotating(false);
+                    setSelectedSketchIndex(null);
                   }}
                 />
               </div>
             </div>
             <div className="mt-4 flex justify-end">
               <button
-                onClick={() => setIsAnnotating(false)}
+                onClick={() => {
+                  setIsAnnotating(false);
+                  setSelectedSketchIndex(null);
+                }}
                 className="px-6 py-3 bg-gray-200 hover:bg-gray-300 text-gray-800 rounded-xl font-bold transition-colors"
               >
                 Отмена
@@ -758,7 +783,11 @@ export const ProjectSetCheckoutModal = ({
                   {sketches.map((url, idx) => (
                     <div
                       key={idx}
-                      className="relative group w-32 h-32 rounded-2xl overflow-hidden border border-gray-100 shadow-sm transition-all hover:shadow-md"
+                      onClick={() => {
+                        setSelectedSketchIndex(idx);
+                        setIsAnnotating(true);
+                      }}
+                      className="relative group w-32 h-32 rounded-2xl overflow-hidden border border-gray-100 shadow-sm transition-all hover:shadow-md cursor-pointer"
                     >
                       <img
                         src={url}
@@ -766,11 +795,12 @@ export const ProjectSetCheckoutModal = ({
                         className="w-full h-full object-cover"
                       />
                       <button
-                        onClick={() =>
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setSketches((prev) =>
                             prev.filter((_, i) => i !== idx),
-                          )
-                        }
+                          );
+                        }}
                         className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all shadow-sm"
                         title="Удалить эскиз"
                       >
@@ -796,65 +826,96 @@ export const ProjectSetCheckoutModal = ({
                       Загрузить с ПК
                     </span>
                   </button>
-
-                  <button
-                    onClick={() => setIsAnnotating(true)}
-                    className="w-32 h-32 rounded-2xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-2 text-gray-400 hover:border-indigo-400 hover:text-indigo-400 transition-all group hover:bg-indigo-50/30"
-                  >
-                    <PenTool className="w-6 h-6 group-hover:-translate-y-1 transition-transform" />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-center px-2">
-                      Рисовать эскиз
-                    </span>
-                  </button>
                 </div>
               </section>
             </div>
 
             {/* Footer */}
-            <div className="px-8 py-6 bg-white border-t border-gray-100 flex items-center justify-end gap-4 sticky bottom-0 z-10">
+            <div className="px-8 py-6 bg-white border-t border-gray-100 flex items-center justify-between gap-4 sticky bottom-0 z-10">
               <button
                 onClick={onClose}
                 className="px-8 py-3 rounded-2xl text-sm font-bold text-gray-500 hover:bg-gray-50 transition-all border border-gray-200"
               >
                 Отмена
               </button>
-              <button
-                onClick={() => {
-                  const perProjectDates: Record<string, string> = {};
-                  if (useSeparateDates) {
-                    Object.entries(projectLeadTimeDays).forEach(
-                      ([pId, days]) => {
-                        perProjectDates[pId] = calculateReadyDate(
-                          new Date(contractDate),
-                          days,
+              <div className="flex items-center gap-4">
+                {onSaveDraft && (
+                  <button
+                    onClick={() => {
+                        const perProjectDates: Record<string, string> = {};
+                        if (useSeparateDates) {
+                          Object.entries(projectLeadTimeDays).forEach(
+                            ([pId, days]) => {
+                              perProjectDates[pId] = calculateReadyDate(
+                                new Date(contractDate),
+                                days,
+                                productionCycle,
+                              ).toISOString();
+                            },
+                          );
+                        }
+                        onSaveDraft({
+                          id: editingSet?.id,
+                          contractNumber,
+                          contractDate,
+                          leadTimeDays,
+                          readyDate: useSeparateDates
+                            ? null
+                            : readyDate.toISOString(),
+                          useSeparateDates,
+                          perProjectDates,
                           productionCycle,
-                        ).toISOString();
-                      },
-                    );
-                  }
+                          projectIds: projects.map((p) => p.id),
+                          sketches,
+                          totalPrice: summary.totalOverall,
+                          summary,
+                        });
+                        console.log("DEBUG: onSaveDraft called with:", { contractNumber, contractDate, leadTimeDays, sketches });
+                    }}
+                    className="px-8 py-3 rounded-2xl text-sm font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-all border border-indigo-100 flex items-center gap-2"
+                  >
+                    <Save className="w-4 h-4" />
+                    Сохранить
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    const perProjectDates: Record<string, string> = {};
+                    if (useSeparateDates) {
+                      Object.entries(projectLeadTimeDays).forEach(
+                        ([pId, days]) => {
+                          perProjectDates[pId] = calculateReadyDate(
+                            new Date(contractDate),
+                            days,
+                            productionCycle,
+                          ).toISOString();
+                        },
+                      );
+                    }
 
-                  onSave({
-                    id: editingSet?.id,
-                    contractNumber,
-                    contractDate,
-                    leadTimeDays,
-                    readyDate: useSeparateDates
-                      ? null
-                      : readyDate.toISOString(),
-                    useSeparateDates,
-                    perProjectDates,
-                    productionCycle,
-                    projectIds: projects.map((p) => p.id),
-                    sketches,
-                    totalPrice: summary.totalOverall,
-                    summary,
-                  });
-                }}
-                className="px-10 py-4 bg-indigo-600 text-white rounded-2xl text-sm font-black shadow-lg shadow-indigo-100 hover:bg-indigo-700 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2"
-              >
-                <ClipboardCheck className="w-5 h-5" />
-                Создать спецификацию
-              </button>
+                    onSave({
+                      id: editingSet?.id,
+                      contractNumber,
+                      contractDate,
+                      leadTimeDays,
+                      readyDate: useSeparateDates
+                        ? null
+                        : readyDate.toISOString(),
+                      useSeparateDates,
+                      perProjectDates,
+                      productionCycle,
+                      projectIds: projects.map((p) => p.id),
+                      sketches,
+                      totalPrice: summary.totalOverall,
+                      summary,
+                    });
+                  }}
+                  className="px-10 py-4 bg-indigo-600 text-white rounded-2xl text-sm font-black shadow-lg shadow-indigo-100 hover:bg-indigo-700 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2"
+                >
+                  <ClipboardCheck className="w-5 h-5" />
+                  Создать спецификацию
+                </button>
+              </div>
             </div>
           </>
         )}

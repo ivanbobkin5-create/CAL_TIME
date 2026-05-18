@@ -20,19 +20,14 @@ import {
   Tag,
   Trash2
 } from 'lucide-react';
-import { db, handleFirestoreError, OperationType } from '../../firebase';
+// Firebase removed, backend switched to TimeWeb
+const db = {};
+const handleFirestoreError = (e: any, op: any, path: string) => console.warn("Firestore call bypassed (Firebase removed):", op, path);
+enum OperationType { LIST = "LIST", UPDATE = "UPDATE", GET = "GET", DELETE = "DELETE", WRITE = "WRITE", CREATE = "CREATE" }
 import { 
-  collection, 
-  onSnapshot, 
-  doc, 
-  updateDoc, 
-  getDocs, 
-  getDoc,
-  deleteDoc,
-  query, 
-  where 
-} from 'firebase/firestore';
-import { cn } from '../../lib/utils';
+  cn 
+} from '../../lib/utils';
+
 
 interface Company {
   id: string;

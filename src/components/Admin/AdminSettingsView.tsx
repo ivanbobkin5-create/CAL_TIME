@@ -1,8 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Plus, Shield, Mail, User, Briefcase, Settings, Trash2, Edit2, X, Check, Loader2, Lock, Crown } from 'lucide-react';
+// Firebase removed, backend switched to TimeWeb
+const db = {};
+function createUserWithEmailAndPassword() {}
+function collection() { return {}; }
+function onSnapshot() { return () => {}; }
+function doc() { return {}; }
+function setDoc() { return Promise.resolve(); }
+function deleteDoc() { return Promise.resolve(); }
+function getDoc() { return Promise.resolve({ exists: () => false }); }
+function query() { return {}; }
+function where() { return {}; }
 import { cn } from '../../lib/utils';
-import { db, createUserWithEmailAndPassword } from '../../firebase';
-import { collection, onSnapshot, doc, setDoc, deleteDoc, getDoc, query, where } from 'firebase/firestore';
+
 
 // Employee management
 

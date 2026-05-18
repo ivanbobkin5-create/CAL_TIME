@@ -7,12 +7,27 @@ export const SketchAnnotator = ({ imageUrl, onSave }: { imageUrl: string, onSave
   const [image] = useImage(imageUrl);
   const stageRef = useRef<any>(null);
   const [lines, setLines] = useState<any[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [tool, setTool] = useState<'cursor' | 'pencil' | 'rect' | 'hinge' | 'arrow' | 'note' | 'size'>('pencil');
   const [color, setColor] = useState('#df4b26');
   const [editingText, setEditingText] = useState<{ id: number, text: string } | null>(null);
 
-  const undo = () => setLines(lines.slice(0, -1));
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedId !== null) {
+        setLines(lines.filter(l => l.id !== selectedId));
+        setSelectedId(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [lines, selectedId]);
+
+  const undo = () => {
+    setLines(lines.slice(0, -1));
+    setSelectedId(null);
+  };
 
   const handleMouseDown = (e: any) => {
     // Не рисуем, если кликнули на существующий элемент или включен курсор (режим выбора/перетаскивания)
@@ -150,30 +165,38 @@ export const SketchAnnotator = ({ imageUrl, onSave }: { imageUrl: string, onSave
             )}
             
             {lines.map((line, i) => {
+              const commonProps = {
+                key: line.id,
+                onClick: () => { if (tool === 'cursor') setSelectedId(line.id); },
+                stroke: selectedId === line.id ? 'cyan' : line.color,
+                draggable: isDraggable && tool === 'cursor',
+                onDragEnd: (e: any) => handleDragEnd(i, e)
+              };
+
               if (line.tool === 'pencil') return (
-                <Line key={i} x={line.x || 0} y={line.y || 0} points={line.points} stroke={line.color} strokeWidth={5} tension={0.5} lineCap="round" lineJoin="round" draggable={isDraggable} onDragEnd={(e) => handleDragEnd(i, e)} />
+                <Line x={line.x || 0} y={line.y || 0} points={line.points} strokeWidth={5} tension={0.5} lineCap="round" lineJoin="round" {...commonProps} />
               );
               if (line.tool === 'rect') return (
-                <Rect key={i} x={line.x} y={line.y} width={line.width} height={line.height} stroke={line.color} strokeWidth={3} draggable={isDraggable} onDragEnd={(e) => handleDragEnd(i, e)} />
+                <Rect x={line.x} y={line.y} width={line.width} height={line.height} strokeWidth={3} {...commonProps} />
               );
               if (line.tool === 'hinge') return (
-                <Circle key={i} x={line.x} y={line.y} radius={8} stroke={line.color} strokeWidth={3} fill="#ffffff" draggable={isDraggable} onDragEnd={(e) => handleDragEnd(i, e)} />
+                <Circle x={line.x} y={line.y} radius={8} strokeWidth={3} fill="#ffffff" {...commonProps} />
               );
               if (line.tool === 'arrow') return (
-                <Arrow key={i} x={line.x || 0} y={line.y || 0} points={line.points} stroke={line.color} strokeWidth={3} fill={line.color} draggable={isDraggable} onDragEnd={(e) => handleDragEnd(i, e)} />
+                <Arrow x={line.x || 0} y={line.y || 0} points={line.points} strokeWidth={3} fill={line.color} {...commonProps} />
               );
               if (line.tool === 'note') return (
-                <Text key={i} x={line.x} y={line.y} text={line.text} fontSize={18} fontStyle="bold" padding={5} fill={line.color} draggable={isDraggable} onDragEnd={(e) => handleDragEnd(i, e)} onDblClick={() => handleTextDblClick(line.id, line.text)} onTap={() => handleTextDblClick(line.id, line.text)} />
+                <Text x={line.x} y={line.y} text={line.text} fontSize={18} fontStyle="bold" padding={5} fill={line.color} onDblClick={() => handleTextDblClick(line.id, line.text)} onTap={() => handleTextDblClick(line.id, line.text)} {...commonProps} />
               );
               if (line.tool === 'size') return (
-                <React.Fragment key={i}>
-                  <Arrow x={line.x_arr || 0} y={line.y_arr || 0} points={line.points} stroke={line.color} strokeWidth={2} fill={line.color} pointerAtBeginning draggable={isDraggable} onDragEnd={(e) => {
+                <React.Fragment key={line.id}>
+                  <Arrow x={line.x_arr || 0} y={line.y_arr || 0} points={line.points} stroke={line.color} strokeWidth={2} fill={line.color} pointerAtBeginning draggable={isDraggable && tool === 'cursor'} onDragEnd={(e) => {
                       const newLines = [...lines];
                       newLines[i].x_arr = e.target.x();
                       newLines[i].y_arr = e.target.y();
                       setLines(newLines);
                   }} />
-                  <Text x={line.x} y={line.y} text={line.text} fontSize={18} fontStyle="bold" padding={4} fill={line.color} draggable={isDraggable} onDragEnd={(e) => handleDragEnd(i, e)} onDblClick={() => handleTextDblClick(line.id, line.text)} onTap={() => handleTextDblClick(line.id, line.text)} />
+                  <Text x={line.x} y={line.y} text={line.text} fontSize={18} fontStyle="bold" padding={4} fill={line.color} onDblClick={() => handleTextDblClick(line.id, line.text)} onTap={() => handleTextDblClick(line.id, line.text)} {...{...commonProps, onClick: undefined}} />
                 </React.Fragment>
               );
               return null;
