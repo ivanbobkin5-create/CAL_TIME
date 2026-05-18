@@ -13536,7 +13536,18 @@ export default function App() {
     try {
       await signInWithEmailAndPassword(auth, data.email, data.password);
     } catch (error) {
-      showAlert("Ошибка входа", (error as Error).message);
+      console.error("Login error:", error);
+      let message = "Произошла неизвестная ошибка при входе.";
+      if ((error as any).code === "auth/user-not-found") {
+        message = "Пользователь не найден. Проверьте email.";
+      } else if ((error as any).code === "auth/wrong-password") {
+        message = "Неверный пароль.";
+      } else if ((error as any).code === "auth/network-request-failed") {
+        message = "Ошибка сети. Проверьте подключение к интернету.";
+      } else {
+        message = (error as Error).message;
+      }
+      showAlert("Ошибка входа", message);
     }
   };
 
@@ -13612,9 +13623,19 @@ export default function App() {
       
     } catch (error) {
       console.error("CRITICAL registration error:", error);
-      const message = (error as Error).message || String(error);
+      let message = "Произошла неизвестная ошибка при регистрации.";
+      if ((error as any).code === "auth/email-already-in-use") {
+        message = "Этот Email уже зарегистрирован.";
+      } else if ((error as any).code === "auth/invalid-email") {
+        message = "Некорректный формат Email.";
+      } else if ((error as any).code === "auth/weak-password") {
+        message = "Пароль слишком слабый.";
+      } else if ((error as any).code === "auth/network-request-failed") {
+        message = "Ошибка сети. Проверьте подключение.";
+      } else {
+        message = (error as Error).message || String(error);
+      }
       showAlert("Ошибка регистрации", message);
-      throw error;
     }
   };
 
