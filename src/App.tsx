@@ -13316,12 +13316,8 @@ export default function App() {
   useEffect(() => {
     const handler = (event: PromiseRejectionEvent) => {
       // Ignore known benign Vite HMR WebSocket errors in dev environment
-      if (
-        (event.reason instanceof Error &&
-          event.reason.message === "WebSocket closed without opened.") ||
-        (typeof event.reason === "string" &&
-          event.reason.includes("WebSocket closed without opened."))
-      ) {
+      const reasonString = String(event.reason);
+      if (reasonString.includes("WebSocket closed without opened.")) {
         event.preventDefault();
       }
     };
