@@ -243,8 +243,11 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`Server running on port ${PORT}`);
+    console.log(`--- [DEBUG] Server successfully bound to ${PORT} ---`);
   });
 }
 
-startServer();
+startServer().catch(err => {
+  console.error("CRITICAL SERVER START FAILURE:", err);
+  process.exit(1);
+});

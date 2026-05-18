@@ -13463,7 +13463,17 @@ export default function App() {
         body: JSON.stringify({ email: data.adminEmail, password: data.adminPassword })
       });
       
-      if (!response.ok) throw new Error("Failed to create account");
+      if (!response.ok) {
+        const text = await response.text();
+        console.error("Registration failed, status:", response.status, "body:", text);
+        let errorData;
+        try {
+          errorData = JSON.parse(text);
+        } catch (e) {
+          throw new Error(`Server returned error ${response.status}: ${text || "Failed to create account"}`);
+        }
+        throw new Error(errorData.error || errorData.code || "Failed to create account");
+      }
       const user = await response.json();
       console.log("Created user:", user);
 
