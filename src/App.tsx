@@ -13456,50 +13456,71 @@ export default function App() {
   const handleRegister = async (data: RegistrationData) => {
     try {
       console.log("Starting register...");
-      const userCredential = await createUserWithEmailAndPassword(
-        auth,
-        data.adminEmail,
-        data.adminPassword,
-      );
-      const user = userCredential.user;
+      
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: data.adminEmail, password: data.adminPassword })
+      });
+      
+      if (!response.ok) throw new Error("Failed to create account");
+      const user = await response.json();
       console.log("Created user:", user);
 
       const companyId = Math.random().toString(36).substr(2, 9);
-
       const expirationDate = new Date();
       expirationDate.setDate(expirationDate.getDate() + 14);
 
       console.log("Creating company doc...");
       const prodFormat = data.companyType === "Мебельное производство" ? "own" : "contract";
-      // Create company
-      await setDoc(doc(db, "companies", companyId), {
-        name: data.companyName,
-        type: data.companyType,
-        city: data.city,
-        ownerUid: user.uid,
-        tariffExpiration: expirationDate.toISOString(),
-        productionFormat: prodFormat,
+      
+      await fetch(`/api/firebase/doc/companies/${companyId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: {
+          name: data.companyName,
+          type: data.companyType,
+          city: data.city,
+          ownerUid: user.uid,
+          tariffExpiration: expirationDate.toISOString(),
+          productionFormat: prodFormat,
+        }})
       });
 
       console.log("Creating user doc...");
-      // Create user
-      await setDoc(doc(db, "users", user.uid), {
-        uid: user.uid,
-        email: data.adminEmail,
-        displayName: data.adminName,
-        role: "admin",
-        companyId: companyId,
-        createdAt: new Date().toISOString(),
+      await fetch(`/api/firebase/doc/users/${user.uid}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: {
+          uid: user.uid,
+          email: data.adminEmail,
+          displayName: data.adminName,
+          role: "admin",
+          companyId: companyId,
+          createdAt: new Date().toISOString(),
+        }})
       });
 
       console.log("Creating settings doc...");
-      // Initialize settings
-      await setDoc(doc(db, "companies", companyId, "settings", "categories"), {
-        categories: INITIAL_PRODUCT_CATEGORIES,
-        coefficients: INITIAL_PRODUCT_CATEGORIES.reduce(
-          (acc, cat) => ({ ...acc, [cat]: 1.5 }),
-          {},
-        ),
+      await fetch(`/api/firebase/doc/companies/${companyId}/settings/categories`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: {
+          categories: INITIAL_PRODUCT_CATEGORIES,
+          coefficients: INITIAL_PRODUCT_CATEGORIES.reduce(
+            (acc, cat: string) => ({ ...acc, [cat]: 1.5 }),
+            {},
+          ),
+        }})
+      });
+
+      showAlert("Успех", "Регистрация прошла успешно. Пожалуйста, войдите.");
+      setIsRegistering(false);
+    } catch (error) {
+      console.error("Register error:", error);
+      showAlert("Ошибка регистрации", (error as Error).message);
+    }
+  };
       });
       
       console.log("Registration finished! Forcing authenticated state...");
