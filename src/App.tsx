@@ -14571,7 +14571,7 @@ export default function App() {
   useEffect(() => {
     const timer = setTimeout(() => {
       if (activeTab === "production") {
-        saveProductionConfig();
+        saveProductionConfig(ownProductionConfig);
       }
     }, 3000); // 3 sec debounce                
     return () => clearTimeout(timer);
@@ -14871,13 +14871,13 @@ export default function App() {
     );
   };
 
-  const saveProductionConfig = async () => {
+  const saveProductionConfig = async (configToSave?: any) => {
     if (!companyData?.id) return;
     try {
       const isOwn =
         productionFormat === "own" ||
         companyData?.type === "Мебельное производство";
-      const config = isOwn ? ownProductionConfig : contractConfig;
+      const config = configToSave || (isOwn ? ownProductionConfig : contractConfig);
 
       await setDoc(
         doc(db, "companies", companyData.id, "settings", "production"),
