@@ -13457,7 +13457,7 @@ export default function App() {
     try {
       console.log("Starting register...");
       
-      const response = await fetch('http://localhost:3000/api/auth/register', {
+      const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: data.adminEmail, password: data.adminPassword })
@@ -13474,7 +13474,7 @@ export default function App() {
       console.log("Creating company doc...");
       const prodFormat = data.companyType === "Мебельное производство" ? "own" : "contract";
       
-      await fetch(`http://localhost:3000/api/firebase/doc/companies/${companyId}`, {
+      await fetch(`/api/firebase/doc/companies/${companyId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data: {
@@ -13488,7 +13488,7 @@ export default function App() {
       });
 
       console.log("Creating user doc...");
-      await fetch(`http://localhost:3000/api/firebase/doc/users/${user.uid}`, {
+      await fetch(`/api/firebase/doc/users/${user.uid}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data: {
@@ -13502,7 +13502,7 @@ export default function App() {
       });
 
       console.log("Creating settings doc...");
-      await fetch(`http://localhost:3000/api/firebase/doc/companies/${companyId}/settings/categories`, {
+      await fetch(`/api/firebase/doc/companies/${companyId}/settings/categories`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data: {
