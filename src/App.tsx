@@ -13508,24 +13508,13 @@ export default function App() {
         body: JSON.stringify({ data: {
           categories: INITIAL_PRODUCT_CATEGORIES,
           coefficients: INITIAL_PRODUCT_CATEGORIES.reduce(
-            (acc, cat: string) => ({ ...acc, [cat]: 1.5 }),
+            (acc: any, cat: string) => ({ ...acc, [cat]: 1.5 }),
             {},
           ),
         }})
       });
 
-      showAlert("Успех", "Регистрация прошла успешно. Пожалуйста, войдите.");
-      setIsRegistering(false);
-    } catch (error) {
-      console.error("Register error:", error);
-      showAlert("Ошибка регистрации", (error as Error).message);
-    }
-  };
-      });
-      
       console.log("Registration finished! Forcing authenticated state...");
-      
-      // Force app state to authenticated immediately to fix the non-responsive button
       setCompanyData({
         id: companyId,
         name: data.companyName,
@@ -13543,28 +13532,21 @@ export default function App() {
       setUserRole("admin");
       setIsAuthenticated(true);
       setIsLoading(false);
-      
+      setIsRegistering(false);
+      showAlert("Успех", "Регистрация прошла успешно.");
     } catch (error) {
-      console.error("CRITICAL registration error:", error);
-      let message = "Произошла неизвестная ошибка при регистрации.";
-      if ((error as any).code === "auth/email-already-in-use") {
-        message = "Этот Email уже зарегистрирован.";
-      } else if ((error as any).code === "auth/invalid-email") {
-        message = "Некорректный формат Email.";
-      } else if ((error as any).code === "auth/weak-password") {
-        message = "Пароль слишком слабый.";
-      } else if ((error as any).code === "auth/network-request-failed") {
-        message = "Ошибка сети. Проверьте подключение.";
-      } else {
-        message = (error as Error).message || String(error);
-      }
-      showAlert("Ошибка регистрации", message);
+      console.error("Register error:", error);
+      showAlert("Ошибка регистрации", (error as Error).message);
     }
   };
 
+
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      console.log("Logout triggered - switching to local state");
+      setIsAuthenticated(false);
+      setUserData(null);
+      setCompanyData(null);
     } catch (error) {
       console.error("Logout error:", error);
     }
