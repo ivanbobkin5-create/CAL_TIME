@@ -13453,11 +13453,15 @@ export default function App() {
       // Load user data from Firestore-like API
       const userRes = await fetch(`/api/firebase/doc/users/${authUser.uid}`);
       if (userRes.ok) {
-         const userData = await userRes.json();
-         setUser(userData);
+         const docData = await userRes.json();
+         setUserData(docData);
+         setUserRole(docData.role || 'manager');
+         setIsAuthenticated(true);
       } else {
          // Fallback if user doc doesn't exist for some reason
-         setUser({ uid: authUser.uid, email: authUser.email, role: 'manager' });
+         setUserData({ uid: authUser.uid, email: authUser.email, role: 'manager' });
+         setUserRole('manager');
+         setIsAuthenticated(true);
       }
       
     } catch (error) {
@@ -13485,9 +13489,15 @@ export default function App() {
         try {
           errorData = JSON.parse(text);
         } catch (e) {
-          throw new Error(`Server returned error ${response.status}: ${text || "Failed to create account"}`);
+          throw new Error(`Сервер вернул ошибку ${response.status}: ${text || "Не удалось создать аккаунт"}`);
         }
-        throw new Error(errorData.error || errorData.code || "Failed to create account");
+        
+        const code = errorData.error || errorData.code;
+        if (code === "auth/email-already-in-use") {
+           throw new Error("Этот email уже зарегистрирован. Пожалуйста, войдите в систему.");
+        }
+        
+        throw new Error(code || "Не удалось создать аккаунт");
       }
       const user = await response.json();
       console.log("Created user:", user);
