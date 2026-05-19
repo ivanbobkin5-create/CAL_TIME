@@ -13872,7 +13872,12 @@ export default function App() {
         }})
       });
 
-      console.log("Registration finished! Forcing authenticated state...");
+      console.log("Registration finished!");
+      if (user.needsVerification) {
+        showAlert("Подтверждение", `Регистрация почти завершена. Мы отправили код на ${data.adminEmail}`);
+        return; // Don't log in yet
+      }
+
       setCompanyData({
         id: companyId,
         name: data.companyName,
@@ -14757,6 +14762,12 @@ export default function App() {
     setIsSyncing(true);
     try {
       const projectId = currentProjectId || Date.now().toString();
+      const hardwareTotal = (addedProducts || []).reduce((acc: number, p: any) => {
+        const basePrice = p.price || 0;
+        const qty = p.quantity || 1;
+        return acc + (basePrice * qty);
+      }, 0);
+
       const projectData: any = {
         id: projectId,
         name: projectName,
@@ -14765,6 +14776,8 @@ export default function App() {
         createdByName: userData.displayName || userData.email || "Пользователь",
         status: "draft",
         totalPrice: currentProjectTotal,
+        totalHardwareCost: hardwareTotal,
+        type: furnitureType || facadeType || "Мебель",
         data: {
           summaryRows: currentSummaryRows,
           results,

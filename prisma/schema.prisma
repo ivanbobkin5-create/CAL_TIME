@@ -51,6 +51,16 @@ model AuthUser {
   uid       String   @id @default(uuid())
   email     String   @unique
   password  String   // Hashed password
+  verified  Boolean  @default(true) // Start as true for existing users, making it false for new ones later
+  createdAt DateTime @default(now())
+}
+
+model VerificationToken {
+  id        String   @id @default(uuid())
+  email     String
+  token     String   @unique
+  type      String   // "RESET" or "VERIFY"
+  expiresAt DateTime
   createdAt DateTime @default(now())
 }
 

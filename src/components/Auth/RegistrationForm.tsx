@@ -72,6 +72,9 @@ export const RegistrationForm = ({
     city.toLowerCase().includes(cityQuery.toLowerCase())
   );
 
+  const [verificationCode, setVerificationCode] = useState('');
+  const [verificationError, setVerificationError] = useState('');
+
   const handleNext = () => {
     if (step === 1 && data.companyName && data.companyType) setStep(2);
     else if (step === 2 && data.city && data.workFormat.length > 0) setStep(3);
@@ -83,11 +86,35 @@ export const RegistrationForm = ({
       setLoading(true);
       try {
         await onRegister(data);
+        setStep(4); // Move to verification after successful initial registration
       } catch (error) {
         console.error("Registration error:", error);
       } finally {
         setLoading(false);
       }
+    }
+  };
+
+  const handleVerify = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setVerificationError('');
+    try {
+      const res = await fetch('/api/auth/verify-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: verificationCode })
+      });
+      if (res.ok) {
+        // Success! The app will likely catch the state change or we can force it
+        window.location.reload(); // Simplest way to refresh auth state after verification
+      } else {
+        setVerificationError('Неверный код подтверждения');
+      }
+    } catch (e) {
+      setVerificationError('Ошибка сети');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -293,6 +320,7 @@ export const RegistrationForm = ({
 
           {step === 3 && (
             <form onSubmit={handleSubmit} className="space-y-6">
+              {/* ... existing fields ... */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">ФИО Администратора</label>
                 <div className="relative">
@@ -365,6 +393,54 @@ export const RegistrationForm = ({
                 </button>
               </div>
             </form>
+          )}
+
+          {step === 4 && (
+            <div className="space-y-6">
+              <div className="text-center">
+                <Mail className="w-12 h-12 text-blue-600 mx-auto mb-4" />
+                <h3 className="text-lg font-bold text-gray-900 mb-2">Проверьте вашу почту</h3>
+                <p className="text-sm text-gray-500">
+                  Мы отправили 6-значный код подтверждения на <b>{data.adminEmail}</b>.
+                  Пожалуйста, введите его ниже для активации аккаунта.
+                </p>
+              </div>
+
+              <form onSubmit={handleVerify} className="space-y-4">
+                <div>
+                  <input
+                    type="text"
+                    maxLength={6}
+                    required
+                    value={verificationCode}
+                    onChange={(e) => setVerificationCode(e.target.value)}
+                    className="block w-full px-4 py-4 text-center text-2xl font-black tracking-[0.5em] border border-gray-300 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none"
+                    placeholder="000000"
+                  />
+                  {verificationError && (
+                    <p className="mt-2 text-xs text-red-500 font-bold text-center">{verificationError}</p>
+                  )}
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={verificationCode.length !== 6 || loading}
+                  className="w-full flex justify-center items-center py-4 bg-blue-600 text-white rounded-2xl font-black shadow-xl shadow-blue-100 hover:bg-blue-700 transition-all disabled:opacity-50 disabled:shadow-none active:scale-95"
+                >
+                  {loading ? (
+                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    'Подтвердить email'
+                  )}
+                </button>
+              </form>
+
+              <div className="pt-6 text-center border-t border-gray-100">
+                <p className="text-xs text-gray-400 font-medium">
+                  Не получили код? Проверьте папку "Спам" или попробуйте зарегистрироваться заново позже.
+                </p>
+              </div>
+            </div>
           )}
         </div>
       </div>

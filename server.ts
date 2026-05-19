@@ -5,6 +5,7 @@ import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import nodemailer from "nodemailer";
 
 const prisma = new PrismaClient();
 
@@ -83,14 +84,157 @@ async function startServer() {
     }
   });
 
+  // Helpers
+  const sendEmail = async (email: string, subject: string, message: string) => {
+    // Check if SMTP is configured
+    if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+      console.log("--- [SMTP NOT CONFIGURED - FALLBACK TO LOG] ---");
+      console.log(`To: ${email}`);
+      console.log(`Subject: ${subject}`);
+      console.log(`Body: ${message}`);
+      return true;
+    }
+
+    try {
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: parseInt(process.env.SMTP_PORT || "587"),
+        secure: process.env.SMTP_PORT === "465", 
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+      });
+
+      // Validating "from" field to avoid 550 error. Use SMTP_FROM if set, otherwise SMTP_USER.
+      const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
+      const fromName = "Мебельный калькулятор";
+
+      await transporter.sendMail({
+        from: `"${fromName}" <${fromEmail}>`,
+        to: email,
+        subject: subject,
+        text: message,
+        html: message.replace(/\n/g, '<br>'),
+      });
+
+      console.log(`--- [EMAIL SENT] To: ${email} ---`);
+      return true;
+    } catch (error) {
+      console.error("--- [EMAIL ERROR] ---", error);
+      return false;
+    }
+  };
+
+  app.post("/api/auth/forgot-password", async (req, res) => {
+    const { email } = req.body;
+    try {
+      const user = await prisma.authUser.findUnique({ where: { email: email.toLowerCase() } });
+      if (!user) {
+        return res.json({ status: "ok", message: "Instructions sent if email exists" });
+      }
+
+      const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      await prisma.verificationToken.create({
+        data: {
+          email: user.email,
+          token,
+          type: "RESET",
+          expiresAt: new Date(Date.now() + 3600000) // 1 hour
+        }
+      });
+
+      const protocol = req.headers['x-forwarded-proto'] || 'http';
+      const host = req.headers['host'];
+      // Prefer APP_URL from env if available to avoid unexpected proxy hosts like mf-ftp
+      const baseUrl = process.env.APP_URL || `${protocol}://${host}`;
+
+      await sendEmail(
+        user.email,
+        "Восстановление пароля - Мебельный калькулятор",
+        `Здравствуйте!\n\nВы получили это письмо, так как для вашего аккаунта в приложении "Мебельный калькулятор" был запрошен сброс пароля.\n\nКод для подтверждения: ${token}\n\nДля завершения сброса пароля перейдите по ссылке:\n${baseUrl}/reset-password?token=${token}\n\nЕсли вы не запрашивали сброс пароля, просто проигнорируйте это письмо.\n\nС уважением,\nКоманда "Мебельный калькулятор"`
+      );
+
+      res.json({ status: "ok", message: "Instructions sent" });
+    } catch (e) {
+      res.status(500).json({ error: "Failed to process request" });
+    }
+  });
+
+  app.post("/api/auth/reset-password", async (req, res) => {
+    const { token, newPassword } = req.body;
+    try {
+      const vToken = await prisma.verificationToken.findFirst({
+        where: { token, type: "RESET", expiresAt: { gt: new Date() } }
+      });
+
+      if (!vToken) return res.status(400).json({ error: "Invalid or expired token" });
+
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      await prisma.authUser.update({
+        where: { email: vToken.email },
+        data: { password: hashedPassword }
+      });
+
+      await prisma.verificationToken.delete({ where: { id: vToken.id } });
+
+      res.json({ status: "ok" });
+    } catch (e) {
+      res.status(500).json({ error: "Failed to reset password" });
+    }
+  });
+
+  app.post("/api/auth/verify-email", async (req, res) => {
+    const { token } = req.body;
+    try {
+      const vToken = await prisma.verificationToken.findFirst({
+        where: { token, type: "VERIFY", expiresAt: { gt: new Date() } }
+      });
+
+      if (!vToken) return res.status(400).json({ error: "Invalid or expired code" });
+
+      await prisma.authUser.update({
+        where: { email: vToken.email },
+        data: { verified: true }
+      });
+
+      await prisma.verificationToken.delete({ where: { id: vToken.id } });
+
+      res.json({ status: "ok" });
+    } catch (e) {
+      res.status(500).json({ error: "Verification failed" });
+    }
+  });
+
   app.post("/api/auth/register", async (req, res) => {
     const { email, password } = req.body;
     try {
       const hashedPassword = await bcrypt.hash(password, 10);
       const user = await prisma.authUser.create({
-        data: { email: email.toLowerCase(), password: hashedPassword }
+        data: { 
+          email: email.toLowerCase(), 
+          password: hashedPassword,
+          verified: false // Require verification for new users
+        }
       });
-      res.json({ uid: user.uid, email: user.email });
+
+      const token = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit code
+      await prisma.verificationToken.create({
+        data: {
+          email: user.email,
+          token,
+          type: "VERIFY",
+          expiresAt: new Date(Date.now() + 86400000) // 24 hours
+        }
+      });
+
+      await sendEmail(
+        user.email,
+        "Подтверждение регистрации - Мебельный калькулятор",
+        `Добро пожаловать в "Мебельный калькулятор"!\n\nДля завершения регистрации, пожалуйста, введите следующий код подтверждения в приложении:\n\nКод: ${token}\n\nЕсли вы не регистрировались в нашем приложении, просто проигнорируйте это письмо.\n\nС уважением,\nКоманда "Мебельный калькулятор"`
+      );
+
+      res.json({ uid: user.uid, email: user.email, needsVerification: true });
     } catch (e) {
       console.error("Error creating user:", e);
       if ((e as any).code === 'P2002') return res.status(400).json({ code: 'auth/email-already-in-use' });
@@ -163,6 +307,11 @@ async function startServer() {
         console.log("Password mismatch for:", email);
         return res.status(401).json({ error: "Invalid credentials" });
       }
+
+      if (!user.verified) {
+        return res.status(403).json({ error: "Email not verified", needsVerification: true, email: user.email });
+      }
+
       console.log("Login successful for:", email);
       res.json({ uid: user.uid, email: user.email });
     } catch (e) {

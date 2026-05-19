@@ -1,5 +1,6 @@
 {
-  "name": "TIMEWEB Мебельный калькулятор",
-  "description": "",
-  "requestFramePermissions": []
+  "name": "Мебельный калькулятор",
+  "description": "Профессиональный калькулятор для мебельщиков",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
