@@ -379,7 +379,7 @@ export const AppAdminView = () => {
 
   const stats = {
     totalCompanies: companies.length,
-    totalUsers: users.length,
+    totalUsers: users.filter(u => u.role !== 'admin').length, // Count only real employees
     blockedCompanies: companies.filter(c => c.isBlocked).length,
     productionCount: companies.filter(c => c.type === 'Мебельное производство').length,
     salonCount: companies.filter(c => c.type === 'Салон').length,
@@ -693,8 +693,8 @@ export const AppAdminView = () => {
 
             {/* Orphaned Users cleanup */}
             {users.filter(u => 
-              u.email !== 'lk.ivanbobkin@gmail.com' && 
               u.role !== 'admin' &&
+              u.email !== 'lk.ivanbobkin@gmail.com' &&
               (!u.companyId || !companies.find(c => c.id === u.companyId))
             ).length > 0 && (
               <div className="mt-12 pt-12 border-t-2 border-dashed border-gray-200">
@@ -707,23 +707,45 @@ export const AppAdminView = () => {
                       Аккаунты, не привязанные ни к одной активной организации (кроме администраторов)
                     </p>
                   </div>
+                  <button 
+                    onClick={async () => {
+                      const orphaned = users.filter(u => 
+                        u.role !== 'admin' &&
+                        u.email !== 'lk.ivanbobkin@gmail.com' &&
+                        (!u.companyId || !companies.find(c => c.id === u.companyId))
+                      );
+                      if (window.confirm(`Вы уверены, что хотите удалить ВСЕХ (${orphaned.length}) нераспределенных пользователей?`)) {
+                        for (const u of orphaned) {
+                          await deleteDoc(doc(db, 'users', u.uid));
+                          await fetch(`/api/auth/user/${u.uid}`, { method: 'DELETE' });
+                        }
+                        alert("Все нераспределенные пользователи удалены");
+                      }
+                    }}
+                    className="flex items-center gap-2 px-6 py-3 bg-red-50 text-red-600 rounded-2xl font-bold hover:bg-red-100 transition-all text-sm"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    Очистить всех "призраков"
+                  </button>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {users.filter(u => 
-                    u.email !== 'lk.ivanbobkin@gmail.com' && 
                     u.role !== 'admin' &&
+                    u.email !== 'lk.ivanbobkin@gmail.com' &&
                     (!u.companyId || !companies.find(c => c.id === u.companyId))
                   ).map(user => (
                     <div key={user.uid} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex items-center justify-between">
                       <div className="flex items-center gap-4">
                         <div className="w-12 h-12 bg-gray-100 text-gray-500 rounded-2xl flex items-center justify-center font-bold">
-                          {user.displayName?.charAt(0) || 'U'}
+                          {user.displayName?.charAt(0) || user.email?.charAt(0).toUpperCase() || 'U'}
                         </div>
-                        <div>
-                          <p className="font-bold text-gray-900">{user.displayName || 'Без имени'}</p>
-                          <p className="text-xs text-gray-500">{user.email}</p>
-                          <p className="text-[10px] text-red-400 font-bold uppercase mt-1">ID компании: {user.companyId || 'отсутствует'}</p>
+                        <div className="overflow-hidden">
+                          <p className="font-bold text-gray-900 truncate">{user.displayName || 'Без имени'}</p>
+                          <p className="text-xs text-gray-500 truncate">{user.email}</p>
+                          <p className="text-[10px] text-red-400 font-bold uppercase mt-1">
+                            {user.companyId ? `ID компании: ${user.companyId}` : 'Компания не указана'}
+                          </p>
                         </div>
                       </div>
                       <button 

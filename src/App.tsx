@@ -7888,6 +7888,8 @@ const SettingsView = ({
   ownProductionConfig,
   companyInfo,
   setCompanyInfo,
+  companyData,
+  setCompanyData,
   showAlert,
   showConfirm,
   showPrompt,
@@ -7949,6 +7951,8 @@ const SettingsView = ({
   >;
   companyInfo: any;
   setCompanyInfo: React.Dispatch<React.SetStateAction<any>>;
+  companyData: any;
+  setCompanyData: React.Dispatch<React.SetStateAction<any>>;
   showAlert: (title: string, message: string) => void;
   showConfirm: (title: string, message: string, onConfirm: () => void) => void;
   showPrompt: (
@@ -7971,7 +7975,7 @@ const SettingsView = ({
 }) => {
   const [newCategory, setNewCategory] = useState("");
   const [activeSubTab, setActiveSubTab] = useState<
-    "general" | "services" | "production" | "account" | "facades"
+    "general" | "services" | "production" | "account" | "facades" | "bitrix24"
   >("general");
   const [showBrandCoeffModal, setShowBrandCoeffModal] = useState(false);
   const [brandCoeffForm, setBrandCoeffForm] = useState({
@@ -8235,6 +8239,7 @@ const SettingsView = ({
             ? [{ id: "production", label: "Производство", icon: Factory }]
             : []),
           { id: "account", label: "Компания", icon: Building2 },
+          { id: "bitrix24", label: "Bitrix24", icon: Link },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -9809,6 +9814,128 @@ const SettingsView = ({
                         />
                       </div>
                     </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        )}
+
+        {activeSubTab === "bitrix24" && (
+          <div className="space-y-12 animate-in fade-in duration-300">
+            <section>
+              <div className="flex items-center gap-3 mb-8">
+                <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600">
+                  <Link className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-gray-900 tracking-tight font-sans">
+                    Интеграция с Bitrix24
+                  </h3>
+                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1 font-sans">
+                    Свяжите ваши заказы с CRM
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-8">
+                <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100">
+                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
+                    Ссылка входящего вебхука
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="https://yourgroup.bitrix24.ru/rest/..."
+                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                    value={companyData?.bitrix24?.webhookUrl || ""}
+                    onChange={(e) =>
+                      setCompanyData((prev: any) => ({
+                        ...prev,
+                        bitrix24: {
+                          ...(prev?.bitrix24 || {}),
+                          webhookUrl: e.target.value,
+                        },
+                      }))
+                    }
+                  />
+                  <p className="text-[11px] text-gray-500 mt-3 leading-relaxed">
+                    Инструкция: Зайдите в Битрикс24 &rarr; Приложения &rarr;
+                    Вебхуки &rarr; Добавить входящий вебхук. Скопируйте ссылку и
+                    вставьте сюда.
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  <h4 className="text-sm font-bold text-gray-900 font-sans">
+                    Настройка полей (API ID)
+                  </h4>
+                  <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
+                    <table className="w-full text-sm text-left">
+                      <thead className="text-[10px] text-gray-400 uppercase font-black bg-gray-50/50">
+                        <tr>
+                          <th className="px-6 py-4">Поле в приложении</th>
+                          <th className="px-6 py-4">
+                            ID в Bitrix24 (например, UF_CRM_...)
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {[
+                          { key: "contractNumber", label: "Номер договора" },
+                          { key: "totalSum", label: "Сумма договора" },
+                          { key: "contractDate", label: "Дата договора" },
+                          { key: "readyDate", label: "Дата готовности" },
+                          { key: "hardwareSum", label: "Сумма фурнитуры" },
+                          { key: "cabinetSum", label: "Стоимость корпуса" },
+                          { key: "facadeSum", label: "Стоимость фасадов" },
+                          {
+                            key: "customFacadeSum",
+                            label: "Стоимость заказных фасадов",
+                          },
+                          { key: "assemblySum", label: "Стоимость сборки" },
+                          { key: "deliverySum", label: "Стоимость доставки" },
+                          {
+                            key: "deliveryComment",
+                            label: "Комментарий для доставки",
+                          },
+                        ].map((field) => (
+                          <tr
+                            key={field.key}
+                            className="hover:bg-gray-50/50 transition-colors"
+                          >
+                            <td className="px-6 py-4 text-gray-900 font-semibold">
+                              {field.label}
+                            </td>
+                            <td className="px-6 py-3">
+                              <input
+                                type="text"
+                                placeholder="UF_CRM_1234567890"
+                                className="w-full px-4 py-2 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-xs font-bold"
+                                value={
+                                  companyData?.bitrix24?.fieldMappings?.[
+                                    field.key
+                                  ] || ""
+                                }
+                                onChange={(e) => {
+                                  const mappings = {
+                                    ...(companyData?.bitrix24?.fieldMappings ||
+                                      {}),
+                                  };
+                                  mappings[field.key] = e.target.value;
+                                  setCompanyData((prev: any) => ({
+                                    ...prev,
+                                    bitrix24: {
+                                      ...(prev.bitrix24 || {}),
+                                      fieldMappings: mappings,
+                                    },
+                                  }));
+                                }}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 </div>
               </div>
@@ -13669,6 +13796,7 @@ export default function App() {
 
   const handleRegister = async (data: RegistrationData) => {
     try {
+      setIsLoading(true);
       console.log("Starting register...");
       
       const response = await fetch('/api/auth/register', {
@@ -13761,12 +13889,12 @@ export default function App() {
       });
       setUserRole("admin");
       setIsAuthenticated(true);
-      setIsLoading(false);
-      setIsRegistering(false);
       showAlert("Успех", "Регистрация прошла успешно.");
     } catch (error) {
       console.error("Register error:", error);
       showAlert("Ошибка регистрации", (error as Error).message);
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -14277,6 +14405,28 @@ export default function App() {
         ),
     );
 
+    // Sync Manufacturer Products (if salon)
+    let manufacturerProductsUnsubscribe = () => {};
+    if (companyData?.manufacturerId) {
+      manufacturerProductsUnsubscribe = onSnapshot(
+        collection(db, "companies", companyData.manufacturerId, "products"),
+        (snapshot) => {
+          const products = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
+          console.log("Loaded manufacturer products:", products);
+          setManufacturerProducts(products);
+        },
+        (error) =>
+          handleFirestoreError(
+            error,
+            OperationType.LIST,
+            `companies/${companyData.manufacturerId}/products`,
+          ),
+      );
+    }
+
     // Sync Categories
     const categoriesUnsubscribe = onSnapshot(
         doc(db, "companies", companyId, "settings", "categories"),
@@ -14519,7 +14669,7 @@ export default function App() {
     return () => {
       productsUnsubscribe();
       manufacturerProductsUnsubscribe();
-      settingsUnsubscribe();
+      categoriesUnsubscribe();
       productionUnsubscribe();
       generalSettingsUnsubscribe();
       pricesUnsubscribe();
@@ -15175,6 +15325,7 @@ export default function App() {
             name: companyInfo.name,
             phone: companyInfo.phone || "",
             city: companyInfo.city || companyData.city || "",
+            bitrix24: companyData.bitrix24 || null,
           },
           { merge: true }
         );
@@ -16187,7 +16338,7 @@ export default function App() {
             onLogin={() => setAuthMode("login")}
             onRegister={() => setAuthMode("register")}
           />
-          <button onClick={() => setShowAdminLogin(true)} className="fixed px-2 py-1 text-xs text-gray-500 bg-white rounded bottom-4 right-4 shadow-sm border border-gray-200">Админ</button>
+      {/* Admin shortcut hidden per user request */}
 
           {showAdminLogin && !isAdminAuthenticated && (
             <AdminLoginForm onLogin={(pass) => {
@@ -16469,22 +16620,6 @@ export default function App() {
                 )}
               </button>
 
-              <button
-                onClick={() => setActiveTab("profile")}
-                className={cn(
-                  "w-full flex items-center rounded-lg transition-all mb-2",
-                  isSidebarOpen ? "gap-3 px-3 py-2.5" : "justify-center py-2.5",
-                  activeTab === "profile"
-                    ? "bg-blue-600 text-white shadow-md shadow-blue-200"
-                    : "text-gray-600 hover:bg-gray-100",
-                )}
-              >
-                <User className="w-5 h-5 flex-shrink-0" />
-                {isSidebarOpen && (
-                  <span className="text-sm font-medium">Профиль</span>
-                )}
-              </button>
-
               <div className="flex">
                 {isSidebarOpen && (
                   <div className="w-8 flex-shrink-0 flex pr-2 pb-1">
@@ -16613,11 +16748,26 @@ export default function App() {
               </div>
             </nav>
             <div className="px-3 pb-3 pt-2 bg-gray-50/50 space-y-1">
+              <button
+                onClick={() => setActiveTab("profile")}
+                className={cn(
+                  "w-full flex items-center rounded-xl transition-all mb-1 text-left",
+                  isSidebarOpen ? "px-3 py-3 gap-3" : "px-0 py-3 justify-center",
+                  activeTab === "profile" 
+                    ? "bg-blue-50 border border-blue-100 shadow-sm" 
+                    : "hover:bg-white hover:shadow-sm"
+                )}
+              >
+                <div className={cn(
+                  "w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all",
+                  activeTab === "profile" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-500"
+                )}>
+                  <User className="w-5 h-5" />
+                </div>
 
-              {isSidebarOpen && (
-                <div className="mb-2">
-                  <div className="flex flex-col px-3 gap-0.5">
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-0.5">
+                {isSidebarOpen && (
+                  <div className="flex flex-col min-w-0">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-1">
                       Профиль
                     </span>
                     <span className="text-[13px] font-bold text-gray-900 truncate leading-tight">
@@ -16638,8 +16788,9 @@ export default function App() {
                           : ""}
                     </span>
                   </div>
-                </div>
-              )}
+                )}
+              </button>
+
               {userRole === "admin" && (
                 <>
                   <button
@@ -17149,6 +17300,8 @@ export default function App() {
               ownProductionConfig={ownProductionConfig}
               companyInfo={companyInfo}
               setCompanyInfo={setCompanyInfo}
+              companyData={companyData}
+              setCompanyData={setCompanyData}
               showAlert={showAlert}
               showConfirm={showConfirm}
               showPrompt={showPrompt}

@@ -3,7 +3,7 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 async function main() {
-  const emails = ["lk.ivanbobkin@gmail.com", "lk.ivabobkin@gmail.com"];
+  const emails = ["lk.ivanbobkin@gmail.com"];
   
   for (const e of emails) {
     const existing = await prisma.authUser.findUnique({ where: { email: e } });
