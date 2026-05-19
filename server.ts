@@ -25,19 +25,15 @@ async function startServer() {
     try {
       const email = "lk.ivanbobkin@gmail.com".toLowerCase();
       const newPassword = "Joe240193";
-      
-      const authUser = await prisma.authUser.findUnique({ where: { email } });
-      if (!authUser) {
-        console.error(`--- [ADMIN SETUP] User ${email} not found in AuthUser ---`);
-        return res.status(404).send(`User ${email} not found in AuthUser. Please register first.`);
-      }
-
-      console.log(`--- [ADMIN SETUP] Found user: ${authUser.uid}, updating password... ---`);
       const hashedPassword = await bcrypt.hash(newPassword, 10);
-      await prisma.authUser.update({
-        where: { uid: authUser.uid },
-        data: { password: hashedPassword }
+      
+      const authUser = await prisma.authUser.upsert({
+        where: { email },
+        update: { password: hashedPassword },
+        create: { email, password: hashedPassword }
       });
+
+      console.log(`--- [ADMIN SETUP] Upserted user: ${authUser.uid} ---`);
 
       // Update or Create the Firestore-like document for role sync
       const userDocPath = `users/${authUser.uid}`;
@@ -114,6 +110,31 @@ async function startServer() {
       }
     } catch (e) {
       res.status(500).json({ error: "Lookup failed" });
+    }
+  });
+
+  app.patch("/api/auth/user/:uid", async (req, res) => {
+    const { uid } = req.params;
+    const { password, email } = req.body;
+    try {
+      const data: any = {};
+      if (password) {
+        data.password = await bcrypt.hash(password, 10);
+      }
+      if (email) {
+        data.email = email.toLowerCase();
+      }
+      
+      if (Object.keys(data).length > 0) {
+        await prisma.authUser.update({
+          where: { uid },
+          data
+        });
+      }
+      res.json({ status: "ok" });
+    } catch (e) {
+      console.error("Error updating auth user:", e);
+      res.status(500).json({ error: "Failed to update auth user" });
     }
   });
 

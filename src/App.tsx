@@ -42,6 +42,7 @@ import { ProjectsView } from "./components/Projects/ProjectsView";
 import { ProjectSpecificationView } from "./components/Projects/ProjectSpecificationView";
 import { ProjectSetCheckoutModal } from "./components/Projects/ProjectSetCheckoutModal";
 import { SpecificationPrintView } from "./components/Projects/SpecificationPrintView";
+import { UserProfileView } from "./components/Profile/UserProfileView";
 import {
   Menu,
   X,
@@ -67,6 +68,7 @@ import {
   Minus,
   Factory,
   Users,
+  User,
   LogOut,
   FolderOpen,
   ShieldCheck,
@@ -104,6 +106,7 @@ import {
   Clock,
   Navigation,
   ShieldAlert,
+  CheckCircle2,
 } from "lucide-react";
 
 const handleFirestoreError = (e: any, op: any, path: string) => console.warn("Firestore error:", op, path, e);
@@ -16466,6 +16469,22 @@ export default function App() {
                 )}
               </button>
 
+              <button
+                onClick={() => setActiveTab("profile")}
+                className={cn(
+                  "w-full flex items-center rounded-lg transition-all mb-2",
+                  isSidebarOpen ? "gap-3 px-3 py-2.5" : "justify-center py-2.5",
+                  activeTab === "profile"
+                    ? "bg-blue-600 text-white shadow-md shadow-blue-200"
+                    : "text-gray-600 hover:bg-gray-100",
+                )}
+              >
+                <User className="w-5 h-5 flex-shrink-0" />
+                {isSidebarOpen && (
+                  <span className="text-sm font-medium">Профиль</span>
+                )}
+              </button>
+
               <div className="flex">
                 {isSidebarOpen && (
                   <div className="w-8 flex-shrink-0 flex pr-2 pb-1">
@@ -17174,6 +17193,36 @@ export default function App() {
               userRole={userRole || "worker"}
               companyId={companyData?.id || ""}
               manufacturerId={companyData?.manufacturerId}
+            />
+          ) : activeTab === "profile" ? (
+            <UserProfileView 
+              userData={userData}
+              onUpdateUser={async (updates: any) => {
+                if (userData?.uid) {
+                  try {
+                    // 1. Sync password if changed
+                    if (updates.password) {
+                      await fetch(`/api/auth/user/${userData.uid}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ password: updates.password })
+                      });
+                    }
+
+                    // 2. Update user doc (name, etc)
+                    const docUpdates = { ...updates };
+                    delete docUpdates.password; // Don't store plain password in Firestore-like doc
+
+                    await updateDoc(doc(db, "users", userData.uid), docUpdates);
+                    setUserData((prev: any) => ({ ...prev, ...docUpdates }));
+                    showAlert("Успех", "Данные профиля обновлены");
+                  } catch (e) {
+                    console.error("Profile update error:", e);
+                    showAlert("Ошибка", "Не удалось обновить данные");
+                  }
+                }
+              }}
+              onLogout={handleLogout}
             />
           ) : null}
         </main>
