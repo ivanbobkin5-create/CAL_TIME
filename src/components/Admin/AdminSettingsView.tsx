@@ -309,9 +309,56 @@ export const AdminSettingsView = ({
     });
   };
 
+  const saveBitrix24Settings = async () => {
+    if (!companyId) return;
+    setIsLoading(true);
+    try {
+      await fetch(`/api/firebase/doc/companies/${companyId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: { bitrix24: companyData.bitrix24 } })
+      });
+      showAlert('Успешно', 'Настройки Bitrix24 сохранены');
+    } catch (error) {
+      console.error(error);
+      showAlert('Ошибка', 'Не удалось сохранить настройки');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   return (
     <div className="p-4 md:p-8">
       <div className="max-w-5xl mx-auto space-y-8">
+        {/* Bitrix24 Integration Section */}
+        <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
+          <div className="flex items-center gap-3 mb-8">
+            <Settings className="w-8 h-8 text-blue-600" />
+            <h1 className="text-3xl font-bold text-gray-900">Интеграция с Bitrix24</h1>
+          </div>
+          <div className="space-y-6">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Ссылка входящего вебхука</label>
+              <input
+                type="text"
+                placeholder="https://yourgroup.bitrix24.ru/rest/..."
+                className="block w-full px-4 py-2 border border-gray-300 rounded-xl focus:ring-blue-500 focus:border-blue-500"
+                value={companyData?.bitrix24?.webhookUrl || ''}
+                onChange={(e) => setCompanyData(prev => ({ ...prev, bitrix24: { ...prev.bitrix24, webhookUrl: e.target.value } }))}
+              />
+              <p className="text-sm text-gray-500 mt-2">
+                Инструкция: Зайдите в Битрикс24 &rarr; Приложения &rarr; Вебхуки &rarr; Добавить входящий вебхук. Скопируйте ссылку и вставьте сюда.
+              </p>
+            </div>
+            <button
+               onClick={saveBitrix24Settings}
+               className="px-6 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors"
+            >
+              {isLoading ? 'Сохранение...' : 'Сохранить настройки Bitrix24'}
+            </button>
+          </div>
+        </div>
+
         {/* Tariff Info Section */}
         <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">

@@ -33,6 +33,7 @@ function getDocs() { return Promise.resolve({ docs: [] }); }
 
 import { cn } from "../../lib/utils";
 import { ProjectSpecificationModal } from "./ProjectSpecificationModal";
+import { Bitrix24Modal } from "./Bitrix24Modal";
 
 
 interface Project {
@@ -85,6 +86,7 @@ export const ProjectsView = ({
   const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
+  const [selectedBitrixProject, setSelectedBitrixProject] = useState<Project | null>(null);
 
   const handleTransfer = async (e: React.MouseEvent, project: Project) => {
     e.stopPropagation();
@@ -654,6 +656,18 @@ export const ProjectsView = ({
                       </button>
                     )}
                     {(userRole === "manager" || userRole === "admin") && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedBitrixProject(project);
+                      }}
+                      className="p-1 px-1.5 text-orange-600 hover:bg-orange-50 rounded-lg transition-all"
+                      title="Bitrix24"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  {(userRole === "manager" || userRole === "admin") && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
@@ -691,6 +705,14 @@ export const ProjectsView = ({
           </div>
         )}
       </div>
+      {selectedBitrixProject && (
+        <Bitrix24Modal
+          project={selectedBitrixProject}
+          companyId={companyId || ""}
+          onClose={() => setSelectedBitrixProject(null)}
+          showAlert={showAlert}
+        />
+      )}
     </div>
   );
 };

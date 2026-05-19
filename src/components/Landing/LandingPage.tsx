@@ -8,8 +8,10 @@ import {
   CheckCircle2,
   Factory,
   Users,
-  ArrowRight
+  ArrowRight,
+  Phone
 } from 'lucide-react';
+import { motion } from 'motion/react';
 
 export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRegister: () => void }) => {
   return (
@@ -26,6 +28,10 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
               <span className="text-xl font-black text-gray-900 tracking-tight sm:hidden">Калькулятор</span>
             </div>
             <div className="flex items-center gap-4">
+              <div className="hidden md:flex items-center gap-2 text-sm text-gray-500 font-medium mr-2">
+                <Phone className="w-4 h-4" />
+                <span className="hover:text-blue-600 transition-colors">+7 (812) 507-99-27 <span className="text-gray-400">доб. 2</span></span>
+              </div>
               <button 
                 onClick={onLogin}
                 className="text-sm font-bold text-gray-600 hover:text-blue-600 transition-colors"
@@ -118,101 +124,61 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
         </div>
       </section>
 
-      {/* Pricing Section */}
-      <section className="py-20 bg-white" id="pricing">
+      {/* Platform Power Section */}
+      <section className="py-24 bg-gray-50" id="platform">
         <div className="max-w-7xl mx-auto px-4">
           <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-black text-gray-900 mb-4">Тарифы</h2>
-            <p className="text-gray-500">У всех после регистрации есть 14 дней бесплатно.</p>
+            <h2 className="text-3xl md:text-5xl font-black text-gray-900 mb-6">Операционная система вашего мебельного дела</h2>
+            <p className="text-xl text-gray-500 max-w-2xl mx-auto">От эскиза до отгрузки — всё в одном информационном поле.</p>
           </div>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            {/* Производство */}
-            <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 hover:shadow-xl transition-all flex flex-col relative">
-              <h3 className="text-2xl font-bold text-gray-900 mb-2">Производство</h3>
-              <div className="mb-6">
-                <span className="text-4xl font-black text-gray-900">4 990 ₽</span>
-                <span className="text-gray-500"> / мес</span>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6" id="bento-grid">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              className="md:col-span-2 bg-white p-8 rounded-3xl shadow-sm border border-gray-100 flex flex-col justify-between"
+            >
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white"><Calculator className="w-6 h-6" /></div>
+                <h3 className="text-2xl font-bold text-gray-900">Безошибочные расчеты</h3>
               </div>
-              <div className="text-sm text-green-600 font-medium mb-6 bg-green-50 px-3 py-1 rounded-lg inline-block self-start">
-                При оплате на год скидка 30%
-              </div>
-              <div className="space-y-4 mb-8 flex-1">
-                <div className="flex gap-3 items-start">
-                  <CheckCircle2 className="w-5 h-5 text-blue-600 shrink-0" />
-                  <span className="text-gray-600">Включено: 5 мебельных салонов, 3 дизайнера, 10 сотрудников</span>
-                </div>
-                <div className="flex gap-3 items-start">
-                  <CheckCircle2 className="w-5 h-5 text-blue-600 shrink-0" />
-                  <span className="text-gray-600">+1 сотрудник - 1000 рублей</span>
-                </div>
-                <div className="flex gap-3 items-start">
-                  <CheckCircle2 className="w-5 h-5 text-blue-600 shrink-0" />
-                  <span className="text-gray-600">+1 салон - 2000 рублей</span>
-                </div>
-                <div className="flex gap-3 items-start">
-                  <CheckCircle2 className="w-5 h-5 text-blue-600 shrink-0" />
-                  <span className="text-gray-600">+1 дизайнер - 1000 рублей</span>
-                </div>
-              </div>
-              <button onClick={onRegister} className="w-full py-3 bg-gray-100 text-gray-900 font-bold rounded-xl hover:bg-gray-200 transition-colors">
-                Начать бесплатно
-              </button>
-            </div>
+              <p className="text-gray-600 text-lg">Автоматизация учета всех материалов и услуг. Исключите человеческий фактор: система мгновенно считает стоимость корпуса, фасадов, фурнитуры и работ.</p>
+            </motion.div>
 
-            {/* Салон */}
-            <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 hover:shadow-xl transition-all flex flex-col">
-              <h3 className="text-2xl font-bold text-gray-900 mb-2">Салон</h3>
-              <div className="mb-6">
-                <span className="text-4xl font-black text-gray-900">7 990 ₽</span>
-                <span className="text-gray-500"> / мес</span>
-              </div>
-              <div className="text-sm text-green-600 font-medium mb-6 bg-green-50 px-3 py-1 rounded-lg inline-block self-start">
-                При оплате на год скидка 30%
-              </div>
-              <div className="space-y-4 mb-8 flex-1">
-                <div className="flex gap-3 items-start">
-                  <CheckCircle2 className="w-5 h-5 text-blue-600 shrink-0" />
-                  <span className="text-gray-600">Включено: 1 производство в городе присутствия, 5 сотрудников</span>
-                </div>
-                <div className="flex gap-3 items-start">
-                  <CheckCircle2 className="w-5 h-5 text-blue-600 shrink-0" />
-                  <span className="text-gray-600">Каждый новый город + 3000 рублей</span>
-                </div>
-                <div className="flex gap-3 items-start">
-                  <CheckCircle2 className="w-5 h-5 text-blue-600 shrink-0" />
-                  <span className="text-gray-600">+1 сотрудник - 1000 рублей</span>
-                </div>
-              </div>
-              <button onClick={onRegister} className="w-full py-3 bg-gray-100 text-gray-900 font-bold rounded-xl hover:bg-gray-200 transition-colors">
-                Начать бесплатно
-              </button>
-            </div>
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.1 }}
+              className="bg-gray-900 p-8 rounded-3xl text-white flex flex-col justify-between"
+            >
+              <h3 className="text-2xl font-bold mb-4">Единое поле работы</h3>
+              <p className="text-gray-400">Производство и салоны работают в единой среде. Данные о расчетах мгновенно доступны всем участникам процесса.</p>
+            </motion.div>
 
-            {/* Дизайнер */}
-            <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 hover:shadow-xl transition-all flex flex-col">
-              <h3 className="text-2xl font-bold text-gray-900 mb-2">Дизайнер</h3>
-              <div className="mb-6">
-                <span className="text-4xl font-black text-gray-900">1 990 ₽</span>
-                <span className="text-gray-500"> / мес</span>
-              </div>
-              <div className="text-sm text-green-600 font-medium mb-6 bg-green-50 px-3 py-1 rounded-lg inline-block self-start">
-                При оплате на год скидка 30%
-              </div>
-              <div className="space-y-4 mb-8 flex-1">
-                <div className="flex gap-3 items-start">
-                  <CheckCircle2 className="w-5 h-5 text-blue-600 shrink-0" />
-                  <span className="text-gray-600">Включено: 1 производство в городе присутствия</span>
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.2 }}
+              className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100"
+            >
+              <h3 className="text-2xl font-bold text-gray-900 mb-4">Bitrix24 Интеграция</h3>
+              <p className="text-gray-600">Выгружайте готовые данные о сделках прямо в Bitrix24. Работайте в своей CRM, используя мощности нашей системы расчета.</p>
+            </motion.div>
+
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.3 }}
+              className="md:col-span-2 relative bg-blue-600 p-8 rounded-3xl text-white flex items-center justify-center group cursor-pointer"
+            >
+              <div className="absolute inset-0 bg-black/20 rounded-3xl group-hover:bg-black/10 transition-colors" />
+              <div className="flex items-center gap-4 relative z-10">
+                <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm group-hover:scale-105 transition-transform">
+                  <div className="w-0 h-0 border-t-[12px] border-t-transparent border-l-[20px] border-l-white border-b-[12px] border-b-transparent ml-1" />
                 </div>
-                <div className="flex gap-3 items-start">
-                  <CheckCircle2 className="w-5 h-5 text-blue-600 shrink-0" />
-                  <span className="text-gray-600">Каждый новый город + 1000 рублей</span>
-                </div>
+                <div className="text-2xl font-bold">Посмотреть видео-обзор сервиса</div>
               </div>
-              <button onClick={onRegister} className="w-full py-3 bg-gray-100 text-gray-900 font-bold rounded-xl hover:bg-gray-200 transition-colors">
-                Начать бесплатно
-              </button>
-            </div>
+            </motion.div>
           </div>
         </div>
       </section>

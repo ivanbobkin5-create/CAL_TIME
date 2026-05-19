@@ -226,18 +226,50 @@ async function startServer() {
     }
   });
 
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  app.post("/api/bitrix24/execute", async (req, res) => {
+    try {
+      const { companyId, method, fields } = req.body;
+      const companyDoc = await prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } });
+      if (!companyDoc) return res.status(404).json({ error: "Company not found" });
+      const companyData = JSON.parse(companyDoc.data);
+      const webhookUrl = companyData.bitrix24?.webhookUrl;
+      if (!webhookUrl) return res.status(400).json({ error: "Bitrix24 not configured" });
+
+      const bitrixRes = await fetch(`${webhookUrl}/${method}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fields })
+      });
+      const bitrixData = await bitrixRes.json();
+      res.json(bitrixData);
+    } catch (e) {
+      console.error("Bitrix24 error:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  // Vite middleware for development - Default to production unless explicitly set to development
+  const isDev = process.env.NODE_ENV === "development";
+  
+  if (isDev) {
+    console.log("--- [DEBUG] Explicitly running in DEVELOPMENT mode with Vite middleware ---");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    // In production, serve static files and have a catch-all route for SPA routing
+    console.log("--- [DEBUG] Running in PRODUCTION mode, serving static files from /dist ---");
     const distPath = path.join(process.cwd(), 'dist');
+    
+    // Check if dist directory exists
     app.use(express.static(distPath));
-    app.get('*', (req, res) => {
+    
+    app.get('*', (req, res, next) => {
+      // If it's an API request that didn't match any route, don't serve index.html
+      if (req.path.startsWith('/api/')) {
+        return res.status(404).json({ error: "API Route not found" });
+      }
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }
