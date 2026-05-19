@@ -248,29 +248,38 @@ async function startServer() {
     }
   });
 
-  // Vite middleware for development - Default to production unless explicitly set to development
+  // Environment determination
   const isDev = process.env.NODE_ENV === "development";
-  
+  const distPath = path.join(process.cwd(), 'dist');
+
+  console.log(`--- [STARTUP] Mode: ${isDev ? 'DEVELOPMENT' : 'PRODUCTION'} ---`);
+  console.log(`--- [STARTUP] CWD: ${process.cwd()} ---`);
+  console.log(`--- [STARTUP] Dist Path: ${distPath} ---`);
+
   if (isDev) {
-    console.log("--- [DEBUG] Explicitly running in DEVELOPMENT mode with Vite middleware ---");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
   } else {
-    console.log("--- [DEBUG] Running in PRODUCTION mode, serving static files from /dist ---");
-    const distPath = path.join(process.cwd(), 'dist');
+    // Check if dist exists for better error reporting in logs
+    app.use(express.static(distPath, { index: false }));
     
-    // Check if dist directory exists
-    app.use(express.static(distPath));
-    
-    app.get('*', (req, res, next) => {
-      // If it's an API request that didn't match any route, don't serve index.html
+    app.get('*', (req, res) => {
+      // API 404s
       if (req.path.startsWith('/api/')) {
+        console.warn(`--- [API 404] No route for: ${req.path} ---`);
         return res.status(404).json({ error: "API Route not found" });
       }
-      res.sendFile(path.join(distPath, 'index.html'));
+      
+      const indexPath = path.join(distPath, 'index.html');
+      res.sendFile(indexPath, (err) => {
+        if (err) {
+          console.error(`--- [SERVER ERROR] Failed to send index.html: ${err.message} ---`);
+          res.status(500).send("The application build (dist) was not found. Please ensure 'npm run build' was executed.");
+        }
+      });
     });
   }
 

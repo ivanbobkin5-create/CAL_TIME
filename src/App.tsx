@@ -13436,20 +13436,35 @@ export default function App() {
 
   const handleLogin = async (data: any) => {
     try {
-      await signInWithEmailAndPassword(auth, data.email, data.password);
+      setIsLoading(true);
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: data.email, password: data.password })
+      });
+
+      if (!response.ok) {
+        const err = await response.json();
+        throw new Error(err.error || "Неверный email или пароль");
+      }
+
+      const authUser = await response.json();
+      
+      // Load user data from Firestore-like API
+      const userRes = await fetch(`/api/firebase/doc/users/${authUser.uid}`);
+      if (userRes.ok) {
+         const userData = await userRes.json();
+         setUser(userData);
+      } else {
+         // Fallback if user doc doesn't exist for some reason
+         setUser({ uid: authUser.uid, email: authUser.email, role: 'manager' });
+      }
+      
     } catch (error) {
       console.error("Login error:", error);
-      let message = "Произошла неизвестная ошибка при входе.";
-      if ((error as any).code === "auth/user-not-found") {
-        message = "Пользователь не найден. Проверьте email.";
-      } else if ((error as any).code === "auth/wrong-password") {
-        message = "Неверный пароль.";
-      } else if ((error as any).code === "auth/network-request-failed") {
-        message = "Ошибка сети. Проверьте подключение к интернету.";
-      } else {
-        message = (error as Error).message;
-      }
-      showAlert("Ошибка входа", message);
+      showAlert("Ошибка входа", (error as Error).message);
+    } finally {
+      setIsLoading(false);
     }
   };
 

@@ -350,6 +350,56 @@ export const AdminSettingsView = ({
                 Инструкция: Зайдите в Битрикс24 &rarr; Приложения &rarr; Вебхуки &rarr; Добавить входящий вебхук. Скопируйте ссылку и вставьте сюда.
               </p>
             </div>
+
+            <div className="pt-4 border-t border-gray-100">
+              <h3 className="text-lg font-bold text-gray-900 mb-4">Настройка полей (Соответствие API ID)</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm text-left text-gray-500">
+                  <thead className="text-xs text-gray-700 uppercase bg-gray-50">
+                    <tr>
+                      <th className="px-4 py-3">Поле в приложении</th>
+                      <th className="px-4 py-3">ID поля в Bitrix24 (например, UF_CRM_...)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {[
+                      { key: 'contractNumber', label: 'Номер договора' },
+                      { key: 'totalSum', label: 'Сумма договора' },
+                      { key: 'contractDate', label: 'Дата договора' },
+                      { key: 'readyDate', label: 'Дата готовности' },
+                      { key: 'hardwareSum', label: 'Сумма фурнитуры' },
+                      { key: 'cabinetSum', label: 'Стоимость корпуса' },
+                      { key: 'facadeSum', label: 'Стоимость фасадов' },
+                      { key: 'customFacadeSum', label: 'Стоимость заказных фасадов' },
+                      { key: 'assemblySum', label: 'Стоимость сборки' },
+                      { key: 'deliverySum', label: 'Стоимость доставки' },
+                      { key: 'deliveryComment', label: 'Комментарий для доставки' },
+                    ].map((field) => (
+                      <tr key={field.key}>
+                        <td className="px-4 py-2 font-medium text-gray-900">{field.label}</td>
+                        <td className="px-4 py-2">
+                          <input
+                            type="text"
+                            placeholder="UF_CRM_1234567890"
+                            className="w-full px-3 py-1.5 border border-gray-200 rounded-lg focus:ring-1 focus:ring-blue-500"
+                            value={companyData?.bitrix24?.fieldMappings?.[field.key] || ''}
+                            onChange={(e) => {
+                              const mappings = { ...(companyData?.bitrix24?.fieldMappings || {}) };
+                              mappings[field.key] = e.target.value;
+                              setCompanyData(prev => ({
+                                ...prev,
+                                bitrix24: { ...prev.bitrix24, fieldMappings: mappings }
+                              }));
+                            }}
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             <button
                onClick={saveBitrix24Settings}
                className="px-6 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors"

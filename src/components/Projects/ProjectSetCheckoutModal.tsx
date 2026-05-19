@@ -178,6 +178,8 @@ export const ProjectSetCheckoutModal = ({
     let totalServicesPrice = 0;
     let totalDeliveryPrice = 0;
     let totalAssemblyPrice = 0;
+    let totalFacadePrice = 0;
+    let totalCustomFacadePrice = 0;
 
     const materials: any[] = [];
     const hardware: any[] = [];
@@ -188,6 +190,7 @@ export const ProjectSetCheckoutModal = ({
       const rows = p.data.summaryRows;
       if (rows && rows.length > 0) {
         rows.forEach((row: any) => {
+          const rowNameLower = (row.name || "").toLowerCase();
           if (
             row.type === "product" ||
             row.type === "product_edge" ||
@@ -201,8 +204,6 @@ export const ProjectSetCheckoutModal = ({
               hardware.push({ ...row, projectName: p.name });
             }
           } else if (row.type === "service") {
-            // Group specific services
-            const rowNameLower = (row.name || "").toLowerCase();
             if (rowNameLower.includes("доставка")) {
               if (useSeparateDelivery) {
                 totalServicesPrice += row.total || 0;
@@ -216,6 +217,13 @@ export const ProjectSetCheckoutModal = ({
               totalServicesPrice += row.total || 0;
               services.push({ ...row, projectName: p.name });
             }
+          } else if (row.type === "facade" || rowNameLower.includes("фасад")) {
+             if (rowNameLower.includes("заказн")) {
+               totalCustomFacadePrice += row.total || 0;
+             } else {
+               totalFacadePrice += row.total || 0;
+             }
+             materials.push({ ...row, projectName: p.name });
           } else {
             totalMaterialsPrice += row.total || 0;
             materials.push({ ...row, projectName: p.name });
@@ -346,6 +354,8 @@ export const ProjectSetCheckoutModal = ({
       totalServicesPrice,
       totalDeliveryPrice,
       totalAssemblyPrice,
+      totalFacadePrice,
+      totalCustomFacadePrice,
       totalOverall: overall,
       materials,
       hardware,

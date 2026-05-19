@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { X, ExternalLink, Loader2, Send } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, ExternalLink, Loader2, Send, Settings } from 'lucide-react';
+import { cn } from "../../lib/utils";
 
 export const Bitrix24Modal = ({
   project,
@@ -12,37 +13,83 @@ export const Bitrix24Modal = ({
   onClose: () => void;
   showAlert: (title: string, message: string) => void;
 }) => {
-  const [mode, setMode] = useState<'link' | 'create'>('link');
+  const [mode, setMode] = useState<'link' | 'create'>('create');
   const [dealId, setDealId] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [settings, setSettings] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const response = await fetch(`/api/firebase/doc/companies/${companyId}`);
+        if (response.ok) {
+          const data = await response.json();
+          setSettings(data.bitrix24 || {});
+        }
+      } catch (e) {
+        console.error("Error fetching bitrix settings:", e);
+      }
+    };
+    fetchSettings();
+  }, [companyId]);
 
   const handleCreateNewDeal = async () => {
     setIsLoading(true);
     try {
+      const mapping = settings?.fieldMappings || {};
+      const data = project.data || {};
+      const summary = data.summary || {};
+
+      // Basic fields for the deal
+      const fields: any = {
+        TITLE: `Проект: ${project.name}`,
+        CURRENCY_ID: "RUB",
+      };
+
+      // Add comments
+      let comments = `Создано из приложения Mebelev.\n`;
+      if (data.contractNumber) comments += `Договор №: ${data.contractNumber}\n`;
+      if (data.comment) comments += `Комментарий: ${data.comment}`;
+      fields.COMMENTS = comments;
+
+      // Map dynamic fields from Project Data
+      if (mapping.contractNumber && data.contractNumber) fields[mapping.contractNumber] = data.contractNumber;
+      if (mapping.totalSum && data.totalSum) fields[mapping.totalSum] = data.totalSum;
+      if (mapping.contractDate && data.contractDate) fields[mapping.contractDate] = data.contractDate;
+      if (mapping.readyDate && data.readyDate) fields[mapping.readyDate] = data.readyDate;
+      
+      // Values from summary
+      if (mapping.hardwareSum && summary.totalHardwarePrice) fields[mapping.hardwareSum] = summary.totalHardwarePrice;
+      if (mapping.cabinetSum && summary.totalMaterialsPrice) fields[mapping.cabinetSum] = summary.totalMaterialsPrice;
+      if (mapping.facadeSum && summary.totalFacadePrice) fields[mapping.facadeSum] = summary.totalFacadePrice;
+      if (mapping.customFacadeSum && summary.totalCustomFacadePrice) fields[mapping.customFacadeSum] = summary.totalCustomFacadePrice;
+      if (mapping.deliverySum && summary.totalDeliveryPrice) fields[mapping.deliverySum] = summary.totalDeliveryPrice;
+      if (mapping.assemblySum && summary.totalAssemblyPrice) fields[mapping.assemblySum] = summary.totalAssemblyPrice;
+      if (mapping.deliveryComment && data.comment) fields[mapping.deliveryComment] = data.comment;
+
+      // Standart opportunity field
+      fields.OPPORTUNITY = data.totalSum || 0;
+
       const response = await fetch("/api/bitrix24/execute", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           companyId,
           method: "crm.deal.add",
-          fields: {
-            TITLE: `Проект: ${project.name}`,
-            // We'll map fields here based on requirements later
-            COMMENT: project.data?.comment || "",
-          }
+          fields
         })
       });
-      const data = await response.json();
-      if (data.result) {
+      
+      const resData = await response.json();
+      if (resData.result) {
         showAlert('Успешно', 'Сделка создана в Bitrix24.');
-        window.open(`https://your-bitrix24-url/crm/deal/details/${data.result}/`, '_blank');
         onClose();
       } else {
-        throw new Error(data.error_description || "Ошибка создания сделки");
+        throw new Error(resData.error_description || "Ошибка создания сделки");
       }
     } catch (e) {
       console.error(e);
-      showAlert('Ошибка', 'Не удалось создать сделку в Bitrix24');
+      showAlert('Ошибка', 'Не удалось создать сделку. Проверьте настройки вебхука в админ-панели и правильность ID полей.');
     } finally {
       setIsLoading(false);
     }
