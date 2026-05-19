@@ -2,15 +2,66 @@ import React, { useState, useEffect } from 'react';
 import { Users, Plus, Shield, Mail, User, Briefcase, Settings, Trash2, Edit2, X, Check, Loader2, Lock, Crown } from 'lucide-react';
 // Firebase removed, backend switched to TimeWeb
 const db = {};
-function createUserWithEmailAndPassword() {}
-function collection() { return {}; }
-function onSnapshot() { return () => {}; }
-function doc() { return {}; }
-function setDoc() { return Promise.resolve(); }
-function deleteDoc() { return Promise.resolve(); }
-function getDoc() { return Promise.resolve({ exists: () => false }); }
-function query() { return {}; }
-function where() { return {}; }
+function collection(db: any, ...pathParts: string[]) {
+  return { path: pathParts.join('/') };
+}
+function onSnapshot(ref: any, callback: (snap: any) => void) {
+  const fetchData = async () => {
+    try {
+      if (ref.path.split('/').length % 2 === 0) {
+        // Doc ref
+        const res = await fetch(`/api/firebase/doc/${ref.path}`);
+        if (res.ok) {
+          const data = await res.json();
+          callback({ exists: () => true, data: () => data });
+        } else {
+          callback({ exists: () => false });
+        }
+      } else {
+        // Collection ref
+        const res = await fetch(`/api/firebase/col/${ref.path}`);
+        if (res.ok) {
+          const data = await res.json();
+          callback({
+            docs: data.map((d: any) => ({
+              id: d.id,
+              data: () => d.data,
+              exists: () => true
+            })),
+            size: data.length
+          });
+        }
+      }
+    } catch (e) {
+      console.error("Snapshot error:", e);
+    }
+  };
+  fetchData();
+  return () => {};
+}
+function doc(db: any, ...pathParts: string[]) {
+  return { path: pathParts.join('/') };
+}
+async function setDoc(docRef: any, data: any) {
+  await fetch(`/api/firebase/doc/${docRef.path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data })
+  });
+}
+async function deleteDoc(docRef: any) {
+  await fetch(`/api/firebase/doc/${docRef.path}`, { method: 'DELETE' });
+}
+async function getDoc(docRef: any) {
+  const res = await fetch(`/api/firebase/doc/${docRef.path}`);
+  if (res.ok) {
+    const data = await res.json();
+    return { exists: () => true, data: () => data };
+  }
+  return { exists: () => false };
+}
+function query(ref: any, ...constraints: any[]) { return ref; }
+function where(field: string, op: string, value: any) { return {}; }
 import { cn } from '../../lib/utils';
 
 

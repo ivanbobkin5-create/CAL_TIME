@@ -18,18 +18,78 @@ import {
 const db = {};
 const handleFirestoreError = (e: any, op: any, path: string) => console.warn("Firestore call bypassed (Firebase removed):", op, path);
 enum OperationType { LIST = "LIST", UPDATE = "UPDATE", GET = "GET", DELETE = "DELETE", WRITE = "WRITE", CREATE = "CREATE" }
-function collection() { return {}; }
-function onSnapshot() { return () => {}; }
-function query()  { return {}; }
-function where() { return {}; }
-function orderBy() { return {}; }
-function deleteDoc() { return Promise.resolve(); }
-function updateDoc() { return Promise.resolve(); }
-function doc() { return {}; }
-function or() { return {}; }
-function writeBatch() { return { update: () => {}, commit: () => {} }; }
-function limit() { return {}; }
-function getDocs() { return Promise.resolve({ docs: [] }); }
+function collection(db: any, ...pathParts: string[]) {
+  return { path: pathParts.join('/') };
+}
+function onSnapshot(ref: any, callback: (snap: any) => void) {
+  const fetchData = async () => {
+    try {
+      const res = await fetch(`/api/firebase/col/${ref.path}`);
+      if (res.ok) {
+        const data = await res.json();
+        callback({
+          docs: data.map((d: any) => ({
+            id: d.id,
+            data: () => d.data,
+            exists: () => true
+          })),
+          size: data.length
+        });
+      }
+    } catch (e) {
+      console.error("Snapshot error:", e);
+    }
+  };
+  fetchData();
+  return () => {};
+}
+function query(ref: any, ...constraints: any[]) { return ref; }
+function where(field: string, op: string, value: any) { return {}; }
+function orderBy(field: string, dir: string) { return {}; }
+async function deleteDoc(docRef: any) {
+  await fetch(`/api/firebase/doc/${docRef.path}`, { method: 'DELETE' });
+}
+async function updateDoc(docRef: any, data: any) {
+  await fetch(`/api/firebase/doc/${docRef.path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data })
+  });
+}
+function doc(db: any, ...pathParts: string[]) {
+  return { path: pathParts.join('/') };
+}
+function or(...constraints: any[]) { return {}; }
+function writeBatch() { 
+  const updates: Array<{path: string, data: any}> = [];
+  return { 
+    update: (docRef: any, data: any) => { updates.push({ path: docRef.path, data }); }, 
+    commit: async () => {
+      for (const update of updates) {
+        await fetch(`/api/firebase/doc/${update.path}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: update.data })
+        });
+      }
+    } 
+  }; 
+}
+function limit(n: number) { return {}; }
+async function getDocs(ref: any) {
+  const res = await fetch(`/api/firebase/col/${ref.path}`);
+  if (res.ok) {
+    const data = await res.json();
+    return {
+      docs: data.map((d: any) => ({
+        id: d.id,
+        data: () => d.data,
+      })),
+      size: data.length
+    };
+  }
+  return { docs: [], size: 0 };
+}
 
 import { cn } from "../../lib/utils";
 import { ProjectSpecificationModal } from "./ProjectSpecificationModal";

@@ -24,15 +24,72 @@ const handleFirestoreError = (e: any, op: any, path: string) => console.warn("Fi
 enum OperationType { LIST = "LIST", UPDATE = "UPDATE", GET = "GET", DELETE = "DELETE", WRITE = "WRITE", CREATE = "CREATE" }
 // Firebase removed, backend switched to TimeWeb
 const db = {};
-function collection() { return {}; }
-function onSnapshot() { return () => {}; }
-function doc() { return {}; }
-function getDoc() { return Promise.resolve({ exists: () => false }); }
-function getDocs() { return Promise.resolve({ docs: [] }); }
-function updateDoc() { return Promise.resolve(); }
-function deleteDoc() { return Promise.resolve(); }
-function query() { return {}; }
-function where() { return {}; }
+function collection(db: any, path: string, ...rest: any[]) { 
+  return { path }; 
+}
+function onSnapshot(colRef: any, callback: (snap: any) => void, errorCb?: (err: any) => void) { 
+  const fetchCol = async () => {
+    try {
+      const res = await fetch(`/api/firebase/col/${colRef.path}`);
+      if (res.ok) {
+        const data = await res.json();
+        callback({
+          docs: data.map((d: any) => ({
+            id: d.id,
+            data: () => d.data,
+            exists: () => true
+          })),
+          size: data.length
+        });
+      }
+    } catch (e) {
+      if (errorCb) errorCb(e);
+      else console.error("Snapshot error:", e);
+    }
+  };
+  fetchCol();
+  return () => {}; 
+}
+function doc(db: any, col: string, ...rest: any[]) { 
+  const path = [col, ...rest].join('/');
+  return { path }; 
+}
+async function getDoc(docRef: any) { 
+  const res = await fetch(`/api/firebase/doc/${docRef.path}`);
+  if (res.ok) {
+    const data = await res.json();
+    return {
+      exists: () => true,
+      data: () => data
+    };
+  }
+  return { exists: () => false };
+}
+async function getDocs(colRef: any) { 
+  const res = await fetch(`/api/firebase/col/${colRef.path}`);
+  if (res.ok) {
+    const data = await res.json();
+    return {
+      docs: data.map((d: any) => ({ id: d.id, data: () => d.data })),
+      size: data.length
+    };
+  }
+  return { docs: [], size: 0 };
+}
+async function updateDoc(docRef: any, data: any) { 
+  await fetch(`/api/firebase/doc/${docRef.path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data })
+  });
+}
+async function deleteDoc(docRef: any) { 
+  await fetch(`/api/firebase/doc/${docRef.path}`, {
+    method: 'DELETE'
+  });
+}
+function query(colRef: any, ...constraints: any[]) { return colRef; }
+function where(field: string, op: string, value: any) { return {}; }
 import { cn } from '../../lib/utils';
 
 interface Company {
