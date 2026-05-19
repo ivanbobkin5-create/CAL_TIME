@@ -101,7 +101,105 @@ import {
   AlertTriangle,
   Layers,
   Target,
+  Clock,
+  Navigation,
+  ShieldAlert,
 } from "lucide-react";
+
+const handleFirestoreError = (e: any, op: any, path: string) => console.warn("Firestore error:", op, path, e);
+enum OperationType { LIST = "LIST", UPDATE = "UPDATE", GET = "GET", DELETE = "DELETE", WRITE = "WRITE", CREATE = "CREATE" }
+
+// Firebase removed, backend switched to TimeWeb
+const db = {};
+const auth: { currentUser: any } = { currentUser: null };
+
+function collection(db: any, path: string, ...rest: any[]) { 
+  return { path }; 
+}
+
+function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any) => void) { 
+  const isCol = ref.path.split('/').length % 2 !== 0;
+  
+  const fetchSnapshot = async () => {
+    try {
+      if (isCol) {
+        const res = await fetch(`/api/firebase/col/${ref.path}`);
+        if (res.ok) {
+          const data = await res.json();
+          callback({
+            docs: data.map((d: any) => ({
+              id: d.id,
+              data: () => d.data,
+              exists: () => true
+            })),
+            size: data.length
+          });
+        }
+      } else {
+        const res = await fetch(`/api/firebase/doc/${ref.path}`);
+        if (res.ok) {
+          const data = await res.json();
+          callback({
+            exists: () => true,
+            data: () => data,
+            id: ref.path.split('/').pop()
+          });
+        } else {
+          callback({ exists: () => false, data: () => null });
+        }
+      }
+    } catch (e) {
+      if (errorCb) errorCb(e);
+      else console.error("Snapshot error:", e);
+    }
+  };
+
+  fetchSnapshot();
+  const interval = setInterval(fetchSnapshot, 15000); 
+  return () => clearInterval(interval); 
+}
+
+function doc(db: any, col: string, ...rest: any[]) { 
+  const path = [col, ...rest].join('/');
+  return { path }; 
+}
+
+async function getDoc(docRef: any) { 
+  const res = await fetch(`/api/firebase/doc/${docRef.path}`);
+  if (res.ok) {
+    const data = await res.json();
+    return {
+      exists: () => true,
+      data: () => data
+    };
+  }
+  return { exists: () => false };
+}
+
+async function setDoc(docRef: any, data: any, options?: { merge?: boolean }) {
+  await fetch(`/api/firebase/doc/${docRef.path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data, merge: options?.merge })
+  });
+}
+
+async function updateDoc(docRef: any, data: any) { 
+  await fetch(`/api/firebase/doc/${docRef.path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data })
+  });
+}
+
+async function deleteDoc(docRef: any) { 
+  await fetch(`/api/firebase/doc/${docRef.path}`, {
+    method: 'DELETE'
+  });
+}
+
+function query(colRef: any, ...constraints: any[]) { return colRef; }
+function where(field: string, op: string, value: any) { return {}; }
 import {
   LDSP_DATABASE,
   NORDECO_EDGE_MAPPING,
@@ -13330,6 +13428,8 @@ export default function App() {
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
+  const [isSessionBlocked, setIsSessionBlocked] = useState(false);
+  const [sessionId] = useState(() => Math.random().toString(36).substr(2, 9));
 
   const [productionFormat, setProductionFormat] =
     useState<ProductionFormat>("contract");
@@ -13428,11 +13528,67 @@ export default function App() {
   // Removed the auto-redirect to admin panel
   // Users will access it manually using the button in the bottom left menu
 
-  // Firebase Auth Listener
+  // Auth Persistence and Session Tracking
   useEffect(() => {
-    // Auth and Firestore functionality removed as per user request to move all backend logic to TimesWeb.
-    setIsLoading(false);
+    const savedUid = localStorage.getItem('auth_uid');
+    const savedEmail = localStorage.getItem('auth_email');
+    
+    const restoreAuth = async () => {
+      if (savedUid && savedEmail) {
+        setIsLoading(true);
+        try {
+          const userRes = await fetch(`/api/firebase/doc/users/${savedUid}`);
+          if (userRes.ok) {
+            const docData = await userRes.json();
+            setUserData(docData);
+            setUserRole(docData.role || 'manager');
+            auth.currentUser = { uid: savedUid, email: savedEmail, ...docData };
+            
+            if (docData.companyId) {
+              const compRes = await fetch(`/api/firebase/doc/companies/${docData.companyId}`);
+              if (compRes.ok) {
+                const compData = await compRes.json();
+                setCompanyData({ id: docData.companyId, ...compData });
+              }
+            }
+            
+            if (docData.isRoot || docData.email === 'lk.ivanbobkin@gmail.com') {
+              setIsAppAdmin(true);
+              setUserRole('admin');
+            }
+            
+            setIsAuthenticated(true);
+          }
+        } catch (e) {
+          console.error("Failed to restore auth:", e);
+        } finally {
+          setIsLoading(false);
+        }
+      } else {
+        setIsLoading(false);
+      }
+    };
+    
+    restoreAuth();
   }, []);
+
+  // Sync Session ID
+  useEffect(() => {
+    if (isAuthenticated && userData?.uid) {
+      const userRef = doc(db, "users", userData.uid);
+      const unsub = onSnapshot(userRef, (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          if (data.activeSessionId && data.activeSessionId !== sessionId) {
+            setIsSessionBlocked(true);
+          } else {
+            setIsSessionBlocked(false);
+          }
+        }
+      });
+      return unsub;
+    }
+  }, [isAuthenticated, userData?.uid, sessionId]);
 
   const handleLogin = async (data: any) => {
     try {
@@ -13450,29 +13606,52 @@ export default function App() {
 
       const authUser = await response.json();
       
+      // Update session ID for single session enforcement
+      await fetch(`/api/firebase/doc/users/${authUser.uid}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: { activeSessionId: sessionId } })
+      });
+
       // Load user data from Firestore-like API
       const userRes = await fetch(`/api/firebase/doc/users/${authUser.uid}`);
       if (userRes.ok) {
          const docData = await userRes.json();
          setUserData(docData);
          setUserRole(docData.role || 'manager');
+         auth.currentUser = { uid: authUser.uid, email: authUser.email, ...docData };
+         
+         // Fetch company data to ensure correct account type is loaded
+         if (docData.companyId) {
+           const compRes = await fetch(`/api/firebase/doc/companies/${docData.companyId}`);
+           if (compRes.ok) {
+             const compData = await compRes.json();
+             setCompanyData({ id: docData.companyId, ...compData });
+             console.log("Loaded company data:", compData);
+           }
+         }
+
+         // Persistence
+         localStorage.setItem('auth_uid', authUser.uid);
+         localStorage.setItem('auth_email', authUser.email);
          
          // Set global admin status
          if (docData.isRoot || docData.email === 'lk.ivanbobkin@gmail.com') {
            setIsAppAdmin(true);
            setShowAdminPanel(true);
+           setUserRole('admin');
          }
          
          setIsAuthenticated(true);
       } else {
-         // Fallback if user doc doesn't exist for some reason
+         // Fallback
          const fallbackData = { uid: authUser.uid, email: authUser.email, role: 'manager' };
          setUserData(fallbackData);
          setUserRole('manager');
+         auth.currentUser = { uid: authUser.uid, email: authUser.email };
          
-         if (authUser.email === 'lk.ivanbobkin@gmail.com') {
-           setIsAppAdmin(true);
-         }
+         localStorage.setItem('auth_uid', authUser.uid);
+         localStorage.setItem('auth_email', authUser.email);
          
          setIsAuthenticated(true);
       }
@@ -13592,6 +13771,9 @@ export default function App() {
   const handleLogout = async () => {
     try {
       console.log("Logout triggered - switching to local state");
+      localStorage.removeItem('auth_uid');
+      localStorage.removeItem('auth_email');
+      auth.currentUser = null;
       setIsAuthenticated(false);
       setUserData(null);
       setCompanyData(null);
@@ -15942,6 +16124,54 @@ export default function App() {
             Выйти из аккаунта
           </button>
         </div>
+      </div>
+    );
+  }
+
+  if (isSessionBlocked) {
+    return (
+      <div className="fixed inset-0 z-[300] bg-gray-900/90 backdrop-blur-xl flex items-center justify-center p-4">
+        <motion.div 
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="max-w-md w-full bg-white p-10 rounded-[3rem] border border-gray-100 shadow-2xl text-center"
+        >
+          <div className="w-24 h-24 bg-amber-100 text-amber-600 rounded-[2rem] flex items-center justify-center mx-auto mb-8 relative">
+            <div className="absolute inset-0 bg-amber-400 opacity-20 animate-ping rounded-[2rem]" />
+            <ShieldAlert className="w-12 h-12 relative z-10" />
+          </div>
+          
+          <h2 className="text-2xl font-black text-gray-900 mb-4 tracking-tight">
+            Активная сессия на другом устройстве
+          </h2>
+          
+          <p className="text-gray-500 mb-10 leading-relaxed font-medium">
+            Обнаружен вход в этот аккаунт с другого ПК или браузера. Работа возможна только в одном окне одновременно.
+          </p>
+          
+          <div className="space-y-3">
+            <button
+              onClick={async () => {
+                // End other session by taking control
+                if (userData?.uid) {
+                  await updateDoc(doc(db, "users", userData.uid), { activeSessionId: sessionId });
+                  setIsSessionBlocked(false);
+                }
+              }}
+              className="w-full py-4 bg-blue-600 text-white font-bold rounded-2xl hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all flex items-center justify-center gap-3 active:scale-95"
+            >
+              <CheckCircle2 className="w-5 h-5" />
+              Завершить другие сессии
+            </button>
+            
+            <button
+              onClick={handleLogout}
+              className="w-full py-4 text-sm font-bold text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              Выйти из аккаунта
+            </button>
+          </div>
+        </motion.div>
       </div>
     );
   }

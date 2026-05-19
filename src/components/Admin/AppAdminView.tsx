@@ -185,52 +185,7 @@ export const AppAdminView = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'companies' | 'stats' | 'requests' | 'integration'>('companies');
-  const [globalMappings, setGlobalMappings] = useState<Record<string, string>>({});
-  const [isSavingMappings, setIsSavingMappings] = useState(false);
-
-  useEffect(() => {
-    const fetchMappings = async () => {
-      const res = await fetch('/api/firebase/doc/config/bitrix24_mapping');
-      if (res.ok) {
-        const data = await res.json();
-        setGlobalMappings(data.mappings || {});
-      } else {
-        // Default mappings if none exist
-        setGlobalMappings({
-          contractNumber: 'UF_CRM_1234567890',
-          totalSum: 'OPPORTUNITY',
-          contractDate: 'UF_CRM_DATE',
-          readyDate: 'UF_CRM_READY_DATE',
-          hardwareSum: 'UF_CRM_HARDWARE',
-          cabinetSum: 'UF_CRM_CABINET',
-          facadeSum: 'UF_CRM_FACADE',
-          customFacadeSum: 'UF_CRM_CUSTOM_FACADE',
-          deliverySum: 'UF_CRM_DELIVERY',
-          assemblySum: 'UF_CRM_ASSEMBLY',
-          deliveryComment: 'COMMENTS'
-        });
-      }
-    };
-    fetchMappings();
-  }, []);
-
-  const saveMappings = async () => {
-    setIsSavingMappings(true);
-    try {
-      await fetch('/api/firebase/doc/config/bitrix24_mapping', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: { mappings: globalMappings } })
-      });
-      alert('Настройки интеграции сохранены!');
-    } catch (e) {
-      console.error(e);
-      alert('Ошибка при сохранении');
-    } finally {
-      setIsSavingMappings(false);
-    }
-  };
+  const [activeTab, setActiveTab] = useState<'companies' | 'stats' | 'requests'>('companies');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCoefficients, setSelectedCoefficients] = useState<any>(null);
   const [coeffModalOpen, setCoeffModalOpen] = useState(false);
@@ -350,16 +305,38 @@ export const AppAdminView = () => {
     if (!window.confirm("Вы уверены, что хотите ПОЛНОСТЬЮ УДАЛИТЬ компанию и всех ее сотрудников? Это действие необратимо!")) return;
     
     try {
+      // 1. Fetch ALL users that claim to be part of this company
       const companyUsers = users.filter(u => u.companyId === companyId);
-      for (const u of companyUsers) {
-        await deleteDoc(doc(db, 'companies', companyId, 'employees', u.uid));
-        await deleteDoc(doc(db, 'users', u.uid));
-        await fetch(`/api/auth/user/${u.uid}`, { method: 'DELETE' });
+      
+      // 2. Also try to fetch from employees subcollection directly to be sure
+      const employeesSnapshot = await getDocs(collection(db, 'companies', companyId, 'employees'));
+      const directEmployeeIds = employeesSnapshot.docs.map(d => d.id);
+      
+      // Merge unique IDs
+      const allEmployeeIds = Array.from(new Set([...companyUsers.map(u => u.uid), ...directEmployeeIds]));
+
+      for (const uid of allEmployeeIds) {
+        // Delete from subcollection
+        await deleteDoc(doc(db, 'companies', companyId, 'employees', uid));
+        // Delete from global users
+        await deleteDoc(doc(db, 'users', uid));
+        // Delete from Auth
+        await fetch(`/api/auth/user/${uid}`, { method: 'DELETE' });
       }
+
+      // 3. Delete company record
       await deleteDoc(doc(db, 'companies', companyId));
+      
+      // 4. Cleanup settings
+      const settingsPaths = ['production', 'categories', 'general', 'prices', 'bitrix24'];
+      for (const s of settingsPaths) {
+        await deleteDoc(doc(db, 'companies', companyId, 'settings', s));
+      }
+
+      alert("Компания и сотрудники успешно удалены");
     } catch (error) {
       console.error("Error deleting company:", error);
-      alert("Ошибка при удалении компании");
+      alert("Ошибка при полном удалении компании");
     }
   };
 
@@ -385,7 +362,7 @@ export const AppAdminView = () => {
     }
   };
 
-  const updateLimit = async (companyId: string, field: 'employeeLimit' | 'productLimit' | 'tariffExpiration', value: any) => {
+  const updateLimit = async (companyId: string, field: string, value: any) => {
     try {
       await updateDoc(doc(db, 'companies', companyId), {
         [field]: value
@@ -460,16 +437,6 @@ export const AppAdminView = () => {
                 <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>
               )}
             </button>
-            <button 
-              onClick={() => setActiveTab('integration')}
-              className={cn(
-                "px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 relative",
-                activeTab === 'integration' ? "bg-blue-600 text-white shadow-lg shadow-blue-200" : "text-gray-500 hover:text-gray-700"
-              )}
-            >
-              <Settings2 className="w-4 h-4" />
-              Интеграция
-            </button>
           </div>
         </div>
 
@@ -537,69 +504,6 @@ export const AppAdminView = () => {
               </div>
             )}
           </div>
-        ) : activeTab === 'integration' ? (
-          <div className="bg-white rounded-[2rem] p-8 border border-gray-100 shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between mb-8">
-              <div>
-                <h3 className="text-xl font-black text-gray-900">Настройки интеграции</h3>
-                <p className="text-xs text-gray-500 mt-1">Глобальное сопоставление полей Bitrix24 для всех компаний</p>
-              </div>
-              <button 
-                onClick={saveMappings}
-                disabled={isSavingMappings}
-                className="bg-blue-600 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all flex items-center gap-2 disabled:opacity-50 text-sm"
-              >
-                {isSavingMappings ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
-                {isSavingMappings ? 'Сохранение...' : 'Сохранить все ID'}
-              </button>
-            </div>
-
-            <div className="border border-gray-100 rounded-2xl overflow-hidden">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-gray-50">
-                    <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Поле Mebelev</th>
-                    <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">ID в Bitrix24</th>
-                    <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Описание</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {[
-                    { key: 'contractNumber', label: 'Номер договора', desc: 'Строковое поле для номера договора' },
-                    { key: 'totalSum', label: 'Общая сумма', desc: 'Числовое поле (обычно OPPORTUNITY)' },
-                    { key: 'contractDate', label: 'Дата договора', desc: 'Поле типа Дата' },
-                    { key: 'readyDate', label: 'Дата готовности', desc: 'Поле типа Дата' },
-                    { key: 'hardwareSum', label: 'Сумма фурнитуры', desc: 'Числовое поле для стоимости фурнитуры' },
-                    { key: 'cabinetSum', label: 'Сумма корпуса', desc: 'Числовое поле (ЛДСП/кромка)' },
-                    { key: 'facadeSum', label: 'Сумма фасадов', desc: 'Числовое поле (пленка)' },
-                    { key: 'customFacadeSum', label: 'Сумма заказных фасадов', desc: 'Числовое поле (эмаль и др.)' },
-                    { key: 'deliverySum', label: 'Сумма доставки', desc: 'Числовое поле для доставки' },
-                    { key: 'assemblySum', label: 'Сумма сборки', desc: 'Числовое поле для сборки' },
-                    { key: 'deliveryComment', label: 'Комментарий', desc: 'Текстовое поле для примечаний' },
-                  ].map((item) => (
-                    <tr key={item.key} className="hover:bg-gray-50/50 transition-colors">
-                      <td className="px-6 py-4">
-                        <span className="font-bold text-gray-900 text-sm">{item.label}</span>
-                        <code className="block text-[10px] text-gray-400 font-mono mt-0.5">{item.key}</code>
-                      </td>
-                      <td className="px-6 py-4">
-                        <input 
-                          type="text" 
-                          value={globalMappings[item.key] || ''}
-                          onChange={(e) => setGlobalMappings({ ...globalMappings, [item.key]: e.target.value })}
-                          placeholder="Напр. UF_CRM_123"
-                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-mono focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all"
-                        />
-                      </td>
-                      <td className="px-6 py-4 text-[11px] text-gray-500">
-                        {item.desc}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
         ) : (
           <div className="space-y-6">
             <div className="relative max-w-md">
@@ -638,7 +542,18 @@ export const AppAdminView = () => {
                         </div>
                         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
                           <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {company.city}</span>
-                          <span className="flex items-center gap-1"><Tag className="w-3 h-3" /> {company.type}</span>
+                          <div className="flex items-center gap-1">
+                            <Tag className="w-3 h-3" />
+                            <select 
+                              value={company.type}
+                              onChange={(e) => updateLimit(company.id, 'type', e.target.value)}
+                              className="bg-transparent border-none p-0 font-medium text-gray-500 focus:ring-0 cursor-pointer hover:text-blue-600 transition-colors"
+                            >
+                              <option value="Мебельное производство">Мебельное производство</option>
+                              <option value="Салон">Салон</option>
+                              <option value="Дизайнер">Дизайнер</option>
+                            </select>
+                          </div>
                           <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {company.employeeCount || 0} сотрудников</span>
                           <span className="flex items-center gap-1"><BarChart3 className="w-3 h-3 text-blue-500" /> {company.projectCount || 0} расчетов</span>
                           {company.manufacturerId && (
@@ -777,7 +692,11 @@ export const AppAdminView = () => {
             </div>
 
             {/* Orphaned Users cleanup */}
-            {users.filter(u => !u.companyId || !companies.find(c => c.id === u.companyId)).length > 0 && (
+            {users.filter(u => 
+              u.email !== 'lk.ivanbobkin@gmail.com' && 
+              u.role !== 'admin' &&
+              (!u.companyId || !companies.find(c => c.id === u.companyId))
+            ).length > 0 && (
               <div className="mt-12 pt-12 border-t-2 border-dashed border-gray-200">
                 <div className="flex items-center justify-between mb-8">
                   <div>
@@ -785,13 +704,17 @@ export const AppAdminView = () => {
                       Пользователи без компании
                     </h2>
                     <p className="text-sm text-gray-500 font-medium font-sans">
-                      Записи, которые не привязаны ни к одной организации
+                      Аккаунты, не привязанные ни к одной активной организации (кроме администраторов)
                     </p>
                   </div>
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {users.filter(u => !u.companyId || !companies.find(c => c.id === u.companyId)).map(user => (
+                  {users.filter(u => 
+                    u.email !== 'lk.ivanbobkin@gmail.com' && 
+                    u.role !== 'admin' &&
+                    (!u.companyId || !companies.find(c => c.id === u.companyId))
+                  ).map(user => (
                     <div key={user.uid} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex items-center justify-between">
                       <div className="flex items-center gap-4">
                         <div className="w-12 h-12 bg-gray-100 text-gray-500 rounded-2xl flex items-center justify-center font-bold">
@@ -800,6 +723,7 @@ export const AppAdminView = () => {
                         <div>
                           <p className="font-bold text-gray-900">{user.displayName || 'Без имени'}</p>
                           <p className="text-xs text-gray-500">{user.email}</p>
+                          <p className="text-[10px] text-red-400 font-bold uppercase mt-1">ID компании: {user.companyId || 'отсутствует'}</p>
                         </div>
                       </div>
                       <button 
