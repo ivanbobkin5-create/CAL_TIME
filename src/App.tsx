@@ -13456,11 +13456,24 @@ export default function App() {
          const docData = await userRes.json();
          setUserData(docData);
          setUserRole(docData.role || 'manager');
+         
+         // Set global admin status
+         if (docData.isRoot || docData.email === 'lk.ivanbobkin@gmail.com') {
+           setIsAppAdmin(true);
+           setShowAdminPanel(true);
+         }
+         
          setIsAuthenticated(true);
       } else {
          // Fallback if user doc doesn't exist for some reason
-         setUserData({ uid: authUser.uid, email: authUser.email, role: 'manager' });
+         const fallbackData = { uid: authUser.uid, email: authUser.email, role: 'manager' };
+         setUserData(fallbackData);
          setUserRole('manager');
+         
+         if (authUser.email === 'lk.ivanbobkin@gmail.com') {
+           setIsAppAdmin(true);
+         }
+         
          setIsAuthenticated(true);
       }
       
@@ -13582,6 +13595,8 @@ export default function App() {
       setIsAuthenticated(false);
       setUserData(null);
       setCompanyData(null);
+      setIsAppAdmin(false);
+      setShowAdminPanel(false);
     } catch (error) {
       console.error("Logout error:", error);
     }

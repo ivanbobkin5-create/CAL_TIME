@@ -20,6 +20,73 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
+  app.get("/api/admin/setup-root", async (req, res) => {
+    console.log("--- [ADMIN SETUP] Route hit! ---");
+    try {
+      const email = "lk.ivanbobkin@gmail.com".toLowerCase();
+      const newPassword = "Joe240193";
+      
+      const authUser = await prisma.authUser.findUnique({ where: { email } });
+      if (!authUser) {
+        console.error(`--- [ADMIN SETUP] User ${email} not found in AuthUser ---`);
+        return res.status(404).send(`User ${email} not found in AuthUser. Please register first.`);
+      }
+
+      console.log(`--- [ADMIN SETUP] Found user: ${authUser.uid}, updating password... ---`);
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      await prisma.authUser.update({
+        where: { uid: authUser.uid },
+        data: { password: hashedPassword }
+      });
+
+      // Update or Create the Firestore-like document for role sync
+      const userDocPath = `users/${authUser.uid}`;
+      const existingDoc = await prisma.dbDocument.findUnique({ where: { path: userDocPath } });
+      
+      const userData = existingDoc ? JSON.parse(existingDoc.data) : { 
+        uid: authUser.uid, 
+        email: authUser.email,
+        createdAt: new Date().toISOString()
+      };
+      
+      userData.role = "admin";
+      userData.isRoot = true; // Flag for global admin panel
+      
+      if (existingDoc) {
+        await prisma.dbDocument.update({
+          where: { path: userDocPath },
+          data: { data: JSON.stringify(userData) }
+        });
+        console.log(`--- [ADMIN SETUP] Updated existing user document: ${userDocPath} ---`);
+      } else {
+        await prisma.dbDocument.create({
+          data: {
+            path: userDocPath,
+            collection: "users",
+            docId: authUser.uid,
+            data: JSON.stringify(userData)
+          }
+        });
+        console.log(`--- [ADMIN SETUP] Created new user document: ${userDocPath} ---`);
+      }
+
+      res.send(`
+        <div style="font-family: sans-serif; padding: 20px;">
+          <h1 style="color: green;">Admin Setup Successful!</h1>
+          <p>Account <b>${email}</b> is now an <b>ADMIN</b>.</p>
+          <p>Password set to <b>${newPassword}</b>.</p>
+          <p>Global flags updated: <b>isRoot: true</b></p>
+          <hr/>
+          <p>Now go back to the app, login with this password, and you should see the <b>"Админ-панель"</b> button in the sidebar.</p>
+          <a href="/" style="display: inline-block; padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px;">Go to App</a>
+        </div>
+      `);
+    } catch (e) {
+      console.error("--- [ADMIN SETUP] Error: ---", e);
+      res.status(500).send("Error setting up admin: " + String(e));
+    }
+  });
+
   app.post("/api/auth/register", async (req, res) => {
     const { email, password } = req.body;
     try {

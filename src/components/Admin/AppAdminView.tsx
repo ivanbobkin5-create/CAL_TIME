@@ -20,14 +20,20 @@ import {
   Tag,
   Trash2
 } from 'lucide-react';
+const handleFirestoreError = (e: any, op: any, path: string) => console.warn("Firestore error:", op, path, e);
+enum OperationType { LIST = "LIST", UPDATE = "UPDATE", GET = "GET", DELETE = "DELETE", WRITE = "WRITE", CREATE = "CREATE" }
 // Firebase removed, backend switched to TimeWeb
 const db = {};
-const handleFirestoreError = (e: any, op: any, path: string) => console.warn("Firestore call bypassed (Firebase removed):", op, path);
-enum OperationType { LIST = "LIST", UPDATE = "UPDATE", GET = "GET", DELETE = "DELETE", WRITE = "WRITE", CREATE = "CREATE" }
-import { 
-  cn 
-} from '../../lib/utils';
-
+function collection() { return {}; }
+function onSnapshot() { return () => {}; }
+function doc() { return {}; }
+function getDoc() { return Promise.resolve({ exists: () => false }); }
+function getDocs() { return Promise.resolve({ docs: [] }); }
+function updateDoc() { return Promise.resolve(); }
+function deleteDoc() { return Promise.resolve(); }
+function query() { return {}; }
+function where() { return {}; }
+import { cn } from '../../lib/utils';
 
 interface Company {
   id: string;
@@ -122,7 +128,52 @@ export const AppAdminView = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'companies' | 'stats' | 'requests'>('companies');
+  const [activeTab, setActiveTab] = useState<'companies' | 'stats' | 'requests' | 'integration'>('companies');
+  const [globalMappings, setGlobalMappings] = useState<Record<string, string>>({});
+  const [isSavingMappings, setIsSavingMappings] = useState(false);
+
+  useEffect(() => {
+    const fetchMappings = async () => {
+      const res = await fetch('/api/firebase/doc/config/bitrix24_mapping');
+      if (res.ok) {
+        const data = await res.json();
+        setGlobalMappings(data.mappings || {});
+      } else {
+        // Default mappings if none exist
+        setGlobalMappings({
+          contractNumber: 'UF_CRM_1234567890',
+          totalSum: 'OPPORTUNITY',
+          contractDate: 'UF_CRM_DATE',
+          readyDate: 'UF_CRM_READY_DATE',
+          hardwareSum: 'UF_CRM_HARDWARE',
+          cabinetSum: 'UF_CRM_CABINET',
+          facadeSum: 'UF_CRM_FACADE',
+          customFacadeSum: 'UF_CRM_CUSTOM_FACADE',
+          deliverySum: 'UF_CRM_DELIVERY',
+          assemblySum: 'UF_CRM_ASSEMBLY',
+          deliveryComment: 'COMMENTS'
+        });
+      }
+    };
+    fetchMappings();
+  }, []);
+
+  const saveMappings = async () => {
+    setIsSavingMappings(true);
+    try {
+      await fetch('/api/firebase/doc/config/bitrix24_mapping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data: { mappings: globalMappings } })
+      });
+      alert('Настройки интеграции сохранены!');
+    } catch (e) {
+      console.error(e);
+      alert('Ошибка при сохранении');
+    } finally {
+      setIsSavingMappings(false);
+    }
+  };
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCoefficients, setSelectedCoefficients] = useState<any>(null);
   const [coeffModalOpen, setCoeffModalOpen] = useState(false);
@@ -352,6 +403,16 @@ export const AppAdminView = () => {
                 <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>
               )}
             </button>
+            <button 
+              onClick={() => setActiveTab('integration')}
+              className={cn(
+                "px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 relative",
+                activeTab === 'integration' ? "bg-blue-600 text-white shadow-lg shadow-blue-200" : "text-gray-500 hover:text-gray-700"
+              )}
+            >
+              <Settings2 className="w-4 h-4" />
+              Интеграция
+            </button>
           </div>
         </div>
 
@@ -418,6 +479,69 @@ export const AppAdminView = () => {
                 Нет заявок на тарифы
               </div>
             )}
+          </div>
+        ) : activeTab === 'integration' ? (
+          <div className="bg-white rounded-[2rem] p-8 border border-gray-100 shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h3 className="text-xl font-black text-gray-900">Настройки интеграции</h3>
+                <p className="text-xs text-gray-500 mt-1">Глобальное сопоставление полей Bitrix24 для всех компаний</p>
+              </div>
+              <button 
+                onClick={saveMappings}
+                disabled={isSavingMappings}
+                className="bg-blue-600 text-white px-6 py-2.5 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all flex items-center gap-2 disabled:opacity-50 text-sm"
+              >
+                {isSavingMappings ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+                {isSavingMappings ? 'Сохранение...' : 'Сохранить все ID'}
+              </button>
+            </div>
+
+            <div className="border border-gray-100 rounded-2xl overflow-hidden">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-gray-50">
+                    <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Поле Mebelev</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">ID в Bitrix24</th>
+                    <th className="px-6 py-4 text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-100">Описание</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {[
+                    { key: 'contractNumber', label: 'Номер договора', desc: 'Строковое поле для номера договора' },
+                    { key: 'totalSum', label: 'Общая сумма', desc: 'Числовое поле (обычно OPPORTUNITY)' },
+                    { key: 'contractDate', label: 'Дата договора', desc: 'Поле типа Дата' },
+                    { key: 'readyDate', label: 'Дата готовности', desc: 'Поле типа Дата' },
+                    { key: 'hardwareSum', label: 'Сумма фурнитуры', desc: 'Числовое поле для стоимости фурнитуры' },
+                    { key: 'cabinetSum', label: 'Сумма корпуса', desc: 'Числовое поле (ЛДСП/кромка)' },
+                    { key: 'facadeSum', label: 'Сумма фасадов', desc: 'Числовое поле (пленка)' },
+                    { key: 'customFacadeSum', label: 'Сумма заказных фасадов', desc: 'Числовое поле (эмаль и др.)' },
+                    { key: 'deliverySum', label: 'Сумма доставки', desc: 'Числовое поле для доставки' },
+                    { key: 'assemblySum', label: 'Сумма сборки', desc: 'Числовое поле для сборки' },
+                    { key: 'deliveryComment', label: 'Комментарий', desc: 'Текстовое поле для примечаний' },
+                  ].map((item) => (
+                    <tr key={item.key} className="hover:bg-gray-50/50 transition-colors">
+                      <td className="px-6 py-4">
+                        <span className="font-bold text-gray-900 text-sm">{item.label}</span>
+                        <code className="block text-[10px] text-gray-400 font-mono mt-0.5">{item.key}</code>
+                      </td>
+                      <td className="px-6 py-4">
+                        <input 
+                          type="text" 
+                          value={globalMappings[item.key] || ''}
+                          onChange={(e) => setGlobalMappings({ ...globalMappings, [item.key]: e.target.value })}
+                          placeholder="Напр. UF_CRM_123"
+                          className="w-full bg-white border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-mono focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all"
+                        />
+                      </td>
+                      <td className="px-6 py-4 text-[11px] text-gray-500">
+                        {item.desc}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         ) : (
           <div className="space-y-6">
