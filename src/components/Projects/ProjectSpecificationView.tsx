@@ -16,11 +16,30 @@ import {
 const db = {};
 const handleFirestoreError = (e: any, op: any, path: string) => console.warn("Firestore call bypassed (Firebase removed):", op, path);
 enum OperationType { LIST = "LIST", UPDATE = "UPDATE", GET = "GET", DELETE = "DELETE", WRITE = "WRITE", CREATE = "CREATE" }
-function doc() { return {}; }
-function updateDoc() { return Promise.resolve(); }
-function addDoc() { return Promise.resolve(); }
-function collection() { return {}; }
-function serverTimestamp() { return {}; }
+function doc(db: any, ...pathParts: string[]) {
+  return { path: pathParts.join('/') };
+}
+async function updateDoc(docRef: any, data: any) {
+  await fetch(`/api/firebase/doc/${docRef.path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data })
+  });
+}
+async function addDoc(colRef: any, data: any) {
+  const id = Math.random().toString(36).substr(2, 9);
+  const path = `${colRef.path}/${id}`;
+  await fetch(`/api/firebase/doc/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data })
+  });
+  return { id, path, data };
+}
+function collection(db: any, ...pathParts: string[]) {
+  return { path: pathParts.join('/') };
+}
+const serverTimestamp = () => new Date().toISOString();
 import { cn } from '../../lib/utils';
 import { SketchAnnotator } from './SketchAnnotator';
 

@@ -6,8 +6,10 @@ import { createServer as createViteServer } from "vite";
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
+import jwt from "jsonwebtoken";
 
 const prisma = new PrismaClient();
+const JWT_SECRET = process.env.JWT_SECRET || "default_jwt_secret_change_me";
 
 async function startServer() {
   const app = express();
@@ -88,12 +90,15 @@ async function startServer() {
   const sendEmail = async (email: string, subject: string, message: string) => {
     // Check if SMTP is configured
     if (!process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
-      console.log("--- [SMTP NOT CONFIGURED - FALLBACK TO LOG] ---");
+      console.log("--- [SMTP NOT CONFIGURED] Fallback to console log ---");
       console.log(`To: ${email}`);
       console.log(`Subject: ${subject}`);
       console.log(`Body: ${message}`);
       return true;
     }
+
+    console.log(`--- [SMTP ATTEMPT] Sending to ${email} via ${process.env.SMTP_HOST}:${process.env.SMTP_PORT} ---`);
+    console.log(`--- [SMTP CONFIG] User: ${process.env.SMTP_USER}, From: ${process.env.SMTP_FROM || 'not set'} ---`);
 
     try {
       const transporter = nodemailer.createTransport({
@@ -104,25 +109,41 @@ async function startServer() {
           user: process.env.SMTP_USER,
           pass: process.env.SMTP_PASS,
         },
+        // Better diagnostics
+        logger: true,
+        debug: true,
+        connectionTimeout: 10000, // 10 seconds
+        greetingTimeout: 10000,
+        socketTimeout: 10000,
+        tls: {
+          // Do not fail on invalid certs
+          rejectUnauthorized: false
+        }
       });
 
-      // Validating "from" field to avoid 550 error. Use SMTP_FROM if set, otherwise SMTP_USER.
-      const fromEmail = process.env.SMTP_FROM || process.env.SMTP_USER;
-      const fromName = "Мебельный калькулятор";
+      // Validating "from" field to avoid 550 error.
+      // If SMTP_FROM contains <, it's likely already formatted.
+      let fromField: string;
+      if (process.env.SMTP_FROM) {
+        fromField = process.env.SMTP_FROM;
+      } else {
+        fromField = `"Мебельный калькулятор" <${process.env.SMTP_USER}>`;
+      }
 
-      await transporter.sendMail({
-        from: `"${fromName}" <${fromEmail}>`,
+      const info = await transporter.sendMail({
+        from: fromField,
         to: email,
         subject: subject,
         text: message,
         html: message.replace(/\n/g, '<br>'),
       });
 
-      console.log(`--- [EMAIL SENT] To: ${email} ---`);
-      return true;
-    } catch (error) {
-      console.error("--- [EMAIL ERROR] ---", error);
-      return false;
+      console.log(`--- [EMAIL SUCCESS] MessageId: ${info.messageId} ---`);
+      return { success: true };
+    } catch (error: any) {
+      console.error("--- [EMAIL ERROR] ---");
+      console.error(error);
+      return { success: false, error: error.message || String(error) };
     }
   };
 
@@ -146,14 +167,17 @@ async function startServer() {
 
       const protocol = req.headers['x-forwarded-proto'] || 'http';
       const host = req.headers['host'];
-      // Prefer APP_URL from env if available to avoid unexpected proxy hosts like mf-ftp
       const baseUrl = process.env.APP_URL || `${protocol}://${host}`;
 
-      await sendEmail(
+      const emailResult = await sendEmail(
         user.email,
         "Восстановление пароля - Мебельный калькулятор",
         `Здравствуйте!\n\nВы получили это письмо, так как для вашего аккаунта в приложении "Мебельный калькулятор" был запрошен сброс пароля.\n\nКод для подтверждения: ${token}\n\nДля завершения сброса пароля перейдите по ссылке:\n${baseUrl}/reset-password?token=${token}\n\nЕсли вы не запрашивали сброс пароля, просто проигнорируйте это письмо.\n\nС уважением,\nКоманда "Мебельный калькулятор"`
       );
+
+      if (typeof emailResult === 'object' && !emailResult.success && process.env.SMTP_HOST) {
+        return res.status(500).json({ error: `Ошибка отправки почты: ${emailResult.error}` });
+      }
 
       res.json({ status: "ok", message: "Instructions sent" });
     } catch (e) {
@@ -198,9 +222,11 @@ async function startServer() {
         data: { verified: true }
       });
 
+      const user = await prisma.authUser.findUnique({ where: { email: vToken.email } });
       await prisma.verificationToken.delete({ where: { id: vToken.id } });
 
-      res.json({ status: "ok" });
+      const jwtToken = jwt.sign({ uid: user?.uid, email: user?.email }, JWT_SECRET, { expiresIn: '30d' });
+      res.json({ status: "ok", token: jwtToken, uid: user?.uid, email: user?.email });
     } catch (e) {
       res.status(500).json({ error: "Verification failed" });
     }
@@ -208,9 +234,10 @@ async function startServer() {
 
   app.post("/api/auth/register", async (req, res) => {
     const { email, password } = req.body;
+    let user;
     try {
       const hashedPassword = await bcrypt.hash(password, 10);
-      const user = await prisma.authUser.create({
+      user = await prisma.authUser.create({
         data: { 
           email: email.toLowerCase(), 
           password: hashedPassword,
@@ -228,16 +255,59 @@ async function startServer() {
         }
       });
 
-      await sendEmail(
+      const emailResult = await sendEmail(
         user.email,
         "Подтверждение регистрации - Мебельный калькулятор",
         `Добро пожаловать в "Мебельный калькулятор"!\n\nДля завершения регистрации, пожалуйста, введите следующий код подтверждения в приложении:\n\nКод: ${token}\n\nЕсли вы не регистрировались в нашем приложении, просто проигнорируйте это письмо.\n\nС уважением,\nКоманда "Мебельный калькулятор"`
       );
 
+      if (typeof emailResult === 'object' && !emailResult.success && process.env.SMTP_HOST) {
+        // If SMTP is configured but failed, we cleanup the user so they can try again
+        await prisma.authUser.delete({ where: { uid: user.uid } });
+        return res.status(500).json({ error: `Не удалось отправить письмо с кодом подтверждения: ${emailResult.error}` });
+      }
+
       res.json({ uid: user.uid, email: user.email, needsVerification: true });
     } catch (e) {
       console.error("Error creating user:", e);
       if ((e as any).code === 'P2002') return res.status(400).json({ code: 'auth/email-already-in-use' });
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/auth/resend-verification", async (req, res) => {
+    const { email } = req.body;
+    try {
+      const user = await prisma.authUser.findUnique({ where: { email: email.toLowerCase() } });
+      if (!user) return res.status(404).json({ error: "Пользователь не найден" });
+      if (user.verified) return res.status(400).json({ error: "Email уже подтвержден" });
+
+      const token = Math.floor(100000 + Math.random() * 900000).toString();
+      await prisma.verificationToken.upsert({
+        where: { email_token_type: { email: user.email, token: "", type: "VERIFY" } }, // This where clause is tricky for upsert without unique index on (email, type)
+        // Let's use a simpler approach: delete old then create new for VERIFY
+        create: { email: user.email, token, type: "VERIFY", expiresAt: new Date(Date.now() + 86400000) },
+        update: { token, expiresAt: new Date(Date.now() + 86400000) }
+      }).catch(async () => {
+        // Fallback if upsert fails due to missing unique constraint in where
+        await prisma.verificationToken.deleteMany({ where: { email: user.email, type: "VERIFY" } });
+        return prisma.verificationToken.create({
+          data: { email: user.email, token, type: "VERIFY", expiresAt: new Date(Date.now() + 86400000) }
+        });
+      });
+
+      const emailResult = await sendEmail(
+        user.email,
+        "Код подтверждения - Мебельный калькулятор",
+        `Ваш новый код подтверждения: ${token}\n\nЕсли вы не запрашивали новый код, просто проигнорируйте это письмо.`
+      );
+
+      if (typeof emailResult === 'object' && !emailResult.success) {
+        return res.status(500).json({ error: `Не удалось отправить письмо: ${emailResult.error}` });
+      }
+
+      res.json({ status: "ok" });
+    } catch (e) {
       res.status(500).json({ error: String(e) });
     }
   });
@@ -313,7 +383,8 @@ async function startServer() {
       }
 
       console.log("Login successful for:", email);
-      res.json({ uid: user.uid, email: user.email });
+      const token = jwt.sign({ uid: user.uid, email: user.email }, JWT_SECRET, { expiresIn: '30d' });
+      res.json({ uid: user.uid, email: user.email, token });
     } catch (e) {
       console.error("Failed to login:", e);
       res.status(500).json({ error: "Failed to login" });
@@ -490,6 +561,8 @@ async function startServer() {
   const distPath = path.join(process.cwd(), 'dist');
 
   console.log(`--- [STARTUP] Mode: ${isDev ? 'DEVELOPMENT' : 'PRODUCTION'} ---`);
+  console.log(`--- [SMTP ENV] Host: ${process.env.SMTP_HOST || 'EMPTY'}, Port: ${process.env.SMTP_PORT || 'EMPTY'}, User: ${process.env.SMTP_USER || 'EMPTY'} ---`);
+  console.log(`--- [SMTP ENV] Has Pass: ${!!process.env.SMTP_PASS}, From: ${process.env.SMTP_FROM || 'EMPTY'} ---`);
   console.log(`--- [STARTUP] CWD: ${process.cwd()} ---`);
   console.log(`--- [STARTUP] Dist Path: ${distPath} ---`);
 

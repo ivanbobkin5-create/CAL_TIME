@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useRef } from "react";
+import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import * as ReactDOM from "react-dom";
 import { formatPhoneNumber } from "./lib/utils";
@@ -106,7 +106,7 @@ import {
   Clock,
   Navigation,
   ShieldAlert,
-  CheckCircle2,
+  History,
 } from "lucide-react";
 
 const handleFirestoreError = (e: any, op: any, path: string) => console.warn("Firestore error:", op, path, e);
@@ -187,11 +187,11 @@ async function setDoc(docRef: any, data: any, options?: { merge?: boolean }) {
   });
 }
 
-async function updateDoc(docRef: any, data: any) { 
+async function updateDoc(docRef: any, data: any, options?: any) { 
   await fetch(`/api/firebase/doc/${docRef.path}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data })
+    body: JSON.stringify({ data, merge: options?.merge })
   });
 }
 
@@ -199,6 +199,53 @@ async function deleteDoc(docRef: any) {
   await fetch(`/api/firebase/doc/${docRef.path}`, {
     method: 'DELETE'
   });
+}
+
+const reportPriceChange = async (companyId: string, userId: string, userName: string, materialId: string, oldPrice: number, newPrice: number) => {
+  if (!companyId || !userId || oldPrice === newPrice) return;
+  try {
+    await fetch(`/api/firebase/doc/companies/${companyId}/priceHistory/${Math.random().toString(36).substr(2, 9)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ data: {
+        materialId,
+        oldPrice,
+        newPrice,
+        userId,
+        userName,
+        timestamp: new Date().toISOString()
+      }})
+    });
+  } catch (err) {
+    console.error("Error logging price change", err);
+  }
+};
+
+async function addDoc(colRef: any, data: any) {
+  const id = Math.random().toString(36).substr(2, 9);
+  const path = `${colRef.path}/${id}`;
+  await fetch(`/api/firebase/doc/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data })
+  });
+  return { id, path, data };
+}
+
+function writeBatch(db: any) {
+  const operations: any[] = [];
+  return {
+    set: (ref: any, data: any) => operations.push({ type: 'set', ref, data }),
+    update: (ref: any, data: any, options?: any) => operations.push({ type: 'update', ref, data, options }),
+    delete: (ref: any) => operations.push({ type: 'delete', ref }),
+    commit: async () => {
+      for (const op of operations) {
+        if (op.type === 'set') await setDoc(op.ref, op.data, op.options);
+        if (op.type === 'update') await updateDoc(op.ref, op.data, op.options);
+        if (op.type === 'delete') await deleteDoc(op.ref);
+      }
+    }
+  };
 }
 
 function query(colRef: any, ...constraints: any[]) { return colRef; }
@@ -13388,7 +13435,9 @@ const PriceInputWithSave = ({
   auth, 
   userRole, 
   canEdit, 
-  prices 
+  prices,
+  onShowHistory,
+  logPriceChange
 }: { 
   priceKey: string, 
   value: number, 
@@ -13397,7 +13446,9 @@ const PriceInputWithSave = ({
   auth: any, 
   userRole?: string | null, 
   canEdit: boolean,
-  prices: any
+  prices: any,
+  onShowHistory?: (id: string) => void,
+  logPriceChange?: (id: string, old: number, newVal: number) => void
 }) => {
   const [localVal, setLocalVal] = useState(String(value || ""));
 
@@ -13425,10 +13476,14 @@ const PriceInputWithSave = ({
         }}
         onBlur={async () => {
           const newPrice = localVal === "" ? 0 : parseFloat(localVal);
-          if (newPrice !== value) {
-            logPriceChange(priceKey, value, newPrice);
-          }
           const companyId = (auth.currentUser as any)?.companyId || auth.currentUser?.uid;
+          if (newPrice !== value && companyId && auth.currentUser) {
+            logPriceChange?.(
+              priceKey, 
+              value, 
+              newPrice
+            );
+          }
           if (companyId && (userRole === "admin" || userRole === "manager")) {
             await setDoc(
               doc(db, "companies", companyId, "settings", "prices"),
@@ -13523,9 +13578,9 @@ export default function App() {
     "admin" | "supervisor" | "manager" | "worker" | null
   >(null);
   const [userData, setUserData] = useState<any>(null);
-  const showAlert = (title: string, message: string) => {
+  const showAlert = useCallback((title: string, message: string) => {
     setModal({ isOpen: true, type: "alert", title, message });
-  };
+  }, []);
 
   const showConfirm = (
     title: string,
@@ -13720,9 +13775,8 @@ export default function App() {
     }
   }, [isAuthenticated, userData?.uid, sessionId]);
 
-  const handleLogin = async (data: any) => {
+  const handleLogin = useCallback(async (data: any) => {
     try {
-      setIsLoading(true);
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -13764,6 +13818,7 @@ export default function App() {
          // Persistence
          localStorage.setItem('auth_uid', authUser.uid);
          localStorage.setItem('auth_email', authUser.email);
+         if (authUser.token) localStorage.setItem('auth_token', authUser.token);
          
          // Set global admin status
          if (docData.isRoot || docData.email === 'lk.ivanbobkin@gmail.com') {
@@ -13782,6 +13837,7 @@ export default function App() {
          
          localStorage.setItem('auth_uid', authUser.uid);
          localStorage.setItem('auth_email', authUser.email);
+         if (authUser.token) localStorage.setItem('auth_token', authUser.token);
          
          setIsAuthenticated(true);
       }
@@ -13789,14 +13845,11 @@ export default function App() {
     } catch (error) {
       console.error("Login error:", error);
       showAlert("Ошибка входа", (error as Error).message);
-    } finally {
-      setIsLoading(false);
     }
-  };
+  }, [sessionId, showAlert]);
 
-  const handleRegister = async (data: RegistrationData) => {
+  const handleRegister = useCallback(async (data: RegistrationData) => {
     try {
-      setIsLoading(true);
       console.log("Starting register...");
       
       const response = await fetch('/api/auth/register', {
@@ -13820,7 +13873,7 @@ export default function App() {
            throw new Error("Этот email уже зарегистрирован. Пожалуйста, войдите в систему.");
         }
         
-        throw new Error(code || "Не удалось создать аккаунт");
+        throw new Error(errorData.error || "Не удалось создать аккаунт");
       }
       const user = await response.json();
       console.log("Created user:", user);
@@ -13898,10 +13951,8 @@ export default function App() {
     } catch (error) {
       console.error("Register error:", error);
       showAlert("Ошибка регистрации", (error as Error).message);
-    } finally {
-      setIsLoading(false);
     }
-  };
+  }, [showAlert, INITIAL_PRODUCT_CATEGORIES]);
 
 
   const handleLogout = async () => {
@@ -13909,6 +13960,7 @@ export default function App() {
       console.log("Logout triggered - switching to local state");
       localStorage.removeItem('auth_uid');
       localStorage.removeItem('auth_email');
+      localStorage.removeItem('auth_token');
       auth.currentUser = null;
       setIsAuthenticated(false);
       setUserData(null);
@@ -13947,6 +13999,7 @@ export default function App() {
     | "projects"
     | "specification"
     | "checkout_current"
+    | "profile"
   >("calculator");
   const [selectedProductCategory, setSelectedProductCategory] = useState<
     string | null
@@ -13965,21 +14018,18 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [prices, setPrices] = useState<Record<string, number>>({});
   const [historyMaterialId, setHistoryMaterialId] = useState<string | null>(null);
-  const logPriceChange = async (materialId: string, oldPrice: number, newPrice: number) => {
+  const logPriceChange = useCallback(async (materialId: string, oldPrice: number, newPrice: number) => {
     if (!companyData?.id || !userData?.uid || oldPrice === newPrice) return;
-    try {
-      await addDoc(collection(db, "companies", companyData.id, "priceHistory"), {
-        materialId,
-        oldPrice,
-        newPrice,
-        userId: userData.uid,
-        userName: userData.displayName || userData.email,
-        timestamp: new Date().toISOString()
-      });
-    } catch (err) {
-      console.error("Error logging price change", err);
-    }
-  };
+    await reportPriceChange(
+      companyData.id,
+      userData.uid,
+      userData.displayName || userData.email,
+      materialId,
+      oldPrice,
+      newPrice
+    );
+  }, [companyData?.id, userData?.uid, userData?.displayName, userData?.email]);
+
   const [results, setResults] = useState<any>(null);
 
   useEffect(() => {
@@ -17274,7 +17324,6 @@ export default function App() {
               showAlert={showAlert}
               showConfirm={showConfirm}
               showPrompt={showPrompt}
-              userData={userData}
             />
           ) : activeTab === "settings" && userRole === "admin" ? (
             <SettingsView

@@ -21,6 +21,41 @@ enum OperationType { LIST = "LIST", UPDATE = "UPDATE", GET = "GET", DELETE = "DE
 function collection(db: any, ...pathParts: string[]) {
   return { path: pathParts.join('/') };
 }
+function doc(db: any, ...pathParts: string[]) {
+  return { path: pathParts.join('/') };
+}
+async function setDoc(docRef: any, data: any, options?: any) {
+  await fetch(`/api/firebase/doc/${docRef.path}`, {
+    method: options?.merge ? 'PATCH' : 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data })
+  });
+}
+async function updateDoc(docRef: any, data: any, options?: any) {
+  await fetch(`/api/firebase/doc/${docRef.path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data, merge: options?.merge })
+  });
+}
+function writeBatch(db: any) {
+  const operations: any[] = [];
+  return {
+    set: (ref: any, data: any) => operations.push({ type: 'set', ref, data }),
+    update: (ref: any, data: any, options?: any) => operations.push({ type: 'update', ref, data, options }),
+    delete: (ref: any) => operations.push({ type: 'delete', ref }),
+    commit: async () => {
+      for (const op of operations) {
+        if (op.type === 'set') await setDoc(op.ref, op.data, op.options);
+        if (op.type === 'update') await updateDoc(op.ref, op.data, op.options);
+        if (op.type === 'delete') await deleteDoc(op.ref);
+      }
+    }
+  };
+}
+async function deleteDoc(docRef: any) {
+  await fetch(`/api/firebase/doc/${docRef.path}`, { method: 'DELETE' });
+}
 function onSnapshot(ref: any, callback: (snap: any) => void) {
   const fetchData = async () => {
     try {
@@ -46,35 +81,7 @@ function onSnapshot(ref: any, callback: (snap: any) => void) {
 function query(ref: any, ...constraints: any[]) { return ref; }
 function where(field: string, op: string, value: any) { return {}; }
 function orderBy(field: string, dir: string) { return {}; }
-async function deleteDoc(docRef: any) {
-  await fetch(`/api/firebase/doc/${docRef.path}`, { method: 'DELETE' });
-}
-async function updateDoc(docRef: any, data: any) {
-  await fetch(`/api/firebase/doc/${docRef.path}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data })
-  });
-}
-function doc(db: any, ...pathParts: string[]) {
-  return { path: pathParts.join('/') };
-}
 function or(...constraints: any[]) { return {}; }
-function writeBatch() { 
-  const updates: Array<{path: string, data: any}> = [];
-  return { 
-    update: (docRef: any, data: any) => { updates.push({ path: docRef.path, data }); }, 
-    commit: async () => {
-      for (const update of updates) {
-        await fetch(`/api/firebase/doc/${update.path}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ data: update.data })
-        });
-      }
-    } 
-  }; 
-}
 function limit(n: number) { return {}; }
 async function getDocs(ref: any) {
   const res = await fetch(`/api/firebase/col/${ref.path}`);
@@ -120,6 +127,7 @@ export const ProjectsView = ({
   companyType,
   manufacturerId,
   showConfirm,
+  showAlert,
   onCreateSet,
 }: {
   companyId?: string;
@@ -130,6 +138,7 @@ export const ProjectsView = ({
   companyType?: string;
   manufacturerId?: string;
   showConfirm: (title: string, message: string, onConfirm: () => void) => void;
+  showAlert?: (title: string, message: string) => void;
   onCreateSet?: (projects: Project[], set?: any) => void;
 }) => {
   const [projects, setProjects] = useState<Project[]>([]);

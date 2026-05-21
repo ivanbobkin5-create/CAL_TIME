@@ -12,8 +12,42 @@ import {
   Plus
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { db, handleFirestoreError, OperationType } from '../../firebase';
-import { doc, updateDoc, addDoc, collection, serverTimestamp } from 'firebase/firestore';
+
+// Firebase removed, backend switched to TimeWeb
+const db = {};
+const handleFirestoreError = (e: any, op: any, path: string) => console.warn("Firestore call bypassed (Firebase removed):", op, path);
+enum OperationType { LIST = "LIST", UPDATE = "UPDATE", GET = "GET", DELETE = "DELETE", WRITE = "WRITE", CREATE = "CREATE" }
+function collection(db: any, ...pathParts: string[]) {
+  return { path: pathParts.join('/') };
+}
+function doc(db: any, ...pathParts: string[]) {
+  return { path: pathParts.join('/') };
+}
+async function setDoc(docRef: any, data: any, options?: any) {
+  await fetch(`/api/firebase/doc/${docRef.path}`, {
+    method: options?.merge ? 'PATCH' : 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data })
+  });
+}
+async function updateDoc(docRef: any, data: any) {
+  await fetch(`/api/firebase/doc/${docRef.path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data })
+  });
+}
+async function addDoc(colRef: any, data: any) {
+  const id = Math.random().toString(36).substr(2, 9);
+  const path = `${colRef.path}/${id}`;
+  await fetch(`/api/firebase/doc/${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data })
+  });
+  return { id, path, data };
+}
+const serverTimestamp = () => new Date().toISOString();
 
 interface Project {
   id: string;

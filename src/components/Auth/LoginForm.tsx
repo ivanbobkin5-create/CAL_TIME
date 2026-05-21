@@ -10,7 +10,7 @@ export const LoginForm = ({
   onLogin, 
   onGoToRegister 
 }: { 
-  onLogin: (data: LoginData) => void;
+  onLogin: (data: LoginData) => Promise<void> | void;
   onGoToRegister: () => void;
 }) => {
   const [view, setView] = useState<'login' | 'forgot' | 'reset'>('login');
@@ -23,13 +23,18 @@ export const LoginForm = ({
   const [isLoading, setIsLoading] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (data.email && data.password) {
-      onLogin({
-        email: data.email.trim().toLowerCase(),
-        password: data.password
-      });
+      setIsLoading(true);
+      try {
+        await onLogin({
+          email: data.email.trim().toLowerCase(),
+          password: data.password
+        });
+      } finally {
+        setIsLoading(false);
+      }
     }
   };
 

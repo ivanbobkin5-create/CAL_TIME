@@ -150,4 +150,3 @@ export const Bitrix24Modal = ({
     </div>
   );
 };
-import { cn } from "../../lib/utils";

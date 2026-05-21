@@ -7,6 +7,7 @@ interface DbProduct {
   description: string | null;
   price: number | null;
   status: string;
+  photos?: string[];
 }
 
 export const AdminProductsApprovalView = () => {

@@ -42,11 +42,18 @@ function onSnapshot(ref: any, callback: (snap: any) => void) {
 function doc(db: any, ...pathParts: string[]) {
   return { path: pathParts.join('/') };
 }
-async function setDoc(docRef: any, data: any) {
+async function setDoc(docRef: any, data: any, options?: any) {
   await fetch(`/api/firebase/doc/${docRef.path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data })
+    body: JSON.stringify({ data, merge: options?.merge })
+  });
+}
+async function updateDoc(docRef: any, data: any, options?: any) {
+  await fetch(`/api/firebase/doc/${docRef.path}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data, merge: options?.merge })
   });
 }
 async function deleteDoc(docRef: any) {
