@@ -71,7 +71,7 @@ export const UserProfileView = ({ userData, onUpdateUser, onLogout }: UserProfil
   useEffect(() => {
     const fetchUserStats = async () => {
       try {
-        const res = await fetch(`/api/firebase/col/companies/${userData.companyId}/projects`);
+        const res = await fetch(`/api/db/col/companies/${userData.companyId}/projects`);
         if (res.ok) {
           const allProjects = await res.json();
           // Filter projects created by THIS user

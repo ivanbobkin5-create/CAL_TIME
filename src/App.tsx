@@ -115,8 +115,8 @@ const originalFetch = window.fetch;
 
 function updateLocalCache(url: string, method: string, bodyStr: string | null) {
   try {
-    const isDoc = url.includes("/api/firebase/doc/");
-    const baseApi = isDoc ? "/api/firebase/doc/" : "/api/firebase/col/";
+    const isDoc = url.includes("/api/db/doc/");
+    const baseApi = isDoc ? "/api/db/doc/" : "/api/db/col/";
     const docPathIndex = url.indexOf(baseApi);
     if (docPathIndex === -1) return;
     
@@ -142,8 +142,8 @@ function updateLocalCache(url: string, method: string, bodyStr: string | null) {
       const segments = docPath.split("/");
       const docId = segments[segments.length - 1];
       const colPath = segments.slice(0, -1).join("/");
-      const colUrl = `/api/firebase/col/${colPath}`;
-      const docUrl = `/api/firebase/doc/${docPath}`;
+      const colUrl = `/api/db/col/${colPath}`;
+      const docUrl = `/api/db/doc/${docPath}`;
       
       if (method === "DELETE") {
         localStorage.removeItem(`meb_cache:${docUrl}`);
@@ -154,7 +154,9 @@ function updateLocalCache(url: string, method: string, bodyStr: string | null) {
             const colData = JSON.parse(cachedColStr);
             if (Array.isArray(colData)) {
               const filtered = colData.filter((item: any) => item.id !== docId);
-              localStorage.setItem(`meb_cache:${colUrl}`, JSON.stringify(filtered));
+              try {
+                localStorage.setItem(`meb_cache:${colUrl}`, JSON.stringify(filtered));
+              } catch (_) {}
             }
           } catch (_) {}
         }
@@ -174,7 +176,9 @@ function updateLocalCache(url: string, method: string, bodyStr: string | null) {
           updatedDoc = requestData;
         }
         
-        localStorage.setItem(`meb_cache:${docUrl}`, JSON.stringify(updatedDoc));
+        try {
+          localStorage.setItem(`meb_cache:${docUrl}`, JSON.stringify(updatedDoc));
+        } catch (_) {}
         
         const cachedColStr = localStorage.getItem(`meb_cache:${colUrl}`);
         if (cachedColStr) {
@@ -187,7 +191,9 @@ function updateLocalCache(url: string, method: string, bodyStr: string | null) {
               } else {
                 colData.push({ id: docId, data: updatedDoc });
               }
-              localStorage.setItem(`meb_cache:${colUrl}`, JSON.stringify(colData));
+              try {
+                localStorage.setItem(`meb_cache:${colUrl}`, JSON.stringify(colData));
+              } catch (_) {}
             }
           } catch (_) {}
         }
@@ -265,7 +271,7 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
   const url = typeof input === "string" ? input : (input instanceof Request ? input.url : "");
   const method = (init && init.method) ? init.method.toUpperCase() : "GET";
   
-  if (url.includes("/api/firebase/")) {
+  if (url.includes("/api/db/")) {
     const isWrite = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
     
     if (!isWrite) {
@@ -273,14 +279,70 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
       try {
         const res = await originalFetch.apply(this, arguments as any);
         if (res.ok) {
-          const clone = res.clone();
           try {
-            const data = await clone.json();
-            localStorage.setItem(`meb_cache:${url}`, JSON.stringify(data));
-          } catch (_) {}
+            // Read response stream as text first to validate format and content integrity
+            const text = await res.text();
+            try {
+              // Verify the payload is a valid fully parsed JSON object (not and index.html document or truncated)
+              JSON.parse(text);
+              
+              // Safe cache entry write (guard against QuotaExceededErrors)
+              try {
+                localStorage.setItem(`meb_cache:${url}`, text);
+              } catch (_) {}
+              
+              // Return reconstructed clean response
+              return new Response(text, {
+                status: 200,
+                headers: { "Content-Type": "application/json" }
+              });
+            } catch (jsonErr) {
+              console.warn("Fetched stream failed JSON validation, using cache fallback for path:", url);
+              const cached = localStorage.getItem(`meb_cache:${url}`);
+              if (cached) {
+                return new Response(cached, {
+                  status: 200,
+                  headers: { "Content-Type": "application/json" }
+                });
+              }
+              const emptyFallback = url.includes("/col/") ? "[]" : "{}";
+              return new Response(emptyFallback, {
+                status: 200,
+                headers: { "Content-Type": "application/json" }
+              });
+            }
+          } catch (streamErr) {
+            console.warn("Fetched response stream failed to read, using cache fallback for path:", url);
+            const cached = localStorage.getItem(`meb_cache:${url}`);
+            if (cached) {
+              return new Response(cached, {
+                status: 200,
+                headers: { "Content-Type": "application/json" }
+              });
+            }
+            const emptyFallback = url.includes("/col/") ? "[]" : "{}";
+            return new Response(emptyFallback, {
+              status: 200,
+              headers: { "Content-Type": "application/json" }
+            });
+          }
+        } else {
+          // If response status is not successful, look in cache
+          const cached = localStorage.getItem(`meb_cache:${url}`);
+          if (cached) {
+            return new Response(cached, {
+              status: 200,
+              headers: { "Content-Type": "application/json" }
+            });
+          }
+          const emptyFallback = url.includes("/col/") ? "[]" : "{}";
+          return new Response(emptyFallback, {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          });
         }
-        return res;
       } catch (err) {
+        // Network connection error fallback
         const cached = localStorage.getItem(`meb_cache:${url}`);
         if (cached) {
           return new Response(cached, {
@@ -288,9 +350,12 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
             headers: { "Content-Type": "application/json" }
           });
         }
-        throw err;
+        const emptyFallback = url.includes("/col/") ? "[]" : "{}";
+        return new Response(emptyFallback, {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
       }
-    } else {
       // Write request: append to sync queue
       let bodyStr: string | null = null;
       if (init && init.body) {
@@ -363,15 +428,16 @@ try {
 const fetch = customFetch;
 // --- END OF OFFLINE CACHE AND SYNC ENGINE ---
 
-const handleFirestoreError = (e: any, op: any, path: string) => console.warn("Firestore error:", op, path, e);
+const handleDbError = (e: any, op: any, path: string) => console.warn("Database error:", op, path, e);
 enum OperationType { LIST = "LIST", UPDATE = "UPDATE", GET = "GET", DELETE = "DELETE", WRITE = "WRITE", CREATE = "CREATE" }
 
-// Firebase removed, backend switched to TimeWeb
+// TimeWeb DB Setup
 const db = {};
 const auth: { currentUser: any } = { currentUser: null };
 
 function collection(db: any, path: string, ...rest: any[]) { 
-  return { path }; 
+  const fullPath = [path, ...rest].join('/');
+  return { path: fullPath }; 
 }
 
 function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any) => void, intervalMs: number = 15000) { 
@@ -380,7 +446,7 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
   const fetchSnapshot = async () => {
     try {
       if (isCol) {
-        const res = await fetch(`/api/firebase/col/${ref.path}`);
+        const res = await fetch(`/api/db/col/${ref.path}`);
         if (res.ok) {
           const data = await res.json();
           callback({
@@ -393,7 +459,7 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
           });
         }
       } else {
-        const res = await fetch(`/api/firebase/doc/${ref.path}`);
+        const res = await fetch(`/api/db/doc/${ref.path}`);
         if (res.ok) {
           const data = await res.json();
           callback({
@@ -422,7 +488,7 @@ function doc(db: any, col: string, ...rest: any[]) {
 }
 
 async function getDoc(docRef: any) { 
-  const res = await fetch(`/api/firebase/doc/${docRef.path}`);
+  const res = await fetch(`/api/db/doc/${docRef.path}`);
   if (res.ok) {
     const data = await res.json();
     return {
@@ -434,7 +500,7 @@ async function getDoc(docRef: any) {
 }
 
 async function setDoc(docRef: any, data: any, options?: { merge?: boolean }) {
-  await fetch(`/api/firebase/doc/${docRef.path}`, {
+  await fetch(`/api/db/doc/${docRef.path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ data, merge: options?.merge })
@@ -442,7 +508,7 @@ async function setDoc(docRef: any, data: any, options?: { merge?: boolean }) {
 }
 
 async function updateDoc(docRef: any, data: any, options?: any) { 
-  await fetch(`/api/firebase/doc/${docRef.path}`, {
+  await fetch(`/api/db/doc/${docRef.path}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ data, merge: options?.merge })
@@ -450,7 +516,7 @@ async function updateDoc(docRef: any, data: any, options?: any) {
 }
 
 async function deleteDoc(docRef: any) { 
-  await fetch(`/api/firebase/doc/${docRef.path}`, {
+  await fetch(`/api/db/doc/${docRef.path}`, {
     method: 'DELETE'
   });
 }
@@ -458,7 +524,7 @@ async function deleteDoc(docRef: any) {
 const reportPriceChange = async (companyId: string, userId: string, userName: string, materialId: string, oldPrice: number, newPrice: number) => {
   if (!companyId || !userId || oldPrice === newPrice) return;
   try {
-    await fetch(`/api/firebase/doc/companies/${companyId}/priceHistory/${Math.random().toString(36).substr(2, 9)}`, {
+    await fetch(`/api/db/doc/companies/${companyId}/priceHistory/${Math.random().toString(36).substr(2, 9)}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ data: {
@@ -478,7 +544,7 @@ const reportPriceChange = async (companyId: string, userId: string, userName: st
 async function addDoc(colRef: any, data: any) {
   const id = Math.random().toString(36).substr(2, 9);
   const path = `${colRef.path}/${id}`;
-  await fetch(`/api/firebase/doc/${path}`, {
+  await fetch(`/api/db/doc/${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ data })
@@ -4006,21 +4072,6 @@ const CalculatorView = ({
   selectedForGlue: string[];
   setSelectedForGlue: React.Dispatch<React.SetStateAction<string[]>>;
 }) => {
-  const handleSave = () => {
-    if (currentProjectId && currentProjectName) {
-      onSaveProject(currentProjectName);
-    } else {
-      showPrompt(
-        "Сохранить проект",
-        "Введите название проекта:",
-        "",
-        (name) => {
-          if (name) onSaveProject(name);
-        },
-      );
-    }
-  };
-
   return (
     <div className="p-4 md:p-8">
       <div className="max-w-5xl mx-auto bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
@@ -4154,15 +4205,7 @@ const CalculatorView = ({
           </div>
         </div>
 
-        <div className="flex justify-end mb-8 mt-4">
-          <button
-            onClick={handleSave}
-            className="px-6 py-2.5 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700 shadow-lg shadow-green-200 transition-all flex items-center gap-2"
-          >
-            <FolderOpen className="w-5 h-5" />
-            {currentProjectId ? "Сохранить вручную" : "Сохранить проект"}
-          </button>
-        </div>
+
 
         {results && (
           <div className="space-y-8">
@@ -13925,7 +13968,7 @@ const PriceInputWithSave = ({
           const v = e.target.value.replace(",", ".");
           if (v === "" || /^\d*\.?\d*$/.test(v)) {
             setLocalVal(v);
-            // Still update parent state so calculator reacts, but we'll use onBlur forFirestore
+            // Still update parent state so calculator reacts, but we'll use onBlur for DB
             setPrices((prev: any) => ({
               ...prev,
               [priceKey]: v === "" ? 0 : parseFloat(v),
@@ -14181,7 +14224,7 @@ export default function App() {
       if (savedUid && savedEmail) {
         setIsLoading(true);
         try {
-          const userRes = await fetch(`/api/firebase/doc/users/${savedUid}`);
+          const userRes = await fetch(`/api/db/doc/users/${savedUid}`);
           if (userRes.ok) {
             const docData = await userRes.json();
             setUserData(docData);
@@ -14189,7 +14232,7 @@ export default function App() {
             auth.currentUser = { uid: savedUid, email: savedEmail, ...docData };
             
             if (docData.companyId) {
-              const compRes = await fetch(`/api/firebase/doc/companies/${docData.companyId}`);
+              const compRes = await fetch(`/api/db/doc/companies/${docData.companyId}`);
               if (compRes.ok) {
                 const compData = await compRes.json();
                 setCompanyData({ id: docData.companyId, ...compData });
@@ -14216,20 +14259,13 @@ export default function App() {
     restoreAuth();
   }, []);
 
-  // Sync Session ID
+  // Sync Session ID (Temporarily disabled active session blocking as requested)
   useEffect(() => {
     if (isAuthenticated && userData?.uid) {
       const userRef = doc(db, "users", userData.uid);
       const unsub = onSnapshot(userRef, (snap) => {
-        if (snap.exists()) {
-          const data = snap.data();
-          if (data.activeSessionId && data.activeSessionId !== sessionId) {
-            setIsSessionBlocked(true);
-          } else {
-            setIsSessionBlocked(false);
-          }
-        }
-      }, undefined, 3000); // Poll every 3 seconds for session verification to keep devices in sync
+        setIsSessionBlocked(false);
+      }, undefined, 15000); 
       return unsub;
     }
   }, [isAuthenticated, userData?.uid, sessionId]);
@@ -14262,14 +14298,14 @@ export default function App() {
       }
       
       // Update session ID for single session enforcement
-      await fetch(`/api/firebase/doc/users/${authUser.uid}`, {
+      await fetch(`/api/db/doc/users/${authUser.uid}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data: { activeSessionId: sessionId } })
       });
 
-      // Load user data from Firestore-like API
-      const userRes = await fetch(`/api/firebase/doc/users/${authUser.uid}`);
+      // Load user data from TimeWeb DB API
+      const userRes = await fetch(`/api/db/doc/users/${authUser.uid}`);
       if (userRes.ok) {
          const docData = await userRes.json();
          setUserData(docData);
@@ -14278,7 +14314,7 @@ export default function App() {
          
          // Fetch company data to ensure correct account type is loaded
          if (docData.companyId) {
-           const compRes = await fetch(`/api/firebase/doc/companies/${docData.companyId}`);
+           const compRes = await fetch(`/api/db/doc/companies/${docData.companyId}`);
            if (compRes.ok) {
              const compData = await compRes.json();
              setCompanyData({ id: docData.companyId, ...compData });
@@ -14356,7 +14392,7 @@ export default function App() {
       console.log("Creating company doc...");
       const prodFormat = data.companyType === "Мебельное производство" ? "own" : "contract";
       
-      await fetch(`/api/firebase/doc/companies/${companyId}`, {
+      await fetch(`/api/db/doc/companies/${companyId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data: {
@@ -14370,7 +14406,7 @@ export default function App() {
       });
 
       console.log("Creating user doc...");
-      await fetch(`/api/firebase/doc/users/${user.uid}`, {
+      await fetch(`/api/db/doc/users/${user.uid}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data: {
@@ -14384,7 +14420,7 @@ export default function App() {
       });
 
       console.log("Creating settings doc...");
-      await fetch(`/api/firebase/doc/companies/${companyId}/settings/categories`, {
+      await fetch(`/api/db/doc/companies/${companyId}/settings/categories`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data: {
@@ -14926,7 +14962,7 @@ export default function App() {
         setOwnProducts(products);
       },
       (error) =>
-        handleFirestoreError(
+        handleDbError(
           error,
           OperationType.LIST,
           `companies/${companyId}/products`,
@@ -14947,7 +14983,7 @@ export default function App() {
           setManufacturerProducts(products);
         },
         (error) =>
-          handleFirestoreError(
+          handleDbError(
             error,
             OperationType.LIST,
             `companies/${companyData.manufacturerId}/products`,
@@ -15005,7 +15041,7 @@ export default function App() {
           }
         },
         (error) =>
-          handleFirestoreError(
+          handleDbError(
             error,
             OperationType.GET,
             `companies/${companyId}/settings/categories`,
@@ -15054,7 +15090,7 @@ export default function App() {
         }
       },
       (error) =>
-        handleFirestoreError(
+        handleDbError(
           error,
           OperationType.GET,
           `companies/${companyId}/settings/production`,
@@ -15170,7 +15206,7 @@ export default function App() {
         }
       },
       (error) =>
-        handleFirestoreError(
+        handleDbError(
           error,
           OperationType.GET,
           `companies/${companyId}/settings/general`,
@@ -15187,7 +15223,7 @@ export default function App() {
         }
       },
       (error) =>
-        handleFirestoreError(
+        handleDbError(
           error,
           OperationType.GET,
           `companies/${companyId}/settings/prices`,
@@ -15341,21 +15377,33 @@ export default function App() {
   }, [productionFormat, contractConfig.productionId]);
 
   // Save actions
-  const saveProject = async (projectName: string, silent: boolean = false) => {
+  const saveProject = async (
+    projectName: string,
+    silent: boolean = false,
+    overrides?: {
+      projectId?: string;
+      results?: any;
+      currentProjectTotal?: number;
+      currentSummaryRows?: any[];
+      addedProducts?: any[];
+      addedServices?: any[];
+    }
+  ) => {
     if (!companyData?.id || !userData?.uid) return;
     
-    // Minimum 10 seconds between writes to avoid accidental double-clicks or rapid consecutive saves
     const now = Date.now();
-    if (now - lastWriteAt.current < 10000 && silent) {
-      console.log("Saving skipped: too frequent");
-      return;
-    }
     lastWriteAt.current = now;
 
     setIsSyncing(true);
     try {
-      const projectId = currentProjectId || Date.now().toString();
-      const hardwareTotal = (addedProducts || []).reduce((acc: number, p: any) => {
+      const projectId = overrides?.projectId || currentProjectId || Date.now().toString();
+      const activeProducts = overrides?.hasOwnProperty('addedProducts') ? overrides.addedProducts : addedProducts;
+      const activeResults = overrides?.hasOwnProperty('results') ? overrides.results : results;
+      const activeTotal = overrides?.hasOwnProperty('currentProjectTotal') ? overrides.currentProjectTotal : currentProjectTotal;
+      const activeSummaryRows = overrides?.hasOwnProperty('currentSummaryRows') ? overrides.currentSummaryRows : currentSummaryRows;
+      const activeServices = overrides?.hasOwnProperty('addedServices') ? overrides.addedServices : addedServices;
+
+      const hardwareTotal = (activeProducts || []).reduce((acc: number, p: any) => {
         const basePrice = p.price || 0;
         const qty = p.quantity || 1;
         return acc + (basePrice * qty);
@@ -15368,12 +15416,12 @@ export default function App() {
         createdBy: userData.uid,
         createdByName: userData.displayName || userData.email || "Пользователь",
         status: "draft",
-        totalPrice: currentProjectTotal,
+        totalPrice: activeTotal,
         totalHardwareCost: hardwareTotal,
         type: furnitureType || facadeType || "Мебель",
         data: {
-          summaryRows: currentSummaryRows,
-          results,
+          summaryRows: activeSummaryRows,
+          results: activeResults,
           selectedDecor,
           prices,
           facadeType,
@@ -15395,13 +15443,15 @@ export default function App() {
           facadeCategory,
           facadeMilling,
           facadeThicknessOverride,
-          addedProducts,
-          addedServices,
+          addedProducts: activeProducts,
+          addedServices: activeServices,
           serviceData,
         },
       };
 
-      if (!currentProjectId) {
+      if (!currentProjectId && !overrides?.projectId) {
+        projectData.createdAt = new Date().toISOString();
+      } else if (overrides?.projectId) {
         projectData.createdAt = new Date().toISOString();
       }
 
@@ -15411,13 +15461,13 @@ export default function App() {
         projectData,
         { merge: true },
       ).then(() => {
-        const stableTotal = Math.round((currentProjectTotal || 0) * 100);
+        const stableTotal = Math.round((activeTotal || 0) * 100);
         const currentStateHash = JSON.stringify({
           total: stableTotal,
-          results,
+          results: activeResults,
           selectedDecor,
-          addedProducts,
-          addedServices,
+          addedProducts: activeProducts,
+          addedServices: activeServices,
         });
         setLastSavedHash(currentStateHash);
         setLastSyncedAt(new Date());
@@ -15442,7 +15492,7 @@ export default function App() {
         );
       }
     } catch (error) {
-      handleFirestoreError(
+      handleDbError(
         error,
         OperationType.WRITE,
         `companies/${companyData.id}/projects`,
@@ -15493,7 +15543,7 @@ export default function App() {
     if (currentStateHash !== lastSavedHash) {
       const timer = setTimeout(() => {
         saveProject(currentProjectName, true);
-      }, 5000); // 5 sec debounce
+      }, 1500); // 1.5 sec debounce
       return () => clearTimeout(timer);
     }
   }, [
@@ -15533,6 +15583,8 @@ export default function App() {
               readyDate: setData.readyDate,
               sketches: setData.sketches,
               status: isFinal ? "sent" : "draft",
+              totalPrice: setData.totalPrice,
+              summary: setData.summary,
               // Store copies in data for backward compatibility and persistence
               data: {
                 ...(p.data || {}),
@@ -15541,6 +15593,8 @@ export default function App() {
                 leadTimeDays: setData.leadTimeDays,
                 readyDate: setData.readyDate,
                 sketches: setData.sketches,
+                totalSum: setData.totalPrice,
+                summary: setData.summary,
               }
           }, { merge: true });
           
@@ -15558,6 +15612,8 @@ export default function App() {
                     readyDate: setData.readyDate,
                     sketches: setData.sketches,
                     status: isFinal ? "sent" : "draft",
+                    totalPrice: setData.totalPrice,
+                    summary: setData.summary,
                     data: {
                       ...(p.data || {}),
                       contractNumber: setData.contractNumber,
@@ -15565,6 +15621,8 @@ export default function App() {
                       leadTimeDays: setData.leadTimeDays,
                       readyDate: setData.readyDate,
                       sketches: setData.sketches,
+                      totalSum: setData.totalPrice,
+                      summary: setData.summary,
                     }
                   } 
                 : p
@@ -15584,7 +15642,7 @@ export default function App() {
             }
           }
 
-          const setRecord: FurnitureSet = {
+          const setRecord: FurnitureSet & { summary?: any } = {
             id: setId,
             name: setData.contractNumber
               ? `Заказ №${setData.contractNumber}`
@@ -15600,6 +15658,7 @@ export default function App() {
             sketches: setData.sketches || [],
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
+            summary: setData.summary,
           };
 
           batch.set(setDocRef, setRecord);
@@ -15673,7 +15732,7 @@ export default function App() {
       }
       setSelectedProjectsForCheckout([]);
     } catch (error) {
-      handleFirestoreError(
+      handleDbError(
         error,
         OperationType.WRITE,
         `companies/${companyData.id}/sets`,
@@ -15767,7 +15826,7 @@ export default function App() {
       }
     } catch (error) {
       console.error("Error in saveProduct:", error);
-      handleFirestoreError(
+      handleDbError(
         error,
         OperationType.WRITE,
         `companies/${companyData.id}/products`,
@@ -15786,7 +15845,7 @@ export default function App() {
         { merge: true },
       );
     } catch (error) {
-      handleFirestoreError(
+      handleDbError(
         error,
         OperationType.WRITE,
         `companies/${companyData.id}/settings/categories`,
@@ -15801,7 +15860,7 @@ export default function App() {
         doc(db, "companies", companyData.id, "products", productId.toString()),
       );
     } catch (error) {
-      handleFirestoreError(
+      handleDbError(
         error,
         OperationType.DELETE,
         `companies/${companyData.id}/products/${productId}`,
@@ -15905,7 +15964,7 @@ export default function App() {
         showAlert("Успех", "Настройки производства сохранены");
       }
     } catch (error) {
-      handleFirestoreError(
+      handleDbError(
         error,
         OperationType.WRITE,
         `companies/${companyData.id}/settings/production`,
@@ -16012,7 +16071,7 @@ export default function App() {
         showAlert("Успех", "Настройки успешно сохранены");
       }
     } catch (error) {
-      handleFirestoreError(
+      handleDbError(
         error,
         OperationType.WRITE,
         `companies/${companyData.id}/settings/general`,
@@ -16429,6 +16488,22 @@ export default function App() {
           setEdgeToEdge((prev) => ({ ...prev, ...initialEdgeToEdge }));
           setExpandedResults((prev) => new Set([...prev, ...initialExpanded]));
           setResults(grouped);
+
+          // Get file name without extension and auto-assign
+          const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+          const newProjectId = Date.now().toString();
+          setCurrentProjectId(newProjectId);
+          setCurrentProjectName(fileNameWithoutExt);
+
+          saveProject(fileNameWithoutExt, true, {
+            projectId: newProjectId,
+            results: grouped,
+            currentProjectTotal: 0,
+            currentSummaryRows: [],
+            addedProducts: [],
+            addedServices: []
+          });
+
           setActiveTab("calculator");
         },
         error: (error) => {
@@ -16483,7 +16558,7 @@ export default function App() {
           }
         },
         (error) =>
-          handleFirestoreError(
+          handleDbError(
             error,
             OperationType.GET,
             `companies/${companyData?.manufacturerId}/settings/production`,
@@ -17820,6 +17895,7 @@ export default function App() {
               manufacturerId={companyData?.manufacturerId}
               companyData={companyData}
               showConfirm={showConfirm}
+              showAlert={showAlert}
               projects={projects}
               sets={projectSets}
             />
@@ -18072,7 +18148,7 @@ export default function App() {
 
                     // 2. Update user doc (name, etc)
                     const docUpdates = { ...updates };
-                    delete docUpdates.password; // Don't store plain password in Firestore-like doc
+                    delete docUpdates.password; // Don't store plain password in DB doc
 
                     await updateDoc(doc(db, "users", userData.uid), docUpdates);
                     setUserData((prev: any) => ({ ...prev, ...docUpdates }));

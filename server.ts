@@ -38,7 +38,7 @@ async function startServer() {
 
       console.log(`--- [ADMIN SETUP] Upserted user: ${authUser.uid} ---`);
 
-      // Update or Create the Firestore-like document for role sync
+      // Update or Create the DB document for role sync
       const userDocPath = `users/${authUser.uid}`;
       const existingDoc = await prisma.dbDocument.findUnique({ where: { path: userDocPath } });
       
@@ -411,21 +411,21 @@ async function startServer() {
     }
   });
 
-  // Firestore-like Document API
-  app.get("/api/firebase/doc/*", async (req, res) => {
+  // TimeWeb Database Document API
+  app.get("/api/db/doc/*", async (req, res) => {
     const docPath = req.params[0];
     const doc = await prisma.dbDocument.findUnique({ where: { path: docPath } });
     if (doc) res.json(JSON.parse(doc.data));
     else res.status(404).json({ error: "Not found" });
   });
 
-  app.get("/api/firebase/col/*", async (req, res) => {
+  app.get("/api/db/col/*", async (req, res) => {
     const colPath = req.params[0];
     const docs = await prisma.dbDocument.findMany({ where: { collection: colPath } });
     res.json(docs.map(d => ({ id: d.docId, data: JSON.parse(d.data), path: d.path })));
   });
 
-  app.post("/api/firebase/doc/*", async (req, res) => {
+  app.post("/api/db/doc/*", async (req, res) => {
     try {
       const docPath = req.params[0];
       const parts = docPath.split('/');
@@ -451,12 +451,12 @@ async function startServer() {
       }
       res.json({ status: "ok" });
     } catch (e) {
-      console.error("Error in POST /api/firebase/doc/*:", e);
+      console.error("Error in POST /api/db/doc/*:", e);
       res.status(500).json({ error: String(e) });
     }
   });
 
-  app.patch("/api/firebase/doc/*", async (req, res) => {
+  app.patch("/api/db/doc/*", async (req, res) => {
     try {
       const docPath = req.params[0];
       const { data } = req.body;
@@ -475,18 +475,18 @@ async function startServer() {
       }
       res.json({ status: "ok" });
     } catch (e) {
-      console.error("Error in PATCH /api/firebase/doc/*:", e);
+      console.error("Error in PATCH /api/db/doc/*:", e);
       res.status(500).json({ error: String(e) });
     }
   });
 
-  app.delete("/api/firebase/doc/*", async (req, res) => {
+  app.delete("/api/db/doc/*", async (req, res) => {
     try {
       const docPath = req.params[0];
       await prisma.dbDocument.deleteMany({ where: { path: docPath } });
       res.json({ status: "ok" });
     } catch (e) {
-      console.error("Error in DELETE /api/firebase/doc/*:", e);
+      console.error("Error in DELETE /api/db/doc/*:", e);
       res.status(500).json({ error: String(e) });
     }
   });
@@ -594,8 +594,16 @@ async function startServer() {
         body: params ? JSON.stringify(params) : undefined
       });
 
-      const bitrixData = await bitrixRes.json();
-      res.json(bitrixData);
+      const resText = await bitrixRes.text();
+      try {
+        const bitrixData = JSON.parse(resText);
+        res.json(bitrixData);
+      } catch (jsonErr) {
+        console.error("Bitrix24 query response was not valid JSON. Response body:", resText);
+        res.status(bitrixRes.status || 500).json({
+          error: resText.trim() || `Bitrix24 returned ${bitrixRes.status || 500} non-JSON response`
+        });
+      }
     } catch (e) {
       console.error("Bitrix24 query error:", e);
       res.status(500).json({ error: String(e) });
@@ -618,8 +626,17 @@ async function startServer() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      const bitrixData = await bitrixRes.json();
-      res.json(bitrixData);
+      
+      const resText = await bitrixRes.text();
+      try {
+        const bitrixData = JSON.parse(resText);
+        res.json(bitrixData);
+      } catch (jsonErr) {
+        console.error("Bitrix24 execute response was not valid JSON. Response body:", resText);
+        res.status(bitrixRes.status || 500).json({
+          error: resText.trim() || `Bitrix24 returned ${bitrixRes.status || 500} non-JSON response`
+        });
+      }
     } catch (e) {
       console.error("Bitrix24 error:", e);
       res.status(500).json({ error: String(e) });

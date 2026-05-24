@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Plus, Shield, Mail, User, Briefcase, Settings, Trash2, Edit2, X, Check, Loader2, Lock, Crown } from 'lucide-react';
-// Firebase removed, backend switched to TimeWeb
+// TimeWeb DB Setup
 const db = {};
 function collection(db: any, ...pathParts: string[]) {
   return { path: pathParts.join('/') };
@@ -10,7 +10,7 @@ function onSnapshot(ref: any, callback: (snap: any) => void) {
     try {
       if (ref.path.split('/').length % 2 === 0) {
         // Doc ref
-        const res = await fetch(`/api/firebase/doc/${ref.path}`);
+        const res = await fetch(`/api/db/doc/${ref.path}`);
         if (res.ok) {
           const data = await res.json();
           callback({ exists: () => true, data: () => data });
@@ -19,7 +19,7 @@ function onSnapshot(ref: any, callback: (snap: any) => void) {
         }
       } else {
         // Collection ref
-        const res = await fetch(`/api/firebase/col/${ref.path}`);
+        const res = await fetch(`/api/db/col/${ref.path}`);
         if (res.ok) {
           const data = await res.json();
           callback({
@@ -43,24 +43,24 @@ function doc(db: any, ...pathParts: string[]) {
   return { path: pathParts.join('/') };
 }
 async function setDoc(docRef: any, data: any, options?: any) {
-  await fetch(`/api/firebase/doc/${docRef.path}`, {
+  await fetch(`/api/db/doc/${docRef.path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ data, merge: options?.merge })
   });
 }
 async function updateDoc(docRef: any, data: any, options?: any) {
-  await fetch(`/api/firebase/doc/${docRef.path}`, {
+  await fetch(`/api/db/doc/${docRef.path}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ data, merge: options?.merge })
   });
 }
 async function deleteDoc(docRef: any) {
-  await fetch(`/api/firebase/doc/${docRef.path}`, { method: 'DELETE' });
+  await fetch(`/api/db/doc/${docRef.path}`, { method: 'DELETE' });
 }
 async function getDoc(docRef: any) {
-  const res = await fetch(`/api/firebase/doc/${docRef.path}`);
+  const res = await fetch(`/api/db/doc/${docRef.path}`);
   if (res.ok) {
     const data = await res.json();
     return { exists: () => true, data: () => data };

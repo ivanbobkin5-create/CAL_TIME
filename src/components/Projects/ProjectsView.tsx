@@ -15,9 +15,9 @@ import {
   Send,
   Link,
 } from "lucide-react";
-// Firebase removed, backend switched to TimeWeb
+// TimeWeb DB Setup
 const db = {};
-const handleFirestoreError = (e: any, op: any, path: string) => console.warn("Firestore call bypassed (Firebase removed):", op, path);
+const handleDbError = (e: any, op: any, path: string) => console.warn("Database error:", op, path, e);
 enum OperationType { LIST = "LIST", UPDATE = "UPDATE", GET = "GET", DELETE = "DELETE", WRITE = "WRITE", CREATE = "CREATE" }
 function collection(db: any, ...pathParts: string[]) {
   return { path: pathParts.join('/') };
@@ -26,14 +26,14 @@ function doc(db: any, ...pathParts: string[]) {
   return { path: pathParts.join('/') };
 }
 async function setDoc(docRef: any, data: any, options?: any) {
-  await fetch(`/api/firebase/doc/${docRef.path}`, {
+  await fetch(`/api/db/doc/${docRef.path}`, {
     method: options?.merge ? 'PATCH' : 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ data })
   });
 }
 async function updateDoc(docRef: any, data: any, options?: any) {
-  await fetch(`/api/firebase/doc/${docRef.path}`, {
+  await fetch(`/api/db/doc/${docRef.path}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ data, merge: options?.merge })
@@ -55,12 +55,12 @@ function writeBatch(db: any) {
   };
 }
 async function deleteDoc(docRef: any) {
-  await fetch(`/api/firebase/doc/${docRef.path}`, { method: 'DELETE' });
+  await fetch(`/api/db/doc/${docRef.path}`, { method: 'DELETE' });
 }
 function onSnapshot(ref: any, callback: (snap: any) => void) {
   const fetchData = async () => {
     try {
-      const res = await fetch(`/api/firebase/col/${ref.path}`);
+      const res = await fetch(`/api/db/col/${ref.path}`);
       if (res.ok) {
         const data = await res.json();
         callback({
@@ -85,7 +85,7 @@ function orderBy(field: string, dir: string) { return {}; }
 function or(...constraints: any[]) { return {}; }
 function limit(n: number) { return {}; }
 async function getDocs(ref: any) {
-  const res = await fetch(`/api/firebase/col/${ref.path}`);
+  const res = await fetch(`/api/db/col/${ref.path}`);
   if (res.ok) {
     const data = await res.json();
     return {
@@ -202,7 +202,7 @@ export const ProjectsView = ({
             );
           }
         } catch (error) {
-          handleFirestoreError(
+          handleDbError(
             error,
             OperationType.UPDATE,
             `companies/${companyId}/projects/${project.id}`,
@@ -240,7 +240,7 @@ export const ProjectsView = ({
           
           await batch.commit();
         } catch (error) {
-          handleFirestoreError(
+          handleDbError(
             error,
             OperationType.UPDATE,
             `companies/${companyId}/sets/${set.id}`,
@@ -265,7 +265,7 @@ export const ProjectsView = ({
       );
       setEditingProjectId(null);
     } catch (error) {
-      handleFirestoreError(
+      handleDbError(
         error,
         OperationType.UPDATE,
         `companies/${companyId}/projects/${editingProjectId}`,
@@ -370,7 +370,7 @@ export const ProjectsView = ({
             doc(db, "companies", companyId, "projects", projectId),
           );
         } catch (error) {
-          handleFirestoreError(
+          handleDbError(
             error,
             OperationType.DELETE,
             `companies/${companyId}/projects/${projectId}`,
@@ -495,13 +495,25 @@ export const ProjectsView = ({
                       <Combine className="w-6 h-6" />
                     </div>
                     <div className="flex-1 min-w-0 pr-24">
-                      <div className="flex items-center gap-2 mb-1">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <h3 className="font-bold text-gray-900 truncate group-hover:text-indigo-600 transition-colors min-w-0">
                           {set.name || "Комплект"}
                         </h3>
                         <span className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider bg-indigo-100 text-indigo-700 flex-shrink-0">
                           {set.projectIds?.length || 0} шт
                         </span>
+                        {set.bitrix24DealId && bitrixBaseUrl && (
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              window.open(`${bitrixBaseUrl}/crm/deal/details/${set.bitrix24DealId}/`, "_blank");
+                            }}
+                            className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider flex-shrink-0 bg-blue-100 text-blue-700 flex items-center gap-1 hover:bg-blue-200 transition-colors cursor-pointer"
+                          >
+                            <Link className="w-2.5 h-2.5" />
+                            CRM
+                          </button>
+                        )}
                       </div>
                       <div className="text-sm text-gray-500">
                         Сумма: {(set.totalPrice || 0).toLocaleString()} ₽
@@ -544,6 +556,37 @@ export const ProjectsView = ({
                       <FileText className="w-4 h-4" />
                       Спецификация
                     </button>
+                    {(userRole === "manager" || userRole === "admin") && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedBitrixProject({
+                            id: set.id,
+                            name: set.name || "Комплект",
+                            contractNumber: set.contractNumber,
+                            contractDate: set.contractDate,
+                            readyDate: set.readyDate,
+                            totalPrice: set.totalPrice,
+                            bitrix24DealId: set.bitrix24DealId || null,
+                            isSet: true,
+                            projectIds: set.projectIds,
+                            summary: set.summary,
+                            data: {
+                              contractNumber: set.contractNumber,
+                              contractDate: set.contractDate,
+                              readyDate: set.readyDate,
+                              totalSum: set.totalPrice,
+                              summary: set.summary,
+                            }
+                          } as any);
+                        }}
+                        className="p-1.5 text-orange-600 hover:bg-orange-50 rounded-lg transition-all flex items-center gap-1 text-[10px] font-bold"
+                        title="Интеграция с Bitrix24"
+                      >
+                        <Send className="w-4 h-4" />
+                        Bitrix24
+                      </button>
+                    )}
                     <div className="flex-1" />
                     <button
                       onClick={async (e) => {
@@ -553,7 +596,7 @@ export const ProjectsView = ({
                           try {
                             await deleteDoc(doc(db, "companies", companyId, "sets", set.id));
                           } catch (error) {
-                            handleFirestoreError(error, OperationType.DELETE, `companies/${companyId}/sets/${set.id}`);
+                            handleDbError(error, OperationType.DELETE, `companies/${companyId}/sets/${set.id}`);
                           }
                         });
                       }}

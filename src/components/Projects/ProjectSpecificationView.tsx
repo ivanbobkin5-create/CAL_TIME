@@ -12,15 +12,15 @@ import {
   Plus,
   Package
 } from 'lucide-react';
-// Firebase removed, backend switched to TimeWeb
+// TimeWeb DB Setup
 const db = {};
-const handleFirestoreError = (e: any, op: any, path: string) => console.warn("Firestore call bypassed (Firebase removed):", op, path);
+const handleDbError = (e: any, op: any, path: string) => console.warn("Database error:", op, path, e);
 enum OperationType { LIST = "LIST", UPDATE = "UPDATE", GET = "GET", DELETE = "DELETE", WRITE = "WRITE", CREATE = "CREATE" }
 function doc(db: any, ...pathParts: string[]) {
   return { path: pathParts.join('/') };
 }
 async function updateDoc(docRef: any, data: any) {
-  await fetch(`/api/firebase/doc/${docRef.path}`, {
+  await fetch(`/api/db/doc/${docRef.path}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ data })
@@ -29,7 +29,7 @@ async function updateDoc(docRef: any, data: any) {
 async function addDoc(colRef: any, data: any) {
   const id = Math.random().toString(36).substr(2, 9);
   const path = `${colRef.path}/${id}`;
-  await fetch(`/api/firebase/doc/${path}`, {
+  await fetch(`/api/db/doc/${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ data })
@@ -96,7 +96,7 @@ export const ProjectSpecificationView = ({
       });
       onClose();
     } catch (err) {
-      handleFirestoreError(err, OperationType.UPDATE, `companies/${companyId}/projects/${project.id}`);
+      handleDbError(err, OperationType.UPDATE, `companies/${companyId}/projects/${project.id}`);
       setError('Ошибка при передаче руководителю');
     } finally {
       setIsSubmitting(false);
@@ -158,7 +158,7 @@ export const ProjectSpecificationView = ({
 
       onClose();
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, `companies/${manufacturerId}/projects`);
+      handleDbError(err, OperationType.CREATE, `companies/${manufacturerId}/projects`);
       setError('Ошибка при передаче проекта на производство');
     } finally {
       setIsSubmitting(false);

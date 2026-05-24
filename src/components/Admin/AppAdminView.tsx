@@ -20,17 +20,18 @@ import {
   Tag,
   Trash2
 } from 'lucide-react';
-const handleFirestoreError = (e: any, op: any, path: string) => console.warn("Firestore error:", op, path, e);
+const handleDbError = (e: any, op: any, path: string) => console.warn("Database error:", op, path, e);
 enum OperationType { LIST = "LIST", UPDATE = "UPDATE", GET = "GET", DELETE = "DELETE", WRITE = "WRITE", CREATE = "CREATE" }
-// Firebase removed, backend switched to TimeWeb
+// TimeWeb DB Setup
 const db = {};
 function collection(db: any, path: string, ...rest: any[]) { 
-  return { path }; 
+  const fullPath = [path, ...rest].join('/');
+  return { path: fullPath }; 
 }
 function onSnapshot(colRef: any, callback: (snap: any) => void, errorCb?: (err: any) => void) { 
   const fetchCol = async () => {
     try {
-      const res = await fetch(`/api/firebase/col/${colRef.path}`);
+      const res = await fetch(`/api/db/col/${colRef.path}`);
       if (res.ok) {
         const data = await res.json();
         callback({
@@ -55,7 +56,7 @@ function doc(db: any, col: string, ...rest: any[]) {
   return { path }; 
 }
 async function getDoc(docRef: any) { 
-  const res = await fetch(`/api/firebase/doc/${docRef.path}`);
+  const res = await fetch(`/api/db/doc/${docRef.path}`);
   if (res.ok) {
     const data = await res.json();
     return {
@@ -66,7 +67,7 @@ async function getDoc(docRef: any) {
   return { exists: () => false };
 }
 async function getDocs(colRef: any) { 
-  const res = await fetch(`/api/firebase/col/${colRef.path}`);
+  const res = await fetch(`/api/db/col/${colRef.path}`);
   if (res.ok) {
     const data = await res.json();
     return {
@@ -77,14 +78,14 @@ async function getDocs(colRef: any) {
   return { docs: [], size: 0 };
 }
 async function updateDoc(docRef: any, data: any) { 
-  await fetch(`/api/firebase/doc/${docRef.path}`, {
+  await fetch(`/api/db/doc/${docRef.path}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ data })
   });
 }
 async function deleteDoc(docRef: any) { 
-  await fetch(`/api/firebase/doc/${docRef.path}`, {
+  await fetch(`/api/db/doc/${docRef.path}`, {
     method: 'DELETE'
   });
 }
@@ -287,7 +288,7 @@ export const AppAdminView = () => {
         isBlocked: !currentStatus
       });
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `companies/${companyId}`);
+      handleDbError(error, OperationType.UPDATE, `companies/${companyId}`);
     }
   };
 
@@ -297,7 +298,7 @@ export const AppAdminView = () => {
         isBlocked: !currentStatus
       });
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `users/${uid}`);
+      handleDbError(error, OperationType.UPDATE, `users/${uid}`);
     }
   };
 
@@ -368,7 +369,7 @@ export const AppAdminView = () => {
         [field]: value
       });
     } catch (error) {
-      handleFirestoreError(error, OperationType.UPDATE, `companies/${companyId}`);
+      handleDbError(error, OperationType.UPDATE, `companies/${companyId}`);
     }
   };
 
