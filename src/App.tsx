@@ -43,11 +43,13 @@ import { ProjectSpecificationView } from "./components/Projects/ProjectSpecifica
 import { ProjectSetCheckoutModal } from "./components/Projects/ProjectSetCheckoutModal";
 import { SpecificationPrintView } from "./components/Projects/SpecificationPrintView";
 import { UserProfileView } from "./components/Profile/UserProfileView";
+import { PromotionsView } from "./components/Promotions/PromotionsView";
 import {
   Menu,
   X,
   Calculator,
   Tag,
+  Percent,
   Search,
   ChevronRight,
   ChevronDown,
@@ -108,6 +110,8 @@ import {
   Navigation,
   ShieldAlert,
   History,
+  CheckCircle,
+  Sparkles,
 } from "lucide-react";
 
 // --- START OF OFFLINE CACHE AND SYNC ENGINE ---
@@ -6399,6 +6403,7 @@ const SummaryView = ({
   catalogMaterials,
   resolveBrandCoefficient,
   onSummaryCalculated,
+  promotions = [],
 }: {
   results: any;
   selectedDecor: Record<string, string>;
@@ -6468,11 +6473,14 @@ const SummaryView = ({
   catalogMaterials: Record<string, string[]>;
   resolveBrandCoefficient: (categoryId: string, brand: string) => number;
   onSummaryCalculated?: (total: number, summaryRows?: any[]) => void;
+  promotions?: any[];
 }) => {
   const [activeWorktopForCut, setActiveWorktopForCut] = useState<any | null>(
     null,
   );
   const [showChecklistWindow, setShowChecklistWindow] = useState(false);
+  const [selectedPromoIds, setSelectedPromoIds] = useState<string[]>([]);
+  const [selectedInstallmentProg, setSelectedInstallmentProg] = useState<string>("");
 
   const currentHardwareKitPriceLocal = (() => {
     const price = hardwareKitPriceProps as any;
@@ -7217,17 +7225,25 @@ const SummaryView = ({
 
   // Add Assembly Fee if enabled
   if (serviceData.assembly) {
+    let effectiveAssemblyPercentage = assemblyPercentage;
+    selectedPromoIds.forEach(pId => {
+      const promo = promotions?.find(p => p.id === pId);
+      if (promo && promo.promoType === "gift_service" && promo.giftServiceId === "assembly" && !promo.giftServiceNeedMarkup) {
+        effectiveAssemblyPercentage = promo.giftServiceCustomPrice !== undefined ? promo.giftServiceCustomPrice : 0;
+      }
+    });
+
     const productsSubtotal = summaryRows
       .filter((row) => row.type !== "service")
       .reduce((sum, row) => sum + row.total, 0);
     const assemblyCoef = currentCoefficients.assembly || 1.5;
     const assemblyFee = Math.round(
-      productsSubtotal * (assemblyPercentage / 100),
+      productsSubtotal * (effectiveAssemblyPercentage / 100),
     );
     summaryRows.push({
       type: "service",
       name: "Базовый пакет сборки",
-      sub: `Сервис (${assemblyPercentage}% от стоимости товаров)`,
+      sub: `Сервис (${effectiveAssemblyPercentage}% от стоимости товаров)`,
       decor: "-",
       qty: "1 усл",
       price: assemblyFee,
@@ -7287,13 +7303,212 @@ const SummaryView = ({
     totalCost += finalDeliveryFee;
   }
 
+  // Row classification helper for Promotions
+  const getRowCategory = (row: any) => {
+    const nameL = (row.name || "").toLowerCase();
+    const subL = (row.sub || "").toLowerCase();
+    const type = row.type;
+
+    const isLdsp = nameL.includes("лдсп") || subL.includes("лдсп");
+    const isMdf = nameL.includes("мдф") || subL.includes("мдф");
+    const isHdfOrBack = nameL.includes("хдф") || nameL.includes("двп") || nameL.includes("задняя") || subL.includes("задняя");
+    const isHardwareKit = row.name === "Комплект метизов" || nameL.includes("метиз");
+    const isStone = nameL.includes("камень") || nameL.includes("компактламинат") || nameL.includes("компакт ламинат") || nameL.includes("компакт-ламинат") || nameL.includes("акрил") || nameL.includes("кварц") || subL.includes("камень") || subL.includes("компактламинат") || subL.includes("компакт ламинат") || subL.includes("компакт-ламинат");
+    const isAppliance = nameL.includes("техника") || nameL.includes("духовой") || nameL.includes("варочная") || nameL.includes("вытяжка") || nameL.includes("холодильник") || nameL.includes("посудомойка") || subL.includes("техника");
+
+    // Determine if it is a custom facade
+    const isFacade = type === "facade" || nameL.includes("фасад");
+    const isCustomFacade = isFacade && (nameL.includes("заказн") || nameL.includes("пленка") || nameL.includes("эмаль") || nameL.includes("эмалирован") || subL.includes("заказн") || subL.includes("пленка") || subL.includes("эмаль"));
+
+    // Check if it is MDF / Facade edge
+    const isFacadeOrMdfEdge = nameL.includes("мдф") || subL.includes("мдф") || nameL.includes("фасад");
+
+    if (isStone) return "stone";
+    if (isAppliance) return "appliances";
+
+    if (type === "service") {
+      if (nameL.includes("доставк")) return "delivery";
+      if (nameL.includes("сборк") || nameL.includes("монтаж")) return "assembly";
+      return "services";
+    }
+
+    if (isHardwareKit) {
+      return "corp";
+    }
+
+    if (type === "hardware" || type === "product") {
+      return "hardware";
+    }
+
+    if (isLdsp || isHdfOrBack) {
+      return "corp";
+    }
+
+    if (type === "edge" || type === "product_edge" || nameL.includes("кромка")) {
+      return isFacadeOrMdfEdge ? "facades_plt" : "corp";
+    }
+
+    if (isCustomFacade) {
+      return "facades_cust";
+    }
+
+    if (isFacade || isMdf) {
+      return "facades_plt";
+    }
+
+    return "corp"; // fallback
+  };
+
+  const eligiblePromotions = (promotions || []).filter(promo => {
+    if (promo.isActive === false) return false;
+    const today = new Date().toISOString().split('T')[0];
+    if (today < promo.startDate || today > promo.endDate) return false;
+    if (!promo.buyerTypes.includes(customerType)) return false;
+    return true;
+  });
+
+  const togglePromo = (promo: any) => {
+    if (selectedPromoIds.includes(promo.id)) {
+      setSelectedPromoIds(selectedPromoIds.filter(id => id !== promo.id));
+      if (promo.promoType === "installment") {
+        setSelectedInstallmentProg("");
+      }
+    } else {
+      if (!promo.allowOverlap) {
+        setSelectedPromoIds([promo.id]);
+        if (promo.promoType === "installment") {
+          const activeProgKey = Object.keys(promo.installmentPrograms || {}).find(k => promo.installmentPrograms[k].enabled) || "";
+          setSelectedInstallmentProg(activeProgKey);
+        } else {
+          setSelectedInstallmentProg("");
+        }
+      } else {
+        const overlappingAndCompat = eligiblePromotions.filter(p => p.allowOverlap && selectedPromoIds.includes(p.id));
+        setSelectedPromoIds([...overlappingAndCompat.map(p => p.id), promo.id]);
+        if (promo.promoType === "installment") {
+          const activeProgKey = Object.keys(promo.installmentPrograms || {}).find(k => promo.installmentPrograms[k].enabled) || "";
+          setSelectedInstallmentProg(activeProgKey);
+        }
+      }
+    }
+  };
+
+  const activeSelectedPromos = eligiblePromotions.filter(p => selectedPromoIds.includes(p.id));
+
+  // Initialize row display states
+  summaryRows.forEach(row => {
+    row.displayTotal = row.total;
+    row.discountSum = 0;
+    row.cashbackSum = 0;
+    row.netPaid = row.total;
+  });
+
+  let totalPromoMarkup = 0;
+  let totalPromoDiscount = 0;
+  let totalPromoCashback = 0;
+
+  activeSelectedPromos.forEach(promo => {
+    if (promo.promoType === "discount") {
+      const P = promo.discountPercent || 0;
+      summaryRows.forEach(row => {
+        const cat = getRowCategory(row);
+        if (promo.discountScopes?.includes("all_project") || promo.discountScopes?.includes(cat)) {
+          if (promo.discountNeedMarkup) {
+            row.displayTotal = (row.displayTotal || row.total) * (1 + P / 100);
+            row.discountSum = (row.discountSum || 0) + (row.total * P / 100);
+            row.netPaid = row.total;
+          } else {
+            row.displayTotal = row.displayTotal || row.total;
+            row.discountSum = (row.discountSum || 0) + (row.total * P / 100);
+            row.netPaid = (row.netPaid || row.total) - (row.total * P / 100);
+          }
+          row.promoApplied = promo.name;
+        }
+      });
+    } else if (promo.promoType === "cashback") {
+      const P = promo.cashbackPercent || 0;
+      summaryRows.forEach(row => {
+        const cat = getRowCategory(row);
+        if (promo.cashbackScopes?.includes("all_project") || promo.cashbackScopes?.includes(cat)) {
+          if (promo.cashbackNeedMarkup) {
+            row.displayTotal = (row.displayTotal || row.total) * (1 + P / 100);
+            row.cashbackSum = (row.cashbackSum || 0) + (row.total * P / 100);
+            row.netPaid = (row.netPaid || row.total) * (1 + P / 100);
+          } else {
+            row.displayTotal = row.displayTotal || row.total;
+            row.cashbackSum = (row.cashbackSum || 0) + (row.total * P / 100);
+            row.netPaid = row.netPaid || row.total;
+          }
+          row.promoApplied = promo.name;
+        }
+      });
+    } else if (promo.promoType === "gift_product") {
+      summaryRows.forEach(row => {
+        if (row.type === "product" && row.productId === promo.giftProductId) {
+          if (promo.giftProductNeedMarkup) {
+            row.promoApplied = promo.name;
+          } else {
+            const rowQty = parseFloat(row.qty) || 1;
+            const singleCustomPrice = promo.giftProductCustomPrice !== undefined ? promo.giftProductCustomPrice : 0;
+            row.displayTotal = row.total;
+            row.discountSum = row.total - (singleCustomPrice * rowQty);
+            row.netPaid = singleCustomPrice * rowQty;
+            row.promoApplied = promo.name;
+          }
+        }
+      });
+      if (promo.giftProductNeedMarkup && promo.giftProductMarkupAmount) {
+        totalPromoMarkup += promo.giftProductMarkupAmount;
+      }
+    } else if (promo.promoType === "gift_service") {
+      if (promo.giftServiceId === "assembly") {
+        if (promo.giftServiceNeedMarkup && promo.giftServiceMarkupAmount) {
+          totalPromoMarkup += promo.giftServiceMarkupAmount;
+        }
+      } else {
+        summaryRows.forEach(row => {
+          if (row.type === "service" && row.id === promo.giftServiceId) {
+            if (promo.giftServiceNeedMarkup) {
+              row.promoApplied = promo.name;
+            } else {
+              const rowQty = parseFloat(row.qty) || 1;
+              const singleCustomPrice = promo.giftServiceCustomPrice !== undefined ? promo.giftServiceCustomPrice : 0;
+              row.displayTotal = row.total;
+              row.discountSum = row.total - (singleCustomPrice * rowQty);
+              row.netPaid = singleCustomPrice * rowQty;
+              row.promoApplied = promo.name;
+            }
+          }
+        });
+        if (promo.giftServiceNeedMarkup && promo.giftServiceMarkupAmount) {
+          totalPromoMarkup += promo.giftServiceMarkupAmount;
+        }
+      }
+    } else if (promo.promoType === "installment" && selectedInstallmentProg) {
+      const prog = promo.installmentPrograms?.[selectedInstallmentProg];
+      if (prog && promo.installmentNeedMarkup) {
+        const P_bank = prog.bankPercent || 0;
+        summaryRows.forEach(row => {
+          row.displayTotal = (row.displayTotal || row.total) * (1 + P_bank / 100);
+          row.netPaid = (row.netPaid || row.total) * (1 + P_bank / 100);
+          row.promoApplied = `${promo.name} (${selectedInstallmentProg})`;
+        });
+      }
+    }
+  });
+
+  totalPromoDiscount = summaryRows.reduce((sum, r) => sum + (r.discountSum || 0), 0);
+  totalPromoCashback = summaryRows.reduce((sum, r) => sum + (r.cashbackSum || 0), 0);
+
+  let promotionAdjustedTotal = summaryRows.reduce((sum, r) => sum + (r.netPaid !== undefined ? r.netPaid : r.total), 0) + totalPromoMarkup;
+
   const materialsSubtotalValue = summaryRows
     .filter((r) => ["material", "edge"].includes(r.type))
-    .reduce((sum, r) => sum + r.total, 0);
+    .reduce((sum, r) => sum + (r.netPaid !== undefined ? r.netPaid : r.total), 0);
 
   const hardwareSubtotalValue = summaryRows
     .filter((r) => r.type === "hardware")
-    .reduce((sum, r) => sum + r.total, 0);
+    .reduce((sum, r) => sum + (r.netPaid !== undefined ? r.netPaid : r.total), 0);
 
   // Function to determine if an item is present in the summary rows
   const isItemPresent = (itemName: string) => {
@@ -7356,7 +7571,7 @@ const SummaryView = ({
       ? FURNITURE_CHECKLISTS[furnitureType as FurnitureType]
       : null;
 
-  const finalTotal = allDataEntered ? Math.round(totalCost) : 0;
+  const finalTotal = allDataEntered ? Math.round(promotionAdjustedTotal) : 0;
 
   const stringifiedRows = JSON.stringify(summaryRows);
   useEffect(() => {
@@ -7442,6 +7657,58 @@ const SummaryView = ({
                 </select>
               </div>
             )}
+        </div>
+      )}
+
+      {eligiblePromotions.length > 0 && (
+        <div className="bg-gradient-to-r from-indigo-50/70 to-blue-50/50 rounded-2xl border border-indigo-100 p-5 space-y-3 shadow-sm select-none">
+          <div className="flex items-center gap-2 mb-1">
+            <Sparkles className="w-5 h-5 text-indigo-650" />
+            <h3 className="font-extrabold text-indigo-900 text-sm tracking-tight uppercase">Доступные акции для этого расчета</h3>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {eligiblePromotions.map((promo) => {
+              const selected = selectedPromoIds.includes(promo.id);
+              return (
+                <div key={promo.id} className="flex flex-col gap-2">
+                  <button
+                    type="button"
+                    onClick={() => togglePromo(promo)}
+                    className={cn(
+                      "flex items-center gap-2.5 px-4 py-2.5 rounded-xl border text-xs font-bold transition-all shadow-sm select-none",
+                      selected
+                        ? "bg-indigo-600 text-white border-indigo-600"
+                        : "bg-white text-gray-700 border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/20"
+                    )}
+                  >
+                    {selected ? (
+                      <CheckCircle className="w-4 h-4 text-white" />
+                    ) : (
+                      <Percent className="w-4 h-4 text-indigo-500" />
+                    )}
+                    <span>{promo.name}</span>
+                  </button>
+
+                  {selected && promo.promoType === "installment" && (
+                    <div className="flex items-center gap-1.5 p-1 bg-white border border-indigo-100 rounded-lg ml-2 animate-in slide-in-from-top-1">
+                      <span className="text-[10px] text-gray-400 font-bold px-1.5">Программа рассрочки:</span>
+                      <select
+                        value={selectedInstallmentProg}
+                        onChange={(e) => setSelectedInstallmentProg(e.target.value)}
+                        className="text-[11px] font-extrabold text-indigo-600 border-none bg-transparent p-0 focus:ring-0 cursor-pointer outline-none"
+                      >
+                        {Object.entries(promo.installmentPrograms || {})
+                          .filter(([_, val]: any) => val.enabled)
+                          .map(([key]) => (
+                            <option key={key} value={key}>{key}</option>
+                          ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
 
@@ -7802,13 +8069,23 @@ const SummaryView = ({
                       )}
                     </td>
                     <td className="px-6 py-2 text-right font-bold text-gray-900 whitespace-nowrap">
-                      <span
-                        className={cn(
-                          row.type === "edge" && "text-sm font-medium text-gray-600",
-                        )}
-                      >
-                        {(row.total ?? 0).toLocaleString()} ₽
-                      </span>
+                      {row.displayTotal !== row.total ? (
+                        <div className="flex flex-col items-end">
+                          <span className="text-xs line-through text-gray-400 font-normal">{(row.displayTotal ?? row.total).toLocaleString()} ₽</span>
+                          <span className="text-sm font-extrabold text-indigo-650">{(row.netPaid ?? row.total).toLocaleString()} ₽</span>
+                          {row.promoApplied && (
+                            <span className="text-[9px] text-white bg-indigo-550 px-1.5 py-0.5 rounded font-black uppercase tracking-wider mt-1">{row.promoApplied}</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span
+                          className={cn(
+                            row.type === "edge" && "text-sm font-medium text-gray-600",
+                          )}
+                        >
+                          {(row.total ?? 0).toLocaleString()} ₽
+                        </span>
+                      )}
                     </td>
                   </tr>
                 );
@@ -7989,7 +8266,17 @@ const SummaryView = ({
                           {(row.price ?? 0).toLocaleString()} ₽
                         </td>
                         <td className="px-6 py-2 text-right font-bold text-gray-900 whitespace-nowrap">
-                          {(row.total ?? 0).toLocaleString()} ₽
+                          {row.displayTotal !== row.total ? (
+                            <div className="flex flex-col items-end">
+                              <span className="text-xs line-through text-gray-400 font-normal">{(row.displayTotal ?? row.total).toLocaleString()} ₽</span>
+                              <span className="text-sm font-extrabold text-indigo-650">{(row.netPaid ?? row.total).toLocaleString()} ₽</span>
+                              {row.promoApplied && (
+                                <span className="text-[9px] text-white bg-indigo-550 px-1.5 py-0.5 rounded font-black uppercase tracking-wider mt-1">{row.promoApplied}</span>
+                              )}
+                            </div>
+                          ) : (
+                            `${(row.total ?? 0).toLocaleString()} ₽`
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -8066,7 +8353,17 @@ const SummaryView = ({
                         )}
                       </td>
                       <td className="px-6 py-2 text-right font-bold text-green-600 whitespace-nowrap">
-                        {(row.total ?? 0).toLocaleString()} ₽
+                        {row.displayTotal !== row.total ? (
+                          <div className="flex flex-col items-end">
+                            <span className="text-xs line-through text-gray-400 font-normal">{(row.displayTotal ?? row.total).toLocaleString()} ₽</span>
+                            <span className="text-sm font-extrabold text-indigo-650">{(row.netPaid ?? row.total).toLocaleString()} ₽</span>
+                            {row.promoApplied && (
+                              <span className="text-[9px] text-white bg-indigo-550 px-1.5 py-0.5 rounded font-black uppercase tracking-wider mt-1">{row.promoApplied}</span>
+                            )}
+                          </div>
+                        ) : (
+                          `${(row.total ?? 0).toLocaleString()} ₽`
+                        )}
                       </td>
                     </tr>
                   ))}
@@ -8074,7 +8371,7 @@ const SummaryView = ({
             )}
           </tbody>
           <tfoot>
-            <tr className="bg-blue-50">
+            <tr className="bg-gradient-to-r from-blue-50 to-indigo-50/70">
               <td
                 colSpan={3}
                 className="px-6 py-4 text-right font-bold text-gray-700 text-lg"
@@ -8083,11 +8380,37 @@ const SummaryView = ({
               </td>
               <td
                 colSpan={2}
-                className="px-6 py-4 text-right font-black text-blue-600 text-2xl whitespace-nowrap"
+                className="px-6 py-4 text-right whitespace-nowrap"
               >
-                {finalTotal > 0
-                  ? `${(finalTotal ?? 0).toLocaleString()} ₽`
-                  : "0 ₽"}
+                {(totalPromoDiscount > 0 || totalPromoCashback > 0 || totalPromoMarkup > 0) ? (
+                  <div className="flex flex-col items-end space-y-1">
+                    <span className="text-sm line-through text-gray-400 font-bold">
+                      {Math.round(totalCost).toLocaleString()} ₽
+                    </span>
+                    <span className="text-2xl font-black text-blue-600">
+                      {finalTotal > 0 ? `${(finalTotal ?? 0).toLocaleString()} ₽` : "0 ₽"}
+                    </span>
+                    {totalPromoDiscount > 0 && (
+                      <span className="text-xs font-bold text-indigo-650 bg-indigo-50 px-2 py-1 rounded">
+                        Скидка: -{totalPromoDiscount.toLocaleString()} ₽
+                      </span>
+                    )}
+                    {totalPromoCashback > 0 && (
+                      <span className="text-xs font-bold text-emerald-650 bg-emerald-50 px-2 py-1 rounded">
+                        Кэшбек: +{totalPromoCashback.toLocaleString()} ₽
+                      </span>
+                    )}
+                    {totalPromoMarkup > 0 && (
+                      <span className="text-xs font-bold text-amber-650 bg-amber-50 px-2 py-1 rounded">
+                        Наценка по условиям: +{totalPromoMarkup.toLocaleString()} ₽
+                      </span>
+                    )}
+                  </div>
+                ) : (
+                  <span className="font-black text-blue-600 text-2xl">
+                    {finalTotal > 0 ? `${(finalTotal ?? 0).toLocaleString()} ₽` : "0 ₽"}
+                  </span>
+                )}
                 {!allDataEntered && (
                   <div className="text-[10px] text-gray-400 font-normal mt-1">
                     Заполните все цены
@@ -8249,6 +8572,9 @@ const SettingsView = ({
   catalogMaterials,
   catalogServices,
   catalogProducts,
+  promotions,
+  savePromotions,
+  userRole,
 }: {
   coefficients: { retail: any; wholesale: any; designer: any };
   setCoefficients: React.Dispatch<
@@ -8319,10 +8645,13 @@ const SettingsView = ({
   catalogMaterials: Record<string, string[]>;
   catalogServices: any[];
   catalogProducts: any[];
+  promotions: any[];
+  savePromotions: (promosList: any[]) => Promise<void>;
+  userRole?: string | null;
 }) => {
   const [newCategory, setNewCategory] = useState("");
   const [activeSubTab, setActiveSubTab] = useState<
-    "general" | "services" | "production" | "account" | "facades" | "bitrix24"
+    "general" | "services" | "production" | "account" | "facades" | "bitrix24" | "promotions"
   >("general");
   const [showBrandCoeffModal, setShowBrandCoeffModal] = useState(false);
   
@@ -8659,6 +8988,7 @@ const SettingsView = ({
           ...(isProduction
             ? [{ id: "production", label: "Производство", icon: Factory }]
             : []),
+          { id: "promotions", label: "Акции", icon: Percent },
           { id: "account", label: "Компания", icon: Building2 },
           { id: "bitrix24", label: "Bitrix24", icon: Link },
         ].map((tab) => (
@@ -10446,6 +10776,15 @@ const SettingsView = ({
                             key: "deliveryComment",
                             label: "Комментарий для доставки",
                           },
+                          { key: "corpPlusFacadesSum", label: "Стоимость продукции: (Корпус+Фасады)" },
+                          { key: "expenseCorp", label: "Расходы на корпус" },
+                          { key: "expenseFacades", label: "Расходы на фасады" },
+                          { key: "expenseCustomFacades", label: "Расходы на фасады заказные" },
+                          { key: "expenseHardware", label: "Расходы фурнитура" },
+                          { key: "reserveCorpExtraSheets", label: "Запас на корпус ДОП ЛИСТЫ" },
+                          { key: "reserveFacadesExtraSheets", label: "Запас на фасады ДОП ЛИСТЫ" },
+                          { key: "expenseStoneCountertops", label: "Расходы столешницы камень/компактламинат" },
+                          { key: "expenseAppliances", label: "Расходы техника" },
                         ].map((field) => (
                           <tr
                             key={field.key}
@@ -10488,6 +10827,22 @@ const SettingsView = ({
                 </div>
               </div>
             </section>
+          </div>
+        )}
+
+        {activeSubTab === "promotions" && (
+          <div className="space-y-12 animate-in fade-in duration-300">
+            <PromotionsView
+              promotions={promotions}
+              savePromotions={savePromotions}
+              userRole={userRole}
+              companyType={companyData?.type}
+              productCategories={productCategories}
+              catalogProducts={catalogProducts}
+              catalogServices={catalogServices}
+              showAlert={showAlert}
+              showConfirm={showConfirm}
+            />
           </div>
         )}
 
@@ -14507,6 +14862,7 @@ export default function App() {
     | "specification"
     | "checkout_current"
     | "profile"
+    | "promotions"
   >("calculator");
   const [selectedProductCategory, setSelectedProductCategory] = useState<
     string | null
@@ -14941,6 +15297,7 @@ export default function App() {
   const [productCategories, setProductCategories] = useState<string[]>(
     INITIAL_PRODUCT_CATEGORIES,
   );
+  const [promotions, setPromotions] = useState<any[]>([]);
 
   const [showManufacturerCoeffs, setShowManufacturerCoeffs] = useState(false);
 
@@ -15230,6 +15587,21 @@ export default function App() {
         ),
     );
 
+    const promotionsUnsubscribe = onSnapshot(
+      doc(db, "companies", companyId, "settings", "promotions"),
+      (snapshot) => {
+        if (snapshot.exists()) {
+          const data = snapshot.data();
+          if (Array.isArray(data.promotions)) {
+            setPromotions(data.promotions);
+          }
+        }
+      },
+      (error) => {
+        console.error("Error syncing promotions:", error);
+      }
+    );
+
     return () => {
       productsUnsubscribe();
       manufacturerProductsUnsubscribe();
@@ -15237,6 +15609,7 @@ export default function App() {
       productionUnsubscribe();
       generalSettingsUnsubscribe();
       pricesUnsubscribe();
+      promotionsUnsubscribe();
     };
   }, [
     isAuthenticated,
@@ -16076,6 +16449,23 @@ export default function App() {
         OperationType.WRITE,
         `companies/${companyData.id}/settings/general`,
       );
+    }
+  };
+
+  const savePromotions = async (updatedPromotions: any[]) => {
+    if (!companyData?.id) return;
+    try {
+      await setDoc(
+        doc(db, "companies", companyData.id, "settings", "promotions"),
+        {
+          promotions: updatedPromotions,
+          updatedAt: new Date().toISOString(),
+        }
+      );
+      setPromotions(updatedPromotions);
+    } catch (e) {
+      console.error("Error saving promotions:", e);
+      showAlert("Ошибка", "Не удалось сохранить изменения акций");
     }
   };
 
@@ -17514,6 +17904,21 @@ export default function App() {
                       </span>
                     )}
                   </button>
+                  <button
+                    onClick={() => setActiveTab("promotions")}
+                    className={cn(
+                      "w-full flex items-center rounded-lg transition-all",
+                      isSidebarOpen ? "gap-3 px-3 py-2.5" : "justify-center py-2.5",
+                      activeTab === "promotions"
+                        ? "bg-blue-600 text-white shadow-md shadow-blue-200"
+                        : "text-gray-600 hover:bg-gray-100",
+                    )}
+                  >
+                    <Percent className="w-5 h-5 flex-shrink-0" />
+                    {isSidebarOpen && (
+                      <span className="text-sm font-medium">Акции</span>
+                    )}
+                  </button>
                 </div>
               </div>
             </nav>
@@ -17731,6 +18136,7 @@ export default function App() {
 
           <div className={cn(activeTab === "summary" || activeTab === "checkout_current" ? "block" : "hidden")}>
             <SummaryView
+              promotions={promotions}
               onSummaryCalculated={(t, r) => {
                 setCurrentProjectTotal(t);
                 if (r) setCurrentSummaryRows(r);
@@ -18100,6 +18506,21 @@ export default function App() {
               catalogMaterials={catalogMaterials}
               catalogServices={catalogServices}
               catalogProducts={catalogProducts}
+              promotions={promotions}
+              savePromotions={savePromotions}
+              userRole={userRole}
+            />
+          ) : activeTab === "promotions" ? (
+            <PromotionsView
+              promotions={promotions}
+              savePromotions={savePromotions}
+              userRole={userRole}
+              companyType={companyData?.type}
+              productCategories={productCategories}
+              catalogProducts={catalogProducts}
+              catalogServices={catalogServices}
+              showAlert={showAlert}
+              showConfirm={showConfirm}
             />
           ) : activeTab === "specification" && selectedProjectForSpec ? (
             <ProjectSpecificationView

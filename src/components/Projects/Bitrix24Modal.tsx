@@ -19,6 +19,7 @@ export const Bitrix24Modal = ({
   const [dealId, setDealId] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [settings, setSettings] = useState<any>(null);
+  const [companyType, setCompanyType] = useState<string | null>(null);
   const [currentUserB24Id, setCurrentUserB24Id] = useState<string | null>(null);
   const [associatedProjects, setAssociatedProjects] = useState<any[]>([]);
 
@@ -29,6 +30,7 @@ export const Bitrix24Modal = ({
         if (response.ok) {
           const data = await response.json();
           setSettings(data.bitrix24 || {});
+          setCompanyType(data.companyType || null);
         }
       } catch (e) {
         console.error("Error fetching bitrix settings:", e);
@@ -309,6 +311,211 @@ export const Bitrix24Modal = ({
       if (mapping.deliverySum && computedSummary.totalDeliveryPrice) {
         fields[mapping.deliverySum] = computedSummary.totalDeliveryPrice;
       }
+
+      // Calculate new advanced synchronization fields: Product Cost and Expenses
+      const parseQty = (qtyStr: any): number => {
+        if (typeof qtyStr === 'number') return qtyStr;
+        if (!qtyStr) return 0;
+        const str = String(qtyStr).trim();
+        const match = str.match(/^([\d.,]+)/);
+        if (match) {
+          return parseFloat(match[1].replace(',', '.')) || 0;
+        }
+        return 0;
+      };
+
+      const getRowPurchaseSum = (row: any) => {
+        if (row.total !== undefined) {
+          if (row.coef && row.coef > 0) {
+            return row.total / row.coef;
+          }
+          return row.total;
+        }
+        const qty = parseQty(row.qty);
+        const pr = row.rawPrice !== undefined ? row.rawPrice : (row.price || 0);
+        return qty * pr;
+      };
+
+      // Collate allRows across all associated projects
+      const allRows: any[] = [];
+      associatedProjects.forEach((p) => {
+        if (!p.data) return;
+        if (p.data.summaryRows && p.data.summaryRows.length > 0) {
+          allRows.push(...p.data.summaryRows.map((row: any) => ({ ...row, _project: p })));
+        } else {
+          // Build rows from fallback schema
+          const results = p.data.results || {};
+          const selectedDecor = p.data.selectedDecor || {};
+          const facadeType = p.data.facadeType || {};
+          const facadeCustomType = p.data.facadeCustomType || {};
+
+          Object.entries(results).forEach(([key, r]: [string, any]) => {
+            const decor = selectedDecor[key] || "Не выбран";
+            const isFacade = r.type === "Фасад";
+            
+            allRows.push({
+              type: isFacade ? "facade" : "material",
+              name: isFacade ? `Фасад (${facadeCustomType[key] || "Пленка"})` : r.name || r.type,
+              sub: r.category || "",
+              decor: decor,
+              qty: r.totalArea ? `${r.totalArea.toFixed(2)} м²` : "1 л.",
+              price: r.totalPrice / (r.totalArea || 1), 
+              rawPrice: r.totalPrice / (r.totalArea || 1),
+              total: r.totalPrice,
+              coef: 1.5, 
+              _project: p,
+              key: key
+            });
+          });
+
+          (p.data.addedProducts || []).forEach((item: any) => {
+            allRows.push({
+              type: "product",
+              name: item.name,
+              sub: item.category || "",
+              decor: "-",
+              qty: `${item.quantity} шт`,
+              price: item.price || 0,
+              total: (item.price || 0) * (item.quantity || 1),
+              coef: 1,
+              _project: p,
+              id: item.id
+            });
+          });
+        }
+      });
+
+      const isFacadeOrMdfEdge = (row: any) => {
+        const parentProj = row._project;
+        if (parentProj?.data?.results && row.key && parentProj.data.results[row.key]) {
+          const parentMat = parentProj.data.results[row.key];
+          if (parentMat.type === "МДФ" || parentMat.type === "Фасад") {
+            return true;
+          }
+        }
+        const rowNameL = (row.name || "").toLowerCase();
+        const subL = (row.sub || "").toLowerCase();
+        const decorL = (row.decor || "").toLowerCase();
+        return rowNameL.includes("мдф") || subL.includes("мдф") || decorL.includes("мдф") || rowNameL.includes("фасад") || subL.includes("фасад");
+      };
+
+      // 1. Стоимость продукции: (Корпус+Фасады) это сумма без фурнитуры (customer sales price)
+      const corpPlusFacadesSum = (computedSummary.totalMaterialsPrice || 0) + (computedSummary.totalFacadePrice || 0) + (computedSummary.totalCustomFacadePrice || 0);
+
+      // 2. Расходы на корпус
+      let expenseCorp = 0;
+      allRows.forEach((row) => {
+        const nameL = (row.name || "").toLowerCase();
+        const subL = (row.sub || "").toLowerCase();
+        const type = row.type;
+        
+        const isLdsp = nameL.includes("лдсп") || subL.includes("лдсп");
+        const isHdfOrBack = nameL.includes("хдф") || nameL.includes("двп") || nameL.includes("задняя") || subL.includes("задняя");
+        const isEdge = type === "edge" || type === "product_edge" || nameL.includes("кромка");
+        const isHardwareKit = row.name === "Комплект метизов" || nameL.includes("метиз");
+
+        const belongsToCorp = isLdsp || isHdfOrBack || (isEdge && !isFacadeOrMdfEdge(row)) || (isHardwareKit && (companyType === "Салон" || companyType === "Дизайнер"));
+        
+        if (belongsToCorp) {
+          expenseCorp += getRowPurchaseSum(row);
+        }
+      });
+
+      // 3. Расходы на фасады (плитные МДФ и кромка к нему)
+      let expenseFacades = 0;
+      allRows.forEach((row) => {
+        const nameL = (row.name || "").toLowerCase();
+        const subL = (row.sub || "").toLowerCase();
+        const type = row.type;
+        
+        const isMdf = nameL.includes("мдф") || subL.includes("мдф");
+        const isEdge = type === "edge" || type === "product_edge" || nameL.includes("кромка");
+        const isFacade = type === "facade" || nameL.includes("фасад");
+        const isCustomFacade = isFacade && (nameL.includes("заказн") || nameL.includes("пленка") || nameL.includes("эмаль") || nameL.includes("эмалирован") || subL.includes("заказн") || subL.includes("пленка") || subL.includes("эмаль"));
+
+        const belongsToPlitnyFacades = (isMdf && !isCustomFacade) || (isFacade && !isCustomFacade && !isEdge) || (isEdge && isFacadeOrMdfEdge(row));
+
+        if (belongsToPlitnyFacades) {
+          expenseFacades += getRowPurchaseSum(row);
+        }
+      });
+
+      // 4. Расходы на фасады заказные (сумма закупки м2 из прайс листа)
+      let expenseCustomFacades = 0;
+      allRows.forEach((row) => {
+        const nameL = (row.name || "").toLowerCase();
+        const subL = (row.sub || "").toLowerCase();
+        const type = row.type;
+        
+        const isFacade = type === "facade" || nameL.includes("фасад");
+        const isCustomFacade = isFacade && (nameL.includes("заказн") || nameL.includes("пленка") || nameL.includes("эмаль") || nameL.includes("эмалирован") || subL.includes("заказн") || subL.includes("пленка") || subL.includes("эмаль"));
+
+        if (isCustomFacade) {
+          expenseCustomFacades += getRowPurchaseSum(row);
+        }
+      });
+
+      // 5. Расходы фурнитура (за исключением столешниц из камня / компактламината и техники)
+      let expenseHardware = 0;
+      allRows.forEach((row) => {
+        const nameL = (row.name || "").toLowerCase();
+        const subL = (row.sub || "").toLowerCase();
+        const type = row.type;
+        
+        const isHardwareKit = row.name === "Комплект метизов" || nameL.includes("метиз");
+        const isStoneCountertop = nameL.includes("камень") || nameL.includes("компактламинат") || nameL.includes("компакт ламинат") || nameL.includes("компакт-ламинат") || nameL.includes("акрил") || nameL.includes("кварц") || subL.includes("камень") || subL.includes("компактламинат") || subL.includes("компакт ламинат") || subL.includes("компакт-ламинат");
+        const isAppliance = nameL.includes("техника") || nameL.includes("духовой") || nameL.includes("варочная") || nameL.includes("вытяжка") || nameL.includes("холодильник") || nameL.includes("посудомойка") || subL.includes("техника");
+        
+        const isHardwareRow = type === "hardware" || type === "product" || isHardwareKit;
+
+        if (isHardwareRow && !isStoneCountertop && !isAppliance) {
+          if (isHardwareKit && (companyType === "Салон" || companyType === "Дизайнер")) {
+            return;
+          }
+          expenseHardware += getRowPurchaseSum(row);
+        }
+      });
+
+      // 6 & 7. Запас на корпус ДОП ЛИСТЫ & Запас на фасады ДОП ЛИСТЫ
+      const reserveCorpExtraSheets = project.reserveCorpExtraSheets || project.data?.reserveCorpExtraSheets || 0;
+      const reserveFacadesExtraSheets = project.reserveFacadesExtraSheets || project.data?.reserveFacadesExtraSheets || 0;
+
+      // 8. Расходы столешницы камень/компактламинат
+      let expenseStoneCountertops = 0;
+      allRows.forEach((row) => {
+        const nameL = (row.name || "").toLowerCase();
+        const subL = (row.sub || "").toLowerCase();
+        
+        const isStoneCountertop = nameL.includes("камень") || nameL.includes("компактламинат") || nameL.includes("компакт ламинат") || nameL.includes("компакт-ламинат") || nameL.includes("акрил") || nameL.includes("кварц") || subL.includes("камень") || subL.includes("компактламинат") || subL.includes("компакт ламинат") || subL.includes("компакт-ламинат");
+        
+        if (isStoneCountertop) {
+          expenseStoneCountertops += getRowPurchaseSum(row);
+        }
+      });
+
+      // 9. Расходы техника
+      let expenseAppliances = 0;
+      allRows.forEach((row) => {
+        const nameL = (row.name || "").toLowerCase();
+        const subL = (row.sub || "").toLowerCase();
+        
+        const isAppliance = nameL.includes("техника") || nameL.includes("духовой") || nameL.includes("варочная") || nameL.includes("вытяжка") || nameL.includes("холодильник") || nameL.includes("посудомойка") || subL.includes("техника");
+        
+        if (isAppliance) {
+          expenseAppliances += getRowPurchaseSum(row);
+        }
+      });
+
+      // Map everything into fields
+      if (mapping.corpPlusFacadesSum && corpPlusFacadesSum) fields[mapping.corpPlusFacadesSum] = Math.round(corpPlusFacadesSum);
+      if (mapping.expenseCorp && expenseCorp) fields[mapping.expenseCorp] = Math.round(expenseCorp);
+      if (mapping.expenseFacades && expenseFacades) fields[mapping.expenseFacades] = Math.round(expenseFacades);
+      if (mapping.expenseCustomFacades && expenseCustomFacades) fields[mapping.expenseCustomFacades] = Math.round(expenseCustomFacades);
+      if (mapping.expenseHardware && expenseHardware) fields[mapping.expenseHardware] = Math.round(expenseHardware);
+      if (mapping.reserveCorpExtraSheets && reserveCorpExtraSheets) fields[mapping.reserveCorpExtraSheets] = reserveCorpExtraSheets;
+      if (mapping.reserveFacadesExtraSheets && reserveFacadesExtraSheets) fields[mapping.reserveFacadesExtraSheets] = reserveFacadesExtraSheets;
+      if (mapping.expenseStoneCountertops && expenseStoneCountertops) fields[mapping.expenseStoneCountertops] = Math.round(expenseStoneCountertops);
+      if (mapping.expenseAppliances && expenseAppliances) fields[mapping.expenseAppliances] = Math.round(expenseAppliances);
 
       // Generate Delivery comment detail if delivery is split across multiple products
       let deliveryCommentText = "";
