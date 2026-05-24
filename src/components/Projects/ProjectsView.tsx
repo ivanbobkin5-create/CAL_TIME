@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   Send,
   Link,
+  TrendingUp,
 } from "lucide-react";
 // TimeWeb DB Setup
 const db = {};
@@ -102,6 +103,7 @@ async function getDocs(ref: any) {
 import { cn } from "../../lib/utils";
 import { ProjectSpecificationModal } from "./ProjectSpecificationModal";
 import { Bitrix24Modal } from "./Bitrix24Modal";
+import { ProjectAnalyticsModal } from "./ProjectAnalyticsModal";
 
 
 interface Project {
@@ -173,6 +175,7 @@ export const ProjectsView = ({
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
   const [selectedBitrixProject, setSelectedBitrixProject] = useState<Project | null>(null);
+  const [selectedAnalyticsProject, setSelectedAnalyticsProject] = useState<Project | null>(null);
 
   const handleTransfer = async (e: React.MouseEvent, project: Project) => {
     e.stopPropagation();
@@ -380,7 +383,20 @@ export const ProjectsView = ({
     );
   };
 
-  const filteredProjects = projects.filter((p) => {
+  const myProjects = useMemo(() => {
+    if (!userRole || userRole === "admin") {
+      return projects;
+    }
+    if (userRole === "supervisor") {
+      return projects.filter(
+        (p) => p.createdBy === userId || p.status === "transferred"
+      );
+    }
+    // Employees, managers, and other roles can only see projects they created
+    return projects.filter((p) => p.createdBy === userId);
+  }, [projects, userRole, userId]);
+
+  const filteredProjects = myProjects.filter((p) => {
     const matchesSearch =
       p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.createdByName?.toLowerCase().includes(searchQuery.toLowerCase());
@@ -389,7 +405,19 @@ export const ProjectsView = ({
     return matchesSearch && (p.status || "draft") === activeFilter;
   });
 
-  const filteredSets = sets.filter((s) => {
+  const mySets = useMemo(() => {
+    if (!userRole || userRole === "admin") {
+      return sets;
+    }
+    if (userRole === "supervisor") {
+      return sets.filter(
+        (s) => s.createdBy === userId || s.status === "transferred"
+      );
+    }
+    return sets.filter((s) => s.createdBy === userId);
+  }, [sets, userRole, userId]);
+
+  const filteredSets = mySets.filter((s) => {
     return (
       s.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
       s.contractNumber?.toLowerCase().includes(searchQuery.toLowerCase())
@@ -744,16 +772,18 @@ export const ProjectsView = ({
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between pt-4 border-t border-gray-50 mt-auto gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <div className="w-6 h-6 bg-gray-100 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-gray-500">
-                      {project.createdByName?.charAt(0) || "U"}
+                <div className="flex flex-col pt-3 border-t border-gray-50 mt-auto gap-2.5">
+                  <div className="flex items-center justify-between w-full min-w-0">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="w-6 h-6 bg-gray-100 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-gray-500">
+                        {project.createdByName?.charAt(0) || "U"}
+                      </div>
+                      <span className="text-[10px] text-gray-600 font-bold truncate">
+                        Менеджер: {project.createdByName || "Пользователь"}
+                      </span>
                     </div>
-                    <span className="text-[10px] text-gray-500 font-medium truncate">
-                      {project.createdByName || "Пользователь"}
-                    </span>
                   </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
+                  <div className="flex items-center justify-end gap-1 w-full flex-wrap">
                     {project.status === "sent" && (
                       <button
                         onClick={(e) => handleTransfer(e, project)}
@@ -775,6 +805,19 @@ export const ProjectsView = ({
                       <Send className="w-3.5 h-3.5" />
                     </button>
                   )}
+                  {(userRole === "manager" || userRole === "admin") && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedAnalyticsProject(project);
+                        }}
+                        className="p-1 px-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all flex items-center gap-1 text-[10px] font-bold"
+                        title="Бизнес-аналитика сделки"
+                      >
+                        <TrendingUp className="w-3.5 h-3.5" />
+                        Анализ
+                      </button>
+                    )}
                   {(userRole === "manager" || userRole === "admin") && (
                       <button
                         onClick={(e) => {
@@ -820,6 +863,12 @@ export const ProjectsView = ({
           userId={userId}
           onClose={() => setSelectedBitrixProject(null)}
           showAlert={showAlert}
+        />
+      )}
+      {selectedAnalyticsProject && (
+        <ProjectAnalyticsModal
+          project={selectedAnalyticsProject}
+          onClose={() => setSelectedAnalyticsProject(null)}
         />
       )}
     </div>

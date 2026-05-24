@@ -9,7 +9,11 @@ import {
   Factory,
   Users,
   ArrowRight,
-  Phone
+  Phone,
+  Sparkles,
+  Percent,
+  Tag,
+  Gift
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -179,6 +183,129 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
                 <div className="text-2xl font-bold">Посмотреть видео-обзор сервиса</div>
               </div>
             </motion.div>
+          </div>
+        </div>
+      </section>
+
+      {/* Smart Marketing Section */}
+      <section className="py-20 bg-gradient-to-b from-white to-gray-50 border-t border-gray-100 overflow-hidden">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex flex-col lg:flex-row items-center gap-16">
+            <div className="flex-1 space-y-6">
+              <div className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 rounded-full text-sm font-bold">
+                <Sparkles className="w-4 h-4" />
+                <span>Новый модуль: Маркетинг и Акции</span>
+              </div>
+              <h2 className="text-4xl md:text-5xl font-black text-gray-900 leading-tight tracking-tight">
+                Управляйте продажами через <br />
+                <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">
+                  умный конструктор акций
+                </span>
+              </h2>
+              <p className="text-lg text-gray-500 leading-relaxed">
+                Наш инструмент позволяет создавать и автоматизировать любые маркетинговые механики. Моментально применяйте скидки, выделяйте акционные предложения в каталоге и гибко настраивайте параметры для привлечения клиентов — без лишней рутины и сложных расчетов вручную.
+              </p>
+              
+              <div className="space-y-4 pt-4">
+                <div className="flex items-start gap-4">
+                  <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <Percent className="w-5 h-5 animate-pulse" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-gray-900 mb-1">Гибкие условия специальных предложений</h4>
+                    <p className="text-sm text-gray-500">Задавайте скидки в процентах или фиксированных суммах на определенные категории фурнитуры, фасадов или услуг.</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-4">
+                  <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <Tag className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-gray-900 mb-1">Фокус на акционном ассортименте</h4>
+                    <p className="text-sm text-gray-500">Автоматически выделяйте акционные позиции яркими стикерами в каталоге, привлекая внимание менеджеров при проектировании.</p>
+                  </div>
+                </div>
+
+                <div className="flex items-start gap-4">
+                  <div className="w-10 h-10 bg-purple-50 text-purple-600 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <Gift className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-gray-900 mb-1">Планирование по времени</h4>
+                    <p className="text-sm text-gray-500">Устанавливайте даты запуска и завершения акций. Система автоматически активирует и отключит предложения в срок.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Visual Phone/Tablet mockup of the promotion mechanism */}
+            <div className="flex-1 w-full max-w-lg lg:max-w-none">
+              <div className="bg-white rounded-3xl p-6 md:p-8 shadow-xl border border-gray-100 relative">
+                <div className="absolute -top-3 -right-3 w-12 h-12 bg-yellow-400 text-yellow-900 rounded-full flex items-center justify-center font-bold text-lg rotate-12 shadow-lg z-10 animate-pulse">
+                  %
+                </div>
+                
+                <h3 className="font-black text-gray-900 text-xl mb-6 flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 bg-blue-600 rounded-full"></span>
+                  Конструктор маркетинговых кампаний
+                </h3>
+
+                {/* Example Action Item 1 */}
+                <div className="space-y-4">
+                  <div className="p-4 bg-blue-50/50 rounded-2xl border border-blue-100 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-blue-100 text-blue-600 rounded-xl flex items-center justify-center">
+                        <Tag className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="font-bold text-gray-900 text-sm">Весенняя акция на фасады</div>
+                        <div className="text-xs text-blue-600 font-semibold">Скидка 15% • Все пленочные фасады</div>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 bg-green-100 text-green-800 text-[10px] font-bold rounded-full uppercase tracking-wider">Активна</span>
+                  </div>
+
+                  {/* Example Action Item 2 */}
+                  <div className="p-4 bg-purple-50/50 rounded-2xl border border-purple-100 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-purple-100 text-purple-600 rounded-xl flex items-center justify-center">
+                        <Gift className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="font-bold text-gray-900 text-sm">Фурнитура Blum в подарок</div>
+                        <div className="text-xs text-purple-600 font-semibold">При заказе кухни от 150 000 ₽</div>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 bg-green-100 text-green-800 text-[10px] font-bold rounded-full uppercase tracking-wider">Активна</span>
+                  </div>
+
+                  {/* Example Action Item 3 */}
+                  <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex items-center justify-between opacity-70">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 bg-gray-200 text-gray-500 rounded-xl flex items-center justify-center">
+                        <Percent className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <div className="font-bold text-gray-900 text-sm">Новогодний кэшбэк</div>
+                        <div className="text-xs text-gray-500 font-semibold">Скидка 20% • Завершена</div>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 bg-gray-100 text-gray-600 text-[10px] font-bold rounded-full uppercase tracking-wider">Завершена</span>
+                  </div>
+                </div>
+
+                <div className="mt-6 pt-6 border-t border-gray-100 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs text-gray-400 block uppercase tracking-wider font-bold mb-1">Интеграция с расчетом</span>
+                    <p className="text-sm font-semibold text-gray-700">Акции автоматически применяются в смете</p>
+                  </div>
+                  <div className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-100">
+                    + Создать акцию
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </section>

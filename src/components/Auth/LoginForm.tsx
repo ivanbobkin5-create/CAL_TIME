@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Building2, Mail, Lock, ArrowRight, Key, ShieldCheck, CheckCircle2 } from 'lucide-react';
+import { Building2, Mail, Lock, ArrowRight, Key, ShieldCheck, CheckCircle2, Loader2 } from 'lucide-react';
 
 interface LoginData {
   email: string;
@@ -27,6 +27,7 @@ export const LoginForm = ({
     e.preventDefault();
     if (data.email && data.password) {
       setIsLoading(true);
+      setMessage(null);
       try {
         await onLogin({
           email: data.email.trim().toLowerCase(),
@@ -176,7 +177,17 @@ export const LoginForm = ({
             disabled={!data.email || !data.password || isLoading}
             className="w-full py-5 bg-blue-600 text-white rounded-2xl font-black shadow-xl shadow-blue-100 hover:bg-blue-700 transition-all disabled:opacity-50 disabled:shadow-none active:scale-95 flex items-center justify-center gap-2"
           >
-            Войти в систему <ArrowRight className="w-5 h-5" />
+            {isLoading ? (
+              <>
+                <Loader2 className="w-5 h-5 animate-spin" />
+                <span>Проверка и вход...</span>
+              </>
+            ) : (
+              <>
+                <span>Войти в систему</span>
+                <ArrowRight className="w-5 h-5" />
+              </>
+            )}
           </button>
         </form>
       )}
