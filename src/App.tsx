@@ -77,6 +77,7 @@ import {
   Link,
   BarChart3,
   WifiOff,
+  Wifi,
   ImageIcon,
   Info,
   PlayCircle,
@@ -109,6 +110,259 @@ import {
   History,
 } from "lucide-react";
 
+// --- START OF OFFLINE CACHE AND SYNC ENGINE ---
+const originalFetch = window.fetch;
+
+function updateLocalCache(url: string, method: string, bodyStr: string | null) {
+  try {
+    const isDoc = url.includes("/api/firebase/doc/");
+    const baseApi = isDoc ? "/api/firebase/doc/" : "/api/firebase/col/";
+    const docPathIndex = url.indexOf(baseApi);
+    if (docPathIndex === -1) return;
+    
+    let fullPath = url.substring(docPathIndex);
+    const qIndex = fullPath.indexOf('?');
+    if (qIndex !== -1) {
+      fullPath = fullPath.substring(0, qIndex);
+    }
+    
+    const docPath = fullPath.replace(baseApi, "");
+    
+    let requestData: any = null;
+    let isMerge = false;
+    if (bodyStr) {
+      try {
+        const parsed = JSON.parse(bodyStr);
+        requestData = parsed.data !== undefined ? parsed.data : parsed;
+        isMerge = parsed.merge || false;
+      } catch (err) {}
+    }
+    
+    if (isDoc) {
+      const segments = docPath.split("/");
+      const docId = segments[segments.length - 1];
+      const colPath = segments.slice(0, -1).join("/");
+      const colUrl = `/api/firebase/col/${colPath}`;
+      const docUrl = `/api/firebase/doc/${docPath}`;
+      
+      if (method === "DELETE") {
+        localStorage.removeItem(`meb_cache:${docUrl}`);
+        
+        const cachedColStr = localStorage.getItem(`meb_cache:${colUrl}`);
+        if (cachedColStr) {
+          try {
+            const colData = JSON.parse(cachedColStr);
+            if (Array.isArray(colData)) {
+              const filtered = colData.filter((item: any) => item.id !== docId);
+              localStorage.setItem(`meb_cache:${colUrl}`, JSON.stringify(filtered));
+            }
+          } catch (_) {}
+        }
+      } else {
+        const cachedDocStr = localStorage.getItem(`meb_cache:${docUrl}`);
+        let currentDoc: any = {};
+        if (cachedDocStr) {
+          try {
+            currentDoc = JSON.parse(cachedDocStr);
+          } catch (_) {}
+        }
+        
+        let updatedDoc: any;
+        if (method === "PATCH" || isMerge) {
+          updatedDoc = { ...currentDoc, ...requestData };
+        } else {
+          updatedDoc = requestData;
+        }
+        
+        localStorage.setItem(`meb_cache:${docUrl}`, JSON.stringify(updatedDoc));
+        
+        const cachedColStr = localStorage.getItem(`meb_cache:${colUrl}`);
+        if (cachedColStr) {
+          try {
+            const colData = JSON.parse(cachedColStr);
+            if (Array.isArray(colData)) {
+              const idx = colData.findIndex((item: any) => item.id === docId);
+              if (idx !== -1) {
+                colData[idx] = { id: docId, data: updatedDoc };
+              } else {
+                colData.push({ id: docId, data: updatedDoc });
+              }
+              localStorage.setItem(`meb_cache:${colUrl}`, JSON.stringify(colData));
+            }
+          } catch (_) {}
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Local cache update error:", err);
+  }
+}
+
+let isSyncing = false;
+async function triggerSync() {
+  if (isSyncing || typeof window === 'undefined' || !navigator.onLine) return;
+  isSyncing = true;
+  try {
+    const queueStr = localStorage.getItem("meb_pending_writes");
+    if (!queueStr) {
+      isSyncing = false;
+      return;
+    }
+    let queue: any[] = [];
+    try {
+      queue = JSON.parse(queueStr);
+    } catch (_) {
+      queue = [];
+    }
+    if (queue.length === 0) {
+      isSyncing = false;
+      return;
+    }
+    
+    const remainingQueue = [...queue];
+    for (const req of queue) {
+      try {
+        const res = await originalFetch(req.url, {
+          method: req.method,
+          headers: {
+            ...req.headers,
+            'Content-Type': 'application/json',
+            'X-Offline-Sync': 'true'
+          },
+          body: req.body
+        });
+        
+        if (res.ok) {
+          remainingQueue.shift();
+          localStorage.setItem("meb_pending_writes", JSON.stringify(remainingQueue));
+        } else {
+          if (res.status >= 400 && res.status < 500) {
+            remainingQueue.shift();
+            localStorage.setItem("meb_pending_writes", JSON.stringify(remainingQueue));
+          } else {
+            break;
+          }
+        }
+      } catch (err) {
+        break;
+      }
+    }
+  } catch (err) {
+    console.error("Sync error:", err);
+  } finally {
+    isSyncing = false;
+  }
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener('online', () => {
+    triggerSync();
+  });
+  setInterval(triggerSync, 30000);
+}
+
+const customFetch = async function (this: any, input: any, init?: any): Promise<Response> {
+  const url = typeof input === "string" ? input : (input instanceof Request ? input.url : "");
+  const method = (init && init.method) ? init.method.toUpperCase() : "GET";
+  
+  if (url.includes("/api/firebase/")) {
+    const isWrite = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
+    
+    if (!isWrite) {
+      // GET Request: try fetch then fallback
+      try {
+        const res = await originalFetch.apply(this, arguments as any);
+        if (res.ok) {
+          const clone = res.clone();
+          try {
+            const data = await clone.json();
+            localStorage.setItem(`meb_cache:${url}`, JSON.stringify(data));
+          } catch (_) {}
+        }
+        return res;
+      } catch (err) {
+        const cached = localStorage.getItem(`meb_cache:${url}`);
+        if (cached) {
+          return new Response(cached, {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+        throw err;
+      }
+    } else {
+      // Write request: append to sync queue
+      let bodyStr: string | null = null;
+      if (init && init.body) {
+        if (typeof init.body === "string") {
+          bodyStr = init.body;
+        } else if (init.body instanceof Blob) {
+          bodyStr = await init.body.text();
+        }
+      }
+      
+      // Update local storage representation instantly
+      updateLocalCache(url, method, bodyStr);
+      
+      // Queue the pending write
+      const queueStr = localStorage.getItem("meb_pending_writes") || "[]";
+      let queue: any[] = [];
+      try { queue = JSON.parse(queueStr); } catch (_) {}
+      
+      queue.push({
+        url,
+        method,
+        headers: init && init.headers ? (init.headers as any) : {},
+        body: bodyStr,
+        timestamp: Date.now()
+      });
+      localStorage.setItem("meb_pending_writes", JSON.stringify(queue));
+      
+      // Attempt immediate background sync
+      setTimeout(triggerSync, 100);
+      
+      // Return synthetic Response to keep frontend fully operational
+      return new Response(JSON.stringify({ success: true, offline: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+  }
+  
+  return originalFetch.apply(this, arguments as any);
+};
+
+// Global intercept with safe try-catch handlers to prevent getter errors
+try {
+  try {
+    (window as any).fetch = customFetch;
+  } catch (err) {
+    try {
+      Object.defineProperty(window, 'fetch', {
+        value: customFetch,
+        writable: true,
+        configurable: true
+      });
+    } catch (err2) {
+      try {
+        Object.defineProperty(Object.getPrototypeOf(window), 'fetch', {
+          value: customFetch,
+          writable: true,
+          configurable: true
+        });
+      } catch (err3) {
+        console.warn("Global fetch interception is disabled by sandbox/security context. Falling back to local module shadowing.", err3);
+      }
+    }
+  }
+} catch (e) {
+  console.warn("Fetch interceptor setup encountered external issues:", e);
+}
+
+// Local module shadow to guarantee it is always used within App.tsx context
+const fetch = customFetch;
+// --- END OF OFFLINE CACHE AND SYNC ENGINE ---
+
 const handleFirestoreError = (e: any, op: any, path: string) => console.warn("Firestore error:", op, path, e);
 enum OperationType { LIST = "LIST", UPDATE = "UPDATE", GET = "GET", DELETE = "DELETE", WRITE = "WRITE", CREATE = "CREATE" }
 
@@ -120,7 +374,7 @@ function collection(db: any, path: string, ...rest: any[]) {
   return { path }; 
 }
 
-function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any) => void) { 
+function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any) => void, intervalMs: number = 15000) { 
   const isCol = ref.path.split('/').length % 2 !== 0;
   
   const fetchSnapshot = async () => {
@@ -158,7 +412,7 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
   };
 
   fetchSnapshot();
-  const interval = setInterval(fetchSnapshot, 15000); 
+  const interval = setInterval(fetchSnapshot, intervalMs); 
   return () => clearInterval(interval); 
 }
 
@@ -235,7 +489,7 @@ async function addDoc(colRef: any, data: any) {
 function writeBatch(db: any) {
   const operations: any[] = [];
   return {
-    set: (ref: any, data: any) => operations.push({ type: 'set', ref, data }),
+    set: (ref: any, data: any, options?: any) => operations.push({ type: 'set', ref, data, options }),
     update: (ref: any, data: any, options?: any) => operations.push({ type: 'update', ref, data, options }),
     delete: (ref: any) => operations.push({ type: 'delete', ref }),
     commit: async () => {
@@ -250,6 +504,9 @@ function writeBatch(db: any) {
 
 function query(colRef: any, ...constraints: any[]) { return colRef; }
 function where(field: string, op: string, value: any) { return {}; }
+function orderBy(field: string, dir?: string) { return {}; }
+function limit(n: number) { return {}; }
+function or(...constraints: any[]) { return {}; }
 import {
   LDSP_DATABASE,
   NORDECO_EDGE_MAPPING,
@@ -8025,6 +8282,78 @@ const SettingsView = ({
     "general" | "services" | "production" | "account" | "facades" | "bitrix24"
   >("general");
   const [showBrandCoeffModal, setShowBrandCoeffModal] = useState(false);
+  
+  const [b24Categories, setB24Categories] = useState<{ id: string; name: string }[]>([]);
+  const [b24Stages, setB24Stages] = useState<{ id: string; name: string }[]>([]);
+
+  const loadB24Categories = async (url: string) => {
+    if (!url) return;
+    try {
+      const res = await fetch("/api/bitrix24/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          webhookUrl: url,
+          method: "crm.dealcategory.list",
+          params: {}
+        })
+      });
+      const data = await res.json();
+      const categories = [{ id: "0", name: "Общее направление" }];
+      if (data.result && Array.isArray(data.result)) {
+        data.result.forEach((cat: any) => {
+          categories.push({ id: String(cat.ID), name: cat.NAME });
+        });
+      }
+      setB24Categories(categories);
+    } catch (e) {
+      console.error("Error loading categories:", e);
+    }
+  };
+
+  const loadB24Stages = async (url: string, categoryId: string) => {
+    if (!url) return;
+    try {
+      const entityId = !categoryId || categoryId === "0" ? "DEAL_STAGE" : `DEAL_STAGE_${categoryId}`;
+      const res = await fetch("/api/bitrix24/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          webhookUrl: url,
+          method: "crm.status.list",
+          params: {
+            filter: { ENTITY_ID: entityId }
+          }
+        })
+      });
+      const data = await res.json();
+      const stages: { id: string; name: string }[] = [];
+      if (data.result && Array.isArray(data.result)) {
+        data.result.forEach((st: any) => {
+          stages.push({ id: String(st.STATUS_ID), name: `${st.NAME} (${st.STATUS_ID})` });
+        });
+      }
+      setB24Stages(stages);
+    } catch (e) {
+      console.error("Error loading stages:", e);
+    }
+  };
+
+  useEffect(() => {
+    const url = companyData?.bitrix24?.webhookUrl;
+    if (activeSubTab === "bitrix24" && url) {
+      loadB24Categories(url);
+    }
+  }, [activeSubTab, companyData?.bitrix24?.webhookUrl]);
+
+  useEffect(() => {
+    const url = companyData?.bitrix24?.webhookUrl;
+    const catId = companyData?.bitrix24?.categoryId || "0";
+    if (activeSubTab === "bitrix24" && url) {
+      loadB24Stages(url, catId);
+    }
+  }, [activeSubTab, companyData?.bitrix24?.webhookUrl, companyData?.bitrix24?.categoryId]);
+
   const [brandCoeffForm, setBrandCoeffForm] = useState({
     categoryId: "ldsp",
     brand: "",
@@ -8041,6 +8370,8 @@ const SettingsView = ({
     }, 2000);
     return () => clearTimeout(timer);
   }, [
+    companyData,
+    ownProductionConfig,
     coefficients,
     calcMode,
     trimming,
@@ -9890,21 +10221,148 @@ const SettingsView = ({
                   <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
                     Ссылка входящего вебхука
                   </label>
-                  <input
-                    type="text"
-                    placeholder="https://yourgroup.bitrix24.ru/rest/..."
-                    className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
-                    value={companyData?.bitrix24?.webhookUrl || ""}
-                    onChange={(e) =>
-                      setCompanyData((prev: any) => ({
-                        ...prev,
-                        bitrix24: {
-                          ...(prev?.bitrix24 || {}),
-                          webhookUrl: e.target.value,
-                        },
-                      }))
-                    }
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="https://yourgroup.bitrix24.ru/rest/..."
+                      className="flex-1 px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                      value={companyData?.bitrix24?.webhookUrl || ""}
+                      onChange={(e) =>
+                        setCompanyData((prev: any) => ({
+                          ...prev,
+                          bitrix24: {
+                            ...(prev?.bitrix24 || {}),
+                            webhookUrl: e.target.value,
+                          },
+                        }))
+                      }
+                    />
+                    <button
+                      onClick={async () => {
+                        const url = companyData?.bitrix24?.webhookUrl;
+                        if (!url) {
+                          showAlert("Ошибка", "Сначала укажите ссылку на вебхук");
+                          return;
+                        }
+                        try {
+                          const res = await fetch("/api/bitrix24/test", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ webhookUrl: url })
+                          });
+                          const data = await res.json();
+                          if (data.success) {
+                            showAlert("Успех", "Соединение с Bitrix24 успешно установлено! Списки воронок и стадий обновлены.");
+                            loadB24Categories(url);
+                            const catId = companyData?.bitrix24?.categoryId || "0";
+                            loadB24Stages(url, catId);
+                          } else {
+                            showAlert("Ошибка соединения", data.error || "Неизвестная ошибка");
+                          }
+                        } catch (e) {
+                          showAlert("Ошибка", "Не удалось связаться с сервером");
+                        }
+                      }}
+                      className="px-6 py-2 bg-blue-600 text-white rounded-2xl text-xs font-bold hover:bg-blue-700 transition-colors flex items-center gap-2"
+                    >
+                      <Wifi className="w-4 h-4" />
+                      Проверить связь и обновить списки
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    <div>
+                      <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
+                        Воронка сделок (categoryId)
+                      </label>
+                      {b24Categories.length > 0 ? (
+                        <select
+                          className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold text-gray-700 appearance-none"
+                          style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234B5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundPosition: 'right 16px center', backgroundSize: '16px', backgroundRepeat: 'no-repeat' }}
+                          value={companyData?.bitrix24?.categoryId || "0"}
+                          onChange={(e) => {
+                            const newCatId = e.target.value;
+                            setCompanyData((prev: any) => ({
+                              ...prev,
+                              bitrix24: {
+                                ...(prev?.bitrix24 || {}),
+                                categoryId: newCatId,
+                              },
+                            }));
+                            const url = companyData?.bitrix24?.webhookUrl;
+                            if (url) {
+                              loadB24Stages(url, newCatId);
+                            }
+                          }}
+                        >
+                          {b24Categories.map((cat) => (
+                            <option key={cat.id} value={cat.id}>
+                              {cat.name} (ID: {cat.id})
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          placeholder="Например: 0"
+                          className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                          value={companyData?.bitrix24?.categoryId || ""}
+                          onChange={(e) =>
+                            setCompanyData((prev: any) => ({
+                              ...prev,
+                              bitrix24: {
+                                ...(prev?.bitrix24 || {}),
+                                categoryId: e.target.value,
+                              },
+                            }))
+                          }
+                        />
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
+                        Стадия сделки (stageId)
+                      </label>
+                      {b24Stages.length > 0 ? (
+                        <select
+                          className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold text-gray-700 appearance-none"
+                          style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234B5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundPosition: 'right 16px center', backgroundSize: '16px', backgroundRepeat: 'no-repeat' }}
+                          value={companyData?.bitrix24?.stageId || ""}
+                          onChange={(e) =>
+                            setCompanyData((prev: any) => ({
+                              ...prev,
+                              bitrix24: {
+                                ...(prev?.bitrix24 || {}),
+                                stageId: e.target.value,
+                              },
+                            }))
+                          }
+                        >
+                          <option value="">-- Выберите стадию --</option>
+                          {b24Stages.map((st) => (
+                            <option key={st.id} value={st.id}>
+                              {st.name}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          placeholder="Например: C1:NEW"
+                          className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                          value={companyData?.bitrix24?.stageId || ""}
+                          onChange={(e) =>
+                            setCompanyData((prev: any) => ({
+                              ...prev,
+                              bitrix24: {
+                                ...(prev?.bitrix24 || {}),
+                                stageId: e.target.value,
+                              },
+                            }))
+                          }
+                        />
+                      )}
+                    </div>
+                  </div>
                   <p className="text-[11px] text-gray-500 mt-3 leading-relaxed">
                     Инструкция: Зайдите в Битрикс24 &rarr; Приложения &rarr;
                     Вебхуки &rarr; Добавить входящий вебхук. Скопируйте ссылку и
@@ -13614,6 +14072,7 @@ export default function App() {
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
   const [isSessionBlocked, setIsSessionBlocked] = useState(false);
+  const [isEndingSessions, setIsEndingSessions] = useState(false);
   const [sessionId] = useState(() => Math.random().toString(36).substr(2, 9));
 
   const [productionFormat, setProductionFormat] =
@@ -13770,7 +14229,7 @@ export default function App() {
             setIsSessionBlocked(false);
           }
         }
-      });
+      }, undefined, 3000); // Poll every 3 seconds for session verification to keep devices in sync
       return unsub;
     }
   }, [isAuthenticated, userData?.uid, sessionId]);
@@ -13784,11 +14243,23 @@ export default function App() {
       });
 
       if (!response.ok) {
-        const err = await response.json();
-        throw new Error(err.error || "Неверный email или пароль");
+        const text = await response.text();
+        let errorData;
+        try {
+          errorData = JSON.parse(text);
+        } catch (e) {
+          throw new Error(`Ошибка сервера ${response.status}: ${text.trim() || "Неверный email или пароль"}`);
+        }
+        throw new Error(errorData.error || "Неверный email или пароль");
       }
 
-      const authUser = await response.json();
+      const text = await response.text();
+      let authUser;
+      try {
+        authUser = JSON.parse(text);
+      } catch (e) {
+        throw new Error("Ошибка сервера: получен неверный ответ при авторизации");
+      }
       
       // Update session ID for single session enforcement
       await fetch(`/api/firebase/doc/users/${authUser.uid}`, {
@@ -14004,6 +14475,8 @@ export default function App() {
   const [selectedProductCategory, setSelectedProductCategory] = useState<
     string | null
   >(null);
+  const [projects, setProjects] = useState<any[]>([]);
+  const [projectSets, setProjectSets] = useState<any[]>([]);
   const [selectedProjectForSpec, setSelectedProjectForSpec] = useState<
     any | null
   >(null);
@@ -14736,6 +15209,76 @@ export default function App() {
     companyData?.manufacturerId,
   ]);
 
+  // Sync Projects and Sets
+  useEffect(() => {
+    if (!isAuthenticated || !companyData?.id || !userData?.uid) return;
+
+    let qProjects;
+    let qSets;
+
+    if (userRole === "admin") {
+      qProjects = query(
+        collection(db, "companies", companyData.id, "projects"),
+        orderBy("createdAt", "desc"),
+        limit(100),
+      );
+      qSets = query(
+        collection(db, "companies", companyData.id, "sets"),
+        orderBy("createdAt", "desc"),
+        limit(100),
+      );
+    } else if (userRole === "supervisor") {
+      qProjects = query(
+        collection(db, "companies", companyData.id, "projects"),
+        or(where("createdBy", "==", userData.uid), where("status", "==", "transferred")),
+        orderBy("createdAt", "desc"),
+        limit(100),
+      );
+      qSets = query(
+        collection(db, "companies", companyData.id, "sets"),
+        or(where("createdBy", "==", userData.uid), where("status", "==", "transferred")),
+        orderBy("createdAt", "desc"),
+        limit(100),
+      );
+    } else {
+      qProjects = query(
+        collection(db, "companies", companyData.id, "projects"),
+        where("createdBy", "==", userData.uid),
+        orderBy("createdAt", "desc"),
+        limit(100),
+      );
+      qSets = query(
+        collection(db, "companies", companyData.id, "sets"),
+        where("createdBy", "==", userData.uid),
+        orderBy("createdAt", "desc"),
+        limit(100),
+      );
+    }
+
+    const unsubProjects = onSnapshot(
+      qProjects, 
+      (snapshot) => {
+        const projs = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        setProjects(projs);
+      },
+      (error) => console.error("Error syncing projects:", error)
+    );
+
+    const unsubSets = onSnapshot(
+      qSets, 
+      (snapshot) => {
+        const setsData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        setProjectSets(setsData);
+      },
+      (error) => console.error("Error syncing sets:", error)
+    );
+
+    return () => {
+      unsubProjects();
+      unsubSets();
+    };
+  }, [isAuthenticated, companyData?.id, userData?.uid, userRole]);
+
   // Sync Production Settings (for Contract mode)
   useEffect(() => {
     if (productionFormat !== "contract" || !contractConfig.productionId) {
@@ -14973,27 +15516,60 @@ export default function App() {
     if (!companyData?.id || !userData?.uid) return;
     try {
       const activeProjects = optionalProjectsList || selectedProjectsForCheckout;
-      const isSingleProject = activeProjects.length === 1 && !setData.id; // Heuristic? Or should I pass a flag?
-      // Let's pass isSingleProject explicitly in the future, for now let's enhance it.
+      const isSingleProject = activeProjects.length === 1 && (!setData.id || !setData.id.startsWith("set-")); // Heuristic to check if this is a single project
       
       const batch = writeBatch(db);
 
       // Check if it's a single project and it's not a set record yet
-      if (activeProjects.length === 1 && !setData.id) {
+      if (isSingleProject) {
           // Update single project directly
           const p = activeProjects[0];
           const projectDocRef = doc(db, "companies", companyData.id, "projects", p.id);
           
-          batch.update(projectDocRef, {
+          batch.set(projectDocRef, {
               contractNumber: setData.contractNumber,
               contractDate: setData.contractDate,
               leadTimeDays: setData.leadTimeDays,
               readyDate: setData.readyDate,
               sketches: setData.sketches,
               status: isFinal ? "sent" : "draft",
+              // Store copies in data for backward compatibility and persistence
+              data: {
+                ...(p.data || {}),
+                contractNumber: setData.contractNumber,
+                contractDate: setData.contractDate,
+                leadTimeDays: setData.leadTimeDays,
+                readyDate: setData.readyDate,
+                sketches: setData.sketches,
+              }
           }, { merge: true });
           
           await batch.commit();
+
+          // Update local state
+          setProjects((prevProjects: any[]) => 
+            prevProjects.map((p) => 
+              p.id === activeProjects[0].id 
+                ? { 
+                    ...p, 
+                    contractNumber: setData.contractNumber,
+                    contractDate: setData.contractDate,
+                    leadTimeDays: setData.leadTimeDays,
+                    readyDate: setData.readyDate,
+                    sketches: setData.sketches,
+                    status: isFinal ? "sent" : "draft",
+                    data: {
+                      ...(p.data || {}),
+                      contractNumber: setData.contractNumber,
+                      contractDate: setData.contractDate,
+                      leadTimeDays: setData.leadTimeDays,
+                      readyDate: setData.readyDate,
+                      sketches: setData.sketches,
+                    }
+                  } 
+                : p
+            )
+          );
       } else {
           // Normal set logic
           const setId = setData.id || `set-${Date.now()}`;
@@ -15028,19 +15604,53 @@ export default function App() {
 
           batch.set(setDocRef, setRecord);
 
-          // Update individual projects status
+          // Update individual projects status and data
           for (const pId of setData.projectIds) {
             const projectDocRef = doc(db, "companies", companyData.id, "projects", pId);
             const statusUpdate: any = {
                 setId: setId,
+                contractNumber: setData.contractNumber,
+                contractDate: setData.contractDate,
+                leadTimeDays: setData.leadTimeDays,
+                readyDate: setData.readyDate,
+                sketches: setData.sketches,
             };
             if (isFinal) {
                 statusUpdate.status = "sent";
             }
-            batch.update(projectDocRef, statusUpdate, { merge: true });
+            batch.set(projectDocRef, statusUpdate, { merge: true });
           }
 
           await batch.commit();
+
+          // Update local state for projects
+          setProjects((prevProjects: any[]) => 
+            prevProjects.map((p) => 
+              setData.projectIds.includes(p.id)
+                ? { 
+                    ...p, 
+                    setId: setId, 
+                    status: isFinal ? "sent" : p.status,
+                    contractNumber: setData.contractNumber,
+                    contractDate: setData.contractDate,
+                    leadTimeDays: setData.leadTimeDays,
+                    readyDate: setData.readyDate,
+                    sketches: setData.sketches,
+                  }
+                : p
+            )
+          );
+
+          // Update local state for sets
+          setProjectSets((prev) => {
+            const exists = prev.findIndex(s => s.id === setId);
+            if (exists >= 0) {
+              const updated = [...prev];
+              updated[exists] = setRecord;
+              return updated;
+            }
+            return [setRecord, ...prev];
+          });
 
           // Update local state to keep it in sync
           if (!isFinal) {
@@ -15053,6 +15663,9 @@ export default function App() {
       if (!isFinal) {
           setPrintSetData(null);
           showAlert("Сохранено", "Комплект сохранен как черновик");
+          if (activeTab === "checkout_current") {
+              setActiveTab("projects");
+          }
       } else {
           setPrintSetData({ projects: activeProjects, data: setData }); 
           showAlert("Успех", "Спецификация заказа успешно создана и сохранена");
@@ -15340,6 +15953,8 @@ export default function App() {
 
   const saveGeneralSettings = async (silent: boolean = false) => {
     if (!companyData?.id) return;
+    console.log("DEBUG: saveGeneralSettings started. silent:", silent);
+    console.log("DEBUG: Current companyData.bitrix24:", companyData.bitrix24);
     try {
       await setDoc(
         doc(db, "companies", companyData.id, "settings", "general"),
@@ -15381,20 +15996,17 @@ export default function App() {
       }
 
       // Sync specific fields to the main company doc
-      if (companyInfo && companyInfo.name) {
-        await setDoc(
-          doc(db, "companies", companyData.id),
-          {
-            name: companyInfo.name,
-            phone: companyInfo.phone || "",
-            city: companyInfo.city || companyData.city || "",
-            bitrix24: companyData.bitrix24 || null,
-          },
-          { merge: true }
-        );
-        // Also update local state so sidebar reflects it immediately
-        setCompanyData((prev: any) => prev ? { ...prev, name: companyInfo.name } : prev);
-      }
+      console.log("DEBUG: Syncing company doc with bitrix24:", companyData.bitrix24);
+      await setDoc(
+        doc(db, "companies", companyData.id),
+        {
+          name: companyInfo?.name || companyData.name || "",
+          phone: companyInfo?.phone || companyData.phone || "",
+          city: companyInfo?.city || companyData.city || "",
+          bitrix24: companyData.bitrix24 || null,
+        },
+        { merge: true }
+      );
 
       if (!silent) {
         showAlert("Успех", "Настройки успешно сохранены");
@@ -16368,17 +16980,37 @@ export default function App() {
           
           <div className="space-y-3">
             <button
+              disabled={isEndingSessions}
               onClick={async () => {
-                // End other session by taking control
-                if (userData?.uid) {
-                  await updateDoc(doc(db, "users", userData.uid), { activeSessionId: sessionId });
-                  setIsSessionBlocked(false);
+                const uid = userData?.uid || localStorage.getItem('auth_uid');
+                if (uid) {
+                  setIsEndingSessions(true);
+                  try {
+                    await updateDoc(doc(db, "users", uid), { activeSessionId: sessionId });
+                    setIsSessionBlocked(false);
+                  } catch (err) {
+                    console.error("Failed to update session ID", err);
+                  } finally {
+                    setIsEndingSessions(false);
+                  }
+                } else {
+                  // If we don't even have a UID, log them out to be safe
+                  handleLogout();
                 }
               }}
-              className="w-full py-4 bg-blue-600 text-white font-bold rounded-2xl hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all flex items-center justify-center gap-3 active:scale-95"
+              className="w-full py-4 bg-blue-600 text-white font-bold rounded-2xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-xl shadow-blue-100 transition-all flex items-center justify-center gap-3 active:scale-95"
             >
-              <CheckCircle2 className="w-5 h-5" />
-              Завершить другие сессии
+              {isEndingSessions ? (
+                <>
+                  <span className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Завершение...
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="w-5 h-5" />
+                  Завершить другие сессии
+                </>
+              )}
             </button>
             
             <button
@@ -17162,9 +17794,20 @@ export default function App() {
                 if (project.status === 'sent' || project.status === 'transferred') {
                   setSelectedProjectForSpec(project);
                   setActiveTab("specification");
+                } else if (project.setId) {
+                  const set = projectSets.find(s => s.id === project.setId);
+                  if (set) {
+                    setSelectedProjectsForCheckout(projects.filter(p => p.setId === project.setId));
+                    setEditingSet(set);
+                    setIsCheckoutModalOpen(true);
+                  } else {
+                    setSelectedProjectsForCheckout([project]);
+                    setEditingSet(project);
+                    setIsCheckoutModalOpen(true);
+                  }
                 } else {
                   setSelectedProjectsForCheckout([project]);
-                  setEditingSet(null);
+                  setEditingSet(project);
                   setIsCheckoutModalOpen(true);
                 }
               }}
@@ -17175,7 +17818,10 @@ export default function App() {
               }}
               companyType={companyData?.type}
               manufacturerId={companyData?.manufacturerId}
+              companyData={companyData}
               showConfirm={showConfirm}
+              projects={projects}
+              sets={projectSets}
             />
           ) : activeTab === "products" ? (
             <ProductsView
@@ -17521,12 +18167,14 @@ export default function App() {
 
         {/* Offline Indicator */}
         {isOffline && (
-          <div className="fixed bottom-6 right-6 z-[200] bg-red-50 text-red-600 px-6 py-3 rounded-2xl shadow-xl border border-red-100 flex items-center gap-3 animate-in slide-in-from-bottom-5 duration-300">
-            <WifiOff className="w-5 h-5" />
+          <div className="fixed bottom-6 right-6 z-[200] bg-orange-50 text-orange-700 px-6 py-4 rounded-2xl shadow-xl border border-orange-100 flex items-center gap-4 animate-in slide-in-from-bottom-5 duration-300 max-w-sm">
+            <div className="p-2 bg-orange-100 rounded-xl text-orange-600">
+              <WifiOff className="w-5 h-5 animate-pulse" />
+            </div>
             <div>
-              <div className="text-sm font-bold">Оффлайн режим</div>
-              <div className="text-[10px] uppercase font-bold tracking-wider opacity-80">
-                Данные сохраняются локально
+              <div className="text-sm font-bold">Оффлайн режим активен</div>
+              <div className="text-xs text-orange-600/90 mt-0.5 leading-relaxed">
+                Вы можете продолжать расчеты! Все данные кэшируются. Можно безопасно обновлять страницу — весь функционал работает оффлайн.
               </div>
             </div>
           </div>

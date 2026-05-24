@@ -81,6 +81,7 @@ interface Employee {
   role: string;
   accessLevel: 'admin' | 'supervisor' | 'manager' | 'worker';
   createdAt?: string;
+  bitrix24UserId?: string;
 }
 
 export const AdminSettingsView = ({ 
@@ -115,6 +116,40 @@ export const AdminSettingsView = ({
     extraEmployees: 0,
     extraCities: 0
   });
+
+  const [b24Users, setB24Users] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    const url = companyData?.bitrix24?.webhookUrl;
+    if (url) {
+      const loadB24Users = async () => {
+        try {
+          const res = await fetch("/api/bitrix24/query", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              webhookUrl: url,
+              method: "user.get",
+              params: {
+                FILTER: { ACTIVE: "Y" }
+              }
+            })
+          });
+          const data = await res.json();
+          if (data.result && Array.isArray(data.result)) {
+            const users = data.result.map((u: any) => ({
+              id: String(u.ID),
+              name: `${u.LAST_NAME || ''} ${u.NAME || ''}`.trim() || `ID: ${u.ID}`
+            }));
+            setB24Users(users);
+          }
+        } catch (e) {
+          console.error("Error loading B24 users in AdminSettingsView:", e);
+        }
+      };
+      loadB24Users();
+    }
+  }, [companyData?.bitrix24?.webhookUrl]);
 
   useEffect(() => {
     if (!companyId) return;
@@ -180,11 +215,15 @@ export const AdminSettingsView = ({
             const res = await fetch("/api/auth/register", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ email: trimmedEmail, password: "password123" })
+              body: JSON.stringify({ 
+                email: trimmedEmail, 
+                password: "123456",
+                verified: true
+              })
             });
             const data = await res.json();
             if (!res.ok) {
-              if (data.code === 'auth/email-already-in-use' || data.error?.includes('unique constraint')) {
+              if (data.code === 'auth/email-already-in-use' || data.error?.toLowerCase().includes('unique constraint') || data.error?.toLowerCase().includes('already-in-use')) {
                  throw { code: 'auth/email-already-in-use' };
               }
               throw new Error(data.error || "Failed to register employee");
@@ -198,7 +237,16 @@ export const AdminSettingsView = ({
               
               if (lookupRes.ok && lookupData.uid) {
                 uid = lookupData.uid;
-                // We'll proceed with this uid and add them to the company
+                // Force-update the password and verified status of the existing user so they can login with standard password "123456"
+                const patchRes = await fetch(`/api/auth/user/${uid}`, {
+                  method: "PATCH",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ password: "123456", verified: true })
+                });
+                if (!patchRes.ok) {
+                  const patchData = await patchRes.json();
+                  throw new Error(patchData.error || "Не удалось сбросить пароль для существующего пользователя");
+                }
               } else {
                 setError('Пользователь с таким Email уже существует в системе, но получить его UID не удалось.');
                 setIsLoading(false);
@@ -218,7 +266,8 @@ export const AdminSettingsView = ({
           email: trimmedEmail,
           role: newEmployee.accessLevel,
           companyId: companyId,
-          createdAt: new Date().toISOString()
+          createdAt: newEmployee.createdAt || new Date().toISOString(),
+          bitrix24UserId: newEmployee.bitrix24UserId || null
         };
 
         // 1. Create/Update in global 'users' collection (for auth and rules)
@@ -229,7 +278,8 @@ export const AdminSettingsView = ({
           name: newEmployee.name,
           email: trimmedEmail,
           role: newEmployee.role, // This is the job title (e.g. "Менеджер проектов")
-          accessLevel: newEmployee.accessLevel
+          accessLevel: newEmployee.accessLevel,
+          bitrix24UserId: newEmployee.bitrix24UserId || null
         });
 
         setIsAdding(false);
@@ -264,9 +314,27 @@ export const AdminSettingsView = ({
   };
 
   const changePassword = (employee: Employee) => {
-    showPrompt('Смена пароля', `Введите новый пароль для ${employee.name}:`, '123456', (newPass) => {
+    showPrompt('Смена пароля', `Введите новый пароль для ${employee.name}:`, '123456', async (newPass) => {
       if (newPass) {
-        showAlert('Сброс пароля', 'Пароль будет изменен. В данной версии это имитация. В реальности требуется использование Admin SDK или сброс через Email.');
+        setIsLoading(true);
+        setError(null);
+        try {
+          const res = await fetch(`/api/auth/user/${employee.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password: newPass, verified: true })
+          });
+          if (!res.ok) {
+            const data = await res.json();
+            throw new Error(data.error || "Не удалось изменить пароль");
+          }
+          showAlert('Смена пароля', `Пароль для ${employee.name} успешно изменен на "${newPass}"`);
+        } catch (error: any) {
+          console.error("Error changing password:", error);
+          showAlert('Ошибка', 'Не удалось изменить пароль: ' + error.message);
+        } finally {
+          setIsLoading(false);
+        }
       }
     });
   };
@@ -274,7 +342,7 @@ export const AdminSettingsView = ({
   const restoreAccess = async (employee: Employee) => {
     if (!companyId) return;
     
-    showConfirm('Восстановление доступа', `Вы хотите восстановить доступ для ${employee.name}? Это создаст учетную запись в Auth, если она отсутствует, с паролем 123456.`, async () => {
+    showConfirm('Восстановление доступа', `Вы хотите восстановить доступ для ${employee.name}? Это сбросит/создаст учетную запись в Auth с паролем 123456.`, async () => {
       setIsLoading(true);
       setError(null);
       try {
@@ -283,23 +351,38 @@ export const AdminSettingsView = ({
           const res = await fetch("/api/auth/register", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email: trimmedEmail, password: "password123" }) // use standard password from prompt
+            body: JSON.stringify({ 
+              email: trimmedEmail, 
+              password: "123456",
+              verified: true
+            })
           });
           const data = await res.json();
           let uid = data.uid;
           
           if (!res.ok) {
-            if (data.code === 'auth/email-already-in-use' || data.error?.includes('unique constraint')) {
+            if (data.code === 'auth/email-already-in-use' || data.error?.toLowerCase().includes('unique constraint') || data.error?.toLowerCase().includes('already-in-use')) {
                const lookupRes = await fetch(`/api/auth/lookup?email=${encodeURIComponent(trimmedEmail)}`);
                const lookupData = await lookupRes.json();
                if (lookupRes.ok && lookupData.uid) {
                  uid = lookupData.uid;
-                 showAlert('Информация', 'Учетная запись уже существует. Доступ восстановлен к существующему аккаунту.');
+                 
+                 // Force-update the password for existing user
+                 const patchRes = await fetch(`/api/auth/user/${uid}`, {
+                   method: "PATCH",
+                   headers: { "Content-Type": "application/json" },
+                   body: JSON.stringify({ password: "123456", verified: true })
+                 });
+                 if (!patchRes.ok) {
+                   const patchData = await patchRes.json();
+                   throw new Error(patchData.error || "Не удалось сбросить пароль");
+                 }
+                 showAlert('Информация', 'Учетная запись уже существовала. Доступ восстановлен, пароль сброшен на default: 123456');
                } else {
                  throw new Error("User exists but could not lookup UID");
                }
             } else {
-              throw new Error(data.error || "Failed to register employee");
+               throw new Error(data.error || "Failed to register employee");
             }
           }
 
@@ -321,7 +404,7 @@ export const AdminSettingsView = ({
           }
           
           if (res.ok) {
-             showAlert('Успех', 'Доступ успешно восстановлен. Пароль по умолчанию: password123');
+             showAlert('Успех', 'Доступ успешно восстановлен. Пароль по умолчанию: 123456');
           }
         } catch (authError: any) {
           throw authError;
@@ -532,6 +615,30 @@ export const AdminSettingsView = ({
                 </div>
               </div>
 
+              {companyData?.bitrix24?.webhookUrl && (
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Связать с пользователем Bitrix24</label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                      <Settings className="h-5 w-5 text-gray-400" />
+                    </div>
+                    <select
+                      value={newEmployee.bitrix24UserId || ''}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, bitrix24UserId: e.target.value })}
+                      className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-xl focus:ring-blue-500 focus:border-blue-500 sm:text-sm appearance-none bg-white"
+                    >
+                      <option value="">-- Не привязан --</option>
+                      {b24Users.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name} (ID: {u.id})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">При создании сделки в Bitrix24 этим сотрудником, ответственным автоматически будет назначен выбранный пользователь.</p>
+                </div>
+              )}
+
               <div className="md:col-span-2 flex justify-end gap-3 mt-2">
                 <button
                   type="button"
@@ -583,6 +690,11 @@ export const AdminSettingsView = ({
                       <div className="ml-4">
                         <div className="text-sm font-medium text-gray-900">{employee.name}</div>
                         <div className="text-sm text-gray-500">{employee.email}</div>
+                        {employee.bitrix24UserId && (
+                          <div className="text-xs text-blue-600 font-semibold mt-0.5" title={`Bitrix24 User ID: ${employee.bitrix24UserId}`}>
+                            Bitrix24: {b24Users.find(u => u.id === employee.bitrix24UserId)?.name || `ID: ${employee.bitrix24UserId}`}
+                          </div>
+                        )}
                       </div>
                     </div>
                   </td>

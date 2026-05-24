@@ -58,3 +58,17 @@ createRoot(document.getElementById('root')!).render(
     </ErrorBoundary>
   </StrictMode>,
 );
+
+// Register the PWA Service Worker for complete offline capabilities (even on page reload)
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js')
+      .then((reg) => {
+        console.log('Service Worker successfully registered with scope:', reg.scope);
+      })
+      .catch((err) => {
+        console.warn('Service Worker registration failed:', err);
+      });
+  });
+}
+

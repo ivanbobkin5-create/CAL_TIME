@@ -32,6 +32,20 @@ export const LoginForm = ({
           email: data.email.trim().toLowerCase(),
           password: data.password
         });
+      } catch (e: any) {
+        let errorMsg = 'Ошибка входа. Проверьте правильность email и пароля.';
+        const msg = e.message?.toLowerCase() || '';
+        if (msg.includes('404') || msg.includes('not found') || msg.includes('не найден')) {
+          errorMsg = 'Аккаунт с таким email не найден.';
+        } else if (msg.includes('403') || msg.includes('verified')) {
+          errorMsg = 'Email не подтвержден. Пожалуйста, проверьте почту для подтверждения.';
+        } else if (msg.includes('401') || msg.includes('auth/wrong-password') || msg.includes('неверный') || msg.includes('password')) {
+          errorMsg = 'Неверный пароль. Для сотрудников пароль по умолчанию: 123456';
+        }
+        setMessage({ 
+          type: 'error', 
+          text: errorMsg
+        });
       } finally {
         setIsLoading(false);
       }
@@ -94,7 +108,7 @@ export const LoginForm = ({
             {view === 'reset' && <ShieldCheck className="w-8 h-8" />}
           </div>
         </div>
-        <h2 className="text-3xl font-black text-gray-900 tracking-tight capitalize">
+        <h2 className="text-3xl font-black text-gray-900 tracking-tight">
           {view === 'login' && 'Вход в систему'}
           {view === 'forgot' && 'Восстановление'}
           {view === 'reset' && 'Новый пароль'}

@@ -86,25 +86,25 @@ export const ProjectSetCheckoutModal = ({
   editingSet?: any;
 }) => {
   const [contractNumber, setContractNumber] = useState(
-    editingSet?.contractNumber || "",
+    editingSet?.contractNumber || editingSet?.data?.contractNumber || "",
   );
   const [contractDate, setContractDate] = useState(
-    editingSet?.contractDate || new Date().toISOString().split("T")[0],
+    editingSet?.contractDate || editingSet?.data?.contractDate || new Date().toISOString().split("T")[0],
   );
   const [leadTimeDays, setLeadTimeDays] = useState(
-    editingSet?.leadTimeDays || 30,
+    editingSet?.leadTimeDays || editingSet?.data?.leadTimeDays || 30,
   );
   const [sketches, setSketches] = useState<string[]>(
-    editingSet?.sketches || [],
+    editingSet?.sketches || editingSet?.data?.sketches || [],
   );
 
   useEffect(() => {
     if (editingSet) {
       console.log("DEBUG: editingSet updated in modal:", editingSet);
-      setContractNumber(editingSet.contractNumber || "");
-      setContractDate(editingSet.contractDate || new Date().toISOString().split("T")[0]);
-      setLeadTimeDays(editingSet.leadTimeDays || 30);
-      setSketches(editingSet.sketches || []);
+      setContractNumber(editingSet.contractNumber || editingSet?.data?.contractNumber || "");
+      setContractDate(editingSet.contractDate || editingSet?.data?.contractDate || new Date().toISOString().split("T")[0]);
+      setLeadTimeDays(editingSet.leadTimeDays || editingSet?.data?.leadTimeDays || 30);
+      setSketches(editingSet.sketches || editingSet?.data?.sketches || []);
     }
   }, [editingSet]);
   const [expandMaterials, setExpandMaterials] = useState(false);

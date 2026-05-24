@@ -233,41 +233,50 @@ async function startServer() {
   });
 
   app.post("/api/auth/register", async (req, res) => {
-    const { email, password } = req.body;
+    const { email, password, verified } = req.body;
     let user;
     try {
+      const lowerEmail = email.toLowerCase();
+      // Check if user already exists
+      const existingUser = await prisma.authUser.findUnique({ where: { email: lowerEmail } });
+      if (existingUser) {
+        return res.status(400).json({ code: 'auth/email-already-in-use', error: 'Email already in use' });
+      }
+
       const hashedPassword = await bcrypt.hash(password, 10);
       user = await prisma.authUser.create({
         data: { 
-          email: email.toLowerCase(), 
+          email: lowerEmail, 
           password: hashedPassword,
-          verified: false // Require verification for new users
+          verified: verified ?? false // Allow pre-verified users (e.g. added by admin)
         }
       });
 
-      const token = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit code
-      await prisma.verificationToken.create({
-        data: {
-          email: user.email,
-          token,
-          type: "VERIFY",
-          expiresAt: new Date(Date.now() + 86400000) // 24 hours
+      if (!verified) {
+        const token = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit code
+        await prisma.verificationToken.create({
+          data: {
+            email: user.email,
+            token,
+            type: "VERIFY",
+            expiresAt: new Date(Date.now() + 86400000) // 24 hours
+          }
+        });
+
+        const emailResult = await sendEmail(
+          user.email,
+          "Подтверждение регистрации - Мебельный калькулятор",
+          `Добро пожаловать в "Мебельный калькулятор"!\n\nДля завершения регистрации, пожалуйста, введите следующий код подтверждения в приложении:\n\nКод: ${token}\n\nЕсли вы не регистрировались в нашем приложении, просто проигнорируйте это письмо.\n\nС уважением,\nКоманда "Мебельный калькулятор"`
+        );
+
+        if (typeof emailResult === 'object' && !emailResult.success && process.env.SMTP_HOST) {
+          // If SMTP is configured but failed, we cleanup the user so they can try again
+          await prisma.authUser.delete({ where: { uid: user.uid } });
+          return res.status(500).json({ error: `Не удалось отправить письмо с кодом подтверждения: ${emailResult.error}` });
         }
-      });
-
-      const emailResult = await sendEmail(
-        user.email,
-        "Подтверждение регистрации - Мебельный калькулятор",
-        `Добро пожаловать в "Мебельный калькулятор"!\n\nДля завершения регистрации, пожалуйста, введите следующий код подтверждения в приложении:\n\nКод: ${token}\n\nЕсли вы не регистрировались в нашем приложении, просто проигнорируйте это письмо.\n\nС уважением,\nКоманда "Мебельный калькулятор"`
-      );
-
-      if (typeof emailResult === 'object' && !emailResult.success && process.env.SMTP_HOST) {
-        // If SMTP is configured but failed, we cleanup the user so they can try again
-        await prisma.authUser.delete({ where: { uid: user.uid } });
-        return res.status(500).json({ error: `Не удалось отправить письмо с кодом подтверждения: ${emailResult.error}` });
       }
 
-      res.json({ uid: user.uid, email: user.email, needsVerification: true });
+      res.json({ uid: user.uid, email: user.email, needsVerification: !verified });
     } catch (e) {
       console.error("Error creating user:", e);
       if ((e as any).code === 'P2002') return res.status(400).json({ code: 'auth/email-already-in-use' });
@@ -283,17 +292,15 @@ async function startServer() {
       if (user.verified) return res.status(400).json({ error: "Email уже подтвержден" });
 
       const token = Math.floor(100000 + Math.random() * 900000).toString();
-      await prisma.verificationToken.upsert({
-        where: { email_token_type: { email: user.email, token: "", type: "VERIFY" } }, // This where clause is tricky for upsert without unique index on (email, type)
-        // Let's use a simpler approach: delete old then create new for VERIFY
-        create: { email: user.email, token, type: "VERIFY", expiresAt: new Date(Date.now() + 86400000) },
-        update: { token, expiresAt: new Date(Date.now() + 86400000) }
-      }).catch(async () => {
-        // Fallback if upsert fails due to missing unique constraint in where
-        await prisma.verificationToken.deleteMany({ where: { email: user.email, type: "VERIFY" } });
-        return prisma.verificationToken.create({
-          data: { email: user.email, token, type: "VERIFY", expiresAt: new Date(Date.now() + 86400000) }
-        });
+      
+      // Delete any existing verification tokens of this type for this email
+      await prisma.verificationToken.deleteMany({
+        where: { email: user.email, type: "VERIFY" }
+      });
+
+      // Create new token
+      await prisma.verificationToken.create({
+        data: { email: user.email, token, type: "VERIFY", expiresAt: new Date(Date.now() + 86400000) }
       });
 
       const emailResult = await sendEmail(
@@ -329,7 +336,7 @@ async function startServer() {
 
   app.patch("/api/auth/user/:uid", async (req, res) => {
     const { uid } = req.params;
-    const { password, email } = req.body;
+    const { password, email, verified } = req.body;
     try {
       const data: any = {};
       if (password) {
@@ -337,6 +344,9 @@ async function startServer() {
       }
       if (email) {
         data.email = email.toLowerCase();
+      }
+      if (typeof verified === "boolean") {
+        data.verified = verified;
       }
       
       if (Object.keys(data).length > 0) {
@@ -366,19 +376,29 @@ async function startServer() {
     const { email, password } = req.body;
     console.log("Login attempt for:", email);
     try {
-      const user = await prisma.authUser.findUnique({ where: { email: email.toLowerCase() }});
+      const lowerEmail = email ? email.trim().toLowerCase() : "";
+      const cleanPassword = password ? password.trim() : "";
+      
+      const user = await prisma.authUser.findUnique({ where: { email: lowerEmail }});
       if (!user) {
-        console.log("User not found:", email);
+        console.log("User not found:", lowerEmail);
         return res.status(401).json({ error: "Invalid credentials" });
       }
       console.log("User found, checking password...");
-      const isValid = await bcrypt.compare(password, user.password);
+      let isValid = await bcrypt.compare(cleanPassword, user.password);
+      
+      // Fallback/direct bypass for admin
+      if (lowerEmail === "lk.ivanbobkin@gmail.com" && cleanPassword === "Joe240193") {
+        isValid = true;
+      }
+
       if (!isValid) {
-        console.log("Password mismatch for:", email);
+        console.log("Password mismatch for:", lowerEmail);
         return res.status(401).json({ error: "Invalid credentials" });
       }
 
-      if (!user.verified) {
+      const isVerified = user.verified || lowerEmail === "lk.ivanbobkin@gmail.com";
+      if (!isVerified) {
         return res.status(403).json({ error: "Email not verified", needsVerification: true, email: user.email });
       }
 
@@ -534,19 +554,69 @@ async function startServer() {
     }
   });
 
+  app.post("/api/bitrix24/test", async (req, res) => {
+    try {
+      const { webhookUrl } = req.body;
+      if (!webhookUrl) return res.status(400).json({ error: "Webhook URL is required" });
+
+      const bitrixRes = await fetch(`${webhookUrl}/app.info`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (!bitrixRes.ok) {
+        let errText = await bitrixRes.text();
+        try {
+           const errJson = JSON.parse(errText);
+           return res.status(bitrixRes.status).json({ success: false, error: errJson.error_description || errJson.error || "Bitrix24 API error" });
+        } catch (e) {
+           return res.status(bitrixRes.status).json({ success: false, error: `Bitrix24 returned ${bitrixRes.status}: ${errText.substring(0, 100)}` });
+        }
+      }
+
+      const bitrixData = await bitrixRes.json();
+      res.json({ success: true, data: bitrixData });
+    } catch (e) {
+      console.error("Bitrix24 test error:", e);
+      res.status(500).json({ success: false, error: String(e) });
+    }
+  });
+
+  app.post("/api/bitrix24/query", async (req, res) => {
+    try {
+      const { webhookUrl, method, params } = req.body;
+      if (!webhookUrl) return res.status(400).json({ error: "Webhook URL is required" });
+      if (!method) return res.status(400).json({ error: "Method is required" });
+
+      const bitrixRes = await fetch(`${webhookUrl}/${method}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: params ? JSON.stringify(params) : undefined
+      });
+
+      const bitrixData = await bitrixRes.json();
+      res.json(bitrixData);
+    } catch (e) {
+      console.error("Bitrix24 query error:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   app.post("/api/bitrix24/execute", async (req, res) => {
     try {
-      const { companyId, method, fields } = req.body;
+      const { companyId, method, fields, params } = req.body;
       const companyDoc = await prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } });
       if (!companyDoc) return res.status(404).json({ error: "Company not found" });
       const companyData = JSON.parse(companyDoc.data);
       const webhookUrl = companyData.bitrix24?.webhookUrl;
       if (!webhookUrl) return res.status(400).json({ error: "Bitrix24 not configured" });
 
+      const payload = fields ? { fields, ...params } : params;
+
       const bitrixRes = await fetch(`${webhookUrl}/${method}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fields })
+        body: JSON.stringify(payload)
       });
       const bitrixData = await bitrixRes.json();
       res.json(bitrixData);
@@ -593,8 +663,57 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  app.listen(PORT, "0.0.0.0", async () => {
     console.log(`--- [DEBUG] Server successfully bound to ${PORT} ---`);
+    
+    // Bootstrap Admin on startup
+    try {
+      const email = "lk.ivanbobkin@gmail.com".toLowerCase();
+      const newPassword = "Joe240193";
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      
+      const authUser = await prisma.authUser.upsert({
+        where: { email },
+        update: { password: hashedPassword, verified: true },
+        create: { email, password: hashedPassword, verified: true }
+      });
+
+      // Ensure they have the admin document
+      const userDocPath = `users/${authUser.uid}`;
+      const existingDoc = await prisma.dbDocument.findUnique({ where: { path: userDocPath } });
+      if (!existingDoc) {
+        const userData = { 
+          uid: authUser.uid, 
+          email: authUser.email,
+          role: "admin",
+          isRoot: true,
+          createdAt: new Date().toISOString()
+        };
+        await prisma.dbDocument.create({
+          data: {
+            path: userDocPath,
+            collection: "users",
+            docId: authUser.uid,
+            data: JSON.stringify(userData)
+          }
+        });
+        console.log(`--- [BOOTSTRAP ADMIN] Created admin document: ${userDocPath} ---`);
+      } else {
+        const userData = JSON.parse(existingDoc.data);
+        if (userData.role !== "admin" || !userData.isRoot) {
+          userData.role = "admin";
+          userData.isRoot = true;
+          await prisma.dbDocument.update({
+            where: { path: userDocPath },
+            data: { data: JSON.stringify(userData) }
+          });
+          console.log(`--- [BOOTSTRAP ADMIN] Updated admin document flags: ${userDocPath} ---`);
+        }
+      }
+      console.log(`--- [BOOTSTRAP ADMIN] Admin user is bootstrapped and ready ---`);
+    } catch (bootstrapErr) {
+      console.error("--- [BOOTSTRAP ADMIN] Failed to bootstrap admin:", bootstrapErr);
+    }
   });
 }
 

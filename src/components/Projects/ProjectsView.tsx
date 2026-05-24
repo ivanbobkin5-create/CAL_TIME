@@ -13,6 +13,7 @@ import {
   Combine,
   CheckCircle2,
   Send,
+  Link,
 } from "lucide-react";
 // Firebase removed, backend switched to TimeWeb
 const db = {};
@@ -116,6 +117,8 @@ interface Project {
   sourceCompanyId?: string;
   sourceProjectId?: string;
   transferredAt?: string;
+  bitrix24DealId?: string;
+  setId?: string;
 }
 
 export const ProjectsView = ({
@@ -129,6 +132,9 @@ export const ProjectsView = ({
   showConfirm,
   showAlert,
   onCreateSet,
+  companyData,
+  projects = [],
+  sets = [],
 }: {
   companyId?: string;
   userId?: string;
@@ -140,12 +146,23 @@ export const ProjectsView = ({
   showConfirm: (title: string, message: string, onConfirm: () => void) => void;
   showAlert?: (title: string, message: string) => void;
   onCreateSet?: (projects: Project[], set?: any) => void;
+  companyData?: any;
+  projects?: Project[];
+  sets?: any[];
 }) => {
-  const [projects, setProjects] = useState<Project[]>([]);
-  const [sets, setSets] = useState<any[]>([]);
+  const companySettings = companyData;
   const [searchQuery, setSearchQuery] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [loadingSets, setLoadingSets] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [loadingSets, setLoadingSets] = useState(false);
+
+  // Removed old useEffect for companySettings fetch
+
+
+  const bitrixBaseUrl = useMemo(() => {
+    const url = companySettings?.bitrix24?.webhookUrl;
+    if (!url) return null;
+    return url.split('/rest/')[0];
+  }, [companySettings]);
   const [activeFilter, setActiveFilter] = useState<
     "all" | "draft" | "sent" | "transferred" | "sets"
   >("all");
@@ -306,44 +323,11 @@ export const ProjectsView = ({
     }
   }, [companyId, userRole, userId]);
 
+  // Removed redundant fetchData useEffect
   useEffect(() => {
-    if (!companyId || !qProjects || !qSets) return;
-
-    const fetchData = async () => {
-      try {
-        const [projectsSnap, setsSnap] = await Promise.all([
-          getDocs(qProjects),
-          getDocs(qSets),
-        ]);
-        
-        const projs = projectsSnap.docs.map(
-          (doc) => ({ id: doc.id, ...doc.data() }) as Project,
-        );
-        setProjects(projs);
-        setLoading(false);
-
-        const sets = setsSnap.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-        setSets(sets);
-        setLoadingSets(false);
-        
-      } catch (error) {
-        handleFirestoreError(
-          error,
-          OperationType.LIST,
-          `companies/${companyId}/projects_and_sets`,
-        );
-        setLoading(false);
-        setLoadingSets(false);
-      }
-    };
-
-    fetchData();
-
-    return () => {};
-  }, [companyId, qProjects, qSets]);
+    if (projects && projects.length > 0) setLoading(false);
+    if (sets && sets.length > 0) setLoadingSets(false);
+  }, [projects, sets]);
 
   const toggleProjectSelection = (e: React.MouseEvent, projectId: string) => {
     e.stopPropagation();
@@ -680,6 +664,18 @@ export const ProjectsView = ({
                           {project.status === "sent" ? "Оформлен" : "Передан"}
                         </span>
                       )}
+                      {project.bitrix24DealId && bitrixBaseUrl && (
+                        <button 
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            window.open(`${bitrixBaseUrl}/crm/deal/details/${project.bitrix24DealId}/`, "_blank");
+                          }}
+                          className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider flex-shrink-0 bg-blue-100 text-blue-700 flex items-center gap-1 hover:bg-blue-200 transition-colors cursor-pointer"
+                        >
+                          <Link className="w-2 h-2" />
+                          CRM
+                        </button>
+                      )}
                     </div>
                     <div className="flex flex-col gap-1 mt-1">
                       <div className="flex items-center gap-2 text-[10px] text-gray-400">
@@ -778,6 +774,7 @@ export const ProjectsView = ({
         <Bitrix24Modal
           project={selectedBitrixProject}
           companyId={companyId || ""}
+          userId={userId}
           onClose={() => setSelectedBitrixProject(null)}
           showAlert={showAlert}
         />
