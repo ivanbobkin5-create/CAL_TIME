@@ -57,6 +57,7 @@ interface Project {
   sketches?: string[];
   specification?: any;
   companyId?: string;
+  revisionComment?: string;
 }
 
 export const ProjectSpecificationModal = ({ 
@@ -77,8 +78,33 @@ export const ProjectSpecificationModal = ({
   const [sketches, setSketches] = useState<string[]>(project.sketches || []);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showRevisionModal, setShowRevisionModal] = useState(false);
+  const [revisionComment, setRevisionComment] = useState("");
 
   if (!isOpen) return null;
+
+  const handleReturnToRevision = async () => {
+    if (!revisionComment.trim()) {
+      setError("Пожалуйста, укажите причину возврата на доработку");
+      return;
+    }
+    
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      await updateDoc(doc(db, 'companies', companyId, 'projects', project.id), {
+        status: 'draft',
+        revisionComment: revisionComment
+      });
+      onClose();
+    } catch (err) {
+      handleDbError(err, OperationType.UPDATE, `companies/${companyId}/projects/${project.id}`);
+      setError('Ошибка при возврате на доработку');
+    } finally {
+      setIsSubmitting(false);
+      setShowRevisionModal(false);
+    }
+  };
 
   const handleAddSketch = () => {
     // Mock sketch upload
@@ -264,6 +290,15 @@ export const ProjectSpecificationModal = ({
               Закрыть
             </button>
             
+            {project.status === 'transferred' && userRole === 'supervisor' && (
+              <button 
+                onClick={() => setShowRevisionModal(true)}
+                className="flex-1 sm:flex-none px-8 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 shadow-lg shadow-red-200 transition-all flex items-center justify-center gap-2"
+              >
+                Вернуть на доработку
+              </button>
+            )}
+
             {project.status === 'sent' && (
               <button 
                 onClick={handleTransferToSupervisor}
@@ -299,6 +334,35 @@ export const ProjectSpecificationModal = ({
           </div>
         </div>
       </div>
+      
+      {showRevisionModal && (
+        <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+          <div className="bg-white p-6 rounded-3xl w-full max-w-sm shadow-2xl">
+            <h3 className="text-lg font-black text-gray-900 mb-4">Причина возврата на доработку</h3>
+            <textarea
+              className="w-full p-4 border border-gray-200 rounded-xl text-sm mb-4"
+              rows={4}
+              value={revisionComment}
+              onChange={(e) => setRevisionComment(e.target.value)}
+              placeholder="Введите комментарий для менеджера..."
+            />
+            <div className="flex gap-2">
+              <button
+                onClick={() => setShowRevisionModal(false)}
+                className="flex-1 py-2 text-gray-600 font-bold hover:bg-gray-100 rounded-xl"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={handleReturnToRevision}
+                className="flex-1 py-2 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700"
+              >
+                Вернуть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

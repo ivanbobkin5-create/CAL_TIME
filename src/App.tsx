@@ -16151,7 +16151,7 @@ export default function App() {
         updatedAt: new Date().toISOString(),
         createdBy: createdByValue,
         createdByName: createdByNameValue,
-        status: "draft",
+        status: existingProject?.status || "draft",
         totalPrice: activeTotal,
         totalHardwareCost: hardwareTotal,
         type: furnitureType || facadeType || "Мебель",
@@ -16197,6 +16197,15 @@ export default function App() {
         projectData,
         { merge: true },
       ).then(() => {
+        setProjects(prev => {
+          const idx = prev.findIndex(p => p.id === projectId);
+          if (idx !== -1) {
+            const next = [...prev];
+            next[idx] = { ...next[idx], ...projectData, };
+            return next;
+          }
+          return [...prev, {id: projectId, ...projectData}];
+        });
         const stableTotal = Math.round((activeTotal || 0) * 100);
         const currentStateHash = JSON.stringify({
           total: stableTotal,

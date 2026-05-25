@@ -121,6 +121,7 @@ interface Project {
   transferredAt?: string;
   bitrix24DealId?: string;
   setId?: string;
+  revisionComment?: string;
 }
 
 export const ProjectsView = ({
@@ -735,6 +736,13 @@ export const ProjectsView = ({
                           {project.status === "sent" ? "Оформлен" : "Передан"}
                         </span>
                       )}
+                      
+                      {project.status === "draft" && project.revisionComment && (
+                        <span className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider flex-shrink-0 bg-red-100 text-red-700">
+                          На исправлении
+                        </span>
+                      )}
+                      
                       {project.bitrix24DealId && bitrixBaseUrl && (
                         <button 
                           onClick={(e) => {
@@ -748,6 +756,11 @@ export const ProjectsView = ({
                         </button>
                       )}
                     </div>
+                    {project.status === "draft" && project.revisionComment && (
+                        <div className="text-[10px] text-red-600 font-medium mb-1 mt-1 bg-red-50 p-2 rounded-lg border border-red-100">
+                           <span className="font-bold">Комментарий руководителя:</span> {project.revisionComment}
+                        </div>
+                    )}
                     <div className="flex flex-col gap-1 mt-1">
                       <div className="flex items-center gap-2 text-[10px] text-gray-400">
                         <Calendar className="w-3 h-3" />
