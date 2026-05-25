@@ -310,6 +310,15 @@ export const ProjectSpecificationModal = ({
               </button>
             )}
 
+            {(project.status === 'sent') && userRole === 'supervisor' && (
+              <button 
+                onClick={() => setShowRevisionModal(true)}
+                className="flex-1 sm:flex-none px-8 py-3 bg-red-600 text-white font-bold rounded-xl hover:bg-red-700 shadow-lg shadow-red-200 transition-all flex items-center justify-center gap-2"
+              >
+                Вернуть на доработку
+              </button>
+            )}
+
             {userRole === 'manager' && project.status === 'draft' && (
               <button 
                 onClick={handleSendProject}
