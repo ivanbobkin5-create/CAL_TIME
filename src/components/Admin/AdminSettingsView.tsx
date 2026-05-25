@@ -264,23 +264,27 @@ export const AdminSettingsView = ({
           uid: uid,
           name: newEmployee.name,
           email: trimmedEmail,
-          role: newEmployee.accessLevel,
+          role: newEmployee.role,
+          accessLevel: newEmployee.accessLevel,
           companyId: companyId,
           createdAt: newEmployee.createdAt || new Date().toISOString(),
           bitrix24UserId: newEmployee.bitrix24UserId || null
         };
+        console.log("Saving employee:", employeeData);
 
         // 1. Create/Update in global 'users' collection (for auth and rules)
-        await setDoc(doc(db, 'users', uid), employeeData);
+        await setDoc(doc(db, 'users', uid), employeeData, { merge: true });
 
         // 2. Create/Update in company 'employees' collection (for listing in admin panel)
-        await setDoc(doc(db, 'companies', companyId, 'employees', uid), {
+        const employeeDataForCompany = {
           name: newEmployee.name,
           email: trimmedEmail,
           role: newEmployee.role, // This is the job title (e.g. "Менеджер проектов")
           accessLevel: newEmployee.accessLevel,
           bitrix24UserId: newEmployee.bitrix24UserId || null
-        });
+        };
+        console.log("Saving employee for company:", employeeDataForCompany);
+        await setDoc(doc(db, 'companies', companyId, 'employees', uid), employeeDataForCompany, { merge: true });
 
         setIsAdding(false);
         setEditingId(null);
