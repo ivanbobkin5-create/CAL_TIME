@@ -524,7 +524,7 @@ export const ProjectAnalyticsModal = ({
         </div>
 
         {/* Footer */}
-        <div className="px-8 py-4 border-t border-gray-100 bg-gray-50/50 flex justify-end gap-3">
+        <div className="px-8 py-4 border-t border-gray-100 bg-gray-50/50 flex justify-end gap-3 print:hidden">
           <button
             onClick={() => {
               window.print();
@@ -541,6 +541,30 @@ export const ProjectAnalyticsModal = ({
           </button>
         </div>
       </div>
+      <style
+        dangerouslySetInnerHTML={{
+          __html: `
+        @media print {
+          body * {
+            visibility: hidden;
+          }
+          #project-analytics-container, #project-analytics-container * {
+            visibility: visible;
+          }
+          #project-analytics-container {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: auto !important;
+            overflow: visible !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+        }
+      `,
+        }}
+      />
     </div>
   );
 };

@@ -271,6 +271,10 @@ export const AdminSettingsView = ({
           bitrix24UserId: newEmployee.bitrix24UserId || null
         };
         console.log("Saving employee:", employeeData);
+        console.error("DEBUG Saving employee:", {
+          newEmployee,
+          employeeData
+        });
 
         // 1. Create/Update in global 'users' collection (for auth and rules)
         await setDoc(doc(db, 'users', uid), employeeData, { merge: true });
@@ -628,7 +632,7 @@ export const AdminSettingsView = ({
                     </div>
                     <select
                       value={newEmployee.bitrix24UserId || ''}
-                      onChange={(e) => setNewEmployee({ ...newEmployee, bitrix24UserId: e.target.value })}
+                      onChange={(e) => setNewEmployee({ ...newEmployee, bitrix24UserId: e.target.value || null })}
                       className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-xl focus:ring-blue-500 focus:border-blue-500 sm:text-sm appearance-none bg-white"
                     >
                       <option value="">-- Не привязан --</option>

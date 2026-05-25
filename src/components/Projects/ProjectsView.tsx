@@ -15,6 +15,7 @@ import {
   Send,
   Link,
   TrendingUp,
+  MoreVertical,
 } from "lucide-react";
 // TimeWeb DB Setup
 const db = {};
@@ -122,6 +123,7 @@ interface Project {
   bitrix24DealId?: string;
   setId?: string;
   revisionComment?: string;
+  totalPrice?: number;
 }
 
 export const ProjectsView = ({
@@ -173,8 +175,10 @@ export const ProjectsView = ({
     new Set(),
   );
   const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
+  const [deletedProjects, setDeletedProjects] = useState<Set<string>>(new Set());
   const [selectedBitrixProject, setSelectedBitrixProject] = useState<Project | null>(null);
   const [selectedAnalyticsProject, setSelectedAnalyticsProject] = useState<Project | null>(null);
 
@@ -369,11 +373,17 @@ export const ProjectsView = ({
       "Удаление проекта",
       "Вы уверены, что хотите удалить этот проект?",
       async () => {
+        setDeletedProjects(prev => new Set(prev).add(projectId));
         try {
           await deleteDoc(
             doc(db, "companies", companyId, "projects", projectId),
           );
         } catch (error) {
+          setDeletedProjects(prev => {
+            const next = new Set(prev);
+            next.delete(projectId);
+            return next;
+          });
           handleDbError(
             error,
             OperationType.DELETE,
@@ -385,17 +395,20 @@ export const ProjectsView = ({
   };
 
   const myProjects = useMemo(() => {
-    if (!userRole || userRole === "admin") {
-      return projects;
-    }
-    if (userRole === "supervisor") {
-      return projects.filter(
-        (p) => p.createdBy === userId || p.status === "transferred"
-      );
-    }
-    // Employees, managers, and other roles can only see projects they created
-    return projects.filter((p) => p.createdBy === userId);
-  }, [projects, userRole, userId]);
+    const baseProjects = (() => {
+        if (!userRole || userRole === "admin") {
+        return projects;
+        }
+        if (userRole === "supervisor") {
+        return projects.filter(
+            (p) => p.createdBy === userId || p.status === "transferred"
+        );
+        }
+        // Employees, managers, and other roles can only see projects they created
+        return projects.filter((p) => p.createdBy === userId);
+    })();
+    return baseProjects.filter(p => !deletedProjects.has(p.id));
+  }, [projects, userRole, userId, deletedProjects]);
 
   const filteredProjects = myProjects.filter((p) => {
     const matchesSearch =
@@ -426,7 +439,7 @@ export const ProjectsView = ({
   });
 
   return (
-    <div className="p-4 md:p-8">
+    <div className="p-4 md:p-8" onClick={() => setOpenMenuId(null)}>
       <div className="max-w-6xl mx-auto">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
           <div className="flex items-center gap-3">
@@ -493,152 +506,53 @@ export const ProjectsView = ({
           </div>
         </div>
 
-        {activeFilter === "sets" ? (
-          loadingSets ? (
-            <div className="flex items-center justify-center h-64">
-              <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-            </div>
-          ) : filteredSets.length === 0 ? (
-            <div className="bg-white p-12 rounded-3xl border border-gray-100 text-center shadow-sm">
-              <Combine className="w-16 h-16 text-gray-200 mx-auto mb-4" />
-              <h2 className="text-xl font-bold text-gray-900 mb-2">
-                Комплектов не найдено
-              </h2>
-              <p className="text-gray-500">
-                В этой категории пока нет комплектов
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {filteredSets.map((set) => (
-                <div
-                  key={set.id}
-                  className="group bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl hover:border-indigo-200 transition-all relative overflow-hidden"
-                >
-                  <div className="absolute top-4 right-4 flex items-center gap-2">
-                    {/* Only selection icons if any */}
-                  </div>
-
-                  <div className="flex items-start gap-4 mb-4">
-                    <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white">
-                      <Combine className="w-6 h-6" />
-                    </div>
-                    <div className="flex-1 min-w-0 pr-24">
-                      <div className="flex items-center gap-2 mb-1 flex-wrap">
-                        <h3 className="font-bold text-gray-900 truncate group-hover:text-indigo-600 transition-colors min-w-0">
-                          {set.name || "Комплект"}
-                        </h3>
-                        <span className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider bg-indigo-100 text-indigo-700 flex-shrink-0">
-                          {set.projectIds?.length || 0} шт
-                        </span>
-                        {set.bitrix24DealId && bitrixBaseUrl && (
-                          <button 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              window.open(`${bitrixBaseUrl}/crm/deal/details/${set.bitrix24DealId}/`, "_blank");
-                            }}
-                            className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider flex-shrink-0 bg-blue-100 text-blue-700 flex items-center gap-1 hover:bg-blue-200 transition-colors cursor-pointer"
-                          >
-                            <Link className="w-2.5 h-2.5" />
-                            CRM
-                          </button>
-                        )}
+        {activeFilter === "all" || activeFilter === "sets" ? (
+          <div className="mb-12">
+            <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+              <Combine className="w-6 h-6 text-indigo-600" />
+              Комплекты
+            </h2>
+            {loadingSets ? (
+              <div className="flex items-center justify-center h-32">
+                <div className="w-6 h-6 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : filteredSets.length === 0 ? (
+              <div className="bg-white p-6 rounded-3xl border border-gray-100 text-center shadow-sm">
+                <p className="text-gray-500 text-sm">Комплектов пока нет</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredSets.map((set) => (
+                  <div
+                    key={set.id}
+                    className="group bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl hover:border-indigo-200 transition-all relative overflow-hidden"
+                  >
+                    <div className="flex items-start gap-4 mb-4">
+                      <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white">
+                        <Combine className="w-6 h-6" />
                       </div>
-                      <div className="text-sm text-gray-500">
-                        Сумма: {(set.totalPrice || 0).toLocaleString()} ₽
+                      <div className="flex-1 min-w-0 pr-24">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
+                          <h3 className="font-bold text-gray-900 truncate group-hover:text-indigo-600 transition-colors min-w-0">
+                            {set.name || "Комплект"}
+                          </h3>
+                          <span className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider bg-indigo-100 text-indigo-700 flex-shrink-0">
+                            {set.projectIds?.length || 0} шт
+                          </span>
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          Сумма: {(set.totalPrice || 0).toLocaleString()} ₽
+                        </div>
                       </div>
                     </div>
                   </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : null}
 
-                  <div className="flex items-center gap-2 mt-4 pt-4 border-t border-gray-50">
-                    {set.status !== "transferred" && (
-                      <button
-                        onClick={(e) => handleTransferSet(e, set)}
-                        title="Передать руководителю"
-                        className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                      >
-                        <Send className="w-4 h-4" />
-                      </button>
-                    )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (!companyId) return;
-                        const newSelection = new Set<string>(set.projectIds || []);
-                        setSelectedProjectIds(newSelection);
-                        setIsSelectionMode(true);
-                        setActiveFilter("all");
-                      }}
-                      title="Дособрать комплект"
-                      className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                    >
-                      <Plus className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const setProjects = projects.filter((p) => (set.projectIds || []).includes(p.id));
-                        if (onCreateSet && setProjects.length > 0) onCreateSet(setProjects, set);
-                      }}
-                      className="p-1.5 text-green-600 hover:bg-green-50 rounded-lg transition-all flex items-center gap-1 text-[10px] font-bold"
-                    >
-                      <FileText className="w-4 h-4" />
-                      Спецификация
-                    </button>
-                    {(userRole === "manager" || userRole === "admin") && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedBitrixProject({
-                            id: set.id,
-                            name: set.name || "Комплект",
-                            contractNumber: set.contractNumber,
-                            contractDate: set.contractDate,
-                            readyDate: set.readyDate,
-                            totalPrice: set.totalPrice,
-                            bitrix24DealId: set.bitrix24DealId || null,
-                            isSet: true,
-                            projectIds: set.projectIds,
-                            summary: set.summary,
-                            data: {
-                              contractNumber: set.contractNumber,
-                              contractDate: set.contractDate,
-                              readyDate: set.readyDate,
-                              totalSum: set.totalPrice,
-                              summary: set.summary,
-                            }
-                          } as any);
-                        }}
-                        className="p-1.5 text-orange-600 hover:bg-orange-50 rounded-lg transition-all flex items-center gap-1 text-[10px] font-bold"
-                        title="Интеграция с Bitrix24"
-                      >
-                        <Send className="w-4 h-4" />
-                        Bitrix24
-                      </button>
-                    )}
-                    <div className="flex-1" />
-                    <button
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        if (!companyId) return;
-                        showConfirm("Удаление", "Удалить комплект?", async () => {
-                          try {
-                            await deleteDoc(doc(db, "companies", companyId, "sets", set.id));
-                          } catch (error) {
-                            handleDbError(error, OperationType.DELETE, `companies/${companyId}/sets/${set.id}`);
-                          }
-                        });
-                      }}
-                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )
-        ) : loading ? (
+        {activeFilter === "sets" ? null : loading ? (
           <div className="flex items-center justify-center h-64">
             <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
           </div>
@@ -651,221 +565,152 @@ export const ProjectsView = ({
             <p className="text-gray-500">В этой категории пока нет проектов</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredProjects.map((project) => (
-              <div
-                key={project.id}
-                onClick={() =>
-                  isSelectionMode
-                    ? toggleProjectSelection({} as any, project.id)
-                    : onLoadProject(project)
-                }
-                className={cn(
-                  "group bg-white p-6 rounded-3xl border transition-all cursor-pointer relative overflow-hidden",
-                  selectedProjectIds.has(project.id)
-                    ? "border-indigo-500 ring-2 ring-indigo-500/20 shadow-lg"
-                    : "border-gray-100 shadow-sm hover:shadow-xl hover:border-blue-200",
-                )}
-              >
-                  <div className="absolute top-4 right-4 flex items-center gap-2">
-                    <button
-                      onClick={(e) => toggleProjectSelection(e, project.id)}
-                      className={cn(
-                        "w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all",
-                        selectedProjectIds.has(project.id)
-                          ? "bg-indigo-600 border-indigo-600 text-white"
-                          : "bg-white border-gray-200 text-transparent hover:border-indigo-400 opacity-0 group-hover:opacity-100",
-                      )}
-                    >
-                      <CheckCircle2 className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  <div className="flex items-start gap-4 mb-4">
+          <div>
+             <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+              <FileText className="w-6 h-6 text-blue-600" />
+              Проекты
+            </h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {filteredProjects.map((project) => (
+                  /* ... project card content ...*/
                   <div
+                    key={project.id}
+                    onClick={() =>
+                      isSelectionMode
+                        ? toggleProjectSelection({} as any, project.id)
+                        : onLoadProject(project)
+                    }
                     className={cn(
-                      "w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all",
-                      project.status === "sent"
-                        ? "bg-orange-50 text-orange-600"
-                        : project.status === "transferred"
-                          ? "bg-green-50 text-green-600"
-                          : "bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white",
+                      "group bg-white p-5 rounded-3xl border transition-all cursor-pointer relative",
+                      selectedProjectIds.has(project.id)
+                        ? "border-indigo-500 ring-2 ring-indigo-500/20 shadow-lg"
+                        : "border-gray-100 shadow-sm hover:shadow-xl hover:border-blue-200",
                     )}
                   >
-                    <FileText className="w-6 h-6" />
-                  </div>
-                  <div className="flex-1 min-w-0 pr-16">
-                    <div className="flex items-center gap-2 mb-1">
-                      {editingProjectId === project.id ? (
-                        <form
-                          onSubmit={handleRenameSubmit}
-                          className="flex-1"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <input
-                            type="text"
-                            autoFocus
-                            value={editingName}
-                            onChange={(e) => setEditingName(e.target.value)}
-                            onBlur={() => handleRenameSubmit()}
-                            className="w-full px-2 py-1 text-sm font-bold border border-blue-500 rounded focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-                          />
-                        </form>
-                      ) : (
-                        <h3
-                          className="font-bold text-gray-900 truncate group-hover:text-blue-600 transition-colors cursor-text min-w-0"
-                          title="Нажмите, чтобы переименовать"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setEditingProjectId(project.id);
-                            setEditingName(project.name);
-                          }}
-                        >
-                          {project.name}
-                        </h3>
-                      )}
-                      {project.status && project.status !== "draft" && (
-                        <span
-                          className={cn(
-                            "px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider flex-shrink-0",
-                            project.status === "sent"
-                              ? "bg-orange-100 text-orange-700"
-                              : "bg-green-100 text-green-700",
-                          )}
-                        >
-                          {project.status === "sent" ? "Оформлен" : "Передан"}
-                        </span>
-                      )}
-                      
-                      {project.status === "draft" && project.revisionComment && (
-                        <span className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider flex-shrink-0 bg-red-100 text-red-700">
-                          На исправлении
-                        </span>
-                      )}
-                      
-                      {project.bitrix24DealId && bitrixBaseUrl && (
-                        <button 
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            window.open(`${bitrixBaseUrl}/crm/deal/details/${project.bitrix24DealId}/`, "_blank");
-                          }}
-                          className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider flex-shrink-0 bg-blue-100 text-blue-700 flex items-center gap-1 hover:bg-blue-200 transition-colors cursor-pointer"
-                        >
-                          <Link className="w-2 h-2" />
-                          CRM
-                        </button>
-                      )}
-                    </div>
-                    {project.status === "draft" && project.revisionComment && (
-                        <div className="text-[10px] text-red-600 font-medium mb-1 mt-1 bg-red-50 p-2 rounded-lg border border-red-100">
-                           <span className="font-bold">Комментарий руководителя:</span> {project.revisionComment}
+                      {/* Row 1: Header */}
+                      <div className="flex items-start gap-4 mb-4">
+                        <div className={cn(
+                          "w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all",
+                          project.status === "sent" ? "bg-orange-50 text-orange-600" : project.status === "transferred" ? "bg-green-50 text-green-600" : "bg-blue-50 text-blue-600"
+                        )}>
+                          <FileText className="w-6 h-6" />
                         </div>
-                    )}
-                    <div className="flex flex-col gap-1 mt-1">
-                      <div className="flex items-center gap-2 text-[10px] text-gray-400">
-                        <Calendar className="w-3 h-3" />
-                        {new Date(project.createdAt).toLocaleDateString("ru-RU", {
-                          day: "numeric",
-                          month: "short",
-                          year: "numeric",
-                        })}
+                        <div className="flex-1 min-w-0">
+                            <h3 className="font-bold text-gray-900 truncate text-base mb-1">{project.name}</h3>
+                            <div className="flex items-center gap-1.5 text-[11px] text-gray-400">
+                                <Calendar className="w-3 h-3" />
+                                {(() => {
+                                    if (!project.createdAt) return "Нет даты";
+                                    const createdDate = new Date(project.createdAt);
+                                    return !isNaN(createdDate.getTime()) ? createdDate.toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" }) : `Дата: ${project.createdAt}`;
+                                })()}
+                            </div>
+                        </div>
+                        {/* Actions Row */}
+                        <div className="flex flex-col items-center gap-2">
+                            <button
+                                onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === project.id ? null : project.id); }}
+                                className="p-1 text-gray-400 hover:text-gray-900 rounded-lg"
+                            >
+                                <MoreVertical className="w-5 h-5" />
+                            </button>
+                            <div 
+                                onClick={(e) => toggleProjectSelection(e, project.id)}
+                                className={cn(
+                                    "w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all",
+                                    selectedProjectIds.has(project.id) ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white border-gray-200"
+                                )}>
+                                {selectedProjectIds.has(project.id) && <CheckCircle2 className="w-4 h-4" />}
+                            </div>
+                        </div>
                       </div>
-                      {(!project.status || project.status === "draft") && (
-                        <div className="flex items-center gap-2 text-[10px] text-orange-500 font-medium">
-                          {(() => {
-                            const createdDate = new Date(project.createdAt);
-                            if (isNaN(createdDate.getTime())) return "Дата неверна";
-                            const daysPassed = Math.floor((Date.now() - createdDate.getTime()) / (1000 * 60 * 60 * 24));
-                            const daysLeft = Math.max(0, 90 - daysPassed);
-                            return `Срок хранения: ${daysLeft} дней`;
-                          })()}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
 
-                <div className="flex flex-col pt-3 border-t border-gray-50 mt-auto gap-2.5">
-                  <div className="flex items-center justify-between w-full min-w-0">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="w-6 h-6 bg-gray-100 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold text-gray-500">
-                        {project.createdByName?.charAt(0) || "U"}
+                      {/* Open menu */}
+                        {openMenuId === project.id && (
+                            <div className="absolute top-14 right-4 w-48 bg-white rounded-xl shadow-2xl border border-gray-100 py-1 z-[100]" onClick={(e) => e.stopPropagation()}>
+                                {isSelectionMode && (
+                                    <button onClick={(e) => { handleCreateSet(); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-bold text-indigo-600 flex items-center gap-2 border-b border-gray-50">
+                                        <Combine className="w-4 h-4" /> Собрать комплект
+                                    </button>
+                                )}
+                                <button onClick={(e) => { e.stopPropagation(); onLoadProject(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 bg-blue-50 text-blue-600 text-sm font-bold flex items-center gap-2">
+                                    <ArrowRight className="w-4 h-4" /> Открыть
+                                </button>
+                                {(userRole === "manager" || userRole === "admin") && (
+                                    <button onClick={(e) => { onOpenSpecification(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-blue-600 flex items-center gap-2">
+                                        <ClipboardList className="w-4 h-4" /> {project.status === "sent" || project.status === "transferred" ? "Спецификация" : "Оформить"}
+                                    </button>
+                                )}
+                                {project.status === "sent" && (
+                                    <button onClick={(e) => { handleTransfer(e, project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-blue-600 flex items-center gap-2">
+                                        <Send className="w-4 h-4" /> Передать руководителю
+                                    </button>
+                                )}
+                                {(userRole === "manager" || userRole === "admin") && (
+                                    <button onClick={(e) => { setSelectedBitrixProject(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-orange-600 flex items-center gap-2">
+                                        <Send className="w-4 h-4" /> Bitrix24
+                                    </button>
+                                )}
+                                {(userRole === "manager" || userRole === "admin") && (
+                                    <button onClick={(e) => { setSelectedAnalyticsProject(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-indigo-600 flex items-center gap-2">
+                                        <TrendingUp className="w-4 h-4" /> Анализ
+                                    </button>
+                                )}
+                                <button onClick={(e) => { handleDelete(e, project.id); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-red-600 flex items-center gap-2">
+                                    <Trash2 className="w-4 h-4" /> Удалить
+                                </button>
+                            </div>
+                        )}
+                      
+                      {/* Row 2: Bottom Summary */}
+                      <div className="flex items-center justify-between pt-4 border-t border-gray-50 mt-auto">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-gray-100 rounded-full flex-shrink-0 flex items-center justify-center text-sm font-bold text-gray-500 overflow-hidden">
+                                {project.data?.createdByPhoto ? (
+                                    <img src={project.data.createdByPhoto} alt={project.createdByName} className="w-full h-full object-cover" />
+                                ) : (
+                                    project.createdByName?.charAt(0) || "U"
+                                )}
+                            </div>
+                            <div className="flex flex-col">
+                                <span className="text-[10px] text-gray-500 font-bold uppercase">Менеджер</span>
+                                <span className="text-xs text-gray-900 font-bold truncate max-w-[120px]">
+                                    {(() => {
+                                        const name = project.createdByName || "Пользователь";
+                                        if (name.includes('@')) {
+                                            const namePart = name.split('@')[0];
+                                            return namePart.charAt(0).toUpperCase() + namePart.slice(1);
+                                        }
+                                        return name;
+                                    })()}
+                                </span>
+                            </div>
+                        </div>
+                        
+                        <div className="flex flex-col items-end gap-2">
+                            <div className="flex items-center gap-1.5">
+                                {project.status && project.status !== "draft" && (
+                                    <span className={cn(
+                                        "px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider",
+                                        project.status === "sent" ? "bg-orange-100 text-orange-700" : "bg-green-100 text-green-700"
+                                    )}>
+                                    {project.status === "sent" ? "Оформлен" : "Передан"}
+                                    </span>
+                                )}
+                                {project.bitrix24DealId && (
+                                    <div className="px-2 py-1 rounded-lg text-[10px] bg-blue-100 text-blue-700 font-black flex items-center gap-1">
+                                        CRM
+                                    </div>
+                                )}
+                            </div>
+                            <span className="text-xl font-extrabold text-slate-800 tracking-tight">
+                                {(project.totalPrice || (project.data?.results ? Object.values(project.data.results).reduce((acc: number, r: any) => acc + (r.totalPrice || 0), 0) : 0)).toLocaleString()} ₽
+                            </span>
+                        </div>
                       </div>
-                      <span className="text-[10px] text-gray-600 font-bold truncate">
-                        Менеджер: {project.createdByName || "Пользователь"}
-                      </span>
-                    </div>
                   </div>
-                  <div className="flex items-center justify-end gap-1 w-full flex-wrap">
-                    {project.status === "sent" && (
-                      <button
-                        onClick={(e) => handleTransfer(e, project)}
-                        title="Передать руководителю"
-                        className="p-1 px-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                      >
-                        <Send className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                    {(userRole === "manager" || userRole === "admin") && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedBitrixProject(project);
-                      }}
-                      className="p-1 px-1.5 text-orange-600 hover:bg-orange-50 rounded-lg transition-all"
-                      title="Bitrix24"
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  {(userRole === "manager" || userRole === "admin") && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedAnalyticsProject(project);
-                        }}
-                        className="p-1 px-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all flex items-center gap-1 text-[10px] font-bold"
-                        title="Бизнес-аналитика сделки"
-                      >
-                        <TrendingUp className="w-3.5 h-3.5" />
-                        Анализ
-                      </button>
-                    )}
-                  {(userRole === "manager" || userRole === "admin") && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenSpecification(project);
-                        }}
-                        className="p-1 px-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-all flex items-center gap-1 text-[10px] font-bold"
-                      >
-                        <ClipboardList className="w-3.5 h-3.5" />
-                        {project.status === "sent" ||
-                        project.status === "transferred"
-                          ? "Спецификация"
-                          : "Оформить"}
-                      </button>
-                    )}
-                    <button
-                      onClick={(e) => handleDelete(e, project.id)}
-                      className="p-1 px-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        // Normal open behavior: load the project into the editor
-                        onLoadProject(project);
-                      }}
-                      className="flex items-center gap-1 px-2 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-bold hover:bg-blue-100 transition-all group/open ml-1"
-                    >
-                      Открыть <ArrowRight className="w-3 h-3 group-hover/open:translate-x-0.5 transition-transform" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
+                ))}
+            </div>
           </div>
         )}
       </div>

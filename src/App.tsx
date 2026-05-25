@@ -752,6 +752,7 @@ interface OwnProductionConfig {
   customFacades: string[];
   address: string;
   photos: string[];
+  tightNestingThreshold?: number;
   facadeSettings?: FacadeSettings;
   enamelSettings?: FacadeSettings;
   extraFacadeTypes?: ExtraFacadeType[];
@@ -989,6 +990,27 @@ const ProductionView = ({
               <h3 className="text-lg font-bold text-gray-800 mb-4">
                 Данные производства
               </h3>
+
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-2">
+                  Сигнализировать менеджеру о плотном раскрое в случае ...%
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  placeholder="80"
+                  value={ownProductionConfig.tightNestingThreshold || ""}
+                  onChange={(e) => {
+                    const val = parseInt(e.target.value) || 0;
+                    setOwnProductionConfig((prev) => ({
+                      ...prev,
+                      tightNestingThreshold: val,
+                    }));
+                  }}
+                  className="w-32 px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
 
               <div className="space-y-6">
                 <div>
@@ -4018,6 +4040,8 @@ const CalculatorView = ({
   setIsGluingMode,
   selectedForGlue,
   setSelectedForGlue,
+  spareSheets,
+  toggleSpareSheet,
 }: {
   handleFileUpload: (event: React.ChangeEvent<HTMLInputElement>) => void;
   handleCuttingTypeChange: (type: "nesting" | "saw") => void;
@@ -4096,6 +4120,8 @@ const CalculatorView = ({
   setIsGluingMode: (val: boolean) => void;
   selectedForGlue: string[];
   setSelectedForGlue: React.Dispatch<React.SetStateAction<string[]>>;
+  spareSheets: Record<string, boolean>;
+  toggleSpareSheet: (materialKey: string) => void;
 }) => {
   return (
     <div className="p-4 md:p-8">
@@ -5485,17 +5511,33 @@ const CalculatorView = ({
                       </div>
                       <div className="flex gap-2">
                         {item.type !== "ХДФ" && item.type !== "ДВП" && item.type !== "Фасад" && (
-                          <button
-                            onClick={() => toggleEdgeToEdge(key)}
-                            className={cn(
-                              "px-3 py-1.5 rounded-lg text-sm font-medium transition-all",
-                              edgeToEdge[key]
-                                ? "bg-green-600 text-white shadow-md shadow-green-100"
-                                : "bg-gray-100 text-gray-600 hover:bg-gray-200",
-                            )}
-                          >
-                            Кромка в круг
-                          </button>
+                          <div className="flex gap-2">
+                            <button
+                                onClick={() => toggleSpareSheet(key)}
+                                className={cn(
+                                    "px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1",
+                                    spareSheets[key]
+                                      ? "bg-amber-600 text-white shadow-md shadow-amber-100"
+                                      : "bg-gray-100 text-gray-600 hover:bg-gray-200",
+                                    (ownProductionConfig.tightNestingThreshold && /* need to check utilization */ 0 > (ownProductionConfig.tightNestingThreshold || 0)) // Placeholder condition for blinking
+                                      ? "animate-pulse"
+                                      : ""
+                                )}
+                            >
+                                <Plus className="w-4 h-4" /> Запасной лист
+                            </button>
+                            <button
+                              onClick={() => toggleEdgeToEdge(key)}
+                              className={cn(
+                                "px-3 py-1.5 rounded-lg text-sm font-medium transition-all",
+                                edgeToEdge[key]
+                                  ? "bg-green-600 text-white shadow-md shadow-green-100"
+                                  : "bg-gray-100 text-gray-600 hover:bg-gray-200",
+                              )}
+                            >
+                              Кромка в круг
+                            </button>
+                          </div>
                         )}
                         <button
                           onClick={() => toggleExpanded(key)}
@@ -6407,6 +6449,7 @@ const SummaryView = ({
   companyType,
   mergedMaterials,
   selectedForGlue,
+  spareSheets,
   furnitureType,
   setFurnitureType,
   checklistRefused,
@@ -6819,6 +6862,24 @@ const SummaryView = ({
             key: key,
             isManual: isManualMaterial,
           });
+
+          // Add spare sheet row
+          if (spareSheets[key]) {
+            rows.push({
+              type: "edge",
+              name: `${item.name} (+Запас)`,
+              sub: "Запасной лист",
+              decor: decor || "Не указан",
+              qty: "1 л.",
+              price: price, // No markup
+              rawPrice: price,
+              priceKey: priceKey,
+              total: Math.round(price), // No markup
+              coef: 1, // No markup
+              key: key,
+              isManual: isManualMaterial,
+            });
+          }
 
           // Add worktop specific service rows right after the material
           rows.push(...worktopRows);
@@ -15309,6 +15370,11 @@ export default function App() {
   const [mergedMaterials, setMergedMaterials] = useState<
     Record<string, string>
   >({});
+  const [spareSheets, setSpareSheets] = useState<Record<string, boolean>>({});
+
+  const toggleSpareSheet = (materialKey: string) => {
+    setSpareSheets((prev) => ({ ...prev, [materialKey]: !prev[materialKey] }));
+  };
   const [calcMode, setCalcMode] = useState<"sheet" | "area">("sheet");
   const [coefficients, setCoefficients] = useState({
     retail: {
@@ -18137,6 +18203,21 @@ export default function App() {
 
             <nav className="flex-1 px-3 py-3 space-y-1">
               <button
+                onClick={() => setActiveTab("promotions")}
+                className={cn(
+                  "w-full flex items-center rounded-lg transition-all",
+                  isSidebarOpen ? "gap-3 px-3 py-2.5" : "justify-center py-2.5",
+                  activeTab === "promotions"
+                    ? "bg-blue-600 text-white shadow-md shadow-blue-200"
+                    : "text-gray-600 hover:bg-gray-100",
+                )}
+              >
+                <Percent className="w-5 h-5 flex-shrink-0" />
+                {isSidebarOpen && (
+                  <span className="text-sm font-medium">Акции</span>
+                )}
+              </button>
+              <button
                 onClick={() => setActiveTab("projects")}
                 className={cn(
                   "w-full flex items-center rounded-lg transition-all mb-2",
@@ -18274,21 +18355,6 @@ export default function App() {
                       <span className="text-sm font-medium truncate">
                         Доставка и Сборка
                       </span>
-                    )}
-                  </button>
-                  <button
-                    onClick={() => setActiveTab("promotions")}
-                    className={cn(
-                      "w-full flex items-center rounded-lg transition-all",
-                      isSidebarOpen ? "gap-3 px-3 py-2.5" : "justify-center py-2.5",
-                      activeTab === "promotions"
-                        ? "bg-blue-600 text-white shadow-md shadow-blue-200"
-                        : "text-gray-600 hover:bg-gray-100",
-                    )}
-                  >
-                    <Percent className="w-5 h-5 flex-shrink-0" />
-                    {isSidebarOpen && (
-                      <span className="text-sm font-medium">Акции</span>
                     )}
                   </button>
                 </div>
@@ -18503,6 +18569,8 @@ export default function App() {
               setIsGluingMode={setIsGluingMode}
               selectedForGlue={selectedForGlue}
               setSelectedForGlue={setSelectedForGlue}
+              spareSheets={spareSheets}
+              toggleSpareSheet={toggleSpareSheet}
             />
           )}
 
@@ -18558,6 +18626,7 @@ export default function App() {
               setPrices={setPrices}
               mergedMaterials={mergedMaterials}
               selectedForGlue={selectedForGlue}
+              spareSheets={spareSheets}
               furnitureType={furnitureType}
               setFurnitureType={setFurnitureType}
               checklistRefused={checklistRefused}

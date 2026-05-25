@@ -347,6 +347,13 @@ export const PromotionsView = ({
     }
   };
 
+  const formatDate = (dateString: string) => {
+    if (!dateString) return "";
+    const parts = dateString.split("-");
+    if (parts.length !== 3) return dateString;
+    return `${parts[2]}.${parts[1]}.${parts[0]}`;
+  };
+
   const isProductionCompany = companyType === 'Производство' || companyType === 'Мебельное производство';
   
   // Filter products by selected category
@@ -1034,7 +1041,7 @@ export const PromotionsView = ({
                         <h3 className="font-bold text-gray-900 text-base leading-tight mb-1">{promo.name}</h3>
                         <p className="text-[11px] text-gray-400 font-bold flex items-center gap-1">
                           <Calendar className="w-3.5 h-3.5 text-gray-400" />
-                          Сроки: {promo.startDate} — {promo.endDate}
+                          Сроки: {formatDate(promo.startDate)} — {formatDate(promo.endDate)}
                         </p>
                       </div>
 
