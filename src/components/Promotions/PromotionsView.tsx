@@ -351,7 +351,8 @@ export const PromotionsView = ({
     if (!dateString) return "";
     const parts = dateString.split("-");
     if (parts.length !== 3) return dateString;
-    return `${parts[2]}.${parts[1]}.${parts[0]}`;
+    const shortYear = parts[0].slice(-2);
+    return `${parts[2]}.${parts[1]}.${shortYear}`;
   };
 
   const isProductionCompany = companyType === 'Производство' || companyType === 'Мебельное производство';

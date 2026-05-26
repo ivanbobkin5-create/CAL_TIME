@@ -1,0 +1,124 @@
+8643:  companyData,
+8709:  companyData: any;
+8797:    const url = companyData?.bitrix24?.webhookUrl;
+8801:  }, [activeSubTab, companyData?.bitrix24?.webhookUrl]);
+8804:    const url = companyData?.bitrix24?.webhookUrl;
+8805:    const catId = companyData?.bitrix24?.categoryId || "0";
+8809:  }, [activeSubTab, companyData?.bitrix24?.webhookUrl, companyData?.bitrix24?.categoryId]);
+8827:    companyData,
+10684:                      value={companyData?.bitrix24?.webhookUrl || ""}
+10697:                        const url = companyData?.bitrix24?.webhookUrl;
+10712:                            const catId = companyData?.bitrix24?.categoryId || "0";
+10736:                          value={companyData?.bitrix24?.categoryId || "0"}
+10746:                            const url = companyData?.bitrix24?.webhookUrl;
+10763:                          value={companyData?.bitrix24?.categoryId || ""}
+10784:                          value={companyData?.bitrix24?.stageId || ""}
+10807:                          value={companyData?.bitrix24?.stageId || ""}
+10884:                                  companyData?.bitrix24?.fieldMappings?.[
+10890:                                    ...(companyData?.bitrix24?.fieldMappings ||
+10921:              companyType={companyData?.type}
+12298:    if (!companyData?.id) return;
+12301:        doc(db, "companies", companyData.id, "products", productId.toString()),
+12308:        `companies/${companyData.id}/products/${productId}`,
+14929:  const [companyData, setCompanyData] = useState<any>(null);
+15357:    if (!companyData?.id || !userData?.uid || oldPrice === newPrice) return;
+15359:      companyData.id,
+15366:  }, [companyData?.id, userData?.uid, userData?.displayName, userData?.email]);
+15371:    if (companyData?.type) {
+15372:      if (companyData.type === "Мебельное производство") {
+15378:  }, [companyData?.type]);
+15641:    if (!companyData?.id) return;
+15647:      : query(collection(db, "companies"), where("manufacturerId", "==", companyData.id));
+15656:        (c) => c.manufacturerId === companyData.id,
+15661:  }, [companyData?.id, isAppAdmin]);
+15781:    if (!isAuthenticated || !companyData?.id) return;
+15783:    const companyId = companyData.id;
+15806:    if (companyData?.manufacturerId) {
+15808:        collection(db, "companies", companyData.manufacturerId, "products"),
+15821:            `companies/${companyData.manufacturerId}/products`,
+16091:    companyData?.id,
+16093:    companyData?.manufacturerId,
+16098:    if (!isAuthenticated || !companyData?.id || !userData?.uid) return;
+16105:        collection(db, "companies", companyData.id, "projects"),
+16110:        collection(db, "companies", companyData.id, "sets"),
+16116:        collection(db, "companies", companyData.id, "projects"),
+16122:        collection(db, "companies", companyData.id, "sets"),
+16129:        collection(db, "companies", companyData.id, "projects"),
+16135:        collection(db, "companies", companyData.id, "sets"),
+16164:  }, [isAuthenticated, companyData?.id, userData?.uid, userRole]);
+16240:    if (!companyData?.id || !userData?.uid) return;
+16312:        doc(db, "companies", companyData.id, "projects", projectId),
+16359:        `companies/${companyData.id}/projects`,
+16367:    if (!ownProductionConfig || !companyData?.id) return;
+16381:  }, [ownProductionConfig, companyData?.id]);
+16427:    if (!companyData?.id || !userData?.uid) return;
+16438:          const projectDocRef = doc(db, "companies", companyData.id, "projects", p.id);
+16495:          const setDocRef = doc(db, "companies", companyData.id, "sets", setId);
+16529:            const projectDocRef = doc(db, "companies", companyData.id, "projects", pId);
+16599:        `companies/${companyData.id}/sets`,
+16655:    console.log("saveProduct called, companyData?.id:", companyData?.id, "userData?.uid:", userData?.uid, "product:", product);
+16656:    if (!companyData?.id || !userData?.uid) {
+16657:      console.log("saveProduct failed: missing companyData or userData");
+16680:        doc(db, "companies", companyData.id, "products", pId),
+16698:        `companies/${companyData.id}/products`,
+16704:    if (!companyData?.id || userRole !== "admin") return;
+16707:        doc(db, "companies", companyData.id, "settings", "categories"),
+16717:        `companies/${companyData.id}/settings/categories`,
+16723:    if (!companyData?.id) return;
+16727:        doc(db, "companies", companyData.id, "products", productId.toString()),
+16732:            `companies/${companyData.id}/products/${productId}`,
+16740:        `companies/${companyData.id}/products/${productId}`,
+16815:    if (!companyData?.id) return;
+16819:        companyData?.type === "Мебельное производство";
+16823:        doc(db, "companies", companyData.id, "settings", "production"),
+16829:        doc(db, "companies", companyData.id),
+16844:        `companies/${companyData.id}/settings/production`,
+16888:    if (!companyData?.id) return;
+16890:    console.log("DEBUG: Current companyData.bitrix24:", companyData.bitrix24);
+16893:        doc(db, "companies", companyData.id, "settings", "general"),
+16912:        doc(db, "companies", companyData.id, "settings", "prices"),
+16922:        companyData.type === "Мебельное производство" ||
+16926:          doc(db, "companies", companyData.id, "settings", "production"),
+16932:      console.log("DEBUG: Syncing company doc with bitrix24:", companyData.bitrix24);
+16934:        doc(db, "companies", companyData.id),
+16936:          name: companyInfo?.name || companyData.name || "",
+16937:          phone: companyInfo?.phone || companyData.phone || "",
+16938:          city: companyInfo?.city || companyData.city || "",
+16939:          bitrix24: companyData.bitrix24 || null,
+16951:        `companies/${companyData.id}/settings/general`,
+16957:    if (!companyData?.id) return;
+16960:        doc(db, "companies", companyData.id, "settings", "promotions"),
+17420:    if (productionFormat === "contract" && companyData?.manufacturerId) {
+17425:          companyData.manufacturerId,
+17433:              companyData.id,
+17439:              data.salonCoefficients[companyData.id]
+17442:                data.salonCoefficients[companyData.id],
+17455:            `companies/${companyData?.manufacturerId}/settings/production`,
+17462:  }, [productionFormat, companyData?.manufacturerId, companyData?.id]);
+17506:      companyData?.type === "Мебельное производство"
+17549:    companyData?.type,
+17577:          companyData?.type === "Мебельное производство"
+18106:              {companyData && (
+18155:                      (c) => c.id === companyData?.manufacturerId,
+18245:                  {companyData?.name && (
+18247:                      {companyData.name}
+18460:                      {companyData?.type === "Салон"
+18462:                        : companyData?.type === "Дизайнер"
+18683:              isProduction={companyData?.type === "Мебельное производство"}
+18688:              companyType={companyData?.type}
+18772:              companyId={companyData?.id}
+18804:              companyType={companyData?.type}
+18805:              manufacturerId={companyData?.manufacturerId}
+18806:              companyData={companyData}
+18830:              companyType={companyData?.type}
+18905:                companyData?.type === "Мебельное производство" ||
+18923:          ) : historyMaterialId && companyData ? (
+18926:              companyId={companyData.id}
+18937:              companyType={companyData?.type}
+18938:              companyId={companyData?.id}
+18954:              companyId={companyData?.id}
+18987:              companyType={companyData?.type}
+18997:              companyData={companyData}
+19022:              companyType={companyData?.type}
+19056:              companyId={companyData?.id || ""}
+19057:              manufacturerId={companyData?.manufacturerId}

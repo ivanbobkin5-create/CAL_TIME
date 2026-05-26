@@ -38,6 +38,11 @@ import { AdminProductsApprovalView } from "./components/Admin/AdminProductsAppro
 import { AdminSettingsView } from "./components/Admin/AdminSettingsView";
 import { AppAdminView } from "./components/Admin/AppAdminView";
 import { LandingPage } from "./components/Landing/LandingPage";
+import { Supplier, ProcurementSettings } from "./types";
+import { SuppliersSettings } from "./components/Admin/SuppliersSettings";
+import { ProcurementView } from "./components/Procurement/ProcurementView";
+import { ArrivalsView } from "./components/Procurement/ArrivalsView";
+import { ProcurementPlanView } from "./components/Procurement/ProcurementPlanView";
 import { ProjectsView } from "./components/Projects/ProjectsView";
 import { ProjectSpecificationView } from "./components/Projects/ProjectSpecificationView";
 import { ProjectSetCheckoutModal } from "./components/Projects/ProjectSetCheckoutModal";
@@ -6514,6 +6519,9 @@ const SummaryView = ({
   companyType?: string;
   mergedMaterials: Record<string, string>;
   selectedForGlue: string[];
+  spareSheets: Record<string, boolean>;
+  setSpareSheets: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  toggleSpareSheet: (id: string) => void;
   furnitureType: string;
   setFurnitureType: (type: string) => void;
   checklistRefused: Record<string, boolean>;
@@ -7134,7 +7142,7 @@ const SummaryView = ({
   const kitCost = totalLdspSheets * currentHardwareKitPriceLocal;
   if (totalLdspSheets > 0) {
     summaryRows.push({
-      type: "hardware",
+      type: "material",
       name: "Комплект метизов",
       sub: `На ${totalLdspSheets} л. ЛДСП`,
       decor: "-",
@@ -8657,11 +8665,24 @@ const SettingsView = ({
   promotions,
   savePromotions,
   userRole,
+  suppliers,
+  setSuppliers,
+  b24Categories,
+  setB24Categories,
+  b24Stages,
+  setB24Stages,
+  b24ProcurementStages,
+  setB24ProcurementStages,
+  loadB24Categories,
+  loadB24Stages,
+  loadProcurementB24Stages,
 }: {
   coefficients: { retail: any; wholesale: any; designer: any };
   setCoefficients: React.Dispatch<
     React.SetStateAction<{ retail: any; wholesale: any; designer: any }>
   >;
+  suppliers: Supplier[];
+  setSuppliers: React.Dispatch<React.SetStateAction<Supplier[]>>;
   calcMode: "sheet" | "area";
   setCalcMode: React.Dispatch<React.SetStateAction<"sheet" | "area">>;
   trimming: number;
@@ -8730,84 +8751,22 @@ const SettingsView = ({
   promotions: any[];
   savePromotions: (promosList: any[]) => Promise<void>;
   userRole?: string | null;
+  b24Categories: { id: string; name: string }[];
+  setB24Categories: React.Dispatch<React.SetStateAction<{ id: string; name: string }[]>>;
+  b24Stages: { id: string; name: string }[];
+  setB24Stages: React.Dispatch<React.SetStateAction<{ id: string; name: string }[]>>;
+  b24ProcurementStages: { id: string; name: string }[];
+  setB24ProcurementStages: React.Dispatch<React.SetStateAction<{ id: string; name: string }[]>>;
+  loadB24Categories: (url: string, force?: boolean) => Promise<void>;
+  loadB24Stages: (url: string, categoryId: string, force?: boolean) => Promise<void>;
+  loadProcurementB24Stages: (url: string, categoryId: string, force?: boolean) => Promise<void>;
 }) => {
   const [newCategory, setNewCategory] = useState("");
   const [activeSubTab, setActiveSubTab] = useState<
-    "general" | "services" | "production" | "account" | "facades" | "bitrix24" | "promotions"
+    "general" | "services" | "production" | "account" | "facades" | "bitrix24" | "promotions" | "suppliers"
   >("general");
   const [showBrandCoeffModal, setShowBrandCoeffModal] = useState(false);
   
-  const [b24Categories, setB24Categories] = useState<{ id: string; name: string }[]>([]);
-  const [b24Stages, setB24Stages] = useState<{ id: string; name: string }[]>([]);
-
-  const loadB24Categories = async (url: string) => {
-    if (!url) return;
-    try {
-      const res = await fetch("/api/bitrix24/query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          webhookUrl: url,
-          method: "crm.dealcategory.list",
-          params: {}
-        })
-      });
-      const data = await res.json();
-      const categories = [{ id: "0", name: "Общее направление" }];
-      if (data.result && Array.isArray(data.result)) {
-        data.result.forEach((cat: any) => {
-          categories.push({ id: String(cat.ID), name: cat.NAME });
-        });
-      }
-      setB24Categories(categories);
-    } catch (e) {
-      console.error("Error loading categories:", e);
-    }
-  };
-
-  const loadB24Stages = async (url: string, categoryId: string) => {
-    if (!url) return;
-    try {
-      const entityId = !categoryId || categoryId === "0" ? "DEAL_STAGE" : `DEAL_STAGE_${categoryId}`;
-      const res = await fetch("/api/bitrix24/query", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          webhookUrl: url,
-          method: "crm.status.list",
-          params: {
-            filter: { ENTITY_ID: entityId }
-          }
-        })
-      });
-      const data = await res.json();
-      const stages: { id: string; name: string }[] = [];
-      if (data.result && Array.isArray(data.result)) {
-        data.result.forEach((st: any) => {
-          stages.push({ id: String(st.STATUS_ID), name: `${st.NAME} (${st.STATUS_ID})` });
-        });
-      }
-      setB24Stages(stages);
-    } catch (e) {
-      console.error("Error loading stages:", e);
-    }
-  };
-
-  useEffect(() => {
-    const url = companyData?.bitrix24?.webhookUrl;
-    if (activeSubTab === "bitrix24" && url) {
-      loadB24Categories(url);
-    }
-  }, [activeSubTab, companyData?.bitrix24?.webhookUrl]);
-
-  useEffect(() => {
-    const url = companyData?.bitrix24?.webhookUrl;
-    const catId = companyData?.bitrix24?.categoryId || "0";
-    if (activeSubTab === "bitrix24" && url) {
-      loadB24Stages(url, catId);
-    }
-  }, [activeSubTab, companyData?.bitrix24?.webhookUrl, companyData?.bitrix24?.categoryId]);
-
   const [brandCoeffForm, setBrandCoeffForm] = useState({
     categoryId: "ldsp",
     brand: "",
@@ -8839,6 +8798,29 @@ const SettingsView = ({
     companyInfo,
     catalogMaterials,
   ]);
+
+  useEffect(() => {
+    const url = companyData?.bitrix24?.webhookUrl;
+    if (activeSubTab === "bitrix24" && url) {
+      loadB24Categories(url);
+    }
+  }, [activeSubTab, companyData?.bitrix24?.webhookUrl, loadB24Categories]);
+
+  useEffect(() => {
+    const url = companyData?.bitrix24?.webhookUrl;
+    const catId = companyData?.bitrix24?.categoryId || "0";
+    if (activeSubTab === "bitrix24" && url) {
+      loadB24Stages(url, catId);
+    }
+  }, [activeSubTab, companyData?.bitrix24?.webhookUrl, companyData?.bitrix24?.categoryId, loadB24Stages]);
+
+  useEffect(() => {
+    const url = companyData?.bitrix24?.webhookUrl;
+    const procCatId = companyData?.bitrix24?.procurementCategoryId;
+    if (activeSubTab === "bitrix24" && url && procCatId) {
+      loadProcurementB24Stages(url, procCatId);
+    }
+  }, [activeSubTab, companyData?.bitrix24?.webhookUrl, companyData?.bitrix24?.procurementCategoryId, loadProcurementB24Stages]);
 
   const categories = [
     { id: "ldsp", label: "ЛДСП / МДФ" },
@@ -9073,6 +9055,7 @@ const SettingsView = ({
           { id: "promotions", label: "Акции", icon: Percent },
           { id: "account", label: "Компания", icon: Building2 },
           { id: "bitrix24", label: "Bitrix24", icon: Link },
+          { id: "suppliers", label: "Поставщики", icon: Database },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -9091,6 +9074,21 @@ const SettingsView = ({
       </div>
 
       <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-8 space-y-12">
+        {activeSubTab === "suppliers" && (
+          <div className="animate-in fade-in duration-300">
+            <SuppliersSettings
+              companyId={companyData?.id}
+              suppliers={suppliers}
+              setSuppliers={setSuppliers}
+              productCategories={productCategories}
+              db={db}
+              doc={doc}
+              setDoc={setDoc}
+              deleteDoc={deleteDoc}
+              collection={collection}
+            />
+          </div>
+        )}
         {activeSubTab === "general" && (
           <div className="space-y-12 animate-in fade-in duration-300">
             <section>
@@ -10708,9 +10706,11 @@ const SettingsView = ({
                           const data = await res.json();
                           if (data.success) {
                             showAlert("Успех", "Соединение с Bitrix24 успешно установлено! Списки воронок и стадий обновлены.");
-                            loadB24Categories(url);
+                            await loadB24Categories(url, true);
+                            // Add a small delay to respect Bitrix24 rate limits (2 requests per second)
+                            await new Promise(resolve => setTimeout(resolve, 600));
                             const catId = companyData?.bitrix24?.categoryId || "0";
-                            loadB24Stages(url, catId);
+                            await loadB24Stages(url, catId, true);
                           } else {
                             showAlert("Ошибка соединения", data.error || "Неизвестная ошибка");
                           }
@@ -10745,7 +10745,7 @@ const SettingsView = ({
                             }));
                             const url = companyData?.bitrix24?.webhookUrl;
                             if (url) {
-                              loadB24Stages(url, newCatId);
+                              loadB24Stages(url, newCatId, true);
                             }
                           }}
                         >
@@ -10818,11 +10818,181 @@ const SettingsView = ({
                       )}
                     </div>
                   </div>
+                    {/* Procurement specific settings */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 pt-6 border-t border-gray-100">
+                      <div>
+                        <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
+                          Воронка для Снабжения (Procurement categoryId)
+                        </label>
+                        {b24Categories.length > 0 ? (
+                          <select
+                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold text-gray-700 appearance-none"
+                            style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234B5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundPosition: 'right 16px center', backgroundSize: '16px', backgroundRepeat: 'no-repeat' }}
+                            value={companyData?.bitrix24?.procurementCategoryId || "0"}
+                            onChange={(e) => {
+                              const newCatId = e.target.value;
+                              setCompanyData((prev: any) => ({
+                                ...prev,
+                                bitrix24: {
+                                  ...(prev?.bitrix24 || {}),
+                                  procurementCategoryId: newCatId,
+                                },
+                              }));
+                              const url = companyData?.bitrix24?.webhookUrl;
+                              if (url) {
+                                loadProcurementB24Stages(url, newCatId);
+                              }
+                            }}
+                          >
+                            {b24Categories.map((cat) => (
+                              <option key={cat.id} value={cat.id}>
+                                {cat.name} (ID: {cat.id})
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder="ID воронки"
+                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                            value={companyData?.bitrix24?.procurementCategoryId || ""}
+                            onChange={(e) =>
+                              setCompanyData((prev: any) => ({
+                                ...prev,
+                                bitrix24: {
+                                  ...(prev?.bitrix24 || {}),
+                                  procurementCategoryId: e.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
+                          Стадия для Снабжения (Procurement stageId)
+                        </label>
+                        {b24ProcurementStages.length > 0 ? (
+                          <select
+                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold text-gray-700 appearance-none"
+                            style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234B5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundPosition: 'right 16px center', backgroundSize: '16px', backgroundRepeat: 'no-repeat' }}
+                            value={companyData?.bitrix24?.procurementStageId || ""}
+                            onChange={(e) =>
+                              setCompanyData((prev: any) => ({
+                                ...prev,
+                                bitrix24: {
+                                  ...(prev?.bitrix24 || {}),
+                                  procurementStageId: e.target.value,
+                                },
+                              }))
+                            }
+                          >
+                            <option value="">-- Выберите стадию --</option>
+                            {b24ProcurementStages.map((st) => (
+                              <option key={st.id} value={st.id}>
+                                {st.name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder="ID стадии"
+                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                            value={companyData?.bitrix24?.procurementStageId || ""}
+                            onChange={(e) =>
+                              setCompanyData((prev: any) => ({
+                                ...prev,
+                                bitrix24: {
+                                  ...(prev?.bitrix24 || {}),
+                                  procurementStageId: e.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
+                          Финальная стадия (Deal disappears after)
+                        </label>
+                        {b24ProcurementStages.length > 0 ? (
+                          <select
+                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold text-gray-700 appearance-none"
+                            style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234B5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundPosition: 'right 16px center', backgroundSize: '16px', backgroundRepeat: 'no-repeat' }}
+                            value={companyData?.bitrix24?.procurementFinalStageId || ""}
+                            onChange={(e) =>
+                              setCompanyData((prev: any) => ({
+                                ...prev,
+                                bitrix24: {
+                                  ...(prev?.bitrix24 || {}),
+                                  procurementFinalStageId: e.target.value,
+                                },
+                              }))
+                            }
+                          >
+                            <option value="">-- Выберите стадию --</option>
+                            {b24ProcurementStages.map((st) => (
+                              <option key={st.id} value={st.id}>
+                                {st.name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder="ID финальной стадии"
+                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                            value={companyData?.bitrix24?.procurementFinalStageId || ""}
+                            onChange={(e) =>
+                              setCompanyData((prev: any) => ({
+                                ...prev,
+                                bitrix24: {
+                                  ...(prev?.bitrix24 || {}),
+                                  procurementFinalStageId: e.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        )}
+                      </div>
+                    </div>
+
                   <p className="text-[11px] text-gray-500 mt-3 leading-relaxed">
                     Инструкция: Зайдите в Битрикс24 &rarr; Приложения &rarr;
                     Вебхуки &rarr; Добавить входящий вебхук. Скопируйте ссылку и
                     вставьте сюда.
                   </p>
+
+                  <div className="p-6 bg-blue-50/50 rounded-2xl border border-blue-100 mt-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-bold text-gray-900 font-sans">
+                          Раздел "Снабжение"
+                        </h4>
+                        <p className="text-xs text-gray-500 mt-1 font-sans">
+                          Включите этот раздел, чтобы управлять закупками и контролировать расходы.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setCompanyData((prev: any) => ({
+                          ...prev,
+                          procurementEnabled: !prev.procurementEnabled
+                        }))}
+                        className={cn(
+                          "relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-200 focus:outline-none",
+                          companyData?.procurementEnabled ? "bg-blue-600" : "bg-gray-200"
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200",
+                            companyData?.procurementEnabled ? "translate-x-6" : "translate-x-1"
+                          )}
+                        />
+                      </button>
+                    </div>
+                  </div>
                 </div>
 
                 <div className="space-y-4">
@@ -10841,10 +11011,17 @@ const SettingsView = ({
                       </thead>
                       <tbody className="divide-y divide-gray-50">
                         {[
+                          { key: "readyDate", label: "СНАБЖЕНИЕ: Дата готовности" },
+                          { key: "expenseLDSP", label: "СНАБЖЕНИЕ: ЛДСП / Кромка / ХДФ" },
+                          { key: "expenseFacades", label: "СНАБЖЕНИЕ: Фасады пильные" },
+                          { key: "expenseCustomFacades", label: "СНАБЖЕНИЕ: Фасады заказные" },
+                          { key: "expenseHardware", label: "СНАБЖЕНИЕ: Фурнитура" },
+                          { key: "expenseMirrors", label: "СНАБЖЕНИЕ: Зеркала / Двери / Стекла" },
+                          { key: "expenseCountertops", label: "СНАБЖЕНИЕ: Столешницы и стеновые" },
+                          { key: "expenseStoneCountertops", label: "СНАБЖЕНИЕ: Столешницы (камень/компакт)" },
                           { key: "contractNumber", label: "Номер договора" },
                           { key: "totalSum", label: "Сумма договора" },
                           { key: "contractDate", label: "Дата договора" },
-                          { key: "readyDate", label: "Дата готовности" },
                           { key: "hardwareSum", label: "Сумма фурнитуры" },
                           { key: "cabinetSum", label: "Стоимость корпуса" },
                           { key: "facadeSum", label: "Стоимость фасадов" },
@@ -10860,12 +11037,6 @@ const SettingsView = ({
                           },
                           { key: "corpPlusFacadesSum", label: "Стоимость продукции: (Корпус+Фасады)" },
                           { key: "expenseCorp", label: "Расходы на корпус" },
-                          { key: "expenseFacades", label: "Расходы на фасады" },
-                          { key: "expenseCustomFacades", label: "Расходы на фасады заказные" },
-                          { key: "expenseHardware", label: "Расходы фурнитура" },
-                          { key: "reserveCorpExtraSheets", label: "Запас на корпус ДОП ЛИСТЫ" },
-                          { key: "reserveFacadesExtraSheets", label: "Запас на фасады ДОП ЛИСТЫ" },
-                          { key: "expenseStoneCountertops", label: "Расходы столешницы камень/компактламинат" },
                           { key: "expenseAppliances", label: "Расходы техника" },
                         ].map((field) => (
                           <tr
@@ -11824,7 +11995,12 @@ const ProductsView = ({
   setSelectedCategory,
   showAlert,
   showPrompt,
+  showConfirm,
   userData,
+  companyData,
+  db,
+  doc,
+  updateDoc,
 }: {
   onAddProduct: (product: any, qty: number) => void;
   catalogProducts: any[];
@@ -11860,7 +12036,12 @@ const ProductsView = ({
     defaultValue: string,
     onConfirm: (value: string) => void,
   ) => void;
-  userData?: any;
+  showConfirm: (title: string, message: string, onConfirm: () => void) => void;
+  userData: any;
+  companyData: any;
+  db: any;
+  doc: any;
+  updateDoc: any;
 }) => {
   const [showChecklistWindow, setShowChecklistWindow] = useState(false);
   const [requiredProductsModal, setRequiredProductsModal] = useState<{
@@ -12280,14 +12461,40 @@ const ProductsView = ({
     setIsAddingProduct(true);
   };
 
-  const handleDeleteProduct = (id: string | number) => {
-    onDeleteProduct(id);
+  const handleDeleteProduct = (product: any) => {
+    if (userRole === 'admin' || userRole === 'supervisor') {
+        showConfirm(
+          "Удаление товара",
+          "Вы уверены, что хотите удалить этот товар из каталога?",
+          () => onDeleteProduct(product.id)
+        );
+    } else {
+      // Manager: Mark for moderation
+      updateProduct(product.id, { markedForDeletion: true });
+      showAlert("Внимание", "Товар помечен на удаление и отправлен на модерацию администратору.");
+    }
+  };
+
+  const updateProduct = async (productId: string | number, updates: any) => {
+    if (!companyData?.id) return;
+    try {
+      await updateDoc(
+        doc(db, "companies", companyData.id, "products", productId.toString()),
+        updates
+      );
+    } catch (error) {
+      handleDbError(
+        error,
+        OperationType.UPDATE,
+        `companies/${companyData.id}/products/${productId}`,
+      );
+    }
   };
 
   const filteredProducts = catalogProducts.filter((p) => {
     // Stage 1: Moderation / Status filtering
     if (activeProductsView === 'moderation') {
-      return p.status === 'pending';
+      return p.status === 'pending' || p.markedForDeletion;
     }
     
     // In Catalog view:
@@ -14411,6 +14618,29 @@ const ProductsView = ({
                         Ожидание
                       </div>
                     )}
+                    {product.markedForDeletion && (
+                        <div className="flex flex-col gap-1.5 px-2 py-1 bg-red-600 text-white text-[9px] font-black uppercase tracking-widest rounded-lg shadow-lg z-10">
+                           <div className="flex items-center gap-1.5">
+                              <Trash2 className="w-2.5 h-2.5" />
+                              Удаление
+                           </div>
+                           <button 
+                             onClick={(e) => {
+                               e.stopPropagation();
+                               updateProduct(product.id, { markedForDeletion: false });
+                             }}
+                             className="bg-white/20 hover:bg-white/40 px-1 rounded text-[8px]"
+                           >
+                             Отклонить
+                           </button>
+                        </div>
+                    )}
+                    {product.saleBlocked && (
+                        <div className="flex items-center gap-1.5 px-2 py-1 bg-amber-600 text-white text-[9px] font-black uppercase tracking-widest rounded-lg shadow-lg z-10">
+                          <Lock className="w-2.5 h-2.5" />
+                          Продажа закрыта
+                        </div>
+                    )}
                     <span className="px-2 py-1 bg-white/95 backdrop-blur shadow-sm text-[10px] font-bold uppercase tracking-wider text-blue-600 rounded-lg">
                       {product.category}
                     </span>
@@ -14434,10 +14664,22 @@ const ProductsView = ({
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
+                      {(userRole === 'admin' || userRole === 'supervisor') && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            updateProduct(product.id, { saleBlocked: !product.saleBlocked });
+                          }}
+                          className={`p-2 bg-white ${product.saleBlocked ? 'text-amber-600' : 'text-gray-500'} hover:bg-amber-600 hover:text-white rounded-xl shadow-lg transition-all`}
+                          title={product.saleBlocked ? "Разблокировать продажу" : "Заблокировать продажу"}
+                        >
+                          <Lock className={`w-4 h-4 ${product.saleBlocked ? 'fill-current' : ''}`} />
+                        </button>
+                      )}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleDeleteProduct(product.id);
+                          handleDeleteProduct(product);
                         }}
                         className="p-2 bg-white text-red-500 hover:bg-red-500 hover:text-white rounded-xl shadow-lg transition-all"
                         title="Удалить"
@@ -14890,6 +15132,7 @@ export default function App() {
   const [productionFormat, setProductionFormat] =
     useState<ProductionFormat>("contract");
   const [productionSettings, setProductionSettings] = useState<any>(null);
+  const [procurementSettings, setProcurementSettings] = useState<ProcurementSettings>({ enabled: false });
   const [contractConfig, setContractConfig] = useState<ContractConfig>({
     cabinet: { enabled: false, calculateForClients: false },
     facades: { enabled: false, calculateForClients: false },
@@ -14981,6 +15224,140 @@ export default function App() {
       },
     });
 
+  const [b24Categories, setB24Categories] = useState<{ id: string; name: string }[]>([]);
+  const [b24Stages, setB24Stages] = useState<{ id: string; name: string }[]>([]);
+  const [b24ProcurementStages, setB24ProcurementStages] = useState<{ id: string; name: string }[]>([]);
+
+  const lastLoadedB24 = useRef<Record<string, string>>({});
+
+  const loadB24Categories = useCallback(async (url: string, force = false) => {
+    if (!url || (!force && lastLoadedB24.current.categories === url)) return;
+    try {
+      const res = await fetch("/api/bitrix24/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          webhookUrl: url,
+          method: "crm.dealcategory.list",
+          params: {}
+        })
+      });
+      
+      const text = await res.text();
+      if (!res.ok || text.includes("Rate exceeded")) {
+        console.warn("Bitrix24: Rate limit exceeded or server error loading categories");
+        return;
+      }
+      
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        console.error("Invalid JSON from Bitrix24 categories:", text);
+        return;
+      }
+
+      const categories = [{ id: "0", name: "Общее направление" }];
+      if (data.result && Array.isArray(data.result)) {
+        data.result.forEach((cat: any) => {
+          categories.push({ id: String(cat.ID), name: cat.NAME });
+        });
+      }
+      setB24Categories(categories);
+      lastLoadedB24.current.categories = url;
+    } catch (e) {
+      console.error("Error loading categories:", e);
+    }
+  }, []);
+
+  const loadB24Stages = useCallback(async (url: string, categoryId: string, force = false) => {
+    const cacheKey = `${url}_${categoryId}`;
+    if (!url || (!force && lastLoadedB24.current.stages === cacheKey)) return;
+    try {
+      const entityId = !categoryId || categoryId === "0" ? "DEAL_STAGE" : `DEAL_STAGE_${categoryId}`;
+      const res = await fetch("/api/bitrix24/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          webhookUrl: url,
+          method: "crm.status.list",
+          params: {
+            filter: { ENTITY_ID: entityId }
+          }
+        })
+      });
+
+      const text = await res.text();
+      if (!res.ok || text.includes("Rate exceeded")) {
+        console.warn("Bitrix24: Rate limit exceeded or server error loading stages");
+        return;
+      }
+
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        console.error("Invalid JSON from Bitrix24 stages:", text);
+        return;
+      }
+
+      const stages: { id: string; name: string }[] = [];
+      if (data.result && Array.isArray(data.result)) {
+        data.result.forEach((st: any) => {
+          stages.push({ id: String(st.STATUS_ID), name: `${st.NAME} (${st.STATUS_ID})` });
+        });
+      }
+      setB24Stages(stages);
+      lastLoadedB24.current.stages = cacheKey;
+    } catch (e) {
+      console.error("Error loading stages:", e);
+    }
+  }, []);
+
+  const loadProcurementB24Stages = useCallback(async (url: string, categoryId: string, force = false) => {
+    const cacheKey = `${url}_${categoryId}`;
+    if (!url || (!force && lastLoadedB24.current.procurementStages === cacheKey)) return;
+    try {
+      const entityId = !categoryId || categoryId === "0" ? "DEAL_STAGE" : `DEAL_STAGE_${categoryId}`;
+      const res = await fetch("/api/bitrix24/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          webhookUrl: url,
+          method: "crm.status.list",
+          params: {
+            filter: { ENTITY_ID: entityId }
+          }
+        })
+      });
+
+      const text = await res.text();
+      if (!res.ok || text.includes("Rate exceeded")) {
+        console.warn("Bitrix24: Rate limit exceeded or server error loading procurement stages");
+        return;
+      }
+
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch (e) {
+        console.error("Invalid JSON from Bitrix24 procurement stages:", text);
+        return;
+      }
+
+      const stages: { id: string; name: string }[] = [];
+      if (data.result && Array.isArray(data.result)) {
+        data.result.forEach((st: any) => {
+          stages.push({ id: String(st.STATUS_ID), name: `${st.NAME} (${st.STATUS_ID})` });
+        });
+      }
+      setB24ProcurementStages(stages);
+      lastLoadedB24.current.procurementStages = cacheKey;
+    } catch (e) {
+      console.error("Error loading procurement stages:", e);
+    }
+  }, []);
+
   // Removed the auto-redirect to admin panel
   // Users will access it manually using the button in the bottom left menu
 
@@ -15005,6 +15382,11 @@ export default function App() {
               if (compRes.ok) {
                 const compData = await compRes.json();
                 setCompanyData({ id: docData.companyId, ...compData });
+              }
+              const empRes = await fetch(`/api/db/doc/companies/${docData.companyId}/employees/${savedUid}`);
+              if (empRes.ok) {
+                const empData = await empRes.json();
+                setUserData(prev => ({ ...prev, isProcurementManager: empData.isProcurementManager }));
               }
             }
             
@@ -15091,6 +15473,11 @@ export default function App() {
              const compData = await compRes.json();
              setCompanyData({ id: docData.companyId, ...compData });
              console.log("Loaded company data:", compData);
+           }
+           const empRes = await fetch(`/api/db/doc/companies/${docData.companyId}/employees/${authUser.uid}`);
+           if (empRes.ok) {
+             const empData = await empRes.json();
+             setUserData(prev => ({ ...prev, isProcurementManager: empData.isProcurementManager }));
            }
          }
 
@@ -15283,12 +15670,31 @@ export default function App() {
     | "checkout_current"
     | "profile"
     | "promotions"
+    | "procurement"
+    | "procurement_plan"
+    | "arrivals"
   >("calculator");
+  useEffect(() => {
+    if (userData?.isProcurementManager && activeTab !== "procurement_plan" && activeTab !== "procurement" && activeTab !== "profile" && activeTab !== "arrivals") {
+      setActiveTab("procurement_plan");
+    }
+  }, [userData?.isProcurementManager, activeTab]);
+
+  useEffect(() => {
+    const url = companyData?.bitrix24?.webhookUrl;
+    const procCatId = companyData?.bitrix24?.procurementCategoryId;
+    if (activeTab === "procurement" && url && procCatId) {
+      loadProcurementB24Stages(url, procCatId);
+    }
+  }, [activeTab, companyData?.bitrix24?.webhookUrl, companyData?.bitrix24?.procurementCategoryId]);
+
   const [selectedProductCategory, setSelectedProductCategory] = useState<
     string | null
   >(null);
   const [projects, setProjects] = useState<any[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [projectSets, setProjectSets] = useState<any[]>([]);
+  const [procurementOrders, setProcurementOrders] = useState<any[]>([]);
   const [selectedProjectForSpec, setSelectedProjectForSpec] = useState<
     any | null
   >(null);
@@ -16107,9 +16513,29 @@ export default function App() {
       (error) => console.error("Error syncing sets:", error)
     );
 
+    const unsubProcOrders = onSnapshot(
+      collection(db, "companies", companyData.id, "projectSets"),
+      (snapshot) => {
+        const ordersData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        setProcurementOrders(ordersData);
+      },
+      (error) => console.error("Error syncing procurement orders:", error)
+    );
+
+    const unsubSuppliers = onSnapshot(
+      collection(db, "companies", companyData.id, "suppliers"),
+      (snapshot) => {
+        const suppliersData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+        setSuppliers(suppliersData);
+      },
+      (error) => console.error("Error syncing suppliers:", error)
+    );
+
     return () => {
       unsubProjects();
       unsubSets();
+      unsubProcOrders();
+      unsubSuppliers();
     };
   }, [isAuthenticated, companyData?.id, userData?.uid, userRole]);
 
@@ -16624,16 +17050,21 @@ export default function App() {
       }
 
       console.log("Final product to save:", finalProduct);
-      await setDoc(
+      
+      // Perform write in background for optimistic feel
+      setDoc(
         doc(db, "companies", companyData.id, "products", pId),
         finalProduct,
-      );
-      console.log("setDoc completed successfully");
+      ).then(() => {
+        console.log("setDoc completed successfully");
+      }).catch(error => {
+        console.error("Error in setDoc:", error);
+      });
 
       if (isNew && finalProduct.status === 'pending') {
-        showAlert("На проверке", "Товар отправлен на модерацию администратору");
+        showAlert("На проверке", "Товар в процессе сохранения и отправлен на модерацию");
       } else {
-        showAlert("Успех", "Товар сохранен в каталоге");
+        showAlert("Успех", "Товар в процессе сохранения");
       }
     } catch (error) {
       console.error("Error in saveProduct:", error);
@@ -16667,9 +17098,17 @@ export default function App() {
   const deleteProduct = async (productId: string | number) => {
     if (!companyData?.id) return;
     try {
-      await deleteDoc(
+      // Perform delete in background for optimistic feel
+      deleteDoc(
         doc(db, "companies", companyData.id, "products", productId.toString()),
-      );
+      ).catch(error => {
+        handleDbError(
+            error,
+            OperationType.DELETE,
+            `companies/${companyData.id}/products/${productId}`,
+        );
+      });
+      showAlert("Успех", "Товар в процессе удаления");
     } catch (error) {
       handleDbError(
         error,
@@ -18202,39 +18641,96 @@ export default function App() {
             </div>
 
             <nav className="flex-1 px-3 py-3 space-y-1">
-              <button
-                onClick={() => setActiveTab("promotions")}
-                className={cn(
-                  "w-full flex items-center rounded-lg transition-all",
-                  isSidebarOpen ? "gap-3 px-3 py-2.5" : "justify-center py-2.5",
-                  activeTab === "promotions"
-                    ? "bg-blue-600 text-white shadow-md shadow-blue-200"
-                    : "text-gray-600 hover:bg-gray-100",
-                )}
-              >
-                <Percent className="w-5 h-5 flex-shrink-0" />
-                {isSidebarOpen && (
-                  <span className="text-sm font-medium">Акции</span>
-                )}
-              </button>
-              <button
-                onClick={() => setActiveTab("projects")}
-                className={cn(
-                  "w-full flex items-center rounded-lg transition-all mb-2",
-                  isSidebarOpen ? "gap-3 px-3 py-2.5" : "justify-center py-2.5",
-                  activeTab === "projects"
-                    ? "bg-blue-600 text-white shadow-md shadow-blue-200"
-                    : "text-gray-600 hover:bg-gray-100",
-                )}
-              >
-                <FolderOpen className="w-5 h-5 flex-shrink-0" />
-                {isSidebarOpen && (
-                  <span className="text-sm font-medium">Проекты</span>
-                )}
-              </button>
+              {/* Items for procurement & Actions */}
+              {(companyData?.procurementEnabled && (userRole === 'admin' || userRole === 'supervisor' || userData?.isProcurementManager)) && (
+                <>
+                <button
+                  onClick={() => setActiveTab("procurement_plan")}
+                  className={cn(
+                    "w-full flex items-center rounded-lg transition-all",
+                    isSidebarOpen ? "gap-3 px-3 py-2.5" : "justify-center py-2.5",
+                    activeTab === "procurement_plan"
+                      ? "bg-blue-600 text-white shadow-md shadow-blue-200"
+                      : "text-gray-600 hover:bg-gray-100",
+                  )}
+                >
+                  <BarChart3 className="w-5 h-5 flex-shrink-0" />
+                  {isSidebarOpen && (
+                    <span className="text-sm font-black">План снабжения</span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setActiveTab("procurement")}
+                  className={cn(
+                    "w-full flex items-center rounded-lg transition-all",
+                    isSidebarOpen ? "gap-3 px-3 py-2.5" : "justify-center py-2.5",
+                    activeTab === "procurement"
+                      ? "bg-blue-600 text-white shadow-md shadow-blue-200"
+                      : "text-gray-600 hover:bg-gray-100",
+                  )}
+                >
+                  <ShoppingBag className="w-5 h-5 flex-shrink-0" />
+                  {isSidebarOpen && (
+                    <span className="text-sm font-medium">Снабжение</span>
+                  )}
+                </button>
+                <button
+                  onClick={() => setActiveTab("arrivals")}
+                  className={cn(
+                    "w-full flex items-center rounded-lg transition-all",
+                    isSidebarOpen ? "gap-3 px-3 py-2.5" : "justify-center py-2.5",
+                    activeTab === "arrivals"
+                      ? "bg-blue-600 text-white shadow-md shadow-blue-200"
+                      : "text-gray-600 hover:bg-gray-100",
+                  )}
+                >
+                  <Truck className="w-5 h-5 flex-shrink-0" />
+                  {isSidebarOpen && (
+                    <span className="text-sm font-medium">Приходы</span>
+                  )}
+                </button>
+                </>
+              )}
 
+              {!userData?.isProcurementManager && (
+                <>
+                  <button
+                    onClick={() => setActiveTab("promotions")}
+                    className={cn(
+                      "w-full flex items-center rounded-lg transition-all",
+                      isSidebarOpen ? "gap-3 px-3 py-2.5" : "justify-center py-2.5",
+                      activeTab === "promotions"
+                        ? "bg-blue-600 text-white shadow-md shadow-blue-200"
+                        : "text-gray-600 hover:bg-gray-100",
+                    )}
+                  >
+                    <Percent className="w-5 h-5 flex-shrink-0" />
+                    {isSidebarOpen && (
+                      <span className="text-sm font-medium">Акции</span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setActiveTab("projects")}
+                    className={cn(
+                      "w-full flex items-center rounded-lg transition-all mb-2",
+                      isSidebarOpen ? "gap-3 px-3 py-2.5" : "justify-center py-2.5",
+                      activeTab === "projects"
+                        ? "bg-blue-600 text-white shadow-md shadow-blue-200"
+                        : "text-gray-600 hover:bg-gray-100",
+                    )}
+                  >
+                    <FolderOpen className="w-5 h-5 flex-shrink-0" />
+                    {isSidebarOpen && (
+                      <span className="text-sm font-medium">Проекты</span>
+                    )}
+                  </button>
+                </>
+              )}
+              
+              {/* Main navigation area */}
               <div className="flex">
-                {isSidebarOpen && (
+                {/* Project Name Section Sidebar */}
+                {!(userData?.isProcurementManager) && isSidebarOpen && (
                   <div className="w-8 flex-shrink-0 flex pr-2 pb-1">
                     <div
                       title={
@@ -18276,8 +18772,10 @@ export default function App() {
                     </div>
                   </div>
                 )}
-
-                <div className="flex-1 space-y-1 min-w-0">
+                
+                {/* Buttons container */}
+                {(!userData?.isProcurementManager || userRole === 'admin' || userRole === 'supervisor') && (
+                  <div className="flex-1 space-y-1 min-w-0">
                   <button
                     onClick={() => setActiveTab("calculator")}
                     className={cn(
@@ -18358,6 +18856,7 @@ export default function App() {
                     )}
                   </button>
                 </div>
+                )}
               </div>
             </nav>
             <div className="px-3 pb-3 pt-2 bg-gray-50/50 space-y-1">
@@ -18574,6 +19073,40 @@ export default function App() {
             />
           )}
 
+          {activeTab === "procurement_plan" && companyData?.procurementEnabled && (userRole === 'admin' || userRole === 'supervisor' || userData?.isProcurementManager) && (
+            <ProcurementPlanView 
+              orders={procurementOrders} 
+              companyData={companyData}
+            />
+          )}
+
+          {activeTab === "procurement" && companyData?.procurementEnabled && (userRole === 'admin' || userRole === 'supervisor' || userData?.isProcurementManager) && (
+            <ProcurementView 
+              companyData={companyData} 
+              settings={procurementSettings}
+              db={db}
+              collection={collection}
+              onSnapshot={onSnapshot}
+              updateDoc={updateDoc}
+              doc={doc}
+              setDoc={setDoc}
+              suppliers={suppliers}
+              stages={b24ProcurementStages}
+            />
+          )}
+
+          {activeTab === "arrivals" && companyData?.procurementEnabled && (userRole === 'admin' || userRole === 'supervisor' || userData?.isProcurementManager) && (
+            <ArrivalsView
+                orders={procurementOrders}
+                suppliers={suppliers}
+                db={db}
+                doc={doc}
+                getDoc={getDoc}
+                updateDoc={updateDoc}
+                companyData={companyData}
+            />
+          )}
+
           <div className={cn(activeTab === "summary" || activeTab === "checkout_current" ? "block" : "hidden")}>
             <SummaryView
               promotions={promotions}
@@ -18627,6 +19160,8 @@ export default function App() {
               mergedMaterials={mergedMaterials}
               selectedForGlue={selectedForGlue}
               spareSheets={spareSheets}
+              setSpareSheets={setSpareSheets}
+              toggleSpareSheet={toggleSpareSheet}
               furnitureType={furnitureType}
               setFurnitureType={setFurnitureType}
               checklistRefused={checklistRefused}
@@ -18707,6 +19242,7 @@ export default function App() {
           {activeTab === "projects" ? (
             <ProjectsView
               companyId={companyData?.id}
+              companyData={companyData}
               userId={userData?.uid}
               userRole={userRole}
               onLoadProject={(project) => {
@@ -18740,7 +19276,6 @@ export default function App() {
               }}
               companyType={companyData?.type}
               manufacturerId={companyData?.manufacturerId}
-              companyData={companyData}
               showConfirm={showConfirm}
               showAlert={showAlert}
               projects={projects}
@@ -18776,8 +19311,14 @@ export default function App() {
               addedProducts={addedProducts}
               showAlert={showAlert}
               showPrompt={showPrompt}
+              showConfirm={showConfirm}
               selectedCategory={selectedProductCategory}
               setSelectedCategory={setSelectedProductCategory}
+              companyData={companyData}
+              db={db}
+              doc={doc}
+              updateDoc={updateDoc}
+              userData={userData}
             />
           ) : activeTab === "services" ? (
             <ServicesView
@@ -18896,6 +19437,8 @@ export default function App() {
             />
           ) : activeTab === "settings" && userRole === "admin" ? (
             <SettingsView
+              suppliers={suppliers}
+              setSuppliers={setSuppliers}
               coefficients={coefficients}
               setCoefficients={setCoefficients}
               calcMode={calcMode}
@@ -18950,6 +19493,15 @@ export default function App() {
               promotions={promotions}
               savePromotions={savePromotions}
               userRole={userRole}
+              b24Categories={b24Categories}
+              setB24Categories={setB24Categories}
+              b24Stages={b24Stages}
+              setB24Stages={setB24Stages}
+              b24ProcurementStages={b24ProcurementStages}
+              setB24ProcurementStages={setB24ProcurementStages}
+              loadB24Categories={loadB24Categories}
+              loadB24Stages={loadB24Stages}
+              loadProcurementB24Stages={loadProcurementB24Stages}
             />
           ) : activeTab === "promotions" ? (
             <PromotionsView

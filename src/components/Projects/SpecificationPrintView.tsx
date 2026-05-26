@@ -120,7 +120,9 @@ export const SpecificationPrintView = ({
                 {(
                   (summary.totalMaterialsPrice || 0) +
                   (summary.totalHardwarePrice || 0) +
-                  (summary.totalServicesPrice || 0)
+                  (summary.totalServicesPrice || 0) +
+                  (summary.totalDeliveryPrice || 0) +
+                  (summary.totalAssemblyPrice || 0)
                 ).toLocaleString()}{" "}
                 ₽
               </p>
@@ -229,7 +231,9 @@ export const SpecificationPrintView = ({
                   {(
                     (summary.totalMaterialsPrice || 0) +
                     (summary.totalHardwarePrice || 0) +
-                    (summary.totalServicesPrice || 0)
+                    (summary.totalServicesPrice || 0) +
+                    (summary.totalDeliveryPrice || 0) +
+                    (summary.totalAssemblyPrice || 0)
                   ).toLocaleString()}{" "}
                   ₽
                 </span>

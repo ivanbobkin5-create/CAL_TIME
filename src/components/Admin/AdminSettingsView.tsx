@@ -82,6 +82,7 @@ interface Employee {
   accessLevel: 'admin' | 'supervisor' | 'manager' | 'worker';
   createdAt?: string;
   bitrix24UserId?: string;
+  isProcurementManager?: boolean;
 }
 
 export const AdminSettingsView = ({ 
@@ -268,13 +269,10 @@ export const AdminSettingsView = ({
           accessLevel: newEmployee.accessLevel,
           companyId: companyId,
           createdAt: newEmployee.createdAt || new Date().toISOString(),
-          bitrix24UserId: newEmployee.bitrix24UserId || null
+          bitrix24UserId: newEmployee.bitrix24UserId || null,
+          isProcurementManager: !!newEmployee.isProcurementManager
         };
         console.log("Saving employee:", employeeData);
-        console.error("DEBUG Saving employee:", {
-          newEmployee,
-          employeeData
-        });
 
         // 1. Create/Update in global 'users' collection (for auth and rules)
         await setDoc(doc(db, 'users', uid), employeeData, { merge: true });
@@ -285,7 +283,8 @@ export const AdminSettingsView = ({
           email: trimmedEmail,
           role: newEmployee.role, // This is the job title (e.g. "Менеджер проектов")
           accessLevel: newEmployee.accessLevel,
-          bitrix24UserId: newEmployee.bitrix24UserId || null
+          bitrix24UserId: newEmployee.bitrix24UserId || null,
+          isProcurementManager: !!newEmployee.isProcurementManager
         };
         console.log("Saving employee for company:", employeeDataForCompany);
         await setDoc(doc(db, 'companies', companyId, 'employees', uid), employeeDataForCompany, { merge: true });
@@ -621,6 +620,18 @@ export const AdminSettingsView = ({
                     <option value="worker">Сотрудник (Только просмотр)</option>
                   </select>
                 </div>
+              </div>
+
+              <div className="md:col-span-2">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={!!newEmployee.isProcurementManager}
+                    onChange={(e) => setNewEmployee({ ...newEmployee, isProcurementManager: e.target.checked })}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-sm font-medium text-gray-700">Занимается закупками (раздел Снабжение)</span>
+                </label>
               </div>
 
               {companyData?.bitrix24?.webhookUrl && (

@@ -77,11 +77,11 @@ async function getDocs(colRef: any) {
   }
   return { docs: [], size: 0 };
 }
-async function updateDoc(docRef: any, data: any) { 
+async function updateDoc(docRef: any, data: any, options: { merge?: boolean } = { merge: true }) { 
   await fetch(`/api/db/doc/${docRef.path}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data })
+    body: JSON.stringify({ data, merge: options.merge })
   });
 }
 async function deleteDoc(docRef: any) { 
@@ -108,6 +108,9 @@ interface Company {
   photos?: string[];
   tariffExpiration?: string;
   manufacturerId?: string;
+  procurementEnabled?: boolean;
+  crmPipelineId?: string;
+  crmStageId?: string;
 }
 
 interface User {
@@ -146,6 +149,23 @@ const CompanyDateInput = ({ company, updateLimit }: { company: Company, updateLi
       className="bg-transparent font-bold text-gray-900 outline-none text-sm min-w-[120px]"
     />
   );
+};
+
+const CompanyProcurementCheckbox = ({ company, updateLimit }: { company: any, updateLimit: any }) => {
+    return (
+        <label className="flex items-center gap-2 cursor-pointer">
+            <input
+                type="checkbox"
+                checked={!!company.procurementEnabled}
+                onChange={(e) => {
+                    console.log("DEBUG: Checkbox changed", e.target.checked);
+                    updateLimit(company.id, 'procurementEnabled', !!e.target.checked);
+                }}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-[10px] font-black uppercase text-gray-500">Снабжение</span>
+        </label>
+    );
 };
 
 const CompanyLimitInput = ({ 
@@ -364,11 +384,14 @@ export const AppAdminView = () => {
   };
 
   const updateLimit = async (companyId: string, field: string, value: any) => {
+    console.log("DEBUG: updateLimit called", { companyId, field, value });
     try {
       await updateDoc(doc(db, 'companies', companyId), {
         [field]: value
       });
+      console.log("DEBUG: updateDoc success");
     } catch (error) {
+      console.error("DEBUG: updateDoc error", error);
       handleDbError(error, OperationType.UPDATE, `companies/${companyId}`);
     }
   };
@@ -591,6 +614,27 @@ export const AppAdminView = () => {
                         <div className="px-3">
                           <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Тариф до</label>
                           <CompanyDateInput company={company} updateLimit={updateLimit} />
+                        </div>
+                        <div className="w-px h-8 bg-gray-200"></div>
+                        <div className="px-3">
+                           <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Снабжение</label>
+                           <CompanyProcurementCheckbox company={company} updateLimit={updateLimit} />
+                           {company.procurementEnabled && (
+                            <div className="mt-2 text-[10px]">
+                                <input 
+                                  placeholder="Pipeline ID" 
+                                  value={company.crmPipelineId || ''} 
+                                  onChange={(e) => updateLimit(company.id, 'crmPipelineId', e.target.value)}
+                                  className="w-full border rounded p-1 mb-1"
+                                />
+                                <input 
+                                  placeholder="Stage ID" 
+                                  value={company.crmStageId || ''} 
+                                  onChange={(e) => updateLimit(company.id, 'crmStageId', e.target.value)}
+                                  className="w-full border rounded p-1"
+                                />
+                            </div>
+                           )}
                         </div>
                       </div>
 

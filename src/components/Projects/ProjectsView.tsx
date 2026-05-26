@@ -675,14 +675,7 @@ export const ProjectsView = ({
                             <div className="flex flex-col">
                                 <span className="text-[10px] text-gray-500 font-bold uppercase">Менеджер</span>
                                 <span className="text-xs text-gray-900 font-bold truncate max-w-[120px]">
-                                    {(() => {
-                                        const name = project.createdByName || "Пользователь";
-                                        if (name.includes('@')) {
-                                            const namePart = name.split('@')[0];
-                                            return namePart.charAt(0).toUpperCase() + namePart.slice(1);
-                                        }
-                                        return name;
-                                    })()}
+                                    {project.createdByName || "Пользователь"}
                                 </span>
                             </div>
                         </div>

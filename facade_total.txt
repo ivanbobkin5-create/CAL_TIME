@@ -1,0 +1,406 @@
+src/components/Projects/SpecificationPrintView.tsx:                  (summary.totalMaterialsPrice || 0) +
+src/components/Projects/SpecificationPrintView.tsx:                  (summary.totalHardwarePrice || 0) +
+src/components/Projects/SpecificationPrintView.tsx:                  (summary.totalServicesPrice || 0) +
+src/components/Projects/SpecificationPrintView.tsx:                  (summary.totalDeliveryPrice || 0) +
+src/components/Projects/SpecificationPrintView.tsx:                  (summary.totalAssemblyPrice || 0)
+src/components/Projects/SpecificationPrintView.tsx:                    {(summary.totalMaterialsPrice || 0).toLocaleString()} ₽
+src/components/Projects/SpecificationPrintView.tsx:                    {(summary.totalHardwarePrice || 0).toLocaleString()} ₽
+src/components/Projects/SpecificationPrintView.tsx:                    {(summary.totalServicesPrice || 0).toLocaleString()} ₽
+src/components/Projects/SpecificationPrintView.tsx:                  let projSum = p.totalPrice || 0;
+src/components/Projects/SpecificationPrintView.tsx:                      (acc: number, row: any) => acc + (row.total || 0),
+src/components/Projects/SpecificationPrintView.tsx:                      (acc: number, r: any) => acc + (r.totalPrice || 0),
+src/components/Projects/SpecificationPrintView.tsx:                    (summary.totalMaterialsPrice || 0) +
+src/components/Projects/SpecificationPrintView.tsx:                    (summary.totalHardwarePrice || 0) +
+src/components/Projects/SpecificationPrintView.tsx:                    (summary.totalServicesPrice || 0) +
+src/components/Projects/SpecificationPrintView.tsx:                    (summary.totalDeliveryPrice || 0) +
+src/components/Projects/SpecificationPrintView.tsx:                    (summary.totalAssemblyPrice || 0)
+src/components/Projects/SpecificationPrintView.tsx:              {(summary.totalDeliveryPrice > 0 ||
+src/components/Projects/SpecificationPrintView.tsx:                summary.totalAssemblyPrice > 0) && (
+src/components/Projects/SpecificationPrintView.tsx:                                    item.total ||
+src/components/Projects/SpecificationPrintView.tsx:              summary.totalDeliveryPrice > 0 ||
+src/components/Projects/SpecificationPrintView.tsx:              summary.totalAssemblyPrice > 0) && (
+src/components/Projects/SpecificationPrintView.tsx:                                    item.total ||
+src/components/Projects/SpecificationPrintView.tsx:                        summary.totalDeliveryPrice > 0 && (
+src/components/Projects/SpecificationPrintView.tsx:                              {summary.totalDeliveryPrice.toLocaleString()}{" "}
+src/components/Projects/SpecificationPrintView.tsx:                        summary.totalAssemblyPrice > 0 && (
+src/components/Projects/SpecificationPrintView.tsx:                              {summary.totalAssemblyPrice.toLocaleString()}{" "}
+src/components/Projects/ProjectAnalyticsModal.tsx:  totalPrice?: number;
+src/components/Projects/ProjectAnalyticsModal.tsx:    let totalMaterialsRevenue = 0;
+src/components/Projects/ProjectAnalyticsModal.tsx:    let totalMaterialsCost = 0;
+src/components/Projects/ProjectAnalyticsModal.tsx:    let totalFacadeRevenue = 0;
+src/components/Projects/ProjectAnalyticsModal.tsx:    let totalFacadeCost = 0;
+src/components/Projects/ProjectAnalyticsModal.tsx:    let totalHardwareRevenue = 0;
+src/components/Projects/ProjectAnalyticsModal.tsx:    let totalHardwareCost = 0;
+src/components/Projects/ProjectAnalyticsModal.tsx:    let totalServicesRevenue = 0;
+src/components/Projects/ProjectAnalyticsModal.tsx:    let totalServicesCost = 0;
+src/components/Projects/ProjectAnalyticsModal.tsx:        const totalRev = row.total || (row.price * qty) || 0;
+src/components/Projects/ProjectAnalyticsModal.tsx:        let totalCost = 0;
+src/components/Projects/ProjectAnalyticsModal.tsx:          totalCost = row.rawPrice * qty;
+src/components/Projects/ProjectAnalyticsModal.tsx:          totalCost = totalRev / coef;
+src/components/Projects/ProjectAnalyticsModal.tsx:          totalFacadeRevenue += totalRev;
+src/components/Projects/ProjectAnalyticsModal.tsx:          totalFacadeCost += totalCost;
+src/components/Projects/ProjectAnalyticsModal.tsx:          totalHardwareRevenue += totalRev;
+src/components/Projects/ProjectAnalyticsModal.tsx:          totalHardwareCost += totalCost;
+src/components/Projects/ProjectAnalyticsModal.tsx:          totalServicesRevenue += totalRev;
+src/components/Projects/ProjectAnalyticsModal.tsx:          totalServicesCost += totalCost;
+src/components/Projects/ProjectAnalyticsModal.tsx:          totalMaterialsRevenue += totalRev;
+src/components/Projects/ProjectAnalyticsModal.tsx:          totalMaterialsCost += totalCost;
+src/components/Projects/ProjectAnalyticsModal.tsx:    // Default distribution if calculation leads to 0 total revenue
+src/components/Projects/ProjectAnalyticsModal.tsx:    const calculatedTotalRev = totalMaterialsRevenue + totalFacadeRevenue + totalHardwareRevenue + totalServicesRevenue;
+src/components/Projects/ProjectAnalyticsModal.tsx:    const finalProjectTotal = project.totalPrice || project.data?.totalPrice || calculativeTotalFromData(project);
+src/components/Projects/ProjectAnalyticsModal.tsx:      totalMaterialsRevenue = Math.round(finalProjectTotal * 0.35);
+src/components/Projects/ProjectAnalyticsModal.tsx:      totalMaterialsCost = Math.round(totalMaterialsRevenue / 1.5);
+src/components/Projects/ProjectAnalyticsModal.tsx:      totalFacadeRevenue = Math.round(finalProjectTotal * 0.25);
+src/components/Projects/ProjectAnalyticsModal.tsx:      totalFacadeCost = Math.round(totalFacadeRevenue / 1.7);
+src/components/Projects/ProjectAnalyticsModal.tsx:      totalHardwareRevenue = Math.round(finalProjectTotal * 0.28);
+src/components/Projects/ProjectAnalyticsModal.tsx:      totalHardwareCost = Math.round(totalHardwareRevenue / 1.6);
+src/components/Projects/ProjectAnalyticsModal.tsx:      totalServicesRevenue = Math.round(finalProjectTotal * 0.12);
+src/components/Projects/ProjectAnalyticsModal.tsx:      totalServicesCost = Math.round(totalServicesRevenue / 1.25);
+src/components/Projects/ProjectAnalyticsModal.tsx:        cost: cleanCost(totalMaterialsCost, totalMaterialsRevenue),
+src/components/Projects/ProjectAnalyticsModal.tsx:        revenue: Math.round(totalMaterialsRevenue),
+src/components/Projects/ProjectAnalyticsModal.tsx:        cost: cleanCost(totalFacadeCost, totalFacadeRevenue),
+src/components/Projects/ProjectAnalyticsModal.tsx:        revenue: Math.round(totalFacadeRevenue),
+src/components/Projects/ProjectAnalyticsModal.tsx:        cost: cleanCost(totalHardwareCost, totalHardwareRevenue),
+src/components/Projects/ProjectAnalyticsModal.tsx:        revenue: Math.round(totalHardwareRevenue),
+src/components/Projects/ProjectAnalyticsModal.tsx:        cost: cleanCost(totalServicesCost, totalServicesRevenue),
+src/components/Projects/ProjectAnalyticsModal.tsx:        revenue: Math.round(totalServicesRevenue),
+src/components/Projects/ProjectAnalyticsModal.tsx:  // Helper inside useMemo to resolve a default total price
+src/components/Projects/ProjectAnalyticsModal.tsx:      return p.data.summaryRows.reduce((sum: number, r: any) => sum + (r.total || 0), 0);
+src/components/Projects/ProjectAnalyticsModal.tsx:  const totals = useMemo(() => {
+src/components/Projects/ProjectAnalyticsModal.tsx:    if (totals.marginPercent >= 40) {
+src/components/Projects/ProjectAnalyticsModal.tsx:        text: `Высокомаржинальная сделка (${totals.marginPercent}% рентабельности). Наценка составляет x${totals.markup}. Превосходный результат!`,
+src/components/Projects/ProjectAnalyticsModal.tsx:    } else if (totals.marginPercent >= 25) {
+src/components/Projects/ProjectAnalyticsModal.tsx:        text: `Нормальный уровень рентабельности (${totals.marginPercent}%). Наценка x${totals.markup} соответствует рыночному стандарту для мебельного производства.`,
+src/components/Projects/ProjectAnalyticsModal.tsx:        text: `Низкая маржинальность сделки (${totals.marginPercent}%). Наценка составляет всего x${totals.markup}. Обратите внимание на высокие затраты на материалы или фурнитуру.`,
+src/components/Projects/ProjectAnalyticsModal.tsx:    const hardwareShare = totals.cost > 0 ? (analyticsData[2].cost / totals.cost) * 100 : 0;
+src/components/Projects/ProjectAnalyticsModal.tsx:  }, [totals, analyticsData]);
+src/components/Projects/ProjectAnalyticsModal.tsx:              <div className="text-2xl font-black text-blue-900">{totals.revenue.toLocaleString()} ₽</div>
+src/components/Projects/ProjectAnalyticsModal.tsx:              <div className="text-2xl font-black text-red-900">{totals.cost.toLocaleString()} ₽</div>
+src/components/Projects/ProjectAnalyticsModal.tsx:              <div className="text-2xl font-black text-green-900">{totals.profit.toLocaleString()} ₽</div>
+src/components/Projects/ProjectAnalyticsModal.tsx:              <div className="text-2xl font-black text-purple-900">{totals.marginPercent}%</div>
+src/components/Projects/ProjectAnalyticsModal.tsx:              <span className="text-[10px] text-purple-500 font-medium mt-1 inline-block">Наценка: х{totals.markup}</span>
+src/components/Projects/ProjectAnalyticsModal.tsx:                    <td className="px-6 py-4 text-right font-mono">{totals.cost.toLocaleString()} ₽</td>
+src/components/Projects/ProjectAnalyticsModal.tsx:                    <td className="px-6 py-4 text-right font-mono">{totals.revenue.toLocaleString()} ₽</td>
+src/components/Projects/ProjectAnalyticsModal.tsx:                    <td className="px-6 py-4 text-right text-indigo-600 font-black">x{totals.markup}</td>
+src/components/Projects/ProjectAnalyticsModal.tsx:                    <td className="px-6 py-4 text-right text-emerald-700 font-black font-mono">{totals.profit.toLocaleString()} ₽</td>
+src/components/Projects/ProjectAnalyticsModal.tsx:                        {totals.marginPercent}%
+src/components/Projects/ProjectAnalyticsModal.tsx:                    const pct = totals.cost > 0 ? (row.cost / totals.cost) * 100 : 0;
+src/components/Projects/ProjectsView.tsx:  totalPrice?: number;
+src/components/Projects/ProjectsView.tsx:                          Сумма: {(set.totalPrice || 0).toLocaleString()} ₽
+src/components/Projects/ProjectsView.tsx:                                {(project.totalPrice || (project.data?.results ? Object.values(project.data.results).reduce((acc: number, r: any) => acc + (r.totalPrice || 0), 0) : 0)).toLocaleString()} ₽
+src/components/Projects/ProjectSpecificationView.tsx:  totalPrice?: number;
+src/components/Projects/ProjectSpecificationView.tsx:                  {project.totalPrice && (
+src/components/Projects/ProjectSpecificationView.tsx:                      <span className="text-xl font-black text-blue-600">{project.totalPrice.toLocaleString()} ₽</span>
+src/components/Projects/ProjectSpecificationView.tsx:                      const qty = row.qty || row.totalQty || row.quantity || "";
+src/components/Projects/Bitrix24Modal.tsx:    let totalMaterialsPrice = 0;
+src/components/Projects/Bitrix24Modal.tsx:    let totalHardwarePrice = 0;
+src/components/Projects/Bitrix24Modal.tsx:    let totalServicesPrice = 0;
+src/components/Projects/Bitrix24Modal.tsx:    let totalDeliveryPrice = 0;
+src/components/Projects/Bitrix24Modal.tsx:    let totalAssemblyPrice = 0;
+src/components/Projects/Bitrix24Modal.tsx:    let totalFacadePrice = 0;
+src/components/Projects/Bitrix24Modal.tsx:    let totalCustomFacadePrice = 0;
+src/components/Projects/Bitrix24Modal.tsx:              totalMaterialsPrice += row.total || 0;
+src/components/Projects/Bitrix24Modal.tsx:              totalHardwarePrice += row.total || 0;
+src/components/Projects/Bitrix24Modal.tsx:              totalDeliveryPrice += row.total || 0;
+src/components/Projects/Bitrix24Modal.tsx:              totalAssemblyPrice += row.total || 0;
+src/components/Projects/Bitrix24Modal.tsx:              totalServicesPrice += row.total || 0;
+src/components/Projects/Bitrix24Modal.tsx:               totalCustomFacadePrice += row.total || 0;
+src/components/Projects/Bitrix24Modal.tsx:               totalFacadePrice += row.total || 0;
+src/components/Projects/Bitrix24Modal.tsx:            totalMaterialsPrice += row.total || 0;
+src/components/Projects/Bitrix24Modal.tsx:          totalMaterialsPrice += r.totalPrice || 0;
+src/components/Projects/Bitrix24Modal.tsx:            total: r.totalPrice,
+src/components/Projects/Bitrix24Modal.tsx:          totalHardwarePrice += (item.price || 0) * qty;
+src/components/Projects/Bitrix24Modal.tsx:            totalDeliveryPrice += (item.price || 0) * qty;
+src/components/Projects/Bitrix24Modal.tsx:            totalAssemblyPrice += (item.price || 0) * qty;
+src/components/Projects/Bitrix24Modal.tsx:            totalServicesPrice += (item.price || 0) * qty;
+src/components/Projects/Bitrix24Modal.tsx:        totalDeliveryPrice += serviceData.deliveryPrice || 0;
+src/components/Projects/Bitrix24Modal.tsx:          totalAssemblyPrice += serviceData.assemblyPrice;
+src/components/Projects/Bitrix24Modal.tsx:      totalMaterialsPrice,
+src/components/Projects/Bitrix24Modal.tsx:      totalHardwarePrice,
+src/components/Projects/Bitrix24Modal.tsx:      totalServicesPrice,
+src/components/Projects/Bitrix24Modal.tsx:      totalDeliveryPrice,
+src/components/Projects/Bitrix24Modal.tsx:      totalAssemblyPrice,
+src/components/Projects/Bitrix24Modal.tsx:      totalFacadePrice,
+src/components/Projects/Bitrix24Modal.tsx:      totalCustomFacadePrice,
+src/components/Projects/Bitrix24Modal.tsx:      totalOverall: totalMaterialsPrice + totalHardwarePrice + totalServicesPrice + totalDeliveryPrice + totalAssemblyPrice
+src/components/Projects/Bitrix24Modal.tsx:      const totalS = project.totalPrice || data.totalSum || computedSummary.totalOverall || 0;
+src/components/Projects/Bitrix24Modal.tsx:      if (mapping.totalSum && totalS) fields[mapping.totalSum] = totalS;
+src/components/Projects/Bitrix24Modal.tsx:      if (mapping.hardwareSum && computedSummary.totalHardwarePrice) {
+src/components/Projects/Bitrix24Modal.tsx:        fields[mapping.hardwareSum] = computedSummary.totalHardwarePrice;
+src/components/Projects/Bitrix24Modal.tsx:      if (mapping.cabinetSum && computedSummary.totalMaterialsPrice) {
+src/components/Projects/Bitrix24Modal.tsx:        fields[mapping.cabinetSum] = computedSummary.totalMaterialsPrice;
+src/components/Projects/Bitrix24Modal.tsx:      if (mapping.facadeSum && computedSummary.totalFacadePrice) {
+src/components/Projects/Bitrix24Modal.tsx:        fields[mapping.facadeSum] = computedSummary.totalFacadePrice;
+src/components/Projects/Bitrix24Modal.tsx:      if (mapping.customFacadeSum && computedSummary.totalCustomFacadePrice) {
+src/components/Projects/Bitrix24Modal.tsx:        fields[mapping.customFacadeSum] = computedSummary.totalCustomFacadePrice;
+src/components/Projects/Bitrix24Modal.tsx:      if (mapping.assemblySum && computedSummary.totalAssemblyPrice) {
+src/components/Projects/Bitrix24Modal.tsx:        fields[mapping.assemblySum] = computedSummary.totalAssemblyPrice;
+src/components/Projects/Bitrix24Modal.tsx:      if (mapping.deliverySum && computedSummary.totalDeliveryPrice) {
+src/components/Projects/Bitrix24Modal.tsx:        fields[mapping.deliverySum] = computedSummary.totalDeliveryPrice;
+src/components/Projects/Bitrix24Modal.tsx:        if (row.total !== undefined) {
+src/components/Projects/Bitrix24Modal.tsx:            return row.total / row.coef;
+src/components/Projects/Bitrix24Modal.tsx:          return row.total;
+src/components/Projects/Bitrix24Modal.tsx:              qty: r.totalArea ? `${r.totalArea.toFixed(2)} м²` : "1 л.",
+src/components/Projects/Bitrix24Modal.tsx:              price: r.totalPrice / (r.totalArea || 1), 
+src/components/Projects/Bitrix24Modal.tsx:              rawPrice: r.totalPrice / (r.totalArea || 1),
+src/components/Projects/Bitrix24Modal.tsx:              total: r.totalPrice,
+src/components/Projects/Bitrix24Modal.tsx:              total: (item.price || 0) * (item.quantity || 1),
+src/components/Projects/Bitrix24Modal.tsx:      const corpPlusFacadesSum = (computedSummary.totalMaterialsPrice || 0) + (computedSummary.totalFacadePrice || 0) + (computedSummary.totalCustomFacadePrice || 0);
+src/components/Projects/Bitrix24Modal.tsx:                pDelivery += row.total || 0;
+src/components/Projects/Bitrix24Modal.tsx:      fields.OPPORTUNITY = totalS;
+src/components/Projects/Bitrix24Modal.tsx:                  {(project.totalPrice || project.data?.totalSum || computedSummary.totalOverall || 0).toLocaleString()} ₽
+src/components/Projects/Bitrix24Modal.tsx:                  {computedSummary.totalMaterialsPrice.toLocaleString()} ₽
+src/components/Projects/Bitrix24Modal.tsx:                  {computedSummary.totalHardwarePrice.toLocaleString()} ₽
+src/components/Projects/Bitrix24Modal.tsx:                  {computedSummary.totalFacadePrice.toLocaleString()} ₽
+src/components/Projects/Bitrix24Modal.tsx:                  {computedSummary.totalCustomFacadePrice.toLocaleString()} ₽
+src/components/Projects/Bitrix24Modal.tsx:                  {computedSummary.totalAssemblyPrice.toLocaleString()} ₽
+src/components/Projects/Bitrix24Modal.tsx:                  {computedSummary.totalDeliveryPrice.toLocaleString()} ₽
+src/components/Projects/ProjectSetCheckoutModal.tsx:  totalPrice?: number;
+src/components/Projects/ProjectSetCheckoutModal.tsx:    let totalMaterialsPrice = 0;
+src/components/Projects/ProjectSetCheckoutModal.tsx:    let totalHardwarePrice = 0;
+src/components/Projects/ProjectSetCheckoutModal.tsx:    let totalServicesPrice = 0;
+src/components/Projects/ProjectSetCheckoutModal.tsx:    let totalDeliveryPrice = 0;
+src/components/Projects/ProjectSetCheckoutModal.tsx:    let totalAssemblyPrice = 0;
+src/components/Projects/ProjectSetCheckoutModal.tsx:    let totalFacadePrice = 0;
+src/components/Projects/ProjectSetCheckoutModal.tsx:    let totalCustomFacadePrice = 0;
+src/components/Projects/ProjectSetCheckoutModal.tsx:              totalMaterialsPrice += row.total || 0;
+src/components/Projects/ProjectSetCheckoutModal.tsx:              totalHardwarePrice += row.total || 0;
+src/components/Projects/ProjectSetCheckoutModal.tsx:                totalServicesPrice += row.total || 0;
+src/components/Projects/ProjectSetCheckoutModal.tsx:                totalDeliveryPrice += row.total || 0;
+src/components/Projects/ProjectSetCheckoutModal.tsx:              totalAssemblyPrice += row.total || 0;
+src/components/Projects/ProjectSetCheckoutModal.tsx:              totalServicesPrice += row.total || 0;
+src/components/Projects/ProjectSetCheckoutModal.tsx:               totalCustomFacadePrice += row.total || 0;
+src/components/Projects/ProjectSetCheckoutModal.tsx:               totalFacadePrice += row.total || 0;
+src/components/Projects/ProjectSetCheckoutModal.tsx:            totalMaterialsPrice += row.total || 0;
+src/components/Projects/ProjectSetCheckoutModal.tsx:          totalMaterialsPrice += r.totalPrice || 0;
+src/components/Projects/ProjectSetCheckoutModal.tsx:            total: r.totalPrice,
+src/components/Projects/ProjectSetCheckoutModal.tsx:                total: 0, // Fallback price unknown
+src/components/Projects/ProjectSetCheckoutModal.tsx:          totalHardwarePrice += (item.price || 0) * qty;
+src/components/Projects/ProjectSetCheckoutModal.tsx:              totalServicesPrice += (item.price || 0) * qty;
+src/components/Projects/ProjectSetCheckoutModal.tsx:              totalDeliveryPrice += (item.price || 0) * qty;
+src/components/Projects/ProjectSetCheckoutModal.tsx:            totalAssemblyPrice += (item.price || 0) * qty;
+src/components/Projects/ProjectSetCheckoutModal.tsx:            totalServicesPrice += (item.price || 0) * qty;
+src/components/Projects/ProjectSetCheckoutModal.tsx:            totalServicesPrice += serviceData.deliveryPrice;
+src/components/Projects/ProjectSetCheckoutModal.tsx:              total: serviceData.deliveryPrice,
+src/components/Projects/ProjectSetCheckoutModal.tsx:          totalDeliveryPrice += serviceData.deliveryPrice || 0;
+src/components/Projects/ProjectSetCheckoutModal.tsx:          totalAssemblyPrice += serviceData.assemblyPrice;
+src/components/Projects/ProjectSetCheckoutModal.tsx:      totalMaterialsPrice +
+src/components/Projects/ProjectSetCheckoutModal.tsx:      totalHardwarePrice +
+src/components/Projects/ProjectSetCheckoutModal.tsx:      totalServicesPrice +
+src/components/Projects/ProjectSetCheckoutModal.tsx:      totalDeliveryPrice +
+src/components/Projects/ProjectSetCheckoutModal.tsx:      totalAssemblyPrice;
+src/components/Projects/ProjectSetCheckoutModal.tsx:    // If we used the fallback and the sum is different from p.totalPrice, trust p.totalPrice for overall
+src/components/Projects/ProjectSetCheckoutModal.tsx:      (sum, p) => sum + (p.totalPrice || 0),
+src/components/Projects/ProjectSetCheckoutModal.tsx:      totalMaterialsPrice,
+src/components/Projects/ProjectSetCheckoutModal.tsx:      totalHardwarePrice,
+src/components/Projects/ProjectSetCheckoutModal.tsx:      totalServicesPrice,
+src/components/Projects/ProjectSetCheckoutModal.tsx:      totalDeliveryPrice,
+src/components/Projects/ProjectSetCheckoutModal.tsx:      totalAssemblyPrice,
+src/components/Projects/ProjectSetCheckoutModal.tsx:      totalFacadePrice,
+src/components/Projects/ProjectSetCheckoutModal.tsx:      totalCustomFacadePrice,
+src/components/Projects/ProjectSetCheckoutModal.tsx:      totalOverall: overall,
+src/components/Projects/ProjectSetCheckoutModal.tsx:                    {summary.totalOverall.toLocaleString()} ₽
+src/components/Projects/ProjectSetCheckoutModal.tsx:                                    item.total ||
+src/components/Projects/ProjectSetCheckoutModal.tsx:                      {summary.totalDeliveryPrice.toLocaleString()} ₽
+src/components/Projects/ProjectSetCheckoutModal.tsx:                      {summary.totalAssemblyPrice.toLocaleString()} ₽
+src/components/Projects/ProjectSetCheckoutModal.tsx:                          totalPrice: summary.totalOverall,
+src/components/Projects/ProjectSetCheckoutModal.tsx:                      totalPrice: summary.totalOverall,
+src/components/Admin/AppAdminView.tsx:    totalCompanies: companies.length,
+src/components/Admin/AppAdminView.tsx:    totalUsers: users.filter(u => u.role !== 'admin').length, // Count only real employees
+src/components/Admin/AppAdminView.tsx:            <StatCard icon={<Building2 />} label="Всего компаний" value={stats.totalCompanies} color="blue" />
+src/components/Admin/AppAdminView.tsx:            <StatCard icon={<Users />} label="Всего пользователей" value={stats.totalUsers} color="indigo" />
+src/components/Admin/AppAdminView.tsx:                <DistributionItem label="Производства" count={stats.productionCount} total={stats.totalCompanies} color="bg-blue-500" />
+src/components/Admin/AppAdminView.tsx:                <DistributionItem label="Салоны" count={stats.salonCount} total={stats.totalCompanies} color="bg-indigo-500" />
+src/components/Admin/AppAdminView.tsx:                <DistributionItem label="Дизайнеры" count={stats.designerCount} total={stats.totalCompanies} color="bg-purple-500" />
+src/components/Admin/AppAdminView.tsx:const DistributionItem = ({ label, count, total, color }: { label: string, count: number, total: number, color: string }) => {
+src/components/Admin/AppAdminView.tsx:  const percentage = total > 0 ? (count / total) * 100 : 0;
+src/components/Profile/UserProfileView.tsx:  totalPrice?: number;
+src/components/Profile/UserProfileView.tsx:  totalHardwareCost?: number;
+src/components/Profile/UserProfileView.tsx:    totalCount: 0,
+src/components/Profile/UserProfileView.tsx:    totalVolume: 0,
+src/components/Profile/UserProfileView.tsx:            const totalVolume = mine.reduce((acc: number, p: any) => acc + (p.totalPrice || 0), 0);
+src/components/Profile/UserProfileView.tsx:            const totalHardware = mine.reduce((acc: number, p: any) => acc + (p.totalHardwareCost || 0), 0);
+src/components/Profile/UserProfileView.tsx:            const sortedByPrice = [...mine].sort((a, b) => (b.totalPrice || 0) - (a.totalPrice || 0));
+src/components/Profile/UserProfileView.tsx:              totalCount: mine.length,
+src/components/Profile/UserProfileView.tsx:              totalVolume,
+src/components/Profile/UserProfileView.tsx:              mostExpensive: sortedByPrice[0].totalPrice || 0,
+src/components/Profile/UserProfileView.tsx:              avgPrice: Math.round(totalVolume / mine.length),
+src/components/Profile/UserProfileView.tsx:              hardwareShare: totalVolume > 0 ? Math.round((totalHardware / totalVolume) * 100) : 0,
+src/components/Profile/UserProfileView.tsx:                  <div className="text-2xl font-black text-gray-900 mb-1">{stats.totalCount}</div>
+src/components/Profile/UserProfileView.tsx:                  <div className="text-2xl font-black text-gray-900 mb-1">{stats.totalVolume.toLocaleString()}</div>
+src/components/Profile/UserProfileView.tsx:                          <div className="font-black text-gray-900 text-xs">{(project.totalPrice || 0).toLocaleString()}</div>
+src/App.tsx:  totalPrice?: number;
+src/App.tsx:          const totalItems = cat.brands.length + cat.products.length;
+src/App.tsx:                {totalItems} разделов
+src/App.tsx:                              let totalArea = item.area;
+src/App.tsx:                                if (targetKey === key && results[mKey]) totalArea += results[mKey].area;
+src/App.tsx:                              return totalArea.toFixed(2);
+src/App.tsx:                                const totalEdge = clusterKeys.reduce((sum, ck) => {
+src/App.tsx:                                return totalEdge.toFixed(2);
+src/App.tsx:  const totalLengthUsed = parts.reduce((sum, p) => sum + p.height, 0);
+src/App.tsx:  const isLengthExceeded = totalLengthUsed > sourceLength;
+src/App.tsx:                Внимание: общая длина частей ({totalLengthUsed} мм) превышает
+src/App.tsx:  onSummaryCalculated?: (total: number, summaryRows?: any[]) => void;
+src/App.tsx:  let totalCost = 0;
+src/App.tsx:  let totalLdspSheets = 0;
+src/App.tsx:  let totalLdspArea = 0;
+src/App.tsx:          const totalCuttingMeters = transverseMeters + longitudinalMeters;
+src/App.tsx:          if (totalCuttingMeters > 0) {
+src/App.tsx:              qty: `${totalCuttingMeters.toFixed(2)} м`,
+src/App.tsx:              total: Math.round(cuttingPrice * totalCuttingMeters),
+src/App.tsx:              total: Math.round(edgeServicePrice * cutEdgeLen),
+src/App.tsx:                total: Math.round(cut.edgePrice * wtCoef * salesEdgeQty),
+src/App.tsx:              total: Math.round(radiusPrice * radiiCount),
+src/App.tsx:            total: Math.round(itemCost),
+src/App.tsx:            totalLdspSheets += sheetCount;
+src/App.tsx:            totalLdspArea += sheetCount * sheetArea;
+src/App.tsx:            const totalArea = sheetCount * sheetArea;
+src/App.tsx:            itemCost = totalArea * price * coef;
+src/App.tsx:            qtyText = `${totalArea.toFixed(2)} м²`;
+src/App.tsx:            total: Math.round(itemCost),
+src/App.tsx:              total: Math.round(price), // No markup
+src/App.tsx:            totalLength: number;
+src/App.tsx:              totalLength: 0,
+src/App.tsx:          edgeGroups[groupKey].totalLength += edgeLenActual;
+src/App.tsx:                totalLength: 0,
+src/App.tsx:            edgeGroups[gluedGroupKey].totalLength += gluedEdgeLength;
+src/App.tsx:          const edgeLenRounded = Math.ceil(group.totalLength);
+src/App.tsx:              Math.ceil(group.totalLength / multiplicity) * multiplicity;
+src/App.tsx:            total: Math.round(eCost),
+src/App.tsx:  const kitCost = totalLdspSheets * currentHardwareKitPriceLocal;
+src/App.tsx:  if (totalLdspSheets > 0) {
+src/App.tsx:      sub: `На ${totalLdspSheets} л. ЛДСП`,
+src/App.tsx:      qty: `${totalLdspSheets} шт`,
+src/App.tsx:      total: Math.round(kitCost),
+src/App.tsx:      total: displayPrice * product.quantity,
+src/App.tsx:      const totalCuttingMeters = transverseMeters + longitudinalMeters;
+src/App.tsx:      if (totalCuttingMeters > 0) {
+src/App.tsx:          qty: `${totalCuttingMeters.toFixed(2)} м`,
+src/App.tsx:          total: Math.round(cuttingPrice * totalCuttingMeters),
+src/App.tsx:          total: Math.round(edgeServicePrice * edgeLen),
+src/App.tsx:            total: Math.round(cut.edgePrice * wtCoef * salesEdgeQty),
+src/App.tsx:          total: Math.round(radiusPrice * radiiCount),
+src/App.tsx:      total: displayPrice * service.quantity,
+src/App.tsx:  totalCost = summaryRows.reduce((sum, row) => sum + row.total, 0);
+src/App.tsx:    const productsSubtotal = summaryRows
+src/App.tsx:      .reduce((sum, row) => sum + row.total, 0);
+src/App.tsx:      productsSubtotal * (effectiveAssemblyPercentage / 100),
+src/App.tsx:      total: assemblyFee,
+src/App.tsx:    totalCost += assemblyFee;
+src/App.tsx:    // If no materials are present, this logic gracefully falls back to default logic since totalLdspArea will be 0.
+src/App.tsx:    const projectM2 = totalLdspArea;
+src/App.tsx:      total: finalDeliveryFee,
+src/App.tsx:    totalCost += finalDeliveryFee;
+src/App.tsx:    row.displayTotal = row.total;
+src/App.tsx:    row.netPaid = row.total;
+src/App.tsx:  let totalPromoMarkup = 0;
+src/App.tsx:  let totalPromoDiscount = 0;
+src/App.tsx:  let totalPromoCashback = 0;
+src/App.tsx:            row.displayTotal = (row.displayTotal || row.total) * (1 + P / 100);
+src/App.tsx:            row.discountSum = (row.discountSum || 0) + (row.total * P / 100);
+src/App.tsx:            row.netPaid = row.total;
+src/App.tsx:            row.displayTotal = row.displayTotal || row.total;
+src/App.tsx:            row.discountSum = (row.discountSum || 0) + (row.total * P / 100);
+src/App.tsx:            row.netPaid = (row.netPaid || row.total) - (row.total * P / 100);
+src/App.tsx:            row.displayTotal = (row.displayTotal || row.total) * (1 + P / 100);
+src/App.tsx:            row.cashbackSum = (row.cashbackSum || 0) + (row.total * P / 100);
+src/App.tsx:            row.netPaid = (row.netPaid || row.total) * (1 + P / 100);
+src/App.tsx:            row.displayTotal = row.displayTotal || row.total;
+src/App.tsx:            row.cashbackSum = (row.cashbackSum || 0) + (row.total * P / 100);
+src/App.tsx:            row.netPaid = row.netPaid || row.total;
+src/App.tsx:            row.displayTotal = row.total;
+src/App.tsx:            row.discountSum = row.total - (singleCustomPrice * rowQty);
+src/App.tsx:        totalPromoMarkup += promo.giftProductMarkupAmount;
+src/App.tsx:          totalPromoMarkup += promo.giftServiceMarkupAmount;
+src/App.tsx:              row.displayTotal = row.total;
+src/App.tsx:              row.discountSum = row.total - (singleCustomPrice * rowQty);
+src/App.tsx:          totalPromoMarkup += promo.giftServiceMarkupAmount;
+src/App.tsx:          row.displayTotal = (row.displayTotal || row.total) * (1 + P_bank / 100);
+src/App.tsx:          row.netPaid = (row.netPaid || row.total) * (1 + P_bank / 100);
+src/App.tsx:  totalPromoDiscount = summaryRows.reduce((sum, r) => sum + (r.discountSum || 0), 0);
+src/App.tsx:  totalPromoCashback = summaryRows.reduce((sum, r) => sum + (r.cashbackSum || 0), 0);
+src/App.tsx:  let promotionAdjustedTotal = summaryRows.reduce((sum, r) => sum + (r.netPaid !== undefined ? r.netPaid : r.total), 0) + totalPromoMarkup;
+src/App.tsx:  const materialsSubtotalValue = summaryRows
+src/App.tsx:    .reduce((sum, r) => sum + (r.netPaid !== undefined ? r.netPaid : r.total), 0);
+src/App.tsx:  const hardwareSubtotalValue = summaryRows
+src/App.tsx:    .reduce((sum, r) => sum + (r.netPaid !== undefined ? r.netPaid : r.total), 0);
+src/App.tsx:                      {row.displayTotal !== row.total ? (
+src/App.tsx:                          <span className="text-xs line-through text-gray-400 font-normal">{(row.displayTotal ?? row.total).toLocaleString()} ₽</span>
+src/App.tsx:                          <span className="text-sm font-extrabold text-indigo-650">{(row.netPaid ?? row.total).toLocaleString()} ₽</span>
+src/App.tsx:                          {(row.total ?? 0).toLocaleString()} ₽
+src/App.tsx:                  {materialsSubtotalValue.toLocaleString()} ₽
+src/App.tsx:                  {hardwareSubtotalValue.toLocaleString()} ₽
+src/App.tsx:                          {row.displayTotal !== row.total ? (
+src/App.tsx:                              <span className="text-xs line-through text-gray-400 font-normal">{(row.displayTotal ?? row.total).toLocaleString()} ₽</span>
+src/App.tsx:                              <span className="text-sm font-extrabold text-indigo-650">{(row.netPaid ?? row.total).toLocaleString()} ₽</span>
+src/App.tsx:                            `${(row.total ?? 0).toLocaleString()} ₽`
+src/App.tsx:                        {row.displayTotal !== row.total ? (
+src/App.tsx:                            <span className="text-xs line-through text-gray-400 font-normal">{(row.displayTotal ?? row.total).toLocaleString()} ₽</span>
+src/App.tsx:                            <span className="text-sm font-extrabold text-indigo-650">{(row.netPaid ?? row.total).toLocaleString()} ₽</span>
+src/App.tsx:                          `${(row.total ?? 0).toLocaleString()} ₽`
+src/App.tsx:                {(totalPromoDiscount > 0 || totalPromoCashback > 0 || totalPromoMarkup > 0) ? (
+src/App.tsx:                      {Math.round(totalCost).toLocaleString()} ₽
+src/App.tsx:                    {totalPromoDiscount > 0 && (
+src/App.tsx:                        Скидка: -{totalPromoDiscount.toLocaleString()} ₽
+src/App.tsx:                    {totalPromoCashback > 0 && (
+src/App.tsx:                        Кэшбек: +{totalPromoCashback.toLocaleString()} ₽
+src/App.tsx:                    {totalPromoMarkup > 0 && (
+src/App.tsx:                        Наценка по условиям: +{totalPromoMarkup.toLocaleString()} ₽
+src/App.tsx:                          { key: "totalSum", label: "Сумма договора" },
+src/App.tsx:  totalCost,
+src/App.tsx:  totalLdspSheets,
+src/App.tsx:  totalLdspArea = 0,
+src/App.tsx:  totalCost: number;
+src/App.tsx:  totalLdspSheets: number;
+src/App.tsx:  totalLdspArea?: number;
+src/App.tsx:    const projectM2 = totalLdspArea;
+src/App.tsx:    totalLdspArea,
+src/App.tsx:    return Math.round(totalCost * (assemblyPercentage / 100));
+src/App.tsx:  }, [data.assembly, totalCost, assemblyPercentage]);
+src/App.tsx:        totalPrice: activeTotal,
+src/App.tsx:        totalHardwareCost: hardwareTotal,
+src/App.tsx:          total: stableTotal,
+src/App.tsx:      total: stableTotal,
+src/App.tsx:              totalPrice: setData.totalPrice,
+src/App.tsx:                totalSum: setData.totalPrice,
+src/App.tsx:                    totalPrice: setData.totalPrice,
+src/App.tsx:                      totalSum: setData.totalPrice,
+src/App.tsx:            totalPrice: setData.totalPrice,
+src/App.tsx:    setCurrentProjectTotal(project.totalPrice || 0);
+src/App.tsx:  const totalCostForService = useMemo(() => {
+src/App.tsx:    let total = 0;
+src/App.tsx:    let totalLdspSheets = 0;
+src/App.tsx:          totalLdspSheets += sheetCount;
+src/App.tsx:      total += itemFinalCost;
+src/App.tsx:    const hwKitTotal = totalLdspSheets * hwKitPrice;
+src/App.tsx:    total += hwKitTotal;
+src/App.tsx:      total += edgeCost;
+src/App.tsx:      total += itemCost;
+src/App.tsx:      total += displayPrice * s.quantity;
+src/App.tsx:                totalPrice: currentProjectTotal,
+src/App.tsx:              totalCost={totalCostForService}
+src/App.tsx:              totalLdspSheets={Object.entries(results || {}).reduce(
+src/App.tsx:              totalLdspArea={Object.entries(results || {}).reduce((sum, [key, item]: any) => {
+src/App.tsx:                  return sum + (item.totalArea || 0);
+src/App.tsx:                    totalMaterialsPrice: project.totalPrice || 0,
+src/App.tsx:                    totalHardwarePrice: 0,
+src/App.tsx:                    totalServicesPrice: 0,
+src/App.tsx:                    totalDeliveryPrice: 0,
+src/App.tsx:                    totalAssemblyPrice: 0,
+fix_print_styles.cjs:  /\{\(summary\.services\.length > 0 \|\| summary\.totalDeliveryPrice > 0 \|\| summary\.totalAssemblyPrice > 0\) && \(\n              <div>/g,
+fix_print_styles.cjs:  '{(summary.services.length > 0 || summary.totalDeliveryPrice > 0 || summary.totalAssemblyPrice > 0) && (\n              <div className="break-inside-avoid">'
+SpecificationPrintView_content.txt:               <p className="font-bold text-xl">{summary.totalOverall.toLocaleString()} ₽</p>
+SpecificationPrintView_content.txt:                 <p className="flex justify-between"><span className="text-gray-500">Материалы:</span> <span className="font-medium">{(summary.totalMaterialsPrice || 0).toLocaleString()} ₽</span></p>
+SpecificationPrintView_content.txt:                 <p className="flex justify-between"><span className="text-gray-500">Фурнитура/Товары:</span> <span className="font-medium">{(summary.totalHardwarePrice || 0).toLocaleString()} ₽</span></p>
+SpecificationPrintView_content.txt:                 <p className="flex justify-between"><span className="text-gray-500">Услуги производства:</span> <span className="font-medium">{(summary.totalServicesPrice || 0).toLocaleString()} ₽</span></p>
+SpecificationPrintView_content.txt:                 <p className="flex justify-between"><span className="text-gray-500">Доставка:</span> <span className="font-medium">{(summary.totalDeliveryPrice || 0).toLocaleString()} ₽</span></p>
+SpecificationPrintView_content.txt:                 <p className="flex justify-between"><span className="text-gray-500">Сборка:</span> <span className="font-medium">{(summary.totalAssemblyPrice || 0).toLocaleString()} ₽</span></p>
+SpecificationPrintView_content.txt:               <span className="text-xl">Общая сумма: {(summary.totalOverall || 0).toLocaleString()} ₽</span>
+SpecificationPrintView_content.txt:                          <td className="p-3 text-right font-bold text-gray-900">{((item.total || ((item.price || 0) * item.qty)) || 0).toLocaleString()} <span className="text-[10px]">₽</span></td>
+SpecificationPrintView_content.txt:            {(summary.services.length > 0 || summary.totalDeliveryPrice > 0 || summary.totalAssemblyPrice > 0) && (
+SpecificationPrintView_content.txt:                          <td className="p-3 text-right font-bold text-gray-900 w-24">{((item.total || ((item.price || 0) * item.qty)) || 0).toLocaleString()} <span className="text-[10px]">₽</span></td>
+SpecificationPrintView_content.txt:                      {!summary.services.some((s: any) => s.name?.includes('Доставка')) && summary.totalDeliveryPrice > 0 && (
+SpecificationPrintView_content.txt:                          <td className="p-3 text-right font-bold">{summary.totalDeliveryPrice.toLocaleString()} <span className="text-[10px]">₽</span></td>
+SpecificationPrintView_content.txt:                      {!summary.services.some((s: any) => s.name?.includes('сборк')) && summary.totalAssemblyPrice > 0 && (
+SpecificationPrintView_content.txt:                          <td className="p-3 text-right font-bold">{summary.totalAssemblyPrice.toLocaleString()} <span className="text-[10px]">₽</span></td>
+fix_print.cjs:file = file.replace(/Общая сумма: \{summary\.totalOverall\.toLocaleString\(\)\} ₽ — Стоимость изделия, товаров и услуг/g, '<span className="text-xl">Общая сумма: {(summary.totalOverall || 0).toLocaleString()} ₽</span>\n                <span className="text-sm font-medium opacity-75">— Стоимость изделия, товаров и услуг</span>');

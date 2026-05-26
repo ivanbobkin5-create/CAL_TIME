@@ -1,0 +1,48 @@
+src/components/Projects/SpecificationPrintView.tsx:                           groups[p.name] = { body: [], back: [], facades: [] };
+src/components/Projects/SpecificationPrintView.tsx:                        let lastCategory: "body" | "facades" | "back" | null = null;
+src/components/Projects/SpecificationPrintView.tsx:                                 groups[proj].facades.push(itemStr);
+src/components/Projects/SpecificationPrintView.tsx:                                 lastCategory = "facades";
+src/components/Projects/SpecificationPrintView.tsx:                        const hasItems = items.body.length > 0 || items.back.length > 0 || items.facades.length > 0;
+src/components/Projects/SpecificationPrintView.tsx:                                {items.facades.length > 0 && (
+src/components/Projects/SpecificationPrintView.tsx:                                         {items.facades.map((s: string, i: number) => <li key={i}>{s}</li>)}
+src/components/Projects/ProjectAnalyticsModal.tsx:        id: "facades",
+src/components/Projects/ProjectSpecificationView.tsx:                         acc[proj] = { body: [], back: [], facades: [], hardware: [] };
+src/components/Projects/ProjectSpecificationView.tsx:                          acc[proj].facades.push(itemStr);
+src/components/Projects/ProjectSpecificationView.tsx:                          acc[proj]._lastCategory = "facades";
+src/components/Projects/ProjectSpecificationView.tsx:                        {groups.facades.length > 0 && (
+src/components/Projects/ProjectSpecificationView.tsx:                              {groups.facades.map((str: string, i: number) => <li key={i}>{str}</li>)}
+src/components/Projects/ProjectSpecificationModal.tsx:                <SpecItem label="Фасады" value={project.data?.facades || 'Не указаны'} />
+src/components/Projects/ProjectSetCheckoutModal.tsx:                           groups[p.name] = { body: [], back: [], facades: [], hardwareAndOthers: [] };
+src/components/Projects/ProjectSetCheckoutModal.tsx:                        let lastCategory: "body" | "facades" | "back" | null = null;
+src/components/Projects/ProjectSetCheckoutModal.tsx:                                 groups[proj].facades.push(itemStr);
+src/components/Projects/ProjectSetCheckoutModal.tsx:                                 lastCategory = "facades";
+src/components/Projects/ProjectSetCheckoutModal.tsx:                              {items.facades.length > 0 && (
+src/components/Projects/ProjectSetCheckoutModal.tsx:                                       {items.facades.map((s: string, i: number) => <li key={i}>{s}</li>)}
+src/components/Promotions/PromotionsView.tsx:  discountScopes?: string[]; // "all_project" | "corp" | "facades_plt" | "facades_cust" | "hardware" | "stone" | "delivery" | "assembly" | "services"
+src/components/Promotions/PromotionsView.tsx:  facades_plt: "Фасады плитные",
+src/components/Promotions/PromotionsView.tsx:  facades_cust: "Фасады заказные",
+src/App.tsx:  facades: ContractServiceConfig;
+src/App.tsx:  facades: Record<string, boolean>;
+src/App.tsx:                              ownProductionConfig.facades[facade] || false
+src/App.tsx:                                facades: {
+src/App.tsx:                                  ...prev.facades,
+src/App.tsx:                          facades: { ...prev.facades, [val]: true },
+src/App.tsx:                              ownProductionConfig.facades[facade] || false
+src/App.tsx:                                facades: {
+src/App.tsx:                                  ...prev.facades,
+src/App.tsx:                  { id: "facades", label: "Изготовление/заказ фасадов" },
+src/App.tsx:          // Handle custom facades
+src/App.tsx:                                              // Auto set edge decor for facades
+src/App.tsx:      return isFacadeOrMdfEdge ? "facades_plt" : "corp";
+src/App.tsx:      return "facades_cust";
+src/App.tsx:      return "facades_plt";
+src/App.tsx:    "general" | "services" | "production" | "account" | "facades" | "bitrix24" | "promotions"
+src/App.tsx:    facades: { enabled: false, calculateForClients: false },
+src/App.tsx:      facades: {
+src/App.tsx:    !contractConfig.facades.enabled ||
+src/App.tsx:    contractConfig.facades.calculateForClients;
+test-script.ts:   groups[p.name] = { body: [], back: [], facades: [] };
+test-script.ts:let lastCategory: "body" | "facades" | "back" | null = null;
+test-script.ts:         groups[proj].facades.push(itemStr);
+test-script.ts:         lastCategory = "facades";
+fix_print_data.cjs:/                     <div className="p-3 text-gray-800">\{p\.data\?\.decor \|\| '-'}<\/div>\n                   <\/div>\n                   <div className="grid grid-cols-\[1fr,2fr\] text-sm border-b border-gray-50 bg-white">\n                     <div className="p-3 border-r border-gray-50 font-medium text-gray-500">Кромка<\/div>\n                     <div className="p-3 text-gray-800">\{p\.data\?\.edge \|\| '-'}<\/div>\n                   <\/div>\n                   <div className="grid grid-cols-\[1fr,2fr\] text-sm border-b border-gray-50 bg-white">\n                     <div className="p-3 border-r border-gray-50 font-medium text-gray-500">Фасады<\/div>\n                     <div className="p-3 text-gray-800">\{p\.data\?\.facades \|\| '-'}<\/div>/g,

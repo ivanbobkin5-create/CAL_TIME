@@ -332,7 +332,9 @@ export const ProjectSetCheckoutModal = ({
       totalHardwarePrice +
       totalServicesPrice +
       totalDeliveryPrice +
-      totalAssemblyPrice;
+      totalAssemblyPrice +
+      totalFacadePrice +
+      totalCustomFacadePrice;
 
     // If we used the fallback and the sum is different from p.totalPrice, trust p.totalPrice for overall
     const sumOfProjectTotals = projects.reduce(
