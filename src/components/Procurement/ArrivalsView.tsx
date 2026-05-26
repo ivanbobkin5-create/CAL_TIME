@@ -37,6 +37,7 @@ export const ArrivalsView = ({
     const [supplierFilter, setSupplierFilter] = useState<string>('all');
     const [isProcessing, setIsProcessing] = useState<string | null>(null);
     const [commentData, setCommentData] = useState<Record<string, string>>({});
+    const [problemData, setProblemData] = useState<Record<string, boolean>>({});
     const [expandedArrival, setExpandedArrival] = useState<string | null>(null);
     const [acceptedArrivalIds, setAcceptedArrivalIds] = useState<Set<string>>(new Set());
 
@@ -136,7 +137,7 @@ export const ArrivalsView = ({
                     status: 'Поступило',
                     warehouseComment: comment,
                     receivedAt: new Date().toISOString(),
-                    hasProblem: comment.length > 0 // If there's a comment, we mark it as a potential issue/note
+                    hasProblem: problemData[arr.id] || false
                 };
 
                 // Recalculate category status
@@ -330,6 +331,15 @@ export const ArrivalsView = ({
                                                         onChange={(e) => setCommentData(prev => ({...prev, [arr.id]: e.target.value}))}
                                                         className="w-full p-3 bg-gray-50 border border-transparent focus:border-amber-200 focus:bg-white rounded-xl text-[11px] font-medium outline-none min-h-[80px] transition-all resize-none"
                                                     />
+                                                    <label className="flex items-center gap-2 cursor-pointer group">
+                                                        <input 
+                                                            type="checkbox" 
+                                                            className="w-4 h-4 rounded border-gray-300 text-rose-500 focus:ring-rose-500"
+                                                            checked={problemData[arr.id] || false}
+                                                            onChange={(e) => setProblemData(prev => ({...prev, [arr.id]: e.target.checked}))}
+                                                        />
+                                                        <span className="text-[11px] font-semibold text-gray-700 group-hover:text-rose-600 transition-colors">Есть расхождения по счету (отметит счет маркером "Внимание")</span>
+                                                    </label>
                                                     <button
                                                         onClick={() => handleReceived(arr)}
                                                         disabled={isProcessing === arr.id}

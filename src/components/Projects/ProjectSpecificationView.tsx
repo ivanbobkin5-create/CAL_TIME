@@ -63,7 +63,8 @@ export const ProjectSpecificationView = ({
   onPrint,
   userRole,
   companyId,
-  manufacturerId
+  manufacturerId,
+  upsertEdgeToPriceList
 }: { 
   project: Project; 
   onClose: () => void;
@@ -71,6 +72,7 @@ export const ProjectSpecificationView = ({
   userRole: string;
   companyId: string;
   manufacturerId?: string;
+  upsertEdgeToPriceList?: (decor: string, thickness: string, price: number, brandLdsp: string) => Promise<void>;
 }) => {
   const [sketches, setSketches] = useState<string[]>(project.sketches || []);
   const [selectedSketch, setSelectedSketch] = useState<string | null>(null);

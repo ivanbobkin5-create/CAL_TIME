@@ -19,8 +19,12 @@ import {
     ExternalLink,
     Plus,
     Edit2,
-    Trash2
+    Trash2,
+    MessageSquare,
+    Check,
+    HandCoins
 } from 'lucide-react';
+import { Banknote } from 'lucide-react';
 import { Supplier, ProcurementSettings } from '../../types';
 import { cn } from '../../lib/utils';
 
@@ -67,6 +71,7 @@ export const ProcurementView = ({
     const [orders, setOrders] = useState<any[]>([]);
     const [editingCell, setEditingCell] = useState<{order: any, category: string, currentData?: any} | null>(null);
     const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null); // null means adding a new one or viewing list
+    const [showProblemsModal, setShowProblemsModal] = useState(false);
     
     const [isSyncing, setIsSyncing] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -80,6 +85,7 @@ export const ProcurementView = ({
     const [editSupplierId, setEditSupplierId] = useState('');
     const [editInvoice, setEditInvoice] = useState('');
     const [editArrivalDate, setEditArrivalDate] = useState('');
+    const [editIsCredit, setEditIsCredit] = useState(false);
 
     const [categoryItems, setCategoryItems] = useState<any[]>([]);
 
@@ -107,6 +113,9 @@ export const ProcurementView = ({
                 setEditSupplierId('');
                 setEditInvoice('');
                 setEditArrivalDate('');
+                                                   setEditIsCredit(false);
+                                                   setEditIsCredit(false);
+                setEditIsCredit(false);
             }
         }
     }, [editingCell]);
@@ -376,6 +385,7 @@ export const ProcurementView = ({
                 supplierId: editSupplierId,
                 invoiceNumber: editInvoice,
                 arrivalDate: editArrivalDate,
+                isCredit: editIsCredit,
                 updatedAt: new Date().toISOString()
             };
         } else if (editingItemIndex === -1) {
@@ -387,6 +397,7 @@ export const ProcurementView = ({
                 supplierId: editSupplierId,
                 invoiceNumber: editInvoice,
                 arrivalDate: editArrivalDate,
+                isCredit: editIsCredit,
                 updatedAt: new Date().toISOString()
             });
         }
@@ -495,15 +506,26 @@ export const ProcurementView = ({
         return new Date(dateStr).getTime();
     };
 
-    const hasArrivalProblem = useMemo(() => {
-        return orders.some(o => 
-            Object.values(o.procurementStatus || {}).some((cat: any) => 
-                (cat.items || []).some((item: any) => 
-                    item.hasProblem || (item.status === 'Поступило' && (item.receivedQty || 0) < (item.qty || 0))
-                )
-            )
-        );
+    const allArrivalProblems = useMemo(() => {
+        let problems: {order: any, category: string, item: any, itemIndex: number}[] = [];
+        orders.forEach(o => {
+            Object.keys(o.procurementStatus || {}).forEach(category => {
+                const cat = o.procurementStatus[category];
+                (cat.items || []).forEach((item: any, itemIndex: number) => {
+                    if (item.hasProblem || (item.status === 'Поступило' && (item.receivedQty || 0) < (item.qty || 0))) {
+                        problems.push({ order: o, category, item, itemIndex });
+                    }
+                });
+            });
+        });
+        return problems;
     }, [orders]);
+
+    const unreadArrivalProblems = useMemo(() => {
+        return allArrivalProblems.filter(p => !p.item.warehouseCommentRead);
+    }, [allArrivalProblems]);
+
+    const arrivalProblems = unreadArrivalProblems;
 
     const filteredOrders = useMemo(() => {
         const finalStageId = companyData?.bitrix24?.procurementFinalStageId;
@@ -568,6 +590,23 @@ export const ProcurementView = ({
                             />
                         </div>
                         
+                        {unreadArrivalProblems.length > 0 ? (
+                            <button 
+                                onClick={() => setShowProblemsModal(true)}
+                                className="flex items-center gap-2 px-6 py-2.5 rounded-2xl font-black text-xs uppercase tracking-widest transition-all bg-rose-50 text-rose-600 hover:bg-rose-100 hover:shadow-md border border-rose-200 animate-pulse"
+                            >
+                                <AlertTriangle className="w-4 h-4 animate-bounce" />
+                                Приход на склад завершился с проблемой ({unreadArrivalProblems.length})
+                            </button>
+                        ) : (
+                            <button 
+                                onClick={() => setShowProblemsModal(true)}
+                                className="flex items-center gap-2 px-6 py-2.5 rounded-2xl font-black text-xs uppercase tracking-widest transition-all bg-sky-50 text-sky-700 hover:bg-sky-100 hover:shadow-md border border-sky-100"
+                            >
+                                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                                События склада (Ошибки)
+                            </button>
+                        )}
                         {companyData.procurementEnabled && (
                             <button 
                                 onClick={syncDeals}
@@ -600,17 +639,6 @@ export const ProcurementView = ({
                         </div>
                     ) : (
                         <div className="bg-white rounded-[2.5rem] border border-gray-200 shadow-sm overflow-hidden flex flex-col flex-1 min-h-0">
-                                {hasArrivalProblem && (
-                                    <div className="bg-rose-50 border-b border-rose-100 p-4 flex items-center gap-3 animate-in fade-in slide-in-from-top-2 shrink-0">
-                                        <div className="w-10 h-10 bg-rose-100 rounded-full flex items-center justify-center shrink-0">
-                                            <AlertTriangle className="w-5 h-5 text-rose-600" />
-                                        </div>
-                                        <div className="flex flex-col">
-                                            <span className="text-sm font-black text-rose-900 leading-none">Приход на склад завершился с проблемой!</span>
-                                            <span className="text-[10px] font-bold text-rose-600/70 uppercase tracking-widest mt-1">Некоторые товары поступили не в полном объеме</span>
-                                        </div>
-                                    </div>
-                                )}
                                 <div ref={scrollContainerRef} className="w-full flex-1 overflow-auto scrollbar-hide select-none transition-all relative">
                                     <table className="w-full text-left border-collapse table-fixed">
                                         <thead className="sticky top-0 z-[100] bg-white shadow-sm overflow-visible">
@@ -698,7 +726,12 @@ export const ProcurementView = ({
                                                      return (
                                                      <tr key={order.id} className="hover:bg-blue-50/40 transition-colors group">
                                                           {/* Project Name Cell - Narrowed & Wrapping */}
-                                                          <td className="px-4 py-3 sticky left-0 bg-white group-hover:bg-[#f8faff] z-10 border-r border-gray-100 shadow-[2px_0_5px_rgba(0,0,0,0.05)] transition-colors align-top w-48 font-black">
+                                                          <td className="px-4 py-3 sticky left-0 bg-white group-hover:bg-[#f8faff] z-10 border-r border-gray-100 shadow-[2px_0_5px_rgba(0,0,0,0.05)] transition-colors align-top w-48 font-black relative">
+                                                              {Object.values(order.procurementStatus || {}).some((cat: any) => (cat.items || []).some((item: any) => item.status === 'Заказано' && item.isCredit)) && (
+                                                                  <div className="absolute top-2 right-2 flex items-center justify-center w-6 h-6 rounded-lg bg-red-50 border border-red-200 text-red-600 shadow-sm z-20" title="Есть счет в долг">
+                                                                      <HandCoins className="w-3.5 h-3.5" />
+                                                                  </div>
+                                                              )}
                                                               <div className="flex flex-col">
                                                                   <div className="flex items-center justify-between gap-2 mb-2">
                                                                      <span className="font-black text-gray-900 text-xs leading-[1.2] group-hover:text-blue-600 transition-colors break-words whitespace-normal flex-1">
@@ -844,6 +877,12 @@ export const ProcurementView = ({
                                                                                     <div className="flex items-center gap-1 bg-white border border-rose-100 text-rose-600 px-1.5 py-0.5 rounded shadow-sm text-[8px] font-black uppercase tracking-widest w-fit">
                                                                                         <AlertTriangle className="w-2.5 h-2.5 shrink-0" />
                                                                                         ВНИМАНИЕ
+                                                                                    </div>
+                                                                                )}
+                                                                                {items.some((i: any) => i.status === 'Заказано' && i.isCredit) && (
+                                                                                    <div className="flex items-center gap-1 bg-white border border-amber-200 text-amber-700 px-1.5 py-0.5 rounded shadow-sm text-[8px] font-black uppercase tracking-widest w-fit mt-1">
+                                                                                        <Banknote className="w-2.5 h-2.5 shrink-0" />
+                                                                                        В ДОЛГ
                                                                                     </div>
                                                                                 )}
                                                                             </div>
@@ -1057,6 +1096,7 @@ export const ProcurementView = ({
                                                                        setEditSupplierId(item.supplierId || '');
                                                                        setEditInvoice(item.invoiceNumber || '');
                                                                        setEditArrivalDate(item.arrivalDate || '');
+                                                                       setEditIsCredit(item.isCredit || false);
                                                                    }}
                                                                    className="w-10 h-10 bg-gray-50 text-gray-400 hover:bg-blue-600 hover:text-white rounded-xl flex items-center justify-center transition-all lg:opacity-0 lg:group-hover:opacity-100"
                                                                >
@@ -1077,13 +1117,47 @@ export const ProcurementView = ({
                                                                </button>
                                                            </div>
                                                            </div>
-                                                            {item.comment && (
+                                                            {item.warehouseComment && (
                                                                 <div className="bg-rose-50 border border-rose-100 rounded-xl p-3 flex items-start gap-2.5 ml-0 sm:ml-16">
                                                                     <MessageSquare className="w-4 h-4 text-rose-500 shrink-0 mt-0.5" />
-                                                                    <div className="flex flex-col gap-0.5">
+                                                                    <div className="flex flex-col gap-0.5 flex-1">
                                                                         <span className="text-[10px] font-black uppercase tracking-widest text-rose-600">Комментарий склада</span>
-                                                                        <span className="text-xs text-rose-700">{item.comment}</span>
+                                                                        <span className="text-xs text-rose-700">{item.warehouseComment}</span>
                                                                     </div>
+                                                                    {(item.hasProblem || (item.status === 'Поступило' && (item.receivedQty || 0) < (item.qty || 0))) && !item.warehouseCommentRead && (
+                                                                        <button 
+                                                                            onClick={async () => {
+                                                                                const newItems = [...categoryItems];
+                                                                                newItems[idx] = { ...newItems[idx], warehouseCommentRead: true };
+                                                                                
+                                                                                // Оптимистичное обновление
+                                                                                setCategoryItems(newItems);
+                                                                                setOrders(prev => prev.map(o => {
+                                                                                    if (o.id === editingCell.order.id) {
+                                                                                        return {
+                                                                                            ...o,
+                                                                                            procurementStatus: {
+                                                                                                ...(o.procurementStatus || {}),
+                                                                                                [editingCell.category]: {
+                                                                                                    ...(o.procurementStatus?.[editingCell.category] || {}),
+                                                                                                    items: newItems
+                                                                                                }
+                                                                                            }
+                                                                                        };
+                                                                                    }
+                                                                                    return o;
+                                                                                }));
+                                                                                
+                                                                                await updateDoc(doc(db, 'companies', companyData.id, 'projectSets', editingCell.order.id), {
+                                                                                    [`procurementStatus.${editingCell.category}.items`]: newItems
+                                                                                });
+                                                                            }}
+                                                                            className="px-3 py-1.5 bg-rose-600 text-white hover:bg-rose-700 rounded-lg text-[10px] font-bold tracking-widest uppercase transition-colors shrink-0 flex items-center gap-1.5 shadow-sm hover:shadow"
+                                                                        >
+                                                                            <Check className="w-3 h-3" />
+                                                                            Ознакомлен
+                                                                        </button>
+                                                                    )}
                                                                 </div>
                                                             )}
                                                        </div>
@@ -1192,6 +1266,21 @@ export const ProcurementView = ({
                                                        </div>
                                                    </div>
                                                </div>
+
+                                               {editStatus === 'Заказано' && (
+                                                   <label className="flex items-center gap-3 cursor-pointer p-4 border-2 border-amber-100 rounded-2xl hover:border-amber-300 transition-colors bg-amber-50 mt-4 mb-4 col-span-2">
+                                                       <input 
+                                                           type="checkbox" 
+                                                           checked={editIsCredit} 
+                                                           onChange={(e) => setEditIsCredit(e.target.checked)}
+                                                           className="w-5 h-5 text-amber-600 rounded border-2 border-amber-200 focus:ring-amber-500 focus:ring-2 bg-white shrink-0"
+                                                       />
+                                                       <div className="flex flex-col">
+                                                           <span className="text-sm font-bold text-amber-900">Везут в долг</span>
+                                                           <span className="text-[10px] uppercase font-bold text-amber-700/70 tracking-widest mt-0.5">Оплата будет позже</span>
+                                                       </div>
+                                                   </label>
+                                               )}
                                            </div>
 
                                            <div className="flex gap-4">
@@ -1210,6 +1299,146 @@ export const ProcurementView = ({
                                            </div>
                                        </div>
                                   </div>
+                                )}
+                            </div>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+
+            <AnimatePresence>
+                {showProblemsModal && (
+                    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
+                        <motion.div 
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            className="absolute inset-0 bg-gray-900/60 backdrop-blur-md"
+                            onClick={() => setShowProblemsModal(false)}
+                        />
+                        <motion.div 
+                            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+                            className="bg-white rounded-3xl shadow-2xl relative w-full max-w-4xl overflow-hidden flex flex-col"
+                            style={{ maxHeight: 'calc(100vh - 4rem)' }}
+                        >
+                            <div className="p-6 border-b flex items-center justify-between bg-gray-50">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 bg-rose-100 rounded-full flex items-center justify-center">
+                                        <AlertTriangle className="w-5 h-5 text-rose-600" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-lg font-black text-gray-900">Ошибки склада</h3>
+                                        <p className="text-xs text-gray-500 font-medium">Требуется проверка</p>
+                                    </div>
+                                </div>
+                                <button 
+                                    onClick={() => setShowProblemsModal(false)}
+                                    className="w-8 h-8 flex items-center justify-center bg-gray-200 hover:bg-gray-300 text-gray-600 rounded-full transition-colors"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            </div>
+                            
+                            <div className="flex-1 overflow-auto p-6 bg-white space-y-4">
+                                {allArrivalProblems.length === 0 ? (
+                                    <div className="text-center py-10 text-gray-400 font-medium">
+                                        Активных проблем или событий не зафиксировано.
+                                    </div>
+                                ) : (
+                                    allArrivalProblems.map((prob, idx) => {
+                                        const { order, category, item, itemIndex } = prob;
+                                        const isRead = item.warehouseCommentRead;
+                                        
+                                        return (
+                                            <div 
+                                                key={idx} 
+                                                className={cn(
+                                                    "border rounded-2xl p-4 flex flex-col gap-3 transition-all",
+                                                    isRead 
+                                                        ? "border-emerald-100 bg-emerald-50/25" 
+                                                        : "border-rose-100 bg-rose-50 shadow-sm"
+                                                )}
+                                            >
+                                                <div className="flex items-start justify-between">
+                                                    <div>
+                                                        <div className={cn("text-[10px] font-black uppercase tracking-widest", isRead ? "text-emerald-600" : "text-rose-600")}>Сделка</div>
+                                                        <div className="font-bold text-gray-900 text-sm">{order.name}</div>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <div className="text-[10px] font-black uppercase tracking-widest text-gray-500">Категория</div>
+                                                        <div className="font-bold text-gray-700 text-sm">{category}</div>
+                                                    </div>
+                                                </div>
+                                                
+                                                <div className={cn(
+                                                    "flex flex-col gap-1 bg-white p-3 rounded-xl border",
+                                                    isRead ? "border-emerald-100" : "border-rose-100"
+                                                )}>
+                                                    <div className="flex justify-between items-center">
+                                                        <span className="text-[10px] font-black uppercase tracking-widest text-gray-400">Поставщик</span>
+                                                        <span className="font-bold text-gray-700 text-xs">{suppliers.find(s => s.id === item.supplierId)?.name || 'Не выбран'}</span>
+                                                    </div>
+                                                    <div className="flex justify-between items-center text-xs">
+                                                        <span className="text-gray-500">Статус прихода:</span>
+                                                        <span className={cn("font-bold", isRead ? "text-emerald-600" : "text-rose-600")}>
+                                                            {item.hasProblem ? 'Проблема на складе' : `Сдано ${item.receivedQty || 0} из ${item.qty || 0}`}
+                                                        </span>
+                                                    </div>
+                                                    {item.warehouseComment && (
+                                                        <div className={cn(
+                                                            "mt-2 border rounded-lg p-2.5 flex items-start gap-2",
+                                                            isRead ? "bg-emerald-50/50 border-emerald-100" : "bg-rose-50 border-rose-100"
+                                                        )}>
+                                                            <MessageSquare className={cn("w-4 h-4 shrink-0 mt-0.5", isRead ? "text-emerald-500" : "text-rose-500")} />
+                                                            <div className="flex flex-col">
+                                                                <span className={cn("text-[10px] font-bold uppercase tracking-widest", isRead ? "text-emerald-600/70" : "text-rose-600/70")}>Комментарий</span>
+                                                                <span className={cn("text-xs font-medium", isRead ? "text-emerald-950" : "text-rose-950")}>{item.warehouseComment}</span>
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                </div>
+ 
+                                                <div className="flex justify-end mt-1">
+                                                    {isRead ? (
+                                                        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100/50 text-emerald-800 rounded-xl text-xs font-black tracking-wide uppercase leading-none select-none">
+                                                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                                            Проверено
+                                                        </div>
+                                                    ) : (
+                                                        <button 
+                                                            onClick={() => {
+                                                                const newProcurementStatus = { ...order.procurementStatus };
+                                                                const newItems = [...(newProcurementStatus[category]?.items || [])];
+                                                                if (newItems[itemIndex]) {
+                                                                    newItems[itemIndex] = { ...newItems[itemIndex], warehouseCommentRead: true };
+                                                                    newProcurementStatus[category].items = newItems;
+                                                                    
+                                                                    // Оптимистичное обновление
+                                                                    setOrders(prev => prev.map(o => {
+                                                                        if (o.id === order.id) {
+                                                                            return { ...o, procurementStatus: newProcurementStatus };
+                                                                        }
+                                                                        return o;
+                                                                    }));
+ 
+                                                                    // Не блокируем UI через await, убирая микрозадержку сохранения в бэкграунд!
+                                                                    updateDoc(doc(db, 'companies', companyData.id, 'projectSets', order.id), {
+                                                                        procurementStatus: newProcurementStatus
+                                                                    });
+                                                                }
+                                                            }}
+                                                            className="px-4 py-2 bg-blue-600 text-white hover:bg-blue-700 rounded-xl text-xs font-bold tracking-widest uppercase transition-colors flex items-center gap-2 shadow-lg shadow-blue-100 hover:scale-[1.02] active:scale-95 duration-100"
+                                                        >
+                                                            <Check className="w-3.5 h-3.5" />
+                                                            Ознакомлен
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        );
+                                    })
                                 )}
                             </div>
                         </motion.div>

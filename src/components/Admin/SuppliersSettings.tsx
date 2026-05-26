@@ -1,9 +1,10 @@
-import React, { useState } from "react";
+import React, { useState, useMemo } from "react";
 import { Supplier } from "../../types";
 import { Trash2, Plus, GripVertical } from "lucide-react";
 
 export const SuppliersSettings = ({
   companyId,
+  companyData,
   suppliers,
   setSuppliers,
   productCategories,
@@ -14,6 +15,7 @@ export const SuppliersSettings = ({
   collection
 }: {
   companyId?: string;
+  companyData?: any;
   suppliers: Supplier[];
   setSuppliers: React.Dispatch<React.SetStateAction<Supplier[]>>;
   productCategories: string[];
@@ -25,6 +27,26 @@ export const SuppliersSettings = ({
 }) => {
   const [newSupplierName, setNewSupplierName] = useState("");
   const [newSupplierCategories, setNewSupplierCategories] = useState<string[]>([]);
+  const [customCategoryInput, setCustomCategoryInput] = useState("");
+
+  const customCategories = useMemo(() => {
+    const allGlobalCats = new Set(productCategories);
+    const existingCustoms = new Set<string>();
+    
+    // Add custom categories explicitly saved in company settings
+    if (companyData?.customSupplierCategories) {
+        companyData.customSupplierCategories.forEach((cat: string) => existingCustoms.add(cat));
+    }
+    
+    suppliers.forEach(supplier => {
+      supplier.categories?.forEach(cat => {
+        if (!allGlobalCats.has(cat)) {
+          existingCustoms.add(cat);
+        }
+      });
+    });
+    return Array.from(existingCustoms).sort();
+  }, [suppliers, productCategories, companyData?.customSupplierCategories]);
 
   const handleAddSupplier = async () => {
     if (!newSupplierName.trim() || !companyId) return;
@@ -51,6 +73,24 @@ export const SuppliersSettings = ({
     );
   };
 
+  const handleAddCustomCategory = async () => {
+    const trimmed = customCategoryInput.trim();
+    if (trimmed && !newSupplierCategories.includes(trimmed)) {
+      setNewSupplierCategories([...newSupplierCategories, trimmed]);
+      setCustomCategoryInput("");
+      
+      // Save it globally so it's not lost when we create a new supplier later
+      if (companyId) {
+          const currentCustoms = companyData?.customSupplierCategories || [];
+          if (!currentCustoms.includes(trimmed)) {
+              await setDoc(doc(db, 'companies', companyId), {
+                  customSupplierCategories: [...currentCustoms, trimmed]
+              }, { merge: true });
+          }
+      }
+    }
+  };
+
   return (
     <div className="space-y-6">
       <h2 className="text-xl font-bold">Настройка поставщиков</h2>
@@ -66,9 +106,9 @@ export const SuppliersSettings = ({
         />
         
         <div className="space-y-2">
-            <p className="font-medium text-sm text-gray-700">Категории товаров:</p>
+            <p className="font-medium text-sm text-gray-700">Категории (товары и сырье):</p>
             <div className="flex flex-wrap gap-2">
-                {productCategories.map((cat) => (
+                {Array.from(new Set([...productCategories, ...customCategories, ...newSupplierCategories])).map((cat) => (
                     <button
                         key={cat}
                         onClick={() => toggleCategory(cat)}
@@ -82,13 +122,35 @@ export const SuppliersSettings = ({
                     </button>
                 ))}
             </div>
+            
+            <div className="mt-2 flex gap-2">
+              <input
+                type="text"
+                value={customCategoryInput}
+                onChange={(e) => setCustomCategoryInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddCustomCategory();
+                  }
+                }}
+                placeholder="Своя категория (например, 'Стекла')"
+                className="flex-1 p-2 border rounded text-sm max-w-sm"
+              />
+              <button
+                onClick={handleAddCustomCategory}
+                className="bg-gray-200 text-gray-700 px-3 py-2 rounded hover:bg-gray-300 text-sm"
+              >
+                Добавить
+              </button>
+            </div>
         </div>
         
         <button
           onClick={handleAddSupplier}
           className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
         >
-          <Plus className="w-4 h-4" /> Добавить
+          <Plus className="w-4 h-4" /> Сохранить поставщика
         </button>
       </div>
 
@@ -97,7 +159,7 @@ export const SuppliersSettings = ({
           <div key={supplier.id} className="flex items-center justify-between p-3 border rounded">
             <div>
               <p className="font-bold">{supplier.name}</p>
-              <p className="text-sm text-gray-500">{supplier.categories.join(", ")}</p>
+              <p className="text-sm text-gray-500">{supplier.categories?.join(", ")}</p>
             </div>
             <button
               onClick={() => handleRemoveSupplier(supplier.id)}

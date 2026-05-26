@@ -3988,6 +3988,18 @@ const PriceView = ({
   );
 };
 
+const normThicknessForCalc = (t: string) => {
+  if (t === "1.0") return "1";
+  if (t === "2.0") return "2";
+  return t;
+};
+
+const normThicknessForConfig = (t: string) => {
+  if (t === "1") return "1.0";
+  if (t === "2") return "2.0";
+  return t;
+};
+
 const CalculatorView = ({
   handleFileUpload,
   handleCuttingTypeChange,
@@ -4047,6 +4059,7 @@ const CalculatorView = ({
   setSelectedForGlue,
   spareSheets,
   toggleSpareSheet,
+  getAvailableThicknessesForBrand,
 }: {
   handleFileUpload: (event: React.ChangeEvent<HTMLInputElement>) => void;
   handleCuttingTypeChange: (type: "nesting" | "saw") => void;
@@ -4127,6 +4140,7 @@ const CalculatorView = ({
   setSelectedForGlue: React.Dispatch<React.SetStateAction<string[]>>;
   spareSheets: Record<string, boolean>;
   toggleSpareSheet: (materialKey: string) => void;
+  getAvailableThicknessesForBrand: (brandName: string) => string[];
 }) => {
   return (
     <div className="p-4 md:p-8">
@@ -4572,12 +4586,28 @@ const CalculatorView = ({
                                       width: isNaN(w) ? 2800 : w,
                                       height: isNaN(h) ? 2070 : h,
                                     });
+
+                                    const available = getAvailableThicknessesForBrand(brand.brand);
+                                    if (available.length > 0) {
+                                      setEdgeThickness((prev) => ({
+                                        ...prev,
+                                        [key]: normThicknessForCalc(available[0]),
+                                      }));
+                                    }
                                   } else {
                                     const legacyBrand = LDSP_BRANDS.find((b) =>
                                       b.name.includes(e.target.value),
                                     );
-                                    if (legacyBrand)
+                                    if (legacyBrand) {
                                       updateSheetConfig(key, legacyBrand);
+                                      const available = getAvailableThicknessesForBrand(e.target.value);
+                                      if (available.length > 0) {
+                                        setEdgeThickness((prev) => ({
+                                          ...prev,
+                                          [key]: normThicknessForCalc(available[0]),
+                                        }));
+                                      }
+                                    }
                                   }
                                 }
                               }}
@@ -4698,11 +4728,22 @@ const CalculatorView = ({
                                       [key]: e.target.value,
                                     }))
                                   }
-                                  className="w-full p-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+                                  className="w-full p-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white font-bold"
                                 >
-                                  <option value="0.4">0.4 мм</option>
-                                  <option value="1">1.0 мм</option>
-                                  <option value="2">2.0 мм</option>
+                                  {(() => {
+                                    const brandName = sheetConfigs[key]?.name || "";
+                                    const available = getAvailableThicknessesForBrand(brandName);
+                                    const finalThicknesses = available.length > 0 ? available : ["0.4", "1.0", "2.0"];
+                                    
+                                    return finalThicknesses.map(t => {
+                                      const calcVal = normThicknessForCalc(t);
+                                      return (
+                                        <option key={t} value={calcVal}>
+                                          {t === "1" || t === "1.0" ? "1.0" : t === "2" || t === "2.0" ? "2.0" : t} мм
+                                        </option>
+                                      );
+                                    });
+                                  })()}
                                 </select>
                               </div>
                               <div>
@@ -6408,6 +6449,33 @@ const WorktopCutModal = ({
   );
 };
 
+const makeFittingDemandKey = (fit: {
+  category: string;
+  hingeType?: string;
+  depth?: string;
+  width?: string;
+  drawerSubCategory?: string;
+}) => {
+  return [
+    fit.category || "",
+    fit.hingeType || "",
+    fit.depth || "",
+    fit.width || "",
+    fit.drawerSubCategory || ""
+  ].join("::");
+};
+
+const parseFittingDemandKey = (key: string) => {
+  const [category, hingeType, depth, width, drawerSubCategory] = key.split("::");
+  return {
+    category,
+    hingeType: hingeType || undefined,
+    depth: depth || undefined,
+    width: width || undefined,
+    drawerSubCategory: drawerSubCategory || undefined
+  };
+};
+
 const SummaryView = ({
   results,
   selectedDecor,
@@ -6432,6 +6500,13 @@ const SummaryView = ({
   facadeThicknessOverride,
   hardwareKitPrice: hardwareKitPriceProps,
   addedProducts,
+  isModularProgram,
+  setIsModularProgram,
+  activeSegment,
+  setActiveSegment,
+  manualFittings,
+  setManualFittings,
+  catalogProducts = [],
   addedServices,
   serviceData,
   assemblyPercentage,
@@ -6473,6 +6548,7 @@ const SummaryView = ({
   resolveBrandCoefficient,
   onSummaryCalculated,
   promotions = [],
+  upsertEdgeToPriceList,
 }: {
   results: any;
   selectedDecor: Record<string, string>;
@@ -6497,6 +6573,13 @@ const SummaryView = ({
   facadeThicknessOverride: Record<string, string>;
   hardwareKitPrice: number;
   addedProducts: any[];
+  isModularProgram?: boolean;
+  setIsModularProgram?: (val: boolean) => void;
+  activeSegment?: "Эконом" | "Средний" | "Премиум";
+  setActiveSegment?: (val: "Эконом" | "Средний" | "Премиум") => void;
+  manualFittings?: any;
+  setManualFittings?: any;
+  catalogProducts?: any[];
   addedServices: any[];
   serviceData: any;
   assemblyPercentage: number;
@@ -6546,6 +6629,7 @@ const SummaryView = ({
   resolveBrandCoefficient: (categoryId: string, brand: string) => number;
   onSummaryCalculated?: (total: number, summaryRows?: any[]) => void;
   promotions?: any[];
+  upsertEdgeToPriceList?: (decor: string, thickness: string, price: number, brandLdsp: string) => Promise<void>;
 }) => {
   const [activeWorktopForCut, setActiveWorktopForCut] = useState<any | null>(
     null,
@@ -6553,6 +6637,13 @@ const SummaryView = ({
   const [showChecklistWindow, setShowChecklistWindow] = useState(false);
   const [selectedPromoIds, setSelectedPromoIds] = useState<string[]>([]);
   const [selectedInstallmentProg, setSelectedInstallmentProg] = useState<string>("");
+  const [hasAutoSelectedPromo, setHasAutoSelectedPromo] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (isModularProgram && setFurnitureType && furnitureType !== "Кухня") {
+      setFurnitureType("Кухня");
+    }
+  }, [isModularProgram, furnitureType, setFurnitureType]);
 
   const currentHardwareKitPriceLocal = (() => {
     const price = hardwareKitPriceProps as any;
@@ -6608,7 +6699,7 @@ const SummaryView = ({
     return getOrderWeight(itemA) - getOrderWeight(itemB);
   });
 
-  const summaryRows: any[] = results
+  const summaryRows: any[] = (results && !isModularProgram)
     ? sortedMaterialKeys.flatMap((key) => {
         const item = results[key];
         const rows: any[] = [];
@@ -7016,6 +7107,10 @@ const SummaryView = ({
           if (!edgeGroups[groupKey]) {
             // Find base price if missing in edgePrices
             let basePrice = edgePrices[ck] || 0;
+            if (basePrice === 0) {
+              const dAndTKey = `edgePrice_${decor}_${thickness}`;
+              basePrice = edgePrices[dAndTKey] || 0;
+            }
             if (basePrice === 0 && decor !== "Не указан") {
               // Try variations of decor string to find in price list
               const possibleKeys = [
@@ -7130,6 +7225,7 @@ const SummaryView = ({
             key: group.key,
             priceKey: group.priceKey,
             coef: group.coef,
+            thickness: thickness,
           });
         });
 
@@ -7153,25 +7249,210 @@ const SummaryView = ({
     });
   }
 
+  // Add Added Products & Modular Program Calculations
+  let finalProductsList = [...addedProducts];
+  const computedFittingsList: any[] = [];
+
+  if (isModularProgram) {
+    const modulesInProject = addedProducts.filter((p) => p.category === "Кухонные модули");
+    const fittingDemands: Record<string, number> = {};
+    
+    modulesInProject.forEach((mod) => {
+      const modQty = mod.quantity || 1;
+      
+      if (mod.moduleFittings && mod.moduleFittings.length > 0) {
+        mod.moduleFittings.forEach((fit: any) => {
+          const key = makeFittingDemandKey(fit);
+          fittingDemands[key] = (fittingDemands[key] || 0) + (fit.qty * modQty);
+        });
+      } else {
+        const group = mod.moduleGroup || "Нижние";
+        let defaultFits: { category: string; qty: number; hingeType?: string; depth?: string; width?: string }[] = [];
+        if (group === "Нижние") {
+          defaultFits = [
+            { category: "Петли", qty: 2, hingeType: "Накладная" },
+            { category: "Крепежные элементы и цоколь", qty: 4 },
+            { category: "Ручки и крючки", qty: 1 }
+          ];
+        } else if (group === "Верхние") {
+          defaultFits = [
+            { category: "Петли", qty: 2, hingeType: "Накладная" },
+            { category: "Крепежные элементы и цоколь", qty: 2 },
+            { category: "Ручки и крючки", qty: 1 }
+          ];
+        } else if (group === "Пеналы") {
+          defaultFits = [
+            { category: "Петли", qty: 4, hingeType: "Накладная" },
+            { category: "Крепежные элементы и цоколь", qty: 4 },
+            { category: "Ручки и крючки", qty: 2 }
+          ];
+        } else if (group === "Антресоли") {
+          defaultFits = [
+            { category: "Подъёмные механизмы", qty: 2 },
+            { category: "Ручки и крючки", qty: 1 }
+          ];
+        }
+        
+        defaultFits.forEach((fit) => {
+          const key = makeFittingDemandKey(fit);
+          fittingDemands[key] = (fittingDemands[key] || 0) + (fit.qty * modQty);
+        });
+      }
+    });
+
+    Object.entries(fittingDemands).forEach(([keyString, totalQty]) => {
+      if (totalQty <= 0) return;
+      
+      const fitParams = parseFittingDemandKey(keyString);
+      const category = fitParams.category;
+      
+      let matchedProd: any = null;
+      const manualId = manualFittings[keyString] || manualFittings[category];
+      if (manualId) {
+        matchedProd = catalogProducts.find((p: any) => p.id === manualId);
+      }
+      
+      if (!matchedProd) {
+        const searchCategory = category === "Посудосушитель" ? "Оснащение шкафов" : category;
+        let inCat = catalogProducts.filter((p: any) => p.category === searchCategory);
+        
+        if (category === "Петли" && fitParams.hingeType) {
+          const withHinge = inCat.filter((p: any) => p.hingeType === fitParams.hingeType);
+          if (withHinge.length > 0) inCat = withHinge;
+        } else if (category === "Системы выдвижения") {
+          if (fitParams.drawerSubCategory) {
+            const withSub = inCat.filter((p: any) => p.drawerSubCategory === fitParams.drawerSubCategory);
+            if (withSub.length > 0) inCat = withSub;
+          }
+          if (fitParams.depth) {
+            const withDepth = inCat.filter((p: any) => p.depth === fitParams.depth || String(p.name).includes(fitParams.depth));
+            if (withDepth.length > 0) inCat = withDepth;
+          }
+        } else if (category === "Посудосушитель") {
+          const withWidth = inCat.filter((p: any) => 
+            String(p.name).includes(fitParams.width || "") || 
+            (p.width && String(p.width) === fitParams.width) ||
+            String(p.name).toLowerCase().includes("сушил") ||
+            String(p.name).toLowerCase().includes("посудо")
+          );
+          
+          const bestMatches = withWidth.filter((p: any) => 
+            (String(p.name).toLowerCase().includes("сушил") || String(p.name).toLowerCase().includes("посудо")) &&
+            String(p.name).includes(fitParams.width || "")
+          );
+          
+          if (bestMatches.length > 0) {
+            inCat = bestMatches;
+          } else if (withWidth.length > 0) {
+            inCat = withWidth;
+          }
+        }
+        
+        matchedProd = inCat.find((p: any) => p.segment === activeSegment) || inCat[0];
+      }
+      
+      if (matchedProd) {
+        let customSub = category;
+        if (category === "Петли" && fitParams.hingeType) {
+          customSub = `${category} (${fitParams.hingeType})`;
+        } else if (category === "Системы выдвижения") {
+          customSub = `${category} (${fitParams.drawerSubCategory === "Направляющие скрытого монтажа" ? "Скрытого монт." : fitParams.drawerSubCategory === "Телескопические направляющие" ? "Телескоп." : "Ящик"} ${fitParams.depth}мм)`;
+        } else if (category === "Посудосушитель") {
+          customSub = `Посудосушитель (Ширина ${fitParams.width}мм)`;
+        }
+
+        const computedItem = {
+          ...matchedProd,
+          quantity: totalQty,
+          isComputedFitting: true,
+          computedCategory: category,
+          computedSub: customSub,
+          demandKey: keyString,
+          fitParams
+        };
+
+        finalProductsList.push(computedItem);
+        computedFittingsList.push(computedItem);
+      }
+    });
+
+    const bottomModules = modulesInProject.filter((p) => p.moduleGroup === "Нижние");
+    const totalLowerWidth = bottomModules.reduce((sum, mod) => {
+      let width = parseFloat(mod.moduleWidth);
+      if (isNaN(width) || width <= 0) {
+        const nameMatch = String(mod.name).match(/[ВН]-(\d+)/)?.[1] || String(mod.name).match(/\d+х(\d+)х/)?.[1];
+        width = nameMatch ? parseFloat(nameMatch) : 600;
+      }
+      return sum + (width * (mod.quantity || 1));
+    }, 0);
+
+    if (totalLowerWidth > 0) {
+      const fallbackWorktopQty = Math.ceil(totalLowerWidth / 3000);
+      let selectedWorktopQty = fallbackWorktopQty;
+      
+      const manualQtyStr = manualFittings["Столешницы и стеновые_qty"];
+      if (manualQtyStr) {
+        selectedWorktopQty = parseInt(manualQtyStr) || fallbackWorktopQty;
+      }
+
+      let wtProd: any = null;
+      const manualWtId = manualFittings["Столешницы и стеновые"];
+      if (manualWtId) {
+        wtProd = catalogProducts.find((p: any) => p.id === manualWtId);
+      }
+      
+      if (!wtProd) {
+        const wtItems = catalogProducts.filter((p: any) => p.category === "Столешницы и стеновые" && !p.name.toLowerCase().includes("стеновая"));
+        wtProd = wtItems.find((p: any) => p.segment === activeSegment) || wtItems[0];
+      }
+
+      if (wtProd) {
+        finalProductsList.push({
+          ...wtProd,
+          quantity: selectedWorktopQty,
+          isComputedWorktop: true,
+          computedCategory: "Столешницы и стеновые"
+        });
+      }
+    }
+  }
+
   // Add Added Products
-  addedProducts.forEach((product) => {
+  finalProductsList.forEach((product) => {
     const coeff = resolveBrandCoefficient(`cat_${product.category}`, "");
     const displayPrice = product.purchasePrice
       ? Math.round(product.purchasePrice * coeff)
       : product.price;
 
-    summaryRows.push({
-      type: "product",
-      name: product.name,
-      sub: product.category,
-      decor: "-",
-      qty: `${product.quantity} шт`,
-      price: displayPrice,
-      total: displayPrice * product.quantity,
-      coef: coeff,
-      id: product.id,
-      key: String(product.id),
-    });
+    const isKitchenModule = product.category === "Кухонные модули";
+
+    if (isKitchenModule && isModularProgram) {
+      summaryRows.push({
+        type: "material",
+        name: product.name,
+        sub: `${product.moduleGroup || "Нижние"} (${product.moduleHeight || "720"}х${product.moduleWidth || "600"}х${product.moduleDepth || "512"})`,
+        decor: product.moduleMaterial || "-",
+        qty: `${product.quantity} шт`,
+        price: displayPrice,
+        total: displayPrice * product.quantity,
+        coef: coeff,
+        id: product.id,
+        key: String(product.id),
+      });
+    } else {
+      summaryRows.push({
+        type: product.isComputedFitting ? "hardware" : "product",
+        name: product.name,
+        sub: product.category,
+        decor: product.isComputedWorktop ? (product.color || "-") : "-",
+        qty: `${product.quantity} шт`,
+        price: displayPrice,
+        total: displayPrice * product.quantity,
+        coef: coeff,
+        id: product.id,
+        key: String(product.id),
+      });
+    }
 
     // Worktop / Backsplash Cut Logic
     if (worktopCuts[product.id]) {
@@ -7456,6 +7737,24 @@ const SummaryView = ({
     if (!promo.buyerTypes.includes(customerType)) return false;
     return true;
   });
+
+  useEffect(() => {
+    if (eligiblePromotions.length > 0) {
+      const firstPromoId = eligiblePromotions[0].id;
+      if (selectedPromoIds.length === 0 && hasAutoSelectedPromo !== firstPromoId) {
+        setSelectedPromoIds([firstPromoId]);
+        setHasAutoSelectedPromo(firstPromoId);
+        
+        const firstPromo = eligiblePromotions[0];
+        if (firstPromo.promoType === "installment") {
+          const activeProgKey = Object.keys(firstPromo.installmentPrograms || {}).find(k => firstPromo.installmentPrograms[k].enabled) || "";
+          setSelectedInstallmentProg(activeProgKey);
+        }
+      }
+    } else {
+      setHasAutoSelectedPromo(null);
+    }
+  }, [eligiblePromotions, selectedPromoIds, hasAutoSelectedPromo]);
 
   const togglePromo = (promo: any) => {
     if (selectedPromoIds.includes(promo.id)) {
@@ -7821,18 +8120,24 @@ const SummaryView = ({
           <label className="text-sm font-bold text-gray-500 ml-4">
             Тип мебели:
           </label>
-          <select
-            value={furnitureType}
-            onChange={(e) => setFurnitureType(e.target.value)}
-            className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[200px]"
-          >
-            <option value="">Не указан</option>
-            {Object.keys(FURNITURE_CHECKLISTS).map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
+          {isModularProgram ? (
+            <div className="px-4 py-2 bg-emerald-50 border border-emerald-200 text-emerald-950 font-bold rounded-xl text-sm min-w-[200px] text-center shadow-inner">
+              Кухни (Модульная программа)
+            </div>
+          ) : (
+            <select
+              value={furnitureType}
+              onChange={(e) => setFurnitureType(e.target.value)}
+              className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[200px]"
+            >
+              <option value="">Не указан</option>
+              {Object.keys(FURNITURE_CHECKLISTS).map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
 
@@ -7974,6 +8279,243 @@ const SummaryView = ({
         </div>
       )}
 
+      {isModularProgram && (
+        <div className="bg-emerald-50/40 border border-emerald-100 rounded-2xl p-6 mb-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-emerald-100/60 pb-4 mb-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="inline-block w-2.5 h-2.5 bg-emerald-500 rounded-full animate-pulse" />
+                <h3 className="text-base font-bold text-emerald-950">Модульная программа кухни</h3>
+              </div>
+              <p className="text-xs text-emerald-800/80 mt-0.5">
+                Материалы заменены на готовые корпуса. Комплектующие унаследованы из каталога.
+              </p>
+            </div>
+            
+            <div className="flex items-center gap-4">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-gray-500">Базовый сегмент:</span>
+                <select
+                  value={activeSegment}
+                  onChange={(e) => setActiveSegment(e.target.value as any)}
+                  className="px-3 py-1.5 text-xs bg-white border border-emerald-200 rounded-lg font-semibold text-emerald-950 outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
+                >
+                  <option value="Эконом">Эконом</option>
+                  <option value="Средний">Средний</option>
+                  <option value="Премиум">Премиум</option>
+                </select>
+              </div>
+
+              <button
+                onClick={() => {
+                  showConfirm(
+                    "Отключить модульную программу",
+                    "Вернуться к детальному расчету материалов? Это вернет стандартное списание ЛДСП, ХДФ, кромки и метизов.",
+                    () => {
+                      if (setIsModularProgram) setIsModularProgram(false);
+                    }
+                  );
+                }}
+                className="text-xs font-semibold px-3 py-1.5 text-red-600 bg-red-50 hover:bg-red-100 border border-red-200 rounded-lg transition-colors"
+              >
+                Отключить
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* Fittings Override list */}
+            {computedFittingsList.map((fitItem) => {
+              const cat = fitItem.computedCategory;
+              const keyString = fitItem.demandKey;
+              const fitParams = fitItem.fitParams;
+              
+              const searchCategory = cat === "Посудосушитель" ? "Оснащение шкафов" : cat;
+              let opts = catalogProducts.filter((p) => p.category === searchCategory);
+              
+              if (cat === "Петли" && fitParams.hingeType) {
+                opts = [...opts].sort((a, b) => {
+                  const aMatch = a.hingeType === fitParams.hingeType ? 1 : 0;
+                  const bMatch = b.hingeType === fitParams.hingeType ? 1 : 0;
+                  return bMatch - aMatch;
+                });
+              } else if (cat === "Системы выдвижения") {
+                opts = [...opts].sort((a, b) => {
+                  let scoreA = 0;
+                  let scoreB = 0;
+                  if (fitParams.drawerSubCategory && a.drawerSubCategory === fitParams.drawerSubCategory) scoreA += 2;
+                  if (fitParams.drawerSubCategory && b.drawerSubCategory === fitParams.drawerSubCategory) scoreB += 2;
+                  if (fitParams.depth && (a.depth === fitParams.depth || String(a.name).includes(fitParams.depth))) scoreA += 1;
+                  if (fitParams.depth && (b.depth === fitParams.depth || String(b.name).includes(fitParams.depth))) scoreB += 1;
+                  return scoreB - scoreA;
+                });
+              } else if (cat === "Посудосушитель" && fitParams.width) {
+                opts = [...opts].sort((a, b) => {
+                  let scoreA = 0;
+                  let scoreB = 0;
+                  if (String(a.name).includes(fitParams.width)) scoreA += 2;
+                  if (String(b.name).includes(fitParams.width)) scoreB += 2;
+                  if (String(a.name).toLowerCase().includes("сушил") || String(a.name).toLowerCase().includes("посудо")) scoreA += 1;
+                  if (String(b.name).toLowerCase().includes("сушил") || String(b.name).toLowerCase().includes("посудо")) scoreB += 1;
+                  return scoreB - scoreA;
+                });
+              }
+
+              if (opts.length === 0) return null;
+              
+              const curId = manualFittings[keyString];
+              let activeProduct = catalogProducts.find((p) => p.id === curId);
+              if (!activeProduct) {
+                activeProduct = fitItem;
+              }
+
+              return (
+                <div key={keyString} className="bg-white p-3.5 border border-emerald-100 rounded-xl flex flex-col justify-between shadow-sm hover:shadow-md transition-shadow">
+                  <div className="mb-2">
+                    <span className="text-[10px] font-extrabold uppercase text-emerald-800 tracking-wider bg-emerald-50 px-2 py-0.5 rounded-full inline-block">
+                      {fitItem.computedSub}
+                    </span>
+                    <div className="text-xs font-bold text-gray-800 line-clamp-1 mt-1.5" title={activeProduct?.name || "Не выбрано"}>
+                      {activeProduct?.name || "Не выбрано"}
+                    </div>
+                    {activeProduct && (
+                      <div className="text-[10px] text-gray-500 mt-0.5">
+                        Сегмент: <span className="font-bold text-emerald-700">{activeProduct.segment || "—"}</span> | Цена: <span className="font-bold">{activeProduct.price} ₽</span> | Необх: <span className="font-bold text-emerald-950">{fitItem.quantity} шт</span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  <select
+                    value={curId || "auto"}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setManualFittings((prev: any) => {
+                        const next = { ...prev };
+                        if (val === "auto") {
+                          delete next[keyString];
+                        } else {
+                          next[keyString] = val;
+                        }
+                        return next;
+                      });
+                    }}
+                    className="w-full px-2 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg text-gray-700 font-semibold outline-none focus:border-emerald-300 focus:bg-white cursor-pointer"
+                  >
+                    <option value="auto">Автоподбор ({activeSegment})</option>
+                    {opts.map((opt) => (
+                      <option key={opt.id} value={opt.id}>
+                        [{opt.segment || "—"}] {opt.name} ({opt.price} ₽)
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })}
+
+            {/* Countertop Override Section */}
+            {(() => {
+              const cat = "Столешницы и стеновые";
+              const opts = catalogProducts.filter((p) => p.category === cat && !p.name.toLowerCase().includes("стеновая"));
+              if (opts.length === 0) return null;
+
+              const curId = manualFittings[cat];
+              let activeProduct = catalogProducts.find((p) => p.id === curId);
+              if (!activeProduct) {
+                activeProduct = opts.find((p) => p.segment === activeSegment) || opts[0];
+              }
+
+              // Calculate initial fallback worktop count
+              const modulesInProject = addedProducts.filter((p) => p.category === "Кухонные модули");
+              const bottomModules = modulesInProject.filter((p) => p.moduleGroup === "Нижние");
+              const totalLowerWidth = bottomModules.reduce((sum, mod) => {
+                let width = parseFloat(mod.moduleWidth);
+                if (isNaN(width) || width <= 0) {
+                  const nameMatch = String(mod.name).match(/[ВН]-(\d+)/)?.[1] || String(mod.name).match(/\d+х(\d+)х/)?.[1];
+                  width = nameMatch ? parseFloat(nameMatch) : 600;
+                }
+                return sum + (width * (mod.quantity || 1));
+              }, 0);
+              const fallbackWorktopQty = Math.ceil(totalLowerWidth / 3000);
+              const curQty = manualFittings[`${cat}_qty`] ? parseInt(manualFittings[`${cat}_qty`]) : fallbackWorktopQty;
+
+              return (
+                <div className="bg-emerald-50 border border-emerald-100 p-3.5 rounded-xl flex flex-col justify-between col-span-1 md:col-span-2 lg:col-span-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
+                    <div>
+                      <span className="text-[10px] font-extrabold uppercase text-emerald-800 tracking-wider">
+                        Столешница (расчет по нижней ширине: {totalLowerWidth} мм)
+                      </span>
+                      <div className="text-xs font-bold text-gray-800" title={activeProduct?.name || "Не выбрано"}>
+                        {activeProduct?.name || "Не выбрано"}
+                      </div>
+                      {activeProduct && (
+                        <div className="text-[10px] text-gray-500 mt-0.5">
+                          Сегмент: <span className="font-bold text-emerald-700">{activeProduct.segment || "—"}</span> | Цена: <span className="font-bold">{activeProduct.price} ₽</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-semibold text-gray-600">Кол-во (шт):</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={curQty}
+                        onChange={(e) => {
+                          const val = parseInt(e.target.value) || 1;
+                          setManualFittings((prev: any) => ({
+                            ...prev,
+                            [`${cat}_qty`]: String(val),
+                          }));
+                        }}
+                        className="w-16 px-2 py-1 text-xs bg-white border border-emerald-200 rounded-md text-center font-bold outline-none"
+                      />
+                      <button
+                        onClick={() => {
+                          setManualFittings((prev: any) => {
+                            const next = { ...prev };
+                            delete next[`${cat}_qty`];
+                            return next;
+                          });
+                        }}
+                        className="text-[10px] text-emerald-700 underline hover:text-emerald-950"
+                        title="Сбросить количество к авторасчету"
+                      >
+                        согласно ширине
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-2">
+                    <div>
+                      <label className="block text-[9px] uppercase font-bold text-gray-500 mb-0.5">Выбор столешницы</label>
+                      <select
+                        value={curId || "auto"}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setManualFittings((prev: any) => ({
+                            ...prev,
+                            [cat]: val === "auto" ? undefined : val,
+                          }));
+                        }}
+                        className="w-full px-2 py-1.5 text-xs bg-white border border-gray-200 rounded-md text-gray-700 font-medium outline-none"
+                      >
+                        <option value="auto">Автоподбор ({activeSegment})</option>
+                        {opts.map((opt) => (
+                          <option key={opt.id} value={opt.id}>
+                            [{opt.segment || "—"}] {opt.name} ({opt.price} ₽)
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
         <table className="w-full text-left border-collapse">
           <thead>
@@ -8093,6 +8635,39 @@ const SummaryView = ({
                                   [row.priceKey || row.key!]:
                                     v === "" ? 0 : parseFloat(v),
                                 }));
+                              }
+                            }}
+                            onBlur={async () => {
+                              const newPrice = edgePrices[row.priceKey || row.key!] || row.rawPrice || 0;
+                              if (newPrice > 0) {
+                                const decor = row.decor || "Не указан";
+                                const thickness = row.thickness || "0.4";
+                                const dAndTKey = `edgePrice_${decor}_${thickness}`;
+                                
+                                setEdgePrices((prev) => ({
+                                  ...prev,
+                                  [dAndTKey]: newPrice,
+                                }));
+
+                                const companyId = (auth.currentUser as any)?.companyId || auth.currentUser?.uid;
+                                if (companyId) {
+                                  await setDoc(
+                                    doc(db, "companies", companyId, "settings", "prices"),
+                                    { 
+                                      edgePrices: { 
+                                        ...edgePrices, 
+                                        [row.priceKey || row.key!]: newPrice,
+                                        [dAndTKey]: newPrice,
+                                      } 
+                                    },
+                                    { merge: true }
+                                  );
+
+                                  const boardBrand = sheetConfigs[row.key!]?.name || "Egger";
+                                  if (upsertEdgeToPriceList) {
+                                    await upsertEdgeToPriceList(decor, thickness, newPrice, boardBrand);
+                                  }
+                                }
                               }
                             }}
                             placeholder="0"
@@ -9078,6 +9653,7 @@ const SettingsView = ({
           <div className="animate-in fade-in duration-300">
             <SuppliersSettings
               companyId={companyData?.id}
+              companyData={companyData}
               suppliers={suppliers}
               setSuppliers={setSuppliers}
               productCategories={productCategories}
@@ -9829,86 +10405,88 @@ const SettingsView = ({
 
         {activeSubTab === "production" && isProduction && (
           <div className="space-y-12 animate-in fade-in duration-500">
-            <section className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center">
-                    <Database className="w-5 h-5 text-indigo-600" />
+            {false && (
+              <section className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center">
+                      <Database className="w-5 h-5 text-indigo-600" />
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-black text-gray-900 leading-none">
+                        Бренды материала и толщины кромок
+                      </h3>
+                      <p className="text-xs text-gray-400 font-medium mt-1">
+                        Доступность материалов и кромок
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-lg font-black text-gray-900 leading-none">
-                      Бренды материала и толщины кромок
-                    </h3>
-                    <p className="text-xs text-gray-400 font-medium mt-1">
-                      Доступность материалов и кромок
-                    </p>
-                  </div>
-                </div>
-                <button
-                  onClick={() => setShowBrandCoeffModal(true)}
-                  className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 transition-all flex items-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  Добавить коэффициент
-                </button>
-              </div>
-
-              <div className="space-y-4">
-                {ownProductionConfig.ldspBrands.map((brand) => (
-                  <div
-                    key={brand.id}
-                    className="p-4 bg-gray-50 rounded-2xl border border-gray-100"
+                  <button
+                    onClick={() => setShowBrandCoeffModal(true)}
+                    className="px-4 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 transition-all flex items-center gap-2"
                   >
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <div className="font-bold text-gray-800">
-                          {brand.brand}
-                        </div>
-                        <div className="text-[10px] bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full font-bold uppercase">
-                          {brand.type}
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleRemoveLdspBrand(brand.id)}
-                          className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
+                    <Plus className="w-4 h-4" />
+                    Добавить коэффициент
+                  </button>
+                </div>
 
-                    <div className="space-y-3">
-                      <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">
-                        Недоступные толщины кромки
-                      </span>
-                      <div className="flex flex-wrap gap-2">
-                        {["0.4", "0.8", "1", "2"].map((th) => {
-                          const isUnavailable =
-                            brand.unavailableThicknesses?.includes(th);
-                          return (
-                            <button
-                              key={th}
-                              onClick={() =>
-                                handleToggleUnavailableThickness(brand.id, th)
-                              }
-                              className={cn(
-                                "px-3 py-1.5 rounded-xl text-xs font-bold transition-all",
-                                isUnavailable
-                                  ? "bg-red-500 text-white shadow-sm"
-                                  : "bg-white text-gray-500 border border-gray-200 hover:border-indigo-300 hover:text-indigo-600",
-                              )}
-                            >
-                              {th} мм
-                            </button>
-                          );
-                        })}
+                <div className="space-y-4">
+                  {ownProductionConfig.ldspBrands.map((brand) => (
+                    <div
+                      key={brand.id}
+                      className="p-4 bg-gray-50 rounded-2xl border border-gray-100"
+                    >
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className="font-bold text-gray-800">
+                            {brand.brand}
+                          </div>
+                          <div className="text-[10px] bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full font-bold uppercase">
+                            {brand.type}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleRemoveLdspBrand(brand.id)}
+                            className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-3">
+                        <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">
+                          Недоступные толщины кромки
+                        </span>
+                        <div className="flex flex-wrap gap-2">
+                          {["0.4", "0.8", "1", "2"].map((th) => {
+                            const isUnavailable =
+                              brand.unavailableThicknesses?.includes(th);
+                            return (
+                              <button
+                                key={th}
+                                onClick={() =>
+                                  handleToggleUnavailableThickness(brand.id, th)
+                                }
+                                className={cn(
+                                  "px-3 py-1.5 rounded-xl text-xs font-bold transition-all",
+                                  isUnavailable
+                                    ? "bg-red-500 text-white shadow-sm"
+                                    : "bg-white text-gray-500 border border-gray-200 hover:border-indigo-300 hover:text-indigo-600",
+                                )}
+                              >
+                                {th} мм
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </section>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <section>
               <div className="flex items-center justify-between mb-4">
@@ -12134,6 +12712,9 @@ const ProductsView = ({
   const [moduleHeightFilter, setModuleHeightFilter] = useState<string | null>(
     null,
   );
+  const [moduleWidthFilter, setModuleWidthFilter] = useState<string | null>(
+    null,
+  );
   const [moduleDepthFilter, setModuleDepthFilter] = useState<string | null>(
     null,
   );
@@ -12174,8 +12755,19 @@ const ProductsView = ({
     moduleType: "" as "" | "Для сушилки" | "Для вытяжки" | "Для техники",
     moduleHeight: "",
     moduleDepth: "",
+    moduleWidth: "",
     moduleMaterial: "ЛДСП Nordeco Белый 16 мм",
     moduleEdge: "0,4 мм",
+    segment: "Средний" as "Эконом" | "Средний" | "Премиум",
+    moduleFittings: [] as { 
+      category: string; 
+      qty: number; 
+      hingeType?: string; 
+      depth?: string; 
+      width?: string; 
+      drawerSubCategory?: string; 
+      manufacturer?: string; 
+    }[],
     // Worktop / Backsplash specific
     wtManufacturer: "Скиф",
     wtType: "ЛДСП",
@@ -12407,8 +12999,11 @@ const ProductsView = ({
       moduleType: "",
       moduleHeight: "",
       moduleDepth: "",
+      moduleWidth: "",
       moduleMaterial: "ЛДСП Nordeco Белый 16 мм",
       moduleEdge: "0,4 мм",
+      segment: "Средний",
+      moduleFittings: [],
       wtManufacturer: "Скиф",
       wtType: "ЛДСП",
       wtLength: "3000",
@@ -12448,8 +13043,11 @@ const ProductsView = ({
       moduleType: product.moduleType || "",
       moduleHeight: product.moduleHeight || "",
       moduleDepth: product.moduleDepth || "",
+      moduleWidth: product.moduleWidth || "",
       moduleMaterial: product.moduleMaterial || "ЛДСП Nordeco Белый 16 мм",
       moduleEdge: product.moduleEdge || "0,4 мм",
+      segment: product.segment || "Средний",
+      moduleFittings: product.moduleFittings || [],
       wtManufacturer: product.wtManufacturer || "Скиф",
       wtType: product.wtType || "ЛДСП",
       wtLength: product.wtLength || "3000",
@@ -12572,6 +13170,11 @@ const ProductsView = ({
       matchesModuleDepth = p.moduleDepth === moduleDepthFilter;
     }
 
+    let matchesModuleWidth = true;
+    if (selectedCategory === "Кухонные модули" && moduleWidthFilter) {
+      matchesModuleWidth = p.moduleWidth === moduleWidthFilter;
+    }
+
     let matchesModuleType = true;
     if (selectedCategory === "Кухонные модули" && moduleTypeFilter) {
       matchesModuleType = p.moduleType === moduleTypeFilter;
@@ -12588,6 +13191,7 @@ const ProductsView = ({
       matchesModuleGroup &&
       matchesModuleHeight &&
       matchesModuleDepth &&
+      matchesModuleWidth &&
       matchesModuleType
     );
   });
@@ -13056,6 +13660,23 @@ const ProductsView = ({
               ))}
             </select>
           </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-gray-400 font-bold uppercase">
+              Ширина:
+            </span>
+            <select
+              value={moduleWidthFilter || ""}
+              onChange={(e) => setModuleWidthFilter(e.target.value || null)}
+              className="px-2 py-1 bg-white border border-gray-100 rounded-lg text-xs font-bold text-gray-600 outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              <option value="">Все</option>
+              {["150", "200", "250", "300", "350", "400", "450", "500", "550", "600", "650", "700", "750", "800", "850", "900", "1000", "1200"].map((w) => (
+                <option key={w} value={w}>
+                  {w} мм
+                </option>
+              ))}
+            </select>
+          </div>
           <button
             onClick={populateSamples}
             className="ml-auto px-3 py-1 bg-emerald-100 text-emerald-600 rounded-lg text-[10px] font-black uppercase hover:bg-emerald-200 transition-colors"
@@ -13179,6 +13800,25 @@ const ProductsView = ({
                         <option value="компл">Комплект</option>
                         <option value="м.п.">М.п.</option>
                         <option value="упак">Упаковка</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-2">
+                        Сегмент товара
+                      </label>
+                      <select
+                        value={newProduct.segment}
+                        onChange={(e) =>
+                          setNewProduct((prev) => ({
+                            ...prev,
+                            segment: e.target.value as any,
+                          }))
+                        }
+                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
+                      >
+                        <option value="Эконом">Эконом</option>
+                        <option value="Средний">Средний</option>
+                        <option value="Премиум">Премиум</option>
                       </select>
                     </div>
                   </div>
@@ -13451,6 +14091,244 @@ const ProductsView = ({
                             className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none bg-white font-medium italic"
                           />
                         </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4 mt-4">
+                        <div>
+                          <label className="block text-sm font-bold text-emerald-900 mb-2">
+                            Ширина модуля (мм)
+                          </label>
+                          <input
+                            type="text"
+                            value={newProduct.moduleWidth}
+                            placeholder="Например: 600"
+                            onChange={(e) =>
+                              setNewProduct((prev) => ({
+                                ...prev,
+                                moduleWidth: e.target.value,
+                              }))
+                            }
+                            className="w-full px-4 py-3 border border-emerald-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none bg-white font-medium"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="mt-6 border-t border-emerald-100 pt-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <span className="text-sm font-bold text-emerald-950">
+                            Комплектуемая фурнитура для модуля
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNewProduct((prev) => ({
+                                ...prev,
+                                moduleFittings: [
+                                  ...(prev.moduleFittings || []),
+                                  { category: "Петли", qty: 2 },
+                                ],
+                              }));
+                            }}
+                            className="text-xs font-bold text-emerald-600 hover:text-emerald-700 bg-emerald-50 px-3 py-1.5 rounded-lg border border-emerald-200 transition-colors flex items-center gap-1"
+                          >
+                            + Добавить категорию фурнитуры
+                          </button>
+                        </div>
+                        
+                        {(!newProduct.moduleFittings || newProduct.moduleFittings.length === 0) ? (
+                          <div className="text-xs text-gray-400 bg-emerald-50/20 rounded-xl p-4 border border-dashed border-emerald-100 text-center">
+                            Нет предустановленной фурнитуры. Будут использоваться стандартные комплекты для класса {newProduct.moduleGroup || "Нижние"}.
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {newProduct.moduleFittings.map((fit, idx) => (
+                              <div key={idx} className="bg-white p-4 border border-emerald-100 rounded-xl space-y-3 shadow-sm">
+                                <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                                  {/* Категория (span 4) */}
+                                  <div className="md:col-span-4">
+                                    <label className="block text-[10px] uppercase font-bold text-gray-500 mb-1">
+                                      Категория
+                                    </label>
+                                    <select
+                                      value={fit.category}
+                                      onChange={(e) => {
+                                        const val = e.target.value;
+                                        const updated = [...newProduct.moduleFittings];
+                                        updated[idx] = { 
+                                          category: val, 
+                                          qty: fit.qty || 1,
+                                          ...(val === "Петли" ? { hingeType: "Накладная" } : {}),
+                                          ...(val === "Системы выдвижения" ? { drawerSubCategory: "Направляющие скрытого монтажа", depth: "450" } : {}),
+                                          ...(val === "Посудосушитель" ? { width: "600" } : {})
+                                        };
+                                        setNewProduct((prev) => ({ ...prev, moduleFittings: updated }));
+                                      }}
+                                      className="w-full px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:ring-1 focus:ring-emerald-500 outline-none font-semibold text-gray-800"
+                                    >
+                                      {[
+                                        "Петли",
+                                        "Системы выдвижения",
+                                        "Подъёмные механизмы",
+                                        "Ручки и крючки",
+                                        "Крепежные элементы и цоколь",
+                                        "Выдвижные корзины",
+                                        "Оснащение шкафов",
+                                        "Посудосушитель"
+                                      ].map((cat) => (
+                                        <option key={cat} value={cat}>{cat}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  {/* Кол-во (span 2) */}
+                                  <div className="md:col-span-2">
+                                    <label className="block text-[10px] uppercase font-bold text-gray-500 mb-1">
+                                      Кол-во (шт)
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      value={fit.qty}
+                                      onChange={(e) => {
+                                        const updated = [...newProduct.moduleFittings];
+                                        updated[idx] = { ...updated[idx], qty: parseInt(e.target.value) || 1 };
+                                        setNewProduct((prev) => ({ ...prev, moduleFittings: updated }));
+                                      }}
+                                      className="w-full px-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:ring-1 focus:ring-emerald-500 outline-none font-bold"
+                                    />
+                                  </div>
+
+                                  {/* Дополнительные свойства (span 5) */}
+                                  <div className="md:col-span-5">
+                                    {fit.category === "Петли" && (
+                                      <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                          <label className="block text-[9px] uppercase font-extrabold text-emerald-800 mb-0.5">
+                                            Тип петли
+                                          </label>
+                                          <select
+                                            value={fit.hingeType || "Накладная"}
+                                            onChange={(e) => {
+                                              const updated = [...newProduct.moduleFittings];
+                                              updated[idx] = { ...updated[idx], hingeType: e.target.value };
+                                              setNewProduct((prev) => ({ ...prev, moduleFittings: updated }));
+                                            }}
+                                            className="w-full px-2 py-1 text-[11px] bg-emerald-50/50 border border-emerald-100 rounded-md text-emerald-950 outline-none focus:ring-1 focus:ring-emerald-500 font-semibold"
+                                          >
+                                            {["Накладная", "Полунакладная", "Вкладная"].map((t) => (
+                                              <option key={t} value={t}>{t}</option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                        <div>
+                                          <label className="block text-[9px] uppercase font-extrabold text-emerald-800 mb-0.5">
+                                            Бренд
+                                          </label>
+                                          <select
+                                            value={fit.manufacturer || "auto"}
+                                            onChange={(e) => {
+                                              const updated = [...newProduct.moduleFittings];
+                                              updated[idx] = { ...updated[idx], manufacturer: e.target.value === "auto" ? undefined : e.target.value };
+                                              setNewProduct((prev) => ({ ...prev, moduleFittings: updated }));
+                                            }}
+                                            className="w-full px-2 py-1 text-[11px] bg-emerald-50/50 border border-emerald-100 rounded-md text-emerald-950 outline-none focus:ring-1 focus:ring-emerald-500 font-semibold"
+                                          >
+                                            <option value="auto">Автоподбор</option>
+                                            {["Boyard", "Blum", "Hettich", "GTV", "Samet"].map((m) => (
+                                              <option key={m} value={m}>{m}</option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {fit.category === "Системы выдвижения" && (
+                                      <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                          <label className="block text-[9px] uppercase font-extrabold text-emerald-800 mb-0.5" title="Тип направляющих">
+                                            Тип ящика
+                                          </label>
+                                          <select
+                                            value={fit.drawerSubCategory || "Направляющие скрытого монтажа"}
+                                            onChange={(e) => {
+                                              const updated = [...newProduct.moduleFittings];
+                                              updated[idx] = { ...updated[idx], drawerSubCategory: e.target.value };
+                                              setNewProduct((prev) => ({ ...prev, moduleFittings: updated }));
+                                            }}
+                                            className="w-full px-2 py-1 text-[11px] bg-emerald-50/50 border border-emerald-100 rounded-md text-emerald-950 outline-none focus:ring-1 focus:ring-emerald-500 font-semibold whitespace-nowrap overflow-hidden text-ellipsis"
+                                          >
+                                            <option value="Направляющие скрытого монтажа">Скрытого монтажа</option>
+                                            <option value="Телескопические направляющие">Телескопические</option>
+                                            <option value="Системы ящиков">Системы ящиков</option>
+                                          </select>
+                                        </div>
+                                        <div>
+                                          <label className="block text-[9px] uppercase font-extrabold text-emerald-800 mb-0.5">
+                                            Глубина (мм)
+                                          </label>
+                                          <select
+                                            value={fit.depth || "450"}
+                                            onChange={(e) => {
+                                              const updated = [...newProduct.moduleFittings];
+                                              updated[idx] = { ...updated[idx], depth: e.target.value };
+                                              setNewProduct((prev) => ({ ...prev, moduleFittings: updated }));
+                                            }}
+                                            className="w-full px-2 py-1 text-[11px] bg-emerald-50/50 border border-emerald-100 rounded-md text-emerald-950 outline-none focus:ring-1 focus:ring-emerald-500 font-semibold"
+                                          >
+                                            {["250", "300", "350", "400", "450", "500", "550", "600"].map((d) => (
+                                              <option key={d} value={d}>{d} мм</option>
+                                            ))}
+                                          </select>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {fit.category === "Посудосушитель" && (
+                                      <div>
+                                        <label className="block text-[9px] uppercase font-extrabold text-emerald-800 mb-0.5">
+                                          Ширина сушки (мм)
+                                        </label>
+                                        <select
+                                          value={fit.width || "600"}
+                                          onChange={(e) => {
+                                            const updated = [...newProduct.moduleFittings];
+                                            updated[idx] = { ...updated[idx], width: e.target.value };
+                                            setNewProduct((prev) => ({ ...prev, moduleFittings: updated }));
+                                          }}
+                                          className="w-full px-2 py-1 text-[11px] bg-emerald-50/50 border border-emerald-100 rounded-md text-emerald-950 outline-none focus:ring-1 focus:ring-emerald-500 font-semibold"
+                                        >
+                                          {["400", "450", "500", "600", "700", "800", "900"].map((w) => (
+                                            <option key={w} value={w}>{w} мм</option>
+                                          ))}
+                                        </select>
+                                      </div>
+                                    )}
+
+                                    {fit.category !== "Петли" && fit.category !== "Системы выдвижения" && fit.category !== "Посудосушитель" && (
+                                      <span className="text-[10px] text-gray-400 italic block mt-2">Параметры не требуются</span>
+                                    )}
+                                  </div>
+
+                                  {/* Действие (span 1) */}
+                                  <div className="md:col-span-1 flex justify-end">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setNewProduct((prev) => ({
+                                          ...prev,
+                                          moduleFittings: prev.moduleFittings.filter((_, fIdx) => fIdx !== idx),
+                                        }));
+                                      }}
+                                      className="p-1.5 hover:bg-red-50 text-red-500 rounded-lg transition-colors border border-transparent hover:border-red-100 inline-flex items-center justify-center"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     </div>
                   )}
@@ -15090,6 +15968,11 @@ export default function App() {
     "admin" | "supervisor" | "manager" | "worker" | null
   >(null);
   const [userData, setUserData] = useState<any>(null);
+
+  const [isModularProgram, setIsModularProgram] = useState<boolean>(false);
+  const [modularAsked, setModularAsked] = useState<boolean>(false);
+  const [activeSegment, setActiveSegment] = useState<"Эконом" | "Средний" | "Премиум">("Средний");
+  const [manualFittings, setManualFittings] = useState<Record<string, string>>({});
   const showAlert = useCallback((title: string, message: string) => {
     setModal({ isOpen: true, type: "alert", title, message });
   }, []);
@@ -15115,6 +15998,33 @@ export default function App() {
       message,
       value: defaultValue,
       onConfirm: (val) => onConfirm(val || ""),
+    });
+  };
+
+  const getAvailableThicknessesForBrand = (brandName: string) => {
+    const allThicknesses = ["0.4", "0.8", "1.0", "2.0"];
+    const config = productionFormat === "contract" && productionSettings?.production
+      ? productionSettings.production
+      : ownProductionConfig;
+
+    if (!brandName) {
+      return allThicknesses.filter(t => config?.edgeThicknesses?.[t]);
+    }
+
+    const edgeBrands = LDSP_TO_EDGE_BRANDS[brandName] || [];
+
+    return allThicknesses.filter(t => {
+      if (!config?.edgeThicknesses?.[t]) return false;
+
+      if (edgeBrands.length === 0) {
+        const mKey = `${brandName}:${t}`;
+        return !config?.edgeNotAvailable?.[mKey];
+      } else {
+        return edgeBrands.some(eb => {
+          const mKey = `${brandName}:${eb}:${t}`;
+          return !config?.edgeNotAvailable?.[mKey];
+        });
+      }
     });
   };
 
@@ -15374,7 +16284,14 @@ export default function App() {
           if (userRes.ok) {
             const docData = await userRes.json();
             setUserData(docData);
-            setUserRole(docData.role || 'manager');
+            {
+            const rawRole = docData.accessLevel || docData.role || 'manager';
+            setUserRole(['admin', 'supervisor', 'manager', 'worker'].includes(rawRole) ? rawRole : (
+              rawRole.toLowerCase().includes('админ') ? 'admin' :
+              rawRole.toLowerCase().includes('руковод') ? 'supervisor' : 
+              rawRole.toLowerCase().includes('сотрудник') ? 'worker' : 'manager'
+            ));
+          }
             auth.currentUser = { uid: savedUid, email: savedEmail, ...docData };
             
             if (docData.companyId) {
@@ -15386,7 +16303,14 @@ export default function App() {
               const empRes = await fetch(`/api/db/doc/companies/${docData.companyId}/employees/${savedUid}`);
               if (empRes.ok) {
                 const empData = await empRes.json();
-                setUserData(prev => ({ ...prev, isProcurementManager: empData.isProcurementManager }));
+                setUserData(prev => ({ 
+                  ...prev, 
+                  isProcurementManager: empData.isProcurementManager,
+                  accessLevel: empData.accessLevel || prev?.accessLevel
+                }));
+                if (empData.accessLevel) {
+                  setUserRole(empData.accessLevel);
+                }
               }
             }
             
@@ -15463,7 +16387,14 @@ export default function App() {
       if (userRes.ok) {
          const docData = await userRes.json();
          setUserData(docData);
-         setUserRole(docData.role || 'manager');
+         {
+            const rawRole = docData.accessLevel || docData.role || 'manager';
+            setUserRole(['admin', 'supervisor', 'manager', 'worker'].includes(rawRole) ? rawRole : (
+              rawRole.toLowerCase().includes('админ') ? 'admin' :
+              rawRole.toLowerCase().includes('руковод') ? 'supervisor' : 
+              rawRole.toLowerCase().includes('сотрудник') ? 'worker' : 'manager'
+            ));
+          }
          auth.currentUser = { uid: authUser.uid, email: authUser.email, ...docData };
          
          // Fetch company data to ensure correct account type is loaded
@@ -15477,7 +16408,14 @@ export default function App() {
            const empRes = await fetch(`/api/db/doc/companies/${docData.companyId}/employees/${authUser.uid}`);
            if (empRes.ok) {
              const empData = await empRes.json();
-             setUserData(prev => ({ ...prev, isProcurementManager: empData.isProcurementManager }));
+             setUserData(prev => ({ 
+               ...prev, 
+               isProcurementManager: empData.isProcurementManager,
+               accessLevel: empData.accessLevel || prev?.accessLevel
+             }));
+             if (empData.accessLevel) {
+               setUserRole(empData.accessLevel);
+             }
            }
          }
 
@@ -15900,6 +16838,10 @@ export default function App() {
     setWorktopCuts({});
     setGluedEdgeDecor({});
     setCurrentSummaryRows([]);
+    setIsModularProgram(false);
+    setModularAsked(false);
+    setActiveSegment("Средний");
+    setManualFittings({});
   };
 
   const toggleRotated = (key: string) => {
@@ -15935,6 +16877,43 @@ export default function App() {
   };
 
   const onAddProduct = (product: any, quantity: number = 1) => {
+    if (product.category === "Кухонные модули" && !isModularProgram && !modularAsked) {
+      setModularAsked(true);
+      setModal({
+        isOpen: true,
+        type: "confirm",
+        title: "Модульная программа кухни",
+        message: "Оформить этот заказ по модульной программе кухни? В таком расчете не будет ЛДСП, ХДФ, ДВП и метизов — расчет будет вестись по готовым модулям кухонь, к которым выписывается комплект фурнитуры и столешницы.",
+        onConfirm: () => {
+          setIsModularProgram(true);
+          setAddedProducts((prev) => {
+            const existing = prev.find((p) => p.id === product.id);
+            if (existing) {
+              return prev.map((p) =>
+                p.id === product.id ? { ...p, quantity: p.quantity + quantity } : p,
+              );
+            }
+            return [...prev, { ...product, quantity }];
+          });
+          setActiveTab("calculator");
+        },
+        onCancel: () => {
+          setIsModularProgram(false);
+          setAddedProducts((prev) => {
+            const existing = prev.find((p) => p.id === product.id);
+            if (existing) {
+              return prev.map((p) =>
+                p.id === product.id ? { ...p, quantity: p.quantity + quantity } : p,
+              );
+            }
+            return [...prev, { ...product, quantity }];
+          });
+          setActiveTab("summary");
+        }
+      });
+      return;
+    }
+
     setAddedProducts((prev) => {
       const existing = prev.find((p) => p.id === product.id);
       if (existing) {
@@ -16674,6 +17653,10 @@ export default function App() {
           addedProducts: activeProducts,
           addedServices: activeServices,
           serviceData,
+          isModularProgram,
+          modularAsked,
+          activeSegment,
+          manualFittings,
         },
       };
 
@@ -17019,12 +18002,56 @@ export default function App() {
     if (d.serviceData) setServiceData(d.serviceData);
     if (d.furnitureType) setFurnitureType(d.furnitureType);
     if (d.checklistRefused) setChecklistRefused(d.checklistRefused);
+    setIsModularProgram(d.isModularProgram ?? false);
+    setModularAsked(d.modularAsked ?? false);
+    setActiveSegment(d.activeSegment || "Средний");
+    setManualFittings(d.manualFittings || {});
     if (d.summaryRows) setCurrentSummaryRows(d.summaryRows);
 
     setCurrentProjectId(project.id);
     setCurrentProjectName(project.name);
     setCurrentProjectTotal(project.totalPrice || 0);
     setActiveTab("calculator");
+  };
+
+  const upsertEdgeToPriceList = async (decor: string, thickness: string, price: number, brandLdsp: string) => {
+    if (!companyData?.id || price <= 0 || !decor || decor === "Не указан") return;
+
+    // Найдем соответствующий бренд кромки по таблице совместимости
+    const edgeBrands = LDSP_TO_EDGE_BRANDS[brandLdsp] || [];
+    const edgeBrand = edgeBrands[0] || "Egger"; // По умолчанию Egger, если не нашли
+
+    // Поищем в catalogProducts существующую кромку с таким декором, толщиной и категорией "Кромочные материалы"
+    const existing = catalogProducts.find(p => 
+      p.category === "Кромочные материалы" && 
+      p.decor === decor && 
+      p.thickness === thickness
+    );
+
+    const pId = existing?.id || Math.random().toString(36).substr(2, 9);
+    const productData = {
+      id: pId,
+      category: "Кромочные материалы",
+      decor: decor,
+      thickness: thickness,
+      brand: edgeBrand,
+      price: price,
+      name: `Кромка ${decor} ${thickness}мм`,
+      compatibility: brandLdsp,
+      updatedAt: new Date().toISOString(),
+      status: 'approved'
+    };
+
+    try {
+      await setDoc(
+        doc(db, "companies", companyData.id, "products", pId),
+        productData,
+        { merge: true }
+      );
+      console.log("Upserted edge to price list:", productData);
+    } catch (e) {
+      console.error("Error upserting edge to price list:", e);
+    }
   };
 
   const saveProduct = async (product: any) => {
@@ -18133,6 +19160,10 @@ export default function App() {
       
       if (!edgeGroupsForTotal[gK]) {
         let eP = edgePrices[ck] || 0;
+        if (eP === 0) {
+          const dAndTKey = `edgePrice_${dec}_${thick}`;
+          eP = edgePrices[dAndTKey] || 0;
+        }
         if (eP === 0 && dec !== "Не указан") {
           const variations = [dec, dec.replace(/ /g, "|"), dec.toUpperCase(), dec.toLowerCase()];
           for (const v of variations) { if (configToUse.prices?.[v]) { eP = configToUse.prices[v]; break; } }
@@ -19012,6 +20043,7 @@ export default function App() {
         >
           {activeTab === "calculator" && (
             <CalculatorView
+              getAvailableThicknessesForBrand={getAvailableThicknessesForBrand}
               handleFileUpload={handleFileUpload}
               handleCuttingTypeChange={handleCuttingTypeChange}
               cuttingType={cuttingType}
@@ -19109,6 +20141,7 @@ export default function App() {
 
           <div className={cn(activeTab === "summary" || activeTab === "checkout_current" ? "block" : "hidden")}>
             <SummaryView
+              upsertEdgeToPriceList={upsertEdgeToPriceList}
               promotions={promotions}
               onSummaryCalculated={(t, r) => {
                 setCurrentProjectTotal(t);
@@ -19176,6 +20209,13 @@ export default function App() {
               setActiveTab={setActiveTab}
               showAlert={showAlert}
               showConfirm={showConfirm}
+              isModularProgram={isModularProgram}
+              setIsModularProgram={setIsModularProgram}
+              activeSegment={activeSegment}
+              setActiveSegment={setActiveSegment}
+              manualFittings={manualFittings}
+              setManualFittings={setManualFittings}
+              catalogProducts={catalogProducts}
               catalogMaterials={catalogMaterials}
               resolveBrandCoefficient={resolveBrandCoefficient}
             />
@@ -19544,6 +20584,7 @@ export default function App() {
               userRole={userRole || "worker"}
               companyId={companyData?.id || ""}
               manufacturerId={companyData?.manufacturerId}
+              upsertEdgeToPriceList={upsertEdgeToPriceList}
             />
           ) : activeTab === "profile" ? (
             <UserProfileView 

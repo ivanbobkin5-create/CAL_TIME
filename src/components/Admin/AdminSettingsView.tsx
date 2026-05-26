@@ -266,7 +266,7 @@ export const AdminSettingsView = ({
           name: newEmployee.name,
           email: trimmedEmail,
           role: newEmployee.role,
-          accessLevel: newEmployee.accessLevel,
+          accessLevel: newEmployee.accessLevel || 'worker',
           companyId: companyId,
           createdAt: newEmployee.createdAt || new Date().toISOString(),
           bitrix24UserId: newEmployee.bitrix24UserId || null,
@@ -282,7 +282,7 @@ export const AdminSettingsView = ({
           name: newEmployee.name,
           email: trimmedEmail,
           role: newEmployee.role, // This is the job title (e.g. "Менеджер проектов")
-          accessLevel: newEmployee.accessLevel,
+          accessLevel: newEmployee.accessLevel || 'worker',
           bitrix24UserId: newEmployee.bitrix24UserId || null,
           isProcurementManager: !!newEmployee.isProcurementManager
         };
@@ -398,7 +398,7 @@ export const AdminSettingsView = ({
             uid: uid,
             name: employee.name,
             email: trimmedEmail,
-            role: employee.accessLevel,
+            role: employee.role, accessLevel: employee.accessLevel || 'worker',
             companyId: companyId,
             createdAt: new Date().toISOString()
           };

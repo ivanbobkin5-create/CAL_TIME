@@ -506,7 +506,7 @@ export const ProjectsView = ({
           </div>
         </div>
 
-        {activeFilter === "all" || activeFilter === "sets" ? (
+        {activeFilter === "sets" ? (
           <div className="mb-12">
             <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
               <Combine className="w-6 h-6 text-indigo-600" />
@@ -566,10 +566,18 @@ export const ProjectsView = ({
           </div>
         ) : (
           <div>
-             <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-              <FileText className="w-6 h-6 text-blue-600" />
-              Проекты
-            </h2>
+             {activeFilter !== "all" && (
+               <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+                <FileText className="w-6 h-6 text-blue-600" />
+                {activeFilter === "draft"
+                  ? "Черновики"
+                  : activeFilter === "sent"
+                    ? "Оформленные"
+                    : activeFilter === "transferred"
+                      ? "Переданные"
+                      : "Проекты"}
+              </h2>
+             )}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {filteredProjects.map((project) => (
                   /* ... project card content ...*/

@@ -565,6 +565,10 @@ export const PRICE_LIST_CATEGORIES = [
     brands: ["Egger", "Kronospan", "Lamarty", "Nordeco", "Evosoft", "AGT SUPRAMATT", "ХДФ"]
   },
   {
+    title: "Кромочные материалы",
+    brands: ["Egger", "Rehau", "Galoplast", "Kantenwelt", "Evosoft"]
+  },
+  {
     title: "Фасады заказные",
     brands: ["AGT SUPRAMATT PUR", "EVOSOFT PUR"]
   },
