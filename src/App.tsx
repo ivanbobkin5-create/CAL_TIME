@@ -6449,6 +6449,40 @@ const WorktopCutModal = ({
   );
 };
 
+const matchProductSegment = (p: { segment?: string }, activeSegment: string): boolean => {
+  if (!p.segment) return false;
+  return p.segment.split(",").map((s: string) => s.trim()).includes(activeSegment);
+};
+
+const getProductCoefficient = (
+  product: { 
+    useCustomCoeffs?: boolean; 
+    customCoeffRetail?: number; 
+    customCoeffWholesale?: number; 
+    customCoeffDesigner?: number; 
+    category?: string;
+  }, 
+  customerType: string, 
+  resolveBrandCoefficient: (cat: string, brand: string) => number
+): number => {
+  if (product && product.useCustomCoeffs) {
+    let role: "retail" | "wholesale" | "designer" = "wholesale";
+    if (customerType === "retail") role = "retail";
+    else if (customerType === "designer") role = "designer";
+
+    if (role === "retail" && product.customCoeffRetail !== undefined && product.customCoeffRetail > 0) {
+      return product.customCoeffRetail;
+    }
+    if (role === "designer" && product.customCoeffDesigner !== undefined && product.customCoeffDesigner > 0) {
+      return product.customCoeffDesigner;
+    }
+    if (role === "wholesale" && product.customCoeffWholesale !== undefined && product.customCoeffWholesale > 0) {
+      return product.customCoeffWholesale;
+    }
+  }
+  return resolveBrandCoefficient(`cat_${product?.category}`, "");
+};
+
 const makeFittingDemandKey = (fit: {
   category: string;
   hingeType?: string;
@@ -7348,7 +7382,7 @@ const SummaryView = ({
           }
         }
         
-        matchedProd = inCat.find((p: any) => p.segment === activeSegment) || inCat[0];
+        matchedProd = inCat.find((p: any) => matchProductSegment(p, activeSegment)) || inCat[0];
       }
       
       if (matchedProd) {
@@ -7403,7 +7437,7 @@ const SummaryView = ({
       
       if (!wtProd) {
         const wtItems = catalogProducts.filter((p: any) => p.category === "Столешницы и стеновые" && !p.name.toLowerCase().includes("стеновая"));
-        wtProd = wtItems.find((p: any) => p.segment === activeSegment) || wtItems[0];
+        wtProd = wtItems.find((p: any) => matchProductSegment(p, activeSegment)) || wtItems[0];
       }
 
       if (wtProd) {
@@ -7419,7 +7453,7 @@ const SummaryView = ({
 
   // Add Added Products
   finalProductsList.forEach((product) => {
-    const coeff = resolveBrandCoefficient(`cat_${product.category}`, "");
+    const coeff = getProductCoefficient(product, customerType, resolveBrandCoefficient);
     const displayPrice = product.purchasePrice
       ? Math.round(product.purchasePrice * coeff)
       : product.price;
@@ -8421,7 +8455,7 @@ const SummaryView = ({
               const curId = manualFittings[cat];
               let activeProduct = catalogProducts.find((p) => p.id === curId);
               if (!activeProduct) {
-                activeProduct = opts.find((p) => p.segment === activeSegment) || opts[0];
+                activeProduct = opts.find((p) => matchProductSegment(p, activeSegment)) || opts[0];
               }
 
               // Calculate initial fallback worktop count
@@ -12555,6 +12589,7 @@ const ProductsView = ({
   productCategories,
   setProductCategories,
   coefficients,
+  globalCoefficients,
   productionFormat,
   onSaveProduct,
   onDeleteProduct,
@@ -12579,16 +12614,21 @@ const ProductsView = ({
   db,
   doc,
   updateDoc,
+  customerType,
+  resolveBrandCoefficient,
 }: {
   onAddProduct: (product: any, qty: number) => void;
   catalogProducts: any[];
   productCategories: string[];
   setProductCategories: React.Dispatch<React.SetStateAction<string[]>>;
   coefficients: any;
+  globalCoefficients?: any;
   productionFormat: string;
   onSaveProduct: (product: any) => void;
   onDeleteProduct: (id: string | number) => void;
   userRole?: string | null;
+  customerType: string;
+  resolveBrandCoefficient: (cat: string, brand: string) => number;
   companyType?: string;
   furnitureType?: string;
   setFurnitureType?: (t: string) => void;
@@ -12775,6 +12815,10 @@ const ProductsView = ({
     wtDepth: "600",
     wtThickness: "38",
     wtSlope: "R3",
+    useCustomCoeffs: false,
+    customCoeffRetail: globalCoefficients?.retail?.products?.[productCategories[0]] ?? 1.5,
+    customCoeffWholesale: globalCoefficients?.wholesale?.products?.[productCategories[0]] ?? 1.3,
+    customCoeffDesigner: globalCoefficients?.designer?.products?.[productCategories[0]] ?? 1.4,
   });
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -12949,7 +12993,10 @@ const ProductsView = ({
       console.log("Validation failed: name:", newProduct.name, "purchasePrice:", newProduct.purchasePrice);
       return;
     }
-    const coeff = coefficients.products?.[newProduct.category] || 1.5;
+    const defaultCoeff = coefficients.products?.[newProduct.category] || 1.5;
+    const coeff = newProduct.useCustomCoeffs && newProduct.customCoeffRetail
+      ? newProduct.customCoeffRetail
+      : defaultCoeff;
     const finalPrice = newProduct.purchasePrice * coeff;
 
     const product = {
@@ -12974,9 +13021,10 @@ const ProductsView = ({
   };
 
   const resetForm = () => {
+    const defaultCat = productCategories[0];
     setNewProduct({
       name: "",
-      category: productCategories[0],
+      category: defaultCat,
       purchasePrice: 0,
       images: [],
       article: "",
@@ -13011,6 +13059,10 @@ const ProductsView = ({
       wtThickness: "38",
       wtSlope: "R3",
       requiredProducts: [],
+      useCustomCoeffs: false,
+      customCoeffRetail: globalCoefficients?.retail?.products?.[defaultCat] ?? 1.5,
+      customCoeffWholesale: globalCoefficients?.wholesale?.products?.[defaultCat] ?? 1.3,
+      customCoeffDesigner: globalCoefficients?.designer?.products?.[defaultCat] ?? 1.4,
     });
     setEditingProduct(null);
     setIsAddingProduct(false);
@@ -13055,6 +13107,10 @@ const ProductsView = ({
       wtThickness: product.wtThickness || "38",
       wtSlope: product.wtSlope || "R3",
       requiredProducts: product.requiredProducts || [],
+      useCustomCoeffs: product.useCustomCoeffs || false,
+      customCoeffRetail: product.customCoeffRetail || globalCoefficients?.retail?.products?.[product.category] || 1.5,
+      customCoeffWholesale: product.customCoeffWholesale || globalCoefficients?.wholesale?.products?.[product.category] || 1.3,
+      customCoeffDesigner: product.customCoeffDesigner || globalCoefficients?.designer?.products?.[product.category] || 1.4,
     });
     setIsAddingProduct(true);
   };
@@ -13338,20 +13394,20 @@ const ProductsView = ({
       )}
 
       {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-8">
         <div>
           <h2 className="text-2xl font-bold text-gray-800">Каталог товаров</h2>
           <p className="text-sm text-gray-500">
             Управление фурнитурой и аксессуарами
           </p>
         </div>
-        <div className="flex flex-row items-center w-full gap-2 md:gap-3 flex-nowrap">
+        <div className="flex flex-col sm:flex-row sm:items-center flex-wrap gap-2 md:gap-3 w-full lg:w-auto justify-end">
           {userRole === 'admin' && (
-            <div className="flex bg-gray-100 p-1 rounded-xl items-center mr-2 shadow-inner flex-shrink-0">
+            <div className="flex bg-gray-100 p-1 rounded-xl items-center shadow-inner flex-shrink-0 justify-center">
                <button 
                  onClick={() => setActiveProductsView('catalog')}
                  className={cn(
-                   "h-8 px-4 rounded-lg text-xs font-black uppercase tracking-widest transition-all flex items-center",
+                   "h-8 px-4 rounded-lg text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center",
                    activeProductsView === 'catalog' ? "bg-white text-blue-600 shadow-sm" : "text-gray-400 font-bold"
                  )}
                >
@@ -13360,7 +13416,7 @@ const ProductsView = ({
                <button 
                  onClick={() => setActiveProductsView('moderation')}
                  className={cn(
-                   "h-8 px-4 rounded-lg text-xs font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                   "h-8 px-4 rounded-lg text-xs font-black uppercase tracking-widest transition-all flex items-center justify-center gap-2",
                    activeProductsView === 'moderation' ? "bg-white text-orange-600 shadow-sm" : "text-gray-400 font-bold"
                  )}
                >
@@ -13380,7 +13436,7 @@ const ProductsView = ({
             <ShieldCheck className="w-5 h-5" />
             Чек-лист
           </button>
-          <div className="relative w-full md:w-80 flex-shrink-0">
+          <div className="relative w-full sm:w-64 md:w-80">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
             <input
               type="text"
@@ -13767,12 +13823,16 @@ const ProductsView = ({
                       </label>
                       <select
                         value={newProduct.category}
-                        onChange={(e) =>
-                          setNewProduct((prev) => ({
+                        onChange={(e) => {
+                          const newCat = e.target.value;
+                          setNewProduct((prev: any) => ({
                             ...prev,
-                            category: e.target.value,
-                          }))
-                        }
+                            category: newCat,
+                            customCoeffRetail: globalCoefficients?.retail?.products?.[newCat] ?? 1.5,
+                            customCoeffWholesale: globalCoefficients?.wholesale?.products?.[newCat] ?? 1.3,
+                            customCoeffDesigner: globalCoefficients?.designer?.products?.[newCat] ?? 1.4,
+                          }));
+                        }}
                         className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
                       >
                         {productCategories.map((c) => (
@@ -13804,22 +13864,46 @@ const ProductsView = ({
                     </div>
                     <div>
                       <label className="block text-sm font-bold text-gray-700 mb-2">
-                        Сегмент товара
+                        Сегменты товара (можно выбрать несколько)
                       </label>
-                      <select
-                        value={newProduct.segment}
-                        onChange={(e) =>
-                          setNewProduct((prev) => ({
-                            ...prev,
-                            segment: e.target.value as any,
-                          }))
-                        }
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
-                      >
-                        <option value="Эконом">Эконом</option>
-                        <option value="Средний">Средний</option>
-                        <option value="Премиум">Премиум</option>
-                      </select>
+                      <div className="flex flex-wrap gap-3 p-3 bg-gray-50/50 border border-gray-200 rounded-xl">
+                        {["Эконом", "Средний", "Премиум"].map((seg) => {
+                          const currentSegments = newProduct.segment
+                            ? String(newProduct.segment).split(",").map((s) => s.trim()).filter(Boolean)
+                            : [];
+                          const isSelected = currentSegments.includes(seg);
+                          return (
+                            <label
+                              key={seg}
+                              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border cursor-pointer select-none transition-all text-sm font-semibold ${
+                                isSelected
+                                  ? "bg-emerald-50 border-emerald-200 text-emerald-950 shadow-sm"
+                                  : "bg-white border-gray-200 text-gray-700 hover:bg-gray-100"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => {
+                                  let nextSegments;
+                                  if (isSelected) {
+                                    nextSegments = currentSegments.filter((s) => s !== seg);
+                                  } else {
+                                    nextSegments = [...currentSegments, seg];
+                                  }
+                                  const segVal = nextSegments.length > 0 ? nextSegments.join(", ") : "Средний";
+                                  setNewProduct((prev) => ({
+                                    ...prev,
+                                    segment: segVal,
+                                  }));
+                                }}
+                                className="w-4 h-4 text-emerald-600 focus:ring-emerald-500 border-gray-300 rounded"
+                              />
+                              <span>{seg}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
 
@@ -14735,23 +14819,139 @@ const ProductsView = ({
                       </label>
                     </div>
 
-                    <div className="pt-2">
-                      <div className="flex justify-between items-center text-sm font-bold text-blue-900 mb-1">
-                        <span>Итоговая цена для клиента:</span>
-                        <span className="text-xl">
-                          {(
-                            newProduct.purchasePrice *
-                            (coefficients.products?.[newProduct.category] ||
-                              1.5)
-                          ).toLocaleString()}{" "}
-                          ₽
+                    <div className="border-t border-blue-100 pt-4 space-y-3">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={newProduct.useCustomCoeffs || false}
+                          onChange={(e) =>
+                            setNewProduct((prev) => ({
+                              ...prev,
+                              useCustomCoeffs: e.target.checked,
+                            }))
+                          }
+                          className="w-4 h-4 text-emerald-600 rounded cursor-pointer"
+                        />
+                        <span className="text-sm font-bold text-blue-900">
+                          Свой коэффициент продажи у товара
                         </span>
-                      </div>
-                      <p className="text-[10px] text-blue-500 italic">
-                        * Рассчитано автоматически на основе коэффициента
-                        категории "{newProduct.category}" (
-                        {coefficients.products?.[newProduct.category] || 1.5})
-                      </p>
+                      </label>
+                      
+                      {newProduct.useCustomCoeffs && (
+                        <div className="p-3.5 bg-emerald-50/50 border border-emerald-100 rounded-xl space-y-3 animate-in fade-in duration-150">
+                          <p className="text-[11px] text-emerald-800 leading-normal font-medium">
+                            Введите коэффициенты наценки для каждого типа клиентов (розница, опт, дизайнеры):
+                          </p>
+                          <div className="grid grid-cols-3 gap-2">
+                            <div>
+                              <label className="block text-[10px] font-bold text-emerald-900 mb-1">
+                                Розница
+                              </label>
+                              <input
+                                type="number"
+                                step="0.1"
+                                min="0"
+                                value={newProduct.customCoeffRetail || ""}
+                                onFocus={(e) => e.target.select()}
+                                onChange={(e) =>
+                                  setNewProduct((prev) => ({
+                                    ...prev,
+                                    customCoeffRetail: parseFloat(e.target.value) || 0,
+                                  }))
+                                }
+                                className="w-full px-2 py-1.5 border border-emerald-200 bg-white rounded-lg text-center font-bold text-emerald-950 text-sm focus:ring-1 focus:ring-emerald-400 outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-emerald-900 mb-1">
+                                Опт
+                              </label>
+                              <input
+                                type="number"
+                                step="0.1"
+                                min="0"
+                                value={newProduct.customCoeffWholesale || ""}
+                                onFocus={(e) => e.target.select()}
+                                onChange={(e) =>
+                                  setNewProduct((prev) => ({
+                                    ...prev,
+                                    customCoeffWholesale: parseFloat(e.target.value) || 0,
+                                  }))
+                                }
+                                className="w-full px-2 py-1.5 border border-emerald-200 bg-white rounded-lg text-center font-bold text-emerald-950 text-sm focus:ring-1 focus:ring-emerald-400 outline-none"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[10px] font-bold text-emerald-900 mb-1">
+                                Дизайнары
+                              </label>
+                              <input
+                                type="number"
+                                step="0.1"
+                                min="0"
+                                value={newProduct.customCoeffDesigner || ""}
+                                onFocus={(e) => e.target.select()}
+                                onChange={(e) =>
+                                  setNewProduct((prev) => ({
+                                    ...prev,
+                                    customCoeffDesigner: parseFloat(e.target.value) || 0,
+                                  }))
+                                }
+                                className="w-full px-2 py-1.5 border border-emerald-200 bg-white rounded-lg text-center font-bold text-emerald-950 text-sm focus:ring-1 focus:ring-emerald-400 outline-none"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="pt-2 border-t border-blue-100/50 mt-1">
+                      {newProduct.useCustomCoeffs ? (
+                        <div className="space-y-1.5 bg-emerald-50/20 p-2.5 rounded-xl border border-emerald-200/40">
+                          <div className="text-[10px] uppercase font-bold text-emerald-800 tracking-wider">
+                            Итоговые цены со своими коэф.:
+                          </div>
+                          <div className="grid grid-cols-3 gap-2 text-center">
+                            <div className="p-1 bg-white rounded-lg border border-emerald-50">
+                              <span className="text-[9px] text-gray-500 block">Розница</span>
+                              <span className="font-bold text-xs text-emerald-950">
+                                {Math.round(newProduct.purchasePrice * (newProduct.customCoeffRetail || 0)).toLocaleString()} ₽
+                              </span>
+                            </div>
+                            <div className="p-1 bg-white rounded-lg border border-emerald-50">
+                              <span className="text-[9px] text-gray-500 block">Опт</span>
+                              <span className="font-bold text-xs text-emerald-950">
+                                {Math.round(newProduct.purchasePrice * (newProduct.customCoeffWholesale || 0)).toLocaleString()} ₽
+                              </span>
+                            </div>
+                            <div className="p-1 bg-white rounded-lg border border-emerald-50">
+                              <span className="text-[9px] text-gray-500 block">Дизайн</span>
+                              <span className="font-bold text-xs text-emerald-950">
+                                {Math.round(newProduct.purchasePrice * (newProduct.customCoeffDesigner || 0)).toLocaleString()} ₽
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <>
+                          <div className="flex justify-between items-center text-sm font-bold text-blue-900 mb-1">
+                            <span>Итоговая цена для клиента:</span>
+                            <span className="text-xl">
+                              {(
+                                newProduct.purchasePrice *
+                                (coefficients.products?.[newProduct.category] ||
+                                  1.5)
+                              ).toLocaleString()}{" "}
+                              ₽
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-blue-500 italic">
+                            * Рассчитано автоматически на основе коэффициента
+                            категории "{newProduct.category}" (
+                            {coefficients.products?.[newProduct.category] || 1.5})
+                          </p>
+                        </>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -14851,20 +15051,26 @@ const ProductsView = ({
                       Связанные товары автоматически добавляются при выборе этого товара в проект (пользователь сможет настроить количество или отказаться).
                     </p>
 
-                    <div className="flex flex-col sm:flex-row gap-2">
+                    <div className="flex flex-col sm:flex-row gap-2 w-full min-w-0">
                       <select
                         id="related-product-select"
-                        className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-500 text-gray-700 font-medium"
+                        className="w-full sm:flex-1 min-w-0 px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-500 text-gray-700 font-medium truncate"
                         defaultValue=""
                       >
                         <option value="">-- Выберите товар из каталога --</option>
                         {catalogProducts
                           .filter((p) => p.id !== (editingProduct?.id || null))
-                          .map((p) => (
-                            <option key={p.id} value={p.id}>
-                              [{p.category}] {p.name} ({(p.price || 0).toLocaleString()} ₽)
-                            </option>
-                          ))}
+                          .map((p) => {
+                            const displayName = p.name ? (p.name.length > 50 ? p.name.substring(0, 48) + "..." : p.name) : "";
+                            const displayPrice = p.purchasePrice
+                              ? Math.round(p.purchasePrice * getProductCoefficient(p, customerType, resolveBrandCoefficient))
+                              : p.price;
+                            return (
+                              <option key={p.id} value={p.id} title={p.name}>
+                                [{p.category}] {displayName} ({(displayPrice || 0).toLocaleString()} ₽)
+                              </option>
+                            );
+                          })}
                       </select>
                       <div className="flex gap-2 items-center">
                         <input
@@ -15058,12 +15264,16 @@ const ProductsView = ({
                     <div className="grid grid-cols-2 gap-y-4">
                       <div className="space-y-1">
                         <span className="text-[10px] text-gray-400 uppercase font-black">
-                          Цена продажи
+                          Цена продажи (клиентская)
                         </span>
                         <div className="text-2xl font-black text-gray-900">
-                          {(
-                            selectedProductForDetail.price || 0
-                          ).toLocaleString()}{" "}
+                          {(() => {
+                            const coeff = getProductCoefficient(selectedProductForDetail, customerType, resolveBrandCoefficient);
+                            const displayPrice = selectedProductForDetail.purchasePrice
+                              ? Math.round(selectedProductForDetail.purchasePrice * coeff)
+                              : selectedProductForDetail.price;
+                            return (displayPrice || 0).toLocaleString();
+                          })()}{" "}
                           ₽
                         </div>
                       </div>
@@ -15235,7 +15445,13 @@ const ProductsView = ({
                           return (
                             <div key={idx} className="flex justify-between items-center bg-white p-3 rounded-xl border border-blue-100/40 text-xs">
                               <span className="font-semibold text-gray-700 truncate max-w-[240px]" title={cp?.name || `Товар [ID: ${rp.id}]`}>
-                                {cp?.name || `Товар [ID: ${rp.id}]`} {cp ? `(${(cp.price || 0).toLocaleString()} ₽)` : ""}
+                                {cp?.name || `Товар [ID: ${rp.id}]`} {cp ? `(${(() => {
+                                  const coeff = getProductCoefficient(cp, customerType, resolveBrandCoefficient);
+                                  const displayPrice = cp.purchasePrice
+                                    ? Math.round(cp.purchasePrice * coeff)
+                                    : cp.price;
+                                  return (displayPrice || 0).toLocaleString();
+                                })()} ₽)` : ""}
                               </span>
                               <span className="font-black text-blue-600 shrink-0">
                                 {rp.qty} {cp?.unit || "шт."}
@@ -15260,6 +15476,9 @@ const ProductsView = ({
                   <div className="pt-6 border-t border-gray-100 space-y-3">
                     <div className="flex items-center justify-between text-[10px] font-black text-gray-400 uppercase tracking-widest">
                       <span>Инфо о закупке</span>
+                      {selectedProductForDetail.useCustomCoeffs && (
+                        <span className="text-emerald-600 font-extrabold normal-case">Свои коэф.</span>
+                      )}
                     </div>
                     <div className="grid grid-cols-3 gap-2">
                       <div className="bg-gray-50 p-2 rounded-xl border border-gray-100 text-center">
@@ -15275,10 +15494,13 @@ const ProductsView = ({
                           Коэф.
                         </div>
                         <div className="font-bold text-xs">
-                          {(
-                            selectedProductForDetail.price /
-                            selectedProductForDetail.purchasePrice
-                          ).toFixed(2)}
+                          {selectedProductForDetail.useCustomCoeffs 
+                            ? (selectedProductForDetail.customCoeffRetail || 1.0).toFixed(2)
+                            : (
+                                selectedProductForDetail.price /
+                                (selectedProductForDetail.purchasePrice || 1)
+                              ).toFixed(2)
+                          }
                         </div>
                       </div>
                       <div className="bg-gray-50 p-2 rounded-xl border border-gray-100 text-center">
@@ -15289,6 +15511,28 @@ const ProductsView = ({
                           {selectedProductForDetail.vat || 20}%
                         </div>
                       </div>
+
+                      {selectedProductForDetail.useCustomCoeffs && (
+                        <div className="col-span-3 mt-1.5 p-2.5 bg-emerald-50 rounded-xl border border-emerald-100 space-y-1 text-left">
+                          <div className="text-[9px] uppercase font-bold text-emerald-800 tracking-wider">
+                            Установленные коэффициенты:
+                          </div>
+                          <div className="grid grid-cols-3 gap-1 text-[11px] font-medium text-emerald-950">
+                            <div>
+                              <span className="text-gray-500">Розница:</span>{" "}
+                              <span className="font-bold">{selectedProductForDetail.customCoeffRetail || "—"}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Опт:</span>{" "}
+                              <span className="font-bold">{selectedProductForDetail.customCoeffWholesale || "—"}</span>
+                            </div>
+                            <div>
+                              <span className="text-gray-500">Дизайн:</span>{" "}
+                              <span className="font-bold">{selectedProductForDetail.customCoeffDesigner || "—"}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -15653,7 +15897,13 @@ const ProductsView = ({
                           Цена для клиента
                         </span>
                         <span className="text-xl font-black text-gray-900">
-                          {(product.price ?? 0).toLocaleString()} ₽
+                          {(() => {
+                            const coeff = getProductCoefficient(product, customerType, resolveBrandCoefficient);
+                            const displayPrice = product.purchasePrice
+                              ? Math.round(product.purchasePrice * coeff)
+                              : product.price;
+                            return (displayPrice ?? 0).toLocaleString();
+                          })()} ₽
                         </span>
                       </div>
                       <div className="flex items-center gap-2 bg-gray-100 p-1.5 rounded-xl">
@@ -19183,7 +19433,7 @@ export default function App() {
     });
 
     addedProducts.forEach((p) => {
-      const coeff = resolveBrandCoefficient(`cat_${p.category}`, "");
+      const coeff = getProductCoefficient(p, customerType, resolveBrandCoefficient);
       const displayPrice = p.purchasePrice
         ? Math.round(p.purchasePrice * coeff)
         : p.price;
@@ -20335,6 +20585,7 @@ export default function App() {
                 saveProductCategories(newCats);
               }}
               coefficients={currentCoefficients}
+              globalCoefficients={coefficients}
               productionFormat={productionFormat}
               onSaveProduct={saveProduct}
               onDeleteProduct={deleteProduct}
@@ -20359,6 +20610,8 @@ export default function App() {
               doc={doc}
               updateDoc={updateDoc}
               userData={userData}
+              customerType={customerType}
+              resolveBrandCoefficient={resolveBrandCoefficient}
             />
           ) : activeTab === "services" ? (
             <ServicesView
