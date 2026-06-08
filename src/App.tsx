@@ -2740,6 +2740,7 @@ const PriceView = ({
   logPriceChange,
   db,
   auth,
+  companyId,
 }: {
   calcMode: string;
   prices: Record<string, number>;
@@ -2774,6 +2775,7 @@ const PriceView = ({
   logPriceChange: (id: string, old: number, newVal: number) => void;
   db: any;
   auth: any;
+  companyId?: string;
 }) => {
   const [priceSearch, setPriceSearch] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -3525,6 +3527,84 @@ const PriceView = ({
                   >
                     <Plus className="w-3.5 h-3.5" />
                     Добавить бренд
+                  </button>
+                )}
+                {cat.title === "Кромочные материалы" && (
+                  <button
+                    onClick={async () => {
+                      if (!companyId) {
+                        showAlert("Ошибка", "Не найден идентификатор компании. Пожалуйста, выполните вход повторно.");
+                        return;
+                      }
+                      showConfirm(
+                        "Синхронизация кромки Egger 24+",
+                        "Вы действительно хотите проверить и сгенерировать кромочные материалы (кромку 0.4мм, 1.0мм, 2.0мм) для всех декоров Egger (Коллекция 24+)? Недостающие кромки будут автоматически добавлены в прайс-лист.",
+                        async () => {
+                          setIsSaving(true);
+                          try {
+                            const decors = LDSP_DATABASE["Egger"] || [];
+                            const thicknesses = ["0.4", "1.0", "2.0"];
+                            
+                            // Find existing edge products to avoid duplication
+                            const existingEdges = catalogProducts.filter(p => p.category === "Кромочные материалы" && p.brand === "Egger");
+                            const existingSet = new Set(existingEdges.map(p => `${p.decor}|${p.thickness}`));
+                            
+                            const toCreate: { decor: string; thickness: string }[] = [];
+                            decors.forEach(decor => {
+                              thicknesses.forEach(thickness => {
+                                if (!existingSet.has(`${decor}|${thickness}`)) {
+                                  toCreate.push({ decor, thickness });
+                                }
+                              });
+                            });
+
+                            if (toCreate.length === 0) {
+                              showAlert("Уведомление", "Все необходимые кромочные материалы Egger 24+ уже присутствуют в вашем прайс-листе.");
+                              return;
+                            }
+
+                            // Batch create missing ones in chunks of 20
+                            let addedCount = 0;
+                            const chunkSize = 20;
+                            for (let i = 0; i < toCreate.length; i += chunkSize) {
+                              const chunk = toCreate.slice(i, i + chunkSize);
+                              await Promise.all(
+                                chunk.map(async (item) => {
+                                  const pId = `edge_egger_${Math.random().toString(36).substr(2, 9)}`;
+                                  const productData = {
+                                    id: pId,
+                                    category: "Кромочные материалы",
+                                    decorKey: `Egger|${item.decor}`,
+                                    decor: item.decor,
+                                    thickness: item.thickness,
+                                    brand: "Egger",
+                                    price: item.thickness === "0.4" ? 50 : (item.thickness === "1.0" ? 80 : 100), // reasonable base prices
+                                    name: `Кромка Egger ${item.decor} ${item.thickness}мм`,
+                                    compatibility: "Egger",
+                                    updatedAt: new Date().toISOString(),
+                                    status: 'approved'
+                                  };
+                                  await setDoc(doc(db, "companies", companyId, "products", pId), productData);
+                                  addedCount++;
+                                })
+                              );
+                            }
+
+                            showAlert("Успех", `Успешно добавлено ${addedCount} новых кромочных материалов для декоров Egger 24+!`);
+                          } catch (err: any) {
+                            console.error("Error generating Egger edges:", err);
+                            showAlert("Ошибка", "Не удалось сгенерировать кромочные материалы: " + err.message);
+                          } finally {
+                            setIsSaving(false);
+                          }
+                        }
+                      );
+                    }}
+                    disabled={isSaving}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg disabled:bg-gray-400 disabled:cursor-not-allowed transition-all flex items-center gap-2 shadow-sm"
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    Заполнить кромку Egger 24+
                   </button>
                 )}
               </div>
@@ -6506,7 +6586,7 @@ const parseFittingDemandKey = (key: string) => {
     hingeType: hingeType || undefined,
     depth: depth || undefined,
     width: width || undefined,
-    drawerSubCategory: drawerSubCategory || undefined
+    drawerSubCategory: drawerSubCategory || "auto"
   };
 };
 
@@ -6544,6 +6624,7 @@ const SummaryView = ({
   addedServices,
   serviceData,
   assemblyPercentage,
+  assemblyPercentages,
   deliveryTariffs,
   canEditCabinet,
   canEditFacades,
@@ -6617,6 +6698,7 @@ const SummaryView = ({
   addedServices: any[];
   serviceData: any;
   assemblyPercentage: number;
+  assemblyPercentages?: Record<string, number>;
   deliveryTariffs: DeliveryTariffs;
   canEditCabinet: boolean;
   canEditFacades: boolean;
@@ -7354,7 +7436,7 @@ const SummaryView = ({
           const withHinge = inCat.filter((p: any) => p.hingeType === fitParams.hingeType);
           if (withHinge.length > 0) inCat = withHinge;
         } else if (category === "Системы выдвижения") {
-          if (fitParams.drawerSubCategory) {
+          if (fitParams.drawerSubCategory && fitParams.drawerSubCategory !== "auto") {
             const withSub = inCat.filter((p: any) => p.drawerSubCategory === fitParams.drawerSubCategory);
             if (withSub.length > 0) inCat = withSub;
           }
@@ -7390,7 +7472,8 @@ const SummaryView = ({
         if (category === "Петли" && fitParams.hingeType) {
           customSub = `${category} (${fitParams.hingeType})`;
         } else if (category === "Системы выдвижения") {
-          customSub = `${category} (${fitParams.drawerSubCategory === "Направляющие скрытого монтажа" ? "Скрытого монт." : fitParams.drawerSubCategory === "Телескопические направляющие" ? "Телескоп." : "Ящик"} ${fitParams.depth}мм)`;
+          const actualSub = matchedProd?.drawerSubCategory || fitParams.drawerSubCategory;
+          customSub = `${category} (${actualSub === "Направляющие скрытого монтажа" ? "Скрытого монт." : actualSub === "Телескопические направляющие" ? "Телескоп." : "Ящик"} ${fitParams.depth}мм)`;
         } else if (category === "Посудосушитель") {
           customSub = `Посудосушитель (Ширина ${fitParams.width}мм)`;
         }
@@ -7599,6 +7682,40 @@ const SummaryView = ({
     }
   });
 
+  // Aggregate standard equipment from kitchen modules
+  const stdEquipmentTotals: Record<string, number> = {};
+  const kitchenModules = addedProducts.filter((p) => p.category === "Кухонные модули");
+  
+  kitchenModules.forEach((mod) => {
+    const qty = mod.quantity || 1;
+    if (mod.moduleStandardEquipment && mod.moduleStandardEquipment.length > 0) {
+      mod.moduleStandardEquipment.forEach((item: any) => {
+        stdEquipmentTotals[item.id] = (stdEquipmentTotals[item.id] || 0) + (item.qty * qty);
+      });
+    }
+  });
+
+  // Now, for each unique product in standard equipment totals, add a row to summaryRows
+  Object.entries(stdEquipmentTotals).forEach(([prodId, totalQty]) => {
+    if (totalQty <= 0) return;
+    const prod = catalogProducts.find((cp) => cp.id === prodId);
+    if (prod) {
+      summaryRows.push({
+        type: "hardware",
+        name: `${prod.name}`,
+        sub: `Стандартная комплектация (${prod.category})`,
+        decor: "Входит в стоимость",
+        qty: `${totalQty} ${prod.unit || "шт"}`,
+        price: 0,
+        total: 0,
+        coef: 1,
+        id: `std_equip_${prodId}`,
+        key: `std_equip_${prodId}`,
+        isStandardEquipment: true,
+      });
+    }
+  });
+
   // Add Added Services
   addedServices.forEach((service) => {
     const coeff = resolveBrandCoefficient("services", ""); // Fallback to general service markup
@@ -7631,6 +7748,9 @@ const SummaryView = ({
   // Add Assembly Fee if enabled
   if (serviceData.assembly) {
     let effectiveAssemblyPercentage = assemblyPercentage;
+    if (furnitureType && assemblyPercentages && assemblyPercentages[furnitureType] !== undefined) {
+      effectiveAssemblyPercentage = assemblyPercentages[furnitureType];
+    }
     selectedPromoIds.forEach(pId => {
       const promo = promotions?.find(p => p.id === pId);
       if (promo && promo.promoType === "gift_service" && promo.giftServiceId === "assembly" && !promo.giftServiceNeedMarkup) {
@@ -8086,7 +8206,7 @@ const SummaryView = ({
       {eligiblePromotions.length > 0 && (
         <div className="bg-gradient-to-r from-indigo-50/70 to-blue-50/50 rounded-2xl border border-indigo-100 p-5 space-y-3 shadow-sm select-none">
           <div className="flex items-center gap-2 mb-1">
-            <Sparkles className="w-5 h-5 text-indigo-650" />
+            <Sparkles className="w-5 h-5 text-indigo-600" />
             <h3 className="font-extrabold text-indigo-900 text-sm tracking-tight uppercase">Доступные акции для этого расчета</h3>
           </div>
           <div className="flex flex-wrap gap-3">
@@ -8377,8 +8497,8 @@ const SummaryView = ({
                 opts = [...opts].sort((a, b) => {
                   let scoreA = 0;
                   let scoreB = 0;
-                  if (fitParams.drawerSubCategory && a.drawerSubCategory === fitParams.drawerSubCategory) scoreA += 2;
-                  if (fitParams.drawerSubCategory && b.drawerSubCategory === fitParams.drawerSubCategory) scoreB += 2;
+                  if (fitParams.drawerSubCategory && fitParams.drawerSubCategory !== "auto" && a.drawerSubCategory === fitParams.drawerSubCategory) scoreA += 2;
+                  if (fitParams.drawerSubCategory && fitParams.drawerSubCategory !== "auto" && b.drawerSubCategory === fitParams.drawerSubCategory) scoreB += 2;
                   if (fitParams.depth && (a.depth === fitParams.depth || String(a.name).includes(fitParams.depth))) scoreA += 1;
                   if (fitParams.depth && (b.depth === fitParams.depth || String(b.name).includes(fitParams.depth))) scoreB += 1;
                   return scoreB - scoreA;
@@ -8551,26 +8671,27 @@ const SummaryView = ({
       )}
 
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
-              <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider">
-                Материал / Параметры
-              </th>
-              <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider">
-                Декор
-              </th>
-              <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider text-right">
-                Кол-во
-              </th>
-              <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider text-right">
-                Цена
-              </th>
-              <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider text-right">
-                Итого
-              </th>
-            </tr>
-          </thead>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse min-w-[800px]">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                  Материал / Параметры
+                </th>
+                <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                  Декор
+                </th>
+                <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider text-right whitespace-nowrap">
+                  Кол-во
+                </th>
+                <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider text-right whitespace-nowrap">
+                  Цена
+                </th>
+                <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider text-right whitespace-nowrap">
+                  Итого
+                </th>
+              </tr>
+            </thead>
           <tbody className="divide-y divide-gray-100">
             {summaryRows
               .filter(
@@ -8646,14 +8767,14 @@ const SummaryView = ({
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-2 text-right text-sm font-medium">
+                    <td className="px-6 py-2 text-right text-sm font-medium whitespace-nowrap">
                       <span
                         className={cn(row.type === "edge" && "text-xs text-gray-500")}
                       >
                         {row.qty}
                       </span>
                     </td>
-                    <td className="px-6 py-2 text-right text-sm font-medium">
+                    <td className="px-6 py-2 text-right text-sm font-medium whitespace-nowrap">
                       {row.type === "edge" ? (
                         <div className="flex items-center justify-end gap-2">
                           <input
@@ -8764,16 +8885,18 @@ const SummaryView = ({
                           </div>
                         </div>
                       ) : (
-                        `${(row.price ?? 0).toLocaleString()} ₽`
+                        row.isStandardEquipment ? (
+                          <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-extrabold uppercase tracking-wide">Входит</span>
+                        ) : `${(row.price ?? 0).toLocaleString()} ₽`
                       )}
                     </td>
                     <td className="px-6 py-2 text-right font-bold text-gray-900 whitespace-nowrap">
                       {row.displayTotal !== row.total ? (
                         <div className="flex flex-col items-end">
                           <span className="text-xs line-through text-gray-400 font-normal">{(row.displayTotal ?? row.total).toLocaleString()} ₽</span>
-                          <span className="text-sm font-extrabold text-indigo-650">{(row.netPaid ?? row.total).toLocaleString()} ₽</span>
+                          <span className="text-sm font-extrabold text-indigo-600">{(row.netPaid ?? row.total).toLocaleString()} ₽</span>
                           {row.promoApplied && (
-                            <span className="text-[9px] text-white bg-indigo-550 px-1.5 py-0.5 rounded font-black uppercase tracking-wider mt-1">{row.promoApplied}</span>
+                            <span className="text-[9px] text-white bg-indigo-600 px-1.5 py-0.5 rounded font-black uppercase tracking-wider mt-1">{row.promoApplied}</span>
                           )}
                         </div>
                       ) : (
@@ -8782,7 +8905,9 @@ const SummaryView = ({
                             row.type === "edge" && "text-sm font-medium text-gray-600",
                           )}
                         >
-                          {(row.total ?? 0).toLocaleString()} ₽
+                          {row.isStandardEquipment ? (
+                            <span className="text-xs text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded font-extrabold uppercase tracking-wide">Входит</span>
+                          ) : `${(row.total ?? 0).toLocaleString()} ₽`}
                         </span>
                       )}
                     </td>
@@ -8926,7 +9051,7 @@ const SummaryView = ({
                             {row.decor}
                           </span>
                         </td>
-                        <td className="px-6 py-2 text-right text-sm">
+                        <td className="px-6 py-2 text-right text-sm whitespace-nowrap">
                           {row.type === "product" ? (
                             <div className="flex items-center justify-end gap-2">
                               <button
@@ -8968,9 +9093,9 @@ const SummaryView = ({
                           {row.displayTotal !== row.total ? (
                             <div className="flex flex-col items-end">
                               <span className="text-xs line-through text-gray-400 font-normal">{(row.displayTotal ?? row.total).toLocaleString()} ₽</span>
-                              <span className="text-sm font-extrabold text-indigo-650">{(row.netPaid ?? row.total).toLocaleString()} ₽</span>
+                              <span className="text-sm font-extrabold text-indigo-600">{(row.netPaid ?? row.total).toLocaleString()} ₽</span>
                               {row.promoApplied && (
-                                <span className="text-[9px] text-white bg-indigo-550 px-1.5 py-0.5 rounded font-black uppercase tracking-wider mt-1">{row.promoApplied}</span>
+                                <span className="text-[9px] text-white bg-indigo-600 px-1.5 py-0.5 rounded font-black uppercase tracking-wider mt-1">{row.promoApplied}</span>
                               )}
                             </div>
                           ) : (
@@ -9021,10 +9146,10 @@ const SummaryView = ({
                           -
                         </span>
                       </td>
-                      <td className="px-6 py-2 text-right text-sm font-medium text-green-600">
+                      <td className="px-6 py-2 text-right text-sm font-medium text-green-600 whitespace-nowrap">
                         {row.qty}
                       </td>
-                      <td className="px-6 py-2 text-right text-sm font-medium text-green-600">
+                      <td className="px-6 py-2 text-right text-sm font-medium text-green-600 whitespace-nowrap">
                         {row.isManual ? (
                           <div className="flex items-center justify-end gap-2">
                             <input
@@ -9055,9 +9180,9 @@ const SummaryView = ({
                         {row.displayTotal !== row.total ? (
                           <div className="flex flex-col items-end">
                             <span className="text-xs line-through text-gray-400 font-normal">{(row.displayTotal ?? row.total).toLocaleString()} ₽</span>
-                            <span className="text-sm font-extrabold text-indigo-650">{(row.netPaid ?? row.total).toLocaleString()} ₽</span>
+                            <span className="text-sm font-extrabold text-indigo-600">{(row.netPaid ?? row.total).toLocaleString()} ₽</span>
                             {row.promoApplied && (
-                              <span className="text-[9px] text-white bg-indigo-550 px-1.5 py-0.5 rounded font-black uppercase tracking-wider mt-1">{row.promoApplied}</span>
+                              <span className="text-[9px] text-white bg-indigo-600 px-1.5 py-0.5 rounded font-black uppercase tracking-wider mt-1">{row.promoApplied}</span>
                             )}
                           </div>
                         ) : (
@@ -9090,17 +9215,17 @@ const SummaryView = ({
                       {finalTotal > 0 ? `${(finalTotal ?? 0).toLocaleString()} ₽` : "0 ₽"}
                     </span>
                     {totalPromoDiscount > 0 && (
-                      <span className="text-xs font-bold text-indigo-650 bg-indigo-50 px-2 py-1 rounded">
+                      <span className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded">
                         Скидка: -{totalPromoDiscount.toLocaleString()} ₽
                       </span>
                     )}
                     {totalPromoCashback > 0 && (
-                      <span className="text-xs font-bold text-emerald-650 bg-emerald-50 px-2 py-1 rounded">
+                      <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">
                         Кэшбек: +{totalPromoCashback.toLocaleString()} ₽
                       </span>
                     )}
                     {totalPromoMarkup > 0 && (
-                      <span className="text-xs font-bold text-amber-650 bg-amber-50 px-2 py-1 rounded">
+                      <span className="text-xs font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded">
                         Наценка по условиям: +{totalPromoMarkup.toLocaleString()} ₽
                       </span>
                     )}
@@ -9119,6 +9244,7 @@ const SummaryView = ({
             </tr>
           </tfoot>
         </table>
+      </div>
 
         {finalTotal > 0 && (
           <div className="mt-6 flex justify-end">
@@ -9234,6 +9360,8 @@ const SettingsView = ({
   setHardwareKitPrice,
   assemblyPercentage,
   setAssemblyPercentage,
+  assemblyPercentages,
+  setAssemblyPercentages,
   deliveryTariffs,
   setDeliveryTariffs,
   mapLink,
@@ -9310,6 +9438,8 @@ const SettingsView = ({
   >;
   assemblyPercentage: number;
   setAssemblyPercentage: React.Dispatch<React.SetStateAction<number>>;
+  assemblyPercentages?: Record<string, number>;
+  setAssemblyPercentages?: React.Dispatch<React.SetStateAction<Record<string, number>>>;
   deliveryTariffs: DeliveryTariffs;
   setDeliveryTariffs: React.Dispatch<React.SetStateAction<DeliveryTariffs>>;
   mapLink: string;
@@ -9385,6 +9515,25 @@ const SettingsView = ({
     standardSalon: 1.2,
   });
 
+  const [localAssemblyPercentages, setLocalAssemblyPercentages] = useState<Record<string, number>>(assemblyPercentages || {});
+  const lastTypedPercentagesRef = useRef<number>(0);
+
+  const [localAssemblyPercentage, setLocalAssemblyPercentage] = useState<number>(assemblyPercentage);
+  const lastMovedAssemblyPercentageRef = useRef<number>(0);
+
+  // Sync from props only if user hasn't typed recently (to avoid snapshot race overwrite)
+  useEffect(() => {
+    if (Date.now() - lastTypedPercentagesRef.current > 4000) {
+      setLocalAssemblyPercentages(assemblyPercentages || {});
+    }
+  }, [assemblyPercentages]);
+
+  useEffect(() => {
+    if (Date.now() - lastMovedAssemblyPercentageRef.current > 4000) {
+      setLocalAssemblyPercentage(assemblyPercentage);
+    }
+  }, [assemblyPercentage]);
+
   // Auto-save settings on change
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -9399,6 +9548,7 @@ const SettingsView = ({
     trimming,
     hardwareKitPrice,
     assemblyPercentage,
+    assemblyPercentages,
     assemblyIncludes,
     deliveryTariffs,
     mapLink,
@@ -10308,7 +10458,7 @@ const SettingsView = ({
                               Процент на сборку
                             </span>
                             <span className="text-lg font-black text-blue-600 font-sans">
-                              {assemblyPercentage}%
+                              {localAssemblyPercentage}%
                             </span>
                           </div>
                           <input
@@ -10316,12 +10466,57 @@ const SettingsView = ({
                             min="0"
                             max="30"
                             step="1"
-                            value={assemblyPercentage}
-                            onChange={(e) =>
-                              setAssemblyPercentage(parseInt(e.target.value))
-                            }
+                            value={localAssemblyPercentage}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value);
+                              const finalVal = isNaN(val) ? 0 : val;
+                              lastMovedAssemblyPercentageRef.current = Date.now();
+                              setLocalAssemblyPercentage(finalVal);
+                              setAssemblyPercentage(finalVal);
+                            }}
                             className="w-full h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-blue-600"
                           />
+                        </div>
+
+                        <div className="pt-3 border-t border-gray-100">
+                          <label className="block text-[10px] font-black text-gray-500 uppercase tracking-wider font-sans mb-2">
+                            Процент сборки по видам изделий
+                          </label>
+                          <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                            {["Кухня", "Шкаф", "Шкаф-купе", "Стол", "Прихожая", "Тумба в ванную", "Консоль подвесная"].map((type) => {
+                              const currentVal = localAssemblyPercentages?.[type] !== undefined ? localAssemblyPercentages[type] : localAssemblyPercentage;
+                              return (
+                                <div key={type} className="flex items-center justify-between gap-4 p-2 bg-white rounded-xl border border-gray-100 shadow-sm">
+                                  <span className="text-xs font-semibold text-gray-700">{type}</span>
+                                  <div className="flex items-center gap-1.5">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      max="50"
+                                      value={currentVal}
+                                      onChange={(e) => {
+                                        const val = parseInt(e.target.value);
+                                        const finalVal = isNaN(val) ? 0 : val;
+                                        lastTypedPercentagesRef.current = Date.now();
+                                        setLocalAssemblyPercentages((prev) => ({
+                                          ...prev,
+                                          [type]: finalVal,
+                                        }));
+                                        if (setAssemblyPercentages) {
+                                          setAssemblyPercentages((prev) => ({
+                                            ...prev,
+                                            [type]: finalVal
+                                          }));
+                                        }
+                                      }}
+                                      className="w-14 px-2 py-1 text-center font-bold text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                    <span className="text-xs text-gray-400 font-medium">%</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
 
                         <div className="pt-4 border-t border-gray-200">
@@ -12226,6 +12421,8 @@ const ServiceSectionView = ({
   productionFormat,
   totalCost,
   assemblyPercentage,
+  assemblyPercentages,
+  furnitureType,
   deliveryTariffs,
   totalLdspSheets,
   totalLdspArea = 0,
@@ -12238,6 +12435,8 @@ const ServiceSectionView = ({
   productionFormat: string;
   totalCost: number;
   assemblyPercentage: number;
+  assemblyPercentages?: Record<string, number>;
+  furnitureType?: string;
   deliveryTariffs: DeliveryTariffs;
   totalLdspSheets: number;
   totalLdspArea?: number;
@@ -12290,8 +12489,12 @@ const ServiceSectionView = ({
 
   const calculatedAssemblyPrice = useMemo(() => {
     if (!data.assembly) return 0;
-    return Math.round(totalCost * (assemblyPercentage / 100));
-  }, [data.assembly, totalCost, assemblyPercentage]);
+    let pct = assemblyPercentage;
+    if (furnitureType && assemblyPercentages && assemblyPercentages[furnitureType] !== undefined) {
+      pct = assemblyPercentages[furnitureType];
+    }
+    return Math.round(totalCost * (pct / 100));
+  }, [data.assembly, totalCost, assemblyPercentage, furnitureType, assemblyPercentages]);
 
   useEffect(() => {
     if (
@@ -12551,7 +12754,13 @@ const ServiceSectionView = ({
             Сборка и монтаж
           </h3>
           <p className="text-sm text-gray-500">
-            Базовый пакет сборки ({assemblyPercentage}% от стоимости)
+            Базовый пакет сборки ({(() => {
+              let pct = assemblyPercentage;
+              if (furnitureType && assemblyPercentages && assemblyPercentages[furnitureType] !== undefined) {
+                pct = assemblyPercentages[furnitureType];
+              }
+              return pct;
+            })()}% от стоимости)
           </p>
         </div>
       </div>
@@ -12759,9 +12968,64 @@ const ProductsView = ({
     null,
   );
   const [lightingSubFilter, setLightingSubFilter] = useState<string | null>(null);
+  const [selectedStdProductId, setSelectedStdProductId] = useState("");
+  const [selectedStdQty, setSelectedStdQty] = useState(1);
+  const [stdCategoryFilter, setStdCategoryFilter] = useState("");
+  const [stdSubCategoryFilter, setStdSubCategoryFilter] = useState("");
+  const [stdSearchText, setStdSearchText] = useState("");
+
   const [quantities, setQuantities] = useState<Record<string, any>>({});
   const [isAddingProduct, setIsAddingProduct] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
+
+  const availableCategoriesForStd = useMemo(() => {
+    const cats = new Set<string>();
+    catalogProducts.forEach((p) => {
+      if (p.category && p.category !== "Кухонные модули") {
+        cats.add(p.category);
+      }
+    });
+    return Array.from(cats).sort();
+  }, [catalogProducts]);
+
+  const subCategoriesForSelectedStd = useMemo(() => {
+    if (!stdCategoryFilter) return [];
+    const subs = new Set<string>();
+    catalogProducts
+      .filter((p) => p.category === stdCategoryFilter)
+      .forEach((p) => {
+        if (stdCategoryFilter === "Петли" && p.hingeType) {
+          subs.add(p.hingeType);
+        } else if (stdCategoryFilter === "Системы выдвижения" && p.drawerSubCategory) {
+          subs.add(p.drawerSubCategory);
+        }
+      });
+    return Array.from(subs).filter(Boolean);
+  }, [catalogProducts, stdCategoryFilter]);
+
+  const filteredStdProducts = useMemo(() => {
+    return catalogProducts.filter((p) => {
+      if (p.id === (editingProduct?.id || null)) return false;
+      if (p.category === "Кухонные модули") return false;
+      
+      const matchCat = !stdCategoryFilter || p.category === stdCategoryFilter;
+      
+      let matchSub = true;
+      if (stdCategoryFilter === "Петли" && stdSubCategoryFilter) {
+        matchSub = p.hingeType === stdSubCategoryFilter;
+      } else if (stdCategoryFilter === "Системы выдвижения" && stdSubCategoryFilter) {
+        matchSub = p.drawerSubCategory === stdSubCategoryFilter;
+      }
+      
+      const searchLower = stdSearchText.toLowerCase().trim();
+      const matchSearch = !searchLower || 
+        (p.name || "").toLowerCase().includes(searchLower) ||
+        (p.article || "").toLowerCase().includes(searchLower) ||
+        (p.category || "").toLowerCase().includes(searchLower);
+        
+      return matchCat && matchSub && matchSearch;
+    });
+  }, [catalogProducts, stdCategoryFilter, stdSubCategoryFilter, stdSearchText, editingProduct]);
 
   const [newProduct, setNewProduct] = useState({
     name: "",
@@ -12808,6 +13072,7 @@ const ProductsView = ({
       drawerSubCategory?: string; 
       manufacturer?: string; 
     }[],
+    moduleStandardEquipment: [] as { id: string; qty: number }[],
     // Worktop / Backsplash specific
     wtManufacturer: "Скиф",
     wtType: "ЛДСП",
@@ -13052,6 +13317,7 @@ const ProductsView = ({
       moduleEdge: "0,4 мм",
       segment: "Средний",
       moduleFittings: [],
+      moduleStandardEquipment: [],
       wtManufacturer: "Скиф",
       wtType: "ЛДСП",
       wtLength: "3000",
@@ -13100,6 +13366,7 @@ const ProductsView = ({
       moduleEdge: product.moduleEdge || "0,4 мм",
       segment: product.segment || "Средний",
       moduleFittings: product.moduleFittings || [],
+      moduleStandardEquipment: product.moduleStandardEquipment || [],
       wtManufacturer: product.wtManufacturer || "Скиф",
       wtType: product.wtType || "ЛДСП",
       wtLength: product.wtLength || "3000",
@@ -14242,7 +14509,7 @@ const ProductsView = ({
                                           category: val, 
                                           qty: fit.qty || 1,
                                           ...(val === "Петли" ? { hingeType: "Накладная" } : {}),
-                                          ...(val === "Системы выдвижения" ? { drawerSubCategory: "Направляющие скрытого монтажа", depth: "450" } : {}),
+                                          ...(val === "Системы выдвижения" ? { drawerSubCategory: "auto", depth: "450" } : {}),
                                           ...(val === "Посудосушитель" ? { width: "600" } : {})
                                         };
                                         setNewProduct((prev) => ({ ...prev, moduleFittings: updated }));
@@ -14333,7 +14600,7 @@ const ProductsView = ({
                                             Тип ящика
                                           </label>
                                           <select
-                                            value={fit.drawerSubCategory || "Направляющие скрытого монтажа"}
+                                            value={fit.drawerSubCategory || "auto"}
                                             onChange={(e) => {
                                               const updated = [...newProduct.moduleFittings];
                                               updated[idx] = { ...updated[idx], drawerSubCategory: e.target.value };
@@ -14341,6 +14608,7 @@ const ProductsView = ({
                                             }}
                                             className="w-full px-2 py-1 text-[11px] bg-emerald-50/50 border border-emerald-100 rounded-md text-emerald-950 outline-none focus:ring-1 focus:ring-emerald-500 font-semibold whitespace-nowrap overflow-hidden text-ellipsis"
                                           >
+                                            <option value="auto">Автоподбор (по сегменту)</option>
                                             <option value="Направляющие скрытого монтажа">Скрытого монтажа</option>
                                             <option value="Телескопические направляющие">Телескопические</option>
                                             <option value="Системы ящиков">Системы ящиков</option>
@@ -14411,6 +14679,263 @@ const ProductsView = ({
                                 </div>
                               </div>
                             ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Стандартная комплектация */}
+                      <div className="mt-6 border-t border-emerald-100 pt-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-bold text-emerald-950">
+                            Стандартная комплектация (Входит в стоимость модуля)
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-gray-500 mb-3 leading-normal">
+                          Выберите товары, стоимость которых включена в цену модуля. Они будут отображаться в итоговом расчете клиента с нулевой ценой (как стандартный комплект), но с суммарным количеством.
+                        </p>
+
+                        {/* Поэтапный выбор стандартной комплектации */}
+                        <div className="bg-emerald-50/20 border border-emerald-100 rounded-xl p-3.5 mb-4 space-y-4">
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                            {/* Поле 1: Раздел */}
+                            <div className="space-y-1">
+                              <label className="block text-[10px] font-bold text-emerald-900 uppercase tracking-wider">
+                                1. Раздел / Категория
+                              </label>
+                              <select
+                                value={stdCategoryFilter}
+                                onChange={(e) => {
+                                  setStdCategoryFilter(e.target.value);
+                                  setStdSubCategoryFilter("");
+                                  setSelectedStdProductId("");
+                                }}
+                                className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-white outline-none focus:ring-1 focus:ring-emerald-500 font-semibold text-gray-700"
+                              >
+                                <option value="">-- Все разделы --</option>
+                                {availableCategoriesForStd.map((cat) => (
+                                  <option key={cat} value={cat}>
+                                    {cat}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            {/* Поле 2: Подкатегория (если есть) */}
+                            <div className="space-y-1">
+                              <label className="block text-[10px] font-bold text-emerald-900 uppercase tracking-wider">
+                                2. Подкатегория
+                              </label>
+                              <select
+                                value={stdSubCategoryFilter}
+                                onChange={(e) => {
+                                  setStdSubCategoryFilter(e.target.value);
+                                  setSelectedStdProductId("");
+                                }}
+                                disabled={subCategoriesForSelectedStd.length === 0}
+                                className="w-full px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-white outline-none focus:ring-1 focus:ring-emerald-500 font-semibold text-gray-700 disabled:bg-gray-50/50 disabled:text-gray-400"
+                              >
+                                <option value="">
+                                  {subCategoriesForSelectedStd.length === 0
+                                    ? "Нет подкатегорий"
+                                    : "-- Все подкатегории --"}
+                                </option>
+                                {subCategoriesForSelectedStd.map((sub) => (
+                                  <option key={sub} value={sub}>
+                                    {sub}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            {/* Поле 3: Фильтр/Поиск по названию */}
+                            <div className="space-y-1">
+                              <label className="block text-[10px] font-bold text-emerald-900 uppercase tracking-wider">
+                                3. Поиск по названию
+                              </label>
+                              <div className="relative">
+                                <input
+                                  type="text"
+                                  value={stdSearchText}
+                                  onChange={(e) => {
+                                    setStdSearchText(e.target.value);
+                                  }}
+                                  className="w-full pl-7 pr-7 py-1.5 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-emerald-500 font-medium text-gray-700"
+                                  placeholder="Введите название или артикул..."
+                                />
+                                <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                                {stdSearchText && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setStdSearchText("")}
+                                    className="text-gray-400 hover:text-gray-650 absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-semibold"
+                                  >
+                                    ✕
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Список найденных товаров */}
+                          <div className="space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                                Выберите товар из списка (Найдено: {filteredStdProducts.length})
+                              </span>
+                              {(stdCategoryFilter || stdSubCategoryFilter || stdSearchText) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setStdCategoryFilter("");
+                                    setStdSubCategoryFilter("");
+                                    setStdSearchText("");
+                                    setSelectedStdProductId("");
+                                  }}
+                                  className="text-[10px] text-emerald-600 hover:text-emerald-800 font-extrabold underline cursor-pointer"
+                                >
+                                  Сбросить все фильтры
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="max-h-36 overflow-y-auto border border-gray-200 rounded-lg bg-white p-1 divide-y divide-gray-50 shadow-inner">
+                              {filteredStdProducts.length > 0 ? (
+                                filteredStdProducts.map((p) => {
+                                  const isSelected = selectedStdProductId === p.id;
+                                  const displayPrice = p.purchasePrice
+                                    ? Math.round(
+                                        p.purchasePrice *
+                                          getProductCoefficient(
+                                            p,
+                                            customerType,
+                                            resolveBrandCoefficient,
+                                          ),
+                                      )
+                                    : p.price;
+                                  return (
+                                    <div
+                                      key={p.id}
+                                      onClick={() => setSelectedStdProductId(p.id)}
+                                      className={cn(
+                                        "flex items-center justify-between px-2.5 py-2.5 text-[11px] cursor-pointer transition-colors select-none rounded-md mb-0.5",
+                                        isSelected
+                                          ? "bg-emerald-600 text-white font-bold"
+                                          : "text-gray-700 hover:bg-emerald-50/50"
+                                      )}
+                                    >
+                                      <span className="truncate pr-2" title={p.name}>
+                                        <span className={cn("font-extrabold mr-1.5", isSelected ? "text-emerald-150" : "text-emerald-850")}>
+                                          [{p.category}]
+                                        </span>
+                                        {p.name}
+                                      </span>
+                                      <span className={cn("shrink-0 font-mono text-[10px]", isSelected ? "text-emerald-100" : "text-gray-500")}>
+                                        {p.article ? `арт. ${p.article} | ` : ""}{(displayPrice || 0).toLocaleString()} ₽
+                                      </span>
+                                    </div>
+                                  );
+                                })
+                              ) : (
+                                <div className="text-center py-6 text-xs text-gray-405 font-medium italic">
+                                  Товары не найдены. Попробуйте сбросить или изменить фильтры.
+                                </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Блок подтверждения выбранного товара и его количества */}
+                          {selectedStdProductId && (
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 p-3 bg-emerald-50 border border-emerald-100 rounded-lg animate-in fade-in-50 duration-200">
+                              {(() => {
+                                const selectedProduct = catalogProducts.find((cp) => cp.id === selectedStdProductId);
+                                if (!selectedProduct) return null;
+                                return (
+                                  <>
+                                    <div className="min-w-0 flex-1">
+                                      <span className="text-[10px] font-bold text-emerald-800 uppercase block leading-none mb-1">Выбранный товар:</span>
+                                      <div className="text-xs font-extrabold text-gray-800 truncate" title={selectedProduct.name}>
+                                        {selectedProduct.name}
+                                      </div>
+                                    </div>
+                                    <div className="flex items-center gap-2.5 self-end sm:self-auto shrink-0 w-full sm:w-auto justify-between sm:justify-end">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="text-[11px] font-semibold text-gray-500">Кол-во:</span>
+                                        <input
+                                          type="number"
+                                          min="1"
+                                          value={selectedStdQty}
+                                          onChange={(e) => setSelectedStdQty(parseInt(e.target.value) || 1)}
+                                          className="w-14 px-2 py-1 text-xs border border-gray-300 rounded text-center outline-none focus:ring-1 focus:ring-emerald-500 font-bold bg-white text-gray-800"
+                                        />
+                                        <span className="text-[10px] font-bold text-gray-500">{selectedProduct.unit || "шт"}</span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const exists = (newProduct.moduleStandardEquipment || []).some((item: any) => item.id === selectedStdProductId);
+                                          if (exists) {
+                                            alert("Этот товар уже добавлен в стандартную комплектацию!");
+                                            return;
+                                          }
+
+                                          setNewProduct((prev: any) => ({
+                                            ...prev,
+                                            moduleStandardEquipment: [
+                                              ...(prev.moduleStandardEquipment || []),
+                                              { id: selectedStdProductId, qty: selectedStdQty }
+                                            ]
+                                          }));
+
+                                          // Reset selected product and quantity
+                                          setSelectedStdProductId("");
+                                          setSelectedStdQty(1);
+                                        }}
+                                        className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm shrink-0"
+                                      >
+                                        Добавить
+                                      </button>
+                                    </div>
+                                  </>
+                                );
+                              })()}
+                            </div>
+                          )}
+                        </div>
+
+                        {(newProduct.moduleStandardEquipment || []).length > 0 ? (
+                          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                            {(newProduct.moduleStandardEquipment || []).map((item: any, idx: number) => {
+                              const stdProduct = catalogProducts.find((cp) => cp.id === item.id);
+                              return (
+                                <div key={idx} className="flex items-center justify-between p-2 bg-white rounded-lg border border-gray-100 text-[11px] shadow-sm">
+                                  <span className="font-semibold text-gray-700 truncate max-w-[200px] sm:max-w-[400px]" title={stdProduct?.name || item.id}>
+                                    <strong>[{stdProduct?.category || "—"}]</strong> {stdProduct?.name || `Товар (Удален) [ID: ${item.id}]`}
+                                  </span>
+                                  <div className="flex items-center gap-3 shrink-0">
+                                    <span className="font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100">
+                                      {item.qty} {stdProduct?.unit || "шт."} (входит)
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setNewProduct((prev: any) => ({
+                                          ...prev,
+                                          moduleStandardEquipment: (prev.moduleStandardEquipment || []).filter((e: any) => e.id !== item.id)
+                                        }));
+                                      }}
+                                      className="text-red-500 hover:bg-red-50 p-1 rounded-lg transition-colors border border-transparent hover:border-red-100"
+                                      title="Удалить из комплектации"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="text-center py-4 border border-dashed border-gray-200 rounded-lg text-gray-400 text-xs font-medium bg-white/50">
+                            Комплектация пуста
                           </div>
                         )}
                       </div>
@@ -15766,11 +16291,6 @@ const ProductsView = ({
                     <span className="px-2 py-1 bg-white/95 backdrop-blur shadow-sm text-[10px] font-bold uppercase tracking-wider text-blue-600 rounded-lg">
                       {product.category}
                     </span>
-                    {product.article && (
-                      <span className="px-2 py-1 bg-gray-900/80 backdrop-blur text-white text-[10px] font-medium tracking-tight rounded-lg">
-                        Арт: {product.article}
-                      </span>
-                    )}
                   </div>
 
                   {/* Quick Actions */}
@@ -15819,6 +16339,13 @@ const ProductsView = ({
                         {product.name}
                       </h3>
                     </div>
+                    {product.article && (
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <span className="px-1.5 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-bold rounded border border-gray-200">
+                          Арт: {product.article}
+                        </span>
+                      </div>
+                    )}
                     {product.color && (
                       <div className="flex items-center gap-1.5 mb-1">
                         <Palette className="w-3 h-3 text-gray-400" />
@@ -15891,12 +16418,9 @@ const ProductsView = ({
                   </div>
 
                   <div className="mt-4 pt-4 border-t border-gray-50 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex flex-col">
-                        <span className="text-xs text-gray-400 font-medium uppercase tracking-wider">
-                          Цена для клиента
-                        </span>
-                        <span className="text-xl font-black text-gray-900">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex flex-col min-w-0">
+                        <span className="text-xl font-black text-gray-900 whitespace-nowrap">
                           {(() => {
                             const coeff = getProductCoefficient(product, customerType, resolveBrandCoefficient);
                             const displayPrice = product.purchasePrice
@@ -15906,7 +16430,7 @@ const ProductsView = ({
                           })()} ₽
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 bg-gray-100 p-1.5 rounded-xl">
+                      <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl flex-shrink-0 select-none">
                         <button
                           onClick={() =>
                             setQuantities((prev) => ({
@@ -15919,7 +16443,7 @@ const ProductsView = ({
                           }
                           className="p-1 hover:bg-white rounded-lg text-gray-500 transition-all active:scale-90"
                         >
-                          <Minus className="w-4 h-4" />
+                          <Minus className="w-3.5 h-3.5" />
                         </button>
                         <input
                           type="number"
@@ -15931,7 +16455,7 @@ const ProductsView = ({
                               [product.id]: val === "" ? "" : (parseInt(val) || 0),
                             }));
                           }}
-                          className="w-10 text-center font-bold text-sm bg-transparent outline-none focus:text-blue-600 transition-colors"
+                          className="w-8 text-center font-bold text-xs bg-transparent outline-none focus:text-blue-600 transition-colors [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
                         <button
                           onClick={() =>
@@ -15942,7 +16466,7 @@ const ProductsView = ({
                           }
                           className="p-1 hover:bg-white rounded-lg text-gray-500 transition-all active:scale-90"
                         >
-                          <Plus className="w-4 h-4" />
+                          <Plus className="w-3.5 h-3.5" />
                         </button>
                       </div>
                     </div>
@@ -15963,7 +16487,7 @@ const ProductsView = ({
                         onClick={() => handleAdd(product)}
                         disabled={product.status === 'pending'}
                         className={cn(
-                          "w-full py-3 font-bold rounded-2xl transition-all shadow-sm active:scale-95 flex items-center justify-center gap-2 group/btn",
+                          "w-full py-1.5 px-3 font-semibold rounded-lg text-xs transition-all shadow-sm active:scale-95 flex items-center justify-center gap-1.5 group/btn",
                           product.status === 'pending' 
                             ? "bg-gray-100 text-gray-400 cursor-not-allowed" 
                             : "bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white"
@@ -15971,13 +16495,13 @@ const ProductsView = ({
                       >
                         {product.status === 'pending' ? (
                           <>
-                            <Clock className="w-5 h-5" />
-                            На модерации
+                            <Clock className="w-3.5 h-3.5" />
+                            На проверке
                           </>
                         ) : (
                           <>
-                            <ShoppingBag className="w-5 h-5 group-hover/btn:scale-110 transition-transform" />
-                            Добавить в проект
+                            <ShoppingBag className="w-3.5 h-3.5 group-hover/btn:scale-110 transition-transform" />
+                            В проект
                           </>
                         )}
                       </button>
@@ -17341,6 +17865,7 @@ export default function App() {
   const [addedProducts, setAddedProducts] = useState<any[]>([]);
   const [addedServices, setAddedServices] = useState<any[]>([]);
   const [assemblyPercentage, setAssemblyPercentage] = useState(12);
+  const [assemblyPercentages, setAssemblyPercentages] = useState<Record<string, number>>({});
   const [assemblyIncludes, setAssemblyIncludes] = useState<string[]>(
     INITIAL_ASSEMBLY_INCLUDES,
   );
@@ -17615,6 +18140,8 @@ export default function App() {
             setHardwareKitPrice(data.hardwareKitPrice);
           if (data.assemblyPercentage !== undefined)
             setAssemblyPercentage(data.assemblyPercentage);
+          if (data.assemblyPercentages !== undefined)
+            setAssemblyPercentages(data.assemblyPercentages);
           if (data.assemblyIncludes !== undefined)
             setAssemblyIncludes(data.assemblyIncludes);
           if (data.deliveryTariffs) setDeliveryTariffs(data.deliveryTariffs);
@@ -18550,6 +19077,7 @@ export default function App() {
           trimming,
           hardwareKitPrice,
           assemblyPercentage,
+          assemblyPercentages,
           assemblyIncludes,
           deliveryTariffs,
           mapLink,
@@ -19921,7 +20449,7 @@ export default function App() {
               </button>
             </div>
 
-            <nav className="flex-1 px-3 py-3 space-y-1">
+            <nav className="flex-1 px-2.5 py-1.5 space-y-0.5 overflow-y-auto scrollbar-thin">
               {/* Items for procurement & Actions */}
               {(companyData?.procurementEnabled && (userRole === 'admin' || userRole === 'supervisor' || userData?.isProcurementManager)) && (
                 <>
@@ -19929,45 +20457,45 @@ export default function App() {
                   onClick={() => setActiveTab("procurement_plan")}
                   className={cn(
                     "w-full flex items-center rounded-lg transition-all",
-                    isSidebarOpen ? "gap-3 px-3 py-2.5" : "justify-center py-2.5",
+                    isSidebarOpen ? "gap-2.5 px-2.5 py-1.5" : "justify-center py-1.5",
                     activeTab === "procurement_plan"
                       ? "bg-blue-600 text-white shadow-md shadow-blue-200"
                       : "text-gray-600 hover:bg-gray-100",
                   )}
                 >
-                  <BarChart3 className="w-5 h-5 flex-shrink-0" />
+                  <BarChart3 className="w-4 h-4 flex-shrink-0" />
                   {isSidebarOpen && (
-                    <span className="text-sm font-black">План снабжения</span>
+                    <span className="text-[13px] font-black">План снабжения</span>
                   )}
                 </button>
                 <button
                   onClick={() => setActiveTab("procurement")}
                   className={cn(
                     "w-full flex items-center rounded-lg transition-all",
-                    isSidebarOpen ? "gap-3 px-3 py-2.5" : "justify-center py-2.5",
+                    isSidebarOpen ? "gap-2.5 px-2.5 py-1.5" : "justify-center py-1.5",
                     activeTab === "procurement"
                       ? "bg-blue-600 text-white shadow-md shadow-blue-200"
                       : "text-gray-600 hover:bg-gray-100",
                   )}
                 >
-                  <ShoppingBag className="w-5 h-5 flex-shrink-0" />
+                  <ShoppingBag className="w-4 h-4 flex-shrink-0" />
                   {isSidebarOpen && (
-                    <span className="text-sm font-medium">Снабжение</span>
+                    <span className="text-[13px] font-medium">Снабжение</span>
                   )}
                 </button>
                 <button
                   onClick={() => setActiveTab("arrivals")}
                   className={cn(
                     "w-full flex items-center rounded-lg transition-all",
-                    isSidebarOpen ? "gap-3 px-3 py-2.5" : "justify-center py-2.5",
+                    isSidebarOpen ? "gap-2.5 px-2.5 py-1.5" : "justify-center py-1.5",
                     activeTab === "arrivals"
                       ? "bg-blue-600 text-white shadow-md shadow-blue-200"
                       : "text-gray-600 hover:bg-gray-100",
                   )}
                 >
-                  <Truck className="w-5 h-5 flex-shrink-0" />
+                  <Truck className="w-4 h-4 flex-shrink-0" />
                   {isSidebarOpen && (
-                    <span className="text-sm font-medium">Приходы</span>
+                    <span className="text-[13px] font-medium">Приходы</span>
                   )}
                 </button>
                 </>
@@ -19979,30 +20507,30 @@ export default function App() {
                     onClick={() => setActiveTab("promotions")}
                     className={cn(
                       "w-full flex items-center rounded-lg transition-all",
-                      isSidebarOpen ? "gap-3 px-3 py-2.5" : "justify-center py-2.5",
+                      isSidebarOpen ? "gap-2.5 px-2.5 py-1.5" : "justify-center py-1.5",
                       activeTab === "promotions"
                         ? "bg-blue-600 text-white shadow-md shadow-blue-200"
                         : "text-gray-600 hover:bg-gray-100",
                     )}
                   >
-                    <Percent className="w-5 h-5 flex-shrink-0" />
+                    <Percent className="w-4 h-4 flex-shrink-0" />
                     {isSidebarOpen && (
-                      <span className="text-sm font-medium">Акции</span>
+                      <span className="text-[13px] font-medium">Акции</span>
                     )}
                   </button>
                   <button
                     onClick={() => setActiveTab("projects")}
                     className={cn(
-                      "w-full flex items-center rounded-lg transition-all mb-2",
-                      isSidebarOpen ? "gap-3 px-3 py-2.5" : "justify-center py-2.5",
+                      "w-full flex items-center rounded-lg transition-all mb-1",
+                      isSidebarOpen ? "gap-2.5 px-2.5 py-1.5" : "justify-center py-1.5",
                       activeTab === "projects"
                         ? "bg-blue-600 text-white shadow-md shadow-blue-200"
                         : "text-gray-600 hover:bg-gray-100",
                     )}
                   >
-                    <FolderOpen className="w-5 h-5 flex-shrink-0" />
+                    <FolderOpen className="w-4 h-4 flex-shrink-0" />
                     {isSidebarOpen && (
-                      <span className="text-sm font-medium">Проекты</span>
+                      <span className="text-[13px] font-medium">Проекты</span>
                     )}
                   </button>
                 </>
@@ -20033,7 +20561,7 @@ export default function App() {
                         );
                       }}
                       className={cn(
-                        "w-6 flex-1 rounded-full flex items-center justify-center py-3 cursor-pointer select-none transition-all border",
+                        "w-6 flex-1 rounded-full flex items-center justify-center py-2 cursor-pointer select-none transition-all border",
                         !currentProjectName
                           ? "bg-amber-100 text-amber-700 border-amber-200 animate-[pulse_2s_ease-in-out_infinite] hover:bg-amber-200 shadow-sm"
                           : "bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100 hover:text-blue-700 shadow-sm"
@@ -20061,30 +20589,30 @@ export default function App() {
                     onClick={() => setActiveTab("calculator")}
                     className={cn(
                       "w-full flex items-center rounded-lg transition-all",
-                      isSidebarOpen ? "gap-3 px-3 py-2.5" : "justify-center py-2.5",
+                      isSidebarOpen ? "gap-2.5 px-2.5 py-1.5" : "justify-center py-1.5",
                       activeTab === "calculator"
                         ? "bg-blue-600 text-white shadow-md shadow-blue-200"
                         : "text-gray-600 hover:bg-gray-100",
                     )}
                   >
-                    <Calculator className="w-5 h-5 flex-shrink-0" />
+                    <Calculator className="w-4 h-4 flex-shrink-0" />
                     {isSidebarOpen && (
-                      <span className="text-sm font-medium">Калькулятор</span>
+                      <span className="text-[13px] font-medium">Калькулятор</span>
                     )}
                   </button>
                   <button
                     onClick={() => setActiveTab("summary")}
                     className={cn(
                       "w-full flex items-center rounded-lg transition-all",
-                      isSidebarOpen ? "gap-3 px-3 py-2.5" : "justify-center py-2.5",
+                      isSidebarOpen ? "gap-2.5 px-2.5 py-1.5" : "justify-center py-1.5",
                       activeTab === "summary"
                         ? "bg-blue-600 text-white shadow-md shadow-blue-200"
                         : "text-gray-600 hover:bg-gray-100",
                     )}
                   >
-                    <LayoutDashboard className="w-5 h-5 flex-shrink-0" />
+                    <LayoutDashboard className="w-4 h-4 flex-shrink-0" />
                     {isSidebarOpen && (
-                      <span className="text-sm font-medium">
+                      <span className="text-[13px] font-medium">
                         Итоговый расчет
                       </span>
                     )}
@@ -20093,45 +20621,45 @@ export default function App() {
                     onClick={() => setActiveTab("products")}
                     className={cn(
                       "w-full flex items-center rounded-lg transition-all",
-                      isSidebarOpen ? "gap-3 px-3 py-2.5" : "justify-center py-2.5",
+                      isSidebarOpen ? "gap-2.5 px-2.5 py-1.5" : "justify-center py-1.5",
                       activeTab === "products"
                         ? "bg-blue-600 text-white shadow-md shadow-blue-200"
                         : "text-gray-600 hover:bg-gray-100",
                     )}
                   >
-                    <ShoppingBag className="w-5 h-5 flex-shrink-0" />
+                    <ShoppingBag className="w-4 h-4 flex-shrink-0" />
                     {isSidebarOpen && (
-                      <span className="text-sm font-medium">Товары</span>
+                      <span className="text-[13px] font-medium">Товары</span>
                     )}
                   </button>
                   <button
                     onClick={() => setActiveTab("services")}
                     className={cn(
                       "w-full flex items-center rounded-lg transition-all",
-                      isSidebarOpen ? "gap-3 px-3 py-2.5" : "justify-center py-2.5",
+                      isSidebarOpen ? "gap-2.5 px-2.5 py-1.5" : "justify-center py-1.5",
                       activeTab === "services"
                         ? "bg-blue-600 text-white shadow-md shadow-blue-200"
                         : "text-gray-600 hover:bg-gray-100",
                     )}
                   >
-                    <Database className="w-5 h-5 flex-shrink-0" />
+                    <Database className="w-4 h-4 flex-shrink-0" />
                     {isSidebarOpen && (
-                      <span className="text-sm font-medium">Услуги</span>
+                      <span className="text-[13px] font-medium">Услуги</span>
                     )}
                   </button>
                   <button
                     onClick={() => setActiveTab("service-section")}
                     className={cn(
                       "w-full flex items-center rounded-lg transition-all",
-                      isSidebarOpen ? "gap-3 px-3 py-2.5" : "justify-center py-2.5",
+                      isSidebarOpen ? "gap-2.5 px-2.5 py-1.5" : "justify-center py-1.5",
                       activeTab === "service-section"
                         ? "bg-blue-600 text-white shadow-md shadow-blue-200"
                         : "text-gray-600 hover:bg-gray-100",
                     )}
                   >
-                    <Truck className="w-5 h-5 flex-shrink-0" />
+                    <Truck className="w-4 h-4 flex-shrink-0" />
                     {isSidebarOpen && (
-                      <span className="text-sm font-medium truncate">
+                      <span className="text-[13px] font-medium truncate">
                         Доставка и Сборка
                       </span>
                     )}
@@ -20140,30 +20668,30 @@ export default function App() {
                 )}
               </div>
             </nav>
-            <div className="px-3 pb-3 pt-2 bg-gray-50/50 space-y-1">
+            <div className="px-2 pb-2 pt-1.5 bg-gray-50/50 space-y-0.5">
               <button
                 onClick={() => setActiveTab("profile")}
                 className={cn(
-                  "w-full flex items-center rounded-xl transition-all mb-1 text-left",
-                  isSidebarOpen ? "px-3 py-3 gap-3" : "px-0 py-3 justify-center",
+                  "w-full flex items-center rounded-xl transition-all mb-0.5 text-left",
+                  isSidebarOpen ? "px-2 py-1.5 gap-2" : "px-0 py-1.5 justify-center",
                   activeTab === "profile" 
                     ? "bg-blue-50 border border-blue-100 shadow-sm" 
                     : "hover:bg-white hover:shadow-sm"
                 )}
               >
                 <div className={cn(
-                  "w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all",
+                  "w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-all",
                   activeTab === "profile" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-500"
                 )}>
-                  <User className="w-5 h-5" />
+                  <User className="w-4 h-4" />
                 </div>
 
                 {isSidebarOpen && (
                   <div className="flex flex-col min-w-0">
-                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-1">
+                    <span className="text-[9px] font-bold text-gray-400 uppercase tracking-widest leading-none mb-0.5">
                       Профиль
                     </span>
-                    <span className="text-[13px] font-bold text-gray-900 truncate leading-tight">
+                    <span className="text-[12px] font-bold text-gray-900 truncate leading-tight">
                       {userData?.displayName ||
                         userData?.name ||
                         "Пользователь"}
@@ -20190,15 +20718,15 @@ export default function App() {
                     onClick={() => setActiveTab("price")}
                     className={cn(
                       "w-full flex items-center rounded-lg transition-all",
-                      isSidebarOpen ? "gap-3 px-3 py-2" : "justify-center py-2",
+                      isSidebarOpen ? "gap-2 px-2.5 py-1" : "justify-center py-1",
                       activeTab === "price"
                         ? "bg-blue-600 text-white shadow-md shadow-blue-200"
                         : "text-gray-600 hover:bg-gray-100",
                     )}
                   >
-                    <Tag className="w-[18px] h-[18px] flex-shrink-0" />
+                    <Tag className="w-4 h-4 flex-shrink-0" />
                     {isSidebarOpen && (
-                      <span className="text-[13px] font-medium">
+                      <span className="text-[12px] font-medium">
                         Прайс-лист
                       </span>
                     )}
@@ -20207,30 +20735,30 @@ export default function App() {
                     onClick={() => setActiveTab("settings")}
                     className={cn(
                       "w-full flex items-center rounded-lg transition-all",
-                      isSidebarOpen ? "gap-3 px-3 py-2" : "justify-center py-2",
+                      isSidebarOpen ? "gap-2 px-2.5 py-1" : "justify-center py-1",
                       activeTab === "settings"
                         ? "bg-blue-600 text-white shadow-md shadow-blue-200"
                         : "text-gray-600 hover:bg-gray-100",
                     )}
                   >
-                    <Settings className="w-[18px] h-[18px] flex-shrink-0" />
+                    <Settings className="w-4 h-4 flex-shrink-0" />
                     {isSidebarOpen && (
-                      <span className="text-[13px] font-medium">Настройки</span>
+                      <span className="text-[12px] font-medium">Настройки</span>
                     )}
                   </button>
                   <button
                     onClick={() => setActiveTab("production")}
                     className={cn(
                       "w-full flex items-center rounded-lg transition-all",
-                      isSidebarOpen ? "gap-3 px-3 py-2" : "justify-center py-2",
+                      isSidebarOpen ? "gap-2 px-2.5 py-1" : "justify-center py-1",
                       activeTab === "production"
                         ? "bg-blue-600 text-white shadow-md shadow-blue-200"
                         : "text-gray-600 hover:bg-gray-100",
                     )}
                   >
-                    <Factory className="w-[18px] h-[18px] flex-shrink-0" />
+                    <Factory className="w-4 h-4 flex-shrink-0" />
                     {isSidebarOpen && (
-                      <span className="text-[13px] font-medium">
+                      <span className="text-[12px] font-medium">
                         Производство
                       </span>
                     )}
@@ -20242,15 +20770,15 @@ export default function App() {
                   onClick={() => setActiveTab("employees")}
                   className={cn(
                     "w-full flex items-center rounded-lg transition-all",
-                    isSidebarOpen ? "gap-3 px-3 py-2" : "justify-center py-2",
+                    isSidebarOpen ? "gap-2 px-2.5 py-1" : "justify-center py-1",
                     activeTab === "employees"
                       ? "bg-blue-600 text-white shadow-md shadow-blue-200"
                       : "text-gray-600 hover:bg-gray-100",
                   )}
                 >
-                  <Users className="w-[18px] h-[18px] flex-shrink-0" />
+                  <Users className="w-4 h-4 flex-shrink-0" />
                   {isSidebarOpen && (
-                    <span className="text-[13px] font-medium">Сотрудники</span>
+                    <span className="text-[12px] font-medium">Сотрудники</span>
                   )}
                 </button>
               )}
@@ -20259,12 +20787,12 @@ export default function App() {
                   onClick={() => setShowAdminPanel(true)}
                   className={cn(
                     "w-full flex items-center rounded-lg text-blue-600 hover:bg-blue-50 transition-all border border-blue-100",
-                    isSidebarOpen ? "gap-3 px-3 py-2" : "justify-center py-2"
+                    isSidebarOpen ? "gap-2 px-2.5 py-1" : "justify-center py-1"
                   )}
                 >
-                  <ShieldCheck className="w-[18px] h-[18px] flex-shrink-0" />
+                  <ShieldCheck className="w-4 h-4 flex-shrink-0" />
                   {isSidebarOpen && (
-                    <span className="text-[13px] font-bold">Админ-панель</span>
+                    <span className="text-[12px] font-bold">Админ-панель</span>
                   )}
                 </button>
               )}
@@ -20272,12 +20800,12 @@ export default function App() {
                 onClick={handleLogout}
                 className={cn(
                   "w-full flex items-center rounded-lg text-red-600 hover:bg-red-50 transition-all",
-                  isSidebarOpen ? "gap-3 px-3 py-2" : "justify-center py-2"
+                  isSidebarOpen ? "gap-2 px-2.5 py-1" : "justify-center py-1"
                 )}
               >
-                <LogOut className="w-[18px] h-[18px] flex-shrink-0" />
+                <LogOut className="w-4 h-4 flex-shrink-0" />
                 {isSidebarOpen && (
-                  <span className="text-[13px] font-medium">Выйти</span>
+                  <span className="text-[12px] font-medium">Выйти</span>
                 )}
               </button>
             </div>
@@ -20422,6 +20950,7 @@ export default function App() {
               addedServices={addedServices}
               serviceData={serviceData}
               assemblyPercentage={assemblyPercentage}
+              assemblyPercentages={assemblyPercentages}
               deliveryTariffs={deliveryTariffs}
               canEditCabinet={canEditCabinet}
               canEditFacades={canEditFacades}
@@ -20630,6 +21159,8 @@ export default function App() {
               productionFormat={productionFormat}
               totalCost={totalCostForService}
               assemblyPercentage={assemblyPercentage}
+              assemblyPercentages={assemblyPercentages}
+              furnitureType={furnitureType}
               deliveryTariffs={deliveryTariffs}
               assemblyIncludes={assemblyIncludes}
               totalLdspSheets={Object.entries(results || {}).reduce(
@@ -20690,6 +21221,7 @@ export default function App() {
               logPriceChange={logPriceChange}
               db={db}
               auth={auth}
+              companyId={companyData?.id}
             />
           ) : historyMaterialId && companyData ? (
             <PriceHistoryView
@@ -20744,6 +21276,8 @@ export default function App() {
               setHardwareKitPrice={setHardwareKitPrice}
               assemblyPercentage={assemblyPercentage}
               setAssemblyPercentage={setAssemblyPercentage}
+              assemblyPercentages={assemblyPercentages}
+              setAssemblyPercentages={setAssemblyPercentages}
               deliveryTariffs={deliveryTariffs}
               setDeliveryTariffs={setDeliveryTariffs}
               mapLink={mapLink}
