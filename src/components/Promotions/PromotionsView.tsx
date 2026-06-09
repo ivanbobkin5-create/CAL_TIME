@@ -882,7 +882,7 @@ export const PromotionsView = ({
                           {targetProductIds.map((tid, idx) => {
                             const tProduct = catalogProducts.find((cp) => String(cp.id) === String(tid));
                             return (
-                              <div key={idx} className="flex items-center justify-between p-2 bg-white rounded-xl border border-indigo-100/50 text-xs shadow-sm">
+                              <div key={tid} className="flex items-center justify-between p-2 bg-white rounded-xl border border-indigo-100/50 text-xs shadow-sm">
                                 <span className="font-semibold text-gray-700 truncate max-w-[200px] sm:max-w-[320px]" title={tProduct?.name || tid}>
                                   [{tProduct?.category || "Каталог"}] {tProduct?.name || `Товар [ID: ${tid}]`}
                                   {tProduct?.article ? ` (Арт: ${tProduct.article})` : ""}

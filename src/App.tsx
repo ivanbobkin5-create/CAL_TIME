@@ -13117,7 +13117,9 @@ const ProductsView = ({
 
   const [search, setSearch] = useState("");
   const [hingeTypeFilter, setHingeTypeFilter] = useState<string | null>(null);
+  const [hingeDampingFilter, setHingeDampingFilter] = useState<string | null>(null);
   const [drawerSubFilter, setDrawerSubFilter] = useState<string | null>(null);
+  const [drawerRunnerTypeFilter, setDrawerRunnerTypeFilter] = useState<string | null>(null);
   const [moduleGroupFilter, setModuleGroupFilter] = useState<string | null>(
     null,
   );
@@ -13299,6 +13301,7 @@ const ProductsView = ({
     heightTelescopic: "",
     drawerType: "Стандартный" as "Стандартный" | "Внутренний",
     hingeType: "Накладная" as "Накладная" | "Полунакладная" | "Вкладная",
+    hingeDamping: "" as "С доводчиком" | "Без доводчика" | "Без пружины" | "",                
     // Kitchen Module specific
     moduleGroup: "" as "" | "Нижние" | "Верхние" | "Антресоли" | "Пеналы",
     moduleType: "" as "" | "Для сушилки" | "Для вытяжки" | "Для техники",
@@ -13312,6 +13315,7 @@ const ProductsView = ({
       category: string; 
       qty: number; 
       hingeType?: string; 
+      hingeDamping?: string;
       depth?: string; 
       width?: string; 
       drawerSubCategory?: string; 
@@ -13332,6 +13336,8 @@ const ProductsView = ({
     dryerWidth: "",
     dryerBase: "",
   });
+
+  const availableDryerBrands = ["Boyard", "GTV", "Hettich", "Blum", "Rejs"];
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -13588,6 +13594,7 @@ const ProductsView = ({
       customCoeffDesigner: globalCoefficients?.designer?.products?.[defaultCat] ?? 1.4,
       dryerWidth: "",
       dryerBase: "",
+      hingeDamping: "",
     });
     setEditingProduct(null);
     setIsAddingProduct(false);
@@ -13604,6 +13611,7 @@ const ProductsView = ({
       analogs: product.analogs || [],
       vendorArticle: product.vendorArticle || "",
       manufacturerArticle: product.manufacturerArticle || "",
+      hingeDamping: product.hingeDamping || "",
       vat: product.vat || 20,
       includeVat: product.includeVat ?? true,
       color: product.color || "",
@@ -13705,6 +13713,11 @@ const ProductsView = ({
         matchesHingeType = p.hingeType === hingeTypeFilter;
       }
 
+      let matchesHingeDamping = true;
+      if (selectedCategory === "Петли" && hingeDampingFilter) {
+        matchesHingeDamping = p.hingeDamping === hingeDampingFilter;
+      }
+
       let matchesManufacturer = true;
       if (selectedCategory === "Петли" && manufacturerFilter) {
         matchesManufacturer = p.manufacturer === manufacturerFilter;
@@ -13713,6 +13726,11 @@ const ProductsView = ({
       let matchesDrawerSub = true;
       if (selectedCategory === "Системы выдвижения" && drawerSubFilter) {
         matchesDrawerSub = p.drawerSubCategory === drawerSubFilter;
+      }
+      
+      let matchesDrawerRunner = true;
+      if (selectedCategory === "Системы выдвижения" && drawerRunnerTypeFilter) {
+        matchesDrawerRunner = p.runnerType === drawerRunnerTypeFilter;
       }
 
       if (selectedCategory === "Системы выдвижения" && manufacturerFilter) {
@@ -13785,8 +13803,10 @@ const ProductsView = ({
         matchesSearch &&
         matchesCategory &&
         matchesHingeType &&
+        matchesHingeDamping &&
         matchesManufacturer &&
         matchesDrawerSub &&
+        matchesDrawerRunner &&
         matchesDepth &&
         matchesLighting &&
         matchesModuleGroup &&
@@ -13818,8 +13838,10 @@ const ProductsView = ({
     search,
     selectedCategory,
     hingeTypeFilter,
+    hingeDampingFilter,
     manufacturerFilter,
     drawerSubFilter,
+    drawerRunnerTypeFilter,
     depthFilter,
     lightingSubFilter,
     moduleGroupFilter,
@@ -14134,6 +14156,25 @@ const ProductsView = ({
               ),
             )}
           </div>
+          <div className="w-px h-4 bg-blue-200 mx-2" />
+          <div className="flex gap-2">
+            {["Все", "С доводчиком", "Без доводчика", "Без пружины"].map(
+              (val) => (
+                <button
+                  key={val}
+                  onClick={() => setHingeDampingFilter(val === "Все" ? null : val)}
+                  className={cn(
+                    "px-3 py-1 rounded-lg text-xs font-bold transition-all",
+                    hingeDampingFilter === val || (val === "Все" && !hingeDampingFilter)
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "bg-white text-gray-400 border border-gray-100 hover:border-violet-200 hover:text-violet-600",
+                  )}
+                >
+                  {val}
+                </button>
+              ),
+            )}
+          </div>
         </div>
       )}
 
@@ -14178,6 +14219,23 @@ const ProductsView = ({
                 )}
               >
                 {m}
+              </button>
+            ))}
+          </div>
+          <div className="w-px h-4 bg-orange-200 mx-2" />
+          <div className="flex gap-2">
+            {["Все", "С доводчиком", "Push to Open"].map((runner) => (
+              <button
+                key={runner}
+                onClick={() => setDrawerRunnerTypeFilter(runner === "Все" ? null : runner)}
+                className={cn(
+                  "px-3 py-1 rounded-lg text-xs font-bold transition-all",
+                  drawerRunnerTypeFilter === runner || (runner === "Все" && !drawerRunnerTypeFilter)
+                    ? "bg-orange-600 text-white shadow-sm"
+                    : "bg-white text-gray-400 border border-gray-100 hover:border-orange-200 hover:text-orange-600",
+                )}
+              >
+                {runner}
               </button>
             ))}
           </div>
@@ -15716,6 +15774,30 @@ const ProductsView = ({
                             (t) => (
                               <option key={t} value={t}>
                                 {t}
+                              </option>
+                            ),
+                          )}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-2">
+                          Амортизация
+                        </label>
+                        <select
+                          value={newProduct.hingeDamping}
+                          onChange={(e) =>
+                            setNewProduct((prev) => ({
+                              ...prev,
+                              hingeDamping: e.target.value as any,
+                            }))
+                          }
+                          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-blue-50/50"
+                        >
+                          <option value="">Не выбрано</option>
+                          {["С доводчиком", "Без доводчика", "Без пружины"].map(
+                            (v) => (
+                              <option key={v} value={v}>
+                                {v}
                               </option>
                             ),
                           )}
