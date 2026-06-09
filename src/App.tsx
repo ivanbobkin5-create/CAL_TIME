@@ -56,6 +56,7 @@ import {
   Tag,
   Percent,
   Search,
+  Filter,
   ChevronRight,
   ChevronDown,
   Settings,
@@ -117,6 +118,7 @@ import {
   History,
   CheckCircle,
   Sparkles,
+  Replace,
 } from "lucide-react";
 
 // --- START OF OFFLINE CACHE AND SYNC ENGINE ---
@@ -643,6 +645,7 @@ const INITIAL_PRODUCT_CATEGORIES = [
   "Петли",
   "Системы выдвижения",
   "Выдвижные корзины",
+  "Посудосушитель",
   "Подъёмные механизмы",
   "Освещение",
   "Оснащение шкафов",
@@ -2885,7 +2888,7 @@ const PriceView = ({
               "Подкатегория/Бренд": brand,
               "Тип данных": "Категория фасада",
               Наименование: c.name,
-              Цена: c.purchasePrice || 0,
+              Цена: {Math.round(c.purchasePrice || 0)},
               "Мин. объем": facadeSettings?.minOrderVolume || 0,
               "ID/Ключ": `facade|${brand}|cat|${c.id}`,
             };
@@ -6620,6 +6623,10 @@ const SummaryView = ({
   setActiveSegment,
   manualFittings,
   setManualFittings,
+  customFittingQuantities = {},
+  setCustomFittingQuantities,
+  removedFittings = {},
+  setRemovedFittings,
   catalogProducts = [],
   addedServices,
   serviceData,
@@ -6664,6 +6671,7 @@ const SummaryView = ({
   onSummaryCalculated,
   promotions = [],
   upsertEdgeToPriceList,
+  setSelectedProductForDetail,
 }: {
   results: any;
   selectedDecor: Record<string, string>;
@@ -6694,6 +6702,10 @@ const SummaryView = ({
   setActiveSegment?: (val: "Эконом" | "Средний" | "Премиум") => void;
   manualFittings?: any;
   setManualFittings?: any;
+  customFittingQuantities?: Record<string, number>;
+  setCustomFittingQuantities?: React.Dispatch<React.SetStateAction<Record<string, number>>>;
+  removedFittings?: Record<string, boolean>;
+  setRemovedFittings?: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   catalogProducts?: any[];
   addedServices: any[];
   serviceData: any;
@@ -6746,6 +6758,7 @@ const SummaryView = ({
   onSummaryCalculated?: (total: number, summaryRows?: any[]) => void;
   promotions?: any[];
   upsertEdgeToPriceList?: (decor: string, thickness: string, price: number, brandLdsp: string) => Promise<void>;
+  setSelectedProductForDetail?: (product: any) => void;
 }) => {
   const [activeWorktopForCut, setActiveWorktopForCut] = useState<any | null>(
     null,
@@ -7468,6 +7481,15 @@ const SummaryView = ({
       }
       
       if (matchedProd) {
+        const isRemoved = !!removedFittings[keyString];
+        if (isRemoved) return;
+
+        const finalQty = customFittingQuantities[keyString] !== undefined
+          ? customFittingQuantities[keyString]
+          : totalQty;
+
+        if (finalQty <= 0) return;
+
         let customSub = category;
         if (category === "Петли" && fitParams.hingeType) {
           customSub = `${category} (${fitParams.hingeType})`;
@@ -7480,7 +7502,7 @@ const SummaryView = ({
 
         const computedItem = {
           ...matchedProd,
-          quantity: totalQty,
+          quantity: finalQty,
           isComputedFitting: true,
           computedCategory: category,
           computedSub: customSub,
@@ -7490,6 +7512,39 @@ const SummaryView = ({
 
         finalProductsList.push(computedItem);
         computedFittingsList.push(computedItem);
+
+        // Required companion products logic for automatic fittings
+        if (matchedProd.requiredProducts && Array.isArray(matchedProd.requiredProducts)) {
+          matchedProd.requiredProducts.forEach((rp: any) => {
+            const rpProd = catalogProducts.find((p: any) => String(p.id) === String(rp.id));
+            if (rpProd) {
+              const companionKeyString = `${keyString}_companion_${rp.id}`;
+              const isCompanionRemoved = !!removedFittings[companionKeyString];
+              if (!isCompanionRemoved) {
+                const defaultCompanionQty = Math.round((rp.qty || 1) * finalQty);
+                const finalCompanionQty = customFittingQuantities[companionKeyString] !== undefined
+                  ? customFittingQuantities[companionKeyString]
+                  : defaultCompanionQty;
+
+                if (finalCompanionQty > 0) {
+                  const companionItem = {
+                    ...rpProd,
+                    quantity: finalCompanionQty,
+                    isComputedFitting: true,
+                    computedCategory: "Сопутствующие товары",
+                    computedSub: `Сопутствующий для: ${matchedProd.name}`,
+                    demandKey: companionKeyString,
+                    parentDemandKey: keyString,
+                    isCompanion: true,
+                    fitParams: { category: "Сопутствующие товары" }
+                  };
+                  finalProductsList.push(companionItem);
+                  computedFittingsList.push(companionItem);
+                }
+              }
+            }
+          });
+        }
       }
     });
 
@@ -7555,12 +7610,14 @@ const SummaryView = ({
         coef: coeff,
         id: product.id,
         key: String(product.id),
+        image: product.image || (product.images && product.images[0]) || "",
+        rawProduct: product,
       });
     } else {
       summaryRows.push({
         type: product.isComputedFitting ? "hardware" : "product",
         name: product.name,
-        sub: product.category,
+        sub: product.isComputedFitting ? (product.computedSub || product.category) : product.category,
         decor: product.isComputedWorktop ? (product.color || "-") : "-",
         qty: `${product.quantity} шт`,
         price: displayPrice,
@@ -7568,6 +7625,13 @@ const SummaryView = ({
         coef: coeff,
         id: product.id,
         key: String(product.id),
+        isComputedFitting: product.isComputedFitting,
+        idOfFitting: product.id,
+        demandKey: product.demandKey,
+        parentDemandKey: product.parentDemandKey,
+        isCompanion: product.isCompanion,
+        rawProduct: product,
+        image: product.image || (product.images && product.images[0]) || "",
       });
     }
 
@@ -7712,6 +7776,8 @@ const SummaryView = ({
         id: `std_equip_${prodId}`,
         key: `std_equip_${prodId}`,
         isStandardEquipment: true,
+        image: prod.image || (prod.images && prod.images[0]) || "",
+        rawProduct: prod,
       });
     }
   });
@@ -8446,7 +8512,21 @@ const SummaryView = ({
               </p>
             </div>
             
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-4">
+              {(Object.keys(customFittingQuantities).length > 0 || Object.keys(removedFittings).length > 0) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCustomFittingQuantities({});
+                    setRemovedFittings({});
+                    showAlert("Сброшено", "Все ручные изменения и удаления фурнитуры возвращены к авторасчету.");
+                  }}
+                  className="text-xs font-bold px-3 py-1.5 text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-lg transition-colors cursor-pointer"
+                >
+                  Сбросить правки фурнитуры
+                </button>
+              )}
+
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-gray-500">Базовый сегмент:</span>
                 <select
@@ -8479,7 +8559,7 @@ const SummaryView = ({
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {/* Fittings Override list */}
-            {computedFittingsList.map((fitItem) => {
+            {computedFittingsList.filter((fitItem) => !fitItem.isCompanion).map((fitItem) => {
               const cat = fitItem.computedCategory;
               const keyString = fitItem.demandKey;
               const fitParams = fitItem.fitParams;
@@ -8534,7 +8614,7 @@ const SummaryView = ({
                     </div>
                     {activeProduct && (
                       <div className="text-[10px] text-gray-500 mt-0.5">
-                        Сегмент: <span className="font-bold text-emerald-700">{activeProduct.segment || "—"}</span> | Цена: <span className="font-bold">{activeProduct.price} ₽</span> | Необх: <span className="font-bold text-emerald-950">{fitItem.quantity} шт</span>
+                        Сегмент: <span className="font-bold text-emerald-700">{activeProduct.segment || "—"}</span> | Цена: <span className="font-bold">{Math.round(activeProduct.price)} ₽</span> | Необх: <span className="font-bold text-emerald-950">{fitItem.quantity} шт</span>
                       </div>
                     )}
                   </div>
@@ -8558,7 +8638,7 @@ const SummaryView = ({
                     <option value="auto">Автоподбор ({activeSegment})</option>
                     {opts.map((opt) => (
                       <option key={opt.id} value={opt.id}>
-                        [{opt.segment || "—"}] {opt.name} ({opt.price} ₽)
+                        [{opt.segment || "—"}] {opt.name} ({Math.round(opt.price)} ₽)
                       </option>
                     ))}
                   </select>
@@ -8604,7 +8684,7 @@ const SummaryView = ({
                       </div>
                       {activeProduct && (
                         <div className="text-[10px] text-gray-500 mt-0.5">
-                          Сегмент: <span className="font-bold text-emerald-700">{activeProduct.segment || "—"}</span> | Цена: <span className="font-bold">{activeProduct.price} ₽</span>
+                          Сегмент: <span className="font-bold text-emerald-700">{activeProduct.segment || "—"}</span> | Цена: <span className="font-bold">{Math.round(activeProduct.price)} ₽</span>
                         </div>
                       )}
                     </div>
@@ -8714,25 +8794,63 @@ const SummaryView = ({
                     )}
                   >
                     <td className="px-6 py-2">
-                      <div
-                        className={cn(
-                          "font-medium text-gray-900",
-                          row.type === "edge" &&
-                            "pl-6 flex items-center gap-2 text-gray-600 text-sm",
+                      <div className="flex items-center gap-3">
+                        {row.image && (
+                          <div 
+                            onClick={() => {
+                              if (setSelectedProductForDetail && row.rawProduct) {
+                                setSelectedProductForDetail(row.rawProduct);
+                              }
+                            }}
+                            className="w-10 h-10 rounded-xl bg-gray-50 overflow-hidden border border-gray-150 flex-shrink-0 cursor-pointer shadow-sm hover:scale-105 transition-all"
+                          >
+                            <img 
+                              src={row.image} 
+                              alt={row.name} 
+                              className="w-full h-full object-cover" 
+                              referrerPolicy="no-referrer"
+                            />
+                          </div>
                         )}
-                      >
-                        {row.type === "edge" && (
-                          <div className="w-3 h-3 border-l-2 border-b-2 border-gray-300 rounded-bl-md -mt-1.5" />
-                        )}
-                        {row.name}
-                      </div>
-                      <div
-                        className={cn(
-                          "text-xs text-gray-500",
-                          row.type === "edge" && "pl-11",
-                        )}
-                      >
-                        {row.sub}
+                        <div className="min-w-0 flex-1">
+                          <div
+                            onClick={() => {
+                              if (setSelectedProductForDetail && row.rawProduct) {
+                                setSelectedProductForDetail(row.rawProduct);
+                              }
+                            }}
+                            className={cn(
+                              "font-medium text-gray-900 leading-snug",
+                              row.rawProduct ? "cursor-pointer hover:text-blue-600 hover:underline decoration-blue-350 transition-colors" : "",
+                              row.type === "edge" && "pl-6 flex items-center gap-2 text-gray-600 text-sm"
+                            )}
+                          >
+                            {row.type === "edge" && (
+                              <div className="w-3 h-3 border-l-2 border-b-2 border-gray-300 rounded-bl-md -mt-1.5" />
+                            )}
+                            <span className="inline-flex items-center gap-1.5 flex-wrap">
+                              {row.name}
+                              {row.isComputedFitting && (
+                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-100 text-emerald-800 border border-emerald-200 tracking-wider">
+                                  {row.isCompanion ? "Сопутствующий" : "Автоподбор"}
+                                </span>
+                              )}
+                              {row.rawProduct?.analogs && row.rawProduct.analogs.length > 0 && (
+                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-amber-50 text-amber-800 border border-amber-200 tracking-wider">
+                                  <Replace className="w-2.5 h-2.5" /> Есть аналоги
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                          <div
+                            className={cn(
+                              "text-[11px] text-gray-500",
+                              row.type === "edge" && "pl-11",
+                            )}
+                          >
+                            {row.sub}
+                          </div>
+                        </div>
                       </div>
                     </td>
                     <td className="px-6 py-2">
@@ -8768,11 +8886,43 @@ const SummaryView = ({
                       )}
                     </td>
                     <td className="px-6 py-2 text-right text-sm font-medium whitespace-nowrap">
-                      <span
-                        className={cn(row.type === "edge" && "text-xs text-gray-500")}
-                      >
-                        {row.qty}
-                      </span>
+                      {row.isComputedFitting ? (
+                        <div className="flex items-center justify-end gap-1 px-1 py-0.5 rounded-lg bg-emerald-50/60 border border-emerald-100/50 w-fit ml-auto">
+                          <input
+                            type="number"
+                            min="0"
+                            value={row.rawProduct?.quantity ?? 1}
+                            onChange={(e) => {
+                              const val = Math.max(0, parseInt(e.target.value) || 0);
+                              setCustomFittingQuantities((prev) => ({
+                                ...prev,
+                                [row.demandKey]: val,
+                              }));
+                            }}
+                            className="w-12 px-1.5 py-1 text-xs bg-white border border-emerald-200 rounded text-center font-bold text-gray-950 outline-none focus:ring-1 focus:ring-emerald-500"
+                          />
+                          <span className="text-[10px] font-bold text-emerald-800 mr-1">шт</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setRemovedFittings((prev) => ({
+                                ...prev,
+                                [row.demandKey]: true,
+                              }));
+                            }}
+                            className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded transition-colors cursor-pointer"
+                            title="Убрать из расчета"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <span
+                          className={cn(row.type === "edge" && "text-xs text-gray-500")}
+                        >
+                          {row.qty}
+                        </span>
+                      )}
                     </td>
                     <td className="px-6 py-2 text-right text-sm font-medium whitespace-nowrap">
                       {row.type === "edge" ? (
@@ -8982,38 +9132,50 @@ const SummaryView = ({
                         )}
                       >
                         <td className="px-6 py-2">
-                          <div
-                            className={cn(
-                              "font-medium text-gray-900",
-                              row.type === "product_edge" &&
-                                "pl-6 flex items-center gap-2 text-gray-600 text-sm",
+                          <div className="flex items-center gap-3">
+                            {row.image && (
+                              <div 
+                                onClick={() => {
+                                  if (setSelectedProductForDetail && row.rawProduct) {
+                                    setSelectedProductForDetail(row.rawProduct);
+                                  }
+                                }}
+                                className="w-10 h-10 rounded-xl bg-gray-50 overflow-hidden border border-gray-150 flex-shrink-0 cursor-pointer shadow-sm hover:scale-105 transition-all"
+                              >
+                                <img 
+                                  src={row.image} 
+                                  alt={row.name} 
+                                  className="w-full h-full object-cover" 
+                                  referrerPolicy="no-referrer"
+                                />
+                              </div>
                             )}
-                          >
-                            {row.type === "product_edge" && (
-                              <div className="w-3 h-3 border-l-2 border-b-2 border-gray-300 rounded-bl-md -mt-1.5" />
-                            )}
-                            <div className="flex items-center gap-3">
-                              {row.type === "product" &&
-                                (addedProducts.find((ap) => ap.id === row.key)
-                                  ?.images?.[0] ||
-                                  addedProducts.find((ap) => ap.id === row.key)
-                                    ?.image) && (
-                                  <div className="w-8 h-8 rounded bg-gray-100 overflow-hidden border border-gray-200">
-                                    <img
-                                      src={
-                                        addedProducts.find(
-                                          (ap) => ap.id === row.key,
-                                        )?.images?.[0] ||
-                                        addedProducts.find(
-                                          (ap) => ap.id === row.key,
-                                        )?.image
-                                      }
-                                      className="w-full h-full object-cover"
-                                    />
-                                  </div>
+                            <div className="min-w-0 flex-1">
+                              <div
+                                className={cn(
+                                  "font-medium text-gray-900 leading-snug flex items-center gap-2 flex-wrap",
+                                  row.rawProduct ? "cursor-pointer hover:text-blue-600 hover:underline decoration-blue-350 transition-colors" : "",
+                                  row.type === "product_edge" && "pl-6 flex items-center gap-2 text-gray-600 text-sm"
                                 )}
-                              <div className="flex items-center gap-2">
-                                {row.name}
+                              >
+                                {row.type === "product_edge" && (
+                                  <div className="w-3 h-3 border-l-2 border-b-2 border-gray-300 rounded-bl-md -mt-1.5" />
+                                )}
+                                <span 
+                                  onClick={() => {
+                                    if (setSelectedProductForDetail && row.rawProduct) {
+                                      setSelectedProductForDetail(row.rawProduct);
+                                    }
+                                  }}
+                                  className="inline-flex items-center gap-1.5 flex-wrap"
+                                >
+                                  {row.name}
+                                </span>
+                                {row.rawProduct?.analogs && row.rawProduct.analogs.length > 0 && (
+                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-amber-50 text-amber-800 border border-amber-200 tracking-wider">
+                                    <Replace className="w-2.5 h-2.5" /> Есть аналоги
+                                  </span>
+                                )}
                                 {(row.name
                                   .toLowerCase()
                                   .includes("столешница") ||
@@ -9021,7 +9183,7 @@ const SummaryView = ({
                                     .toLowerCase()
                                     .includes("стеновая")) &&
                                   row.type === "product" && (
-                                    <div className="flex gap-2 ml-2">
+                                    <div className="flex gap-2">
                                       <button
                                         onClick={() =>
                                           setActiveWorktopForCut(row)
@@ -9035,15 +9197,15 @@ const SummaryView = ({
                                     </div>
                                   )}
                               </div>
+                              <div
+                                className={cn(
+                                  "text-[11px] text-gray-500 mt-0.5",
+                                  row.type === "product_edge" && "pl-11",
+                                )}
+                              >
+                                {row.sub}
+                              </div>
                             </div>
-                          </div>
-                          <div
-                            className={cn(
-                              "text-xs text-gray-500",
-                              row.type === "product_edge" && "pl-11",
-                            )}
-                          >
-                            {row.sub}
                           </div>
                         </td>
                         <td className="px-6 py-2">
@@ -11329,263 +11491,7 @@ const SettingsView = ({
 
                       <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-3">
                         <label className="block text-sm font-bold text-gray-700 mb-2">
-                          Контакты
-                        </label>
-                        <div className="relative">
-                          <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300" />
-                          <input
-                            type="text"
-                            placeholder="Сайт"
-                            value={companyInfo.website || ""}
-                            onChange={(e) =>
-                              setCompanyInfo({
-                                ...companyInfo,
-                                website: e.target.value,
-                              })
-                            }
-                            className="w-full pl-10 pr-4 py-2 bg-transparent border-b border-gray-200 focus:border-blue-500 outline-none text-sm"
-                          />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <input
-                            type="text"
-                            placeholder="VK"
-                            value={companyInfo.socials?.vk || ""}
-                            onChange={(e) =>
-                              setCompanyInfo({
-                                ...companyInfo,
-                                socials: {
-                                  ...companyInfo.socials,
-                                  vk: e.target.value,
-                                },
-                              })
-                            }
-                            className="w-full px-2 py-2 bg-transparent border-b border-gray-200 focus:border-blue-500 outline-none text-xs"
-                          />
-                          <input
-                            type="text"
-                            placeholder="Telegram"
-                            value={companyInfo.socials?.telegram || ""}
-                            onChange={(e) =>
-                              setCompanyInfo({
-                                ...companyInfo,
-                                socials: {
-                                  ...companyInfo.socials,
-                                  telegram: e.target.value,
-                                },
-                              })
-                            }
-                            className="w-full px-2 py-2 bg-transparent border-b border-gray-200 focus:border-blue-500 outline-none text-xs"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4 lg:col-span-1">
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">
-                      Банковские реквизиты
-                    </label>
-                    <div className="space-y-3">
-                      <input
-                        type="text"
-                        placeholder="Наименование банка"
-                        value={companyInfo.bankName}
-                        onChange={(e) =>
-                          setCompanyInfo({
-                            ...companyInfo,
-                            bankName: e.target.value,
-                          })
-                        }
-                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm placeholder:text-gray-300"
-                      />
-                      <div className="relative">
-                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-gray-300">
-                          БИК
-                        </span>
-                        <input
-                          type="text"
-                          value={companyInfo.bik}
-                          onChange={(e) =>
-                            setCompanyInfo({
-                              ...companyInfo,
-                              bik: e.target.value,
-                            })
-                          }
-                          className="w-full pl-12 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
-                        />
-                      </div>
-                      <div className="relative">
-                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-gray-300 uppercase">
-                          Р/С
-                        </span>
-                        <input
-                          type="text"
-                          placeholder="Расчетный счет"
-                          value={companyInfo.rs}
-                          onChange={(e) =>
-                            setCompanyInfo({
-                              ...companyInfo,
-                              rs: e.target.value,
-                            })
-                          }
-                          className="w-full pl-12 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
-                        />
-                      </div>
-                      <div className="relative">
-                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-gray-300 uppercase">
-                          К/С
-                        </span>
-                        <input
-                          type="text"
-                          placeholder="Корр. счет"
-                          value={companyInfo.ks}
-                          onChange={(e) =>
-                            setCompanyInfo({
-                              ...companyInfo,
-                              ks: e.target.value,
-                            })
-                          }
-                          className="w-full pl-12 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-          </div>
-        )}
-
-        {activeSubTab === "bitrix24" && (
-          <div className="space-y-12 animate-in fade-in duration-300">
-            <section>
-              <div className="flex items-center gap-3 mb-8">
-                <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600">
-                  <Link className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-xl font-black text-gray-900 tracking-tight font-sans">
-                    Интеграция с Bitrix24
-                  </h3>
-                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1 font-sans">
-                    Свяжите ваши заказы с CRM
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-8">
-                <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100">
-                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
-                    Ссылка входящего вебхука
-                  </label>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      placeholder="https://yourgroup.bitrix24.ru/rest/..."
-                      className="flex-1 px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
-                      value={companyData?.bitrix24?.webhookUrl || ""}
-                      onChange={(e) =>
-                        setCompanyData((prev: any) => ({
-                          ...prev,
-                          bitrix24: {
-                            ...(prev?.bitrix24 || {}),
-                            webhookUrl: e.target.value,
-                          },
-                        }))
-                      }
-                    />
-                    <button
-                      onClick={async () => {
-                        const url = companyData?.bitrix24?.webhookUrl;
-                        if (!url) {
-                          showAlert("Ошибка", "Сначала укажите ссылку на вебхук");
-                          return;
-                        }
-                        try {
-                          const res = await fetch("/api/bitrix24/test", {
-                            method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ webhookUrl: url })
-                          });
-                          const data = await res.json();
-                          if (data.success) {
-                            showAlert("Успех", "Соединение с Bitrix24 успешно установлено! Списки воронок и стадий обновлены.");
-                            await loadB24Categories(url, true);
-                            // Add a small delay to respect Bitrix24 rate limits (2 requests per second)
-                            await new Promise(resolve => setTimeout(resolve, 600));
-                            const catId = companyData?.bitrix24?.categoryId || "0";
-                            await loadB24Stages(url, catId, true);
-                          } else {
-                            showAlert("Ошибка соединения", data.error || "Неизвестная ошибка");
-                          }
-                        } catch (e) {
-                          showAlert("Ошибка", "Не удалось связаться с сервером");
-                        }
-                      }}
-                      className="px-6 py-2 bg-blue-600 text-white rounded-2xl text-xs font-bold hover:bg-blue-700 transition-colors flex items-center gap-2"
-                    >
-                      <Wifi className="w-4 h-4" />
-                      Проверить связь и обновить списки
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                    <div>
-                      <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
-                        Воронка сделок (categoryId)
-                      </label>
-                      {b24Categories.length > 0 ? (
-                        <select
-                          className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold text-gray-700 appearance-none"
-                          style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234B5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundPosition: 'right 16px center', backgroundSize: '16px', backgroundRepeat: 'no-repeat' }}
-                          value={companyData?.bitrix24?.categoryId || "0"}
-                          onChange={(e) => {
-                            const newCatId = e.target.value;
-                            setCompanyData((prev: any) => ({
-                              ...prev,
-                              bitrix24: {
-                                ...(prev?.bitrix24 || {}),
-                                categoryId: newCatId,
-                              },
-                            }));
-                            const url = companyData?.bitrix24?.webhookUrl;
-                            if (url) {
-                              loadB24Stages(url, newCatId, true);
-                            }
-                          }}
-                        >
-                          {b24Categories.map((cat) => (
-                            <option key={cat.id} value={cat.id}>
-                              {cat.name} (ID: {cat.id})
-                            </option>
-                          ))}
-                        </select>
-                      ) : (
-                        <input
-                          type="text"
-                          placeholder="Например: 0"
-                          className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
-                          value={companyData?.bitrix24?.categoryId || ""}
-                          onChange={(e) =>
-                            setCompanyData((prev: any) => ({
-                              ...prev,
-                              bitrix24: {
-                                ...(prev?.bitrix24 || {}),
-                                categoryId: e.target.value,
-                              },
-                            }))
-                          }
-                        />
-                      )}
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
-                        Стадия сделки (stageId)
-                      </label>
-                      {b24Stages.length > 0 ? (
-                        <select
+                                       <select
                           className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold text-gray-700 appearance-none"
                           style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234B5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundPosition: 'right 16px center', backgroundSize: '16px', backgroundRepeat: 'no-repeat' }}
                           value={companyData?.bitrix24?.stageId || ""}
@@ -11646,6 +11552,306 @@ const SettingsView = ({
                                 },
                               }));
                               const url = companyData?.bitrix24?.webhookUrl;
+                              if (url) {
+                                loadProcurementB24Stages(url, newCatId);
+                              }
+                            }}
+                          >
+                            {b24Categories.map((cat) => (
+                              <option key={cat.id} value={cat.id}>
+                                {cat.name} (ID: {cat.id})
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder="ID воронки"
+                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                            value={companyData?.bitrix24?.procurementCategoryId || ""}
+                            onChange={(e) =>
+                              setCompanyData((prev: any) => ({
+                                ...prev,
+                                bitrix24: {
+                                  ...(prev?.bitrix24 || {}),
+                                  procurementCategoryId: e.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
+                          Стадия для Снабжения (Procurement stageId)
+                        </label>
+                        {b24ProcurementStages.length > 0 ? (
+                          <select
+                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold text-gray-700 appearance-none"
+                            style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234B5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundPosition: 'right 16px center', backgroundSize: '16px', backgroundRepeat: 'no-repeat' }}
+                            value={companyData?.bitrix24?.procurementStageId || ""}
+                            onChange={(e) =>
+                              setCompanyData((prev: any) => ({
+                                ...prev,
+                                bitrix24: {
+                                  ...(prev?.bitrix24 || {}),
+                                  procurementStageId: e.target.value,
+                                },
+                              }))
+                            }
+                          >
+                            <option value="">-- Выберите стадию --</option>
+                            {b24ProcurementStages.map((st) => (
+                              <option key={st.id} value={st.id}>
+                                {st.name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder="ID стадии"
+                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                            value={companyData?.bitrix24?.procurementStageId || ""}
+                            onChange={(e) =>
+                              setCompanyData((prev: any) => ({
+                                ...prev,
+                                bitrix24: {
+                                  ...(prev?.bitrix24 || {}),
+                                  procurementStageId: e.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        )}
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
+                          Финальная стадия (Deal disappears after)
+                        </label>
+                        {b24ProcurementStages.length > 0 ? (
+                          <select
+                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold text-gray-700 appearance-none"
+                            style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234B5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundPosition: 'right 16px center', backgroundSize: '16px', backgroundRepeat: 'no-repeat' }}
+                            value={companyData?.bitrix24?.procurementFinalStageId || ""}
+                            onChange={(e) =>
+                              setCompanyData((prev: any) => ({
+                                ...prev,
+                                bitrix24: {
+                                  ...(prev?.bitrix24 || {}),
+                                  procurementFinalStageId: e.target.value,
+                                },
+                              }))
+                            }
+                          >
+                            <option value="">-- Выберите стадию --</option>
+                            {b24ProcurementStages.map((st) => (
+                              <option key={st.id} value={st.id}>
+                                {st.name}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder="ID финальной стадии"
+                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                            value={companyData?.bitrix24?.procurementFinalStageId || ""}
+                            onChange={(e) =>
+                              setCompanyData((prev: any) => ({
+                                ...prev,
+                                bitrix24: {
+                                  ...(prev?.bitrix24 || {}),
+                                  procurementFinalStageId: e.target.value,
+                                },
+                              }))
+                            }
+                          />
+                        )}
+                      </div>
+                    </div>
+
+                  <p className="text-[11px] text-gray-500 mt-3 leading-relaxed">
+                    Инструкция: Зайдите в Битрикс24 &rarr; Приложения &rarr;
+                    Вебхуки &rarr; Добавить входящий вебхук. Скопируйте ссылку и
+                    вставьте сюда.
+                  </p>
+
+                  <div className="p-6 bg-blue-50/50 rounded-2xl border border-blue-100 mt-6">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-bold text-gray-900 font-sans">
+                          Раздел "Снабжение"
+                        </h4>
+                        <p className="text-xs text-gray-500 mt-1 font-sans">
+                          Включите этот раздел, чтобы управлять закупками и контролировать расходы.
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => setCompanyData((prev: any) => ({
+                          ...prev,
+                          procurementEnabled: !prev.procurementEnabled
+                        }))}
+                        className={cn(
+                          "relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-200 focus:outline-none",
+                          companyData?.procurementEnabled ? "bg-blue-600" : "bg-gray-200"
+                        )}
+                      >
+                        <span
+                          className={cn(
+                            "inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200",
+                            companyData?.procurementEnabled ? "translate-x-6" : "translate-x-1"
+                          )}
+                        />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <h4 className="text-sm font-bold text-gray-900 font-sans">
+                    Настройка полей (API ID)
+                  </h4>
+                  <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
+                    <table className="w-full text-sm text-left">
+                      <thead className="text-[10px] text-gray-400 uppercase font-black bg-gray-50/50">
+                        <tr>
+                          <th className="px-6 py-4">Поле в приложении</th>
+                          <th className="px-6 py-4">
+                            ID в Bitrix24 (например, UF_CRM_...)
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {[
+                          { key: "readyDate", label: "СНАБЖЕНИЕ: Дата готовности" },
+                          { key: "expenseLDSP", label: "СНАБЖЕНИЕ: ЛДСП / Кромка / ХДФ" },
+                          { key: "expenseFacades", label: "СНАБЖЕНИЕ: Фасады пильные" },
+                          { key: "expenseCustomFacades", label: "СНАБЖЕНИЕ: Фасады заказные" },
+                          { key: "expenseHardware", label: "СНАБЖЕНИЕ: Фурнитура" },
+                          { key: "expenseMirrors", label: "СНАБЖЕНИЕ: Зеркала / Двери / Стекла" },
+                          { key: "expenseCountertops", label: "СНАБЖЕНИЕ: Столешницы и стеновые" },
+                          { key: "expenseStoneCountertops", label: "СНАБЖЕНИЕ: Столешницы (камень/компакт)" },
+                          { key: "contractNumber", label: "Номер договора" },
+                          { key: "totalSum", label: "Сумма договора" },
+                          { key: "contractDate", label: "Дата договора" },
+                          { key: "hardwareSum", label: "Сумма фурнитуры" },
+                          { key: "cabinetSum", label: "Стоимость корпуса" },
+                          { key: "facadeSum", label: "Стоимость фасадов" },
+                          {
+                            key: "customFacadeSum",
+                            label: "Стоимость заказных фасадов",
+                          },
+                          { key: "assemblySum", label: "Стоимость сборки" },
+                          { key: "deliverySum", label: "Стоимость доставки" },
+                          {
+                            key: "deliveryComment",
+                            label: "Комментарий для доставки",
+                          },
+                          { key: "corpPlusFacadesSum", label: "Стоимость продукции: (Корпус+Фасады)" },
+                          { key: "expenseCorp", label: "Расходы на корпус" },
+                          { key: "expenseAppliances", label: "Расходы техника" },
+                        ].filter(field => !field.label.startsWith("СНАБЖЕНИЕ") || companyData?.procurementEnabled).map((field) => (
+                          <tr
+                            key={field.key}
+                            className="hover:bg-gray-50/50 transition-colors"
+                          >
+                            <td className="px-6 py-4 text-gray-900 font-semibold">
+                              {field.label}
+                            </td>
+                            <td className="px-6 py-3">
+                              <input
+                                type="text"
+                                placeholder="UF_CRM_1234567890"
+                                className="w-full px-4 py-2 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-xs font-bold"
+                                value={
+                                  companyData?.bitrix24?.fieldMappings?.[
+                                    field.key
+                                  ] || ""
+                                }
+                                onChange={(e) => {
+                                  const mappings = {
+                                    ...(companyData?.bitrix24?.fieldMappings ||
+                                      {}),
+                                  };
+                                  mappings[field.key] = e.target.value;
+                                  setCompanyData((prev: any) => ({
+                                    ...prev,
+                                    bitrix24: {
+                                      ...(prev.bitrix24 || {}),
+                                      fieldMappings: mappings,
+                                    },
+                                  }));
+                                }}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>label: "СНАБЖЕНИЕ: Фасады пильные" },
+                            { key: "expenseCustomFacades", label: "СНАБЖЕНИЕ: Фасады заказные" },
+                            { key: "expenseHardware", label: "СНАБЖЕНИЕ: Фурнитура" },
+                            { key: "expenseMirrors", label: "СНАБЖЕНИЕ: Зеркала / Двери / Стекла" },
+                            { key: "expenseCountertops", label: "СНАБЖЕНИЕ: Столешницы и стеновые" },
+                            { key: "expenseStoneCountertops", label: "СНАБЖЕНИЕ: Столешницы (камень/компакт)" },
+                            { key: "contractNumber", label: "Номер договора" },
+                            { key: "totalSum", label: "Сумма договора" },
+                            { key: "contractDate", label: "Дата договора" },
+                            { key: "hardwareSum", label: "Сумма фурнитуры" },
+                            { key: "cabinetSum", label: "Стоимость корпуса" },
+                            { key: "facadeSum", label: "Стоимость фасадов" },
+                            {
+                              key: "customFacadeSum",
+                              label: "Стоимость заказных фасадов",
+                            },
+                            { key: "assemblySum", label: "Стоимость сборки" },
+                            { key: "deliverySum", label: "Стоимость доставки" },
+                            {
+                              key: "deliveryComment",
+                              label: "Комментарий для доставки",
+                            },
+                            { key: "corpPlusFacadesSum", label: "Стоимость продукции: (Корпус+Фасады)" },
+                            { key: "expenseCorp", label: "Расходы на корпус" },
+                            { key: "expenseAppliances", label: "Расходы техника" },
+                          ].filter(field => !field.label.startsWith("СНАБЖЕНИЕ") || companyData?.procurementEnabled).map((field) => (
+                            <tr
+                              key={field.key}
+                              className="hover:bg-gray-50/50 transition-colors"
+                            >
+                              <td className="px-6 py-4 text-gray-900 font-semibold">
+                                {field.label}
+                              </td>
+                              <td className="px-6 py-3">
+                                <input
+                                  type="text"
+                                  placeholder="UF_CRM_1234567890"
+                                  className="w-full px-4 py-2 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-xs font-bold"
+                                  value={
+                                    companyData?.bitrix24?.fieldMappings?.[
+                                      field.key
+                                    ] || ""
+                                  }
+                                  onChange={(e) => {
+                                    const mappings = {
+                                      ...(companyData?.bitrix24?.fieldMappings ||
+                                        {}),
+                                    };
+                                    mappings[field.key] = e.target.value;
+                                    setCompanyData((prev: any) => ({
+                                      ...prev,
+                                      bitrix24: {
+                                        ...(prev.bitrix24 || {}),
+                                        fieldMappings: mappings,
+                                      },
+                                    }));
+                                  }}
+                                />
+                              </td>
+                            </tr>
+                          ))
+                        }kUrl;
                               if (url) {
                                 loadProcurementB24Stages(url, newCatId);
                               }
@@ -11906,13 +12112,15 @@ const SettingsView = ({
           </div>
         )}
 
-        <div className="pt-6 border-t border-gray-100">
-          <p className="text-xs text-gray-400 leading-relaxed italic">
-            * Коэффициенты применяются к базовой цене материала в итоговом
-            расчете. Например, если цена листа 1000₽ и коэффициент 4, итоговая
-            цена за лист будет 4000₽.
-          </p>
-        </div>
+{activeSubTab === "production" && (
+  <div className="pt-6 border-t border-gray-100">
+    <p className="text-xs text-gray-400 leading-relaxed italic">
+      * Коэффициенты применяются к базовой цене материала в итоговом
+      расчете. Например, если цена листа 1000₽ и коэффициент 4, итоговая
+      цена за лист будет 4000₽.
+    </p>
+  </div>
+)}
       </div>
 
       {/* Brand Coefficient Modal */}
@@ -12825,6 +13033,8 @@ const ProductsView = ({
   updateDoc,
   customerType,
   resolveBrandCoefficient,
+  selectedProductForDetail,
+  setSelectedProductForDetail,
 }: {
   onAddProduct: (product: any, qty: number) => void;
   catalogProducts: any[];
@@ -12869,6 +13079,8 @@ const ProductsView = ({
   db: any;
   doc: any;
   updateDoc: any;
+  selectedProductForDetail: any;
+  setSelectedProductForDetail: React.Dispatch<React.SetStateAction<any>>;
 }) => {
   const [showChecklistWindow, setShowChecklistWindow] = useState(false);
   const [requiredProductsModal, setRequiredProductsModal] = useState<{
@@ -12974,9 +13186,63 @@ const ProductsView = ({
   const [stdSubCategoryFilter, setStdSubCategoryFilter] = useState("");
   const [stdSearchText, setStdSearchText] = useState("");
 
+  const [dryerWidthFilter, setDryerWidthFilter] = useState<string | null>(null);
+  const [dryerBaseFilter, setDryerBaseFilter] = useState<string | null>(null);
+  const [dryerBrandFilter, setDryerBrandFilter] = useState<string | null>(null);
+  const [addedDryerBrands, setAddedDryerBrands] = useState<string[]>([]);
+  const [isAddingNewBrand, setIsAddingNewBrand] = useState(false);
+  const [newBrandInput, setNewBrandInput] = useState("");
+
+  const [duplicateMatches, setDuplicateMatches] = useState<any[]>([]);
+  const [isCheckingDuplicates, setIsCheckingDuplicates] = useState(false);
+
+  const checkDuplicates = useCallback(async (article: string, name: string) => {
+    if (!companyData?.id) return;
+    if (!article && !name) {
+      setDuplicateMatches([]);
+      return;
+    }
+    try {
+      setIsCheckingDuplicates(true);
+      const res = await fetch(`/api/products/search-duplicates?article=${encodeURIComponent(article)}&name=${encodeURIComponent(name)}&currentCompanyId=${companyData.id}`);
+      if (res.ok) {
+        const matches = await res.json();
+        setDuplicateMatches(matches);
+      }
+    } catch (e) {
+      console.warn("Errors checking duplicate products:", e);
+    } finally {
+      setIsCheckingDuplicates(false);
+    }
+  }, [companyData?.id]);
+
   const [quantities, setQuantities] = useState<Record<string, any>>({});
   const [isAddingProduct, setIsAddingProduct] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
+
+  const [productViews, setProductViews] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem("product_views_count");
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+
+  const [analogSearchQuery, setAnalogSearchQuery] = useState("");
+  const [relatedCategoryFilter, setRelatedCategoryFilter] = useState("");
+  const [relatedSearchQuery, setRelatedSearchQuery] = useState("");
+  const [relatedProductFilterId, setRelatedProductFilterId] = useState("");
+
+  useEffect(() => {
+    if (selectedProductForDetail && selectedProductForDetail.id) {
+      setProductViews((prev) => {
+        const next = { ...prev, [selectedProductForDetail.id]: (prev[selectedProductForDetail.id] || 0) + 1 };
+        localStorage.setItem("product_views_count", JSON.stringify(next));
+        return next;
+      });
+    }
+  }, [selectedProductForDetail]);
 
   const availableCategoriesForStd = useMemo(() => {
     const cats = new Set<string>();
@@ -13025,14 +13291,37 @@ const ProductsView = ({
         
       return matchCat && matchSub && matchSearch;
     });
-  }, [catalogProducts, stdCategoryFilter, stdSubCategoryFilter, stdSearchText, editingProduct]);
+  }, [
+    catalogProducts,
+    stdCategoryFilter,
+    stdSubCategoryFilter,
+    stdSearchText,
+    editingProduct,
+  ]);
+
+  const allDryerBrands = useMemo(() => {
+    const brands = new Set<string>(["Boyard", "Inoxa", "Vibo", "Rejs", "Lemi", ...addedDryerBrands]);
+    catalogProducts
+      .filter((p) => p.category === "Посудосушитель" && p.manufacturer)
+      .forEach((p) => brands.add(p.manufacturer));
+    return Array.from(brands).sort();
+  }, [catalogProducts, addedDryerBrands]);
+
+  const availableDryerWidths = useMemo(() => {
+    const widths = new Set<string>();
+    catalogProducts
+      .filter((p) => p.category === "Посудосушитель" && p.dryerWidth)
+      .forEach((p) => widths.add(String(p.dryerWidth)));
+    return Array.from(widths).sort((a, b) => parseInt(a) - parseInt(b));
+  }, [catalogProducts]);
 
   const [newProduct, setNewProduct] = useState({
     name: "",
-    category: productCategories[0],
+    category: "",
     purchasePrice: 0,
     images: [] as string[],
     article: "",
+    analogs: [] as string[],
     vendorArticle: "",
     manufacturerArticle: "",
     vat: 20,
@@ -13084,12 +13373,33 @@ const ProductsView = ({
     customCoeffRetail: globalCoefficients?.retail?.products?.[productCategories[0]] ?? 1.5,
     customCoeffWholesale: globalCoefficients?.wholesale?.products?.[productCategories[0]] ?? 1.3,
     customCoeffDesigner: globalCoefficients?.designer?.products?.[productCategories[0]] ?? 1.4,
+    dryerWidth: "",
+    dryerBase: "",
   });
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!editingProduct && (newProduct.article || newProduct.name)) {
+        checkDuplicates(newProduct.article, newProduct.name);
+      } else {
+        setDuplicateMatches([]);
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [newProduct.article, newProduct.name, editingProduct, checkDuplicates]);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files) {
-      Array.from(files).forEach((file) => {
+      if (newProduct.images.length >= 3) {
+        alert("Можно добавить не более 3 фотографий");
+        return;
+      }
+      Array.from(files).slice(0, 3 - newProduct.images.length).forEach((file) => {
+        if (file.size > 2 * 1024 * 1024) {
+          alert("Изображение слишком большое (макс 2MB).");
+          return;
+        }
         const reader = new FileReader();
         reader.onloadend = () => {
           setNewProduct((prev) => ({
@@ -13114,7 +13424,7 @@ const ProductsView = ({
     
     if (product.requiredProducts && product.requiredProducts.length > 0) {
       const items = product.requiredProducts.map((rp: any) => {
-        const cp = catalogProducts.find((item: any) => item.id === rp.id);
+        const cp = catalogProducts.find((item: any) => String(item.id) === String(rp.id));
         const relatedProdObj = cp || {
           id: rp.id,
           name: `Товар [ID: ${rp.id}]`,
@@ -13248,8 +13558,6 @@ const ProductsView = ({
     showAlert("Успех", "Образцы (включая кухонные модули) добавлены в каталог");
   };
 
-  const [selectedProductForDetail, setSelectedProductForDetail] =
-    useState<any>(null);
   const [activeProductsView, setActiveProductsView] = useState<'catalog' | 'moderation'>('catalog');
 
   const handleCreateProduct = async () => {
@@ -13293,6 +13601,7 @@ const ProductsView = ({
       purchasePrice: 0,
       images: [],
       article: "",
+      analogs: [],
       vendorArticle: "",
       manufacturerArticle: "",
       vat: 20,
@@ -13329,6 +13638,8 @@ const ProductsView = ({
       customCoeffRetail: globalCoefficients?.retail?.products?.[defaultCat] ?? 1.5,
       customCoeffWholesale: globalCoefficients?.wholesale?.products?.[defaultCat] ?? 1.3,
       customCoeffDesigner: globalCoefficients?.designer?.products?.[defaultCat] ?? 1.4,
+      dryerWidth: "",
+      dryerBase: "",
     });
     setEditingProduct(null);
     setIsAddingProduct(false);
@@ -13342,6 +13653,7 @@ const ProductsView = ({
       purchasePrice: product.purchasePrice || 0,
       images: product.images || (product.image ? [product.image] : []),
       article: product.article || "",
+      analogs: product.analogs || [],
       vendorArticle: product.vendorArticle || "",
       manufacturerArticle: product.manufacturerArticle || "",
       vat: product.vat || 20,
@@ -13378,6 +13690,8 @@ const ProductsView = ({
       customCoeffRetail: product.customCoeffRetail || globalCoefficients?.retail?.products?.[product.category] || 1.5,
       customCoeffWholesale: product.customCoeffWholesale || globalCoefficients?.wholesale?.products?.[product.category] || 1.3,
       customCoeffDesigner: product.customCoeffDesigner || globalCoefficients?.designer?.products?.[product.category] || 1.4,
+      dryerWidth: product.dryerWidth || "",
+      dryerBase: product.dryerBase || "",
     });
     setIsAddingProduct(true);
   };
@@ -13412,112 +13726,166 @@ const ProductsView = ({
     }
   };
 
-  const filteredProducts = catalogProducts.filter((p) => {
-    // Stage 1: Moderation / Status filtering
-    if (activeProductsView === 'moderation') {
-      return p.status === 'pending' || p.markedForDeletion;
-    }
-    
-    // In Catalog view:
-    // If pending, only show to admin or the person who added it
-    if (p.status === 'pending') {
-      return userRole === 'admin' || p.addedBy === userData?.uid;
-    }
-    
-    return true; // Show approved products normally
-  }).filter((p) => {
-    const searchTerms = switchLayout(search);
-    const checkMatch = (field: string) => {
-      const val = (field || "").toLowerCase();
-      return searchTerms.some((term) => val.includes(term));
-    };
-
-    const matchesSearch =
-      checkMatch(p.name) || checkMatch(p.description) || checkMatch(p.article);
-    const matchesCategory =
-      !selectedCategory || p.category === selectedCategory;
-
-    let matchesHingeType = true;
-    if (selectedCategory === "Петли" && hingeTypeFilter) {
-      matchesHingeType = p.hingeType === hingeTypeFilter;
-    }
-
-    let matchesManufacturer = true;
-    if (selectedCategory === "Петли" && manufacturerFilter) {
-      matchesManufacturer = p.manufacturer === manufacturerFilter;
-    }
-
-    let matchesDrawerSub = true;
-    if (selectedCategory === "Системы выдвижения" && drawerSubFilter) {
-      matchesDrawerSub = p.drawerSubCategory === drawerSubFilter;
-    }
-
-    if (selectedCategory === "Системы выдвижения" && manufacturerFilter) {
-      matchesManufacturer = p.manufacturer === manufacturerFilter;
-    }
-
-    let matchesDepth = true;
-    if (selectedCategory === "Системы выдвижения" && depthFilter) {
-      matchesDepth = p.depth === depthFilter;
-    }
-
-    let matchesLighting = true;
-    if (selectedCategory === "Освещение" && lightingSubFilter) {
-      const lowerName = (p.name || "").toLowerCase();
-      const lowerDesc = (p.description || "").toLowerCase();
-      const matchesStr = (str: string) => lowerName.includes(str) || lowerDesc.includes(str);
-      
-      if (lightingSubFilter === "Блоки питания") {
-        matchesLighting = matchesStr("блок") || matchesStr("трансформатор");
-      } else if (lightingSubFilter === "Профили") {
-        matchesLighting = matchesStr("профиль");
-      } else if (lightingSubFilter === "Светодиодные ленты") {
-        matchesLighting = matchesStr("лента");
-      } else if (lightingSubFilter === "Кнопки") {
-        matchesLighting = matchesStr("кнопка") || matchesStr("выключатель") || matchesStr("сенсор");
+  const filteredProducts = useMemo(() => {
+    const filtered = catalogProducts.filter((p) => {
+      // Stage 1: Moderation / Status filtering
+      if (activeProductsView === 'moderation') {
+        return p.status === 'pending' || p.markedForDeletion;
       }
+      
+      // In Catalog view:
+      // If pending, only show to admin or the person who added it
+      if (p.status === 'pending') {
+        return userRole === 'admin' || p.addedBy === userData?.uid;
+      }
+      
+      return true; // Show approved products normally
+    }).filter((p) => {
+      const searchTerms = switchLayout(search);
+      const checkMatch = (field: string) => {
+        const val = (field || "").toLowerCase();
+        return searchTerms.some((term) => val.includes(term));
+      };
+
+      const matchesSearch =
+        checkMatch(p.name) || checkMatch(p.description) || checkMatch(p.article);
+      const matchesCategory =
+        !selectedCategory || p.category === selectedCategory;
+
+      let matchesHingeType = true;
+      if (selectedCategory === "Петли" && hingeTypeFilter) {
+        matchesHingeType = p.hingeType === hingeTypeFilter;
+      }
+
+      let matchesManufacturer = true;
+      if (selectedCategory === "Петли" && manufacturerFilter) {
+        matchesManufacturer = p.manufacturer === manufacturerFilter;
+      }
+
+      let matchesDrawerSub = true;
+      if (selectedCategory === "Системы выдвижения" && drawerSubFilter) {
+        matchesDrawerSub = p.drawerSubCategory === drawerSubFilter;
+      }
+
+      if (selectedCategory === "Системы выдвижения" && manufacturerFilter) {
+        matchesManufacturer = p.manufacturer === manufacturerFilter;
+      }
+
+      let matchesDepth = true;
+      if (selectedCategory === "Системы выдвижения" && depthFilter) {
+        matchesDepth = p.depth === depthFilter;
+      }
+
+      let matchesLighting = true;
+      if (selectedCategory === "Освещение" && lightingSubFilter) {
+        const lowerName = (p.name || "").toLowerCase();
+        const lowerDesc = (p.description || "").toLowerCase();
+        const matchesStr = (str: string) => lowerName.includes(str) || lowerDesc.includes(str);
+        
+        if (lightingSubFilter === "Блоки питания") {
+          matchesLighting = matchesStr("блок") || matchesStr("трансформатор");
+        } else if (lightingSubFilter === "Профили") {
+          matchesLighting = matchesStr("профиль");
+        } else if (lightingSubFilter === "Светодиодные ленты") {
+          matchesLighting = matchesStr("лента");
+        } else if (lightingSubFilter === "Кнопки") {
+          matchesLighting = matchesStr("кнопка") || matchesStr("выключатель") || matchesStr("сенсор");
+        }
+      }
+
+      let matchesModuleGroup = true;
+      if (selectedCategory === "Кухонные модули" && moduleGroupFilter) {
+        matchesModuleGroup = p.moduleGroup === moduleGroupFilter;
+      }
+
+      let matchesModuleHeight = true;
+      if (selectedCategory === "Кухонные модули" && moduleHeightFilter) {
+        matchesModuleHeight = p.moduleHeight === moduleHeightFilter;
+      }
+
+      let matchesModuleDepth = true;
+      if (selectedCategory === "Кухонные модули" && moduleDepthFilter) {
+        matchesModuleDepth = p.moduleDepth === moduleDepthFilter;
+      }
+
+      let matchesModuleWidth = true;
+      if (selectedCategory === "Кухонные модули" && moduleWidthFilter) {
+        matchesModuleWidth = p.moduleWidth === moduleWidthFilter;
+      }
+
+      let matchesModuleType = true;
+      if (selectedCategory === "Кухонные модули" && moduleTypeFilter) {
+        matchesModuleType = p.moduleType === moduleTypeFilter;
+      }
+
+      let matchesDryerWidth = true;
+      if (selectedCategory === "Посудосушитель" && dryerWidthFilter) {
+        matchesDryerWidth = String(p.dryerWidth) === String(dryerWidthFilter);
+      }
+
+      let matchesDryerBase = true;
+      if (selectedCategory === "Посудосушитель" && dryerBaseFilter) {
+        matchesDryerBase = p.dryerBase === dryerBaseFilter;
+      }
+
+      let matchesDryerBrand = true;
+      if (selectedCategory === "Посудосушитель" && dryerBrandFilter) {
+        matchesDryerBrand = p.manufacturer === dryerBrandFilter;
+      }
+
+      return (
+        matchesSearch &&
+        matchesCategory &&
+        matchesHingeType &&
+        matchesManufacturer &&
+        matchesDrawerSub &&
+        matchesDepth &&
+        matchesLighting &&
+        matchesModuleGroup &&
+        matchesModuleHeight &&
+        matchesModuleDepth &&
+        matchesModuleWidth &&
+        matchesModuleType &&
+        matchesDryerWidth &&
+        matchesDryerBase &&
+        matchesDryerBrand
+      );
+    });
+
+    if (!selectedCategory) {
+      return [...filtered].sort((a, b) => {
+        const viewsA = productViews[a.id] || 0;
+        const viewsB = productViews[b.id] || 0;
+        if (viewsB !== viewsA) {
+          return viewsB - viewsA;
+        }
+        return String(b.id).localeCompare(String(a.id));
+      });
     }
 
-    let matchesModuleGroup = true;
-    if (selectedCategory === "Кухонные модули" && moduleGroupFilter) {
-      matchesModuleGroup = p.moduleGroup === moduleGroupFilter;
-    }
-
-    let matchesModuleHeight = true;
-    if (selectedCategory === "Кухонные модули" && moduleHeightFilter) {
-      matchesModuleHeight = p.moduleHeight === moduleHeightFilter;
-    }
-
-    let matchesModuleDepth = true;
-    if (selectedCategory === "Кухонные модули" && moduleDepthFilter) {
-      matchesModuleDepth = p.moduleDepth === moduleDepthFilter;
-    }
-
-    let matchesModuleWidth = true;
-    if (selectedCategory === "Кухонные модули" && moduleWidthFilter) {
-      matchesModuleWidth = p.moduleWidth === moduleWidthFilter;
-    }
-
-    let matchesModuleType = true;
-    if (selectedCategory === "Кухонные модули" && moduleTypeFilter) {
-      matchesModuleType = p.moduleType === moduleTypeFilter;
-    }
-
-    return (
-      matchesSearch &&
-      matchesCategory &&
-      matchesHingeType &&
-      matchesManufacturer &&
-      matchesDrawerSub &&
-      matchesDepth &&
-      matchesLighting &&
-      matchesModuleGroup &&
-      matchesModuleHeight &&
-      matchesModuleDepth &&
-      matchesModuleWidth &&
-      matchesModuleType
-    );
-  });
+    return filtered;
+  }, [
+    catalogProducts,
+    activeProductsView,
+    search,
+    selectedCategory,
+    hingeTypeFilter,
+    manufacturerFilter,
+    drawerSubFilter,
+    depthFilter,
+    lightingSubFilter,
+    moduleGroupFilter,
+    moduleHeightFilter,
+    moduleDepthFilter,
+    moduleWidthFilter,
+    moduleTypeFilter,
+    userRole,
+    userData,
+    productViews,
+    dryerWidthFilter,
+    dryerBaseFilter,
+    dryerBrandFilter,
+  ]);
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -13896,12 +14264,6 @@ const ProductsView = ({
               ))}
             </select>
           </div>
-          <button
-            onClick={populateSamples}
-            className="ml-auto px-3 py-1 bg-orange-100 text-orange-600 rounded-lg text-[10px] font-black uppercase hover:bg-orange-200 transition-colors"
-          >
-            Добавить образцы
-          </button>
         </div>
       )}
 
@@ -14000,12 +14362,79 @@ const ProductsView = ({
               ))}
             </select>
           </div>
-          <button
-            onClick={populateSamples}
-            className="ml-auto px-3 py-1 bg-emerald-100 text-emerald-600 rounded-lg text-[10px] font-black uppercase hover:bg-emerald-200 transition-colors"
-          >
-            Добавить образцы
-          </button>
+        </div>
+      )}
+
+      {selectedCategory === "Посудосушитель" && (
+        <div className="flex flex-wrap items-center gap-4 mb-6 p-4 bg-teal-50/50 rounded-2xl border border-teal-100 animate-in fade-in slide-in-from-top-2">
+          <span className="text-[10px] font-black text-teal-600 uppercase tracking-widest flex items-center gap-1.5">
+            <Filter className="w-3.5 h-3.5" />
+            Фильтры посудосушителей:
+          </span>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-gray-400 font-bold uppercase">
+              Ширина базы:
+            </span>
+            <select
+              value={dryerWidthFilter || ""}
+              onChange={(e) => setDryerWidthFilter(e.target.value || null)}
+              className="px-2 py-1 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-600 outline-none focus:ring-2 focus:ring-teal-500 transition-all"
+            >
+              <option value="">Все ширины</option>
+              {availableDryerWidths.map((w) => (
+                <option key={w} value={w}>
+                  {w} мм
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-gray-400 font-bold uppercase">
+              Размещение:
+            </span>
+            <select
+              value={dryerBaseFilter || ""}
+              onChange={(e) => setDryerBaseFilter(e.target.value || null)}
+              className="px-2 py-1 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-600 outline-none focus:ring-2 focus:ring-teal-500 transition-all"
+            >
+              <option value="">Все базы</option>
+              <option value="В нижнюю базу">В нижнюю базу</option>
+              <option value="В верхнюю базу">В верхнюю базу</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] text-gray-400 font-bold uppercase">
+              Бренд:
+            </span>
+            <select
+              value={dryerBrandFilter || ""}
+              onChange={(e) => setDryerBrandFilter(e.target.value || null)}
+              className="px-2 py-1 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-600 outline-none focus:ring-2 focus:ring-teal-500 transition-all"
+            >
+              <option value="">Все бренды</option>
+              {allDryerBrands.map((b) => (
+                <option key={b} value={b}>
+                  {b}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {(dryerWidthFilter || dryerBaseFilter || dryerBrandFilter) && (
+            <button
+              onClick={() => {
+                setDryerWidthFilter(null);
+                setDryerBaseFilter(null);
+                setDryerBrandFilter(null);
+              }}
+              className="text-[10px] font-bold text-teal-700 hover:text-teal-900 underline underline-offset-2 ml-auto transition-all cursor-pointer"
+            >
+              Сбросить фильтры
+            </button>
+          )}
         </div>
       )}
 
@@ -14082,6 +14511,79 @@ const ProductsView = ({
                       placeholder="Например: Петля Blum Clip Top"
                     />
                   </div>
+
+                  {/* Duplicate verification banner */}
+                  {isCheckingDuplicates && (
+                    <div className="flex items-center gap-2 p-3 bg-blue-50/50 border border-blue-100 text-blue-800 rounded-xl text-xs font-semibold animate-pulse">
+                      <Search className="w-4 h-4 animate-spin" />
+                      <span>Ищем похожие товары в каталогах других компаний...</span>
+                    </div>
+                  )}
+
+                  {duplicateMatches.length > 0 && !editingProduct && (
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl space-y-3 animate-in fade-in slide-in-from-top-2">
+                      <div className="flex items-start gap-2.5">
+                        <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <h4 className="text-sm font-bold text-amber-950">
+                            Товар найден у других компаний!
+                          </h4>
+                          <p className="text-[11px] text-amber-800 leading-normal mt-0.5">
+                            В каталогах других компаний уже содержатся аналогичные товары. Чтобы сэкономить время, вы можете скопировать их атрибуты (картинки, бренд, описание, артикулы). Наценку и цену вы установите сами.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="divide-y divide-amber-100 max-h-[180px] overflow-y-auto pr-1 bg-white/70 rounded-xl border border-amber-100">
+                        {duplicateMatches.map((dm) => (
+                          <div key={dm.id} className="p-2.5 flex items-center justify-between gap-3 text-xs">
+                            <div className="flex items-center gap-3 min-w-0">
+                              {dm.images && dm.images.length > 0 ? (
+                                <img
+                                  src={dm.images[0]}
+                                  alt={dm.name}
+                                  className="w-10 h-10 rounded-lg object-cover bg-gray-50 border border-amber-100 flex-shrink-0"
+                                  referrerPolicy="no-referrer"
+                                />
+                              ) : (
+                                <div className="w-10 h-10 rounded-lg bg-gray-50 border border-amber-100 flex items-center justify-center text-gray-400 flex-shrink-0">
+                                  <ImageIcon className="w-5 h-5 text-amber-400" />
+                                </div>
+                              )}
+                              <div className="min-w-0">
+                                <span className="font-bold text-gray-900 block truncate">{dm.name}</span>
+                                <span className="text-[10px] text-gray-500 block">
+                                  Арт: {dm.article || "—"} • {dm.manufacturer || "Без бренда"} • {dm.category}
+                                </span>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setNewProduct((prev: any) => ({
+                                  ...prev,
+                                  name: dm.name || prev.name,
+                                  article: dm.article || prev.article,
+                                  description: dm.description || prev.description,
+                                  images: dm.images || prev.images,
+                                  color: dm.color || prev.color,
+                                  unit: dm.unit || prev.unit,
+                                  manufacturer: dm.manufacturer || prev.manufacturer,
+                                  category: dm.category || prev.category,
+                                  dryerWidth: dm.dryerWidth || prev.dryerWidth,
+                                  dryerBase: dm.dryerBase || prev.dryerBase,
+                                }));
+                                showAlert("Шаблон скопирован", "Характеристики товара успешно перенесены в форму!");
+                              }}
+                              className="px-2.5 py-1.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-all font-bold text-[10px] flex-shrink-0 cursor-pointer shadow-sm"
+                            >
+                              Использовать
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-2 gap-4">
                     <div>
@@ -15230,6 +15732,138 @@ const ProductsView = ({
                     </div>
                   )}
 
+                  {newProduct.category === "Посудосушитель" && (
+                    <div className="space-y-4 p-5 bg-teal-50/40 border border-teal-100 rounded-2xl animate-in slide-in-from-top-2">
+                      <h4 className="text-sm font-bold text-teal-950 flex items-center gap-1.5 border-b border-teal-100 pb-2">
+                        <Sparkles className="w-4 h-4 text-teal-600" />
+                        Спецификация посудосушителя
+                      </h4>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-2">
+                            Ширина (мм)
+                          </label>
+                          <select
+                            value={newProduct.dryerWidth}
+                            onChange={(e) =>
+                              setNewProduct((prev) => ({
+                                ...prev,
+                                dryerWidth: e.target.value,
+                              }))
+                            }
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white font-medium shadow-sm transition-all"
+                          >
+                            <option value="">Выберите ширину</option>
+                            {["300", "400", "450", "500", "600", "700", "800", "900", "1000", "1200"].map((w) => (
+                              <option key={w} value={w}>
+                                {w} мм
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-2">
+                            База размещения
+                          </label>
+                          <select
+                            value={newProduct.dryerBase}
+                            onChange={(e) =>
+                              setNewProduct((prev) => ({
+                                ...prev,
+                                dryerBase: e.target.value,
+                              }))
+                            }
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white font-medium shadow-sm transition-all"
+                          >
+                            <option value="">Выберите базу</option>
+                            <option value="В нижнюю базу">В нижнюю базу</option>
+                            <option value="В верхнюю базу">В верхнюю базу</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="bg-white p-3.5 border border-teal-100 rounded-xl">
+                        <label className="block text-xs font-bold text-teal-950 mb-1.5 uppercase tracking-wide flex items-center justify-between">
+                          <span>Бренд (Производитель)</span>
+                          {!isAddingNewBrand && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsAddingNewBrand(true);
+                                setNewBrandInput("");
+                              }}
+                              className="text-[10px] text-blue-600 hover:text-blue-800 font-bold underline transition-all cursor-pointer"
+                            >
+                              + Добавить новый бренд
+                            </button>
+                          )}
+                        </label>
+
+                        {isAddingNewBrand ? (
+                          <div className="flex gap-2 items-center animate-in fade-in zoom-in-95 duration-200">
+                            <input
+                              type="text"
+                              value={newBrandInput}
+                              onChange={(e) => setNewBrandInput(e.target.value)}
+                              placeholder="Имя бренда, например: Inoxa"
+                              className="flex-1 px-3 py-1.5 text-xs border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-teal-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const val = newBrandInput.trim();
+                                if (val) {
+                                  if (!addedDryerBrands.includes(val)) {
+                                    setAddedDryerBrands((prev) => [...prev, val]);
+                                  }
+                                  setNewProduct((prev) => ({
+                                    ...prev,
+                                    manufacturer: val,
+                                  }));
+                                }
+                                setIsAddingNewBrand(false);
+                                setNewBrandInput("");
+                              }}
+                              className="px-3 py-1.5 bg-teal-600 text-white font-bold rounded-lg text-xs hover:bg-teal-700 cursor-pointer shadow-sm transition-colors"
+                            >
+                              Добавить
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsAddingNewBrand(false);
+                                setNewBrandInput("");
+                              }}
+                              className="px-2.5 py-1.5 text-xs text-gray-500 hover:bg-gray-100 font-bold rounded-lg cursor-pointer"
+                            >
+                              Отмена
+                            </button>
+                          </div>
+                        ) : (
+                          <select
+                            value={newProduct.manufacturer}
+                            onChange={(e) =>
+                              setNewProduct((prev) => ({
+                                ...prev,
+                                manufacturer: e.target.value,
+                              }))
+                            }
+                            className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50/50"
+                          >
+                            <option value="">Выберите или добавьте бренд</option>
+                            {allDryerBrands.map((b) => (
+                              <option key={b} value={b}>
+                                {b}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 gap-4">
                     <div>
                       <label className="block text-sm font-bold text-gray-700 mb-2">
@@ -15576,76 +16210,137 @@ const ProductsView = ({
                       Связанные товары автоматически добавляются при выборе этого товара в проект (пользователь сможет настроить количество или отказаться).
                     </p>
 
-                    <div className="flex flex-col sm:flex-row gap-2 w-full min-w-0">
-                      <select
-                        id="related-product-select"
-                        className="w-full sm:flex-1 min-w-0 px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-500 text-gray-700 font-medium truncate"
-                        defaultValue=""
-                      >
-                        <option value="">-- Выберите товар из каталога --</option>
-                        {catalogProducts
-                          .filter((p) => p.id !== (editingProduct?.id || null))
-                          .map((p) => {
-                            const displayName = p.name ? (p.name.length > 50 ? p.name.substring(0, 48) + "..." : p.name) : "";
-                            const displayPrice = p.purchasePrice
-                              ? Math.round(p.purchasePrice * getProductCoefficient(p, customerType, resolveBrandCoefficient))
-                              : p.price;
-                            return (
-                              <option key={p.id} value={p.id} title={p.name}>
-                                [{p.category}] {displayName} ({(displayPrice || 0).toLocaleString()} ₽)
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {/* Step 1: Category dropdown */}
+                        <div>
+                          <label className="block text-[10px] font-black text-blue-800 uppercase tracking-widest mb-1">Шаг 1: Категория</label>
+                          <select
+                            value={relatedCategoryFilter}
+                            onChange={(e) => {
+                              setRelatedCategoryFilter(e.target.value);
+                              setRelatedProductFilterId("");
+                            }}
+                            className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-500 text-gray-700 font-bold"
+                          >
+                            <option value="">-- Все категории --</option>
+                            {productCategories.map((c) => (
+                              <option key={c} value={c}>
+                                {c}
                               </option>
-                            );
-                          })}
-                      </select>
-                      <div className="flex gap-2 items-center">
-                        <input
-                          id="related-product-qty"
-                          type="number"
-                          min="1"
-                          defaultValue="1"
-                          className="w-16 px-3 py-2 text-sm border border-gray-200 rounded-xl text-center outline-none focus:ring-2 focus:ring-blue-500 font-bold"
-                          placeholder="Кол-во"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const selectEl = document.getElementById("related-product-select") as HTMLSelectElement;
-                            const qtyEl = document.getElementById("related-product-qty") as HTMLInputElement;
-                            if (selectEl && qtyEl && selectEl.value) {
-                              const prodId = selectEl.value;
-                              const qty = parseInt(qtyEl.value) || 1;
-                              
-                              const exists = (newProduct.requiredProducts || []).some((rp: any) => rp.id === prodId);
-                              if (exists) {
-                                alert("Этот товар уже добавлен в список сопутствующих!");
-                                return;
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Step 2: Search Input text box */}
+                        <div>
+                          <label className="block text-[10px] font-black text-blue-800 uppercase tracking-widest mb-1">Шаг 2: Поиск по названию/арт.</label>
+                          <div className="relative">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 w-3.5 h-3.5" />
+                            <input
+                              type="text"
+                              value={relatedSearchQuery}
+                              onChange={(e) => {
+                                setRelatedSearchQuery(e.target.value);
+                                setRelatedProductFilterId("");
+                              }}
+                              className="w-full h-8 pl-8 pr-3 text-xs border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-white font-medium"
+                              placeholder="Артикул или название..."
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Step 3: Product and Qty Selection list */}
+                      <div className="flex flex-col sm:flex-row gap-2 w-full min-w-0">
+                        <div className="flex-1 min-w-0">
+                          <label className="block text-[10px] font-black text-blue-800 uppercase tracking-widest mb-1">Шаг 3: Товар из списка</label>
+                          <select
+                            id="related-product-select-custom"
+                            value={relatedProductFilterId}
+                            onChange={(e) => setRelatedProductFilterId(e.target.value)}
+                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-500 text-gray-700 font-medium truncate"
+                          >
+                            <option value="">-- Выберите сопутствующий товар --</option>
+                            {catalogProducts
+                              .filter((p) => {
+                                if (p.id === (editingProduct?.id || null)) return false;
+                                if (relatedCategoryFilter && p.category !== relatedCategoryFilter) return false;
+                                
+                                const sLower = relatedSearchQuery.toLowerCase().trim();
+                                if (sLower) {
+                                  const text = `${p.name || ''} ${p.article || ''} ${p.category || ''}`.toLowerCase();
+                                  if (!text.includes(sLower)) return false;
+                                }
+                                return true;
+                              })
+                              .map((p) => {
+                                const displayName = p.name ? (p.name.length > 50 ? p.name.substring(0, 48) + "..." : p.name) : "";
+                                const displayPrice = p.purchasePrice
+                                  ? Math.round(p.purchasePrice * getProductCoefficient(p, customerType, resolveBrandCoefficient))
+                                  : p.price;
+                                return (
+                                  <option key={p.id} value={p.id} title={p.name}>
+                                    [{p.category}] {displayName} ({(displayPrice || 0).toLocaleString()} ₽) {p.article ? `| Арт: ${p.article}` : ""}
+                                  </option>
+                                );
+                              })}
+                          </select>
+                        </div>
+                        
+                        <div className="w-full sm:w-auto flex items-end gap-2">
+                          <div className="w-16">
+                            <label className="block text-[10px] font-black text-blue-800 uppercase tracking-widest mb-1 text-center">Кол-во</label>
+                            <input
+                              id="related-product-qty-custom"
+                              type="number"
+                              min="1"
+                              defaultValue="1"
+                              className="w-full h-9 px-2 text-sm border border-gray-200 rounded-xl text-center outline-none focus:ring-2 focus:ring-blue-500 font-bold"
+                            />
+                          </div>
+                          
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const prodId = relatedProductFilterId;
+                              const qtyEl = document.getElementById("related-product-qty-custom") as HTMLInputElement;
+                              if (prodId && qtyEl) {
+                                const qty = parseInt(qtyEl.value) || 1;
+                                
+                                const exists = (newProduct.requiredProducts || []).some((rp: any) => rp.id === prodId);
+                                if (exists) {
+                                  alert("Этот товар уже добавлен в список сопутствующих!");
+                                  return;
+                                }
+
+                                setNewProduct((prev: any) => ({
+                                  ...prev,
+                                  requiredProducts: [
+                                    ...(prev.requiredProducts || []),
+                                    { id: prodId, qty }
+                                  ]
+                                }));
+
+                                setRelatedProductFilterId("");
+                                setRelatedSearchQuery("");
+                                qtyEl.value = "1";
+                              } else {
+                                alert("Пожалуйста, сначала выберите товар на Шаге 3.");
                               }
-
-                              setNewProduct((prev: any) => ({
-                                ...prev,
-                                requiredProducts: [
-                                  ...(prev.requiredProducts || []),
-                                  { id: prodId, qty }
-                                ]
-                              }));
-
-                              selectEl.value = "";
-                              qtyEl.value = "1";
-                            } else {
-                              alert("Пожалуйста, выберите товар из списка.");
-                            }
-                          }}
-                          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs transition-colors shrink-0"
-                        >
-                          Добавить
-                        </button>
+                            }}
+                            className="h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs transition-colors shrink-0 flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            Добавить
+                          </button>
+                        </div>
                       </div>
                     </div>
 
                     {(newProduct.requiredProducts || []).length > 0 ? (
                       <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
                         {(newProduct.requiredProducts || []).map((rp: any, idx: number) => {
-                          const rpProduct = catalogProducts.find((cp) => cp.id === rp.id);
+                          const rpProduct = catalogProducts.find((cp) => String(cp.id) === String(rp.id));
                           return (
                             <div key={idx} className="flex items-center justify-between p-2 bg-white rounded-xl border border-gray-100 text-xs">
                               <span className="font-semibold text-gray-700 truncate max-w-[200px] sm:max-w-[320px]" title={rpProduct?.name || rp.id}>
@@ -15660,7 +16355,7 @@ const ProductsView = ({
                                   onClick={() => {
                                     setNewProduct((prev: any) => ({
                                       ...prev,
-                                      requiredProducts: (prev.requiredProducts || []).filter((item: any) => item.id !== rp.id)
+                                      requiredProducts: (prev.requiredProducts || []).filter((item: any) => String(item.id) !== String(rp.id))
                                     }));
                                   }}
                                   className="text-red-500 hover:bg-red-50 p-1 rounded-lg transition-colors"
@@ -15676,6 +16371,140 @@ const ProductsView = ({
                     ) : (
                       <div className="text-center py-4 border border-dashed border-gray-200 rounded-xl text-gray-400 text-xs font-medium">
                         Товары не выбраны
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Analogs UI Selector */}
+                  <div className="bg-amber-50/50 p-5 rounded-2xl border border-amber-100 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-bold text-amber-955 flex items-center gap-2">
+                        <Replace className="w-4 h-4 text-amber-600" />
+                        Аналоги товара
+                      </h4>
+                      <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-black uppercase">
+                        {(newProduct.analogs || []).length}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 leading-normal">
+                      Укажите аналогичные товары из каталога. Показываются только товары из той же категории «<strong>{newProduct.category || "не указана"}</strong>». При детальном просмотре этого товара пользователь сможет мгновенно заменить его на один из аналогов.
+                    </p>
+
+                    <div className="space-y-2">
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 w-3.5 h-3.5" />
+                        <input
+                          type="text"
+                          placeholder="Поиск по аналогам (по названию или артикулу)..."
+                          value={analogSearchQuery}
+                          onChange={(e) => setAnalogSearchQuery(e.target.value)}
+                          className="w-full h-8 pl-8 pr-3 text-xs border border-gray-200 rounded-xl outline-none bg-white font-medium focus:ring-2 focus:ring-amber-500"
+                        />
+                      </div>
+                      <div className="flex flex-col sm:flex-row gap-2 w-full min-w-0">
+                        <select
+                          id="analog-product-select"
+                          className="w-full sm:flex-1 min-w-0 px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-amber-500 text-gray-700 font-medium truncate"
+                          defaultValue=""
+                        >
+                          <option value="">-- Выберите аналог --</option>
+                          {catalogProducts
+                            .filter((p) => {
+                              const isNotSelf = p.id !== (editingProduct?.id || null);
+                              const isSameCat = p.category === newProduct.category;
+                              
+                              const searchLower = analogSearchQuery.toLowerCase().trim();
+                              const matchesSearch = !searchLower || 
+                                (p.name || "").toLowerCase().includes(searchLower) ||
+                                (p.article || "").toLowerCase().includes(searchLower);
+                              
+                              return isNotSelf && isSameCat && matchesSearch;
+                            })
+                            .map((p) => {
+                              const displayName = p.name ? (p.name.length > 50 ? p.name.substring(0, 48) + "..." : p.name) : "";
+                              const displayPrice = p.purchasePrice
+                                ? Math.round(p.purchasePrice * getProductCoefficient(p, customerType, resolveBrandCoefficient))
+                                : p.price;
+                              return (
+                                <option key={p.id} value={p.id} title={p.name}>
+                                  {displayName} ({(displayPrice || 0).toLocaleString()} ₽) {p.article ? `| Арт: ${p.article}` : ""}
+                                </option>
+                              );
+                            })}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const selectEl = document.getElementById("analog-product-select") as HTMLSelectElement;
+                            if (selectEl && selectEl.value) {
+                              const prodId = selectEl.value;
+                              
+                              const exists = (newProduct.analogs || []).some((id: any) => String(id) === String(prodId));
+                              if (exists) {
+                                alert("Этот товар уже добавлен в список аналогов!");
+                                return;
+                              }
+
+                              setNewProduct((prev: any) => ({
+                                ...prev,
+                                analogs: [
+                                  ...(prev.analogs || []),
+                                  prodId
+                                ]
+                              }));
+
+                              selectEl.value = "";
+                              setAnalogSearchQuery("");
+                            } else {
+                              alert("Пожалуйста, выберите товар из списка.");
+                            }
+                          }}
+                          className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs transition-colors shrink-0 cursor-pointer"
+                        >
+                          Добавить
+                        </button>
+                      </div>
+                    </div>
+
+                    {(newProduct.analogs || []).length > 0 ? (
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                        {(newProduct.analogs || []).map((analogId: string, idx: number) => {
+                          const analogProduct = catalogProducts.find((cp) => String(cp.id) === String(analogId));
+                          const displayPrice = analogProduct?.purchasePrice
+                            ? Math.round(analogProduct.purchasePrice * getProductCoefficient(analogProduct, customerType, resolveBrandCoefficient))
+                            : analogProduct?.price;
+                          return (
+                            <div key={idx} className="flex items-center justify-between p-2 bg-white rounded-xl border border-gray-100 text-xs">
+                              <span className="font-semibold text-gray-700 truncate max-w-[200px] sm:max-w-[320px]" title={analogProduct?.name || analogId}>
+                                {analogProduct?.name || `Товар (Удален) [ID: ${analogId}]`}
+                              </span>
+                              <div className="flex items-center gap-3">
+                                {analogProduct && (
+                                  <span className="font-bold text-gray-500">
+                                    {(displayPrice || 0).toLocaleString()} ₽
+                                  </span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setNewProduct((prev: any) => ({
+                                      ...prev,
+                                      analogs: (prev.analogs || []).filter((id: any) => String(id) !== String(analogId))
+                                    }));
+                                  }}
+                                  className="text-red-500 hover:bg-red-50 p-1 rounded-lg transition-colors cursor-pointer"
+                                  title="Удалить аналог"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="text-center py-4 border border-dashed border-gray-200 rounded-xl text-gray-400 text-xs font-medium">
+                        Аналоги не добавлены
                       </div>
                     )}
                   </div>
@@ -15704,368 +16533,7 @@ const ProductsView = ({
         </div>
       )}
 
-      {/* Product Detail Modal */}
-      {selectedProductForDetail && (
-        <div
-          className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm shadow-2xl"
-          onClick={() => setSelectedProductForDetail(null)}
-        >
-          <div
-            className="bg-white w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-[32px] shadow-2xl animate-in fade-in zoom-in duration-300"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="sticky top-0 bg-white/80 backdrop-blur-md z-10 px-8 py-6 border-b border-gray-100 flex items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600">
-                  <Package className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-2xl font-black text-gray-900 leading-tight">
-                    {selectedProductForDetail.name}
-                  </h3>
-                  <div className="flex items-center gap-3 mt-1">
-                    <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-black uppercase rounded-lg">
-                      {selectedProductForDetail.category}
-                    </span>
-                    <span className="text-xs text-gray-400 font-bold">
-                      Артикул: {selectedProductForDetail.article || "—"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={() => setSelectedProductForDetail(null)}
-                className="w-10 h-10 flex items-center justify-center bg-gray-50 hover:bg-gray-100 rounded-full transition-all text-gray-400"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
 
-            <div className="p-10 container mx-auto">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
-                <div className="space-y-6">
-                  {selectedProductForDetail.images &&
-                  selectedProductForDetail.images.length > 0 ? (
-                    <div className="space-y-4">
-                      <div className="aspect-square rounded-[32px] overflow-hidden border border-gray-100 shadow-inner">
-                        <img
-                          src={selectedProductForDetail.images[0]}
-                          className="w-full h-full object-cover"
-                          referrerPolicy="no-referrer"
-                        />
-                      </div>
-                      <div className="grid grid-cols-4 gap-3">
-                        {selectedProductForDetail.images
-                          .slice(1)
-                          .map((img: string, i: number) => (
-                            <div
-                              key={i}
-                              className="aspect-square rounded-2xl overflow-hidden border border-gray-100 shadow-sm"
-                            >
-                              <img
-                                src={img}
-                                className="w-full h-full object-cover"
-                                referrerPolicy="no-referrer"
-                              />
-                            </div>
-                          ))}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="aspect-square rounded-[32px] bg-gray-50 border border-dashed border-gray-200 flex flex-col items-center justify-center text-gray-300">
-                      <Package className="w-20 h-20 mb-4 opacity-20" />
-                      <span className="text-sm font-bold opacity-30">
-                        Нет фото
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="space-y-8">
-                  <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 space-y-4">
-                    <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-200 pb-3 mb-4">
-                      Характеристики
-                    </h4>
-                    <div className="grid grid-cols-2 gap-y-4">
-                      <div className="space-y-1">
-                        <span className="text-[10px] text-gray-400 uppercase font-black">
-                          Цена продажи (клиентская)
-                        </span>
-                        <div className="text-2xl font-black text-gray-900">
-                          {(() => {
-                            const coeff = getProductCoefficient(selectedProductForDetail, customerType, resolveBrandCoefficient);
-                            const displayPrice = selectedProductForDetail.purchasePrice
-                              ? Math.round(selectedProductForDetail.purchasePrice * coeff)
-                              : selectedProductForDetail.price;
-                            return (displayPrice || 0).toLocaleString();
-                          })()}{" "}
-                          ₽
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <span className="text-[10px] text-gray-400 uppercase font-black">
-                          Ед. изм.
-                        </span>
-                        <div className="text-xl font-bold text-gray-700">
-                          {selectedProductForDetail.unit || "шт."}
-                        </div>
-                      </div>
-                      <div className="space-y-1">
-                        <span className="text-[10px] text-gray-400 uppercase font-black">
-                          Цвет / Декор
-                        </span>
-                        <div className="text-sm font-bold text-gray-800">
-                          {selectedProductForDetail.color || "—"}
-                        </div>
-                      </div>
-                      {selectedProductForDetail.category ===
-                        "Системы выдвижения" && (
-                        <>
-                          <div className="space-y-1">
-                            <span className="text-[10px] text-gray-400 uppercase font-black">
-                              Подкатегория
-                            </span>
-                            <div className="text-sm font-bold text-gray-800">
-                              {selectedProductForDetail.drawerSubCategory ||
-                                "—"}
-                            </div>
-                          </div>
-                          <div className="space-y-1">
-                            <span className="text-[10px] text-gray-400 uppercase font-black">
-                              Производитель
-                            </span>
-                            <div className="text-sm font-bold text-gray-800">
-                              {selectedProductForDetail.manufacturer || "—"}
-                            </div>
-                          </div>
-                          <div className="space-y-1">
-                            <span className="text-[10px] text-gray-400 uppercase font-black">
-                              Глубина
-                            </span>
-                            <div className="text-sm font-bold text-gray-800">
-                              {selectedProductForDetail.depth
-                                ? selectedProductForDetail.depth + " мм"
-                                : "—"}
-                            </div>
-                          </div>
-                          {selectedProductForDetail.drawerSubCategory ===
-                            "Телескопические направляющие" && (
-                            <div className="space-y-1">
-                              <span className="text-[10px] text-gray-400 uppercase font-black">
-                                Высота
-                              </span>
-                              <div className="text-sm font-bold text-gray-800">
-                                {selectedProductForDetail.heightTelescopic
-                                  ? selectedProductForDetail.heightTelescopic +
-                                    " мм"
-                                  : "—"}
-                              </div>
-                            </div>
-                          )}
-                          {selectedProductForDetail.drawerSubCategory ===
-                            "Системы ящиков" && (
-                            <div className="space-y-1">
-                              <span className="text-[10px] text-gray-400 uppercase font-black">
-                                Тип ящика
-                              </span>
-                              <div className="text-sm font-bold text-gray-800">
-                                {selectedProductForDetail.drawerType ||
-                                  "Стандартный"}
-                              </div>
-                            </div>
-                          )}
-                        </>
-                      )}
-                      {selectedProductForDetail.category ===
-                        "Кухонные модули" && (
-                        <>
-                          <div className="space-y-1">
-                            <span className="text-[10px] text-gray-400 uppercase font-black">
-                              Тип модуля
-                            </span>
-                            <div className="text-sm font-bold text-gray-800">
-                              {selectedProductForDetail.moduleType ||
-                                "Стандартный"}
-                            </div>
-                          </div>
-                          <div className="space-y-1">
-                            <span className="text-[10px] text-gray-400 uppercase font-black">
-                              Группа модуля
-                            </span>
-                            <div className="text-sm font-bold text-gray-800">
-                              {selectedProductForDetail.moduleGroup || "—"}
-                            </div>
-                          </div>
-                          <div className="space-y-1">
-                            <span className="text-[10px] text-gray-400 uppercase font-black">
-                              Высота
-                            </span>
-                            <div className="text-sm font-bold text-gray-800">
-                              {selectedProductForDetail.moduleHeight
-                                ? selectedProductForDetail.moduleHeight + " мм"
-                                : "—"}
-                            </div>
-                          </div>
-                          <div className="space-y-1">
-                            <span className="text-[10px] text-gray-400 uppercase font-black">
-                              Глубина
-                            </span>
-                            <div className="text-sm font-bold text-gray-800">
-                              {selectedProductForDetail.moduleDepth
-                                ? selectedProductForDetail.moduleDepth + " мм"
-                                : "—"}
-                            </div>
-                          </div>
-                          <div className="space-y-1">
-                            <span className="text-[10px] text-gray-400 uppercase font-black">
-                              Материал
-                            </span>
-                            <div className="text-xs font-medium text-gray-600 italic">
-                              {selectedProductForDetail.moduleMaterial ||
-                                "ЛДСП Nordeco Белый 16 мм"}
-                            </div>
-                          </div>
-                          <div className="space-y-1">
-                            <span className="text-[10px] text-gray-400 uppercase font-black">
-                              Кромка
-                            </span>
-                            <div className="text-xs font-medium text-gray-600 italic">
-                              {selectedProductForDetail.moduleEdge || "0,4 мм"}
-                            </div>
-                          </div>
-                        </>
-                      )}
-                      {selectedProductForDetail.category === "Петли" && (
-                        <>
-                          <div className="space-y-1">
-                            <span className="text-[10px] text-gray-400 uppercase font-black">
-                              Производитель
-                            </span>
-                            <div className="text-sm font-bold text-gray-800">
-                              {selectedProductForDetail.manufacturer || "—"}
-                            </div>
-                          </div>
-                          <div className="space-y-1">
-                            <span className="text-[10px] text-gray-400 uppercase font-black">
-                              Тип петли
-                            </span>
-                            <div className="text-sm font-bold text-gray-800">
-                              {selectedProductForDetail.hingeType || "—"}
-                            </div>
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-
-                  {selectedProductForDetail.requiredProducts && selectedProductForDetail.requiredProducts.length > 0 && (
-                    <div className="bg-blue-50/50 p-6 rounded-3xl border border-blue-100 space-y-4">
-                      <h4 className="text-[10px] font-black text-blue-700 uppercase tracking-widest border-b border-blue-200/50 pb-3 flex items-center gap-2">
-                        <Link className="w-3.5 h-3.5" />
-                        Обязательные сопутствующие товары
-                      </h4>
-                      <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                        {selectedProductForDetail.requiredProducts.map((rp: any, idx: number) => {
-                          const cp = catalogProducts.find((item: any) => item.id === rp.id);
-                          return (
-                            <div key={idx} className="flex justify-between items-center bg-white p-3 rounded-xl border border-blue-100/40 text-xs">
-                              <span className="font-semibold text-gray-700 truncate max-w-[240px]" title={cp?.name || `Товар [ID: ${rp.id}]`}>
-                                {cp?.name || `Товар [ID: ${rp.id}]`} {cp ? `(${(() => {
-                                  const coeff = getProductCoefficient(cp, customerType, resolveBrandCoefficient);
-                                  const displayPrice = cp.purchasePrice
-                                    ? Math.round(cp.purchasePrice * coeff)
-                                    : cp.price;
-                                  return (displayPrice || 0).toLocaleString();
-                                })()} ₽)` : ""}
-                              </span>
-                              <span className="font-black text-blue-600 shrink-0">
-                                {rp.qty} {cp?.unit || "шт."}
-                              </span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  <div className="space-y-4">
-                    <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                      Описание
-                    </h4>
-                    <p className="text-gray-600 leading-relaxed text-sm bg-blue-50/30 p-6 rounded-2xl border border-blue-50 italic">
-                      {selectedProductForDetail.description ||
-                        "Описание не указано"}
-                    </p>
-                  </div>
-
-                  <div className="pt-6 border-t border-gray-100 space-y-3">
-                    <div className="flex items-center justify-between text-[10px] font-black text-gray-400 uppercase tracking-widest">
-                      <span>Инфо о закупке</span>
-                      {selectedProductForDetail.useCustomCoeffs && (
-                        <span className="text-emerald-600 font-extrabold normal-case">Свои коэф.</span>
-                      )}
-                    </div>
-                    <div className="grid grid-cols-3 gap-2">
-                      <div className="bg-gray-50 p-2 rounded-xl border border-gray-100 text-center">
-                        <div className="text-[9px] text-gray-400 uppercase mb-1">
-                          Закуп (₽)
-                        </div>
-                        <div className="font-bold text-xs">
-                          {selectedProductForDetail.purchasePrice || 0}
-                        </div>
-                      </div>
-                      <div className="bg-gray-50 p-2 rounded-xl border border-gray-100 text-center">
-                        <div className="text-[9px] text-gray-400 uppercase mb-1">
-                          Коэф.
-                        </div>
-                        <div className="font-bold text-xs">
-                          {selectedProductForDetail.useCustomCoeffs 
-                            ? (selectedProductForDetail.customCoeffRetail || 1.0).toFixed(2)
-                            : (
-                                selectedProductForDetail.price /
-                                (selectedProductForDetail.purchasePrice || 1)
-                              ).toFixed(2)
-                          }
-                        </div>
-                      </div>
-                      <div className="bg-gray-50 p-2 rounded-xl border border-gray-100 text-center">
-                        <div className="text-[9px] text-gray-400 uppercase mb-1">
-                          НДС (%)
-                        </div>
-                        <div className="font-bold text-xs">
-                          {selectedProductForDetail.vat || 20}%
-                        </div>
-                      </div>
-
-                      {selectedProductForDetail.useCustomCoeffs && (
-                        <div className="col-span-3 mt-1.5 p-2.5 bg-emerald-50 rounded-xl border border-emerald-100 space-y-1 text-left">
-                          <div className="text-[9px] uppercase font-bold text-emerald-800 tracking-wider">
-                            Установленные коэффициенты:
-                          </div>
-                          <div className="grid grid-cols-3 gap-1 text-[11px] font-medium text-emerald-950">
-                            <div>
-                              <span className="text-gray-500">Розница:</span>{" "}
-                              <span className="font-bold">{selectedProductForDetail.customCoeffRetail || "—"}</span>
-                            </div>
-                            <div>
-                              <span className="text-gray-500">Опт:</span>{" "}
-                              <span className="font-bold">{selectedProductForDetail.customCoeffWholesale || "—"}</span>
-                            </div>
-                            <div>
-                              <span className="text-gray-500">Дизайн:</span>{" "}
-                              <span className="font-bold">{selectedProductForDetail.customCoeffDesigner || "—"}</span>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {requiredProductsModal && requiredProductsModal.isOpen && (
         <div className="fixed inset-0 bg-black/60 z-[120] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
@@ -16179,7 +16647,11 @@ const ProductsView = ({
                   let addedCount = 0;
                   requiredProductsModal.requiredItems.forEach((item) => {
                     if (item.selectedQty > 0) {
-                      onAddProduct(item.product, item.selectedQty);
+                      onAddProduct({
+                        ...item.product,
+                        parentCatalogId: requiredProductsModal.mainProduct.id,
+                        qtyPerParent: item.defaultQtyPerItem,
+                      }, item.selectedQty);
                       addedCount++;
                     }
                   });
@@ -16392,6 +16864,21 @@ const ProductsView = ({
                           )}
                         </div>
                       )}
+                    {product.category === "Посудосушитель" &&
+                      (product.dryerWidth || product.dryerBase) && (
+                        <div className="flex flex-wrap gap-1.5 mb-3">
+                          {product.dryerWidth && (
+                            <span className="px-1.5 py-0.5 bg-teal-50 text-teal-600 text-[10px] font-bold rounded border border-teal-100">
+                              Ширина: {product.dryerWidth} мм
+                            </span>
+                          )}
+                          {product.dryerBase && (
+                            <span className="px-1.5 py-0.5 bg-sky-50 text-sky-600 text-[10px] font-bold rounded border border-sky-100">
+                              {product.dryerBase}
+                            </span>
+                          )}
+                        </div>
+                      )}
                     {product.requiredProducts && product.requiredProducts.length > 0 && (
                       <div className="mt-2 p-2 bg-blue-50/40 rounded-xl border border-blue-100/30">
                         <div className="text-[9px] font-black uppercase text-blue-700 tracking-wider flex items-center gap-1 mb-1 leading-none">
@@ -16400,19 +16887,41 @@ const ProductsView = ({
                         </div>
                         <div className="space-y-0.5 max-h-16 overflow-y-auto pr-0.5">
                           {product.requiredProducts.map((rp: any, idx: number) => {
-                            const cp = catalogProducts.find((item: any) => item.id === rp.id);
+                            const cp = catalogProducts.find((item: any) => String(item.id) === String(rp.id));
+                            const cpCoeff = cp ? getProductCoefficient(cp, customerType, resolveBrandCoefficient) : 1;
+                            const cpPrice = cp ? (cp.purchasePrice ? Math.round(cp.purchasePrice * cpCoeff) : cp.price) : 0;
+                            const rowCost = (cpPrice || 0) * rp.qty;
                             return (
                               <div key={idx} className="flex justify-between text-[10px] text-gray-500 leading-tight">
                                 <span className="truncate max-w-[120px]" title={cp?.name || "Товар"}>
                                   + {cp?.name || "Товар"}
                                 </span>
-                                <span className="font-extrabold text-blue-600 flex-shrink-0">
-                                  {rp.qty}шт.
+                                <span className="font-extrabold text-blue-600 flex-shrink-0 ml-1">
+                                  {rp.qty} шт. (+{rowCost.toLocaleString()} ₽)
                                 </span>
                               </div>
                             );
                           })}
                         </div>
+                        {(() => {
+                          const mainCoeff = getProductCoefficient(product, customerType, resolveBrandCoefficient);
+                           const mainPrice = product.purchasePrice ? Math.round(product.purchasePrice * mainCoeff) : (product.price || 0);
+                          let companionTotal = 0;
+                          product.requiredProducts.forEach((rp: any) => {
+                            const cp = catalogProducts.find((item: any) => String(item.id) === String(rp.id));
+                            if (cp) {
+                              const cpCoeff = getProductCoefficient(cp, customerType, resolveBrandCoefficient);
+                              const cpPrice = cp.purchasePrice ? Math.round(cp.purchasePrice * cpCoeff) : (cp.price || 0);
+                              companionTotal += rp.qty * cpPrice;
+                            }
+                          });
+                          const totalSetPrice = mainPrice + companionTotal;
+                          return (
+                            <div className="mt-1.5 pt-1 border-t border-blue-100/30 text-[9px] text-gray-500 font-bold text-right">
+                              Итого комплект: <span className="text-blue-700 font-extrabold">{totalSetPrice.toLocaleString()} ₽</span>
+                            </div>
+                          );
+                        })()}
                       </div>
                     )}
                   </div>
@@ -16747,6 +17256,9 @@ export default function App() {
   const [modularAsked, setModularAsked] = useState<boolean>(false);
   const [activeSegment, setActiveSegment] = useState<"Эконом" | "Средний" | "Премиум">("Средний");
   const [manualFittings, setManualFittings] = useState<Record<string, string>>({});
+  const [customFittingQuantities, setCustomFittingQuantities] = useState<Record<string, number>>({});
+  const [removedFittings, setRemovedFittings] = useState<Record<string, boolean>>({});
+  const [selectedProductForDetail, setSelectedProductForDetail] = useState<any>(null);
   const showAlert = useCallback((title: string, message: string) => {
     setModal({ isOpen: true, type: "alert", title, message });
   }, []);
@@ -17616,6 +18128,8 @@ export default function App() {
     setModularAsked(false);
     setActiveSegment("Средний");
     setManualFittings({});
+    setCustomFittingQuantities({});
+    setRemovedFittings({});
   };
 
   const toggleRotated = (key: string) => {
@@ -18434,6 +18948,8 @@ export default function App() {
           modularAsked,
           activeSegment,
           manualFittings,
+          customFittingQuantities,
+          removedFittings,
         },
       };
 
@@ -18783,6 +19299,8 @@ export default function App() {
     setModularAsked(d.modularAsked ?? false);
     setActiveSegment(d.activeSegment || "Средний");
     setManualFittings(d.manualFittings || {});
+    setCustomFittingQuantities(d.customFittingQuantities || {});
+    setRemovedFittings(d.removedFittings || {});
     if (d.summaryRows) setCurrentSummaryRows(d.summaryRows);
 
     setCurrentProjectId(project.id);
@@ -19062,6 +19580,75 @@ export default function App() {
 
   const removeAddedProduct = (productId: string | number) => {
     setAddedProducts((prev) => prev.filter((p) => p.id !== productId));
+  };
+
+  const handleSwapProductWithAnalog = (oldProduct: any, newProductReference: any) => {
+    if (oldProduct.demandKey) {
+      setManualFittings((prev: any) => ({
+        ...prev,
+        [oldProduct.demandKey]: newProductReference.id,
+      }));
+      setSelectedProductForDetail({
+        ...newProductReference,
+        demandKey: oldProduct.demandKey,
+        isComputedFitting: true,
+      });
+      showAlert("Заменено", `Фурнитура "${oldProduct.name}" заменена на аналог: "${newProductReference.name}"`);
+    } else {
+      setAddedProducts((prev) => {
+        // 1. Remove old companion products associated with the old product
+        const filtered = prev.filter((p) => p.parentCatalogId !== oldProduct.id);
+        
+        // 2. Identify the qty of the swapped main product
+        const mainItem = prev.find((p) => p.id === oldProduct.id || p.key === oldProduct.id);
+        const mainQty = mainItem ? (mainItem.quantity || mainItem.qty || 1) : 1;
+        
+        // 3. Build new companion products list from the new product's requiredProducts
+        const newCompanions: any[] = [];
+        if (newProductReference.requiredProducts && newProductReference.requiredProducts.length > 0) {
+          newProductReference.requiredProducts.forEach((rp: any) => {
+            const cp = catalogProducts.find((item: any) => String(item.id) === String(rp.id));
+            if (cp) {
+              newCompanions.push({
+                ...cp,
+                quantity: rp.qty * mainQty,
+                qty: rp.qty * mainQty,
+                parentCatalogId: newProductReference.id,
+                qtyPerParent: rp.qty,
+              });
+            }
+          });
+        }
+        
+        // 4. Map the main product to the new product reference
+        const mapped = filtered.map((p) => {
+          if (p.id === oldProduct.id || p.key === oldProduct.id) {
+            return {
+              ...newProductReference,
+              id: p.id,
+              key: p.id,
+              qty: p.qty,
+              quantity: p.quantity,
+              moduleFittings: p.moduleFittings,
+              moduleGroup: p.moduleGroup,
+              moduleType: p.moduleType,
+              moduleHeight: p.moduleHeight,
+              moduleWidth: p.moduleWidth,
+              moduleDepth: p.moduleDepth,
+              moduleMaterial: p.moduleMaterial,
+              moduleEdge: p.moduleEdge,
+            };
+          }
+          return p;
+        });
+        
+        // 5. Return both mapped main products and the new companion products
+        return [...mapped, ...newCompanions];
+      });
+      
+      setSelectedProductForDetail(newProductReference);
+      showAlert("Заменено", `Товар заменен на аналог: "${newProductReference.name}" вместе с сопутствующими товарами.`);
+    }
   };
 
   const saveGeneralSettings = async (silent: boolean = false) => {
@@ -20994,9 +21581,14 @@ export default function App() {
               setActiveSegment={setActiveSegment}
               manualFittings={manualFittings}
               setManualFittings={setManualFittings}
+              customFittingQuantities={customFittingQuantities}
+              setCustomFittingQuantities={setCustomFittingQuantities}
+              removedFittings={removedFittings}
+              setRemovedFittings={setRemovedFittings}
               catalogProducts={catalogProducts}
               catalogMaterials={catalogMaterials}
               resolveBrandCoefficient={resolveBrandCoefficient}
+              setSelectedProductForDetail={setSelectedProductForDetail}
             />
             {activeTab === "checkout_current" && (() => {
               const activeProject = {
@@ -21141,6 +21733,8 @@ export default function App() {
               userData={userData}
               customerType={customerType}
               resolveBrandCoefficient={resolveBrandCoefficient}
+              selectedProductForDetail={selectedProductForDetail}
+              setSelectedProductForDetail={setSelectedProductForDetail}
             />
           ) : activeTab === "services" ? (
             <ServicesView
@@ -21341,6 +21935,7 @@ export default function App() {
               catalogServices={catalogServices}
               showAlert={showAlert}
               showConfirm={showConfirm}
+              onSaveProduct={saveProduct}
             />
           ) : activeTab === "specification" && selectedProjectForSpec ? (
             <ProjectSpecificationView
@@ -21419,6 +22014,415 @@ export default function App() {
             productionCycle={ownProductionConfig.productionCycle || "working"}
             editingSet={editingSet}
           />
+        )}
+
+        {printSetData && (
+          <SpecificationPrintView
+            projects={printSetData.projects}
+            setData={printSetData.data}
+            onClose={() => setPrintSetData(null)}
+          />
+        )}
+
+        {/* Product Detail Modal */}
+        {selectedProductForDetail && (
+          <div
+            className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm shadow-2xl"
+            onClick={() => setSelectedProductForDetail(null)}
+          >
+            <div
+              className="bg-white w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-[32px] shadow-2xl animate-in fade-in zoom-in duration-300"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="sticky top-0 bg-white/80 backdrop-blur-md z-10 px-8 py-6 border-b border-gray-100 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-blue-50 rounded-2xl flex items-center justify-center text-blue-600">
+                    <Package className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-2xl font-black text-gray-900 leading-tight">
+                      {selectedProductForDetail.name}
+                    </h3>
+                    <div className="flex items-center gap-3 mt-1">
+                      <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-[10px] font-black uppercase rounded-lg">
+                        {selectedProductForDetail.category}
+                      </span>
+                      <span className="text-xs text-gray-400 font-bold">
+                        Артикул: {selectedProductForDetail.article || "—"}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedProductForDetail(null)}
+                  className="w-10 h-10 flex items-center justify-center bg-gray-50 hover:bg-gray-100 rounded-full transition-all text-gray-400 cursor-pointer"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+
+              <div className="p-10 container mx-auto">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                  <div className="space-y-6">
+                    {selectedProductForDetail.images &&
+                    selectedProductForDetail.images.length > 0 ? (
+                      <div className="space-y-4">
+                        <div className="aspect-square rounded-[32px] overflow-hidden border border-gray-100 shadow-inner">
+                          <img
+                            src={selectedProductForDetail.images[0]}
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                        </div>
+                        <div className="grid grid-cols-4 gap-3">
+                          {selectedProductForDetail.images
+                            .slice(1)
+                            .map((img: string, i: number) => (
+                              <div
+                                key={i}
+                                className="aspect-square rounded-2xl overflow-hidden border border-gray-100 shadow-sm"
+                              >
+                                <img
+                                  src={img}
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+                              </div>
+                            ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="aspect-square rounded-[32px] bg-gray-50 border border-dashed border-gray-200 flex flex-col items-center justify-center text-gray-300">
+                        <Package className="w-20 h-20 mb-4 opacity-20" />
+                        <span className="text-sm font-bold opacity-30">
+                          Нет фото
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="space-y-8">
+                    <div className="bg-gray-50 p-6 rounded-3xl border border-gray-100 space-y-4">
+                      <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest border-b border-gray-200 pb-3 mb-4">
+                        Характеристики
+                      </h4>
+                      <div className="grid grid-cols-2 gap-y-4">
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-gray-400 uppercase font-black">
+                            Цена продажи
+                          </span>
+                          <div className="text-2xl font-black text-gray-900">
+                            {(() => {
+                              const coeff = getProductCoefficient(selectedProductForDetail, customerType, resolveBrandCoefficient);
+                              const displayPrice = selectedProductForDetail.purchasePrice
+                                ? Math.round(selectedProductForDetail.purchasePrice * coeff)
+                                : selectedProductForDetail.price;
+                              return (displayPrice || 0).toLocaleString();
+                            })()}{" "}
+                            ₽
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-gray-400 uppercase font-black">
+                            Ед. изм.
+                          </span>
+                          <div className="text-xl font-bold text-gray-700">
+                            {selectedProductForDetail.unit || "шт."}
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[10px] text-gray-400 uppercase font-black">
+                            Цвет / Декор
+                          </span>
+                          <div className="text-sm font-bold text-gray-800">
+                            {selectedProductForDetail.color || "—"}
+                          </div>
+                        </div>
+                        {selectedProductForDetail.category ===
+                          "Системы выдвижения" && (
+                          <>
+                            <div className="space-y-1">
+                              <span className="text-[10px] text-gray-400 uppercase font-black">
+                                Подкатегория
+                              </span>
+                              <div className="text-sm font-bold text-gray-800">
+                                {selectedProductForDetail.drawerSubCategory ||
+                                  "—"}
+                              </div>
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] text-gray-400 uppercase font-black">
+                                Производитель
+                              </span>
+                              <div className="text-sm font-bold text-gray-800">
+                                {selectedProductForDetail.manufacturer || "—"}
+                              </div>
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] text-gray-400 uppercase font-black">
+                                Глубина
+                              </span>
+                              <div className="text-sm font-bold text-gray-800">
+                                {selectedProductForDetail.depth
+                                  ? selectedProductForDetail.depth + " мм"
+                                  : "—"}
+                              </div>
+                            </div>
+                            {selectedProductForDetail.drawerSubCategory ===
+                              "Телескопические направляющие" && (
+                              <div className="space-y-1">
+                                <span className="text-[10px] text-gray-400 uppercase font-black">
+                                  Высота
+                                </span>
+                                <div className="text-sm font-bold text-gray-800">
+                                  {selectedProductForDetail.heightTelescopic
+                                    ? selectedProductForDetail.heightTelescopic +
+                                      " мм"
+                                    : "—"}
+                                </div>
+                              </div>
+                            )}
+                            {selectedProductForDetail.drawerSubCategory ===
+                              "Системы ящиков" && (
+                              <div className="space-y-1">
+                                <span className="text-[10px] text-gray-400 uppercase font-black">
+                                  Тип ящика
+                                </span>
+                                <div className="text-sm font-bold text-gray-800">
+                                  {selectedProductForDetail.drawerType ||
+                                    "Стандартный"}
+                                </div>
+                              </div>
+                            )}
+                          </>
+                        )}
+                        {selectedProductForDetail.category ===
+                          "Кухонные модули" && (
+                          <>
+                            <div className="space-y-1">
+                              <span className="text-[10px] text-gray-400 uppercase font-black">
+                                Тип модуля
+                              </span>
+                              <div className="text-sm font-bold text-gray-800">
+                                {selectedProductForDetail.moduleType ||
+                                  "Стандартный"}
+                              </div>
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] text-gray-400 uppercase font-black">
+                                Группа модуля
+                              </span>
+                              <div className="text-sm font-bold text-gray-800">
+                                {selectedProductForDetail.moduleGroup || "—"}
+                              </div>
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] text-gray-400 uppercase font-black">
+                                Высота
+                              </span>
+                              <div className="text-sm font-bold text-gray-800">
+                                {selectedProductForDetail.moduleHeight
+                                  ? selectedProductForDetail.moduleHeight + " мм"
+                                  : "—"}
+                              </div>
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] text-gray-400 uppercase font-black">
+                                Глубина
+                              </span>
+                              <div className="text-sm font-bold text-gray-800">
+                                {selectedProductForDetail.moduleDepth
+                                  ? selectedProductForDetail.moduleDepth + " мм"
+                                  : "—"}
+                              </div>
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] text-gray-400 uppercase font-black">
+                                Материал
+                              </span>
+                              <div className="text-xs font-medium text-gray-600 italic">
+                                {selectedProductForDetail.moduleMaterial ||
+                                  "ЛДСП Nordeco Белый 16 мм"}
+                              </div>
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] text-gray-400 uppercase font-black">
+                                Кромка
+                              </span>
+                              <div className="text-xs font-medium text-gray-600 italic">
+                                {selectedProductForDetail.moduleEdge || "0,4 мм"}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                        {selectedProductForDetail.category === "Петли" && (
+                          <>
+                            <div className="space-y-1">
+                              <span className="text-[10px] text-gray-400 uppercase font-black">
+                                Производитель
+                              </span>
+                              <div className="text-sm font-bold text-gray-800">
+                                {selectedProductForDetail.manufacturer || "—"}
+                              </div>
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] text-gray-400 uppercase font-black">
+                                Тип петли
+                              </span>
+                              <div className="text-sm font-bold text-gray-800">
+                                {selectedProductForDetail.hingeType || "—"}
+                              </div>
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {selectedProductForDetail.requiredProducts && selectedProductForDetail.requiredProducts.length > 0 && (
+                      <div className="bg-blue-50/50 p-6 rounded-3xl border border-blue-100 space-y-4">
+                        <h4 className="text-[10px] font-black text-blue-700 uppercase tracking-widest border-b border-blue-200/50 pb-3 flex items-center gap-2">
+                          <Link className="w-3.5 h-3.5" />
+                          Обязательные сопутствующие товары
+                        </h4>
+                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+                          {selectedProductForDetail.requiredProducts.map((rp: any, idx: number) => {
+                            const cp = catalogProducts.find((item: any) => String(item.id) === String(rp.id));
+                            const cpCoeff = cp ? getProductCoefficient(cp, customerType, resolveBrandCoefficient) : 1;
+                            const cpPrice = cp ? (cp.purchasePrice ? Math.round(cp.purchasePrice * cpCoeff) : cp.price) : 0;
+                            const totalAddedPrice = rp.qty * cpPrice;
+                            return (
+                              <div key={idx} className="flex justify-between items-center bg-white p-3 rounded-xl border border-blue-100/40 text-xs text-left">
+                                <span className="font-semibold text-gray-700 truncate max-w-[240px]" title={cp?.name || `Товар [ID: ${rp.id}]`}>
+                                  {cp?.name || `Товар [ID: ${rp.id}]`} {cp ? `(${cpPrice.toLocaleString()} ₽)` : ""}
+                                </span>
+                                <span className="font-black text-blue-600 shrink-0">
+                                  + {totalAddedPrice.toLocaleString()} ₽
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        {(() => {
+                          const mainCoeff = getProductCoefficient(selectedProductForDetail, customerType, resolveBrandCoefficient);
+                          const mainPrice = selectedProductForDetail.purchasePrice ? Math.round(selectedProductForDetail.purchasePrice * mainCoeff) : (selectedProductForDetail.price || 0);
+                          let companionTotal = 0;
+                          selectedProductForDetail.requiredProducts.forEach((rp: any) => {
+                            const cp = catalogProducts.find((item: any) => String(item.id) === String(rp.id));
+                            if (cp) {
+                              const cpCoeff = getProductCoefficient(cp, customerType, resolveBrandCoefficient);
+                              const cpPrice = cp.purchasePrice ? Math.round(cp.purchasePrice * cpCoeff) : (cp.price || 0);
+                              companionTotal += rp.qty * cpPrice;
+                            }
+                          });
+                          const totalSetPrice = mainPrice + companionTotal;
+                          return (
+                            <div className="text-xs text-right text-gray-500 font-semibold pt-2 border-t border-blue-200/50">
+                              Итого комплект: <span className="text-blue-700 font-black text-sm">{totalSetPrice.toLocaleString()} ₽</span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+
+                    {(() => {
+                      let analogsList = [];
+                      if (selectedProductForDetail.analogs && selectedProductForDetail.analogs.length > 0) {
+                        analogsList = selectedProductForDetail.analogs
+                          .map((analogId: string) => catalogProducts.find((item: any) => String(item.id) === String(analogId)))
+                          .filter(Boolean);
+                      }
+
+                      if (analogsList.length === 0) return null;
+
+                      return (
+                        <div className="bg-amber-50/50 p-6 rounded-3xl border border-amber-100/70 space-y-4">
+                          <h4 className="text-[10px] font-black text-amber-800 uppercase tracking-widest border-b border-amber-200/50 pb-3 flex items-center gap-3">
+                            <Replace className="w-4 h-4 text-amber-600" />
+                            Доступные аналоги (замена в 1 клик)
+                          </h4>
+                          <div className="space-y-3 max-h-56 overflow-y-auto pr-1">
+                            {analogsList.map((analogProd: any, idx: number) => {
+                              // calculate current product price
+                              const currCoeff = getProductCoefficient(selectedProductForDetail, customerType, resolveBrandCoefficient);
+                              const currPrice = selectedProductForDetail.purchasePrice
+                                ? Math.round(selectedProductForDetail.purchasePrice * currCoeff)
+                                : selectedProductForDetail.price;
+
+                              // calculate analog price
+                              const analogCoeff = getProductCoefficient(analogProd, customerType, resolveBrandCoefficient);
+                              const analogPrice = analogProd.purchasePrice
+                                ? Math.round(analogProd.purchasePrice * analogCoeff)
+                                : analogProd.price;
+
+                              const diff = analogPrice - currPrice;
+                              const diffRepr = diff > 0 
+                                ? `дороже на ${diff.toLocaleString()} ₽` 
+                                : diff < 0 
+                                ? `дешевле на ${Math.abs(diff).toLocaleString()} ₽`
+                                : "такая же цена";
+
+                              const isCheaper = diff < 0;
+                              const isMoreExpensive = diff > 0;
+
+                              return (
+                                <div key={idx} className="flex justify-between items-center bg-white p-3 rounded-xl border border-amber-100 shadow-sm hover:border-amber-300 transition-colors text-left">
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    {(analogProd.images?.[0] || analogProd.image) && (
+                                      <div className="w-8 h-8 rounded bg-gray-100 overflow-hidden border border-gray-150 flex-shrink-0">
+                                        <img 
+                                          src={analogProd.images?.[0] || analogProd.image} 
+                                          alt={analogProd.name} 
+                                          className="w-full h-full object-cover" 
+                                        />
+                                      </div>
+                                    )}
+                                    <div className="min-w-0">
+                                      <div className="font-bold text-gray-800 text-xs truncate max-w-[180px] sm:max-w-[300px]" title={analogProd.name}>
+                                        {analogProd.name}
+                                      </div>
+                                      <div className="flex items-center gap-1.5 mt-0.5 text-[10px] font-bold">
+                                        <span className="text-gray-500 font-semibold">
+                                          {analogPrice.toLocaleString()} ₽
+                                        </span>
+                                        <span className={cn(
+                                          "px-1.5 py-0.2 rounded font-black uppercase text-[8px]",
+                                          isCheaper ? "bg-emerald-50 text-emerald-800" : isMoreExpensive ? "bg-rose-50 text-rose-800" : "bg-gray-100 text-gray-600"
+                                        )}>
+                                          {diffRepr}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSwapProductWithAnalog(selectedProductForDetail, analogProd)}
+                                    className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs transition-colors shadow-sm shrink-0 cursor-pointer active:scale-95"
+                                  >
+                                    Заменить
+                                  </button>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    <div className="space-y-4 text-left">
+                      <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest">
+                        Описание
+                      </h4>
+                      <p className="text-gray-600 leading-relaxed text-sm bg-blue-50/30 p-6 rounded-2xl border border-blue-50 italic">
+                        {selectedProductForDetail.description ||
+                          "Описание не указано"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         )}
 
         {printSetData && (

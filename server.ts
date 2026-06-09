@@ -411,6 +411,64 @@ async function startServer() {
     }
   });
 
+  app.get("/api/products/search-duplicates", async (req, res) => {
+    const { article, name, currentCompanyId } = req.query;
+    try {
+      if (!article && !name) {
+        return res.json([]);
+      }
+      
+      const cleanArticle = typeof article === 'string' ? article.trim().toLowerCase() : "";
+      const cleanName = typeof name === 'string' ? name.trim().toLowerCase() : "";
+      
+      const docs = await prisma.dbDocument.findMany({
+        where: {
+          collection: {
+            startsWith: "companies/",
+            endsWith: "/products"
+          }
+        }
+      });
+      
+      const duplicates: any[] = [];
+      const seenIds = new Set<string>();
+
+      for (const doc of docs) {
+        if (currentCompanyId && doc.collection.includes(`companies/${currentCompanyId}/`)) {
+          continue;
+        }
+        
+        const data = JSON.parse(doc.data);
+        const matchArticle = cleanArticle && data.article && String(data.article).trim().toLowerCase() === cleanArticle;
+        const matchName = cleanName && data.name && String(data.name).trim().toLowerCase() === cleanName;
+        
+        if (matchArticle || matchName) {
+          const ukey = `${doc.collection}-${doc.docId}`;
+          if (seenIds.has(ukey)) continue;
+          seenIds.add(ukey);
+
+          duplicates.push({
+            id: doc.docId,
+            companyId: doc.collection.split('/')[1],
+            name: data.name,
+            article: data.article,
+            description: data.description,
+            images: data.images || (data.image ? [data.image] : []),
+            color: data.color,
+            unit: data.unit,
+            manufacturer: data.manufacturer,
+            category: data.category,
+          });
+        }
+      }
+      
+      res.json(duplicates);
+    } catch (e) {
+      console.error("Error searching duplicates:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   // TimeWeb Database Document API
   app.get("/api/db/doc/*", async (req, res) => {
     const docPath = req.params[0];
