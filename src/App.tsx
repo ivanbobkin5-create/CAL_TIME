@@ -637,6 +637,8 @@ function cn(...inputs: ClassValue[]) {
 
 type ProductionFormat = "own" | "contract";
 
+const isDryerCategory = (cat: string) => cat === "Посудосушитель" || cat === "Посудосушители";
+
 const INITIAL_PRODUCT_CATEGORIES = [
   "Столешницы и стеновые",
   "Крепежные элементы и цоколь",
@@ -7442,11 +7444,12 @@ const SummaryView = ({
       }
       
       if (!matchedProd) {
-        const searchCategory = category === "Посудосушитель" ? "Оснащение шкафов" : category;
+        const searchCategory = isDryerCategory(category) ? "Оснащение шкафов" : category;
         let inCat = catalogProducts.filter((p: any) => p.category === searchCategory);
         
-        if (category === "Петли" && fitParams.hingeType) {
-          inCat = inCat.filter((p: any) => p.hingeType === fitParams.hingeType);
+        if (category === "Петли") {
+          const hingeToUse = fitParams.hingeType && fitParams.hingeType !== "" ? fitParams.hingeType : "Накладная";
+          inCat = inCat.filter((p: any) => p.hingeType === hingeToUse);
         } else if (category === "Системы выдвижения") {
           if (fitParams.drawerSubCategory && fitParams.drawerSubCategory !== "auto") {
             const withSub = inCat.filter((p: any) => p.drawerSubCategory === fitParams.drawerSubCategory);
@@ -7456,7 +7459,7 @@ const SummaryView = ({
             const withDepth = inCat.filter((p: any) => p.depth === fitParams.depth || String(p.name).includes(fitParams.depth));
             if (withDepth.length > 0) inCat = withDepth;
           }
-        } else if (category === "Посудосушитель") {
+        } else if (isDryerCategory(category)) {
           const withWidth = inCat.filter((p: any) => 
             String(p.name).includes(fitParams.width || "") || 
             (p.width && String(p.width) === fitParams.width) ||
@@ -7495,7 +7498,7 @@ const SummaryView = ({
         } else if (category === "Системы выдвижения") {
           const actualSub = matchedProd?.drawerSubCategory || fitParams.drawerSubCategory;
           customSub = `${category} (${actualSub === "Направляющие скрытого монтажа" ? "Скрытого монт." : actualSub === "Телескопические направляющие" ? "Телескоп." : "Ящик"} ${fitParams.depth}мм)`;
-        } else if (category === "Посудосушитель") {
+        } else if (isDryerCategory(category)) {
           customSub = `Посудосушитель (Ширина ${fitParams.width}мм)`;
         }
 
@@ -8563,7 +8566,7 @@ const SummaryView = ({
               const keyString = fitItem.demandKey;
               const fitParams = fitItem.fitParams;
               
-              const searchCategory = cat === "Посудосушитель" ? "Оснащение шкафов" : cat;
+              const searchCategory = isDryerCategory(cat) ? "Оснащение шкафов" : cat;
               let opts = catalogProducts.filter((p) => p.category === searchCategory);
               
               if (cat === "Петли" && fitParams.hingeType) {
@@ -8582,7 +8585,7 @@ const SummaryView = ({
                   if (fitParams.depth && (b.depth === fitParams.depth || String(b.name).includes(fitParams.depth))) scoreB += 1;
                   return scoreB - scoreA;
                 });
-              } else if (cat === "Посудосушитель" && fitParams.width) {
+              } else if (isDryerCategory(cat) && fitParams.width) {
                 opts = [...opts].sort((a, b) => {
                   let scoreA = 0;
                   let scoreB = 0;
@@ -13255,7 +13258,7 @@ const ProductsView = ({
   const allDryerBrands = useMemo(() => {
     const brands = new Set<string>(["Boyard", "Inoxa", "Vibo", "Rejs", "Lemi", ...addedDryerBrands]);
     catalogProducts
-      .filter((p) => p.category === "Посудосушитель" && p.manufacturer)
+      .filter((p) => isDryerCategory(p.category) && p.manufacturer)
       .forEach((p) => brands.add(p.manufacturer));
     return Array.from(brands).sort();
   }, [catalogProducts, addedDryerBrands]);
@@ -13263,7 +13266,7 @@ const ProductsView = ({
   const availableDryerWidths = useMemo(() => {
     const widths = new Set<string>();
     catalogProducts
-      .filter((p) => p.category === "Посудосушитель" && p.dryerWidth)
+      .filter((p) => isDryerCategory(p.category) && p.dryerWidth)
       .forEach((p) => widths.add(String(p.dryerWidth)));
     return Array.from(widths).sort((a, b) => parseInt(a) - parseInt(b));
   }, [catalogProducts]);
@@ -13764,17 +13767,17 @@ const ProductsView = ({
       }
 
       let matchesDryerWidth = true;
-      if (selectedCategory === "Посудосушитель" && dryerWidthFilter) {
+      if (isDryerCategory(selectedCategory) && dryerWidthFilter) {
         matchesDryerWidth = String(p.dryerWidth) === String(dryerWidthFilter);
       }
 
       let matchesDryerBase = true;
-      if (selectedCategory === "Посудосушитель" && dryerBaseFilter) {
+      if (isDryerCategory(selectedCategory) && dryerBaseFilter) {
         matchesDryerBase = p.dryerBase === dryerBaseFilter;
       }
 
       let matchesDryerBrand = true;
-      if (selectedCategory === "Посудосушитель" && dryerBrandFilter) {
+      if (isDryerCategory(selectedCategory) && dryerBrandFilter) {
         matchesDryerBrand = p.manufacturer === dryerBrandFilter;
       }
 
@@ -14310,7 +14313,7 @@ const ProductsView = ({
         </div>
       )}
 
-      {selectedCategory === "Посудосушитель" && (
+      {isDryerCategory(selectedCategory) && (
         <div className="flex flex-wrap items-center gap-4 mb-6 p-4 bg-teal-50/50 rounded-2xl border border-teal-100 animate-in fade-in slide-in-from-top-2">
           <span className="text-[10px] font-black text-teal-600 uppercase tracking-widest flex items-center gap-1.5">
             <Filter className="w-3.5 h-3.5" />
@@ -14345,8 +14348,8 @@ const ProductsView = ({
               className="px-2 py-1 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-600 outline-none focus:ring-2 focus:ring-teal-500 transition-all"
             >
               <option value="">Все базы</option>
-              <option value="В нижнюю базу">В нижнюю базу</option>
-              <option value="В верхнюю базу">В верхнюю базу</option>
+              <option value="Нижняя база">Нижняя база</option>
+              <option value="Верхняя база">Верхняя база</option>
             </select>
           </div>
 
@@ -14911,6 +14914,50 @@ const ProductsView = ({
                         </div>
                       </div>
 
+                      {isDryerCategory(newProduct.category) && (
+                        <div className="mt-4 p-4 bg-emerald-50 rounded-xl space-y-4">
+                          <div>
+                            <label className="block text-sm font-bold text-emerald-900 mb-2">База</label>
+                            <select
+                              value={newProduct.dryerBase || "Верхняя"}
+                              onChange={(e) => setNewProduct(prev => ({...prev, dryerBase: e.target.value}))}
+                              className="w-full px-4 py-2 border border-emerald-200 rounded-lg"
+                            >
+                              <option value="Нижняя база">Нижняя база</option>
+                              <option value="Верхняя база">Верхняя база</option>
+                            </select>
+                          </div>
+                      
+                          <div>
+                            <label className="block text-sm font-bold text-emerald-900 mb-2">Ширина (мм)</label>
+                            <input
+                              type="number"
+                              value={newProduct.dryerWidth || ""}
+                              onChange={(e) => setNewProduct(prev => ({...prev, dryerWidth: e.target.value}))}
+                              className="w-full px-4 py-2 border border-emerald-200 rounded-lg"
+                              placeholder="Например: 600"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-bold text-emerald-900 mb-2">Бренд</label>
+                            <div className="flex gap-2">
+                             <input
+                               type="text"
+                               value={newProduct.manufacturer || ""}
+                               onChange={(e) => setNewProduct(prev => ({...prev, manufacturer: e.target.value}))}
+                               className="flex-1 px-4 py-2 border border-emerald-200 rounded-lg"
+                               placeholder="Введите или выберите бренд"
+                               list="dryer-brands"
+                             />
+                             <datalist id="dryer-brands">
+                               {availableDryerBrands.map(brand => <option key={brand} value={brand} />)}
+                             </datalist>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
                       <div className="mt-6 border-t border-emerald-100 pt-4">
                         <div className="flex items-center justify-between mb-3">
                           <span className="text-sm font-bold text-emerald-950">
@@ -14957,7 +15004,7 @@ const ProductsView = ({
                                           qty: fit.qty || 1,
                                           ...(val === "Петли" ? { hingeType: "Накладная" } : {}),
                                           ...(val === "Системы выдвижения" ? { drawerSubCategory: "auto", depth: "450" } : {}),
-                                          ...(val === "Посудосушитель" ? { width: "600" } : {})
+                                          ...(isDryerCategory(val) ? { width: "600" } : {})
                                         };
                                         setNewProduct((prev) => ({ ...prev, moduleFittings: updated }));
                                       }}
@@ -14971,7 +15018,7 @@ const ProductsView = ({
                                         "Крепежные элементы и цоколь",
                                         "Выдвижные корзины",
                                         "Оснащение шкафов",
-                                        "Посудосушитель"
+                                        "Посудосушители"
                                       ].map((cat) => (
                                         <option key={cat} value={cat}>{cat}</option>
                                       ))}
@@ -15082,7 +15129,7 @@ const ProductsView = ({
                                       </div>
                                     )}
 
-                                    {fit.category === "Посудосушитель" && (
+                                    {isDryerCategory(fit.category) && (
                                       <div>
                                         <label className="block text-[9px] uppercase font-extrabold text-emerald-800 mb-0.5">
                                           Ширина сушки (мм)
@@ -15103,7 +15150,7 @@ const ProductsView = ({
                                       </div>
                                     )}
 
-                                    {fit.category !== "Петли" && fit.category !== "Системы выдвижения" && fit.category !== "Посудосушитель" && (
+                                    {fit.category !== "Петли" && fit.category !== "Системы выдвижения" && !isDryerCategory(fit.category) && (
                                       <span className="text-[10px] text-gray-400 italic block mt-2">Параметры не требуются</span>
                                     )}
                                   </div>
@@ -15677,7 +15724,7 @@ const ProductsView = ({
                     </div>
                   )}
 
-                  {newProduct.category === "Посудосушитель" && (
+                  {isDryerCategory(newProduct.category) && (
                     <div className="space-y-4 p-5 bg-teal-50/40 border border-teal-100 rounded-2xl animate-in slide-in-from-top-2">
                       <h4 className="text-sm font-bold text-teal-950 flex items-center gap-1.5 border-b border-teal-100 pb-2">
                         <Sparkles className="w-4 h-4 text-teal-600" />
@@ -16809,7 +16856,7 @@ const ProductsView = ({
                           )}
                         </div>
                       )}
-                    {product.category === "Посудосушитель" &&
+                    {isDryerCategory(product.category) &&
                       (product.dryerWidth || product.dryerBase) && (
                         <div className="flex flex-wrap gap-1.5 mb-3">
                           {product.dryerWidth && (
@@ -17819,6 +17866,18 @@ export default function App() {
   const [lastSavedHash, setLastSavedHash] = useState<string>("");
   const isFirstLoad = React.useRef(true);
   const lastWriteAt = React.useRef<number>(0);
+  const isDirtyRef = React.useRef<boolean>(false);
+
+  useEffect(() => {
+    const handler = (event: BeforeUnloadEvent) => {
+      if (isDirtyRef.current) {
+        event.preventDefault();
+        event.returnValue = '';
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, []);
 
   useEffect(() => {
     localStorage.setItem("mebcalc_autosave", autoSaveEnabled.toString());
@@ -18984,8 +19043,6 @@ export default function App() {
       return;
     }
 
-    if (!autoSaveEnabled || !currentProjectId || !currentProjectName) return;
-
     const stableTotal = Math.round((currentProjectTotal || 0) * 100);
     const rawState = {
       total: stableTotal,
@@ -18997,6 +19054,9 @@ export default function App() {
     
     // Custom stringifier to deal with circular refs (shouldn't be any, but just in case)
     const currentStateHash = JSON.stringify(rawState);
+    isDirtyRef.current = currentStateHash !== lastSavedHash;
+
+    if (!autoSaveEnabled || !currentProjectId || !currentProjectName) return;
 
     if (currentStateHash !== lastSavedHash) {
       const timer = setTimeout(() => {
