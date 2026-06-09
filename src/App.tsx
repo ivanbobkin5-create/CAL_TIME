@@ -2888,7 +2888,7 @@ const PriceView = ({
               "Подкатегория/Бренд": brand,
               "Тип данных": "Категория фасада",
               Наименование: c.name,
-              Цена: {Math.round(c.purchasePrice || 0)},
+              Цена: c.purchasePrice || 0,
               "Мин. объем": facadeSettings?.minOrderVolume || 0,
               "ID/Ключ": `facade|${brand}|cat|${c.id}`,
             };
@@ -7446,8 +7446,7 @@ const SummaryView = ({
         let inCat = catalogProducts.filter((p: any) => p.category === searchCategory);
         
         if (category === "Петли" && fitParams.hingeType) {
-          const withHinge = inCat.filter((p: any) => p.hingeType === fitParams.hingeType);
-          if (withHinge.length > 0) inCat = withHinge;
+          inCat = inCat.filter((p: any) => p.hingeType === fitParams.hingeType);
         } else if (category === "Системы выдвижения") {
           if (fitParams.drawerSubCategory && fitParams.drawerSubCategory !== "auto") {
             const withSub = inCat.filter((p: any) => p.drawerSubCategory === fitParams.drawerSubCategory);
@@ -8614,7 +8613,7 @@ const SummaryView = ({
                     </div>
                     {activeProduct && (
                       <div className="text-[10px] text-gray-500 mt-0.5">
-                        Сегмент: <span className="font-bold text-emerald-700">{activeProduct.segment || "—"}</span> | Цена: <span className="font-bold">{Math.round(activeProduct.price)} ₽</span> | Необх: <span className="font-bold text-emerald-950">{fitItem.quantity} шт</span>
+                        Сегмент: <span className="font-bold text-emerald-700">{activeProduct.segment || "—"}</span> | Цена: <span className="font-bold">{activeProduct.price} ₽</span> | Необх: <span className="font-bold text-emerald-950">{fitItem.quantity} шт</span>
                       </div>
                     )}
                   </div>
@@ -8638,7 +8637,7 @@ const SummaryView = ({
                     <option value="auto">Автоподбор ({activeSegment})</option>
                     {opts.map((opt) => (
                       <option key={opt.id} value={opt.id}>
-                        [{opt.segment || "—"}] {opt.name} ({Math.round(opt.price)} ₽)
+                        [{opt.segment || "—"}] {opt.name} ({opt.price} ₽)
                       </option>
                     ))}
                   </select>
@@ -8684,7 +8683,7 @@ const SummaryView = ({
                       </div>
                       {activeProduct && (
                         <div className="text-[10px] text-gray-500 mt-0.5">
-                          Сегмент: <span className="font-bold text-emerald-700">{activeProduct.segment || "—"}</span> | Цена: <span className="font-bold">{Math.round(activeProduct.price)} ₽</span>
+                          Сегмент: <span className="font-bold text-emerald-700">{activeProduct.segment || "—"}</span> | Цена: <span className="font-bold">{activeProduct.price} ₽</span>
                         </div>
                       )}
                     </div>
@@ -11491,7 +11490,263 @@ const SettingsView = ({
 
                       <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-3">
                         <label className="block text-sm font-bold text-gray-700 mb-2">
-                                       <select
+                          Контакты
+                        </label>
+                        <div className="relative">
+                          <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300" />
+                          <input
+                            type="text"
+                            placeholder="Сайт"
+                            value={companyInfo.website || ""}
+                            onChange={(e) =>
+                              setCompanyInfo({
+                                ...companyInfo,
+                                website: e.target.value,
+                              })
+                            }
+                            className="w-full pl-10 pr-4 py-2 bg-transparent border-b border-gray-200 focus:border-blue-500 outline-none text-sm"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <input
+                            type="text"
+                            placeholder="VK"
+                            value={companyInfo.socials?.vk || ""}
+                            onChange={(e) =>
+                              setCompanyInfo({
+                                ...companyInfo,
+                                socials: {
+                                  ...companyInfo.socials,
+                                  vk: e.target.value,
+                                },
+                              })
+                            }
+                            className="w-full px-2 py-2 bg-transparent border-b border-gray-200 focus:border-blue-500 outline-none text-xs"
+                          />
+                          <input
+                            type="text"
+                            placeholder="Telegram"
+                            value={companyInfo.socials?.telegram || ""}
+                            onChange={(e) =>
+                              setCompanyInfo({
+                                ...companyInfo,
+                                socials: {
+                                  ...companyInfo.socials,
+                                  telegram: e.target.value,
+                                },
+                              })
+                            }
+                            className="w-full px-2 py-2 bg-transparent border-b border-gray-200 focus:border-blue-500 outline-none text-xs"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4 lg:col-span-1">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                      Банковские реквизиты
+                    </label>
+                    <div className="space-y-3">
+                      <input
+                        type="text"
+                        placeholder="Наименование банка"
+                        value={companyInfo.bankName}
+                        onChange={(e) =>
+                          setCompanyInfo({
+                            ...companyInfo,
+                            bankName: e.target.value,
+                          })
+                        }
+                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm placeholder:text-gray-300"
+                      />
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-gray-300">
+                          БИК
+                        </span>
+                        <input
+                          type="text"
+                          value={companyInfo.bik}
+                          onChange={(e) =>
+                            setCompanyInfo({
+                              ...companyInfo,
+                              bik: e.target.value,
+                            })
+                          }
+                          className="w-full pl-12 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                        />
+                      </div>
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-gray-300 uppercase">
+                          Р/С
+                        </span>
+                        <input
+                          type="text"
+                          placeholder="Расчетный счет"
+                          value={companyInfo.rs}
+                          onChange={(e) =>
+                            setCompanyInfo({
+                              ...companyInfo,
+                              rs: e.target.value,
+                            })
+                          }
+                          className="w-full pl-12 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                        />
+                      </div>
+                      <div className="relative">
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-gray-300 uppercase">
+                          К/С
+                        </span>
+                        <input
+                          type="text"
+                          placeholder="Корр. счет"
+                          value={companyInfo.ks}
+                          onChange={(e) =>
+                            setCompanyInfo({
+                              ...companyInfo,
+                              ks: e.target.value,
+                            })
+                          }
+                          className="w-full pl-12 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
+        )}
+
+        {activeSubTab === "bitrix24" && (
+          <div className="space-y-12 animate-in fade-in duration-300">
+            <section>
+              <div className="flex items-center gap-3 mb-8">
+                <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600">
+                  <Link className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-black text-gray-900 tracking-tight font-sans">
+                    Интеграция с Bitrix24
+                  </h3>
+                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-1 font-sans">
+                    Свяжите ваши заказы с CRM
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-8">
+                <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100">
+                  <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
+                    Ссылка входящего вебхука
+                  </label>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="https://yourgroup.bitrix24.ru/rest/..."
+                      className="flex-1 px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                      value={companyData?.bitrix24?.webhookUrl || ""}
+                      onChange={(e) =>
+                        setCompanyData((prev: any) => ({
+                          ...prev,
+                          bitrix24: {
+                            ...(prev?.bitrix24 || {}),
+                            webhookUrl: e.target.value,
+                          },
+                        }))
+                      }
+                    />
+                    <button
+                      onClick={async () => {
+                        const url = companyData?.bitrix24?.webhookUrl;
+                        if (!url) {
+                          showAlert("Ошибка", "Сначала укажите ссылку на вебхук");
+                          return;
+                        }
+                        try {
+                          const res = await fetch("/api/bitrix24/test", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ webhookUrl: url })
+                          });
+                          const data = await res.json();
+                          if (data.success) {
+                            showAlert("Успех", "Соединение с Bitrix24 успешно установлено! Списки воронок и стадий обновлены.");
+                            await loadB24Categories(url, true);
+                            // Add a small delay to respect Bitrix24 rate limits (2 requests per second)
+                            await new Promise(resolve => setTimeout(resolve, 600));
+                            const catId = companyData?.bitrix24?.categoryId || "0";
+                            await loadB24Stages(url, catId, true);
+                          } else {
+                            showAlert("Ошибка соединения", data.error || "Неизвестная ошибка");
+                          }
+                        } catch (e) {
+                          showAlert("Ошибка", "Не удалось связаться с сервером");
+                        }
+                      }}
+                      className="px-6 py-2 bg-blue-600 text-white rounded-2xl text-xs font-bold hover:bg-blue-700 transition-colors flex items-center gap-2"
+                    >
+                      <Wifi className="w-4 h-4" />
+                      Проверить связь и обновить списки
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                    <div>
+                      <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
+                        Воронка сделок (categoryId)
+                      </label>
+                      {b24Categories.length > 0 ? (
+                        <select
+                          className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold text-gray-700 appearance-none"
+                          style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234B5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundPosition: 'right 16px center', backgroundSize: '16px', backgroundRepeat: 'no-repeat' }}
+                          value={companyData?.bitrix24?.categoryId || "0"}
+                          onChange={(e) => {
+                            const newCatId = e.target.value;
+                            setCompanyData((prev: any) => ({
+                              ...prev,
+                              bitrix24: {
+                                ...(prev?.bitrix24 || {}),
+                                categoryId: newCatId,
+                              },
+                            }));
+                            const url = companyData?.bitrix24?.webhookUrl;
+                            if (url) {
+                              loadB24Stages(url, newCatId, true);
+                            }
+                          }}
+                        >
+                          {b24Categories.map((cat) => (
+                            <option key={cat.id} value={cat.id}>
+                              {cat.name} (ID: {cat.id})
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          placeholder="Например: 0"
+                          className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                          value={companyData?.bitrix24?.categoryId || ""}
+                          onChange={(e) =>
+                            setCompanyData((prev: any) => ({
+                              ...prev,
+                              bitrix24: {
+                                ...(prev?.bitrix24 || {}),
+                                categoryId: e.target.value,
+                              },
+                            }))
+                          }
+                        />
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
+                        Стадия сделки (stageId)
+                      </label>
+                      {b24Stages.length > 0 ? (
+                        <select
                           className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold text-gray-700 appearance-none"
                           style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234B5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundPosition: 'right 16px center', backgroundSize: '16px', backgroundRepeat: 'no-repeat' }}
                           value={companyData?.bitrix24?.stageId || ""}
@@ -11552,306 +11807,6 @@ const SettingsView = ({
                                 },
                               }));
                               const url = companyData?.bitrix24?.webhookUrl;
-                              if (url) {
-                                loadProcurementB24Stages(url, newCatId);
-                              }
-                            }}
-                          >
-                            {b24Categories.map((cat) => (
-                              <option key={cat.id} value={cat.id}>
-                                {cat.name} (ID: {cat.id})
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input
-                            type="text"
-                            placeholder="ID воронки"
-                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
-                            value={companyData?.bitrix24?.procurementCategoryId || ""}
-                            onChange={(e) =>
-                              setCompanyData((prev: any) => ({
-                                ...prev,
-                                bitrix24: {
-                                  ...(prev?.bitrix24 || {}),
-                                  procurementCategoryId: e.target.value,
-                                },
-                              }))
-                            }
-                          />
-                        )}
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
-                          Стадия для Снабжения (Procurement stageId)
-                        </label>
-                        {b24ProcurementStages.length > 0 ? (
-                          <select
-                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold text-gray-700 appearance-none"
-                            style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234B5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundPosition: 'right 16px center', backgroundSize: '16px', backgroundRepeat: 'no-repeat' }}
-                            value={companyData?.bitrix24?.procurementStageId || ""}
-                            onChange={(e) =>
-                              setCompanyData((prev: any) => ({
-                                ...prev,
-                                bitrix24: {
-                                  ...(prev?.bitrix24 || {}),
-                                  procurementStageId: e.target.value,
-                                },
-                              }))
-                            }
-                          >
-                            <option value="">-- Выберите стадию --</option>
-                            {b24ProcurementStages.map((st) => (
-                              <option key={st.id} value={st.id}>
-                                {st.name}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input
-                            type="text"
-                            placeholder="ID стадии"
-                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
-                            value={companyData?.bitrix24?.procurementStageId || ""}
-                            onChange={(e) =>
-                              setCompanyData((prev: any) => ({
-                                ...prev,
-                                bitrix24: {
-                                  ...(prev?.bitrix24 || {}),
-                                  procurementStageId: e.target.value,
-                                },
-                              }))
-                            }
-                          />
-                        )}
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
-                          Финальная стадия (Deal disappears after)
-                        </label>
-                        {b24ProcurementStages.length > 0 ? (
-                          <select
-                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold text-gray-700 appearance-none"
-                            style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234B5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundPosition: 'right 16px center', backgroundSize: '16px', backgroundRepeat: 'no-repeat' }}
-                            value={companyData?.bitrix24?.procurementFinalStageId || ""}
-                            onChange={(e) =>
-                              setCompanyData((prev: any) => ({
-                                ...prev,
-                                bitrix24: {
-                                  ...(prev?.bitrix24 || {}),
-                                  procurementFinalStageId: e.target.value,
-                                },
-                              }))
-                            }
-                          >
-                            <option value="">-- Выберите стадию --</option>
-                            {b24ProcurementStages.map((st) => (
-                              <option key={st.id} value={st.id}>
-                                {st.name}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input
-                            type="text"
-                            placeholder="ID финальной стадии"
-                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
-                            value={companyData?.bitrix24?.procurementFinalStageId || ""}
-                            onChange={(e) =>
-                              setCompanyData((prev: any) => ({
-                                ...prev,
-                                bitrix24: {
-                                  ...(prev?.bitrix24 || {}),
-                                  procurementFinalStageId: e.target.value,
-                                },
-                              }))
-                            }
-                          />
-                        )}
-                      </div>
-                    </div>
-
-                  <p className="text-[11px] text-gray-500 mt-3 leading-relaxed">
-                    Инструкция: Зайдите в Битрикс24 &rarr; Приложения &rarr;
-                    Вебхуки &rarr; Добавить входящий вебхук. Скопируйте ссылку и
-                    вставьте сюда.
-                  </p>
-
-                  <div className="p-6 bg-blue-50/50 rounded-2xl border border-blue-100 mt-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="text-sm font-bold text-gray-900 font-sans">
-                          Раздел "Снабжение"
-                        </h4>
-                        <p className="text-xs text-gray-500 mt-1 font-sans">
-                          Включите этот раздел, чтобы управлять закупками и контролировать расходы.
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => setCompanyData((prev: any) => ({
-                          ...prev,
-                          procurementEnabled: !prev.procurementEnabled
-                        }))}
-                        className={cn(
-                          "relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-200 focus:outline-none",
-                          companyData?.procurementEnabled ? "bg-blue-600" : "bg-gray-200"
-                        )}
-                      >
-                        <span
-                          className={cn(
-                            "inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200",
-                            companyData?.procurementEnabled ? "translate-x-6" : "translate-x-1"
-                          )}
-                        />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4">
-                  <h4 className="text-sm font-bold text-gray-900 font-sans">
-                    Настройка полей (API ID)
-                  </h4>
-                  <div className="bg-white border border-gray-100 rounded-2xl overflow-hidden shadow-sm">
-                    <table className="w-full text-sm text-left">
-                      <thead className="text-[10px] text-gray-400 uppercase font-black bg-gray-50/50">
-                        <tr>
-                          <th className="px-6 py-4">Поле в приложении</th>
-                          <th className="px-6 py-4">
-                            ID в Bitrix24 (например, UF_CRM_...)
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-50">
-                        {[
-                          { key: "readyDate", label: "СНАБЖЕНИЕ: Дата готовности" },
-                          { key: "expenseLDSP", label: "СНАБЖЕНИЕ: ЛДСП / Кромка / ХДФ" },
-                          { key: "expenseFacades", label: "СНАБЖЕНИЕ: Фасады пильные" },
-                          { key: "expenseCustomFacades", label: "СНАБЖЕНИЕ: Фасады заказные" },
-                          { key: "expenseHardware", label: "СНАБЖЕНИЕ: Фурнитура" },
-                          { key: "expenseMirrors", label: "СНАБЖЕНИЕ: Зеркала / Двери / Стекла" },
-                          { key: "expenseCountertops", label: "СНАБЖЕНИЕ: Столешницы и стеновые" },
-                          { key: "expenseStoneCountertops", label: "СНАБЖЕНИЕ: Столешницы (камень/компакт)" },
-                          { key: "contractNumber", label: "Номер договора" },
-                          { key: "totalSum", label: "Сумма договора" },
-                          { key: "contractDate", label: "Дата договора" },
-                          { key: "hardwareSum", label: "Сумма фурнитуры" },
-                          { key: "cabinetSum", label: "Стоимость корпуса" },
-                          { key: "facadeSum", label: "Стоимость фасадов" },
-                          {
-                            key: "customFacadeSum",
-                            label: "Стоимость заказных фасадов",
-                          },
-                          { key: "assemblySum", label: "Стоимость сборки" },
-                          { key: "deliverySum", label: "Стоимость доставки" },
-                          {
-                            key: "deliveryComment",
-                            label: "Комментарий для доставки",
-                          },
-                          { key: "corpPlusFacadesSum", label: "Стоимость продукции: (Корпус+Фасады)" },
-                          { key: "expenseCorp", label: "Расходы на корпус" },
-                          { key: "expenseAppliances", label: "Расходы техника" },
-                        ].filter(field => !field.label.startsWith("СНАБЖЕНИЕ") || companyData?.procurementEnabled).map((field) => (
-                          <tr
-                            key={field.key}
-                            className="hover:bg-gray-50/50 transition-colors"
-                          >
-                            <td className="px-6 py-4 text-gray-900 font-semibold">
-                              {field.label}
-                            </td>
-                            <td className="px-6 py-3">
-                              <input
-                                type="text"
-                                placeholder="UF_CRM_1234567890"
-                                className="w-full px-4 py-2 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-xs font-bold"
-                                value={
-                                  companyData?.bitrix24?.fieldMappings?.[
-                                    field.key
-                                  ] || ""
-                                }
-                                onChange={(e) => {
-                                  const mappings = {
-                                    ...(companyData?.bitrix24?.fieldMappings ||
-                                      {}),
-                                  };
-                                  mappings[field.key] = e.target.value;
-                                  setCompanyData((prev: any) => ({
-                                    ...prev,
-                                    bitrix24: {
-                                      ...(prev.bitrix24 || {}),
-                                      fieldMappings: mappings,
-                                    },
-                                  }));
-                                }}
-                              />
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>label: "СНАБЖЕНИЕ: Фасады пильные" },
-                            { key: "expenseCustomFacades", label: "СНАБЖЕНИЕ: Фасады заказные" },
-                            { key: "expenseHardware", label: "СНАБЖЕНИЕ: Фурнитура" },
-                            { key: "expenseMirrors", label: "СНАБЖЕНИЕ: Зеркала / Двери / Стекла" },
-                            { key: "expenseCountertops", label: "СНАБЖЕНИЕ: Столешницы и стеновые" },
-                            { key: "expenseStoneCountertops", label: "СНАБЖЕНИЕ: Столешницы (камень/компакт)" },
-                            { key: "contractNumber", label: "Номер договора" },
-                            { key: "totalSum", label: "Сумма договора" },
-                            { key: "contractDate", label: "Дата договора" },
-                            { key: "hardwareSum", label: "Сумма фурнитуры" },
-                            { key: "cabinetSum", label: "Стоимость корпуса" },
-                            { key: "facadeSum", label: "Стоимость фасадов" },
-                            {
-                              key: "customFacadeSum",
-                              label: "Стоимость заказных фасадов",
-                            },
-                            { key: "assemblySum", label: "Стоимость сборки" },
-                            { key: "deliverySum", label: "Стоимость доставки" },
-                            {
-                              key: "deliveryComment",
-                              label: "Комментарий для доставки",
-                            },
-                            { key: "corpPlusFacadesSum", label: "Стоимость продукции: (Корпус+Фасады)" },
-                            { key: "expenseCorp", label: "Расходы на корпус" },
-                            { key: "expenseAppliances", label: "Расходы техника" },
-                          ].filter(field => !field.label.startsWith("СНАБЖЕНИЕ") || companyData?.procurementEnabled).map((field) => (
-                            <tr
-                              key={field.key}
-                              className="hover:bg-gray-50/50 transition-colors"
-                            >
-                              <td className="px-6 py-4 text-gray-900 font-semibold">
-                                {field.label}
-                              </td>
-                              <td className="px-6 py-3">
-                                <input
-                                  type="text"
-                                  placeholder="UF_CRM_1234567890"
-                                  className="w-full px-4 py-2 bg-gray-50 border border-gray-100 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-xs font-bold"
-                                  value={
-                                    companyData?.bitrix24?.fieldMappings?.[
-                                      field.key
-                                    ] || ""
-                                  }
-                                  onChange={(e) => {
-                                    const mappings = {
-                                      ...(companyData?.bitrix24?.fieldMappings ||
-                                        {}),
-                                    };
-                                    mappings[field.key] = e.target.value;
-                                    setCompanyData((prev: any) => ({
-                                      ...prev,
-                                      bitrix24: {
-                                        ...(prev.bitrix24 || {}),
-                                        fieldMappings: mappings,
-                                      },
-                                    }));
-                                  }}
-                                />
-                              </td>
-                            </tr>
-                          ))
-                        }kUrl;
                               if (url) {
                                 loadProcurementB24Stages(url, newCatId);
                               }
@@ -12112,15 +12067,13 @@ const SettingsView = ({
           </div>
         )}
 
-{activeSubTab === "production" && (
-  <div className="pt-6 border-t border-gray-100">
-    <p className="text-xs text-gray-400 leading-relaxed italic">
-      * Коэффициенты применяются к базовой цене материала в итоговом
-      расчете. Например, если цена листа 1000₽ и коэффициент 4, итоговая
-      цена за лист будет 4000₽.
-    </p>
-  </div>
-)}
+        <div className="pt-6 border-t border-gray-100">
+          <p className="text-xs text-gray-400 leading-relaxed italic">
+            * Коэффициенты применяются к базовой цене материала в итоговом
+            расчете. Например, если цена листа 1000₽ и коэффициент 4, итоговая
+            цена за лист будет 4000₽.
+          </p>
+        </div>
       </div>
 
       {/* Brand Coefficient Modal */}
@@ -13317,7 +13270,7 @@ const ProductsView = ({
 
   const [newProduct, setNewProduct] = useState({
     name: "",
-    category: "",
+    category: productCategories[0],
     purchasePrice: 0,
     images: [] as string[],
     article: "",
@@ -13391,15 +13344,7 @@ const ProductsView = ({
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files) {
-      if (newProduct.images.length >= 3) {
-        alert("Можно добавить не более 3 фотографий");
-        return;
-      }
-      Array.from(files).slice(0, 3 - newProduct.images.length).forEach((file) => {
-        if (file.size > 2 * 1024 * 1024) {
-          alert("Изображение слишком большое (макс 2MB).");
-          return;
-        }
+      Array.from(files).forEach((file) => {
         const reader = new FileReader();
         reader.onloadend = () => {
           setNewProduct((prev) => ({
@@ -18183,7 +18128,7 @@ export default function App() {
             }
             return [...prev, { ...product, quantity }];
           });
-          setActiveTab("calculator");
+          setActiveTab("summary");
         },
         onCancel: () => {
           setIsModularProgram(false);
