@@ -14,6 +14,7 @@ import {
   Plus,
   Upload,
   PenTool,
+  Loader2,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { SketchAnnotator } from "./SketchAnnotator";
@@ -77,13 +78,15 @@ export const ProjectSetCheckoutModal = ({
   onSaveDraft,
   productionCycle = "working",
   editingSet,
+  specificationConfig,
 }: {
   projects: Project[];
   onClose: () => void;
-  onSave: (data: any) => void;
-  onSaveDraft?: (data: any) => void;
+  onSave: (data: any) => Promise<void> | void;
+  onSaveDraft?: (data: any) => Promise<void> | void;
   productionCycle?: "working" | "calendar";
   editingSet?: any;
+  specificationConfig?: any;
 }) => {
   const [contractNumber, setContractNumber] = useState(
     editingSet?.contractNumber || editingSet?.data?.contractNumber || "",
@@ -97,6 +100,7 @@ export const ProjectSetCheckoutModal = ({
   const [sketches, setSketches] = useState<string[]>(
     editingSet?.sketches || editingSet?.data?.sketches || [],
   );
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     if (editingSet) {
@@ -365,6 +369,37 @@ export const ProjectSetCheckoutModal = ({
     };
   }, [projects]);
 
+  const contractSum = useMemo(() => {
+    const includes = specificationConfig?.contractSumIncludes ?? {
+      materials: true,
+      hardware: true,
+      services: true,
+      delivery: false,
+      assembly: false,
+    };
+
+    return (
+      (includes.materials ? ((summary.totalMaterialsPrice || 0) + (summary.totalFacadePrice || 0) + (summary.totalCustomFacadePrice || 0)) : 0) +
+      (includes.hardware ? (summary.totalHardwarePrice || 0) : 0) +
+      (includes.services ? (summary.totalServicesPrice || 0) : 0) +
+      (includes.delivery ? (summary.totalDeliveryPrice || 0) : 0) +
+      (includes.assembly ? (summary.totalAssemblyPrice || 0) : 0)
+    );
+  }, [summary, specificationConfig]);
+
+  const separateSum = useMemo(() => {
+    const totalAll = (
+      (summary.totalMaterialsPrice || 0) +
+      (summary.totalFacadePrice || 0) +
+      (summary.totalCustomFacadePrice || 0) +
+      (summary.totalHardwarePrice || 0) +
+      (summary.totalServicesPrice || 0) +
+      (summary.totalDeliveryPrice || 0) +
+      (summary.totalAssemblyPrice || 0)
+    );
+    return Math.max(0, totalAll - contractSum);
+  }, [summary, contractSum]);
+
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
       <div className="bg-gray-50 w-full max-w-5xl max-h-[90vh] rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden border border-white/20">
@@ -576,19 +611,19 @@ export const ProjectSetCheckoutModal = ({
                 <div className="flex flex-col items-end gap-1 text-right">
                   <div>
                     <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest leading-none">
-                      Общая сумма (с услугами)
+                      Сумма по договору
                     </p>
                     <p className="text-3xl font-black text-indigo-900 mt-1">
-                      {summary.totalOverall.toLocaleString()} ₽
+                      {contractSum.toLocaleString()} ₽
                     </p>
                   </div>
-                  {((summary.totalDeliveryPrice || 0) > 0 || (summary.totalAssemblyPrice || 0) > 0) && (
+                  {separateSum > 0 && (
                     <div className="mt-2 border-t border-indigo-200/50 pt-1.5 w-full text-right">
                       <p className="text-[10px] font-black text-indigo-400/80 uppercase tracking-widest leading-none">
-                        Без доставки и сборки
+                        Оплачивается отдельно
                       </p>
                       <p className="text-lg font-extrabold text-indigo-950 mt-0.5">
-                        {(summary.totalOverall - (summary.totalDeliveryPrice || 0) - (summary.totalAssemblyPrice || 0)).toLocaleString()} ₽
+                        {separateSum.toLocaleString()} ₽
                       </p>
                     </div>
                   )}
@@ -854,18 +889,78 @@ export const ProjectSetCheckoutModal = ({
               </section>
             </div>
 
-            {/* Footer */}
-            <div className="px-8 py-6 bg-white border-t border-gray-100 flex items-center justify-between gap-4 sticky bottom-0 z-10">
-              <button
-                onClick={onClose}
-                className="px-8 py-3 rounded-2xl text-sm font-bold text-gray-500 hover:bg-gray-50 transition-all border border-gray-200"
-              >
-                Отмена
-              </button>
-              <div className="flex items-center gap-4">
-                {onSaveDraft && (
+              {/* Footer */}
+              <div className="px-8 py-6 bg-white border-t border-gray-100 flex items-center justify-between gap-4 sticky bottom-0 z-10">
+                <button
+                  onClick={onClose}
+                  disabled={isSaving}
+                  className="px-8 py-3 rounded-2xl text-sm font-bold text-gray-500 hover:bg-gray-50 transition-all border border-gray-200 disabled:opacity-50"
+                >
+                  Отмена
+                </button>
+                <div className="flex items-center gap-4">
+                  {onSaveDraft && (
+                    <button
+                      disabled={isSaving}
+                      onClick={async () => {
+                          if (isSaving) return;
+                          setIsSaving(true);
+                          try {
+                            const perProjectDates: Record<string, string> = {};
+                            if (useSeparateDates) {
+                              Object.entries(projectLeadTimeDays).forEach(
+                                ([pId, days]) => {
+                                  perProjectDates[pId] = calculateReadyDate(
+                                    new Date(contractDate),
+                                    days,
+                                    productionCycle,
+                                  ).toISOString();
+                                },
+                              );
+                            }
+                            await onSaveDraft({
+                              id: editingSet?.id,
+                              contractNumber,
+                              contractDate,
+                              leadTimeDays,
+                              readyDate: useSeparateDates
+                                ? null
+                                : readyDate.toISOString(),
+                              useSeparateDates,
+                              perProjectDates,
+                              productionCycle,
+                              projectIds: projects.map((p) => p.id),
+                              sketches,
+                              totalPrice: contractSum,
+                              summary,
+                            });
+                          } catch (err) {
+                            console.error(err);
+                          } finally {
+                            setIsSaving(false);
+                          }
+                      }}
+                      className="px-8 py-3 rounded-2xl text-sm font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-all border border-indigo-100 flex items-center gap-2 disabled:opacity-50"
+                    >
+                      {isSaving ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Сохранение...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="w-4 h-4" />
+                          Сохранить
+                        </>
+                      )}
+                    </button>
+                  )}
                   <button
-                    onClick={() => {
+                    disabled={isSaving}
+                    onClick={async () => {
+                      if (isSaving) return;
+                      setIsSaving(true);
+                      try {
                         const perProjectDates: Record<string, string> = {};
                         if (useSeparateDates) {
                           Object.entries(projectLeadTimeDays).forEach(
@@ -878,7 +973,8 @@ export const ProjectSetCheckoutModal = ({
                             },
                           );
                         }
-                        onSaveDraft({
+
+                        await onSave({
                           id: editingSet?.id,
                           contractNumber,
                           contractDate,
@@ -891,56 +987,31 @@ export const ProjectSetCheckoutModal = ({
                           productionCycle,
                           projectIds: projects.map((p) => p.id),
                           sketches,
-                          totalPrice: summary.totalOverall,
+                          totalPrice: contractSum,
                           summary,
                         });
-                        console.log("DEBUG: onSaveDraft called with:", { contractNumber, contractDate, leadTimeDays, sketches });
+                      } catch (err) {
+                        console.error(err);
+                      } finally {
+                        setIsSaving(false);
+                      }
                     }}
-                    className="px-8 py-3 rounded-2xl text-sm font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-all border border-indigo-100 flex items-center gap-2"
+                    className="px-10 py-4 bg-indigo-600 text-white rounded-2xl text-sm font-black shadow-lg shadow-indigo-100 hover:bg-indigo-700 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    <Save className="w-4 h-4" />
-                    Сохранить
+                    {isSaving ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        Создание спецификации...
+                      </>
+                    ) : (
+                      <>
+                        <ClipboardCheck className="w-5 h-5" />
+                        Создать спецификацию
+                      </>
+                    )}
                   </button>
-                )}
-                <button
-                  onClick={() => {
-                    const perProjectDates: Record<string, string> = {};
-                    if (useSeparateDates) {
-                      Object.entries(projectLeadTimeDays).forEach(
-                        ([pId, days]) => {
-                          perProjectDates[pId] = calculateReadyDate(
-                            new Date(contractDate),
-                            days,
-                            productionCycle,
-                          ).toISOString();
-                        },
-                      );
-                    }
-
-                    onSave({
-                      id: editingSet?.id,
-                      contractNumber,
-                      contractDate,
-                      leadTimeDays,
-                      readyDate: useSeparateDates
-                        ? null
-                        : readyDate.toISOString(),
-                      useSeparateDates,
-                      perProjectDates,
-                      productionCycle,
-                      projectIds: projects.map((p) => p.id),
-                      sketches,
-                      totalPrice: summary.totalOverall,
-                      summary,
-                    });
-                  }}
-                  className="px-10 py-4 bg-indigo-600 text-white rounded-2xl text-sm font-black shadow-lg shadow-indigo-100 hover:bg-indigo-700 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2"
-                >
-                  <ClipboardCheck className="w-5 h-5" />
-                  Создать спецификацию
-                </button>
+                </div>
               </div>
-            </div>
           </>
         )}
       </div>

@@ -5,15 +5,39 @@ import { Download, Loader2 } from "lucide-react";
 export const SpecificationPrintView = ({
   projects,
   setData,
+  specificationConfig,
   onClose,
 }: {
   projects: any[];
   setData: any;
+  specificationConfig?: any;
   onClose: () => void;
 }) => {
   const summary = setData.summary;
   const contentRef = useRef<HTMLDivElement>(null);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+
+  const includes = specificationConfig?.contractSumIncludes ?? {
+    materials: true,
+    hardware: true,
+    services: true,
+    delivery: false,
+    assembly: false,
+  };
+
+  const contractSum = 
+    (includes.materials ? ((summary.totalMaterialsPrice || 0) + (summary.totalFacadePrice || 0) + (summary.totalCustomFacadePrice || 0)) : 0) +
+    (includes.hardware ? (summary.totalHardwarePrice || 0) : 0) +
+    (includes.services ? (summary.totalServicesPrice || 0) : 0) +
+    (includes.delivery ? (summary.totalDeliveryPrice || 0) : 0) +
+    (includes.assembly ? (summary.totalAssemblyPrice || 0) : 0);
+
+  const separateItems: any[] = [];
+  if (!includes.materials && (summary.totalMaterialsPrice || 0) > 0) separateItems.push({ name: "Продукция (материалы)", val: (summary.totalMaterialsPrice || 0) });
+  if (!includes.hardware && (summary.totalHardwarePrice || 0) > 0) separateItems.push({ name: "Фурнитура/Товары", val: (summary.totalHardwarePrice || 0) });
+  if (!includes.services && (summary.totalServicesPrice || 0) > 0) separateItems.push({ name: "Услуги производства", val: (summary.totalServicesPrice || 0) });
+  if (!includes.delivery && (summary.totalDeliveryPrice || 0) > 0) separateItems.push({ name: "Доставка", val: (summary.totalDeliveryPrice || 0) });
+  if (!includes.assembly && (summary.totalAssemblyPrice || 0) > 0) separateItems.push({ name: "Сборка", val: (summary.totalAssemblyPrice || 0) });
 
   const handleSavePdf = () => {
     if (!contentRef.current) return;
@@ -90,17 +114,12 @@ export const SpecificationPrintView = ({
               ))}
             </div>
 
-            <div className="mt-8 text-xs text-gray-500">
+            <div className="mt-8 text-xs text-gray-500 whitespace-pre-line space-y-4">
               <p>
-                Заказчик уведомлен, что отображение цветов на мониторах и
-                мобильных устройствах может отличаться от выбранного декора.
-                Цвет декора соответствует исключительно представленному образцу.
+                {specificationConfig?.colorNoticeText || "Заказчик уведомлен, что отображение цветов на мониторах и мобильных устройствах может отличаться от выбранного декора. Цвет декора соответствует исключительно представленному образцу."}
               </p>
-              <br />
               <p>
-                Заказчик подтверждает и согласен с эскизами и размерами
-                указанными на нем, а также с информацией, указывающей на
-                технические особенности элементов продукции.
+                {specificationConfig?.sketchesAgreementText || "Заказчик подтверждает и согласен с эскизами и размерами указанными на нем, а также с информацией, указывающей на технические особенности элементов продукции."}
               </p>
             </div>
           </div>
@@ -117,15 +136,20 @@ export const SpecificationPrintView = ({
             <div>
               <p className="text-gray-500 mb-1">Сумма по договору:</p>
               <p className="font-bold text-xl">
-                {(
-                  (summary.totalMaterialsPrice || 0) +
-                  (summary.totalHardwarePrice || 0) +
-                  (summary.totalServicesPrice || 0) +
-                  (summary.totalDeliveryPrice || 0) +
-                  (summary.totalAssemblyPrice || 0)
-                ).toLocaleString()}{" "}
-                ₽
+                {contractSum.toLocaleString()} ₽
               </p>
+
+              {separateItems.length > 0 && (
+                <div className="mt-3 pt-3 border-t border-gray-200 border-dashed text-xs space-y-1 text-gray-500 max-w-xs">
+                  <p className="font-bold text-gray-700">Оплачивается отдельно:</p>
+                  {separateItems.map((item, idx) => (
+                    <p key={idx} className="flex justify-between font-medium">
+                      <span>— {item.name}:</span>
+                      <span className="text-gray-905 text-gray-900">{item.val.toLocaleString()} ₽</span>
+                    </p>
+                  ))}
+                </div>
+              )}
 
               {setData.readyDate && !setData.useSeparateDates && (
                 <div className="mt-4">
@@ -264,6 +288,7 @@ export const SpecificationPrintView = ({
                         });
 
                         let lastCategory: "body" | "facades" | "back" | null = null;
+                        const showQty = specificationConfig?.showMaterialQuantity !== false;
                         summary.materials.forEach((m: any) => {
                            const proj = m.projectName;
                            if (!groups[proj]) return;
@@ -273,7 +298,9 @@ export const SpecificationPrintView = ({
                            const qty = m.qty || "";
                            
                            if (m.type === "product_edge" || m.type === "edge" || name.includes("кромка")) {
-                              const edgeStr = `${m.name}${decor !== "Не указан" ? ` ${decor}` : ""} — ${qty}`;
+                              const edgeStr = showQty && qty
+                                 ? `${m.name}${decor !== "Не указан" ? ` ${decor}` : ""} — ${qty}`
+                                 : `${m.name}${decor !== "Не указан" ? ` ${decor}` : ""}`;
                               let targetArr = groups[proj].body;
                               if (lastCategory && groups[proj][lastCategory]) {
                                  targetArr = groups[proj][lastCategory];
@@ -284,7 +311,9 @@ export const SpecificationPrintView = ({
                                  groups[proj].body.push(edgeStr.trim());
                               }
                            } else {
-                              const itemStr = `${m.name}${decor !== "Не указан" ? ` ${decor}` : ""}${sub ? ` (${sub})` : ""} — ${qty}`;
+                              const itemStr = showQty && qty
+                                 ? `${m.name}${decor !== "Не указан" ? ` ${decor}` : ""}${sub ? ` (${sub})` : ""} — ${qty}`
+                                 : `${m.name}${decor !== "Не указан" ? ` ${decor}` : ""}${sub ? ` (${sub})` : ""}`;
                               if (m.type === "facade" || name.includes("фасад")) {
                                  groups[proj].facades.push(itemStr);
                                  lastCategory = "facades";
@@ -533,10 +562,8 @@ export const SpecificationPrintView = ({
 
           <div className="mt-8 text-xs text-gray-500 bg-gray-50 p-4 rounded-xl border border-gray-100 break-inside-avoid shadow-sm">
             <p className="font-bold mb-1">Согласование спецификации</p>
-            <p>
-              Заказчик подтверждает и согласен со Спецификацией к заказу.
-              Внесенные изменения после подписания могут повлечь изменение
-              стоимости и сроков.
+            <p className="whitespace-pre-line">
+              {specificationConfig?.approvalText || "Заказчик подтверждает и согласен со Спецификацией к заказу. Внесенные изменения после подписания могут повлечь изменение стоимости и сроков."}
             </p>
           </div>
         </div>

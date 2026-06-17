@@ -38,7 +38,7 @@ export const TransferProjectModal = ({
             <option value="">Не выбран</option>
             {companyEmployees.map((emp, index) => (
               <option key={emp.uid || index} value={emp.uid} className="text-gray-900">
-                {emp.displayName || emp.email || "Без имени"}
+                {emp.name || emp.displayName || emp.email || "Без имени"}
               </option>
             ))}
           </select>

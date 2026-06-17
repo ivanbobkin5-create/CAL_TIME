@@ -133,6 +133,7 @@ export const ProjectsView = ({
   userRole,
   onLoadProject,
   onOpenSpecification,
+  onOpenProposal,
   companyType,
   manufacturerId,
   showConfirm,
@@ -147,6 +148,7 @@ export const ProjectsView = ({
   userRole?: string;
   onLoadProject: (project: Project) => void;
   onOpenSpecification: (project: Project) => void;
+  onOpenProposal?: (project: Project) => void;
   companyType?: string;
   manufacturerId?: string;
   showConfirm: (title: string, message: string, onConfirm: () => void) => void;
@@ -186,6 +188,7 @@ export const ProjectsView = ({
   const [selectedAnalyticsProject, setSelectedAnalyticsProject] = useState<Project | null>(null);
   const [selectedTransferProject, setSelectedTransferProject] = useState<Project | null>(null);
   const [companyEmployees, setCompanyEmployees] = useState<any[]>([]);
+  const [selectedManagerId, setSelectedManagerId] = useState<string>("");
 
   const handleTransfer = async (e: React.MouseEvent, project: Project) => {
     e.stopPropagation();
@@ -444,9 +447,17 @@ export const ProjectsView = ({
   }, [projects, userRole, userId, deletedProjects]);
 
   const filteredProjects = myProjects.filter((p) => {
+    const employee = companyEmployees.find(emp => emp.uid === p.createdBy);
+    const displayManagerName = employee ? (employee.name || employee.displayName || employee.email) : (p.createdByName || "Пользователь");
+
+    if (selectedManagerId && p.createdBy !== selectedManagerId) {
+      return false;
+    }
+
     const matchesSearch =
       p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.createdByName?.toLowerCase().includes(searchQuery.toLowerCase());
+      displayManagerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      ((p as any).contractNumber || p.data?.contractNumber || "").toLowerCase().includes(searchQuery.toLowerCase());
 
     if (activeFilter === "all") return matchesSearch;
     return matchesSearch && (p.status || "draft") === activeFilter;
@@ -502,9 +513,26 @@ export const ProjectsView = ({
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="block w-full pl-9 pr-3 py-2 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                placeholder="Поиск..."
+                placeholder="Поиск по названию, менеджеру, договору..."
               />
             </div>
+
+            {userRole === "admin" && (
+              <div className="relative w-full md:w-56">
+                <select
+                  value={selectedManagerId}
+                  onChange={(e) => setSelectedManagerId(e.target.value)}
+                  className="block w-full px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-gray-700"
+                >
+                  <option value="">Все менеджеры</option>
+                  {companyEmployees.map((emp) => (
+                    <option key={emp.uid} value={emp.uid}>
+                      {emp.name || emp.displayName || emp.email || "Без имени"}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
             <div className="flex bg-gray-100 p-1 rounded-xl">
               {(["all", "draft", "sent", "transferred", "sets"] as const).map(
@@ -646,6 +674,11 @@ export const ProjectsView = ({
                                     return !isNaN(createdDate.getTime()) ? createdDate.toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" }) : `Дата: ${project.createdAt}`;
                                 })()}
                             </div>
+                            {((project as any).contractNumber || project.data?.contractNumber) && (
+                              <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50/70 px-2 py-0.5 rounded-lg w-fit">
+                                <span>Договор № {((project as any).contractNumber || project.data?.contractNumber)}</span>
+                              </div>
+                            )}
                         </div>
                         {/* Actions Row */}
                         <div className="flex flex-col items-center gap-2">
@@ -682,6 +715,11 @@ export const ProjectsView = ({
                                         <ClipboardList className="w-4 h-4" /> {project.status === "sent" || project.status === "transferred" ? "Спецификация" : "Оформить"}
                                     </button>
                                 )}
+                                {(userRole === "manager" || userRole === "admin") && onOpenProposal && (
+                                    <button onClick={(e) => { e.stopPropagation(); onOpenProposal(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-indigo-600 flex items-center gap-2">
+                                        <FileText className="w-4 h-4" /> Комм. предложение (КП)
+                                    </button>
+                                )}
                                 {project.status === "sent" && (
                                     <button onClick={(e) => { console.log("Transfer requested for:", project.id); handleTransfer(e, project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-blue-600 flex items-center gap-2">
                                         <Send className="w-4 h-4" /> Передать руководителю
@@ -710,21 +748,28 @@ export const ProjectsView = ({
                       
                       {/* Row 2: Bottom Summary */}
                       <div className="flex items-center justify-between pt-4 border-t border-gray-50 mt-auto">
-                        <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 bg-gray-100 rounded-full flex-shrink-0 flex items-center justify-center text-sm font-bold text-gray-500 overflow-hidden">
-                                {project.data?.createdByPhoto ? (
-                                    <img src={project.data.createdByPhoto} alt={project.createdByName} className="w-full h-full object-cover" />
-                                ) : (
-                                    project.createdByName?.charAt(0) || "U"
-                                )}
-                            </div>
-                            <div className="flex flex-col">
-                                <span className="text-[10px] text-gray-500 font-bold uppercase">Менеджер</span>
-                                <span className="text-xs text-gray-900 font-bold truncate max-w-[120px]">
-                                    {project.createdByName || "Пользователь"}
-                                </span>
-                            </div>
-                        </div>
+                        {(() => {
+                           const employee = companyEmployees.find(emp => emp.uid === project.createdBy);
+                           const displayManagerName = employee ? (employee.name || employee.displayName || employee.email) : (project.createdByName || "Пользователь");
+                           const avatarLetter = (displayManagerName?.charAt(0) || "U").toUpperCase();
+                           return (
+                             <div className="flex items-center gap-3">
+                                 <div className="w-10 h-10 bg-gray-100 rounded-full flex-shrink-0 flex items-center justify-center text-sm font-bold text-gray-500 overflow-hidden">
+                                     {project.data?.createdByPhoto ? (
+                                         <img src={project.data.createdByPhoto} alt={displayManagerName} className="w-full h-full object-cover" />
+                                     ) : (
+                                         avatarLetter
+                                     )}
+                                 </div>
+                                 <div className="flex flex-col">
+                                     <span className="text-[10px] text-gray-500 font-bold uppercase">Менеджер</span>
+                                     <span className="text-xs text-gray-900 font-bold truncate max-w-[124px]" title={displayManagerName}>
+                                         {displayManagerName}
+                                     </span>
+                                 </div>
+                             </div>
+                           );
+                        })()}
                         
                         <div className="flex flex-col items-end gap-2">
                             <div className="flex items-center gap-1.5">
@@ -777,10 +822,13 @@ export const ProjectsView = ({
               showAlert={showAlert}
               onConfirm={async (targetUserId) => {
                   try {
+                    const targetEmp = companyEmployees.find(e => e.uid === targetUserId);
+                    const targetName = targetEmp ? (targetEmp.name || targetEmp.displayName || targetEmp.email) : "Пользователь";
                     await updateDoc(
                         doc(db, "companies", companyId!, "projects", selectedTransferProject.id),
                         {
                             createdBy: targetUserId,
+                            createdByName: targetName,
                             status: "draft"
                         }
                     );

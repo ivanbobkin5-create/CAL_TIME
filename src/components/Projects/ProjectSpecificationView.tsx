@@ -61,6 +61,7 @@ export const ProjectSpecificationView = ({
   project, 
   onClose, 
   onPrint,
+  onPrintProposal,
   userRole,
   companyId,
   manufacturerId,
@@ -69,6 +70,7 @@ export const ProjectSpecificationView = ({
   project: Project; 
   onClose: () => void;
   onPrint?: (project: Project) => void;
+  onPrintProposal?: (project: Project) => void;
   userRole: string;
   companyId: string;
   manufacturerId?: string;
@@ -390,6 +392,14 @@ export const ProjectSpecificationView = ({
                 className="px-6 py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-700"
               >
                 Сохранить PDF
+              </button>
+              <button 
+                onClick={() => {
+                  if (onPrintProposal) onPrintProposal(project);
+                }}
+                className="px-6 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-sm"
+              >
+                Коммерческое предложение
               </button>
                <button 
                 onClick={handleSendProject}

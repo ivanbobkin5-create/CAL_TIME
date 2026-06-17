@@ -47,6 +47,7 @@ import { ProjectsView } from "./components/Projects/ProjectsView";
 import { ProjectSpecificationView } from "./components/Projects/ProjectSpecificationView";
 import { ProjectSetCheckoutModal } from "./components/Projects/ProjectSetCheckoutModal";
 import { SpecificationPrintView } from "./components/Projects/SpecificationPrintView";
+import { CommercialProposalPrintView } from "./components/Projects/CommercialProposalPrintView";
 import { UserProfileView } from "./components/Profile/UserProfileView";
 import { PromotionsView } from "./components/Promotions/PromotionsView";
 import {
@@ -119,6 +120,9 @@ import {
   CheckCircle,
   Sparkles,
   Replace,
+  Phone,
+  MessageSquare,
+  FileText,
 } from "lucide-react";
 
 // --- START OF OFFLINE CACHE AND SYNC ENGINE ---
@@ -1929,9 +1933,9 @@ const packDetails = (
 
     for (const detail of sortedDetails) {
       let placed = false;
-      const hasWoodTexture = isTextureAligned && (
-        (detail.color && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|wood|oak|ash|walnut|pine|wenge/i.test(detail.color)) ||
-        (detail.name && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|wood|oak|ash|walnut|pine|wenge/i.test(detail.name))
+      const hasWoodTexture = isTextureAligned || (
+        (detail.color && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|шимо|бодега|wood|oak|ash|walnut|pine|wenge|shimo/i.test(detail.color)) ||
+        (detail.name && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|шимо|бодега|wood|oak|ash|walnut|pine|wenge|shimo/i.test(detail.name))
       );
       const canRotateDetail = detail.manuallyRotated ? false : (hasWoodTexture ? false : (allowRotation || detail.canRotate));
 
@@ -2061,9 +2065,9 @@ const packDetails = (
 
     for (const detail of sortedDetails) {
       let placed = false;
-      const hasWoodTexture = isTextureAligned && (
-        (detail.color && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|wood|oak|ash|walnut|pine|wenge/i.test(detail.color)) ||
-        (detail.name && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|wood|oak|ash|walnut|pine|wenge/i.test(detail.name))
+      const hasWoodTexture = isTextureAligned || (
+        (detail.color && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|шимо|бодега|wood|oak|ash|walnut|pine|wenge|shimo/i.test(detail.color)) ||
+        (detail.name && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|шимо|бодега|wood|oak|ash|walnut|pine|wenge|shimo/i.test(detail.name))
       );
       const canRotateDetail = detail.manuallyRotated ? false : (hasWoodTexture ? false : (allowRotation || detail.canRotate));
 
@@ -5887,7 +5891,7 @@ const CalculatorView = ({
                                           onChange={() => toggleTextureAlignment(key)}
                                           className="w-4 h-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                                         />
-                                        Умная текстура 🪵
+                                        Умная текстура
                                       </label>
                                       <div className="flex flex-col items-end">
                                         <span className="text-xs text-gray-400 uppercase tracking-wider font-bold">
@@ -5969,18 +5973,20 @@ const CalculatorView = ({
                                             width: `${(d.width / sheetConfigs[key].width) * 100}%`,
                                             height: `${(d.height / sheetConfigs[key].height) * 100}%`,
                                             backgroundImage: (
-                                              (d.color && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|wood|oak|ash|walnut|pine|wenge/i.test(d.color)) ||
-                                              (d.name && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|wood|oak|ash|walnut|pine|wenge/i.test(d.name)) ||
-                                              (key && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|wood|oak|ash|walnut|pine|wenge/i.test(key))
+                                              (textureAlignments[key] || false) ||
+                                              (d.color && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|шимо|бодега|wood|oak|ash|walnut|pine|wenge|shimo/i.test(d.color)) ||
+                                              (d.name && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|шимо|бодега|wood|oak|ash|walnut|pine|wenge|shimo/i.test(d.name)) ||
+                                              (key && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|шимо|бодега|wood|oak|ash|walnut|pine|wenge|shimo/i.test(key))
                                             )
                                               ? d.rotated
                                                 ? "repeating-linear-gradient(90deg, rgba(139, 92, 26, 0.05) 0px, rgba(139, 92, 26, 0.05) 1px, transparent 1px, transparent 8px), repeating-linear-gradient(90deg, rgba(100, 60, 20, 0.02) 2px, rgba(100, 60, 20, 0.02) 4px, transparent 4px, transparent 15px)"
                                                 : "repeating-linear-gradient(0deg, rgba(139, 92, 26, 0.05) 0px, rgba(139, 92, 26, 0.05) 1px, transparent 1px, transparent 8px), repeating-linear-gradient(0deg, rgba(100, 60, 20, 0.02) 2px, rgba(100, 60, 20, 0.02) 4px, transparent 4px, transparent 15px)"
                                               : undefined,
                                             backgroundColor: (
-                                              (d.color && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|wood|oak|ash|walnut|pine|wenge/i.test(d.color)) ||
-                                              (d.name && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|wood|oak|ash|walnut|pine|wenge/i.test(d.name)) ||
-                                              (key && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|wood|oak|ash|walnut|pine|wenge/i.test(key))
+                                              (textureAlignments[key] || false) ||
+                                              (d.color && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|шимо|бодега|wood|oak|ash|walnut|pine|wenge|shimo/i.test(d.color)) ||
+                                              (d.name && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|шимо|бодега|wood|oak|ash|walnut|pine|wenge|shimo/i.test(d.name)) ||
+                                              (key && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|шимо|бодега|wood|oak|ash|walnut|pine|wenge|shimo/i.test(key))
                                             )
                                               ? "#fdf7ee"
                                               : undefined,
@@ -6735,6 +6741,7 @@ const parseFittingDemandKey = (key: string) => {
 const SummaryView = ({
   results,
   selectedDecor,
+  setSelectedDecor,
   prices,
   facadeType,
   sheetConfigs,
@@ -6815,6 +6822,7 @@ const SummaryView = ({
 }: {
   results: any;
   selectedDecor: Record<string, string>;
+  setSelectedDecor?: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   prices: Record<string, number>;
   facadeType: Record<string, "sheet" | "custom">;
   sheetConfigs: Record<string, SheetConfig>;
@@ -7757,11 +7765,20 @@ const SummaryView = ({
         rawProduct: product,
       });
     } else {
+      const isSkifWorktopOrPanel = (product.category === "Столешницы и стеновые") && (
+        product.wtManufacturer === "Скиф" || 
+        product.manufacturer === "Скиф" || 
+        (product.name && /скиф/i.test(product.name))
+      );
+      const rowDecor = isSkifWorktopOrPanel
+        ? (selectedDecor[String(product.id)] || selectedDecor[product.id] || product.color || "Не выбран")
+        : ((product.category === "Столешницы и стеновые" || product.isComputedWorktop) ? (product.color || "-") : "-");
+
       summaryRows.push({
         type: product.isComputedFitting ? "hardware" : "product",
         name: product.name,
         sub: product.isComputedFitting ? (product.computedSub || product.category) : product.category,
-        decor: product.isComputedWorktop ? (product.color || "-") : "-",
+        decor: rowDecor,
         qty: `${product.quantity} шт`,
         price: displayPrice,
         total: displayPrice * product.quantity,
@@ -8324,6 +8341,20 @@ const SummaryView = ({
       : null;
 
   const finalTotal = allDataEntered ? Math.round(promotionAdjustedTotal) : 0;
+
+  const deliverySum = React.useMemo(() => {
+    return summaryRows
+      .filter((r) => r.type === "service" && (r.name || "").toLowerCase().includes("доставк"))
+      .reduce((sum, r) => sum + (r.netPaid !== undefined ? r.netPaid : r.total), 0);
+  }, [summaryRows]);
+
+  const assemblySum = React.useMemo(() => {
+    return summaryRows
+      .filter((r) => r.type === "service" && ((r.name || "").toLowerCase().includes("сборк") || (r.name || "").toLowerCase().includes("монтаж")))
+      .reduce((sum, r) => sum + (r.netPaid !== undefined ? r.netPaid : r.total), 0);
+  }, [summaryRows]);
+
+  const sumWithoutDeliveryAndAssembly = finalTotal - deliverySum - assemblySum;
 
   const stringifiedRows = JSON.stringify(summaryRows);
   useEffect(() => {
@@ -9012,6 +9043,29 @@ const SummaryView = ({
                             className="w-full px-2 py-1 border border-gray-200 rounded text-xs focus:ring-1 focus:ring-blue-500 outline-none"
                           />
                         </div>
+                      ) : (row.rawProduct && (
+                        (row.rawProduct.category === "Столешницы и стеновые") && (
+                          row.rawProduct.wtManufacturer === "Скиф" || 
+                          row.rawProduct.manufacturer === "Скиф" || 
+                          (row.rawProduct.name && /скиф/i.test(row.rawProduct.name))
+                        )
+                      )) ? (
+                        <div className="min-w-[120px]">
+                          <input
+                            type="text"
+                            value={selectedDecor[row.key!] || ""}
+                            onChange={(e) => {
+                              if (setSelectedDecor) {
+                                setSelectedDecor((prev) => ({
+                                  ...prev,
+                                  [row.key!]: e.target.value,
+                                }));
+                              }
+                            }}
+                            placeholder="Введите декор Скиф..."
+                            className="w-full max-w-[180px] px-2.5 py-1 border border-blue-200 rounded-lg text-xs font-semibold text-blue-700 bg-blue-50/20 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all placeholder:text-blue-300 placeholder:font-normal"
+                          />
+                        </div>
                       ) : (
                         <span
                           className={cn(
@@ -9500,6 +9554,22 @@ const SummaryView = ({
             )}
           </tbody>
           <tfoot>
+            {((deliverySum > 0) || (assemblySum > 0)) && (
+              <tr className="border-t border-gray-100 bg-gray-50/40">
+                <td
+                  colSpan={3}
+                  className="px-6 py-3 text-right text-gray-500 font-bold text-sm"
+                >
+                  Стоимость без доставки и сборки:
+                </td>
+                <td
+                  colSpan={2}
+                  className="px-6 py-3 text-right text-base font-black text-gray-800 whitespace-nowrap"
+                >
+                  {sumWithoutDeliveryAndAssembly.toLocaleString()} ₽
+                </td>
+              </tr>
+            )}
             <tr className="bg-gradient-to-r from-blue-50 to-indigo-50/70">
               <td
                 colSpan={3}
@@ -9654,6 +9724,8 @@ const SummaryView = ({
 
 const SettingsView = ({
   coefficients,
+  specificationConfig,
+  setSpecificationConfig,
   setCoefficients,
   calcMode,
   setCalcMode,
@@ -9804,10 +9876,12 @@ const SettingsView = ({
   loadB24Categories: (url: string, force?: boolean) => Promise<void>;
   loadB24Stages: (url: string, categoryId: string, force?: boolean) => Promise<void>;
   loadProcurementB24Stages: (url: string, categoryId: string, force?: boolean) => Promise<void>;
+  specificationConfig?: any;
+  setSpecificationConfig?: React.Dispatch<React.SetStateAction<any>>;
 }) => {
   const [newCategory, setNewCategory] = useState("");
   const [activeSubTab, setActiveSubTab] = useState<
-    "general" | "services" | "production" | "account" | "facades" | "bitrix24" | "promotions" | "suppliers"
+    "general" | "services" | "production" | "account" | "facades" | "bitrix24" | "promotions" | "suppliers" | "specification"
   >("general");
   const [showBrandCoeffModal, setShowBrandCoeffModal] = useState(false);
   
@@ -9861,6 +9935,7 @@ const SettingsView = ({
     defaultCuttingType,
     companyInfo,
     catalogMaterials,
+    specificationConfig,
   ]);
 
   useEffect(() => {
@@ -10120,6 +10195,7 @@ const SettingsView = ({
           { id: "account", label: "Компания", icon: Building2 },
           { id: "bitrix24", label: "Bitrix24", icon: Link },
           { id: "suppliers", label: "Поставщики", icon: Database },
+          { id: "specification", label: "Настройки спецификаций и КП", icon: ClipboardList },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -10152,6 +10228,469 @@ const SettingsView = ({
               deleteDoc={deleteDoc}
               collection={collection}
             />
+          </div>
+        )}
+        {activeSubTab === "specification" && (
+          <div className="space-y-8 animate-in fade-in duration-300">
+            <section className="space-y-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider font-sans">
+                  Настройки спецификации
+                </h3>
+              </div>
+              
+              <div className="bg-gray-50/50 p-6 rounded-3xl border border-gray-100 space-y-6">
+                <div>
+                  <span className="font-bold text-gray-800 text-sm block">Управление суммой договора</span>
+                  <span className="text-xs text-gray-450 text-gray-550 block mt-1">
+                    Укажите, что автоматически входит в сумму договора на карточке проекта, а что считается и отображается отдельно.
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <label className="flex items-center gap-3 p-4 bg-white hover:bg-gray-50 rounded-2xl cursor-pointer transition-all border border-gray-100">
+                    <input
+                      type="checkbox"
+                      checked={specificationConfig?.contractSumIncludes?.materials ?? true}
+                      onChange={(e) => {
+                        setSpecificationConfig((prev: any) => ({
+                          ...prev,
+                          contractSumIncludes: {
+                            ...(prev?.contractSumIncludes || {
+                              materials: true,
+                              hardware: true,
+                              services: true,
+                              delivery: false,
+                              assembly: false,
+                            }),
+                            materials: e.target.checked,
+                          },
+                        }));
+                      }}
+                      className="w-5 h-5 rounded text-blue-600 border-gray-305 focus:ring-blue-500"
+                    />
+                    <div>
+                      <span className="font-bold text-gray-700 text-xs block">Продукция (материалы/фасады)</span>
+                      <span className="text-[10px] text-gray-400">Стоимость плитных материалов, кромки, фасадов</span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-3 p-4 bg-white hover:bg-gray-50 rounded-2xl cursor-pointer transition-all border border-gray-100">
+                    <input
+                      type="checkbox"
+                      checked={specificationConfig?.contractSumIncludes?.hardware ?? true}
+                      onChange={(e) => {
+                        setSpecificationConfig((prev: any) => ({
+                          ...prev,
+                          contractSumIncludes: {
+                            ...(prev?.contractSumIncludes || {
+                              materials: true,
+                              hardware: true,
+                              services: true,
+                              delivery: false,
+                              assembly: false,
+                            }),
+                            hardware: e.target.checked,
+                          },
+                        }));
+                      }}
+                      className="w-5 h-5 rounded text-blue-600 border-gray-305 focus:ring-blue-500"
+                    />
+                    <div>
+                      <span className="font-bold text-gray-700 text-xs block">Фурнитура и товары</span>
+                      <span className="text-[10px] text-gray-400">Стоимость ручек, направляющих, петель и комплектующих</span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-3 p-4 bg-white hover:bg-gray-50 rounded-2xl cursor-pointer transition-all border border-gray-100">
+                    <input
+                      type="checkbox"
+                      checked={specificationConfig?.contractSumIncludes?.services ?? true}
+                      onChange={(e) => {
+                        setSpecificationConfig((prev: any) => ({
+                          ...prev,
+                          contractSumIncludes: {
+                            ...(prev?.contractSumIncludes || {
+                              materials: true,
+                              hardware: true,
+                              services: true,
+                              delivery: false,
+                              assembly: false,
+                            }),
+                            services: e.target.checked,
+                          },
+                        }));
+                      }}
+                      className="w-5 h-5 rounded text-blue-600 border-gray-305 focus:ring-blue-500"
+                    />
+                    <div>
+                      <span className="font-bold text-gray-700 text-xs block">Услуги производства</span>
+                      <span className="text-[10px] text-gray-400">Услуги распила, поклейки кромки, присадки на деталях</span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-3 p-4 bg-white hover:bg-gray-50 rounded-2xl cursor-pointer transition-all border border-gray-100">
+                    <input
+                      type="checkbox"
+                      checked={specificationConfig?.contractSumIncludes?.delivery ?? false}
+                      onChange={(e) => {
+                        setSpecificationConfig((prev: any) => ({
+                          ...prev,
+                          contractSumIncludes: {
+                            ...(prev?.contractSumIncludes || {
+                              materials: true,
+                              hardware: true,
+                              services: true,
+                              delivery: false,
+                              assembly: false,
+                            }),
+                            delivery: e.target.checked,
+                          },
+                        }));
+                      }}
+                      className="w-5 h-5 rounded text-blue-600 border-gray-305 focus:ring-blue-500"
+                    />
+                    <div>
+                      <span className="font-bold text-gray-700 text-xs block">Услуги доставки</span>
+                      <span className="text-[10px] text-gray-400">Доставка изделий до адреса заказчика</span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center gap-3 p-4 bg-white hover:bg-gray-50 rounded-2xl cursor-pointer transition-all border border-gray-100">
+                    <input
+                      type="checkbox"
+                      checked={specificationConfig?.contractSumIncludes?.assembly ?? false}
+                      onChange={(e) => {
+                        setSpecificationConfig((prev: any) => ({
+                          ...prev,
+                          contractSumIncludes: {
+                            ...(prev?.contractSumIncludes || {
+                              materials: true,
+                              hardware: true,
+                              services: true,
+                              delivery: false,
+                              assembly: false,
+                            }),
+                            assembly: e.target.checked,
+                          },
+                        }));
+                      }}
+                      className="w-5 h-5 rounded text-blue-600 border-gray-305 focus:ring-blue-500"
+                    />
+                    <div>
+                      <span className="font-bold text-gray-700 text-xs block">Услуги сборки и установки</span>
+                      <span className="text-[10px] text-gray-400">Монтаж и регулировка готовой собираемой мебели</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              <div className="bg-gray-50/50 p-6 rounded-3xl border border-gray-100 space-y-4">
+                <div>
+                  <span className="font-bold text-gray-800 text-sm block">Отображение материалов в спецификации</span>
+                  <span className="text-xs text-gray-550 block mt-1">
+                    Управляйте подробным выводом количественных параметров материалов заказчику.
+                  </span>
+                </div>
+
+                <label className="flex items-center gap-3 p-4 bg-white hover:bg-gray-50 rounded-2xl cursor-pointer transition-all border border-gray-100">
+                  <input
+                    type="checkbox"
+                    checked={specificationConfig?.showMaterialQuantity ?? true}
+                    onChange={(e) => {
+                      setSpecificationConfig((prev: any) => ({
+                        ...prev,
+                        showMaterialQuantity: e.target.checked,
+                      }));
+                    }}
+                    className="w-5 h-5 rounded text-blue-600 border-gray-305 focus:ring-blue-500"
+                  />
+                  <div>
+                    <span className="font-bold text-gray-700 text-xs block">Отображать количество ЛДСП, кромки, ХДФ и др. в спецификации заказчика</span>
+                    <span className="text-[10px] text-gray-400">Показывает площади м², погонные метры и штуки (иначе — выводятся только названия и декоры)</span>
+                  </div>
+                </label>
+              </div>
+
+              <div className="bg-gray-50/50 p-6 rounded-3xl border border-gray-100 space-y-4">
+                <div>
+                  <span className="font-bold text-gray-800 text-sm block">Согласование спецификаций (текст сноски в печатной форме)</span>
+                  <span className="text-xs text-gray-550 block mt-1">
+                    Данный текст выводится на печатном бланке документа «Спецификация» внизу раздела согласования.
+                  </span>
+                </div>
+
+                <textarea
+                  value={specificationConfig?.approvalText ?? ""}
+                  onChange={(e) => {
+                    setSpecificationConfig((prev: any) => ({
+                      ...prev,
+                      approvalText: e.target.value,
+                    }));
+                  }}
+                  rows={3}
+                  className="w-full p-4 bg-white border border-gray-200 rounded-2xl text-xs focus:ring-2 focus:ring-blue-500 outline-none resize-none font-sans text-gray-700"
+                  placeholder="Введите текст сноски для согласования..."
+                />
+              </div>
+
+              <div className="bg-gray-50/50 p-6 rounded-3xl border border-gray-100 space-y-4">
+                <div>
+                  <span className="font-bold text-gray-800 text-sm block">Предупреждение о цветах и декорах (под эскизами)</span>
+                  <span className="text-xs text-gray-550 block mt-1">
+                    Данный текст выводится на первой странице спецификации под эскизами.
+                  </span>
+                </div>
+
+                <textarea
+                  value={specificationConfig?.colorNoticeText ?? ""}
+                  onChange={(e) => {
+                    setSpecificationConfig((prev: any) => ({
+                      ...prev,
+                      colorNoticeText: e.target.value,
+                    }));
+                  }}
+                  rows={3}
+                  className="w-full p-4 bg-white border border-gray-200 rounded-2xl text-xs focus:ring-2 focus:ring-blue-500 outline-none resize-none font-sans text-gray-700"
+                  placeholder="Заказчик уведомлен, что отображение цветов на мониторах и мобильных устройствах может отличаться..."
+                />
+              </div>
+
+              <div className="bg-gray-50/50 p-6 rounded-3xl border border-gray-100 space-y-4">
+                <div>
+                  <span className="font-bold text-gray-800 text-sm block">Согласование эскизов и размеров</span>
+                  <span className="text-xs text-gray-550 block mt-1">
+                    Данный текст выводится на первой странице спецификации под предупреждением о цветах.
+                  </span>
+                </div>
+
+                <textarea
+                  value={specificationConfig?.sketchesAgreementText ?? ""}
+                  onChange={(e) => {
+                    setSpecificationConfig((prev: any) => ({
+                      ...prev,
+                      sketchesAgreementText: e.target.value,
+                    }));
+                  }}
+                  rows={3}
+                  className="w-full p-4 bg-white border border-gray-200 rounded-2xl text-xs focus:ring-2 focus:ring-blue-500 outline-none resize-none font-sans text-gray-700"
+                  placeholder="Заказчик подтверждает и согласен с эскизами и размерами..."
+                />
+              </div>
+
+              <div className="flex items-center justify-between mt-8 mb-4 border-t pt-8 border-gray-100">
+                <h3 className="text-sm font-bold text-indigo-600 uppercase tracking-wider font-sans flex items-center gap-2">
+                  <FileText className="w-4 h-4" /> Настройки Коммерческого предложения (КП)
+                </h3>
+              </div>
+
+              {/* LOGO AND PHONE */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50/50 p-6 rounded-3xl border border-gray-100">
+                <div className="space-y-3">
+                  <div>
+                    <span className="font-bold text-gray-800 text-sm block">Логотип Вашей компании</span>
+                    <span className="text-xs text-gray-500 block mt-1">
+                      Загрузите файл изображения (PNG, JPG) или укажите ссылку на логотип. Он будет отображаться в шапке коммерческих предложений.
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-4 bg-white p-4 rounded-2xl border border-gray-200">
+                    {specificationConfig?.companyLogo ? (
+                      <div className="relative group w-16 h-16 rounded-xl border overflow-hidden bg-gray-50 flex items-center justify-center flex-shrink-0">
+                        <img 
+                          src={specificationConfig.companyLogo} 
+                          alt="Company Logo Preview" 
+                          className="w-full h-full object-contain"
+                          referrerPolicy="no-referrer"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSpecificationConfig((prev: any) => ({
+                              ...prev,
+                              companyLogo: "",
+                            }));
+                          }}
+                          className="absolute inset-0 bg-black/60 text-white font-bold text-[10px] items-center justify-center opacity-0 group-hover:opacity-100 flex transition-opacity rounded-xl"
+                        >
+                          Удалить
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="w-16 h-16 rounded-xl bg-gray-100 border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-gray-400 text-[10px] font-bold flex-shrink-0">
+                        <ImageIcon className="w-5 h-5 opacity-40 mb-1" />
+                        Логотип
+                      </div>
+                    )}
+
+                    <div className="flex-1 space-y-2">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            const r = new FileReader();
+                            r.onloadend = () => {
+                              setSpecificationConfig((p: any) => ({
+                                ...p,
+                                companyLogo: r.result,
+                              }));
+                            };
+                            r.readAsDataURL(file);
+                          }
+                        }}
+                        className="hidden"
+                        id="logo-file-picker"
+                      />
+                      <label
+                        htmlFor="logo-file-picker"
+                        className="inline-block px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-[11px] cursor-pointer transition-all border border-indigo-100"
+                      >
+                        Выбрать файл
+                      </label>
+                      <input
+                        type="text"
+                        value={specificationConfig?.companyLogo || ""}
+                        onChange={(e) => {
+                          setSpecificationConfig((prev: any) => ({
+                            ...prev,
+                            companyLogo: e.target.value,
+                          }));
+                        }}
+                        placeholder="Или вставьте ссылку..."
+                        className="w-full p-2 bg-white border border-gray-200 rounded-xl text-[11px] outline-none focus:ring-1 focus:ring-indigo-500 font-sans text-gray-700"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <span className="font-bold text-gray-800 text-sm block">Контактный телефон</span>
+                    <span className="text-xs text-gray-500 block mt-1">
+                      Отображается в правом верхнем углу коммерческих предложений.
+                    </span>
+                  </div>
+
+                  <div className="relative">
+                    <Phone className="w-4 h-4 text-gray-400 absolute left-4 top-3.5" />
+                    <input
+                      type="text"
+                      value={specificationConfig?.companyPhone || ""}
+                      onChange={(e) => {
+                        setSpecificationConfig((prev: any) => ({
+                          ...prev,
+                          companyPhone: e.target.value,
+                        }));
+                      }}
+                      className="w-full pl-11 pr-4 py-3.5 bg-white border border-gray-200 rounded-2xl text-xs focus:ring-2 focus:ring-indigo-500 outline-none font-sans text-gray-700"
+                      placeholder="+7 (999) 000-00-00"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* MESSENGERS & CHAT LINKS */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-gray-50/50 p-6 rounded-3xl border border-gray-100">
+                <div className="space-y-3">
+                  <div>
+                    <span className="font-bold text-gray-800 text-sm block">Ссылка на чат Telegram</span>
+                    <span className="text-xs text-gray-500 block mt-1">
+                      Ссылка для быстрой связи через Telegram (например, https://t.me/username).
+                    </span>
+                  </div>
+
+                  <div className="relative">
+                    <Send className="w-4 h-4 text-[#229ED9] absolute left-4 top-3.5" />
+                    <input
+                      type="text"
+                      value={specificationConfig?.telegramLink || ""}
+                      onChange={(e) => {
+                        setSpecificationConfig((prev: any) => ({
+                          ...prev,
+                          telegramLink: e.target.value,
+                        }));
+                      }}
+                      className="w-full pl-11 pr-4 py-3.5 bg-white border border-gray-200 rounded-2xl text-xs focus:ring-2 focus:ring-[#229ED9] outline-none font-sans text-gray-700"
+                      placeholder="https://t.me/..."
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <span className="font-bold text-gray-800 text-sm block">Ссылка на чат Max</span>
+                    <span className="text-xs text-gray-500 block mt-1">
+                      Ссылка для быстрой связи через мессенджер Max.
+                    </span>
+                  </div>
+
+                  <div className="relative">
+                    <MessageSquare className="w-4 h-4 text-violet-600 absolute left-4 top-3.5" />
+                    <input
+                      type="text"
+                      value={specificationConfig?.maxLink || ""}
+                      onChange={(e) => {
+                        setSpecificationConfig((prev: any) => ({
+                          ...prev,
+                          maxLink: e.target.value,
+                        }));
+                      }}
+                      className="w-full pl-11 pr-4 py-3.5 bg-white border border-gray-200 rounded-2xl text-xs focus:ring-2 focus:ring-violet-500 outline-none font-sans text-gray-700"
+                      placeholder="https://max.com/..."
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* TEXT ELEMENTS */}
+              <div className="grid grid-cols-1 gap-6 bg-gray-50/50 p-6 rounded-3xl border border-gray-100">
+                <div className="space-y-3">
+                  <div>
+                    <span className="font-bold text-gray-800 text-sm block">Заголовок коммерческого предложения</span>
+                    <span className="text-xs text-gray-500 block mt-1">
+                      Основной заголовок бланка КП (например: Индивидуальное проектное предложение).
+                    </span>
+                  </div>
+
+                  <input
+                    type="text"
+                    value={specificationConfig?.proposalTitle || ""}
+                    onChange={(e) => {
+                      setSpecificationConfig((prev: any) => ({
+                        ...prev,
+                        proposalTitle: e.target.value,
+                      }));
+                    }}
+                    className="w-full p-4 bg-white border border-gray-200 rounded-2xl text-xs focus:ring-2 focus:ring-indigo-500 outline-none font-sans text-gray-700"
+                    placeholder="Коммерческое предложение..."
+                  />
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <span className="font-bold text-gray-800 text-sm block">Вводный сопроводительный текст</span>
+                    <span className="text-xs text-gray-550 block mt-1">
+                      Приветственный текст, описывающий преимущества работы и раскрывающий уважение к покупателю.
+                    </span>
+                  </div>
+
+                  <textarea
+                    value={specificationConfig?.proposalIntroText || ""}
+                    onChange={(e) => {
+                      setSpecificationConfig((prev: any) => ({
+                        ...prev,
+                        proposalIntroText: e.target.value,
+                      }));
+                    }}
+                    rows={4}
+                    className="w-full p-4 bg-white border border-gray-200 rounded-2xl text-xs focus:ring-2 focus:ring-indigo-500 outline-none resize-none font-sans text-gray-700"
+                    placeholder="С удовольствием представляем вам расчет стоимости изготовления изделий..."
+                  />
+                </div>
+              </div>
+            </section>
           </div>
         )}
         {activeSubTab === "general" && (
@@ -16379,26 +16918,38 @@ const ProductsView = ({
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">
-                      Цвет / Декор
-                    </label>
-                    <div className="relative">
-                      <Palette className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
-                      <input
-                        type="text"
-                        value={newProduct.color}
-                        onChange={(e) =>
-                          setNewProduct((prev) => ({
-                            ...prev,
-                            color: e.target.value,
-                          }))
-                        }
-                        className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
-                        placeholder="Например: Хром матовый"
-                      />
+
+                  {!(newProduct.category === "Столешницы и стеновые" && newProduct.wtManufacturer === "Скиф") ? (
+                    <div>
+                      <label className="block text-sm font-bold text-gray-700 mb-2">
+                        Цвет / Декор
+                      </label>
+                      <div className="relative">
+                        <Palette className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
+                        <input
+                          type="text"
+                          value={newProduct.color}
+                          onChange={(e) =>
+                            setNewProduct((prev) => ({
+                              ...prev,
+                              color: e.target.value,
+                            }))
+                          }
+                          className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
+                          placeholder="Например: Хром матовый"
+                        />
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <div>
+                      <label className="block text-sm font-bold text-gray-400 mb-2">
+                        Цвет / Декор
+                      </label>
+                      <div className="p-3 border border-dashed border-gray-200 rounded-xl bg-gray-50 text-xs text-gray-500 font-sans">
+                        Для столешниц и стеновых панелей Скиф декор указывается менеджером в итоговом расчете.
+                      </div>
+                    </div>
+                  )}
 
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-2">
@@ -18163,6 +18714,10 @@ export default function App() {
     projects: any[];
     data: any;
   } | null>(null);
+  const [printProposalData, setPrintProposalData] = useState<{
+    projects: any[];
+    data: any;
+  } | null>(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [prices, setPrices] = useState<Record<string, number>>({});
   const [historyMaterialId, setHistoryMaterialId] = useState<string | null>(null);
@@ -18240,6 +18795,25 @@ export default function App() {
     setSpareSheets((prev) => ({ ...prev, [materialKey]: !prev[materialKey] }));
   };
   const [calcMode, setCalcMode] = useState<"sheet" | "area">("sheet");
+  const [specificationConfig, setSpecificationConfig] = useState<any>({
+    contractSumIncludes: {
+      materials: true,
+      hardware: true,
+      services: true,
+      delivery: false,
+      assembly: false,
+    },
+    approvalText: "Заказчик подтверждает и согласен со Спецификацией к заказу. Внесенные изменения после подписания могут повлечь изменение стоимости и сроков.",
+    colorNoticeText: "Заказчик уведомлен, что отображение цветов на мониторах и мобильных устройствах может отличаться от выбранного декора. Цвет декора соответствует исключительно представленному образцу.",
+    sketchesAgreementText: "Заказчик подтверждает и согласен с эскизами и размерами указанными на нем, а также с информацией, указывающей на технические особенности элементов продукции.",
+    showMaterialQuantity: true,
+    companyLogo: "",
+    companyPhone: "",
+    telegramLink: "",
+    maxLink: "",
+    proposalTitle: "Коммерческое предложение",
+    proposalIntroText: "С удовольствием представляем вам расчет стоимости изготовления изделий по вашему индивидуальному проекту. Мы проработали каждую деталь, подобрали качественные материалы и фурнитуру, чтобы готовый продукт радовал вас долгие годы. Будем рады ответить на ваши вопросы и приступить к реализации!",
+  });
   const [coefficients, setCoefficients] = useState({
     retail: {
       ldsp: 4,
@@ -18895,6 +19469,7 @@ export default function App() {
           if (data.deliveryTariffs) setDeliveryTariffs(data.deliveryTariffs);
           if (data.mapLink) setMapLink(data.mapLink);
           if (data.catalogMaterials) setCatalogMaterials(data.catalogMaterials);
+          if (data.specificationConfig) setSpecificationConfig(data.specificationConfig);
         }
       },
       (error) =>
@@ -19907,6 +20482,7 @@ export default function App() {
           defaultCuttingType,
           companyInfo,
           catalogMaterials,
+          specificationConfig,
         },
       );
 
@@ -21757,6 +22333,7 @@ export default function App() {
               }}
               results={results}
               selectedDecor={selectedDecor}
+              setSelectedDecor={setSelectedDecor}
               prices={prices}
               facadeType={facadeType}
               sheetConfigs={sheetConfigs}
@@ -21923,6 +22500,28 @@ export default function App() {
                   setEditingSet(project);
                   setIsCheckoutModalOpen(true);
                 }
+              }}
+              onOpenProposal={(project) => {
+                const singleProjectData = {
+                  contractNumber: project.id.slice(0, 8),
+                  contractDate: (project as any).sentAt || new Date().toISOString(),
+                  readyDate: (project as any).readyDate || null,
+                  summary: project.data?.summary || {
+                    totalMaterialsPrice: project.totalPrice || 0,
+                    totalHardwarePrice: 0,
+                    totalServicesPrice: 0,
+                    materials: project.data?.summaryRows?.filter((r: any) => r.type === 'material') || [],
+                    hardware: project.data?.summaryRows?.filter((r: any) => r.type === 'hardware' || r.type === 'product') || [],
+                    services: project.data?.summaryRows?.filter((r: any) => r.type === 'service') || [],
+                    totalDeliveryPrice: 0,
+                    totalAssemblyPrice: 0,
+                  },
+                  sketches: project.sketches || [],
+                };
+                setPrintProposalData({ 
+                  projects: [project], 
+                  data: singleProjectData 
+                });
               }}
               onCreateSet={(projects, set) => {
                 setSelectedProjectsForCheckout(projects);
@@ -22101,6 +22700,8 @@ export default function App() {
             />
           ) : activeTab === "settings" && userRole === "admin" ? (
             <SettingsView
+              specificationConfig={specificationConfig}
+              setSpecificationConfig={setSpecificationConfig}
               suppliers={suppliers}
               setSuppliers={setSuppliers}
               coefficients={coefficients}
@@ -22189,8 +22790,8 @@ export default function App() {
               onPrint={(project) => {
                 const singleProjectData = {
                   contractNumber: project.id.slice(0, 8),
-                  contractDate: project.sentAt || new Date().toISOString(),
-                  readyDate: project.readyDate || null,
+                  contractDate: (project as any).sentAt || new Date().toISOString(),
+                  readyDate: (project as any).readyDate || null,
                   summary: project.data?.summary || {
                     totalMaterialsPrice: project.totalPrice || 0,
                     totalHardwarePrice: 0,
@@ -22204,6 +22805,28 @@ export default function App() {
                   sketches: project.sketches || [],
                 };
                 setPrintSetData({ 
+                  projects: [project], 
+                  data: singleProjectData 
+                });
+              }}
+              onPrintProposal={(project) => {
+                const singleProjectData = {
+                  contractNumber: project.id.slice(0, 8),
+                  contractDate: (project as any).sentAt || new Date().toISOString(),
+                  readyDate: (project as any).readyDate || null,
+                  summary: project.data?.summary || {
+                    totalMaterialsPrice: project.totalPrice || 0,
+                    totalHardwarePrice: 0,
+                    totalServicesPrice: 0,
+                    materials: project.data?.summaryRows?.filter((r: any) => r.type === 'material') || [],
+                    hardware: project.data?.summaryRows?.filter((r: any) => r.type === 'hardware' || r.type === 'product') || [],
+                    services: project.data?.summaryRows?.filter((r: any) => r.type === 'service') || [],
+                    totalDeliveryPrice: 0,
+                    totalAssemblyPrice: 0,
+                  },
+                  sketches: project.sketches || [],
+                };
+                setPrintProposalData({ 
                   projects: [project], 
                   data: singleProjectData 
                 });
@@ -22253,6 +22876,7 @@ export default function App() {
         {isCheckoutModalOpen && (
           <ProjectSetCheckoutModal
             projects={selectedProjectsForCheckout}
+            specificationConfig={specificationConfig}
             onClose={() => setIsCheckoutModalOpen(false)}
             onSave={(data) => finalizeSet(data, undefined, true)}
             onSaveDraft={(data) => finalizeSet(data, undefined, false)}
@@ -22265,7 +22889,17 @@ export default function App() {
           <SpecificationPrintView
             projects={printSetData.projects}
             setData={printSetData.data}
+            specificationConfig={specificationConfig}
             onClose={() => setPrintSetData(null)}
+          />
+        )}
+
+        {printProposalData && (
+          <CommercialProposalPrintView
+            projects={printProposalData.projects}
+            setData={printProposalData.data}
+            specificationConfig={specificationConfig}
+            onClose={() => setPrintProposalData(null)}
           />
         )}
 
@@ -22674,7 +23308,17 @@ export default function App() {
           <SpecificationPrintView
             projects={printSetData.projects}
             setData={printSetData.data}
+            specificationConfig={specificationConfig}
             onClose={() => setPrintSetData(null)}
+          />
+        )}
+
+        {printProposalData && (
+          <CommercialProposalPrintView
+            projects={printProposalData.projects}
+            setData={printProposalData.data}
+            specificationConfig={specificationConfig}
+            onClose={() => setPrintProposalData(null)}
           />
         )}
 
