@@ -1,6 +1,5 @@
 import React, { useRef, useState, useMemo, useEffect } from "react";
-import html2pdf from "html2pdf.js";
-import { Download, Loader2, Phone, User, MessageSquare, Send, CheckCircle2, Image as ImageIcon, Briefcase, FileText } from "lucide-react";
+import { Phone, User, MessageSquare, Send, CheckCircle2, Image as ImageIcon, Briefcase, FileText, Printer } from "lucide-react";
 
 export const CommercialProposalPrintView = ({
   projects,
@@ -19,7 +18,6 @@ export const CommercialProposalPrintView = ({
 }) => {
   const summary = setData?.summary || {};
   const contentRef = useRef<HTMLDivElement>(null);
-  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [employees, setEmployees] = useState<any[]>(initialEmployees);
 
   useEffect(() => {
@@ -111,88 +109,158 @@ export const CommercialProposalPrintView = ({
     );
   }, [summary, config.includes, finalDeliveryPrice, finalAssemblyPrice]);
 
-  // Alternatives calculation
-  const alternatives = useMemo(() => {
-    let hardwarePremiumCost = 0;
-    let hardwareOptimaCost = 0;
-    let hardwareCurrentCost = 0;
+  const getProjectItemPrice = (projectItem: any) => {
+    const incl = config.includes;
+    const subSummary = projectItem.data?.summary || {};
+    const subServiceData = projectItem.data?.serviceData || {};
 
-    // Iterate through the project's hardware rows to calculate the precise differences based on analogues if available
-    if (summary.hardware && summary.hardware.length > 0) {
-      summary.hardware.forEach((item: any) => {
-        const qty = item.qty || 1;
-        const currentItemCost = (item.price || 0) * qty;
-        hardwareCurrentCost += currentItemCost;
+    const matPrice = (subSummary.totalMaterialsPrice || 0) + (subSummary.totalFacadePrice || 0) + (subSummary.totalCustomFacadePrice || 0);
+    const hdwPrice = (subSummary.totalHardwarePrice || 0);
+    const srvPrice = (subSummary.totalServicesPrice || 0);
+    
+    // Resolve project level delivery and assembly price
+    const delPrice = subServiceData.deliveryPrice || subSummary.totalDeliveryPrice || 0;
+    const asPrice = subServiceData.assemblyPrice || subSummary.totalAssemblyPrice || 0;
 
-        // Try to find the product in the catalog to inspect analogs
-        const catProd = catalogProducts?.find((cp: any) => 
-          String(cp.id) === String(item.productId || item.id) ||
-          cp.name?.toLowerCase().trim() === item.name?.toLowerCase().trim()
-        );
+    // Calculate sum based on what's active
+    let calculatedItemPrice = 
+      (incl.materials ? matPrice : 0) +
+      (incl.hardware ? hdwPrice : 0) +
+      (incl.services ? srvPrice : 0) +
+      (incl.delivery ? delPrice : 0) +
+      (incl.assembly ? asPrice : 0);
 
-        let foundPremium = false;
-        let foundOptima = false;
-
-        if (catProd && catProd.analogs && catProd.analogs.length > 0) {
-          const analogsList = catProd.analogs
-            .map((aid: string) => catalogProducts?.find((cp: any) => String(cp.id) === String(aid)))
-            .filter(Boolean);
-
-          if (analogsList.length > 0) {
-            // Premium is more expensive than current catalog item
-            const premiumAnalogs = analogsList.filter((ap: any) => (ap.price || ap.purchasePrice || 0) > (catProd.price || catProd.purchasePrice || 0));
-            // Optima is cheaper than current catalog item
-            const economyAnalogs = analogsList.filter((ap: any) => (ap.price || ap.purchasePrice || 0) < (catProd.price || catProd.purchasePrice || 0));
-
-            if (premiumAnalogs.length > 0) {
-              premiumAnalogs.sort((a, b) => (b.price || 0) - (a.price || 0));
-              hardwarePremiumCost += (premiumAnalogs[0].price || 0) * qty;
-              foundPremium = true;
-            }
-
-            if (economyAnalogs.length > 0) {
-              economyAnalogs.sort((a, b) => (a.price || 0) - (b.price || 0));
-              hardwareOptimaCost += (economyAnalogs[0].price || 0) * qty;
-              foundOptima = true;
-            }
-          }
-        }
-
-        // Fallbacks if no specific analogue matches exist in the DB
-        if (!foundPremium) {
-          // Standard upgrade to premium (e.g., Boyard to Hettich is +45%)
-          hardwarePremiumCost += Math.round(currentItemCost * 1.45);
-        }
-        if (!foundOptima) {
-          // Standard downgrade to base (e.g., Comfort to base Boyard/Firmax is -25%)
-          hardwareOptimaCost += Math.round(currentItemCost * 0.75);
-        }
-      });
+    // If calculatedItemPrice is 0, fallback to projectItem.totalPrice minus excluded delivery/assembly
+    if (calculatedItemPrice === 0) {
+      let basePrice = projectItem.totalPrice || 0;
+      if (!incl.delivery) {
+        basePrice -= delPrice;
+      }
+      if (!incl.assembly) {
+        basePrice -= asPrice;
+      }
+      calculatedItemPrice = Math.max(0, basePrice);
     }
 
-    // Calculate differences
-    const premiumDiff = hardwarePremiumCost - hardwareCurrentCost;
-    const optimaDiff = hardwareCurrentCost - hardwareOptimaCost;
+    return calculatedItemPrice;
+  };
 
-    // Apply to the total sum
-    let premiumPrice = totalSum + (premiumDiff > 0 ? premiumDiff : Math.round(totalSum * 0.16));
-    let comfortPlusPrice = totalSum;
-    let optimaPrice = totalSum - (optimaDiff > 0 ? optimaDiff : Math.round(totalSum * 0.12));
+  // Analyze current project specifications
+  const projectAnalysis = useMemo(() => {
+    const hardwareList = projects.flatMap((p: any) => p.data?.summary?.hardware || p.data?.hardware || p.hardware || []);
+    const materialsList = projects.flatMap((p: any) => p.data?.summary?.materials || p.data?.materials || p.materials || []);
 
-    // Bounds checking to make sure Premium > Comfort Plus > Optima
-    if (premiumPrice <= comfortPlusPrice) {
-      premiumPrice = Math.round(comfortPlusPrice * 1.16);
-    }
-    if (optimaPrice >= comfortPlusPrice) {
-      optimaPrice = Math.round(comfortPlusPrice * 0.88);
+    const hardwareNames = Array.from(new Set(hardwareList.map((h: any) => h.name || "").filter(Boolean)));
+    const materialNames = Array.from(new Set(materialsList.map((m: any) => m.name || "").filter(Boolean)));
+
+    const hasBlum = hardwareList.some((h: any) => /blum|блюм/i.test(h.name || ""));
+    const hasHettich = hardwareList.some((h: any) => /hettich|хеттих/i.test(h.name || ""));
+    const hasDtc = hardwareList.some((h: any) => /dtc|samet|самет/i.test(h.name || ""));
+    const hasBoyard = hardwareList.some((h: any) => /boyard|боярд|firmax|фирмакс/i.test(h.name || ""));
+
+    const hasEnamel = materialsList.some((m: any) => /эмаль|enamel|лак/i.test(m.name || "") || /эмаль/i.test(m.subType || m.subtype || ""));
+    const hasVeneer = materialsList.some((m: any) => /шпон|veneer/i.test(m.name || "") || /шпон/i.test(m.subType || m.subtype || ""));
+    const hasPvc = materialsList.some((m: any) => /пленка|плёнка|pvc|мдф/i.test(m.name || "") || /пленка|плёнка/i.test(m.subType || m.subtype || ""));
+    const hasLdsp = materialsList.some((m: any) => /лдсп|ldsp|egger|kronospan/i.test(m.name || "") || /лдсп/i.test(m.subType || m.subtype || ""));
+
+    // Categorize current tier
+    let currentTier: "premium" | "comfort" | "optima" = "comfort";
+    if (hasBlum || hasHettich || hasEnamel || hasVeneer) {
+      currentTier = "premium";
+    } else if (hasBoyard && !hasDtc) {
+      currentTier = "optima";
     }
 
     return {
-      premiumPrice,
-      comfortPlusPrice,
-      optimaPrice
+      hardwareNames,
+      materialNames,
+      hasBlum,
+      hasHettich,
+      hasDtc,
+      hasBoyard,
+      hasEnamel,
+      hasVeneer,
+      hasPvc,
+      hasLdsp,
+      currentTier
     };
-  }, [totalSum, summary.hardware, catalogProducts]);
+  }, [projects]);
+
+  // Alternatives/variants calculation with dynamic Russian descriptions
+  const alternatives = useMemo(() => {
+    const analysis = projectAnalysis;
+    const currentPrice = totalSum;
+
+    // Build nice strings of what is already in the project
+    const currentHardwaresList = analysis.hardwareNames.length > 0
+      ? analysis.hardwareNames.join(", ")
+      : (analysis.hasBlum || analysis.hasHettich ? "Blum/Hettich" : analysis.hasDtc ? "DTC/Samet" : "Boyard/Firmax");
+
+    const currentMaterialsList = analysis.materialNames.length > 0 
+      ? analysis.materialNames.join(", ") 
+      : "выбранных материалов";
+
+    if (analysis.currentTier === "premium") {
+      // 2 options: Selected (Premium) and More affordable (Comfort)
+      const comfortPrice = Math.round(currentPrice * 0.85);
+      const saving = currentPrice - comfortPrice;
+
+      const premiumDesc = `Ваш проект рассчитан в максимальной комплектации Премиум с использованием высококлассной фурнитуры (${currentHardwaresList}) и долговечных материалов (${currentMaterialsList}). Это флагманское качество, безупречная плавность хода и ресурс эксплуатации более 25 лет.`;
+      
+      const comfortDesc = `Для оптимизации бюджета мы разработали проект-альтернативу: замена премиальной фурнитуры на надежные азиатские механизмы DTC/Samet со встроенными доводчиками, а также использование фасадов из качественного МДФ в износостойкой суперматовой ПВХ-плёнке. Внешний вид мебели останется практически идентичным, а экономия составит около ${saving.toLocaleString()} ₽ (15%).`;
+
+      return {
+        type: "premium-heavy" as const,
+        premiumPrice: currentPrice,
+        premiumDesc,
+        comfortPrice,
+        comfortDesc,
+        saving,
+      };
+    } else if (analysis.currentTier === "optima") {
+      // 3 options: Selected (Optima), Comfort upgrade, Premium upgrade
+      const comfortPrice = Math.round(currentPrice * 1.15);
+      const premiumPrice = Math.round(currentPrice * 1.35);
+
+      const optimaDesc = `Ваш проект рассчитан в базовой конфигурации Оптима. В расчете используется проверенная функциональная фурнитура (${currentHardwaresList}) и практичные фасады (${currentMaterialsList}). Это надежное и максимально дружелюбное по цене интерьерное решение.`;
+
+      const comfortDesc = `Рекомендуем рассмотреть комплектацию Комфорт: замена петель и направляющих ящиков на улучшенные серии DTC или Boyard Comfort с доводчиками и плавным закрыванием, а также переход на более плотные плиты МДФ в ПВХ-плёнке. Это существенно повысит эргономику и продлит срок службы мебели до 10-15 лет.`;
+
+      const premiumDesc = `Для максимальной надежности мы можем заменить механизмы на безупречную австрийскую фурнитуру Blum или немецкую Hettich с пожизненной гарантией, а фасады изготовить из МДФ в многослойной шелковисто-матовой эмали. Это гарантирует абсолютно бесшумное скольжение и элитный внешний вид.`;
+
+      return {
+        type: "optima-heavy" as const,
+        optimaPrice: currentPrice,
+        optimaDesc,
+        comfortPrice,
+        comfortDesc,
+        premiumPrice,
+        premiumDesc,
+      };
+    } else {
+      // Default: Comfort middle. Show 3 options: Premium upgrade, Selected (Comfort), Optima downgrade
+      const premiumPrice = Math.round(currentPrice * 1.25);
+      const optimaPrice = Math.round(currentPrice * 0.85);
+      const saving = currentPrice - optimaPrice;
+
+      const premiumDesc = `Рекомендуем повысить класс проекта до уровня Премиум: полная комплектация австрийской фурнитурой Blum или немецкой Hettich с пожизненной гарантией, а также премиальные фасады из МДФ в матовой эмали или шпоне дерева. Это придаст вашей мебели роскошный статус и вечный ресурс эксплуатации.`;
+
+      const comfortDesc = `Ваш проект рассчитан в оптимальной комплектации Комфорт с отличным балансом цены и долговечности. Используется фурнитура с доводчиками (${currentHardwaresList}) и практичные износостойкие фасады (${currentMaterialsList}).`;
+
+      const optimaDesc = `Для снижения общей стоимости проекта можно заменить механизмы на более доступную базовую фурнитуру Boyard или Firmax без сложных систем доводчиков, а материал фасадов выбрать из ЛДСП. Проект полностью сохранит свою конфигурацию и внешний вид, снижая общую смету на ${saving.toLocaleString()} ₽ (15%).`;
+
+      return {
+        type: "comfort-heavy" as const,
+        premiumPrice,
+        premiumDesc,
+        comfortPrice: currentPrice,
+        comfortDesc,
+        optimaPrice,
+        optimaDesc,
+        saving,
+      };
+    }
+  }, [totalSum, projectAnalysis]);
 
   const proposalNumber = useMemo(() => {
     if (setData?.contractNumber) return setData.contractNumber;
@@ -204,37 +272,6 @@ export const CommercialProposalPrintView = ({
     const d = setData?.contractDate ? new Date(setData.contractDate) : new Date();
     return !isNaN(d.getTime()) ? d.toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" }) : new Date().toLocaleDateString("ru-RU");
   }, [setData]);
-
-  const handleSavePdf = () => {
-    if (!contentRef.current) return;
-    setIsGeneratingPdf(true);
-    
-    setTimeout(async () => {
-      try {
-        const opt = {
-          margin:       [6, 6, 6, 6] as [number, number, number, number],
-          filename:     `КП_${proposalNumber}.pdf`,
-          image:        { type: "jpeg" as const, quality: 0.98 },
-          html2canvas:  { scale: 2, useCORS: true, allowTaint: true, logging: false },
-          jsPDF: {
-            unit: "mm" as const,
-            format: "a4" as const,
-            orientation: "portrait" as const,
-          },
-        };
-        const html2pdfModule = (html2pdf as any).default || html2pdf;
-        await html2pdfModule().from(contentRef.current).set(opt).save();
-      } catch (err) {
-        console.error("PDF generation failed:", err);
-        alert(
-          "Возникли сложности с автоматической сборкой PDF (такое случается из-за блокировок CORS сторонних картинок во фрейме).\n\n" +
-          "Решение: Пожалуйста, воспользуйтесь кнопкой 'Печать КП' и в поле принтера выберите 'Сохранить как PDF'. Это сработает мгновенно и сохранит все картинки, QR-коды и высокое качество верстки!"
-        );
-      } finally {
-        setIsGeneratingPdf(false);
-      }
-    }, 455);
-  };
 
   const handlePrint = () => {
     window.print();
@@ -274,38 +311,65 @@ export const CommercialProposalPrintView = ({
       {/* Dynamic styles injected specifically for cleaner browser printing */}
       <style dangerouslySetInnerHTML={{ __html: `
         @media print {
+          @page {
+            size: A4 portrait;
+            margin: 15mm 15mm 15mm 15mm;
+          }
+
+          /* Hide all page background overlays and shells */
+          html, body {
+            background: #ffffff !important;
+            color: #1f2937 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            min-height: 0 !important;
+          }
+
           /* Hide all application shells and sidebars */
           body > * {
             visibility: hidden !important;
+            height: 0 !important;
+            overflow: hidden !important;
           }
+
           /* Only display our commercial proposal container */
-          #kp-modal-container, #kp-modal-container * {
-            visibility: visible !important;
-          }
           #kp-modal-container {
+            visibility: visible !important;
             position: absolute !important;
             left: 0 !important;
             top: 0 !important;
             width: 100% !important;
             height: auto !important;
-            background: white !important;
+            min-height: 0 !important;
+            background: #ffffff !important;
             overflow: visible !important;
             display: block !important;
             padding: 0 !important;
             margin: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            inset: 0 !important;
           }
+
+          #kp-modal-container * {
+            visibility: visible !important;
+          }
+
           #kp-sidebar {
             display: none !important;
+            visibility: hidden !important;
             width: 0 !important;
             height: 0 !important;
             overflow: hidden !important;
             padding: 0 !important;
             margin: 0 !important;
           }
+
           #kp-printable-area {
-            position: absolute !important;
-            left: 0 !important;
-            top: 0 !important;
+            position: relative !important;
+            display: block !important;
             width: 100% !important;
             max-width: none !important;
             min-height: 0 !important;
@@ -313,6 +377,39 @@ export const CommercialProposalPrintView = ({
             box-shadow: none !important;
             padding: 0 !important;
             margin: 0 !important;
+            background: #ffffff !important;
+            overflow: visible !important;
+          }
+
+          /* REPEAT CP PREVIEW COLOR STYLES COMPLETELY IN PRINTER */
+          #kp-printable-area, #kp-printable-area * {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            color-adjust: exact !important;
+          }
+
+          /* BREAK PAGES GRACEFULLY WITHOUT CUTTING CHARACTERS OR BADGES MIDDLE-ROW */
+          .break-inside-avoid {
+            break-inside: avoid !important;
+            page-break-inside: avoid !important;
+          }
+
+          img, p, span, h1, h2, h3, h4, th, td, tr, div {
+            orphans: 4;
+            widows: 4;
+          }
+
+          img {
+            max-width: 100% !important;
+            height: auto !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
+          }
+
+          /* Specifically targets item breakdown cards and summaries to avoid chopping them */
+          .bg-white.rounded-2xl {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
         }
       `}} />
@@ -408,36 +505,19 @@ export const CommercialProposalPrintView = ({
             </label>
           </div>
 
-          <div className="space-y-2">
-            <button
-              onClick={handleSavePdf}
-              disabled={isGeneratingPdf}
-              className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl transition-all shadow-md active:scale-95 disabled:scale-100 disabled:opacity-50 text-sm cursor-pointer"
-            >
-              {isGeneratingPdf ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Создание PDF...
-                </>
-              ) : (
-                <>
-                  <Download className="w-4 h-4" />
-                  Скачать КП
-                </>
-              )}
-            </button>
-
+          <div className="space-y-2.5">
             {/* Native browser print option */}
             <button
               onClick={handlePrint}
-              className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl transition-all shadow-md active:scale-95 text-sm cursor-pointer"
+              className="w-full flex items-center justify-center gap-2.5 py-3.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-extrabold rounded-2xl transition-all shadow-lg shadow-indigo-500/10 active:scale-[0.98] text-sm cursor-pointer"
             >
-              <span>🖨️ Печать / Сохранить в PDF</span>
+              <Printer className="w-4 h-4" />
+              <span>Печать / Сохранить в PDF</span>
             </button>
 
             <button
               onClick={onClose}
-              className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl transition-all text-sm cursor-pointer"
+              className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl transition-all text-sm cursor-pointer active:scale-[0.98]"
             >
               Закрыть
             </button>
@@ -570,7 +650,7 @@ export const CommercialProposalPrintView = ({
                         <div className="text-right">
                           <p className="text-[11px] text-gray-400 font-medium">Стоимость изделия</p>
                           <span className="text-sm font-black text-indigo-700">
-                            {(projectItem.totalPrice || 0).toLocaleString()} ₽
+                            {getProjectItemPrice(projectItem).toLocaleString()} ₽
                           </span>
                         </div>
                       )}
@@ -588,7 +668,7 @@ export const CommercialProposalPrintView = ({
                             const sub = m.subType || m.subtype || m.partType || m.sub || "";
                             const qty = m.qty || "";
                             return (
-                              <div key={mIdx} className="flex justify-between items-start gap-3 text-gray-700 bg-white hover:bg-gray-50/50 p-2.5 rounded-xl text-xs transition-colors border border-gray-100">
+                              <div key={mIdx} className="flex justify-between items-start gap-3 text-gray-700 bg-white hover:bg-gray-50/50 p-2.5 rounded-xl text-xs transition-colors border border-gray-100 break-inside-avoid">
                                 <div className="flex items-start gap-2">
                                   <div className="w-1.5 h-1.5 rounded-full bg-indigo-505 bg-indigo-500 mt-1.5 flex-shrink-0" />
                                   <div className="flex flex-col gap-0.5">
@@ -627,7 +707,7 @@ export const CommercialProposalPrintView = ({
                             const decor = h.decor && h.decor !== "Не указан" && h.decor !== "-" ? h.decor : "";
                             const qty = h.qty || "";
                             return (
-                              <div key={hIdx} className="flex justify-between items-start gap-3 text-gray-700 bg-white hover:bg-gray-50/50 p-2.5 rounded-xl text-xs transition-colors border border-gray-100">
+                              <div key={hIdx} className="flex justify-between items-start gap-3 text-gray-700 bg-white hover:bg-gray-50/50 p-2.5 rounded-xl text-xs transition-colors border border-gray-100 break-inside-avoid">
                                 <div className="flex items-start gap-2">
                                   <div className="w-1.5 h-1.5 rounded-full bg-pink-500 mt-1.5 flex-shrink-0" />
                                   <div className="flex flex-col gap-0.5">
@@ -731,54 +811,148 @@ export const CommercialProposalPrintView = ({
                 <div className="flex items-center gap-2 border-b pb-3 border-gray-100">
                   <FileText className="w-4.5 h-4.5 text-indigo-600" />
                   <div>
-                    <h4 className="font-bold text-xs text-gray-900 leading-tight uppercase tracking-wider">Варианты оптимизации бюджета мебели</h4>
-                    <p className="text-[10px] text-gray-400">Сравнение стоимости при замене ключевых брендов фурнитуры</p>
+                    <h4 className="font-bold text-xs text-gray-900 leading-tight uppercase tracking-wider">Варианты комплектации мебели</h4>
+                    <p className="text-[10px] text-gray-400">Сравнение стоимости проекта при различных уровнях фурнитуры и фасадов</p>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className={`grid grid-cols-1 ${alternatives.type === "premium-heavy" ? "md:grid-cols-2" : "md:grid-cols-3"} gap-4`}>
                   
-                  {/* Premium Option */}
-                  <div className="bg-white rounded-2xl p-4 space-y-2 border border-gray-200 flex flex-col justify-between hover:border-indigo-200 transition-colors shadow-sm">
-                    <div className="space-y-1">
-                      <span className="text-[9px] uppercase font-bold text-indigo-600 block font-sans">Вариант «Премиум»</span>
-                      <p className="text-lg font-bold font-mono text-gray-800">{(alternatives.premiumPrice).toLocaleString()} ₽</p>
-                      <p className="text-[10.5px] text-gray-500 leading-relaxed font-sans pt-1">
-                        Премиальная немецкая фурнитура Hettich/Blum с пожизненной гарантией, скрытые направляющие Quadro/Actro плавного скольжения, влагостойкие декоры плит.
-                      </p>
-                    </div>
-                  </div>
+                  {/* Case 1: Premium Heavy (Selected Premium vs Comfort Alternative) */}
+                  {alternatives.type === "premium-heavy" && (
+                    <>
+                      {/* Premium Card - Selected */}
+                      <div className="bg-indigo-950 text-white rounded-2xl p-4 space-y-2 border-2 border-indigo-500/80 relative overflow-hidden flex flex-col justify-between shadow-sm">
+                        <div className="absolute top-0 right-0 bg-indigo-600 text-[8px] font-black uppercase text-white px-2.5 py-0.5 rounded-bl-lg">
+                          Выбранный
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[9px] uppercase font-bold text-indigo-300 block">Ваш проект — Премиум</span>
+                          <p className="text-lg font-bold font-mono">{(alternatives.premiumPrice).toLocaleString()} ₽</p>
+                          <p className="text-[10.5px] text-indigo-100 leading-relaxed font-sans pt-1">
+                            {alternatives.premiumDesc}
+                          </p>
+                        </div>
+                        <div className="pt-2 border-t border-indigo-900/55 mt-2">
+                           <span className="text-[9px] font-bold text-indigo-150 bg-indigo-900/40 px-2 py-0.5 rounded-lg text-emerald-300 font-sans">Максимальное качество</span>
+                        </div>
+                      </div>
 
-                  {/* Comfort Option */}
-                  <div className="bg-indigo-950 text-white rounded-2xl p-4 space-y-2 border-2 border-indigo-500/80 relative overflow-hidden flex flex-col justify-between shadow-sm">
-                    <div className="absolute top-0 right-0 bg-indigo-600 text-[8px] font-black uppercase text-white px-2.5 py-0.5 rounded-bl-lg">
-                      Выбранный
-                    </div>
-                    <div className="space-y-1">
-                      <span className="text-[9px] uppercase font-bold text-indigo-300 block">Вариант «Комфорт Плюс»</span>
-                      <p className="text-lg font-bold font-mono">{(alternatives.comfortPlusPrice).toLocaleString()} ₽</p>
-                      <p className="text-[10.5px] text-indigo-100 leading-relaxed font-sans pt-1">
-                        Ваш проект с оптимальным балансом цены и надежности. Комплектация фурнитурой DTC/Samet/Boyard Comfort со встроенными доводчиками и мягким амортизатором.
-                      </p>
-                    </div>
-                    <div className="pt-2 border-t border-indigo-900/55 mt-2">
-                       <span className="text-[9px] font-bold text-indigo-150 bg-indigo-900/40 px-2 py-0.5 rounded-lg text-emerald-300">Базовый выбор проекта</span>
-                    </div>
-                  </div>
+                      {/* Comfort Card - More affordable alternative */}
+                      <div className="bg-white rounded-2xl p-4 space-y-2 border border-gray-200 flex flex-col justify-between hover:border-indigo-200 transition-colors shadow-sm">
+                        <div className="space-y-1">
+                          <span className="text-[9px] uppercase font-bold text-amber-600 block">Более доступный проект — Комфорт</span>
+                          <p className="text-lg font-bold font-mono text-gray-800">{(alternatives.comfortPrice).toLocaleString()} ₽</p>
+                          <p className="text-[10.5px] text-gray-500 leading-relaxed font-sans pt-1">
+                            {alternatives.comfortDesc}
+                          </p>
+                        </div>
+                        <div className="pt-2 border-t border-gray-100 mt-2">
+                          <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg font-sans">Экономия ~{(alternatives.saving).toLocaleString()} ₽ (15%)</span>
+                        </div>
+                      </div>
+                    </>
+                  )}
 
-                  {/* Standard Option */}
-                  <div className="bg-white rounded-2xl p-4 space-y-2 border border-gray-200 flex flex-col justify-between hover:border-indigo-200 transition-colors shadow-sm">
-                    <div className="space-y-1">
-                      <span className="text-[9px] uppercase font-bold text-amber-600 block">Вариант «Оптима»</span>
-                      <p className="text-lg font-bold font-mono text-gray-800">{(alternatives.optimaPrice).toLocaleString()} ₽</p>
-                      <p className="text-[10.5px] text-gray-500 leading-relaxed font-sans pt-1">
-                        Использование надежной фурнитуры Boyard/Firmax с доводчиками в основных зонах, надежные телескопические направляющие ящиков полного выдвижения.
-                      </p>
-                    </div>
-                    <div className="pt-2 border-t border-gray-100 mt-2">
-                      <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-lg font-sans">Выгода до 12% (~{(alternatives.comfortPlusPrice - alternatives.optimaPrice).toLocaleString()} ₽)</span>
-                    </div>
-                  </div>
+                  {/* Case 2: Optima Heavy (Selected Optima vs Comfort vs Premium) */}
+                  {alternatives.type === "optima-heavy" && (
+                    <>
+                      {/* Optima Card - Selected */}
+                      <div className="bg-indigo-950 text-white rounded-2xl p-4 space-y-2 border-2 border-indigo-500/80 relative overflow-hidden flex flex-col justify-between shadow-sm">
+                        <div className="absolute top-0 right-0 bg-indigo-600 text-[8px] font-black uppercase text-white px-2.5 py-0.5 rounded-bl-lg">
+                          Выбранный
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[9px] uppercase font-bold text-indigo-300 block">Ваш проект — Оптима</span>
+                          <p className="text-lg font-bold font-mono">{(alternatives.optimaPrice).toLocaleString()} ₽</p>
+                          <p className="text-[10.5px] text-indigo-100 leading-relaxed font-sans pt-1">
+                            {alternatives.optimaDesc}
+                          </p>
+                        </div>
+                        <div className="pt-2 border-t border-indigo-900/55 mt-2">
+                           <span className="text-[9px] font-bold text-indigo-150 bg-indigo-900/40 px-2 py-0.5 rounded-lg text-emerald-300 font-sans">Базовый выбор проекта</span>
+                        </div>
+                      </div>
+
+                      {/* Comfort Card - Upgrade */}
+                      <div className="bg-white rounded-2xl p-4 space-y-2 border border-gray-200 flex flex-col justify-between hover:border-indigo-200 transition-colors shadow-sm">
+                        <div className="space-y-1">
+                          <span className="text-[9px] uppercase font-bold text-indigo-600 block">Вариант «Комфорт»</span>
+                          <p className="text-lg font-bold font-mono text-gray-800">{(alternatives.comfortPrice).toLocaleString()} ₽</p>
+                          <p className="text-[10.5px] text-gray-500 leading-relaxed font-sans pt-1">
+                            {alternatives.comfortDesc}
+                          </p>
+                        </div>
+                        <div className="pt-2 border-t border-gray-100 mt-2">
+                          <span className="text-[9px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-lg font-sans">Инвестиция в надежность +15%</span>
+                        </div>
+                      </div>
+
+                      {/* Premium Card - Upgrade */}
+                      <div className="bg-white rounded-2xl p-4 space-y-2 border border-gray-200 flex flex-col justify-between hover:border-indigo-200 transition-colors shadow-sm">
+                        <div className="space-y-1">
+                          <span className="text-[9px] uppercase font-bold text-violet-600 block">Вариант «Премиум»</span>
+                          <p className="text-lg font-bold font-mono text-gray-800">{(alternatives.premiumPrice).toLocaleString()} ₽</p>
+                          <p className="text-[10.5px] text-gray-500 leading-relaxed font-sans pt-1">
+                            {alternatives.premiumDesc}
+                          </p>
+                        </div>
+                        <div className="pt-2 border-t border-gray-100 mt-2">
+                          <span className="text-[9px] font-bold text-violet-700 bg-violet-50 px-2 py-0.5 rounded-lg font-sans">Премиум комплектация +35%</span>
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  {/* Case 3: Comfort Heavy (Premium vs Selected Comfort vs Optima) */}
+                  {alternatives.type === "comfort-heavy" && (
+                    <>
+                      {/* Premium Card - Upgrade */}
+                      <div className="bg-white rounded-2xl p-4 space-y-2 border border-gray-200 flex flex-col justify-between hover:border-indigo-200 transition-colors shadow-sm">
+                        <div className="space-y-1">
+                          <span className="text-[9px] uppercase font-bold text-violet-600 block">Вариант «Премиум»</span>
+                          <p className="text-lg font-bold font-mono text-gray-800">{(alternatives.premiumPrice).toLocaleString()} ₽</p>
+                          <p className="text-[10.5px] text-gray-500 leading-relaxed font-sans pt-1">
+                            {alternatives.premiumDesc}
+                          </p>
+                        </div>
+                        <div className="pt-2 border-t border-gray-100 mt-2">
+                          <span className="text-[9px] font-bold text-violet-700 bg-violet-50 px-2 py-0.5 rounded-lg font-sans">Повысить класс мебели до Premium</span>
+                        </div>
+                      </div>
+
+                      {/* Comfort Card - Selected */}
+                      <div className="bg-indigo-950 text-white rounded-2xl p-4 space-y-2 border-2 border-indigo-500/80 relative overflow-hidden flex flex-col justify-between shadow-sm">
+                        <div className="absolute top-0 right-0 bg-indigo-600 text-[8px] font-black uppercase text-white px-2.5 py-0.5 rounded-bl-lg">
+                          Выбранный
+                        </div>
+                        <div className="space-y-1">
+                          <span className="text-[9px] uppercase font-bold text-indigo-300 block">Ваш проект — Комфорт</span>
+                          <p className="text-lg font-bold font-mono">{(alternatives.comfortPrice).toLocaleString()} ₽</p>
+                          <p className="text-[10.5px] text-indigo-100 leading-relaxed font-sans pt-1">
+                            {alternatives.comfortDesc}
+                          </p>
+                        </div>
+                        <div className="pt-2 border-t border-indigo-900/55 mt-2">
+                           <span className="text-[9px] font-bold text-indigo-150 bg-indigo-900/40 px-2 py-0.5 rounded-lg text-emerald-300 font-sans">Оптимальный баланс</span>
+                        </div>
+                      </div>
+
+                      {/* Optima Card - Downgrade */}
+                      <div className="bg-white rounded-2xl p-4 space-y-2 border border-gray-200 flex flex-col justify-between hover:border-indigo-200 transition-colors shadow-sm">
+                        <div className="space-y-1">
+                          <span className="text-[9px] uppercase font-bold text-amber-600 block">Вариант «Оптима»</span>
+                          <p className="text-lg font-bold font-mono text-gray-800">{(alternatives.optimaPrice).toLocaleString()} ₽</p>
+                          <p className="text-[10.5px] text-gray-500 leading-relaxed font-sans pt-1">
+                            {alternatives.optimaDesc}
+                          </p>
+                        </div>
+                        <div className="pt-2 border-t border-gray-100 mt-2">
+                          <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg font-sans">Экономия ~{(alternatives.saving).toLocaleString()} ₽ (15%)</span>
+                        </div>
+                      </div>
+                    </>
+                  )}
 
                 </div>
               </div>
