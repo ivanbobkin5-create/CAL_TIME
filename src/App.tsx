@@ -22899,6 +22899,7 @@ export default function App() {
             projects={printProposalData.projects}
             setData={printProposalData.data}
             specificationConfig={specificationConfig}
+            catalogProducts={catalogProducts}
             onClose={() => setPrintProposalData(null)}
           />
         )}
@@ -23318,6 +23319,7 @@ export default function App() {
             projects={printProposalData.projects}
             setData={printProposalData.data}
             specificationConfig={specificationConfig}
+            catalogProducts={catalogProducts}
             onClose={() => setPrintProposalData(null)}
           />
         )}

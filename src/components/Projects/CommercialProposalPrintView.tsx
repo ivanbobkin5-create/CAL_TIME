@@ -7,12 +7,14 @@ export const CommercialProposalPrintView = ({
   setData,
   specificationConfig,
   employees: initialEmployees = [],
+  catalogProducts = [],
   onClose,
 }: {
   projects: any[];
   setData: any;
   specificationConfig?: any;
   employees?: any[];
+  catalogProducts?: any[];
   onClose: () => void;
 }) => {
   const summary = setData?.summary || {};
@@ -72,17 +74,30 @@ export const CommercialProposalPrintView = ({
     };
   }, [specificationConfig]);
 
+  // Resolve proper delivery and assembly amounts from project serviceData
+  const finalDeliveryPrice = useMemo(() => {
+    const sumFromProjects = projects?.reduce((sum, p) => sum + (p.data?.serviceData?.deliveryPrice || 0), 0) || 0;
+    return sumFromProjects || summary.totalDeliveryPrice || 0;
+  }, [projects, summary.totalDeliveryPrice]);
+
+  const finalAssemblyPrice = useMemo(() => {
+    const sumFromProjects = projects?.reduce((sum, p) => sum + (p.data?.serviceData?.assemblyPrice || 0), 0) || 0;
+    return sumFromProjects || summary.totalAssemblyPrice || 0;
+  }, [projects, summary.totalAssemblyPrice]);
+
   // Find Project Manager
   const managerDetails = useMemo(() => {
     const mainProject = projects?.[0];
     if (!mainProject) return null;
     const employee = employees.find(emp => emp.uid === mainProject.createdBy);
+    const employeePhone = employee?.phone || employee?.phoneNumber || employee?.telegram || specificationConfig?.companyPhone || "+7 (999) 000-00-00";
     return {
       name: employee ? (employee.name || employee.displayName || employee.email) : (mainProject.createdByName || "Специалист компании"),
       email: employee?.email || mainProject.createdByEmail || "info@company.ru",
-      role: employee?.role === "admin" ? "Руководитель" : employee?.role === "manager" ? "Менеджер проектов" : "Конструктор"
+      phone: employeePhone,
+      role: "Менеджер проекта"
     };
-  }, [projects, employees]);
+  }, [projects, employees, specificationConfig]);
 
   // Contract sum calculation
   const totalSum = useMemo(() => {
@@ -91,10 +106,93 @@ export const CommercialProposalPrintView = ({
       (incl.materials ? ((summary.totalMaterialsPrice || 0) + (summary.totalFacadePrice || 0) + (summary.totalCustomFacadePrice || 0)) : 0) +
       (incl.hardware ? (summary.totalHardwarePrice || 0) : 0) +
       (incl.services ? (summary.totalServicesPrice || 0) : 0) +
-      (incl.delivery ? (summary.totalDeliveryPrice || 0) : 0) +
-      (incl.assembly ? (summary.totalAssemblyPrice || 0) : 0)
+      (incl.delivery ? finalDeliveryPrice : 0) +
+      (incl.assembly ? finalAssemblyPrice : 0)
     );
-  }, [summary, config.includes]);
+  }, [summary, config.includes, finalDeliveryPrice, finalAssemblyPrice]);
+
+  // Alternatives calculation
+  const alternatives = useMemo(() => {
+    let hardwarePremiumCost = 0;
+    let hardwareOptimaCost = 0;
+    let hardwareCurrentCost = 0;
+
+    // Iterate through the project's hardware rows to calculate the precise differences based on analogues if available
+    if (summary.hardware && summary.hardware.length > 0) {
+      summary.hardware.forEach((item: any) => {
+        const qty = item.qty || 1;
+        const currentItemCost = (item.price || 0) * qty;
+        hardwareCurrentCost += currentItemCost;
+
+        // Try to find the product in the catalog to inspect analogs
+        const catProd = catalogProducts?.find((cp: any) => 
+          String(cp.id) === String(item.productId || item.id) ||
+          cp.name?.toLowerCase().trim() === item.name?.toLowerCase().trim()
+        );
+
+        let foundPremium = false;
+        let foundOptima = false;
+
+        if (catProd && catProd.analogs && catProd.analogs.length > 0) {
+          const analogsList = catProd.analogs
+            .map((aid: string) => catalogProducts?.find((cp: any) => String(cp.id) === String(aid)))
+            .filter(Boolean);
+
+          if (analogsList.length > 0) {
+            // Premium is more expensive than current catalog item
+            const premiumAnalogs = analogsList.filter((ap: any) => (ap.price || ap.purchasePrice || 0) > (catProd.price || catProd.purchasePrice || 0));
+            // Optima is cheaper than current catalog item
+            const economyAnalogs = analogsList.filter((ap: any) => (ap.price || ap.purchasePrice || 0) < (catProd.price || catProd.purchasePrice || 0));
+
+            if (premiumAnalogs.length > 0) {
+              premiumAnalogs.sort((a, b) => (b.price || 0) - (a.price || 0));
+              hardwarePremiumCost += (premiumAnalogs[0].price || 0) * qty;
+              foundPremium = true;
+            }
+
+            if (economyAnalogs.length > 0) {
+              economyAnalogs.sort((a, b) => (a.price || 0) - (b.price || 0));
+              hardwareOptimaCost += (economyAnalogs[0].price || 0) * qty;
+              foundOptima = true;
+            }
+          }
+        }
+
+        // Fallbacks if no specific analogue matches exist in the DB
+        if (!foundPremium) {
+          // Standard upgrade to premium (e.g., Boyard to Hettich is +45%)
+          hardwarePremiumCost += Math.round(currentItemCost * 1.45);
+        }
+        if (!foundOptima) {
+          // Standard downgrade to base (e.g., Comfort to base Boyard/Firmax is -25%)
+          hardwareOptimaCost += Math.round(currentItemCost * 0.75);
+        }
+      });
+    }
+
+    // Calculate differences
+    const premiumDiff = hardwarePremiumCost - hardwareCurrentCost;
+    const optimaDiff = hardwareCurrentCost - hardwareOptimaCost;
+
+    // Apply to the total sum
+    let premiumPrice = totalSum + (premiumDiff > 0 ? premiumDiff : Math.round(totalSum * 0.16));
+    let comfortPlusPrice = totalSum;
+    let optimaPrice = totalSum - (optimaDiff > 0 ? optimaDiff : Math.round(totalSum * 0.12));
+
+    // Bounds checking to make sure Premium > Comfort Plus > Optima
+    if (premiumPrice <= comfortPlusPrice) {
+      premiumPrice = Math.round(comfortPlusPrice * 1.16);
+    }
+    if (optimaPrice >= comfortPlusPrice) {
+      optimaPrice = Math.round(comfortPlusPrice * 0.88);
+    }
+
+    return {
+      premiumPrice,
+      comfortPlusPrice,
+      optimaPrice
+    };
+  }, [totalSum, summary.hardware, catalogProducts]);
 
   const proposalNumber = useMemo(() => {
     if (setData?.contractNumber) return setData.contractNumber;
@@ -124,13 +222,22 @@ export const CommercialProposalPrintView = ({
             orientation: "portrait" as const,
           },
         };
-        await html2pdf().from(contentRef.current).set(opt).save();
+        const html2pdfModule = (html2pdf as any).default || html2pdf;
+        await html2pdfModule().from(contentRef.current).set(opt).save();
       } catch (err) {
         console.error("PDF generation failed:", err);
+        alert(
+          "Возникли сложности с автоматической сборкой PDF (такое случается из-за блокировок CORS сторонних картинок во фрейме).\n\n" +
+          "Решение: Пожалуйста, воспользуйтесь кнопкой 'Печать КП' и в поле принтера выберите 'Сохранить как PDF'. Это сработает мгновенно и сохранит все картинки, QR-коды и высокое качество верстки!"
+        );
       } finally {
         setIsGeneratingPdf(false);
       }
     }, 455);
+  };
+
+  const handlePrint = () => {
+    window.print();
   };
 
   // Dynamic helper for presenting hardware descriptions and types elegantly
@@ -162,13 +269,59 @@ export const CommercialProposalPrintView = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-[150] overflow-y-auto flex justify-center p-4 sm:p-6 font-sans">
+    <div id="kp-modal-container" className="fixed inset-0 bg-gray-900/40 backdrop-blur-sm z-[150] overflow-y-auto flex justify-center p-4 sm:p-6 font-sans print:bg-white print:p-0">
       
+      {/* Dynamic styles injected specifically for cleaner browser printing */}
+      <style dangerouslySetInnerHTML={{ __html: `
+        @media print {
+          /* Hide all application shells and sidebars */
+          body > * {
+            visibility: hidden !important;
+          }
+          /* Only display our commercial proposal container */
+          #kp-modal-container, #kp-modal-container * {
+            visibility: visible !important;
+          }
+          #kp-modal-container {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            height: auto !important;
+            background: white !important;
+            overflow: visible !important;
+            display: block !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+          #kp-sidebar {
+            display: none !important;
+            width: 0 !important;
+            height: 0 !important;
+            overflow: hidden !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+          #kp-printable-area {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            max-width: none !important;
+            min-height: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+        }
+      `}} />
+
       {/* ON-SCREEN CONTROL BAR */}
       <div className="w-full max-w-5xl flex flex-col lg:flex-row gap-6">
         
         {/* Real-time Document Customizer Sidebar */}
-        <div className="w-full lg:w-80 bg-white rounded-3xl p-6 shadow-2xl h-fit border border-gray-100 flex-shrink-0 animate-in fade-in slide-in-from-left duration-300">
+        <div id="kp-sidebar" className="w-full lg:w-80 bg-white rounded-3xl p-6 shadow-2xl h-fit border border-gray-100 flex-shrink-0 animate-in fade-in slide-in-from-left duration-300 print:hidden">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center">
               <FileText className="w-5 h-5" />
@@ -259,7 +412,7 @@ export const CommercialProposalPrintView = ({
             <button
               onClick={handleSavePdf}
               disabled={isGeneratingPdf}
-              className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl transition-all shadow-md active:scale-95 disabled:scale-100 disabled:opacity-50 text-sm"
+              className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl transition-all shadow-md active:scale-95 disabled:scale-100 disabled:opacity-50 text-sm cursor-pointer"
             >
               {isGeneratingPdf ? (
                 <>
@@ -274,9 +427,17 @@ export const CommercialProposalPrintView = ({
               )}
             </button>
 
+            {/* Native browser print option */}
+            <button
+              onClick={handlePrint}
+              className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl transition-all shadow-md active:scale-95 text-sm cursor-pointer"
+            >
+              <span>🖨️ Печать / Сохранить в PDF</span>
+            </button>
+
             <button
               onClick={onClose}
-              className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl transition-all text-sm"
+              className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl transition-all text-sm cursor-pointer"
             >
               Закрыть
             </button>
@@ -288,7 +449,7 @@ export const CommercialProposalPrintView = ({
         </div>
 
         {/* PRINTABLE PAGE WRAPPER */}
-        <div className="flex-1 bg-white rounded-3xl p-8 sm:p-12 shadow-2xl border border-gray-100 h-fit max-w-[210mm] overflow-x-auto min-h-[297mm] animate-in fade-in zoom-in-95 duration-300">
+        <div id="kp-printable-area" className="flex-1 bg-white rounded-3xl p-8 sm:p-12 shadow-2xl border border-gray-100 h-fit max-w-[210mm] overflow-x-auto min-h-[297mm] animate-in fade-in zoom-in-95 duration-300 print:shadow-none print:border-none print:p-0">
           
           {/* THE CAPTURE TARGET */}
           <div ref={contentRef} className="text-gray-800 text-xs leading-relaxed max-w-[190mm]_mx-auto bg-white" style={{ fontFamily: '"Inter", sans-serif' }}>
@@ -498,51 +659,71 @@ export const CommercialProposalPrintView = ({
             </div>
 
             {/* LOGISTICS & SERVICE DETAILS CARD */}
-            <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4 break-inside-avoid">
-              <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-2 shadow-sm text-left">
-                <div className="flex justify-between items-center bg-gray-50/60 p-2 rounded-xl">
-                  <span className="font-extrabold text-[10px] text-gray-500 uppercase tracking-widest">Доставка и логистика</span>
-                  <span className="text-xs font-black text-indigo-700">{(summary.totalDeliveryPrice || 0).toLocaleString()} ₽</span>
-                </div>
-                <p className="text-[11px] text-gray-500 leading-relaxed font-sans px-1 pt-1">
-                  Бережная транспортировка на специализированном мебельном автотранспорте в защитной упаковке прямо на адрес клиента.
-                </p>
-                <div className="px-1">
-                  {config.includes.delivery ? (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-lg font-bold text-[10px] border border-emerald-100 shadow-sm">
-                      <span className="w-1 h-1 rounded-full bg-emerald-505 bg-emerald-600" />
-                      Включено в стоимость проекта
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-amber-50 text-amber-700 rounded-lg font-bold text-[10px] border border-amber-100">
-                      Оплачивается отдельно
-                    </span>
-                  )}
-                </div>
-              </div>
+            {((config.includes.delivery || finalDeliveryPrice > 0) || (config.includes.assembly || finalAssemblyPrice > 0)) ? (
+              <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4 break-inside-avoid">
+                {(config.includes.delivery || finalDeliveryPrice > 0) && (
+                  <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-2 shadow-sm text-left">
+                    <div className="flex justify-between items-center bg-gray-50/60 p-2 rounded-xl">
+                      <span className="font-extrabold text-[10px] text-gray-500 uppercase tracking-widest">Доставка и логистика</span>
+                      {!config.includes.delivery && (
+                        <span className="text-xs font-black text-indigo-700">{(finalDeliveryPrice).toLocaleString()} ₽</span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-gray-500 leading-relaxed font-sans px-1 pt-1">
+                      Бережная транспортировка на специализированном мебельном автотранспорте в защитной упаковке прямо на адрес клиента.
+                    </p>
+                    <div className="px-1">
+                      {config.includes.delivery ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-lg font-bold text-[10px] border border-emerald-100 shadow-sm">
+                          <span className="w-1 h-1 rounded-full bg-emerald-600" />
+                          Включено в стоимость проекта
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-amber-50 text-amber-700 rounded-lg font-bold text-[10px] border border-amber-100">
+                          Оплачивается отдельно
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
 
-              <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-2 shadow-sm text-left">
-                <div className="flex justify-between items-center bg-gray-50/60 p-2 rounded-xl">
-                  <span className="font-extrabold text-[10px] text-gray-500 uppercase tracking-widest">Сборка и монтаж</span>
-                  <span className="text-xs font-black text-indigo-700">{(summary.totalAssemblyPrice || 0).toLocaleString()} ₽</span>
-                </div>
-                <p className="text-[11px] text-gray-500 leading-relaxed font-sans px-1 pt-1">
-                  Профессиональная сборка, навес, стяжка модулей и точная регулировка мебельных фасадов и петель для долговечной эксплуатации.
-                </p>
-                <div className="px-1">
-                  {config.includes.assembly ? (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-lg font-bold text-[10px] border border-emerald-100 shadow-sm">
-                      <span className="w-1 h-1 rounded-full bg-emerald-600" />
-                      Включено в стоимость проекта
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-amber-50 text-amber-700 rounded-lg font-bold text-[10px] border border-amber-100">
-                      Оплачивается отдельно
-                    </span>
-                  )}
+                {(config.includes.assembly || finalAssemblyPrice > 0) && (
+                  <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-2 shadow-sm text-left">
+                    <div className="flex justify-between items-center bg-gray-50/60 p-2 rounded-xl">
+                      <span className="font-extrabold text-[10px] text-gray-500 uppercase tracking-widest">Сборка и монтаж</span>
+                      {!config.includes.assembly && (
+                        <span className="text-xs font-black text-indigo-700">{(finalAssemblyPrice).toLocaleString()} ₽</span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-gray-500 leading-relaxed font-sans px-1 pt-1">
+                      Профессиональная сборка, навес, стяжка модулей и точная регулировка мебельных фасадов и петель для долговечной эксплуатации.
+                    </p>
+                    <div className="px-1">
+                      {config.includes.assembly ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-emerald-50 text-emerald-700 rounded-lg font-bold text-[10px] border border-emerald-100 shadow-sm">
+                          <span className="w-1 h-1 rounded-full bg-emerald-600" />
+                          Включено в стоимость проекта
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-amber-50 text-amber-700 rounded-lg font-bold text-[10px] border border-amber-100">
+                          Оплачивается отдельно
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="mt-8 bg-amber-50/50 rounded-2xl border border-amber-100 p-4 text-left break-inside-avoid shadow-sm flex items-start gap-3">
+                <div className="w-7 h-7 rounded-lg bg-amber-100 text-amber-850 flex items-center justify-center flex-shrink-0 text-sm">ℹ️</div>
+                <div>
+                  <p className="text-xs font-bold text-amber-900 mb-0.5">Услуги доставки, подъема и сборки мебели не включены в данный расчет стоимости.</p>
+                  <p className="text-[10.5px] text-amber-800 leading-relaxed font-sans">
+                    Если вам потребуются логистика и монтажные услуги, обратитесь к вашему менеджеру проекта. Он сделает точный расчет стоимости с учетом дальности и всех особенностей помещения.
+                  </p>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* 4. BUDGET OPTIMIZATION & DESIGN ALTERNATIVES */}
             {showAlternatives && (
@@ -558,30 +739,30 @@ export const CommercialProposalPrintView = ({
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   
                   {/* Premium Option */}
-                  <div className="bg-indigo-950 text-white rounded-2xl p-4 space-y-2 border-2 border-indigo-500/80 relative overflow-hidden flex flex-col justify-between shadow-sm">
-                    <div className="absolute top-0 right-0 bg-indigo-600 text-[8px] font-black uppercase text-white px-2.5 py-0.5 rounded-bl-lg">
-                      Выбранный
-                    </div>
+                  <div className="bg-white rounded-2xl p-4 space-y-2 border border-gray-200 flex flex-col justify-between hover:border-indigo-200 transition-colors shadow-sm">
                     <div className="space-y-1">
-                      <span className="text-[9px] uppercase font-bold text-indigo-300 block">Вариант «Премиум»</span>
-                      <p className="text-lg font-bold font-mono">{(totalSum).toLocaleString()} ₽</p>
-                      <p className="text-[10.5px] text-indigo-100 leading-relaxed font-sans pt-1">
-                        Флагманская немецкая фурнитура (Hettich / Blum) с пожизненной гарантией, скрытые направляющие плавного скольжения, влагостойкие декоры плит.
+                      <span className="text-[9px] uppercase font-bold text-indigo-600 block font-sans">Вариант «Премиум»</span>
+                      <p className="text-lg font-bold font-mono text-gray-800">{(alternatives.premiumPrice).toLocaleString()} ₽</p>
+                      <p className="text-[10.5px] text-gray-500 leading-relaxed font-sans pt-1">
+                        Премиальная немецкая фурнитура Hettich/Blum с пожизненной гарантией, скрытые направляющие Quadro/Actro плавного скольжения, влагостойкие декоры плит.
                       </p>
                     </div>
                   </div>
 
                   {/* Comfort Option */}
-                  <div className="bg-white rounded-2xl p-4 space-y-2 border border-gray-200 flex flex-col justify-between hover:border-indigo-200 transition-colors shadow-sm">
+                  <div className="bg-indigo-950 text-white rounded-2xl p-4 space-y-2 border-2 border-indigo-500/80 relative overflow-hidden flex flex-col justify-between shadow-sm">
+                    <div className="absolute top-0 right-0 bg-indigo-600 text-[8px] font-black uppercase text-white px-2.5 py-0.5 rounded-bl-lg">
+                      Выбранный
+                    </div>
                     <div className="space-y-1">
-                      <span className="text-[9px] uppercase font-bold text-emerald-600 block">Вариант «Комфорт Плюс»</span>
-                      <p className="text-lg font-bold font-mono text-gray-800">{(Math.round(totalSum * 0.88)).toLocaleString()} ₽</p>
-                      <p className="text-[10.5px] text-gray-500 leading-relaxed font-sans pt-1">
-                        Замена фурнитуры на премиальные азиатские бренды DTC или Samet с доводчиками. Внешний вид остается идентичным, долговечность до 10-15 лет.
+                      <span className="text-[9px] uppercase font-bold text-indigo-300 block">Вариант «Комфорт Плюс»</span>
+                      <p className="text-lg font-bold font-mono">{(alternatives.comfortPlusPrice).toLocaleString()} ₽</p>
+                      <p className="text-[10.5px] text-indigo-100 leading-relaxed font-sans pt-1">
+                        Ваш проект с оптимальным балансом цены и надежности. Комплектация фурнитурой DTC/Samet/Boyard Comfort со встроенными доводчиками и мягким амортизатором.
                       </p>
                     </div>
-                    <div className="pt-2 border-t border-gray-100 mt-2">
-                      <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg">Выгода до 12% (~{(Math.round(totalSum * 0.12)).toLocaleString()} ₽)</span>
+                    <div className="pt-2 border-t border-indigo-900/55 mt-2">
+                       <span className="text-[9px] font-bold text-indigo-150 bg-indigo-900/40 px-2 py-0.5 rounded-lg text-emerald-300">Базовый выбор проекта</span>
                     </div>
                   </div>
 
@@ -589,13 +770,13 @@ export const CommercialProposalPrintView = ({
                   <div className="bg-white rounded-2xl p-4 space-y-2 border border-gray-200 flex flex-col justify-between hover:border-indigo-200 transition-colors shadow-sm">
                     <div className="space-y-1">
                       <span className="text-[9px] uppercase font-bold text-amber-600 block">Вариант «Оптима»</span>
-                      <p className="text-lg font-bold font-mono text-gray-800">{(Math.round(totalSum * 0.78)).toLocaleString()} ₽</p>
+                      <p className="text-lg font-bold font-mono text-gray-800">{(alternatives.optimaPrice).toLocaleString()} ₽</p>
                       <p className="text-[10.5px] text-gray-500 leading-relaxed font-sans pt-1">
-                        Использование надежной фурнитуры Boyard/Firmax с точечными доводчиками в основных зонах, стандартные телескопические направляющие ящиков.
+                        Использование надежной фурнитуры Boyard/Firmax с доводчиками в основных зонах, надежные телескопические направляющие ящиков полного выдвижения.
                       </p>
                     </div>
                     <div className="pt-2 border-t border-gray-100 mt-2">
-                      <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-lg">Выгода до 22% (~{(Math.round(totalSum * 0.22)).toLocaleString()} ₽)</span>
+                      <span className="text-[9px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-lg font-sans">Выгода до 12% (~{(alternatives.comfortPlusPrice - alternatives.optimaPrice).toLocaleString()} ₽)</span>
                     </div>
                   </div>
 
@@ -612,7 +793,7 @@ export const CommercialProposalPrintView = ({
                 <p className="text-xl font-extrabold font-sans">
                   Итоговая стоимость проекта:
                 </p>
-                <div className="text-[10px] text-indigo-200 flex flex-wrap gap-x-3 gap-y-1 font-medium">
+                <div className="text-[10px] text-indigo-200 flex flex-wrap gap-x-3 gap-y-1 font-medium pb-1.5">
                   <span>Материалы: {config.includes.materials ? "Включены" : "Отдельно"}</span>
                   <span>Фурнитура: {config.includes.hardware ? "Включены" : "Отдельно"}</span>
                   <span>Услуги: {config.includes.services ? "Включены" : "Отдельно"}</span>
@@ -625,27 +806,27 @@ export const CommercialProposalPrintView = ({
                 <span className="text-2xl font-black text-white tracking-tight">
                   {totalSum.toLocaleString()} ₽
                 </span>
-                <p className="text-[10px] text-indigo-200">НДС не облагается (УСН)</p>
+                <p className="text-[10px] text-indigo-200">Действительно в течение 14 дней</p>
               </div>
             </div>
 
             {/* 6. SKETCHES AND VISUALS */}
             {showSketches && projects.some(p => p.sketches && p.sketches.length > 0) && (
-              <div className="mt-8 space-y-3 break-inside-avoid">
-                <span className="font-extrabold uppercase text-[10px] text-gray-400 tracking-wider block text-left">
+              <div className="mt-8 space-y-4 break-inside-avoid text-left">
+                <span className="font-extrabold uppercase text-[10px] text-gray-400 tracking-wider block">
                   📸 Эскизы и конструкторские 3D-модели:
                 </span>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-6 w-full">
                   {projects.flatMap((p: any) => p.sketches || []).map((url: string, index: number) => (
-                    <div key={index} className="rounded-2xl overflow-hidden border border-gray-100 shadow-sm bg-gray-50 aspect-video relative flex items-center justify-center">
+                    <div key={index} className="rounded-2xl overflow-hidden border border-gray-100 shadow-md bg-white p-2 relative flex flex-col items-center justify-center max-w-full">
                       <img 
                         src={url} 
                         alt={`Эскиз ${index + 1}`} 
-                        className="w-full h-full object-cover" 
+                        className="w-full h-auto max-h-[520px] object-contain rounded-xl" 
                         referrerPolicy="no-referrer" 
                       />
-                      <div className="absolute bottom-2 left-2 bg-black/50 text-white text-[9px] font-bold px-2 py-0.5 rounded-lg uppercase">
-                        Вид {index + 1}
+                      <div className="absolute top-4 left-4 bg-black/60 text-white text-[10px] font-black px-3 py-1 rounded-lg uppercase tracking-widest">
+                        Эскиз проекта {index + 1}
                       </div>
                     </div>
                   ))}
@@ -663,6 +844,7 @@ export const CommercialProposalPrintView = ({
                   <div>
                     <p className="text-[10px] text-indigo-600 font-black uppercase tracking-wider">{managerDetails.role}</p>
                     <h4 className="font-bold text-gray-900 text-sm">{managerDetails.name}</h4>
+                    <p className="text-[11px] text-gray-500 font-semibold font-sans mt-0.5">Телефон: {managerDetails.phone}</p>
                     <p className="text-[10px] text-gray-400 font-sans">Электронная почта: {managerDetails.email}</p>
                   </div>
                 </div>
