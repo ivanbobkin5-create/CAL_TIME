@@ -1855,6 +1855,7 @@ interface Detail {
   label?: string;
   rotated?: boolean;
   canRotate?: boolean;
+  manuallyRotated?: boolean;
 }
 
 interface SheetConfig {
@@ -1908,6 +1909,7 @@ const packDetails = (
   kerf: number = 4,
   allowRotation: boolean = false,
   mode: "nesting" | "saw" = "saw",
+  isTextureAligned: boolean = false,
 ) => {
   const sheets: Detail[][] = [];
 
@@ -1927,100 +1929,122 @@ const packDetails = (
 
     for (const detail of sortedDetails) {
       let placed = false;
-      const canRotateDetail = allowRotation || detail.canRotate;
-      const orientations = canRotateDetail
-        ? [
-            [detail.width, detail.height, false],
-            [detail.height, detail.width, true],
-          ]
-        : [[detail.width, detail.height, false]];
+      const hasWoodTexture = isTextureAligned && (
+        (detail.color && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|wood|oak|ash|walnut|pine|wenge/i.test(detail.color)) ||
+        (detail.name && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|wood|oak|ash|walnut|pine|wenge/i.test(detail.name))
+      );
+      const canRotateDetail = detail.manuallyRotated ? false : (hasWoodTexture ? false : (allowRotation || detail.canRotate));
 
-      for (const [w, h, isRotated] of orientations as [
-        number,
-        number,
-        boolean,
-      ][]) {
-        if (placed) break;
-
-        // Try existing sheets
-        for (let sIdx = 0; sIdx < sheets.length; sIdx++) {
-          const shelves = sheetShelves[sIdx];
-
-          // Try existing shelves in this sheet
-          for (const shelf of shelves) {
-            if (h <= shelf.height && shelf.usedX + w + kerf <= sheetWidth) {
-              sheets[sIdx].push({
-                ...detail,
-                width: w,
-                height: h,
-                packedX: shelf.usedX,
-                packedY: shelf.y,
-                label: `${w}x${h}`,
-                rotated: isRotated,
-              });
-              shelf.usedX += w + kerf;
-              placed = true;
-              break;
-            }
-          }
-          if (placed) break;
-
-          // Try creating a new shelf in this sheet
-          const lastShelf = shelves[shelves.length - 1];
-          const nextY = lastShelf ? lastShelf.y + lastShelf.height + kerf : 0;
-          if (nextY + h + kerf <= sheetHeight && w + kerf <= sheetWidth) {
-            const newShelf = { y: nextY, height: h, usedX: w + kerf };
-            shelves.push(newShelf);
+      // 1. Try to fit on ANY existing shelf on existing sheets
+      for (let sIdx = 0; sIdx < sheets.length; sIdx++) {
+        const shelves = sheetShelves[sIdx];
+        for (const shelf of shelves) {
+          const normalFits = detail.height <= shelf.height && shelf.usedX + detail.width + kerf <= sheetWidth;
+          if (normalFits) {
             sheets[sIdx].push({
               ...detail,
-              width: w,
-              height: h,
-              packedX: 0,
-              packedY: nextY,
-              label: `${w}x${h}`,
-              rotated: isRotated,
+              width: detail.width,
+              height: detail.height,
+              packedX: shelf.usedX,
+              packedY: shelf.y,
+              label: `${detail.width}x${detail.height}`,
+              rotated: false,
             });
+            shelf.usedX += detail.width + kerf;
+            placed = true;
+            break;
+          }
+
+          const rotatedFits = canRotateDetail && detail.width <= shelf.height && shelf.usedX + detail.height + kerf <= sheetWidth;
+          if (rotatedFits) {
+            sheets[sIdx].push({
+              ...detail,
+              width: detail.height,
+              height: detail.width,
+              packedX: shelf.usedX,
+              packedY: shelf.y,
+              label: `${detail.height}x${detail.width}`,
+              rotated: true,
+            });
+            shelf.usedX += detail.height + kerf;
             placed = true;
             break;
           }
         }
+        if (placed) break;
+
+        // 2. Try creating a NEW shelf on this sheet
+        const lastShelf = shelves[shelves.length - 1];
+        const nextY = lastShelf ? lastShelf.y + lastShelf.height + kerf : 0;
+
+        const normalFitsNew = nextY + detail.height + kerf <= sheetHeight && detail.width + kerf <= sheetWidth;
+        if (normalFitsNew) {
+          const newShelf = { y: nextY, height: detail.height, usedX: detail.width + kerf };
+          shelves.push(newShelf);
+          sheets[sIdx].push({
+            ...detail,
+            width: detail.width,
+            height: detail.height,
+            packedX: 0,
+            packedY: nextY,
+            label: `${detail.width}x${detail.height}`,
+            rotated: false,
+          });
+          placed = true;
+          break;
+        }
+
+        const rotatedFitsNew = canRotateDetail && nextY + detail.width + kerf <= sheetHeight && detail.height + kerf <= sheetWidth;
+        if (rotatedFitsNew) {
+          const newShelf = { y: nextY, height: detail.width, usedX: detail.height + kerf };
+          shelves.push(newShelf);
+          sheets[sIdx].push({
+            ...detail,
+            width: detail.height,
+            height: detail.width,
+            packedX: 0,
+            packedY: nextY,
+            label: `${detail.height}x${detail.width}`,
+            rotated: true,
+          });
+          placed = true;
+          break;
+        }
       }
 
+      // 3. Create a NEW sheet if not placed
       if (!placed) {
-        // Create new sheet
-        const [w, h, isRotated] = orientations[0] as [number, number, boolean];
-        if (w + kerf <= sheetWidth && h + kerf <= sheetHeight) {
+        const normalFitsNewSheet = detail.width + kerf <= sheetWidth && detail.height + kerf <= sheetHeight;
+        if (normalFitsNewSheet) {
           sheets.push([
             {
               ...detail,
-              width: w,
-              height: h,
+              width: detail.width,
+              height: detail.height,
               packedX: 0,
               packedY: 0,
-              label: `${w}x${h}`,
-              rotated: isRotated,
+              label: `${detail.width}x${detail.height}`,
+              rotated: false,
             },
           ]);
-          sheetShelves.push([{ y: 0, height: h, usedX: w + kerf }]);
-        } else if (canRotateDetail) {
-          const [w2, h2, isRotated2] = orientations[1] as [
-            number,
-            number,
-            boolean,
-          ];
-          if (w2 + kerf <= sheetWidth && h2 + kerf <= sheetHeight) {
+          sheetShelves.push([{ y: 0, height: detail.height, usedX: detail.width + kerf }]);
+          placed = true;
+        } else {
+          const rotatedFitsNewSheet = canRotateDetail && detail.height + kerf <= sheetWidth && detail.width + kerf <= sheetHeight;
+          if (rotatedFitsNewSheet) {
             sheets.push([
               {
                 ...detail,
-                width: w2,
-                height: h2,
+                width: detail.height,
+                height: detail.width,
                 packedX: 0,
                 packedY: 0,
-                label: `${w2}x${h2}`,
-                rotated: isRotated2,
+                label: `${detail.height}x${detail.width}`,
+                rotated: true,
               },
             ]);
-            sheetShelves.push([{ y: 0, height: h2, usedX: w2 + kerf }]);
+            sheetShelves.push([{ y: 0, height: detail.width, usedX: detail.height + kerf }]);
+            placed = true;
           }
         }
       }
@@ -2037,88 +2061,95 @@ const packDetails = (
 
     for (const detail of sortedDetails) {
       let placed = false;
-      const canRotateDetail = allowRotation || detail.canRotate;
-      const orientations = canRotateDetail
-        ? [
-            [detail.width, detail.height, false],
-            [detail.height, detail.width, true],
-          ]
-        : [[detail.width, detail.height, false]];
+      const hasWoodTexture = isTextureAligned && (
+        (detail.color && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|wood|oak|ash|walnut|pine|wenge/i.test(detail.color)) ||
+        (detail.name && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|wood|oak|ash|walnut|pine|wenge/i.test(detail.name))
+      );
+      const canRotateDetail = detail.manuallyRotated ? false : (hasWoodTexture ? false : (allowRotation || detail.canRotate));
 
-      for (const [w, h, isRotated] of orientations as [
-        number,
-        number,
-        boolean,
-      ][]) {
-        if (placed) break;
+      // 1. Try to fit in ANY free rectangle on ANY sheet
+      for (let sIdx = 0; sIdx < sheets.length; sIdx++) {
+        const freeRects = sheetFreeRects[sIdx];
+        let bestRectIdx = -1;
+        let useRotated = false;
 
-        for (let sIdx = 0; sIdx < sheets.length; sIdx++) {
-          const freeRects = sheetFreeRects[sIdx];
-          let bestRectIdx = -1;
-
-          // Find first rectangle that fits
-          for (let i = 0; i < freeRects.length; i++) {
-            if (w + kerf <= freeRects[i].w && h + kerf <= freeRects[i].h) {
-              bestRectIdx = i;
-              break;
-            }
+        // Find first rectangle that fits
+        for (let i = 0; i < freeRects.length; i++) {
+          const r = freeRects[i];
+          const normalFits = detail.width + kerf <= r.w && detail.height + kerf <= r.h;
+          if (normalFits) {
+            bestRectIdx = i;
+            useRotated = false;
+            break;
           }
 
-          if (bestRectIdx !== -1) {
-            const r = freeRects.splice(bestRectIdx, 1)[0];
-            sheets[sIdx].push({
-              ...detail,
-              width: w,
-              height: h,
-              packedX: r.x,
-              packedY: r.y,
-              label: `${w}x${h}`,
-              rotated: isRotated,
-            });
-
-            // Split remaining space (Guillotine)
-            if (r.w - (w + kerf) > r.h - (h + kerf)) {
-              if (r.w - (w + kerf) > 0)
-                freeRects.push({
-                  x: r.x + w + kerf,
-                  y: r.y,
-                  w: r.w - (w + kerf),
-                  h: r.h,
-                });
-              if (r.h - (h + kerf) > 0)
-                freeRects.push({
-                  x: r.x,
-                  y: r.y + h + kerf,
-                  w: w + kerf,
-                  h: r.h - (h + kerf),
-                });
-            } else {
-              if (r.h - (h + kerf) > 0)
-                freeRects.push({
-                  x: r.x,
-                  y: r.y + h + kerf,
-                  w: r.w,
-                  h: r.h - (h + kerf),
-                });
-              if (r.w - (w + kerf) > 0)
-                freeRects.push({
-                  x: r.x + w + kerf,
-                  y: r.y,
-                  w: r.w - (w + kerf),
-                  h: h + kerf,
-                });
-            }
-            freeRects.sort((a, b) => a.w * a.h - b.w * b.h);
-            placed = true;
+          const rotatedFits = canRotateDetail && detail.height + kerf <= r.w && detail.width + kerf <= r.h;
+          if (rotatedFits) {
+            bestRectIdx = i;
+            useRotated = true;
             break;
           }
         }
+
+        if (bestRectIdx !== -1) {
+          const r = freeRects.splice(bestRectIdx, 1)[0];
+          const w = useRotated ? detail.height : detail.width;
+          const h = useRotated ? detail.width : detail.height;
+
+          sheets[sIdx].push({
+            ...detail,
+            width: w,
+            height: h,
+            packedX: r.x,
+            packedY: r.y,
+            label: `${w}x${h}`,
+            rotated: useRotated,
+          });
+
+          // Split remaining space (Guillotine)
+          if (r.w - (w + kerf) > r.h - (h + kerf)) {
+            if (r.w - (w + kerf) > 0)
+              freeRects.push({
+                x: r.x + w + kerf,
+                y: r.y,
+                w: r.w - (w + kerf),
+                h: r.h,
+              });
+            if (r.h - (h + kerf) > 0)
+              freeRects.push({
+                x: r.x,
+                y: r.y + h + kerf,
+                w: w + kerf,
+                h: r.h - (h + kerf),
+              });
+          } else {
+            if (r.h - (h + kerf) > 0)
+              freeRects.push({
+                x: r.x,
+                y: r.y + h + kerf,
+                w: r.w,
+                h: r.h - (h + kerf),
+              });
+            if (r.w - (w + kerf) > 0)
+              freeRects.push({
+                x: r.x + w + kerf,
+                y: r.y,
+                w: r.w - (w + kerf),
+                h: h + kerf,
+              });
+          }
+          freeRects.sort((a, b) => a.w * a.h - b.w * b.h);
+          placed = true;
+          break;
+        }
       }
 
+      // 2. Create a NEW sheet if not placed
       if (!placed) {
-        // Create new sheet
-        const [w, h, isRotated] = orientations[0] as [number, number, boolean];
-        if (w + kerf <= sheetWidth && h + kerf <= sheetHeight) {
+        const normalFitsSheet = detail.width + kerf <= sheetWidth && detail.height + kerf <= sheetHeight;
+        if (normalFitsSheet) {
+          const w = detail.width;
+          const h = detail.height;
           sheets.push([
             {
               ...detail,
@@ -2127,9 +2158,10 @@ const packDetails = (
               packedX: 0,
               packedY: 0,
               label: `${w}x${h}`,
-              rotated: isRotated,
+              rotated: false,
             },
           ]);
+
           const freeRects = [];
           if (sheetWidth - (w + kerf) > sheetHeight - (h + kerf)) {
             if (sheetWidth - (w + kerf) > 0)
@@ -2164,54 +2196,53 @@ const packDetails = (
           }
           sheetFreeRects.push(freeRects);
           placed = true;
-        } else if (canRotateDetail && orientations[1]) {
-          const [w2, h2, isRotated2] = orientations[1] as [
-            number,
-            number,
-            boolean,
-          ];
-          if (w2 + kerf <= sheetWidth && h2 + kerf <= sheetHeight) {
+        } else {
+          const rotatedFitsSheet = canRotateDetail && detail.height + kerf <= sheetWidth && detail.width + kerf <= sheetHeight;
+          if (rotatedFitsSheet) {
+            const w = detail.height;
+            const h = detail.width;
             sheets.push([
               {
                 ...detail,
-                width: w2,
-                height: h2,
+                width: w,
+                height: h,
                 packedX: 0,
                 packedY: 0,
-                label: `${w2}x${h2}`,
-                rotated: isRotated2,
+                label: `${w}x${h}`,
+                rotated: true,
               },
             ]);
+
             const freeRects = [];
-            if (sheetWidth - (w2 + kerf) > sheetHeight - (h2 + kerf)) {
-              if (sheetWidth - (w2 + kerf) > 0)
+            if (sheetWidth - (w + kerf) > sheetHeight - (h + kerf)) {
+              if (sheetWidth - (w + kerf) > 0)
                 freeRects.push({
-                  x: w2 + kerf,
+                  x: w + kerf,
                   y: 0,
-                  w: sheetWidth - (w2 + kerf),
+                  w: sheetWidth - (w + kerf),
                   h: sheetHeight,
                 });
-              if (sheetHeight - (h2 + kerf) > 0)
+              if (sheetHeight - (h + kerf) > 0)
                 freeRects.push({
                   x: 0,
-                  y: h2 + kerf,
-                  w: w2 + kerf,
-                  h: sheetHeight - (h2 + kerf),
+                  y: h + kerf,
+                  w: w + kerf,
+                  h: sheetHeight - (h + kerf),
                 });
             } else {
-              if (sheetHeight - (h2 + kerf) > 0)
+              if (sheetHeight - (h + kerf) > 0)
                 freeRects.push({
                   x: 0,
-                  y: h2 + kerf,
+                  y: h + kerf,
                   w: sheetWidth,
-                  h: sheetHeight - (h2 + kerf),
+                  h: sheetHeight - (h + kerf),
                 });
-              if (sheetWidth - (w2 + kerf) > 0)
+              if (sheetWidth - (w + kerf) > 0)
                 freeRects.push({
-                  x: w2 + kerf,
+                  x: w + kerf,
                   y: 0,
-                  w: sheetWidth - (w2 + kerf),
-                  h: h2 + kerf,
+                  w: sheetWidth - (w + kerf),
+                  h: h + kerf,
                 });
             }
             sheetFreeRects.push(freeRects);
@@ -2784,6 +2815,7 @@ const PriceView = ({
 }) => {
   const [priceSearch, setPriceSearch] = useState("");
   const [isSaving, setIsSaving] = useState(false);
+  const [protectCoefficients, setProtectCoefficients] = useState(true);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
     new Set(),
   );
@@ -2863,6 +2895,9 @@ const PriceView = ({
         "Наименование",
         "Цена",
         "Мин. объем",
+        "Коэффициент Розница",
+        "Коэффициент Опт",
+        "Коэффициент Дизайнер",
       ];
       fixedHeaders.forEach((h) => dynamicKeys.add(h));
 
@@ -2966,8 +3001,11 @@ const PriceView = ({
           "Подкатегория/Бренд": product.brand || "-",
           "Тип данных": product.type || "Товар",
           Наименование: product.name,
-          Цена: product.price || 0,
+          Цена: product.purchasePrice || product.price || 0,
           "Мин. объем": "-",
+          "Коэффициент Розница": product.useCustomCoeffs ? (product.customCoeffRetail || "-") : "-",
+          "Коэффициент Опт": product.useCustomCoeffs ? (product.customCoeffWholesale || "-") : "-",
+          "Коэффициент Дизайнер": product.useCustomCoeffs ? (product.customCoeffDesigner || "-") : "-",
           "ID/Ключ": `product|${product.id}`,
         };
 
@@ -2982,6 +3020,10 @@ const PriceView = ({
           "description",
           "image",
           "purchasePrice",
+          "useCustomCoeffs",
+          "customCoeffRetail",
+          "customCoeffWholesale",
+          "customCoeffDesigner",
         ];
         Object.entries(product).forEach(([k, v]) => {
           // ONLY add if it's a real value, NOT '-', NOT null/undefined/empty
@@ -3222,7 +3264,33 @@ const PriceView = ({
               (p) => String(p.id) === productId,
             );
             if (product) {
-              productsToUpdate.push({ ...product, price });
+              const updatedProduct = {
+                ...product,
+                price: price,
+                purchasePrice: price,
+              };
+
+              if (protectCoefficients) {
+                // Keep existing custom coefficients intact
+                updatedProduct.useCustomCoeffs = product.useCustomCoeffs;
+                updatedProduct.customCoeffRetail = product.customCoeffRetail;
+                updatedProduct.customCoeffWholesale = product.customCoeffWholesale;
+                updatedProduct.customCoeffDesigner = product.customCoeffDesigner;
+              } else {
+                // If not protecting, see if the Excel row specifies custom coefficient columns
+                const excelRetail = parseFloat(row["Коэффициент Розница"] || row["Коэф розница"] || row["Наценка розница"]);
+                const excelWholesale = parseFloat(row["Коэффициент Опт"] || row["Коэф опт"] || row["Наценка опт"]);
+                const excelDesigner = parseFloat(row["Коэффициент Дизайнер"] || row["Коэф дизайнер"] || row["Наценка дизайнер"]);
+
+                if (!isNaN(excelRetail) || !isNaN(excelWholesale) || !isNaN(excelDesigner)) {
+                  updatedProduct.useCustomCoeffs = true;
+                  if (!isNaN(excelRetail)) updatedProduct.customCoeffRetail = excelRetail;
+                  if (!isNaN(excelWholesale)) updatedProduct.customCoeffWholesale = excelWholesale;
+                  if (!isNaN(excelDesigner)) updatedProduct.customCoeffDesigner = excelDesigner;
+                }
+              }
+
+              productsToUpdate.push(updatedProduct);
               return;
             }
           }
@@ -3269,9 +3337,10 @@ const PriceView = ({
                   p.name.toLowerCase() === String(name).toLowerCase(),
               );
               if (existingProduct) {
-                productsToUpdate.push({
+                const updatedProduct = {
                   ...existingProduct,
                   price,
+                  purchasePrice: price,
                   brand:
                     brand && brand !== "-"
                       ? String(brand)
@@ -3281,7 +3350,29 @@ const PriceView = ({
                       ? String(dataType)
                       : existingProduct.type,
                   ...charMap,
-                });
+                };
+
+                if (protectCoefficients) {
+                  // Keep existing custom coefficients intact
+                  updatedProduct.useCustomCoeffs = existingProduct.useCustomCoeffs;
+                  updatedProduct.customCoeffRetail = existingProduct.customCoeffRetail;
+                  updatedProduct.customCoeffWholesale = existingProduct.customCoeffWholesale;
+                  updatedProduct.customCoeffDesigner = existingProduct.customCoeffDesigner;
+                } else {
+                  // If not protecting, see if the Excel row specifies custom coefficient columns
+                  const excelRetail = parseFloat(row["Коэффициент Розница"] || row["Коэф розница"] || row["Наценка розница"]);
+                  const excelWholesale = parseFloat(row["Коэффициент Опт"] || row["Коэф опт"] || row["Наценка опт"]);
+                  const excelDesigner = parseFloat(row["Коэффициент Дизайнер"] || row["Коэф дизайнер"] || row["Наценка дизайнер"]);
+
+                  if (!isNaN(excelRetail) || !isNaN(excelWholesale) || !isNaN(excelDesigner)) {
+                    updatedProduct.useCustomCoeffs = true;
+                    if (!isNaN(excelRetail)) updatedProduct.customCoeffRetail = excelRetail;
+                    if (!isNaN(excelWholesale)) updatedProduct.customCoeffWholesale = excelWholesale;
+                    if (!isNaN(excelDesigner)) updatedProduct.customCoeffDesigner = excelDesigner;
+                  }
+                }
+
+                productsToUpdate.push(updatedProduct);
               }
             }
           } else if (key) {
@@ -3420,6 +3511,15 @@ const PriceView = ({
             <Upload className="w-4 h-4 rotate-180" />
             Экспорт Excel
           </button>
+          <label className="flex items-center gap-2 px-3 py-2 bg-amber-50 text-amber-800 font-semibold rounded-xl hover:bg-amber-100 transition-all border border-amber-200/50 shadow-sm text-sm cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={protectCoefficients}
+              onChange={() => setProtectCoefficients(!protectCoefficients)}
+              className="w-4 h-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+            />
+            Защита наценок 🛡️
+          </label>
           <label className="flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 font-bold rounded-xl hover:bg-indigo-100 transition-all border border-indigo-100 shadow-sm text-sm cursor-pointer">
             <Upload className="w-4 h-4" />
             Импорт Excel
@@ -4114,6 +4214,8 @@ const CalculatorView = ({
   rotations,
   toggleRotation,
   toggleDetailRotation,
+  textureAlignments,
+  toggleTextureAlignment,
   edgeThickness,
   setEdgeThickness,
   facadeCustomType,
@@ -4179,6 +4281,8 @@ const CalculatorView = ({
   rotations: Record<string, boolean>;
   toggleRotation: (key: string) => void;
   toggleDetailRotation: (key: string, detailId: string) => void;
+  textureAlignments: Record<string, boolean>;
+  toggleTextureAlignment: (key: string) => void;
   edgeThickness: Record<string, string>;
   setEdgeThickness: React.Dispatch<
     React.SetStateAction<Record<string, string>>
@@ -5178,11 +5282,18 @@ const CalculatorView = ({
                           selectedDecor[key] && (
                             <div className="pt-2">
                               {Object.keys(results)
-                                .filter(
-                                  (lk) =>
-                                    results[lk].type === "ЛДСП" &&
-                                    selectedDecor[lk] === selectedDecor[key],
-                                )
+                                .filter((lk) => {
+                                  if (lk === key) return false;
+                                  if (mergedMaterials[key] && mergedMaterials[key] !== lk) return false;
+                                  if (mergedMaterials[lk]) return false;
+
+                                  const lkItem = results[lk];
+                                  const sameThickness = lkItem.thickness === item.thickness;
+                                  const sameDecor = selectedDecor[lk] && selectedDecor[key] && selectedDecor[lk] === selectedDecor[key];
+                                  const compatibleType = lkItem.type === "ЛДСП" || lkItem.type === "МДФ" || lkItem.type === "Фасад";
+
+                                  return sameThickness && sameDecor && compatibleType;
+                                })
                                 .map((lk) => (
                                   <div
                                     key={lk}
@@ -5191,8 +5302,13 @@ const CalculatorView = ({
                                     <div className="flex items-center gap-2 text-sm text-blue-900">
                                       <Combine className="w-4 h-4 text-blue-600" />
                                       <span>
-                                        Декор совпадает с материалом корпуса{" "}
-                                        <strong>"{results[lk].color}"</strong>.
+                                        Декор совпадает с материалом{" "}
+                                        {results[lk].type === "Фасад"
+                                          ? "другого фасада"
+                                          : results[lk].type === "ЛДСП"
+                                            ? "корпуса (ЛДСП)"
+                                            : "плиты (МДФ)"}{" "}
+                                        <strong>"{results[lk].color || results[lk].name}"</strong> ({results[lk].thickness} мм).
                                         Объединить в один раскрой?
                                       </span>
                                     </div>
@@ -5560,7 +5676,7 @@ const CalculatorView = ({
                   const type = (item.type || "").trim().toUpperCase();
                   const name = (item.name || "").toLowerCase();
                   const allowedTypes = ["ЛДСП", "МДФ", "ХДФ", "ДВП", "Фасад", "Столешница", "Стеновая панель"];
-                  const isAllowedType = allowedTypes.some((t) => type.includes(t));
+                  const isAllowedType = allowedTypes.some((t) => type.includes(t.toUpperCase()));
                   const isModule = name.includes("модуль") || type.toLowerCase().includes("модуль");
                   return isAllowedType && !isModule;
                 })
@@ -5704,6 +5820,7 @@ const CalculatorView = ({
                               kerf,
                               rotations[key] || false,
                               cuttingType,
+                              textureAlignments[key] || false,
                             ).map((sheet: Detail[], sheetIndex: number) => {
                               const sheetArea =
                                 sheetConfigs[key].width *
@@ -5763,6 +5880,15 @@ const CalculatorView = ({
                                         />
                                         Вращать детали
                                       </label>
+                                      <label className="flex items-center gap-2 text-sm font-semibold text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-100 hover:bg-emerald-100 transition-all cursor-pointer">
+                                        <input
+                                          type="checkbox"
+                                          checked={textureAlignments[key] || false}
+                                          onChange={() => toggleTextureAlignment(key)}
+                                          className="w-4 h-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                        />
+                                        Умная текстура 🪵
+                                      </label>
                                       <div className="flex flex-col items-end">
                                         <span className="text-xs text-gray-400 uppercase tracking-wider font-bold">
                                           Отходы
@@ -5799,28 +5925,23 @@ const CalculatorView = ({
 
                                       // Determine rendered edges based on orientation
                                       let eTop =
-                                        d.edgeSides?.top || edgeToEdge[key];
+                                        (d.rotated ? d.edgeSides?.left : d.edgeSides?.top) || edgeToEdge[key];
                                       let eBottom =
-                                        d.edgeSides?.bottom || edgeToEdge[key];
+                                        (d.rotated ? d.edgeSides?.right : d.edgeSides?.bottom) || edgeToEdge[key];
                                       let eLeft =
-                                        d.edgeSides?.left || edgeToEdge[key];
+                                        (d.rotated ? d.edgeSides?.bottom : d.edgeSides?.left) || edgeToEdge[key];
                                       let eRight =
-                                        d.edgeSides?.right || edgeToEdge[key];
-
-                                      if (d.rotated) {
-                                        // 90deg rotation mapping
-                                        const old = { ...d.edgeSides };
-                                        eTop = old.left;
-                                        eRight = old.top;
-                                        eBottom = old.right;
-                                        eLeft = old.bottom;
-                                      }
+                                        (d.rotated ? d.edgeSides?.top : d.edgeSides?.right) || edgeToEdge[key];
 
                                       return (
                                         <div
                                           key={i}
                                           className={cn(
-                                            "bg-blue-100 border border-blue-300 text-[10px] p-1 absolute flex flex-col items-center justify-center transition-all cursor-pointer group z-10 hover:z-50",
+                                            "bg-blue-100 text-[10px] p-1 absolute flex flex-col items-center justify-center transition-all cursor-pointer group z-10 hover:z-50",
+                                            eTop ? "border-t-2 border-t-red-500" : "border-t border-t-blue-300",
+                                            eBottom ? "border-b-2 border-b-red-500" : "border-b border-b-blue-300",
+                                            eLeft ? "border-l-2 border-l-red-500" : "border-l border-l-blue-300",
+                                            eRight ? "border-r-2 border-r-red-500" : "border-r border-r-blue-300",
                                             isGluingMode
                                               ? "hover:bg-red-100 border-red-300"
                                               : "hover:bg-blue-200",
@@ -5847,6 +5968,22 @@ const CalculatorView = ({
                                             top: `${((d.packedY! + trimming) / sheetConfigs[key].height) * 100}%`,
                                             width: `${(d.width / sheetConfigs[key].width) * 100}%`,
                                             height: `${(d.height / sheetConfigs[key].height) * 100}%`,
+                                            backgroundImage: (
+                                              (d.color && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|wood|oak|ash|walnut|pine|wenge/i.test(d.color)) ||
+                                              (d.name && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|wood|oak|ash|walnut|pine|wenge/i.test(d.name)) ||
+                                              (key && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|wood|oak|ash|walnut|pine|wenge/i.test(key))
+                                            )
+                                              ? d.rotated
+                                                ? "repeating-linear-gradient(90deg, rgba(139, 92, 26, 0.05) 0px, rgba(139, 92, 26, 0.05) 1px, transparent 1px, transparent 8px), repeating-linear-gradient(90deg, rgba(100, 60, 20, 0.02) 2px, rgba(100, 60, 20, 0.02) 4px, transparent 4px, transparent 15px)"
+                                                : "repeating-linear-gradient(0deg, rgba(139, 92, 26, 0.05) 0px, rgba(139, 92, 26, 0.05) 1px, transparent 1px, transparent 8px), repeating-linear-gradient(0deg, rgba(100, 60, 20, 0.02) 2px, rgba(100, 60, 20, 0.02) 4px, transparent 4px, transparent 15px)"
+                                              : undefined,
+                                            backgroundColor: (
+                                              (d.color && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|wood|oak|ash|walnut|pine|wenge/i.test(d.color)) ||
+                                              (d.name && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|wood|oak|ash|walnut|pine|wenge/i.test(d.name)) ||
+                                              (key && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|wood|oak|ash|walnut|pine|wenge/i.test(key))
+                                            )
+                                              ? "#fdf7ee"
+                                              : undefined,
                                           }}
                                         >
                                           {/* Edge Lines */}
@@ -6662,6 +6799,7 @@ const SummaryView = ({
   setWorktopCuts,
   gluedEdgeDecor,
   setGluedEdgeDecor,
+  textureAlignments,
   updateAddedProductQty,
   setAddedProductQty,
   removeAddedProduct,
@@ -6687,6 +6825,7 @@ const SummaryView = ({
   calcMode: "sheet" | "area";
   coefficients: any;
   edgeToEdge: Record<string, boolean>;
+  textureAlignments?: Record<string, boolean>;
   edgePrices: Record<string, number>;
   setEdgePrices: React.Dispatch<React.SetStateAction<Record<string, number>>>;
   edgeThickness: Record<string, string>;
@@ -7054,6 +7193,7 @@ const SummaryView = ({
             kerf,
             rotations[key] || false,
             cuttingType,
+            textureAlignments?.[key] || false,
           );
           const sheetCount = sheets.length;
           const sheetArea =
@@ -7164,6 +7304,7 @@ const SummaryView = ({
               kerf,
               rotations[ck] || false,
               cuttingType,
+              textureAlignments?.[ck] || false,
             );
 
             const perimeterSum = gluedIds.reduce((sum, id) => {
@@ -13231,6 +13372,7 @@ const ProductsView = ({
     return catalogProducts.filter((p) => {
       if (p.id === (editingProduct?.id || null)) return false;
       if (p.category === "Кухонные модули") return false;
+      if (p.category === "Кромочные материалы" || p.category === "Кромка") return false;
       
       const matchCat = !stdCategoryFilter || p.category === stdCategoryFilter;
       
@@ -13684,6 +13826,11 @@ const ProductsView = ({
 
   const filteredProducts = useMemo(() => {
     const filtered = catalogProducts.filter((p) => {
+      // Исключаем кромочные материалы из товарного каталога
+      if (p.category === "Кромочные материалы" || p.category === "Кромка") {
+        return false;
+      }
+
       // Stage 1: Moderation / Status filtering
       if (activeProductsView === 'moderation') {
         return p.status === 'pending' || p.markedForDeletion;
@@ -18043,6 +18190,7 @@ export default function App() {
     }
   }, [companyData?.type]);
   const [rotations, setRotations] = useState<Record<string, boolean>>({});
+  const [textureAlignments, setTextureAlignments] = useState<Record<string, boolean>>({});
   const [edgeToEdge, setEdgeToEdge] = useState<Record<string, boolean>>({});
   const [sheetConfigs, setSheetConfigs] = useState<Record<string, SheetConfig>>(
     {},
@@ -19880,6 +20028,10 @@ export default function App() {
     setRotations((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
+  const toggleTextureAlignment = (key: string) => {
+    setTextureAlignments((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
   const toggleDetailRotation = (key: string, detailId: string) => {
     setResults((prev) => {
       if (!prev || !prev[key]) return prev;
@@ -19892,6 +20044,7 @@ export default function App() {
               width: d.height,
               height: d.width,
               canRotate: !d.canRotate,
+              manuallyRotated: !d.manuallyRotated,
               // We also swap edge sides to match the rotation
               edgeSides: d.edgeSides
                 ? {
@@ -20554,6 +20707,7 @@ export default function App() {
           kerf,
           rotations[key] || false,
           cuttingType,
+          textureAlignments[key] || false,
         );
         const sheetCount = sheets.length;
         if (item.type === "ЛДСП" || item.type === "МДФ") {
@@ -21524,6 +21678,8 @@ export default function App() {
               rotations={rotations}
               toggleRotation={toggleRotation}
               toggleDetailRotation={toggleDetailRotation}
+              textureAlignments={textureAlignments}
+              toggleTextureAlignment={toggleTextureAlignment}
               edgeThickness={edgeThickness}
               setEdgeThickness={setEdgeThickness}
               facadeCustomType={facadeCustomType}
@@ -21607,6 +21763,7 @@ export default function App() {
               trimming={trimming}
               kerf={kerf}
               rotations={rotations}
+              textureAlignments={textureAlignments}
               cuttingType={cuttingType}
               calcMode={calcMode}
               coefficients={currentCoefficients}
@@ -21858,6 +22015,7 @@ export default function App() {
                       kerf,
                       rotations[key] || false,
                       cuttingType,
+                      textureAlignments[key] || false,
                     );
                     return sum + sheets.length;
                   }

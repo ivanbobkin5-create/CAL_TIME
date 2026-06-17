@@ -105,6 +105,7 @@ import { cn } from "../../lib/utils";
 import { ProjectSpecificationModal } from "./ProjectSpecificationModal";
 import { Bitrix24Modal } from "./Bitrix24Modal";
 import { ProjectAnalyticsModal } from "./ProjectAnalyticsModal";
+import { TransferProjectModal } from "./TransferProjectModal";
 
 
 interface Project {
@@ -155,12 +156,14 @@ export const ProjectsView = ({
   projects?: Project[];
   sets?: any[];
 }) => {
+  console.log("DEBUG: companyData in ProjectsView:", companyData);
   const companySettings = companyData;
   const [searchQuery, setSearchQuery] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [loadingSets, setLoadingSets] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [loadingSets, setLoadingSets] = useState(true);
 
   // Removed old useEffect for companySettings fetch
+
 
 
   const bitrixBaseUrl = useMemo(() => {
@@ -181,6 +184,8 @@ export const ProjectsView = ({
   const [deletedProjects, setDeletedProjects] = useState<Set<string>>(new Set());
   const [selectedBitrixProject, setSelectedBitrixProject] = useState<Project | null>(null);
   const [selectedAnalyticsProject, setSelectedAnalyticsProject] = useState<Project | null>(null);
+  const [selectedTransferProject, setSelectedTransferProject] = useState<Project | null>(null);
+  const [companyEmployees, setCompanyEmployees] = useState<any[]>([]);
 
   const handleTransfer = async (e: React.MouseEvent, project: Project) => {
     e.stopPropagation();
@@ -333,9 +338,37 @@ export const ProjectsView = ({
 
   // Removed redundant fetchData useEffect
   useEffect(() => {
-    if (projects && projects.length > 0) setLoading(false);
-    if (sets && sets.length > 0) setLoadingSets(false);
+    if (projects.length > 0) setLoading(false);
+    if (sets.length > 0) setLoadingSets(false);
+
+    // Safety timer
+    const timer = setTimeout(() => {
+      setLoading(false);
+      setLoadingSets(false);
+    }, 5000);
+    return () => clearTimeout(timer);
   }, [projects, sets]);
+
+  useEffect(() => {
+    if (!companyId) return;
+    const fetchEmployees = async () => {
+      try {
+        const res = await fetch(`/api/db/col/companies/${companyId}/employees`);
+        if (res.ok) {
+          const data = await res.json();
+          // Transform to expected format
+          const employees = data.map((item: any) => ({
+            uid: item.id,
+            ...item.data
+          }));
+          setCompanyEmployees(employees);
+        }
+      } catch (e) {
+        console.error("Error fetching employees:", e);
+      }
+    };
+    fetchEmployees();
+  }, [companyId]);
 
   const toggleProjectSelection = (e: React.MouseEvent, projectId: string) => {
     e.stopPropagation();
@@ -650,13 +683,18 @@ export const ProjectsView = ({
                                     </button>
                                 )}
                                 {project.status === "sent" && (
-                                    <button onClick={(e) => { handleTransfer(e, project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-blue-600 flex items-center gap-2">
+                                    <button onClick={(e) => { console.log("Transfer requested for:", project.id); handleTransfer(e, project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-blue-600 flex items-center gap-2">
                                         <Send className="w-4 h-4" /> Передать руководителю
                                     </button>
                                 )}
                                 {(userRole === "manager" || userRole === "admin") && (
                                     <button onClick={(e) => { setSelectedBitrixProject(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-orange-600 flex items-center gap-2">
                                         <Send className="w-4 h-4" /> Bitrix24
+                                    </button>
+                                )}
+                                {(userRole === "manager" || userRole === "admin") && (
+                                    <button onClick={(e) => { e.stopPropagation(); setSelectedTransferProject(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-blue-600 flex items-center gap-2">
+                                        <Send className="w-4 h-4" /> Отдать проект
                                     </button>
                                 )}
                                 {(userRole === "manager" || userRole === "admin") && (
@@ -729,6 +767,31 @@ export const ProjectsView = ({
           project={selectedAnalyticsProject}
           onClose={() => setSelectedAnalyticsProject(null)}
         />
+      )}
+      {selectedTransferProject && (
+          <TransferProjectModal
+              project={selectedTransferProject}
+              companyId={companyId || ""}
+              companyEmployees={companyEmployees}
+              onClose={() => setSelectedTransferProject(null)}
+              showAlert={showAlert}
+              onConfirm={async (targetUserId) => {
+                  try {
+                    await updateDoc(
+                        doc(db, "companies", companyId!, "projects", selectedTransferProject.id),
+                        {
+                            createdBy: targetUserId,
+                            status: "draft"
+                        }
+                    );
+                    setSelectedTransferProject(null);
+                    if (showAlert) showAlert("Успешно", "Проект передан");
+                  } catch (e) {
+                      console.error(e);
+                      if (showAlert) showAlert("Ошибка", "Не удалось передать проект");
+                  }
+              }}
+          />
       )}
     </div>
   );

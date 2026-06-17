@@ -752,8 +752,8 @@ export const PromotionsView = ({
                               className="w-full px-3 py-2 text-xs border border-gray-205 rounded-xl bg-white outline-none focus:ring-2 focus:ring-indigo-500 text-gray-700 font-bold"
                             >
                               <option value="">-- Все категории --</option>
-                              {productCategories.map((c) => (
-                                <option key={c.id} value={c.name}>
+                              {productCategories.map((c, index) => (
+                                <option key={c.id + '-' + index} value={c.name}>
                                   {c.name}
                                 </option>
                               ))}
@@ -1035,8 +1035,8 @@ export const PromotionsView = ({
                               className="w-full px-3 py-2 text-xs border border-gray-205 rounded-xl bg-white outline-none focus:ring-2 focus:ring-indigo-500 text-gray-700 font-bold"
                             >
                               <option value="">-- Все категории --</option>
-                              {productCategories.map((c) => (
-                                <option key={c.id} value={c.name}>
+                              {productCategories.map((c, index) => (
+                                <option key={c.id + '-' + index} value={c.name}>
                                   {c.name}
                                 </option>
                               ))}

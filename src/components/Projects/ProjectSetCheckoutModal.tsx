@@ -573,13 +573,25 @@ export const ProjectSetCheckoutModal = ({
                     )}
                   </div>
                 </div>
-                <div className="text-right">
-                  <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">
-                    Общая сумма
-                  </p>
-                  <p className="text-3xl font-black text-indigo-900">
-                    {summary.totalOverall.toLocaleString()} ₽
-                  </p>
+                <div className="flex flex-col items-end gap-1 text-right">
+                  <div>
+                    <p className="text-[10px] font-black text-indigo-400 uppercase tracking-widest leading-none">
+                      Общая сумма (с услугами)
+                    </p>
+                    <p className="text-3xl font-black text-indigo-900 mt-1">
+                      {summary.totalOverall.toLocaleString()} ₽
+                    </p>
+                  </div>
+                  {((summary.totalDeliveryPrice || 0) > 0 || (summary.totalAssemblyPrice || 0) > 0) && (
+                    <div className="mt-2 border-t border-indigo-200/50 pt-1.5 w-full text-right">
+                      <p className="text-[10px] font-black text-indigo-400/80 uppercase tracking-widest leading-none">
+                        Без доставки и сборки
+                      </p>
+                      <p className="text-lg font-extrabold text-indigo-950 mt-0.5">
+                        {(summary.totalOverall - (summary.totalDeliveryPrice || 0) - (summary.totalAssemblyPrice || 0)).toLocaleString()} ₽
+                      </p>
+                    </div>
+                  )}
                 </div>
               </div>
 

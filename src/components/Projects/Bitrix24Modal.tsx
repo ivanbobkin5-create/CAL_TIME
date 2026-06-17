@@ -235,7 +235,6 @@ export const Bitrix24Modal = ({
       if (response.ok) {
         showAlert('Успешно', 'Заказ связан со сделкой Bitrix24.');
         onClose();
-        window.location.reload(); 
       } else {
         const errText = await response.text();
         let errMsg = "Ошибка при сохранении связи";
@@ -584,7 +583,6 @@ export const Bitrix24Modal = ({
 
         showAlert('Успешно', 'Сделка сохранена и связана с Bitrix24.');
         onClose();
-        window.location.reload();
       } else {
         throw new Error(resData.error_description || resData.error || "Ошибка создания сделки");
       }
@@ -732,7 +730,6 @@ export const Bitrix24Modal = ({
                         });
                         showAlert('Успешно', 'Связь со сделкой удалена.');
                         onClose();
-                        window.location.reload();
                       } catch (e) {
                         showAlert('Ошибка', 'Не удалось удалить связь со сделкой.');
                       }
