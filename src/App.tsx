@@ -457,6 +457,10 @@ enum OperationType { LIST = "LIST", UPDATE = "UPDATE", GET = "GET", DELETE = "DE
 const db = {};
 const auth: { currentUser: any } = { currentUser: null };
 
+// Global buffer for batch/debounced price saving to avoid DB race conditions and overwriting
+export let globalPriceBuffer: Record<string, number> = {};
+export let globalPriceSaveTimeout: any = null;
+
 function collection(db: any, path: string, ...rest: any[]) { 
   const fullPath = [path, ...rest].join('/');
   return { path: fullPath }; 
@@ -2781,6 +2785,8 @@ const PriceView = ({
   db,
   auth,
   companyId,
+  edgePrices,
+  setEdgePrices,
 }: {
   calcMode: string;
   prices: Record<string, number>;
@@ -2816,10 +2822,26 @@ const PriceView = ({
   db: any;
   auth: any;
   companyId?: string;
+  edgePrices: Record<string, number>;
+  setEdgePrices: React.Dispatch<React.SetStateAction<Record<string, number>>>;
 }) => {
   const [priceSearch, setPriceSearch] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [protectCoefficients, setProtectCoefficients] = useState(true);
+  const [autoSaving, setAutoSaving] = useState(false);
+  const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleState = (e: Event) => {
+      const isSavingPrice = (e as CustomEvent).detail.saving;
+      setAutoSaving(isSavingPrice);
+      if (!isSavingPrice) {
+        setLastSavedTime(new Date().toLocaleTimeString("ru-RU", { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
+      }
+    };
+    window.addEventListener('price-saving-state', handleState);
+    return () => window.removeEventListener('price-saving-state', handleState);
+  }, []);
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(
     new Set(),
   );
@@ -2839,6 +2861,24 @@ const PriceView = ({
       const next = new Set(prev);
       if (next.has(brand)) next.delete(brand);
       else next.add(brand);
+      return next;
+    });
+  };
+
+  const updateAndSaveCatalogMaterials = (
+    updater: (prev: Record<string, string[]>) => Record<string, string[]>
+  ) => {
+    setCatalogMaterials((prev) => {
+      const next = updater(prev);
+      if (companyId) {
+        setDoc(
+          doc(db, "companies", companyId, "settings", "general"),
+          { catalogMaterials: next },
+          { merge: true }
+        ).catch((err) => {
+          console.error("Error saving catalogMaterials:", err);
+        });
+      }
       return next;
     });
   };
@@ -3484,9 +3524,23 @@ const PriceView = ({
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-        <h2 className="text-2xl font-bold text-gray-800">
-          Прайс-лист материалов
-        </h2>
+        <div className="flex flex-col">
+          <h2 className="text-2xl font-bold text-gray-800">
+            Прайс-лист материалов
+          </h2>
+          {autoSaving && (
+            <span className="text-xs text-blue-500 font-bold animate-pulse mt-1 flex items-center gap-1">
+              <span className="w-1.5 h-1.5 bg-blue-500 rounded-full inline-block"></span>
+              Автосохранение изменений...
+            </span>
+          )}
+          {!autoSaving && lastSavedTime && (
+            <span className="text-xs text-green-600 font-medium mt-1 flex items-center gap-1">
+              <span className="w-1.5 h-1.5 bg-green-500 rounded-full inline-block"></span>
+              Все изменения сохранены в {lastSavedTime}
+            </span>
+          )}
+        </div>
         <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
           {onSave && (
             <button
@@ -3624,7 +3678,7 @@ const PriceView = ({
                         "",
                         (val) => {
                           if (val) {
-                            setCatalogMaterials((prev) => ({
+                            updateAndSaveCatalogMaterials((prev) => ({
                               ...prev,
                               [val]: [],
                             }));
@@ -3782,7 +3836,7 @@ const PriceView = ({
                                   "",
                                   (val) => {
                                     if (val) {
-                                      setCatalogMaterials((prev) => ({
+                                      updateAndSaveCatalogMaterials((prev) => ({
                                         ...prev,
                                         [brand]: [...(prev[brand] || []), val],
                                       }));
@@ -3801,7 +3855,7 @@ const PriceView = ({
                                   "Удалить бренд",
                                   `Удалить бренд ${brand} и все его декоры?`,
                                   () => {
-                                    setCatalogMaterials((prev) => {
+                                    updateAndSaveCatalogMaterials((prev) => {
                                       const nx = { ...prev };
                                       delete nx[brand];
                                       return nx;
@@ -3820,84 +3874,171 @@ const PriceView = ({
 
                       {expandedBrands.has(brand) && (
                         <div className="p-4 bg-white">
-                          <div className={cn(
-                            (brand.includes("AGT") || brand.includes("Evosoft"))
-                              ? "flex flex-col gap-2"
-                              : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3"
-                          )}>
-                            {filtered.map((decor) => {
-                              const priceKey = isServices
-                                ? decor
-                                : `${brand}|${decor}`;
-                              return (
-                                <div
-                                  key={decor}
-                                  className={cn(
-                                    "border border-gray-100 rounded-lg hover:border-blue-200 transition-colors group bg-white shadow-sm relative",
-                                    (brand.includes("AGT") || brand.includes("Evosoft")) 
-                                      ? "flex items-center justify-between p-3" 
-                                      : "p-2"
-                                  )}
-                                >
-                                  {!isServices && isProduction && (
-                                    <button
-                                      onClick={() => {
-                                        showConfirm(
-                                          "Удалить декор",
-                                          `Удалить декор "${decor}"?`,
-                                          () => {
-                                            setCatalogMaterials((prev) => ({
-                                              ...prev,
-                                              [brand]: prev[brand].filter(
-                                                (d) => d !== decor,
-                                              ),
-                                            }));
-                                          },
-                                        );
-                                      }}
-                                      className="absolute -top-2 -right-2 w-5 h-5 bg-white border border-gray-200 text-gray-400 hover:text-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm z-10"
-                                    >
-                                      <X className="w-3 h-3" />
-                                    </button>
-                                  )}
+                          {cat.title === "Кромочные материалы" ? (
+                            <div className="overflow-x-auto border border-gray-100 rounded-xl">
+                              <table className="w-full text-left border-collapse">
+                                <thead>
+                                  <tr className="bg-gray-50 border-b border-gray-100 text-xs font-bold text-gray-500 uppercase">
+                                    <th className="px-4 py-3">Декор</th>
+                                    <th className="px-4 py-3 text-center w-36 border-l border-gray-100">0.4 мм</th>
+                                    <th className="px-4 py-3 text-center w-36 border-l border-gray-100">1.0 мм</th>
+                                    <th className="px-4 py-3 text-center w-36 border-l border-gray-100">2.0 мм</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-gray-100">
+                                  {filtered.map((decor) => {
+                                    const key04 = `edgePrice_${decor}_0.4`;
+                                    const key10 = `edgePrice_${decor}_1.0`;
+                                    const key20 = `edgePrice_${decor}_2.0`;
+                                    
+                                    return (
+                                      <tr key={decor} className="hover:bg-gray-50/50 transition-colors group relative">
+                                        <td className="px-4 py-3 text-sm font-bold text-gray-700 relative">
+                                          {decor}
+                                          {!isServices && isProduction && (
+                                            <button
+                                              onClick={() => {
+                                                showConfirm(
+                                                  "Удалить декор",
+                                                  `Удалить декор "${decor}"?`,
+                                                  () => {
+                                                    updateAndSaveCatalogMaterials((prev) => ({
+                                                      ...prev,
+                                                      [brand]: prev[brand].filter(
+                                                        (d) => d !== decor,
+                                                      ),
+                                                    }));
+                                                  },
+                                                );
+                                              }}
+                                              className="absolute left-2 top-1/2 -translate-y-1/2 w-5 h-5 bg-white border border-gray-200 text-gray-400 hover:text-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm z-10"
+                                            >
+                                              <X className="w-3 h-3" />
+                                            </button>
+                                          )}
+                                        </td>
+                                        <td className="px-4 py-1.5 border-l border-gray-100">
+                                          <EdgePriceInputWithSave
+                                            priceKey={key04}
+                                            value={edgePrices?.[key04] || 0}
+                                            setEdgePrices={setEdgePrices}
+                                            db={db}
+                                            auth={auth}
+                                            userRole={userRole}
+                                            canEdit={canEdit}
+                                            edgePrices={edgePrices || {}}
+                                          />
+                                        </td>
+                                        <td className="px-4 py-1.5 border-l border-gray-100">
+                                          <EdgePriceInputWithSave
+                                            priceKey={key10}
+                                            value={edgePrices?.[key10] || 0}
+                                            setEdgePrices={setEdgePrices}
+                                            db={db}
+                                            auth={auth}
+                                            userRole={userRole}
+                                            canEdit={canEdit}
+                                            edgePrices={edgePrices || {}}
+                                          />
+                                        </td>
+                                        <td className="px-4 py-1.5 border-l border-gray-100">
+                                          <EdgePriceInputWithSave
+                                            priceKey={key20}
+                                            value={edgePrices?.[key20] || 0}
+                                            setEdgePrices={setEdgePrices}
+                                            db={db}
+                                            auth={auth}
+                                            userRole={userRole}
+                                            canEdit={canEdit}
+                                            edgePrices={edgePrices || {}}
+                                          />
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          ) : (
+                            <div className={cn(
+                              (brand.includes("AGT") || brand.includes("Evosoft"))
+                                ? "flex flex-col gap-2"
+                                : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3"
+                            )}>
+                              {filtered.map((decor) => {
+                                const priceKey = isServices
+                                  ? decor
+                                  : `${brand}|${decor}`;
+                                return (
                                   <div
+                                    key={decor}
                                     className={cn(
-                                      "font-bold text-gray-500 truncate leading-tight",
-                                      (brand.includes("AGT") || brand.includes("Evosoft")) ? "text-sm text-gray-700" : "text-[10px] mb-1.5"
+                                      "border border-gray-100 rounded-lg hover:border-blue-200 transition-colors group bg-white shadow-sm relative",
+                                      (brand.includes("AGT") || brand.includes("Evosoft")) 
+                                        ? "flex items-center justify-between p-3" 
+                                        : "p-2"
                                     )}
-                                    title={decor}
                                   >
-                                    {decor}
-                                  </div>
-                                  <div className="flex items-center justify-between gap-2">
-                                    <div className={cn(
-                                      (brand.includes("AGT") || brand.includes("Evosoft")) ? "w-32" : "w-full"
-                                    )}>
-                                      <PriceInputWithSave 
-                                        priceKey={priceKey}
-                                        value={prices[priceKey] || 0}
-                                        setPrices={setPrices}
-                                        db={db}
-                                        auth={auth}
-                                        userRole={userRole}
-                                        canEdit={canEdit}
-                                        prices={prices}
-                                        onShowHistory={onShowHistory}
-                                        logPriceChange={logPriceChange}
-                                      />
-                                    </div>
-                                    <button 
-                                      onClick={() => onShowHistory(priceKey)}
-                                      className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
-                                      title="История цен"
+                                    {!isServices && isProduction && (
+                                      <button
+                                        onClick={() => {
+                                          showConfirm(
+                                            "Удалить декор",
+                                            `Удалить декор "${decor}"?`,
+                                            () => {
+                                              updateAndSaveCatalogMaterials((prev) => ({
+                                                ...prev,
+                                                [brand]: prev[brand].filter(
+                                                  (d) => d !== decor,
+                                                ),
+                                              }));
+                                            },
+                                          );
+                                        }}
+                                        className="absolute -top-2 -right-2 w-5 h-5 bg-white border border-gray-200 text-gray-400 hover:text-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm z-10"
+                                      >
+                                        <X className="w-3 h-3" />
+                                      </button>
+                                    )}
+                                    <div
+                                      className={cn(
+                                        "font-bold text-gray-500 truncate leading-tight",
+                                        (brand.includes("AGT") || brand.includes("Evosoft")) ? "text-sm text-gray-700" : "text-[10px] mb-1.5"
+                                      )}
+                                      title={decor}
                                     >
-                                      <History className="w-3.5 h-3.5" />
-                                    </button>
+                                      {decor}
+                                    </div>
+                                    <div className="flex items-center justify-between gap-2">
+                                      <div className={cn(
+                                        (brand.includes("AGT") || brand.includes("Evosoft")) ? "w-32" : "w-full"
+                                      )}>
+                                        <PriceInputWithSave 
+                                          priceKey={priceKey}
+                                          value={prices[priceKey] || 0}
+                                          setPrices={setPrices}
+                                          db={db}
+                                          auth={auth}
+                                          userRole={userRole}
+                                          canEdit={canEdit}
+                                          prices={prices}
+                                          onShowHistory={onShowHistory}
+                                          logPriceChange={logPriceChange}
+                                        />
+                                      </div>
+                                      <button 
+                                        onClick={() => onShowHistory(priceKey)}
+                                        className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                                        title="История цен"
+                                      >
+                                        <History className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
                                   </div>
-                                </div>
-                              );
-                            })}
-                          </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -3906,7 +4047,7 @@ const PriceView = ({
               </div>
 
               {/* Products in this category */}
-              {cat.products.length > 0 && cat.title !== "Фасады заказные" && (
+              {cat.products.length > 0 && cat.title !== "Фасады заказные" && cat.title !== "Кромочные материалы" && (
                 <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm mt-4">
                   <div className="px-6 py-4 bg-gray-50 border-b border-gray-100 flex items-center gap-3">
                     <ShoppingBag className="w-5 h-5 text-emerald-600" />
@@ -4536,29 +4677,41 @@ const CalculatorView = ({
                                 const brandsToCheck = ["Egger", "Kronospan", "Lamarty", "Nordeco", "Uvadrev", "AGT", "Evosoft", "Evogloss", "Arkopa"];
                                 const foundBrand = brandsToCheck.find(b => val.toLowerCase().includes(b.toLowerCase()));
                                 if (foundBrand) {
-                                  const configToUse = productionFormat === "contract" && productionSettings?.production
-                                    ? productionSettings.production
-                                    : ownProductionConfig;
+                                  const currentBrandName = sheetConfigs[key]?.name;
+                                  const isCompatible = currentBrandName && (
+                                    currentBrandName.toLowerCase().includes(foundBrand.toLowerCase()) ||
+                                    foundBrand.toLowerCase().includes(currentBrandName.toLowerCase())
+                                  );
 
-                                  const customBrand = configToUse?.ldspBrands?.find((b: any) => val.toLowerCase().includes(b.brand.toLowerCase()));
-                                  
-                                  let brandConfig: any = null;
-                                  if (customBrand && customBrand.format) {
-                                    const [w, h] = customBrand.format.split("x").map((n: string) => parseInt(n));
-                                    if (w && h) brandConfig = { name: customBrand.brand, width: w, height: h };
-                                  }
-                                  
-                                  if (!brandConfig) {
-                                    // Match legacy brands by base name
-                                    const legacyMatch = LDSP_BRANDS.find(lb => lb.name.toLowerCase().includes(foundBrand.toLowerCase()));
-                                    if (legacyMatch) {
-                                      brandConfig = legacyMatch;
-                                    } else {
-                                      brandConfig = findBrandConfig(foundBrand);
+                                  if (!isCompatible) {
+                                    const configToUse = productionFormat === "contract" && productionSettings?.production
+                                      ? productionSettings.production
+                                      : ownProductionConfig;
+
+                                    const customBrand = configToUse?.ldspBrands?.find((b: any) => {
+                                      const bBrand = b.brand.toLowerCase();
+                                      const fBrand = foundBrand.toLowerCase();
+                                      return bBrand === fBrand || bBrand.includes(fBrand) || fBrand.includes(bBrand);
+                                    });
+                                    
+                                    let brandConfig: any = null;
+                                    if (customBrand && customBrand.format) {
+                                      const [w, h] = customBrand.format.split("x").map((n: string) => parseInt(n));
+                                      if (w && h) brandConfig = { name: customBrand.brand, width: w, height: h };
                                     }
-                                  }
+                                    
+                                    if (!brandConfig) {
+                                      // Match legacy brands by base name
+                                      const legacyMatch = LDSP_BRANDS.find(lb => lb.name.toLowerCase().includes(foundBrand.toLowerCase()));
+                                      if (legacyMatch) {
+                                        brandConfig = legacyMatch;
+                                      } else {
+                                        brandConfig = findBrandConfig(foundBrand);
+                                      }
+                                    }
 
-                                  if (brandConfig) updateSheetConfig(key, brandConfig);
+                                    if (brandConfig) updateSheetConfig(key, brandConfig);
+                                  }
                                 }
                               }}
                                 className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
@@ -4596,6 +4749,19 @@ const CalculatorView = ({
                                               .toUpperCase();
                                           }
 
+                                          const selectedBrandName = sheetConfigs[key]?.name;
+                                          const isGenericBrand = !selectedBrandName || 
+                                            ["default", "custom", "фасад", "фасады", "лдсп", "двп/хдф", "двп", "хдф", "плитные", "плита", "не указан", "не выбран", "выберите"].some(
+                                              (g) => selectedBrandName.toLowerCase().includes(g)
+                                            );
+                                          if (selectedBrandName && !isGenericBrand) {
+                                            const normalizedSelected = selectedBrandName.toLowerCase();
+                                            const normalizedDecorBrand = d.brand.toLowerCase();
+                                            if (!normalizedSelected.includes(normalizedDecorBrand) && !normalizedDecorBrand.includes(normalizedSelected)) {
+                                              return false;
+                                            }
+                                          }
+
                                           return (
                                             brandType.toUpperCase() === iType
                                           );
@@ -4606,7 +4772,8 @@ const CalculatorView = ({
                                         onClick={() => {
                                           const selectedType =
                                             (item.type === "ХДФ" || item.type === "ДВП") &&
-                                            sheetConfigs[key]?.name
+                                            sheetConfigs[key]?.name &&
+                                            !["default", "custom", "фасады", "лдсп", "двп/хдф"].includes(sheetConfigs[key].name.toLowerCase())
                                               ? sheetConfigs[key].name
                                               : d.brand;
                                           const fullName = `${selectedType} ${d.name}`;
@@ -4617,15 +4784,41 @@ const CalculatorView = ({
                                           setSearchQuery("");
 
                                           // Auto set sheet config
-                                          let brandConfig = findBrandConfig(d.brand);
+                                          const configBrands = (productionFormat === "contract" &&
+                                            productionSettings?.production
+                                              ? productionSettings.production.ldspBrands
+                                              : ownProductionConfig.ldspBrands) || [];
+                                          const activeConfigBrand = configBrands.find((b: any) => b.brand.toLowerCase() === d.brand.toLowerCase());
                                           
-                                          // If not found in simple map, look in legacy brands
-                                          if (!brandConfig) {
-                                            brandConfig = LDSP_BRANDS.find(lb => lb.name.toLowerCase().startsWith(d.brand.toLowerCase())) || null;
+                                          let brandConfig: any = null;
+                                          if (activeConfigBrand) {
+                                            const cleanFormat = activeConfigBrand.format
+                                              .toLowerCase()
+                                              .replace(/\s/g, "")
+                                              .replace("х", "x");
+                                            const [w, h] = cleanFormat
+                                              .split("x")
+                                              .map((v: string) => parseInt(v));
+                                            brandConfig = {
+                                              name: activeConfigBrand.brand,
+                                              width: isNaN(w) ? 2800 : w,
+                                              height: isNaN(h) ? 2070 : h,
+                                            };
+                                          } else {
+                                            brandConfig = findBrandConfig(d.brand);
+                                            if (!brandConfig) {
+                                              brandConfig = LDSP_BRANDS.find(lb => lb.name.toLowerCase().startsWith(d.brand.toLowerCase())) || null;
+                                            }
                                           }
                                           
-                                          if (brandConfig)
-                                            updateSheetConfig(key, brandConfig);
+                                          
+                                           const currentBrandName = sheetConfigs[key]?.name;
+                                           const isCompatible = currentBrandName && (
+                                             currentBrandName.toLowerCase().includes(d.brand.toLowerCase()) ||
+                                             d.brand.toLowerCase().includes(currentBrandName.toLowerCase())
+                                           );
+                                           if (brandConfig && !isCompatible)
+                                             updateSheetConfig(key, brandConfig);
 
                                           // Auto set edge decor
                                           if (
@@ -5057,6 +5250,7 @@ const CalculatorView = ({
                                   Бренд плиты
                                 </label>
                                 <select
+                                  value={sheetConfigs[key]?.name || ""}
                                   onChange={(e) => {
                                     const brand =
                                       LDSP_BRANDS.find((b) =>
@@ -5177,7 +5371,22 @@ const CalculatorView = ({
                                     selectedDecor[key] ===
                                       facadeSearchQuery && (
                                       <div className="absolute top-full left-0 right-0 z-20 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl max-h-48 overflow-y-auto">
-                                        {filteredFacadeDecors.filter(d => (BRAND_TO_TYPE[d.brand] || "ЛДСП") !== "ХДФ").map((d) => (
+                                        {filteredFacadeDecors.filter(d => {
+                                          if ((BRAND_TO_TYPE[d.brand] || "ЛДСП") === "ХДФ") return false;
+                                          const selectedBrandName = sheetConfigs[key]?.name;
+                                          const isGenericBrand = !selectedBrandName || 
+                                            ["default", "custom", "фасад", "фасады", "лдсп", "двп/хдф", "двп", "хдф", "плитные", "плита", "не указан", "не выбран", "выберите"].some(
+                                              (g) => selectedBrandName.toLowerCase().includes(g)
+                                            );
+                                          if (selectedBrandName && !isGenericBrand) {
+                                            const normalizedSelected = selectedBrandName.toLowerCase();
+                                            const normalizedDecorBrand = d.brand.toLowerCase();
+                                            if (!normalizedSelected.includes(normalizedDecorBrand) && !normalizedDecorBrand.includes(normalizedSelected)) {
+                                              return false;
+                                            }
+                                          }
+                                          return true;
+                                        }).map((d) => (
                                           <button
                                             key={`${d.brand}|${d.name}`}
                                             onClick={() => {
@@ -5225,11 +5434,17 @@ const CalculatorView = ({
                                                 brandConfig = findBrandConfig(d.brand);
                                               }
 
-                                              if (brandConfig)
-                                                updateSheetConfig(
-                                                  key,
-                                                  brandConfig,
-                                                );
+                                              
+                                               const currentBrandName = sheetConfigs[key]?.name;
+                                               const isCompatible = currentBrandName && (
+                                                 currentBrandName.toLowerCase().includes(d.brand.toLowerCase()) ||
+                                                 d.brand.toLowerCase().includes(currentBrandName.toLowerCase())
+                                               );
+                                               if (brandConfig && !isCompatible)
+                                                 updateSheetConfig(
+                                                   key,
+                                                   brandConfig,
+                                                 );
 
                                               // Auto set edge decor for facades
                                               setEdgeDecor((prev) => ({
@@ -7388,8 +7603,21 @@ const SummaryView = ({
             // Find base price if missing in edgePrices
             let basePrice = edgePrices[ck] || 0;
             if (basePrice === 0) {
-              const dAndTKey = `edgePrice_${decor}_${thickness}`;
-              basePrice = edgePrices[dAndTKey] || 0;
+              const normThick = thickness === "1" || thickness === "1.0" ? "1.0" : thickness === "2" || thickness === "2.0" ? "2.0" : thickness;
+              const dAndTKey = `edgePrice_${decor}_${normThick}`;
+              basePrice = edgePrices[dAndTKey] || edgePrices[`edgePrice_${decor}_${thickness}`] || 0;
+            }
+            if (basePrice === 0 && decor !== "Не указан" && decor !== "Не выбран") {
+              const normThick = thickness === "1" || thickness === "1.0" ? "1.0" : thickness === "2" || thickness === "2.0" ? "2.0" : thickness;
+              const catalogEdge = catalogProducts.find(
+                (p: any) =>
+                  p.category === "Кромочные материалы" &&
+                  p.decor === decor &&
+                  (p.thickness === normThick || p.thickness === thickness)
+              );
+              if (catalogEdge && catalogEdge.price) {
+                basePrice = catalogEdge.price;
+              }
             }
             if (basePrice === 0 && decor !== "Не указан") {
               // Try variations of decor string to find in price list
@@ -7494,7 +7722,7 @@ const SummaryView = ({
             type: "edge",
             name: String(thickness).includes("Склейка")
               ? "Кромка (Склейка)"
-              : `Кромка (${thickness} мм)`,
+              : `Кромка ${group.decor !== "Не указан" && group.decor !== "Не выбран" ? group.decor + " " : ""}${thickness} мм`,
             sub: group.decor,
             decor: group.decor,
             qty: displayQty,
@@ -13970,6 +14198,7 @@ const ProductsView = ({
     unit: "шт",
     manufacturer: "",
     requiredProducts: [] as { id: string; qty: number }[],
+    lightingType: "",
     // Drawer specific
     drawerSubCategory: "" as
       | ""
@@ -14276,6 +14505,7 @@ const ProductsView = ({
       dryerWidth: "",
       dryerBase: "",
       hingeDamping: "",
+      lightingType: "",
     });
     setEditingProduct(null);
     setIsAddingProduct(false);
@@ -14329,6 +14559,7 @@ const ProductsView = ({
       customCoeffDesigner: product.customCoeffDesigner || globalCoefficients?.designer?.products?.[product.category] || 1.4,
       dryerWidth: product.dryerWidth || "",
       dryerBase: product.dryerBase || "",
+      lightingType: product.lightingType || "",
     });
     setIsAddingProduct(true);
   };
@@ -14430,18 +14661,22 @@ const ProductsView = ({
 
       let matchesLighting = true;
       if (selectedCategory === "Освещение" && lightingSubFilter) {
-        const lowerName = (p.name || "").toLowerCase();
-        const lowerDesc = (p.description || "").toLowerCase();
-        const matchesStr = (str: string) => lowerName.includes(str) || lowerDesc.includes(str);
-        
-        if (lightingSubFilter === "Блоки питания") {
-          matchesLighting = matchesStr("блок") || matchesStr("трансформатор");
-        } else if (lightingSubFilter === "Профили") {
-          matchesLighting = matchesStr("профиль");
-        } else if (lightingSubFilter === "Светодиодные ленты") {
-          matchesLighting = matchesStr("лента");
-        } else if (lightingSubFilter === "Кнопки") {
-          matchesLighting = matchesStr("кнопка") || matchesStr("выключатель") || matchesStr("сенсор");
+        if (p.lightingType) {
+          matchesLighting = p.lightingType === lightingSubFilter;
+        } else {
+          const lowerName = (p.name || "").toLowerCase();
+          const lowerDesc = (p.description || "").toLowerCase();
+          const matchesStr = (str: string) => lowerName.includes(str) || lowerDesc.includes(str);
+          
+          if (lightingSubFilter === "Блоки питания") {
+            matchesLighting = matchesStr("блок") || matchesStr("трансформатор");
+          } else if (lightingSubFilter === "Профили") {
+            matchesLighting = matchesStr("профиль");
+          } else if (lightingSubFilter === "Светодиодные ленты") {
+            matchesLighting = matchesStr("лента");
+          } else if (lightingSubFilter === "Кнопки") {
+            matchesLighting = matchesStr("кнопка") || matchesStr("выключатель") || matchesStr("сенсор");
+          }
         }
       }
 
@@ -16492,6 +16727,36 @@ const ProductsView = ({
                     </div>
                   )}
 
+                  {newProduct.category === "Освещение" && (
+                    <div className="space-y-4 p-5 bg-amber-50/40 border border-amber-100 rounded-2xl animate-in slide-in-from-top-2">
+                      <h4 className="text-sm font-bold text-amber-950 flex items-center gap-1.5 border-b border-amber-100 pb-2">
+                        <Sparkles className="w-4 h-4 text-amber-600" />
+                        Спецификация освещения
+                      </h4>
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-2">
+                          Тип освещения
+                        </label>
+                        <select
+                          value={newProduct.lightingType || ""}
+                          onChange={(e) =>
+                            setNewProduct((prev) => ({
+                              ...prev,
+                              lightingType: e.target.value,
+                            }))
+                          }
+                          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-amber-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                        >
+                          <option value="">Выберите тип освещения</option>
+                          <option value="Блоки питания">Блоки питания</option>
+                          <option value="Профили">Профили</option>
+                          <option value="Светодиодные ленты">Светодиодные ленты</option>
+                          <option value="Кнопки">Кнопки (выключатели/сенсоры)</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+
                   {isDryerCategory(newProduct.category) && (
                     <div className="space-y-4 p-5 bg-teal-50/40 border border-teal-100 rounded-2xl animate-in slide-in-from-top-2">
                       <h4 className="text-sm font-bold text-teal-950 flex items-center gap-1.5 border-b border-teal-100 pb-2">
@@ -17919,6 +18184,11 @@ const PriceInputWithSave = ({
             }));
           }
         }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.currentTarget.blur();
+          }
+        }}
         onBlur={async () => {
           const newPrice = localVal === "" ? 0 : parseFloat(localVal);
           const companyId = (auth.currentUser as any)?.companyId || auth.currentUser?.uid;
@@ -17929,13 +18199,45 @@ const PriceInputWithSave = ({
               newPrice
             );
           }
-          if (companyId && (userRole === "admin" || userRole === "manager")) {
-            await setDoc(
-              doc(db, "companies", companyId, "settings", "prices"),
-              { prices: { ...prices, [priceKey]: newPrice } },
-              { merge: true }
-            );
+
+          // Buffer this price change
+          globalPriceBuffer[priceKey] = newPrice;
+
+          if (globalPriceSaveTimeout) {
+            clearTimeout(globalPriceSaveTimeout);
           }
+
+          // Dispatch event that we are saving (or preparing to save)
+          window.dispatchEvent(new CustomEvent('price-saving-state', { detail: { saving: true } }));
+
+          globalPriceSaveTimeout = setTimeout(() => {
+            const currentCompanyId = (auth.currentUser as any)?.companyId || auth.currentUser?.uid;
+            if (currentCompanyId && (userRole === "admin" || userRole === "manager") && Object.keys(globalPriceBuffer).length > 0) {
+              setPrices((currentAllPrices: any) => {
+                const mergedPrices = { ...currentAllPrices, ...globalPriceBuffer };
+                
+                // Perform setDoc asynchronously
+                setDoc(
+                  doc(db, "companies", currentCompanyId, "settings", "prices"),
+                  { prices: mergedPrices },
+                  { merge: true }
+                ).then(() => {
+                  // Clear keys from the buffer that were successfully written
+                  Object.keys(mergedPrices).forEach(k => {
+                    delete globalPriceBuffer[k];
+                  });
+                  window.dispatchEvent(new CustomEvent('price-saving-state', { detail: { saving: false } }));
+                }).catch(err => {
+                  console.error("Error auto-saving prices:", err);
+                  window.dispatchEvent(new CustomEvent('price-saving-state', { detail: { saving: false } }));
+                });
+
+                return mergedPrices;
+              });
+            } else {
+              window.dispatchEvent(new CustomEvent('price-saving-state', { detail: { saving: false } }));
+            }
+          }, 1500);
         }}
         placeholder="0"
         disabled={!canEdit}
@@ -18875,33 +19177,44 @@ export default function App() {
 
   const filteredDecors = useMemo(() => {
     const allDecors: { brand: string; name: string }[] = [];
-    Object.entries(LDSP_DATABASE).forEach(([brand, decors]) => {
+    Object.entries(catalogMaterials).forEach(([brand, decors]) => {
       decors.forEach((name) => allDecors.push({ brand, name }));
     });
-    return allDecors.filter(
-      (d) =>
-        d.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        d.brand.toLowerCase().includes(searchQuery.toLowerCase()),
+    const terms = switchLayout(searchQuery);
+    return allDecors.filter((d) =>
+      terms.some(
+        (term) =>
+          term &&
+          (d.name.toLowerCase().includes(term) ||
+            d.brand.toLowerCase().includes(term)),
+      ),
     );
-  }, [searchQuery]);
+  }, [searchQuery, catalogMaterials]);
 
   const filteredHdfDecors = useMemo(() => {
+    const terms = switchLayout(searchQuery);
     return (catalogMaterials["ХДФ"] || [])
-      .filter((name) => name.toLowerCase().includes(searchQuery.toLowerCase()))
+      .filter((name) =>
+        terms.some((term) => term && name.toLowerCase().includes(term)),
+      )
       .map((name) => ({ brand: "ХДФ", name }));
-  }, [searchQuery]);
+  }, [searchQuery, catalogMaterials]);
 
   const filteredFacadeDecors = useMemo(() => {
     const allDecors: { brand: string; name: string }[] = [];
-    Object.entries(LDSP_DATABASE).forEach(([brand, decors]) => {
+    Object.entries(catalogMaterials).forEach(([brand, decors]) => {
       decors.forEach((name) => allDecors.push({ brand, name }));
     });
-    return allDecors.filter(
-      (d) =>
-        d.name.toLowerCase().includes(facadeSearchQuery.toLowerCase()) ||
-        d.brand.toLowerCase().includes(facadeSearchQuery.toLowerCase()),
+    const terms = switchLayout(facadeSearchQuery);
+    return allDecors.filter((d) =>
+      terms.some(
+        (term) =>
+          term &&
+          (d.name.toLowerCase().includes(term) ||
+            d.brand.toLowerCase().includes(term)),
+      ),
     );
-  }, [facadeSearchQuery]);
+  }, [facadeSearchQuery, catalogMaterials]);
 
   const handleNewProject = () => {
     localStorage.removeItem("mebcalc_draft");
@@ -19486,7 +19799,9 @@ export default function App() {
       (snapshot) => {
         if (snapshot.exists()) {
           const data = snapshot.data();
-          if (data.prices) setPrices(data.prices);
+          if (data.prices && Object.keys(globalPriceBuffer).length === 0) {
+            setPrices(data.prices);
+          }
         }
       },
       (error) =>
@@ -22506,16 +22821,20 @@ export default function App() {
                   contractNumber: project.id.slice(0, 8),
                   contractDate: (project as any).sentAt || new Date().toISOString(),
                   readyDate: (project as any).readyDate || null,
-                  summary: project.data?.summary || {
-                    totalMaterialsPrice: project.totalPrice || 0,
-                    totalHardwarePrice: 0,
-                    totalServicesPrice: 0,
-                    materials: project.data?.summaryRows?.filter((r: any) => r.type === 'material') || [],
-                    hardware: project.data?.summaryRows?.filter((r: any) => r.type === 'hardware' || r.type === 'product') || [],
-                    services: project.data?.summaryRows?.filter((r: any) => r.type === 'service') || [],
-                    totalDeliveryPrice: 0,
-                    totalAssemblyPrice: 0,
-                  },
+                  summary: project.data?.summary || (() => {
+                    const del = project.data?.serviceData?.deliveryPrice || project.data?.summary?.totalDeliveryPrice || (project as any).deliveryPrice || 0;
+                    const as = project.data?.serviceData?.assemblyPrice || project.data?.summary?.totalAssemblyPrice || (project as any).assemblyPrice || 0;
+                    return {
+                      totalMaterialsPrice: Math.max(0, (project.totalPrice || 0) - del - as),
+                      totalHardwarePrice: 0,
+                      totalServicesPrice: 0,
+                      materials: project.data?.summaryRows?.filter((r: any) => r.type === 'material') || [],
+                      hardware: project.data?.summaryRows?.filter((r: any) => r.type === 'hardware' || r.type === 'product') || [],
+                      services: project.data?.summaryRows?.filter((r: any) => r.type === 'service') || [],
+                      totalDeliveryPrice: del,
+                      totalAssemblyPrice: as,
+                    };
+                  })(),
                   sketches: project.sketches || [],
                 };
                 setPrintProposalData({ 
@@ -22660,12 +22979,8 @@ export default function App() {
               db={db}
               auth={auth}
               companyId={companyData?.id}
-            />
-          ) : historyMaterialId && companyData ? (
-            <PriceHistoryView
-              materialId={historyMaterialId}
-              companyId={companyData.id}
-              onClose={() => setHistoryMaterialId(null)}
+              edgePrices={edgePrices}
+              setEdgePrices={setEdgePrices}
             />
           ) : activeTab === "production" && userRole === "admin" ? (
             <ProductionView
@@ -22792,16 +23107,20 @@ export default function App() {
                   contractNumber: project.id.slice(0, 8),
                   contractDate: (project as any).sentAt || new Date().toISOString(),
                   readyDate: (project as any).readyDate || null,
-                  summary: project.data?.summary || {
-                    totalMaterialsPrice: project.totalPrice || 0,
-                    totalHardwarePrice: 0,
-                    totalServicesPrice: 0,
-                    materials: project.data?.summaryRows?.filter((r: any) => r.type === 'material') || [],
-                    hardware: project.data?.summaryRows?.filter((r: any) => r.type === 'hardware' || r.type === 'product') || [],
-                    services: project.data?.summaryRows?.filter((r: any) => r.type === 'service') || [],
-                    totalDeliveryPrice: 0,
-                    totalAssemblyPrice: 0,
-                  },
+                  summary: project.data?.summary || (() => {
+                    const del = project.data?.serviceData?.deliveryPrice || project.data?.summary?.totalDeliveryPrice || (project as any).deliveryPrice || 0;
+                    const as = project.data?.serviceData?.assemblyPrice || project.data?.summary?.totalAssemblyPrice || (project as any).assemblyPrice || 0;
+                    return {
+                      totalMaterialsPrice: Math.max(0, (project.totalPrice || 0) - del - as),
+                      totalHardwarePrice: 0,
+                      totalServicesPrice: 0,
+                      materials: project.data?.summaryRows?.filter((r: any) => r.type === 'material') || [],
+                      hardware: project.data?.summaryRows?.filter((r: any) => r.type === 'hardware' || r.type === 'product') || [],
+                      services: project.data?.summaryRows?.filter((r: any) => r.type === 'service') || [],
+                      totalDeliveryPrice: del,
+                      totalAssemblyPrice: as,
+                    };
+                  })(),
                   sketches: project.sketches || [],
                 };
                 setPrintSetData({ 
@@ -22814,16 +23133,20 @@ export default function App() {
                   contractNumber: project.id.slice(0, 8),
                   contractDate: (project as any).sentAt || new Date().toISOString(),
                   readyDate: (project as any).readyDate || null,
-                  summary: project.data?.summary || {
-                    totalMaterialsPrice: project.totalPrice || 0,
-                    totalHardwarePrice: 0,
-                    totalServicesPrice: 0,
-                    materials: project.data?.summaryRows?.filter((r: any) => r.type === 'material') || [],
-                    hardware: project.data?.summaryRows?.filter((r: any) => r.type === 'hardware' || r.type === 'product') || [],
-                    services: project.data?.summaryRows?.filter((r: any) => r.type === 'service') || [],
-                    totalDeliveryPrice: 0,
-                    totalAssemblyPrice: 0,
-                  },
+                  summary: project.data?.summary || (() => {
+                    const del = project.data?.serviceData?.deliveryPrice || project.data?.summary?.totalDeliveryPrice || (project as any).deliveryPrice || 0;
+                    const as = project.data?.serviceData?.assemblyPrice || project.data?.summary?.totalAssemblyPrice || (project as any).assemblyPrice || 0;
+                    return {
+                      totalMaterialsPrice: Math.max(0, (project.totalPrice || 0) - del - as),
+                      totalHardwarePrice: 0,
+                      totalServicesPrice: 0,
+                      materials: project.data?.summaryRows?.filter((r: any) => r.type === 'material') || [],
+                      hardware: project.data?.summaryRows?.filter((r: any) => r.type === 'hardware' || r.type === 'product') || [],
+                      services: project.data?.summaryRows?.filter((r: any) => r.type === 'service') || [],
+                      totalDeliveryPrice: del,
+                      totalAssemblyPrice: as,
+                    };
+                  })(),
                   sketches: project.sketches || [],
                 };
                 setPrintProposalData({ 
@@ -23376,6 +23699,15 @@ export default function App() {
               </div>
             </div>
           </div>
+        )}
+
+        {/* Price History Modal Overlay */}
+        {historyMaterialId && companyData && (
+          <PriceHistoryView
+            materialId={historyMaterialId}
+            companyId={companyData.id}
+            onClose={() => setHistoryMaterialId(null)}
+          />
         )}
 
         {/* Offline Indicator */}

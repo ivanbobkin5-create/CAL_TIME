@@ -186,10 +186,28 @@ export const CommercialProposalPrintView = ({
     };
   }, [projects]);
 
+  // Base furniture price only (materials + hardware + services)
+  const baseProductPrice = useMemo(() => {
+    const incl = config.includes;
+    return (
+      (incl.materials ? ((summary.totalMaterialsPrice || 0) + (summary.totalFacadePrice || 0) + (summary.totalCustomFacadePrice || 0)) : 0) +
+      (incl.hardware ? (summary.totalHardwarePrice || 0) : 0) +
+      (incl.services ? (summary.totalServicesPrice || 0) : 0)
+    );
+  }, [summary, config.includes]);
+
   // Alternatives/variants calculation with dynamic Russian descriptions
   const alternatives = useMemo(() => {
     const analysis = projectAnalysis;
-    const currentPrice = totalSum;
+    const incl = config.includes;
+
+    // Constant services (delivery & assembly) that are included in the contract sum
+    const constantServicesPrice = 
+      (incl.delivery ? finalDeliveryPrice : 0) +
+      (incl.assembly ? finalAssemblyPrice : 0);
+
+    // We scale only the base product/furniture price!
+    const currentBasePrice = baseProductPrice;
 
     // Build nice strings of what is already in the project
     const currentHardwaresList = analysis.hardwareNames.length > 0
@@ -202,8 +220,11 @@ export const CommercialProposalPrintView = ({
 
     if (analysis.currentTier === "premium") {
       // 2 options: Selected (Premium) and More affordable (Comfort)
-      const comfortPrice = Math.round(currentPrice * 0.85);
-      const saving = currentPrice - comfortPrice;
+      const comfortBasePrice = Math.round(currentBasePrice * 0.85);
+      const saving = currentBasePrice - comfortBasePrice;
+
+      const premiumPrice = currentBasePrice + constantServicesPrice;
+      const comfortPrice = comfortBasePrice + constantServicesPrice;
 
       const premiumDesc = `Ваш проект рассчитан в максимальной комплектации Премиум с использованием высококлассной фурнитуры (${currentHardwaresList}) и долговечных материалов (${currentMaterialsList}). Это флагманское качество, безупречная плавность хода и ресурс эксплуатации более 25 лет.`;
       
@@ -211,7 +232,7 @@ export const CommercialProposalPrintView = ({
 
       return {
         type: "premium-heavy" as const,
-        premiumPrice: currentPrice,
+        premiumPrice,
         premiumDesc,
         comfortPrice,
         comfortDesc,
@@ -219,8 +240,12 @@ export const CommercialProposalPrintView = ({
       };
     } else if (analysis.currentTier === "optima") {
       // 3 options: Selected (Optima), Comfort upgrade, Premium upgrade
-      const comfortPrice = Math.round(currentPrice * 1.15);
-      const premiumPrice = Math.round(currentPrice * 1.35);
+      const comfortBasePrice = Math.round(currentBasePrice * 1.15);
+      const premiumBasePrice = Math.round(currentBasePrice * 1.35);
+
+      const optimaPrice = currentBasePrice + constantServicesPrice;
+      const comfortPrice = comfortBasePrice + constantServicesPrice;
+      const premiumPrice = premiumBasePrice + constantServicesPrice;
 
       const optimaDesc = `Ваш проект рассчитан в базовой конфигурации Оптима. В расчете используется проверенная функциональная фурнитура (${currentHardwaresList}) и практичные фасады (${currentMaterialsList}). Это надежное и максимально дружелюбное по цене интерьерное решение.`;
 
@@ -230,7 +255,7 @@ export const CommercialProposalPrintView = ({
 
       return {
         type: "optima-heavy" as const,
-        optimaPrice: currentPrice,
+        optimaPrice,
         optimaDesc,
         comfortPrice,
         comfortDesc,
@@ -239,11 +264,15 @@ export const CommercialProposalPrintView = ({
       };
     } else {
       // Default: Comfort middle. Show 3 options: Premium upgrade, Selected (Comfort), Optima downgrade
-      const premiumPrice = Math.round(currentPrice * 1.25);
-      const optimaPrice = Math.round(currentPrice * 0.85);
-      const saving = currentPrice - optimaPrice;
+      const premiumBasePrice = Math.round(currentBasePrice * 1.25);
+      const optimaBasePrice = Math.round(currentBasePrice * 0.85);
+      const saving = currentBasePrice - optimaBasePrice;
 
-      const premiumDesc = `Рекомендуем повысить класс проекта до уровня Премиум: полная комплектация австрийской фурнитурой Blum или немецкой Hettich с пожизненной гарантией, а также премиальные фасады из МДФ в матовой эмали или шпоне дерева. Это придаст вашей мебели роскошный статус и вечный ресурс эксплуатации.`;
+      const comfortPrice = currentBasePrice + constantServicesPrice;
+      const premiumPrice = premiumBasePrice + constantServicesPrice;
+      const optimaPrice = optimaBasePrice + constantServicesPrice;
+
+      const premiumDesc = `Рекомендуем повысить класс проекта до уровня Премиум: полная комплектация австрийской фурнитурой Blum или немецкую Hettich с пожизненной гарантией, а также премиальные фасады из МДФ в матовой эмали или шпоне дерева. Это придаст вашей мебели роскошный статус и вечный ресурс эксплуатации.`;
 
       const comfortDesc = `Ваш проект рассчитан в оптимальной комплектации Комфорт с отличным балансом цены и долговечности. Используется фурнитура с доводчиками (${currentHardwaresList}) и практичные износостойкие фасады (${currentMaterialsList}).`;
 
@@ -253,14 +282,14 @@ export const CommercialProposalPrintView = ({
         type: "comfort-heavy" as const,
         premiumPrice,
         premiumDesc,
-        comfortPrice: currentPrice,
+        comfortPrice,
         comfortDesc,
         optimaPrice,
         optimaDesc,
         saving,
       };
     }
-  }, [totalSum, projectAnalysis]);
+  }, [baseProductPrice, projectAnalysis, config.includes, finalDeliveryPrice, finalAssemblyPrice]);
 
   const proposalNumber = useMemo(() => {
     if (setData?.contractNumber) return setData.contractNumber;
