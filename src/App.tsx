@@ -1906,7 +1906,17 @@ const findBrandConfig = (searchName: string) => {
   const ldspMatch = LDSP_BRANDS.find(b => b.name.toLowerCase().includes(searchName.toLowerCase()));
   if (ldspMatch) return ldspMatch;
   const facadeMatch = Object.entries(FACADE_BRANDS).find(([k]) => k.toLowerCase() === searchName.toLowerCase());
-  return facadeMatch ? facadeMatch[1] : null;
+  if (facadeMatch) {
+    return {
+      name: facadeMatch[0],
+      ...facadeMatch[1]
+    };
+  }
+  return {
+    name: searchName,
+    width: 2800,
+    height: 2070
+  };
 };
 
 // Optimized Packing Algorithm with 'First Fit' across all sheets
@@ -3655,7 +3665,11 @@ const PriceView = ({
       <div className="space-y-6">
         {categoriesToDisplay
           .filter((cat) => expandedCategories.has(cat.title))
-          .map((cat) => (
+          .map((cat) => {
+            const canEdit = cat.title.toLowerCase().includes("фасад") || cat.title === "Интегрированные ручки"
+              ? canEditFacades
+              : canEditCabinet;
+            return (
             <div
               key={cat.title}
               className="space-y-4 animate-in fade-in slide-in-from-top-2 duration-300"
@@ -3776,190 +3790,177 @@ const PriceView = ({
                 {/* Brands/Materials */}
                 {cat.brands.map((brand) => {
                   const isServices = brand === "Услуги";
-                  const decors = isServices
-                    ? catalogServices.map((s) => s.name)
-                    : catalogMaterials[brand] || [];
-                  const searchTerms = switchLayout(priceSearch);
-                  const filtered = decors.filter((d) =>
-                    searchTerms.some((term) => d.toLowerCase().includes(term)),
-                  );
-                  if (priceSearch && filtered.length === 0) return null;
+                  const items = catalogMaterials[brand] || [];
+                  const filtered = items.filter((item) => {
+                    const searchTerms = switchLayout(priceSearch);
+                    return (
+                      !priceSearch ||
+                      searchTerms.some((term) =>
+                        item.toLowerCase().includes(term)
+                      )
+                    );
+                  });
 
-                  const isCabinetCategory =
-                    cat.title === "ЛДСП" ||
-                    cat.title === "ХДФ" ||
-                    cat.title === "Кромка" ||
-                    cat.title === "Материалы";
-                  const isFacadeCategory =
-                    cat.title === "Фасады" || cat.title === "Фасады заказные";
-                  const canEdit =
-                    isProduction ||
-                    (isCabinetCategory && canEditCabinet) ||
-                    (isFacadeCategory && canEditFacades) ||
-                    isServices;
+                  if (filtered.length === 0) return null;
 
                   return (
                     <div
                       key={brand}
-                      className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm"
+                      className="bg-white rounded-2xl border border-gray-200/80 p-5 shadow-sm space-y-4 hover:shadow-md transition-all"
                     >
-                      <div className="w-full px-6 py-4 flex items-center justify-between bg-gray-50 border-b border-gray-100">
-                        <button
-                          onClick={() => toggleBrand(brand)}
-                          className="flex-1 flex items-center gap-3 text-left hover:opacity-70 transition-opacity"
-                        >
-                          {isServices ? (
-                            <Wrench className="w-5 h-5 text-blue-600" />
-                          ) : (
-                            <Database className="w-5 h-5 text-blue-600" />
-                          )}
-                          <span className="font-bold text-gray-700">
+                      <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+                        <div className="flex items-center gap-2.5">
+                          <span className="w-2.5 h-2.5 bg-blue-500 rounded-full"></span>
+                          <h5 className="font-bold text-gray-800 text-sm">
                             {brand}
+                          </h5>
+                          <span className="text-xs text-gray-400 font-medium">
+                            {filtered.length} декоров
                           </span>
-                          <span className="text-[10px] text-gray-400 font-medium uppercase bg-gray-100 px-2 py-0.5 rounded-full">
-                            {decors.length} декоров
-                          </span>
-                          {expandedBrands.has(brand) ? (
-                            <ChevronDown className="w-4 h-4 text-gray-400" />
-                          ) : (
-                            <ChevronRight className="w-4 h-4 text-gray-400" />
-                          )}
-                        </button>
-
-                        {!isServices && isProduction && (
-                          <div className="flex items-center gap-2">
-                            <button
-                              onClick={() => {
-                                showPrompt(
-                                  `Добавить декор в ${brand}`,
-                                  "Введите название нового декора",
-                                  "",
-                                  (val) => {
-                                    if (val) {
-                                      updateAndSaveCatalogMaterials((prev) => ({
-                                        ...prev,
-                                        [brand]: [...(prev[brand] || []), val],
-                                      }));
-                                    }
-                                  },
-                                );
-                              }}
-                              className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-lg transition-all"
-                              title="Добавить декор"
-                            >
-                              <Plus className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => {
-                                showConfirm(
-                                  "Удалить бренд",
-                                  `Удалить бренд ${brand} и все его декоры?`,
-                                  () => {
-                                    updateAndSaveCatalogMaterials((prev) => {
-                                      const nx = { ...prev };
-                                      delete nx[brand];
-                                      return nx;
-                                    });
-                                  },
-                                );
-                              }}
-                              className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                              title="Удалить бренд"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
+                        </div>
+                        {isProduction && !isServices && (
+                          <button
+                            onClick={() => {
+                              showPrompt(
+                                "Добавить декор",
+                                `Введите название декора для ${brand}`,
+                                "",
+                                (val) => {
+                                  if (val) {
+                                    updateAndSaveCatalogMaterials((prev) => ({
+                                      ...prev,
+                                      [brand]: [...(prev[brand] || []), val],
+                                    }));
+                                  }
+                                },
+                              );
+                            }}
+                            className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-600 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            Добавить декор
+                          </button>
                         )}
                       </div>
 
-                      {expandedBrands.has(brand) && (
-                        <div className="p-4 bg-white">
-                          {cat.title === "Кромочные материалы" ? (
-                            <div className="overflow-x-auto border border-gray-100 rounded-xl">
-                              <table className="w-full text-left border-collapse">
-                                <thead>
-                                  <tr className="bg-gray-50 border-b border-gray-100 text-xs font-bold text-gray-500 uppercase">
-                                    <th className="px-4 py-3">Декор</th>
-                                    <th className="px-4 py-3 text-center w-36 border-l border-gray-100">0.4 мм</th>
-                                    <th className="px-4 py-3 text-center w-36 border-l border-gray-100">1.0 мм</th>
-                                    <th className="px-4 py-3 text-center w-36 border-l border-gray-100">2.0 мм</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100">
-                                  {filtered.map((decor) => {
-                                    const key04 = `edgePrice_${decor}_0.4`;
-                                    const key10 = `edgePrice_${decor}_1.0`;
-                                    const key20 = `edgePrice_${decor}_2.0`;
-                                    
-                                    return (
-                                      <tr key={decor} className="hover:bg-gray-50/50 transition-colors group relative">
-                                        <td className="px-4 py-3 text-sm font-bold text-gray-700 relative">
-                                          {decor}
-                                          {!isServices && isProduction && (
-                                            <button
-                                              onClick={() => {
-                                                showConfirm(
-                                                  "Удалить декор",
-                                                  `Удалить декор "${decor}"?`,
-                                                  () => {
-                                                    updateAndSaveCatalogMaterials((prev) => ({
-                                                      ...prev,
-                                                      [brand]: prev[brand].filter(
-                                                        (d) => d !== decor,
-                                                      ),
-                                                    }));
-                                                  },
-                                                );
-                                              }}
-                                              className="absolute left-2 top-1/2 -translate-y-1/2 w-5 h-5 bg-white border border-gray-200 text-gray-400 hover:text-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm z-10"
-                                            >
-                                              <X className="w-3 h-3" />
-                                            </button>
-                                          )}
-                                        </td>
-                                        <td className="px-4 py-1.5 border-l border-gray-100">
-                                          <EdgePriceInputWithSave
-                                            priceKey={key04}
-                                            value={edgePrices?.[key04] || 0}
-                                            setEdgePrices={setEdgePrices}
-                                            db={db}
-                                            auth={auth}
-                                            userRole={userRole}
-                                            canEdit={canEdit}
-                                            edgePrices={edgePrices || {}}
-                                          />
-                                        </td>
-                                        <td className="px-4 py-1.5 border-l border-gray-100">
-                                          <EdgePriceInputWithSave
-                                            priceKey={key10}
-                                            value={edgePrices?.[key10] || 0}
-                                            setEdgePrices={setEdgePrices}
-                                            db={db}
-                                            auth={auth}
-                                            userRole={userRole}
-                                            canEdit={canEdit}
-                                            edgePrices={edgePrices || {}}
-                                          />
-                                        </td>
-                                        <td className="px-4 py-1.5 border-l border-gray-100">
-                                          <EdgePriceInputWithSave
-                                            priceKey={key20}
-                                            value={edgePrices?.[key20] || 0}
-                                            setEdgePrices={setEdgePrices}
-                                            db={db}
-                                            auth={auth}
-                                            userRole={userRole}
-                                            canEdit={canEdit}
-                                            edgePrices={edgePrices || {}}
-                                          />
-                                        </td>
-                                      </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
+                      {cat.title === "Кромочные материалы" ? (() => {
+                        const configToUse = productionFormat === "contract" && productionSettings?.production
+                          ? productionSettings.production
+                          : ownProductionConfig;
+
+                        const isThicknessAvailableForBrand = (t: string, edgeBrandName: string) => {
+                          if (!configToUse?.edgeThicknesses?.[t]) return false;
+
+                          const activeLdspBrands = configToUse?.ldspBrands || [];
+                          let hasAnyAvailable = false;
+                          let matchedAnyLdsp = false;
+
+                          for (const b of activeLdspBrands) {
+                            if (!b.brand) continue;
+                            const edgeBrands = LDSP_TO_EDGE_BRANDS[b.brand] || [];
+                            
+                            const usesThisEdge = edgeBrands.length === 0 
+                              ? b.brand === edgeBrandName 
+                              : edgeBrands.includes(edgeBrandName);
+
+                            if (usesThisEdge) {
+                              matchedAnyLdsp = true;
+                              const mKey = edgeBrands.length === 0
+                                ? `${b.brand}:${t}`
+                                : `${b.brand}:${edgeBrandName}:${t}`;
+                              
+                              const isNotAvailable = configToUse?.edgeNotAvailable?.[mKey] === true;
+                              if (!isNotAvailable) {
+                                hasAnyAvailable = true;
+                                break;
+                              }
+                            }
+                          }
+
+                          if (!matchedAnyLdsp) {
+                            const directKey = `${edgeBrandName}:${t}`;
+                            return !configToUse?.edgeNotAvailable?.[directKey];
+                          }
+
+                          return hasAnyAvailable;
+                        };
+
+                        const activeThicknesses = ["0.4", "0.8", "1.0", "2.0"].filter(t => 
+                          isThicknessAvailableForBrand(t, brand)
+                        );
+
+                        if (activeThicknesses.length === 0) {
+                          return (
+                            <div className="p-4 text-center text-sm text-gray-400 bg-gray-50/50 rounded-xl border border-dashed border-gray-200">
+                              Нет активных кромок для бренда {brand} в настройках производства
                             </div>
-                          ) : (
+                          );
+                        }
+
+                        return (
+                          <div className="overflow-x-auto border border-gray-100 rounded-xl">
+                            <table className="w-full text-left border-collapse">
+                              <thead>
+                                <tr className="bg-gray-50 border-b border-gray-100 text-xs font-bold text-gray-500 uppercase">
+                                  <th className="px-4 py-3">Декор</th>
+                                  {activeThicknesses.map(t => (
+                                    <th key={t} className="px-4 py-3 text-center w-36 border-l border-gray-100">{t} мм</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {filtered.map((decor) => {
+                                  return (
+                                    <tr key={decor} className="hover:bg-gray-50/50 transition-colors group relative">
+                                      <td className="px-4 py-3 text-sm font-bold text-gray-700 relative">
+                                        {decor}
+                                        {!isServices && isProduction && (
+                                          <button
+                                            onClick={() => {
+                                              showConfirm(
+                                                "Удалить декор",
+                                                `Удалить декор "${decor}"?`,
+                                                () => {
+                                                  updateAndSaveCatalogMaterials((prev) => ({
+                                                    ...prev,
+                                                    [brand]: prev[brand].filter(
+                                                      (d) => d !== decor,
+                                                    ),
+                                                  }));
+                                                },
+                                              );
+                                            }}
+                                            className="absolute left-2 top-1/2 -translate-y-1/2 w-5 h-5 bg-white border border-gray-200 text-gray-400 hover:text-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm z-10"
+                                          >
+                                            <X className="w-3 h-3" />
+                                          </button>
+                                        )}
+                                      </td>
+                                      {activeThicknesses.map(t => {
+                                        const key = `edgePrice_${decor}_${t}`;
+                                        return (
+                                          <td key={t} className="px-4 py-1.5 border-l border-gray-100">
+                                            <EdgePriceInputWithSave
+                                              priceKey={key}
+                                              value={edgePrices?.[key] || 0}
+                                              setEdgePrices={setEdgePrices}
+                                              db={db}
+                                              auth={auth}
+                                              userRole={userRole}
+                                              canEdit={canEdit}
+                                              edgePrices={edgePrices || {}}
+                                            />
+                                          </td>
+                                        );
+                                      })}
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        );
+                      })() : (
                             <div className={cn(
                               (brand.includes("AGT") || brand.includes("Evosoft"))
                                 ? "flex flex-col gap-2"
@@ -4040,11 +4041,9 @@ const PriceView = ({
                             </div>
                           )}
                         </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+                      );
+                    })}
+                  </div>
 
               {/* Products in this category */}
               {cat.products.length > 0 && cat.title !== "Фасады заказные" && cat.title !== "Кромочные материалы" && (
@@ -4312,7 +4311,7 @@ const PriceView = ({
                 </div>
               )}
             </div>
-          ))}
+          )})}
       </div>
     </div>
   );
@@ -7405,6 +7404,7 @@ const SummaryView = ({
             coef: facadeCoef,
             key: key,
             isManual: isManualMaterial && basePrice === 0,
+            isCustomFacade: true,
           });
         } else {
           const sheetW = (sheetConfigs[key]?.width || 2800) - trimming * 2;
@@ -9430,6 +9430,16 @@ const SummaryView = ({
                               }}
                               onBlur={async () => {
                                 // AUTO-SAVE MANUAL DECOR PRICE TO MAIN DATABASE if user is manufacturer admin
+                                if (
+                                  row.isCustomFacade || 
+                                  row.name?.toLowerCase().includes("фасад") || 
+                                  row.name?.toLowerCase().includes("пленка") || 
+                                  row.name?.toLowerCase().includes("эмаль") || 
+                                  row.decor?.toLowerCase().includes("пленка") || 
+                                  row.decor?.toLowerCase().includes("эмаль")
+                                ) {
+                                  return;
+                                }
                                 const cleanKey = row.decor.replace(/ /g, "|");
                                 const newPrice = prices[row.priceKey!] || 0;
                                 if (newPrice > 0 && cleanKey && productionFormat === 'own' && userRole === 'admin') {
@@ -10107,6 +10117,7 @@ const SettingsView = ({
   specificationConfig?: any;
   setSpecificationConfig?: React.Dispatch<React.SetStateAction<any>>;
 }) => {
+  const isProcurementAllowed = companyData?.procurementAllowed !== undefined ? !!companyData.procurementAllowed : !!companyData?.procurementEnabled;
   const [newCategory, setNewCategory] = useState("");
   const [activeSubTab, setActiveSubTab] = useState<
     "general" | "services" | "production" | "account" | "facades" | "bitrix24" | "promotions" | "suppliers" | "specification"
@@ -10420,7 +10431,6 @@ const SettingsView = ({
             ? [{ id: "production", label: "Производство", icon: Factory }]
             : []),
           { id: "promotions", label: "Акции", icon: Percent },
-          { id: "account", label: "Компания", icon: Building2 },
           { id: "bitrix24", label: "Bitrix24", icon: Link },
           { id: "suppliers", label: "Поставщики", icon: Database },
           { id: "specification", label: "Настройки спецификаций и КП", icon: ClipboardList },
@@ -11223,6 +11233,381 @@ const SettingsView = ({
                 </div>
               </section>
             )}
+
+            {/* Раздел: Данные компании */}
+            <section className="pt-8 border-t border-gray-100 space-y-8">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-gray-100 rounded-xl flex items-center justify-center text-gray-500">
+                  <Building2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-gray-400 uppercase tracking-wider font-sans">
+                    Данные компании
+                  </h3>
+                  <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest mt-0.5 font-sans">
+                    Юридические реквизиты, сайт и контакты организации
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-8">
+                {/* 1. Основная информация */}
+                <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-6 space-y-6">
+                  <h4 className="text-sm font-bold text-gray-700">Основная информация</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-gray-500">
+                        Наименование компании
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Наименование компании"
+                        value={companyInfo.name}
+                        onChange={(e) =>
+                          setCompanyInfo({
+                            ...companyInfo,
+                            name: e.target.value,
+                          })
+                        }
+                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 placeholder:text-gray-300 transition-all text-sm"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-gray-500">
+                        Телефон
+                      </label>
+                      <input
+                        type="tel"
+                        placeholder="+7 (___) ___-__-__"
+                        value={companyInfo.phone || ""}
+                        onChange={(e) =>
+                          setCompanyInfo({
+                            ...companyInfo,
+                            phone: formatPhoneNumber(e.target.value),
+                          })
+                        }
+                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 text-sm placeholder:text-gray-300 transition-all"
+                      />
+                    </div>
+
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="block text-xs font-bold text-gray-500">
+                        Юридический адрес
+                      </label>
+                      <textarea
+                        placeholder="Юридический адрес"
+                        value={companyInfo.legalAddress || ""}
+                        rows={2}
+                        onChange={(e) =>
+                          setCompanyInfo({
+                            ...companyInfo,
+                            legalAddress: e.target.value,
+                          })
+                        }
+                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 text-sm placeholder:text-gray-300 resize-none transition-all"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-gray-500">
+                        Организационно-правовая форма
+                      </label>
+                      <div className="flex gap-2">
+                        {["ИП", "ООО"].map((form) => (
+                          <button
+                            key={form}
+                            type="button"
+                            onClick={() =>
+                              setCompanyInfo({
+                                ...companyInfo,
+                                legalForm: form,
+                              })
+                            }
+                            className={cn(
+                              "flex-1 py-2.5 px-4 rounded-xl text-xs font-black transition-all border uppercase tracking-widest",
+                              companyInfo.legalForm === form
+                                ? "bg-gray-900 text-white border-gray-900 shadow-lg shadow-gray-200"
+                                : "bg-white text-gray-400 border-gray-200 hover:border-gray-300",
+                            )}
+                          >
+                            {form}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {companyInfo.legalForm === "ООО" && (
+                      <div className="space-y-1">
+                        <label className="block text-xs font-bold text-gray-500">
+                          Генеральный директор
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Генеральный директор"
+                          value={companyInfo.director}
+                          onChange={(e) =>
+                            setCompanyInfo({
+                              ...companyInfo,
+                              director: e.target.value,
+                            })
+                          }
+                          className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                        />
+                      </div>
+                    )}
+
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-gray-500">
+                        ИНН
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="ИНН"
+                        value={companyInfo.inn}
+                        onChange={(e) =>
+                          setCompanyInfo({
+                            ...companyInfo,
+                            inn: e.target.value,
+                          })
+                        }
+                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-gray-500">
+                        {companyInfo.legalForm === "ИП" ? "ОГРНИП" : "ОГРН"}
+                      </label>
+                      <input
+                        type="text"
+                        placeholder={companyInfo.legalForm === "ИП" ? "ОГРНИП" : "ОГРН"}
+                        value={companyInfo.ogrn}
+                        onChange={(e) =>
+                          setCompanyInfo({
+                            ...companyInfo,
+                            ogrn: e.target.value,
+                          })
+                        }
+                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Налогообложение и контакты */}
+                <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-6 space-y-6">
+                  <h4 className="text-sm font-bold text-gray-700">Налогообложение и контакты</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-gray-500">
+                        Система налогообложения
+                      </label>
+                      <select
+                        value={companyInfo.taxSystem}
+                        onChange={(e) =>
+                          setCompanyInfo({
+                            ...companyInfo,
+                            taxSystem: e.target.value,
+                          })
+                        }
+                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
+                      >
+                        <option value="ОСНО">ОСНО (НДС 20%)</option>
+                        <option value="УСН Доходы">УСН Доходы</option>
+                        <option value="УСН Доходы-расходы">
+                          УСН Доходы-расходы
+                        </option>
+                        <option value="Патент">Патент</option>
+                        <option value="НПД">НПД (Самозанятый)</option>
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="block text-xs font-bold text-gray-500">
+                          Ставка %
+                        </label>
+                        <input
+                          type="number"
+                          value={companyInfo.taxRate}
+                          onChange={(e) =>
+                            setCompanyInfo({
+                              ...companyInfo,
+                              taxRate: parseFloat(e.target.value) || 0,
+                            })
+                          }
+                          className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-xs font-bold text-gray-500">
+                          НДС %
+                        </label>
+                        <select
+                          value={companyInfo.vat}
+                          onChange={(e) =>
+                            setCompanyInfo({
+                              ...companyInfo,
+                              vat: parseInt(e.target.value),
+                            })
+                          }
+                          className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
+                        >
+                          <option value="0">0%</option>
+                          <option value="5">5%</option>
+                          <option value="7">7%</option>
+                          <option value="20">20%</option>
+                          <option value="22">22%</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-gray-500">
+                        Сайт
+                      </label>
+                      <div className="relative">
+                        <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input
+                          type="text"
+                          placeholder="Сайт"
+                          value={companyInfo.website || ""}
+                          onChange={(e) =>
+                            setCompanyInfo({
+                              ...companyInfo,
+                              website: e.target.value,
+                            })
+                          }
+                          className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="block text-xs font-bold text-gray-500">
+                          VK
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="VK"
+                          value={companyInfo.socials?.vk || ""}
+                          onChange={(e) =>
+                            setCompanyInfo({
+                              ...companyInfo,
+                              socials: {
+                                ...companyInfo.socials,
+                                vk: e.target.value,
+                              },
+                            })
+                          }
+                          className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="block text-xs font-bold text-gray-500">
+                          Telegram
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Telegram"
+                          value={companyInfo.socials?.telegram || ""}
+                          onChange={(e) =>
+                            setCompanyInfo({
+                              ...companyInfo,
+                              socials: {
+                                ...companyInfo.socials,
+                                telegram: e.target.value,
+                              },
+                            })
+                          }
+                          className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. Банковские реквизиты */}
+                <div className="bg-gray-50/50 rounded-2xl border border-gray-100 p-6 space-y-6">
+                  <h4 className="text-sm font-bold text-gray-700">Банковские реквизиты</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-1 md:col-span-2">
+                      <label className="block text-xs font-bold text-gray-500">
+                        Наименование банка
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Наименование банка"
+                        value={companyInfo.bankName}
+                        onChange={(e) =>
+                          setCompanyInfo({
+                            ...companyInfo,
+                            bankName: e.target.value,
+                          })
+                        }
+                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm placeholder:text-gray-300"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-gray-500">
+                        БИК
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="БИК"
+                        value={companyInfo.bik}
+                        onChange={(e) =>
+                          setCompanyInfo({
+                            ...companyInfo,
+                            bik: e.target.value,
+                          })
+                        }
+                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-gray-500">
+                        Расчетный счет
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Расчетный счет"
+                        value={companyInfo.rs}
+                        onChange={(e) =>
+                          setCompanyInfo({
+                            ...companyInfo,
+                            rs: e.target.value,
+                          })
+                        }
+                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                      />
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-gray-500">
+                        Корреспондентский счет
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Корреспондентский счет"
+                        value={companyInfo.ks}
+                        onChange={(e) =>
+                          setCompanyInfo({
+                            ...companyInfo,
+                            ks: e.target.value,
+                          })
+                        }
+                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
           </div>
         )}
 
@@ -12197,340 +12582,6 @@ const SettingsView = ({
           </div>
         )}
 
-        {activeSubTab === "account" && (
-          <div className="space-y-8 animate-in fade-in duration-500">
-            {/* Company Info Section */}
-            <section>
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider font-sans">
-                  Данные компании
-                </h3>
-              </div>
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="space-y-4 lg:col-span-1">
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">
-                      Основная информация
-                    </label>
-                    <div className="space-y-3">
-                      <input
-                        type="text"
-                        placeholder="Наименование компании"
-                        value={companyInfo.name}
-                        onChange={(e) =>
-                          setCompanyInfo({
-                            ...companyInfo,
-                            name: e.target.value,
-                          })
-                        }
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 placeholder:text-gray-300 transition-all text-sm"
-                      />
-
-                      <textarea
-                        placeholder="Юридический адрес"
-                        value={companyInfo.legalAddress || ""}
-                        rows={3}
-                        onChange={(e) =>
-                          setCompanyInfo({
-                            ...companyInfo,
-                            legalAddress: e.target.value,
-                          })
-                        }
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 text-sm placeholder:text-gray-300 resize-none"
-                      />
-
-                      <input
-                        type="tel"
-                        placeholder="+7 (___) ___-__-__"
-                        value={companyInfo.phone || ""}
-                        onChange={(e) =>
-                          setCompanyInfo({
-                            ...companyInfo,
-                            phone: formatPhoneNumber(e.target.value),
-                          })
-                        }
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-gray-900 text-sm placeholder:text-gray-300"
-                      />
-
-                      <div className="flex gap-2">
-                        {["ИП", "ООО"].map((form) => (
-                          <button
-                            key={form}
-                            onClick={() =>
-                              setCompanyInfo({
-                                ...companyInfo,
-                                legalForm: form,
-                              })
-                            }
-                            className={cn(
-                              "flex-1 py-2.5 px-4 rounded-xl text-xs font-black transition-all border uppercase tracking-widest",
-                              companyInfo.legalForm === form
-                                ? "bg-gray-900 text-white border-gray-900 shadow-lg shadow-gray-200"
-                                : "bg-white text-gray-400 border-gray-100 hover:border-gray-200",
-                            )}
-                          >
-                            {form}
-                          </button>
-                        ))}
-                      </div>
-
-                      {companyInfo.legalForm === "ООО" && (
-                        <input
-                          type="text"
-                          placeholder="Генеральный директор"
-                          value={companyInfo.director}
-                          onChange={(e) =>
-                            setCompanyInfo({
-                              ...companyInfo,
-                              director: e.target.value,
-                            })
-                          }
-                          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm"
-                        />
-                      )}
-
-                      <div className="grid grid-cols-1 gap-3">
-                        <div className="relative">
-                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-gray-300 uppercase">
-                            ИНН
-                          </span>
-                          <input
-                            type="text"
-                            value={companyInfo.inn}
-                            onChange={(e) =>
-                              setCompanyInfo({
-                                ...companyInfo,
-                                inn: e.target.value,
-                              })
-                            }
-                            className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
-                          />
-                        </div>
-                        <div className="relative">
-                          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[10px] font-black text-gray-300 uppercase">
-                            {companyInfo.legalForm === "ИП" ? "ОГРНИП" : "ОГРН"}
-                          </span>
-                          <input
-                            type="text"
-                            value={companyInfo.ogrn}
-                            onChange={(e) =>
-                              setCompanyInfo({
-                                ...companyInfo,
-                                ogrn: e.target.value,
-                              })
-                            }
-                            className="w-full pl-20 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4 lg:col-span-1">
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">
-                      Налогообложение
-                    </label>
-                    <div className="space-y-4">
-                      <div className="grid grid-cols-1 gap-3">
-                        <div>
-                          <span className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
-                            Система
-                          </span>
-                          <select
-                            value={companyInfo.taxSystem}
-                            onChange={(e) =>
-                              setCompanyInfo({
-                                ...companyInfo,
-                                taxSystem: e.target.value,
-                              })
-                            }
-                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white text-sm font-bold"
-                          >
-                            <option value="ОСНО">ОСНО (НДС 20%)</option>
-                            <option value="УСН Доходы">УСН Доходы</option>
-                            <option value="УСН Доходы-расходы">
-                              УСН Доходы-расходы
-                            </option>
-                            <option value="Патент">Патент</option>
-                            <option value="НПД">НПД (Самозанятый)</option>
-                          </select>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-3">
-                          <div>
-                            <span className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
-                              Ставка %
-                            </span>
-                            <input
-                              type="number"
-                              value={companyInfo.taxRate}
-                              onChange={(e) =>
-                                setCompanyInfo({
-                                  ...companyInfo,
-                                  taxRate: parseFloat(e.target.value) || 0,
-                                })
-                              }
-                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
-                            />
-                          </div>
-                          <div>
-                            <span className="block text-xs font-bold text-gray-500 mb-1.5 ml-1">
-                              НДС %
-                            </span>
-                            <select
-                              value={companyInfo.vat}
-                              onChange={(e) =>
-                                setCompanyInfo({
-                                  ...companyInfo,
-                                  vat: parseInt(e.target.value),
-                                })
-                              }
-                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white text-sm font-bold"
-                            >
-                              <option value="0">0%</option>
-                              <option value="5">5%</option>
-                              <option value="7">7%</option>
-                              <option value="20">20%</option>
-                              <option value="22">22%</option>
-                            </select>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-3">
-                        <label className="block text-sm font-bold text-gray-700 mb-2">
-                          Контакты
-                        </label>
-                        <div className="relative">
-                          <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-300" />
-                          <input
-                            type="text"
-                            placeholder="Сайт"
-                            value={companyInfo.website || ""}
-                            onChange={(e) =>
-                              setCompanyInfo({
-                                ...companyInfo,
-                                website: e.target.value,
-                              })
-                            }
-                            className="w-full pl-10 pr-4 py-2 bg-transparent border-b border-gray-200 focus:border-blue-500 outline-none text-sm"
-                          />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <input
-                            type="text"
-                            placeholder="VK"
-                            value={companyInfo.socials?.vk || ""}
-                            onChange={(e) =>
-                              setCompanyInfo({
-                                ...companyInfo,
-                                socials: {
-                                  ...companyInfo.socials,
-                                  vk: e.target.value,
-                                },
-                              })
-                            }
-                            className="w-full px-2 py-2 bg-transparent border-b border-gray-200 focus:border-blue-500 outline-none text-xs"
-                          />
-                          <input
-                            type="text"
-                            placeholder="Telegram"
-                            value={companyInfo.socials?.telegram || ""}
-                            onChange={(e) =>
-                              setCompanyInfo({
-                                ...companyInfo,
-                                socials: {
-                                  ...companyInfo.socials,
-                                  telegram: e.target.value,
-                                },
-                              })
-                            }
-                            className="w-full px-2 py-2 bg-transparent border-b border-gray-200 focus:border-blue-500 outline-none text-xs"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-4 lg:col-span-1">
-                  <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">
-                      Банковские реквизиты
-                    </label>
-                    <div className="space-y-3">
-                      <input
-                        type="text"
-                        placeholder="Наименование банка"
-                        value={companyInfo.bankName}
-                        onChange={(e) =>
-                          setCompanyInfo({
-                            ...companyInfo,
-                            bankName: e.target.value,
-                          })
-                        }
-                        className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm placeholder:text-gray-300"
-                      />
-                      <div className="relative">
-                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-gray-300">
-                          БИК
-                        </span>
-                        <input
-                          type="text"
-                          value={companyInfo.bik}
-                          onChange={(e) =>
-                            setCompanyInfo({
-                              ...companyInfo,
-                              bik: e.target.value,
-                            })
-                          }
-                          className="w-full pl-12 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
-                        />
-                      </div>
-                      <div className="relative">
-                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-gray-300 uppercase">
-                          Р/С
-                        </span>
-                        <input
-                          type="text"
-                          placeholder="Расчетный счет"
-                          value={companyInfo.rs}
-                          onChange={(e) =>
-                            setCompanyInfo({
-                              ...companyInfo,
-                              rs: e.target.value,
-                            })
-                          }
-                          className="w-full pl-12 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
-                        />
-                      </div>
-                      <div className="relative">
-                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[9px] font-black text-gray-300 uppercase">
-                          К/С
-                        </span>
-                        <input
-                          type="text"
-                          placeholder="Корр. счет"
-                          value={companyInfo.ks}
-                          onChange={(e) =>
-                            setCompanyInfo({
-                              ...companyInfo,
-                              ks: e.target.value,
-                            })
-                          }
-                          className="w-full pl-12 pr-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </section>
-          </div>
-        )}
-
         {activeSubTab === "bitrix24" && (
           <div className="space-y-12 animate-in fade-in duration-300">
             <section>
@@ -12698,144 +12749,146 @@ const SettingsView = ({
                     </div>
                   </div>
                     {/* Procurement specific settings */}
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 pt-6 border-t border-gray-100">
-                      <div>
-                        <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
-                          Воронка для Снабжения (Procurement categoryId)
-                        </label>
-                        {b24Categories.length > 0 ? (
-                          <select
-                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold text-gray-700 appearance-none"
-                            style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234B5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundPosition: 'right 16px center', backgroundSize: '16px', backgroundRepeat: 'no-repeat' }}
-                            value={companyData?.bitrix24?.procurementCategoryId || "0"}
-                            onChange={(e) => {
-                              const newCatId = e.target.value;
-                              setCompanyData((prev: any) => ({
-                                ...prev,
-                                bitrix24: {
-                                  ...(prev?.bitrix24 || {}),
-                                  procurementCategoryId: newCatId,
-                                },
-                              }));
-                              const url = companyData?.bitrix24?.webhookUrl;
-                              if (url) {
-                                loadProcurementB24Stages(url, newCatId);
+                    {isProcurementAllowed && (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-6 pt-6 border-t border-gray-100 animate-in fade-in duration-200">
+                        <div>
+                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
+                            Воронка для Снабжения (Procurement categoryId)
+                          </label>
+                          {b24Categories.length > 0 ? (
+                            <select
+                              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold text-gray-700 appearance-none"
+                              style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234B5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundPosition: 'right 16px center', backgroundSize: '16px', backgroundRepeat: 'no-repeat' }}
+                              value={companyData?.bitrix24?.procurementCategoryId || "0"}
+                              onChange={(e) => {
+                                const newCatId = e.target.value;
+                                setCompanyData((prev: any) => ({
+                                  ...prev,
+                                  bitrix24: {
+                                    ...(prev?.bitrix24 || {}),
+                                    procurementCategoryId: newCatId,
+                                  },
+                                }));
+                                const url = companyData?.bitrix24?.webhookUrl;
+                                if (url) {
+                                  loadProcurementB24Stages(url, newCatId);
+                                }
+                              }}
+                            >
+                              {b24Categories.map((cat) => (
+                                <option key={cat.id} value={cat.id}>
+                                  {cat.name} (ID: {cat.id})
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              placeholder="ID воронки"
+                              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                              value={companyData?.bitrix24?.procurementCategoryId || ""}
+                              onChange={(e) =>
+                                setCompanyData((prev: any) => ({
+                                  ...prev,
+                                  bitrix24: {
+                                    ...(prev?.bitrix24 || {}),
+                                    procurementCategoryId: e.target.value,
+                                  },
+                                }))
                               }
-                            }}
-                          >
-                            {b24Categories.map((cat) => (
-                              <option key={cat.id} value={cat.id}>
-                                {cat.name} (ID: {cat.id})
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input
-                            type="text"
-                            placeholder="ID воронки"
-                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
-                            value={companyData?.bitrix24?.procurementCategoryId || ""}
-                            onChange={(e) =>
-                              setCompanyData((prev: any) => ({
-                                ...prev,
-                                bitrix24: {
-                                  ...(prev?.bitrix24 || {}),
-                                  procurementCategoryId: e.target.value,
-                                },
-                              }))
-                            }
-                          />
-                        )}
+                            />
+                          )}
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
+                            Стадия для Снабжения (Procurement stageId)
+                          </label>
+                          {b24ProcurementStages.length > 0 ? (
+                            <select
+                              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold text-gray-700 appearance-none"
+                              style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234B5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundPosition: 'right 16px center', backgroundSize: '16px', backgroundRepeat: 'no-repeat' }}
+                              value={companyData?.bitrix24?.procurementStageId || ""}
+                              onChange={(e) =>
+                                setCompanyData((prev: any) => ({
+                                  ...prev,
+                                  bitrix24: {
+                                    ...(prev?.bitrix24 || {}),
+                                    procurementStageId: e.target.value,
+                                  },
+                                }))
+                              }
+                            >
+                              <option value="">-- Выберите стадию --</option>
+                              {b24ProcurementStages.map((st) => (
+                                <option key={st.id} value={st.id}>
+                                  {st.name}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              placeholder="ID стадии"
+                              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                              value={companyData?.bitrix24?.procurementStageId || ""}
+                              onChange={(e) =>
+                                setCompanyData((prev: any) => ({
+                                  ...prev,
+                                  bitrix24: {
+                                    ...(prev?.bitrix24 || {}),
+                                    procurementStageId: e.target.value,
+                                  },
+                                }))
+                              }
+                            />
+                          )}
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
+                            Финальная стадия (Deal disappears after)
+                          </label>
+                          {b24ProcurementStages.length > 0 ? (
+                            <select
+                              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold text-gray-700 appearance-none"
+                              style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234B5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundPosition: 'right 16px center', backgroundSize: '16px', backgroundRepeat: 'no-repeat' }}
+                              value={companyData?.bitrix24?.procurementFinalStageId || ""}
+                              onChange={(e) =>
+                                setCompanyData((prev: any) => ({
+                                  ...prev,
+                                  bitrix24: {
+                                    ...(prev?.bitrix24 || {}),
+                                    procurementFinalStageId: e.target.value,
+                                  },
+                                }))
+                              }
+                            >
+                              <option value="">-- Выберите стадию --</option>
+                              {b24ProcurementStages.map((st) => (
+                                <option key={st.id} value={st.id}>
+                                  {st.name}
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <input
+                              type="text"
+                              placeholder="ID финальной стадии"
+                              className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
+                              value={companyData?.bitrix24?.procurementFinalStageId || ""}
+                              onChange={(e) =>
+                                setCompanyData((prev: any) => ({
+                                  ...prev,
+                                  bitrix24: {
+                                    ...(prev?.bitrix24 || {}),
+                                    procurementFinalStageId: e.target.value,
+                                  },
+                                }))
+                              }
+                            />
+                          )}
+                        </div>
                       </div>
-                      <div>
-                        <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
-                          Стадия для Снабжения (Procurement stageId)
-                        </label>
-                        {b24ProcurementStages.length > 0 ? (
-                          <select
-                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold text-gray-700 appearance-none"
-                            style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234B5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundPosition: 'right 16px center', backgroundSize: '16px', backgroundRepeat: 'no-repeat' }}
-                            value={companyData?.bitrix24?.procurementStageId || ""}
-                            onChange={(e) =>
-                              setCompanyData((prev: any) => ({
-                                ...prev,
-                                bitrix24: {
-                                  ...(prev?.bitrix24 || {}),
-                                  procurementStageId: e.target.value,
-                                },
-                              }))
-                            }
-                          >
-                            <option value="">-- Выберите стадию --</option>
-                            {b24ProcurementStages.map((st) => (
-                              <option key={st.id} value={st.id}>
-                                {st.name}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input
-                            type="text"
-                            placeholder="ID стадии"
-                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
-                            value={companyData?.bitrix24?.procurementStageId || ""}
-                            onChange={(e) =>
-                              setCompanyData((prev: any) => ({
-                                ...prev,
-                                bitrix24: {
-                                  ...(prev?.bitrix24 || {}),
-                                  procurementStageId: e.target.value,
-                                },
-                              }))
-                            }
-                          />
-                        )}
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
-                          Финальная стадия (Deal disappears after)
-                        </label>
-                        {b24ProcurementStages.length > 0 ? (
-                          <select
-                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-semibold text-gray-700 appearance-none"
-                            style={{ backgroundImage: `url("data:image/svg+xml;charset=UTF-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234B5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundPosition: 'right 16px center', backgroundSize: '16px', backgroundRepeat: 'no-repeat' }}
-                            value={companyData?.bitrix24?.procurementFinalStageId || ""}
-                            onChange={(e) =>
-                              setCompanyData((prev: any) => ({
-                                ...prev,
-                                bitrix24: {
-                                  ...(prev?.bitrix24 || {}),
-                                  procurementFinalStageId: e.target.value,
-                                },
-                              }))
-                            }
-                          >
-                            <option value="">-- Выберите стадию --</option>
-                            {b24ProcurementStages.map((st) => (
-                              <option key={st.id} value={st.id}>
-                                {st.name}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <input
-                            type="text"
-                            placeholder="ID финальной стадии"
-                            className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
-                            value={companyData?.bitrix24?.procurementFinalStageId || ""}
-                            onChange={(e) =>
-                              setCompanyData((prev: any) => ({
-                                ...prev,
-                                bitrix24: {
-                                  ...(prev?.bitrix24 || {}),
-                                  procurementFinalStageId: e.target.value,
-                                },
-                              }))
-                            }
-                          />
-                        )}
-                      </div>
-                    </div>
+                    )}
 
                   <p className="text-[11px] text-gray-500 mt-3 leading-relaxed">
                     Инструкция: Зайдите в Битрикс24 &rarr; Приложения &rarr;
@@ -12843,35 +12896,37 @@ const SettingsView = ({
                     вставьте сюда.
                   </p>
 
-                  <div className="p-6 bg-blue-50/50 rounded-2xl border border-blue-100 mt-6">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <h4 className="text-sm font-bold text-gray-900 font-sans">
-                          Раздел "Снабжение"
-                        </h4>
-                        <p className="text-xs text-gray-500 mt-1 font-sans">
-                          Включите этот раздел, чтобы управлять закупками и контролировать расходы.
-                        </p>
-                      </div>
-                      <button
-                        onClick={() => setCompanyData((prev: any) => ({
-                          ...prev,
-                          procurementEnabled: !prev.procurementEnabled
-                        }))}
-                        className={cn(
-                          "relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-200 focus:outline-none",
-                          companyData?.procurementEnabled ? "bg-blue-600" : "bg-gray-200"
-                        )}
-                      >
-                        <span
+                  {isProcurementAllowed && (
+                    <div className="p-6 bg-blue-50/50 rounded-2xl border border-blue-100 mt-6 animate-in fade-in duration-200">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="text-sm font-bold text-gray-900 font-sans">
+                            Раздел "Снабжение"
+                          </h4>
+                          <p className="text-xs text-gray-500 mt-1 font-sans">
+                            Включите этот раздел, чтобы управлять закупками и контролировать расходы.
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => setCompanyData((prev: any) => ({
+                            ...prev,
+                            procurementEnabled: !prev.procurementEnabled
+                          }))}
                           className={cn(
-                            "inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200",
-                            companyData?.procurementEnabled ? "translate-x-6" : "translate-x-1"
+                            "relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-200 focus:outline-none",
+                            companyData?.procurementEnabled ? "bg-blue-600" : "bg-gray-200"
                           )}
-                        />
-                      </button>
+                        >
+                          <span
+                            className={cn(
+                              "inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-200",
+                              companyData?.procurementEnabled ? "translate-x-6" : "translate-x-1"
+                            )}
+                          />
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
 
                 <div className="space-y-4">
@@ -12917,7 +12972,12 @@ const SettingsView = ({
                           { key: "corpPlusFacadesSum", label: "Стоимость продукции: (Корпус+Фасады)" },
                           { key: "expenseCorp", label: "Расходы на корпус" },
                           { key: "expenseAppliances", label: "Расходы техника" },
-                        ].map((field) => (
+                        ].filter((field) => {
+                          if (field.label.startsWith("СНАБЖЕНИЕ:")) {
+                            return isProcurementAllowed && companyData?.procurementEnabled;
+                          }
+                          return true;
+                        }).map((field) => (
                           <tr
                             key={field.key}
                             className="hover:bg-gray-50/50 transition-colors"
@@ -13892,6 +13952,7 @@ const ProductsView = ({
   showConfirm,
   userData,
   companyData,
+  companyInfo,
   db,
   doc,
   updateDoc,
@@ -13940,6 +14001,7 @@ const ProductsView = ({
   showConfirm: (title: string, message: string, onConfirm: () => void) => void;
   userData: any;
   companyData: any;
+  companyInfo?: any;
   db: any;
   doc: any;
   updateDoc: any;
@@ -14191,7 +14253,7 @@ const ProductsView = ({
     analogs: [] as string[],
     vendorArticle: "",
     manufacturerArticle: "",
-    vat: 20,
+    vat: companyInfo?.vat !== undefined ? companyInfo.vat : 20,
     includeVat: true,
     color: "",
     description: "",
@@ -14248,6 +14310,15 @@ const ProductsView = ({
   });
 
   const availableDryerBrands = ["Boyard", "GTV", "Hettich", "Blum", "Rejs"];
+
+  useEffect(() => {
+    if (companyInfo?.vat !== undefined) {
+      setNewProduct((prev) => ({
+        ...prev,
+        vat: companyInfo.vat,
+      }));
+    }
+  }, [companyInfo?.vat]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -14468,7 +14539,7 @@ const ProductsView = ({
       analogs: [],
       vendorArticle: "",
       manufacturerArticle: "",
-      vat: 20,
+      vat: companyInfo?.vat !== undefined ? companyInfo.vat : 20,
       includeVat: true,
       color: "",
       description: "",
@@ -18389,6 +18460,7 @@ export default function App() {
   };
 
   const [companyData, setCompanyData] = useState<any>(null);
+  const isProcurementAllowed = companyData?.procurementAllowed !== undefined ? !!companyData.procurementAllowed : !!companyData?.procurementEnabled;
   const [isLoading, setIsLoading] = useState(true);
   const [isAppAdmin, setIsAppAdmin] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
@@ -19097,7 +19169,7 @@ export default function App() {
     setSpareSheets((prev) => ({ ...prev, [materialKey]: !prev[materialKey] }));
   };
   const [calcMode, setCalcMode] = useState<"sheet" | "area">("sheet");
-  const [specificationConfig, setSpecificationConfig] = useState<any>({
+  const [specificationConfig, setSpecificationConfigReal] = useState<any>({
     contractSumIncludes: {
       materials: true,
       hardware: true,
@@ -19116,6 +19188,16 @@ export default function App() {
     proposalTitle: "Коммерческое предложение",
     proposalIntroText: "С удовольствием представляем вам расчет стоимости изготовления изделий по вашему индивидуальному проекту. Мы проработали каждую деталь, подобрали качественные материалы и фурнитуру, чтобы готовый продукт радовал вас долгие годы. Будем рады ответить на ваши вопросы и приступить к реализации!",
   });
+  const lastTypedSpecificationConfigRef = useRef<number>(0);
+  const setSpecificationConfig = useCallback((val: any) => {
+    lastTypedSpecificationConfigRef.current = Date.now();
+    setSpecificationConfigReal((prev: any) => {
+      if (typeof val === "function") {
+        return val(prev);
+      }
+      return val;
+    });
+  }, []);
   const [coefficients, setCoefficients] = useState({
     retail: {
       ldsp: 4,
@@ -19782,7 +19864,11 @@ export default function App() {
           if (data.deliveryTariffs) setDeliveryTariffs(data.deliveryTariffs);
           if (data.mapLink) setMapLink(data.mapLink);
           if (data.catalogMaterials) setCatalogMaterials(data.catalogMaterials);
-          if (data.specificationConfig) setSpecificationConfig(data.specificationConfig);
+          if (data.specificationConfig) {
+            if (Date.now() - lastTypedSpecificationConfigRef.current > 5000) {
+              setSpecificationConfigReal(data.specificationConfig);
+            }
+          }
         }
       },
       (error) =>
@@ -20582,7 +20668,14 @@ export default function App() {
         }
         return b;
       });
-      return { ...prev, ldspBrands: brands };
+      const updated = { ...prev, ldspBrands: brands };
+      if (companyData?.id) {
+        setDoc(
+          doc(db, "companies", companyData.id, "settings", "production"),
+          updated,
+        ).catch((err) => console.error("Error saving production config directly:", err));
+      }
+      return updated;
     });
   };
 
@@ -20598,22 +20691,31 @@ export default function App() {
             "Введите тип материала (ЛДСП, МДФ, ХДФ)",
             "ЛДСП",
             (type) => {
-              const materialType =
+              const materialType: "ЛДСП" | "ХДФ" | "МДФ" =
                 type === "МДФ" || type === "ХДФ" || type === "ЛДСП"
-                  ? type
+                  ? (type as "ЛДСП" | "ХДФ" | "МДФ")
                   : "ЛДСП";
-              setOwnProductionConfig((prev) => ({
-                ...prev,
-                ldspBrands: [
-                  ...prev.ldspBrands,
-                  {
-                    id: Date.now().toString(),
-                    brand,
-                    format: "2800x2070",
-                    type: materialType,
-                  },
-                ],
-              }));
+              setOwnProductionConfig((prev) => {
+                const updated = {
+                  ...prev,
+                  ldspBrands: [
+                    ...prev.ldspBrands,
+                    {
+                      id: Date.now().toString(),
+                      brand,
+                      format: "2800x2070",
+                      type: materialType,
+                    },
+                  ],
+                };
+                if (companyData?.id) {
+                  setDoc(
+                    doc(db, "companies", companyData.id, "settings", "production"),
+                    updated,
+                  ).catch((err) => console.error("Error saving production config directly:", err));
+                }
+                return updated;
+              });
             },
           );
         }
@@ -20626,10 +20728,19 @@ export default function App() {
       "Удаление",
       "Вы уверены, что хотите удалить этот бренд?",
       () => {
-        setOwnProductionConfig((prev) => ({
-          ...prev,
-          ldspBrands: prev.ldspBrands.filter((b) => b.id !== id),
-        }));
+        setOwnProductionConfig((prev) => {
+          const updated = {
+            ...prev,
+            ldspBrands: prev.ldspBrands.filter((b) => b.id !== id),
+          };
+          if (companyData?.id) {
+            setDoc(
+              doc(db, "companies", companyData.id, "settings", "production"),
+              updated,
+            ).catch((err) => console.error("Error saving production config directly:", err));
+          }
+          return updated;
+        });
       },
     );
   };
@@ -22889,6 +23000,7 @@ export default function App() {
               selectedCategory={selectedProductCategory}
               setSelectedCategory={setSelectedProductCategory}
               companyData={companyData}
+              companyInfo={companyInfo}
               db={db}
               doc={doc}
               updateDoc={updateDoc}

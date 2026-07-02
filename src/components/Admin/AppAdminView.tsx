@@ -109,6 +109,7 @@ interface Company {
   tariffExpiration?: string;
   manufacturerId?: string;
   procurementEnabled?: boolean;
+  procurementAllowed?: boolean;
   crmPipelineId?: string;
   crmStageId?: string;
 }
@@ -152,14 +153,18 @@ const CompanyDateInput = ({ company, updateLimit }: { company: Company, updateLi
 };
 
 const CompanyProcurementCheckbox = ({ company, updateLimit }: { company: any, updateLimit: any }) => {
+    const isAllowed = company.procurementAllowed !== undefined ? !!company.procurementAllowed : !!company.procurementEnabled;
     return (
         <label className="flex items-center gap-2 cursor-pointer">
             <input
                 type="checkbox"
-                checked={!!company.procurementEnabled}
+                checked={isAllowed}
                 onChange={(e) => {
                     console.log("DEBUG: Checkbox changed", e.target.checked);
-                    updateLimit(company.id, 'procurementEnabled', !!e.target.checked);
+                    updateLimit(company.id, 'procurementAllowed', !!e.target.checked);
+                    if (!e.target.checked) {
+                        updateLimit(company.id, 'procurementEnabled', false);
+                    }
                 }}
                 className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
             />
@@ -619,7 +624,7 @@ export const AppAdminView = () => {
                         <div className="px-3">
                            <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Снабжение</label>
                            <CompanyProcurementCheckbox company={company} updateLimit={updateLimit} />
-                           {company.procurementEnabled && (
+                           {(company.procurementAllowed !== undefined ? company.procurementAllowed : company.procurementEnabled) && (
                             <div className="mt-2 text-[10px]">
                                 <input 
                                   placeholder="Pipeline ID" 
