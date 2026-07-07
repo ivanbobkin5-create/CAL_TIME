@@ -229,24 +229,15 @@ async function triggerSync() {
   if (isSyncing || typeof window === 'undefined' || !navigator.onLine) return;
   isSyncing = true;
   try {
-    const queueStr = localStorage.getItem("meb_pending_writes");
-    if (!queueStr) {
-      isSyncing = false;
-      return;
-    }
-    let queue: any[] = [];
-    try {
-      queue = JSON.parse(queueStr);
-    } catch (_) {
-      queue = [];
-    }
-    if (queue.length === 0) {
-      isSyncing = false;
-      return;
-    }
-    
-    const remainingQueue = [...queue];
-    for (const req of queue) {
+    let syncedAny = false;
+    while (true) {
+      const currentQueueStr = localStorage.getItem("meb_pending_writes") || "[]";
+      let currentQueue: any[] = [];
+      try { currentQueue = JSON.parse(currentQueueStr); } catch (_) {}
+      
+      if (currentQueue.length === 0) break;
+      
+      const req = currentQueue[0];
       try {
         const res = await originalFetch(req.url, {
           method: req.method,
@@ -258,22 +249,31 @@ async function triggerSync() {
           body: req.body
         });
         
-        if (res.ok) {
-          remainingQueue.shift();
-          localStorage.setItem("meb_pending_writes", JSON.stringify(remainingQueue));
-        } else {
-          if (res.status >= 400 && res.status < 500) {
-            remainingQueue.shift();
-            localStorage.setItem("meb_pending_writes", JSON.stringify(remainingQueue));
-          } else {
-            break;
+        const isSuccess = res.ok;
+        const isClientError = res.status >= 400 && res.status < 500;
+        
+        if (isSuccess || isClientError) {
+          syncedAny = true;
+          // Re-read because a new item might have been added to the end of the queue while we fetched
+          const latestQueueStr = localStorage.getItem("meb_pending_writes") || "[]";
+          let latestQueue: any[] = [];
+          try { latestQueue = JSON.parse(latestQueueStr); } catch (_) {}
+          
+          if (latestQueue.length > 0) {
+            latestQueue.shift();
+            localStorage.setItem("meb_pending_writes", JSON.stringify(latestQueue));
           }
+        } else {
+          // Server error or temporary issue: stop processing
+          break;
         }
       } catch (err) {
+        // Network connection error: stop processing
         break;
       }
     }
-    if (remainingQueue.length === 0 && queue.length > 0 && typeof window !== "undefined") {
+    
+    if (syncedAny && typeof window !== "undefined") {
       window.dispatchEvent(new CustomEvent("meb_sync_completed"));
     }
   } catch (err) {
@@ -298,9 +298,14 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
     const isWrite = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
     
     if (!isWrite) {
-      // GET Request: try fetch then fallback
+      // GET Request: try fetch with 4.5s timeout, then fallback to cache
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4500);
       try {
-        const res = await originalFetch.apply(this, arguments as any);
+        const fetchOptions = { ...init, signal: controller.signal };
+        const res = await originalFetch(url, fetchOptions);
+        clearTimeout(timeoutId);
+        
         if (res.ok) {
           try {
             // Read response stream as text first to validate format and content integrity
@@ -365,6 +370,7 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
           });
         }
       } catch (err) {
+        clearTimeout(timeoutId);
         // Network connection error fallback
         const cached = localStorage.getItem(`meb_cache:${url}`);
         if (cached) {
@@ -379,6 +385,7 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
           headers: { "Content-Type": "application/json" }
         });
       }
+    } else {
       // Write request: append to sync queue
       let bodyStr: string | null = null;
       if (init && init.body) {
@@ -3191,6 +3198,9 @@ const PriceView = ({
   const importFromExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Clear input value so that the onChange event will trigger if the user selects the same file again
+    e.target.value = "";
 
     const reader = new FileReader();
     reader.onload = async (evt) => {
@@ -8574,6 +8584,26 @@ const SummaryView = ({
       Подъемники: ["подъемник", "aventos", "lift", "gaz-lift", "газлифт"],
       Сушки: ["сушка", "посудосушитель", "dish"],
       Цоколь: ["цоколь", "plinth"],
+      "Ответные планки для петель": [
+        "планка",
+        "планки",
+        "монтажная планка",
+        "ответная планка",
+        "монтажные планки",
+        "ответные планки",
+        "plate",
+        "cruciform",
+      ],
+      "Смягчители удара": [
+        "демпфер",
+        "демпферы",
+        "смягчитель",
+        "смягчители",
+        "амортизатор",
+        "силиконовый",
+        "damper",
+        "bumper",
+      ],
     };
 
     const searchTerms = [lowerItemName];
@@ -13037,6 +13067,12 @@ const SettingsView = ({
                           { key: "corpPlusFacadesSum", label: "Стоимость продукции: (Корпус+Фасады)" },
                           { key: "expenseCorp", label: "Расходы на корпус" },
                           { key: "expenseAppliances", label: "Расходы техника" },
+                          { key: "appReadyDate", label: "Дата готовности" },
+                          { key: "leadTimeDays", label: "Срок изготовления" },
+                          { key: "deliveryAddress", label: "Адрес доставки" },
+                          { key: "deliveryFloor", label: "Этаж" },
+                          { key: "deliveryElevator", label: "Лифт" },
+                          { key: "deliveryFurniture", label: "Доставка мебели" },
                         ].filter((field) => {
                           if (field.label.startsWith("СНАБЖЕНИЕ:")) {
                             return isProcurementAllowed && companyData?.procurementEnabled;
@@ -14143,6 +14179,26 @@ const ProductsView = ({
     Подъемники: ["подъемник", "aventos", "lift", "gaz-lift", "газлифт"],
     Сушки: ["сушка", "посудосушитель", "dish"],
     Цоколь: ["цоколь", "plinth"],
+    "Ответные планки для петель": [
+      "планка",
+      "планки",
+      "монтажная планка",
+      "ответная планка",
+      "монтажные планки",
+      "ответные планки",
+      "plate",
+      "cruciform",
+    ],
+    "Смягчители удара": [
+      "демпфер",
+      "демпферы",
+      "смягчитель",
+      "смягчители",
+      "амортизатор",
+      "силиконовый",
+      "damper",
+      "bumper",
+    ],
   };
 
   const currentChecklist =
@@ -20075,8 +20131,24 @@ export default function App() {
       (snapshot) => {
         if (snapshot.exists()) {
           const data = snapshot.data();
-          if (data.prices && Object.keys(globalPriceBuffer).length === 0) {
-            setPrices(data.prices);
+          if (data.prices) {
+            setPrices((currentPrices: any) => {
+              const merged = { ...data.prices };
+              if (currentPrices) {
+                Object.keys(currentPrices).forEach((k) => {
+                  if (
+                    k.startsWith("manual_") || 
+                    k.startsWith("edgePrice_") || 
+                    (currentPrices[k] !== undefined && data.prices[k] === undefined)
+                  ) {
+                    merged[k] = currentPrices[k];
+                  }
+                });
+                // If there's currently an unsaved globalPriceBuffer, make sure it's also merged
+                Object.assign(merged, globalPriceBuffer);
+              }
+              return merged;
+            });
           }
         }
       },
@@ -20497,6 +20569,11 @@ export default function App() {
               status: isFinal ? "sent" : "draft",
               totalPrice: setData.totalPrice,
               summary: setData.summary,
+              paymentMethod: setData.paymentMethod || null,
+              paymentPartsCount: setData.paymentPartsCount || null,
+              paymentPercentages: setData.paymentPercentages || null,
+              paymentAmounts: setData.paymentAmounts || null,
+              paymentRestAmount: setData.paymentRestAmount || null,
               // Store copies in data for backward compatibility and persistence
               data: {
                 ...(p.data || {}),
@@ -20507,6 +20584,11 @@ export default function App() {
                 sketches: setData.sketches,
                 totalSum: setData.totalPrice,
                 summary: setData.summary,
+                paymentMethod: setData.paymentMethod || null,
+                paymentPartsCount: setData.paymentPartsCount || null,
+                paymentPercentages: setData.paymentPercentages || null,
+                paymentAmounts: setData.paymentAmounts || null,
+                paymentRestAmount: setData.paymentRestAmount || null,
               }
           }, { merge: true });
           
@@ -20526,6 +20608,11 @@ export default function App() {
                     status: isFinal ? "sent" : "draft",
                     totalPrice: setData.totalPrice,
                     summary: setData.summary,
+                    paymentMethod: setData.paymentMethod,
+                    paymentPartsCount: setData.paymentPartsCount,
+                    paymentPercentages: setData.paymentPercentages,
+                    paymentAmounts: setData.paymentAmounts,
+                    paymentRestAmount: setData.paymentRestAmount,
                     data: {
                       ...(p.data || {}),
                       contractNumber: setData.contractNumber,
@@ -20535,6 +20622,11 @@ export default function App() {
                       sketches: setData.sketches,
                       totalSum: setData.totalPrice,
                       summary: setData.summary,
+                      paymentMethod: setData.paymentMethod,
+                      paymentPartsCount: setData.paymentPartsCount,
+                      paymentPercentages: setData.paymentPercentages,
+                      paymentAmounts: setData.paymentAmounts,
+                      paymentRestAmount: setData.paymentRestAmount,
                     }
                   } 
                 : p
@@ -20554,7 +20646,7 @@ export default function App() {
             }
           }
 
-          const setRecord: FurnitureSet & { summary?: any } = {
+          const setRecord: any = {
             id: setId,
             name: setData.contractNumber
               ? `Заказ №${setData.contractNumber}`
@@ -20571,6 +20663,11 @@ export default function App() {
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             summary: setData.summary,
+            paymentMethod: setData.paymentMethod || null,
+            paymentPartsCount: setData.paymentPartsCount || null,
+            paymentPercentages: setData.paymentPercentages || null,
+            paymentAmounts: setData.paymentAmounts || null,
+            paymentRestAmount: setData.paymentRestAmount || null,
           };
 
           batch.set(setDocRef, setRecord);
@@ -20585,6 +20682,11 @@ export default function App() {
                 leadTimeDays: setData.leadTimeDays,
                 readyDate: setData.readyDate,
                 sketches: setData.sketches,
+                paymentMethod: setData.paymentMethod || null,
+                paymentPartsCount: setData.paymentPartsCount || null,
+                paymentPercentages: setData.paymentPercentages || null,
+                paymentAmounts: setData.paymentAmounts || null,
+                paymentRestAmount: setData.paymentRestAmount || null,
             };
             if (isFinal) {
                 statusUpdate.status = "sent";
@@ -20607,6 +20709,11 @@ export default function App() {
                     leadTimeDays: setData.leadTimeDays,
                     readyDate: setData.readyDate,
                     sketches: setData.sketches,
+                    paymentMethod: setData.paymentMethod,
+                    paymentPartsCount: setData.paymentPartsCount,
+                    paymentPercentages: setData.paymentPercentages,
+                    paymentAmounts: setData.paymentAmounts,
+                    paymentRestAmount: setData.paymentRestAmount,
                   }
                 : p
             )
@@ -21270,6 +21377,9 @@ export default function App() {
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+
+    // Clear input value so that the onChange event will trigger if the user selects the same file again
+    event.target.value = "";
 
     // To handle encoding issues (Windows-1251 vs UTF-8),
     // we first read the file as an ArrayBuffer to detect/convert

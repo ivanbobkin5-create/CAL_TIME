@@ -15,6 +15,8 @@ import {
   Upload,
   PenTool,
   Loader2,
+  CreditCard,
+  Coins,
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { SketchAnnotator } from "./SketchAnnotator";
@@ -102,6 +104,27 @@ export const ProjectSetCheckoutModal = ({
   );
   const [isSaving, setIsSaving] = useState(false);
 
+  // Payment states
+  const [paymentMethod, setPaymentMethod] = useState(
+    editingSet?.paymentMethod || editingSet?.data?.paymentMethod || "Наличные"
+  );
+  const [paymentPartsCount, setPaymentPartsCount] = useState<number>(
+    editingSet?.paymentPartsCount || editingSet?.data?.paymentPartsCount || 1
+  );
+  const [paymentPercentages, setPaymentPercentages] = useState<number[]>(() => {
+    if (editingSet?.paymentPercentages) return editingSet.paymentPercentages;
+    if (editingSet?.data?.paymentPercentages) return editingSet.data.paymentPercentages;
+    return [50];
+  });
+
+  const handlePercentageChange = (index: number, val: number) => {
+    setPaymentPercentages((prev) => {
+      const next = [...prev];
+      next[index] = val;
+      return next;
+    });
+  };
+
   useEffect(() => {
     if (editingSet) {
       console.log("DEBUG: editingSet updated in modal:", editingSet);
@@ -109,6 +132,13 @@ export const ProjectSetCheckoutModal = ({
       setContractDate(editingSet.contractDate || editingSet?.data?.contractDate || new Date().toISOString().split("T")[0]);
       setLeadTimeDays(editingSet.leadTimeDays || editingSet?.data?.leadTimeDays || 30);
       setSketches(editingSet.sketches || editingSet?.data?.sketches || []);
+      setPaymentMethod(editingSet.paymentMethod || editingSet?.data?.paymentMethod || "Наличные");
+      setPaymentPartsCount(editingSet.paymentPartsCount || editingSet?.data?.paymentPartsCount || 1);
+      setPaymentPercentages(
+        editingSet.paymentPercentages || 
+        editingSet?.data?.paymentPercentages || 
+        (editingSet.paymentPartsCount === 2 ? [50, 30] : editingSet.paymentPartsCount === 3 ? [40, 30, 20] : editingSet.paymentPartsCount === 4 ? [25, 25, 25, 25] : [50])
+      );
     }
   }, [editingSet]);
   const [expandMaterials, setExpandMaterials] = useState(false);
@@ -630,6 +660,140 @@ export const ProjectSetCheckoutModal = ({
                 </div>
               </div>
 
+              {/* Payment Block (Блок оплаты) */}
+              <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm overflow-hidden">
+                <div className="px-8 py-5 border-b border-gray-50 flex items-center justify-between bg-indigo-50/30">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
+                      <CreditCard className="w-4 h-4 text-white" />
+                    </div>
+                    <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest">
+                      Блок оплаты
+                    </h3>
+                  </div>
+                </div>
+                <div className="p-8 space-y-6">
+                  {/* Payment Method & Splitting trigger */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                        Вид оплаты
+                      </label>
+                      <select
+                        value={paymentMethod}
+                        onChange={(e) => setPaymentMethod(e.target.value)}
+                        className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold shadow-sm"
+                      >
+                        {["Наличные", "СПБ", "QR-код", "Оплата картой", "Безналичные", "Рассрочка"].map((opt) => (
+                          <option key={opt} value={opt}>
+                            {opt}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                        Разбить оплату на части
+                      </label>
+                      <div className="flex items-center gap-2">
+                        {[1, 2, 3, 4].map((parts) => (
+                          <button
+                            key={parts}
+                            type="button"
+                            onClick={() => {
+                              setPaymentPartsCount(parts);
+                              let defaults = [50];
+                              if (parts === 2) defaults = [50, 30];
+                              else if (parts === 3) defaults = [40, 30, 20];
+                              else if (parts === 4) defaults = [25, 25, 25, 25];
+                              setPaymentPercentages(defaults);
+                            }}
+                            className={cn(
+                              "flex-1 py-3 text-xs font-black rounded-xl border transition-all",
+                              paymentPartsCount === parts
+                                ? "bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-100"
+                                : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                            )}
+                          >
+                            {parts} {parts === 1 ? "часть" : parts < 5 ? "части" : "частей"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Payment Parts Inputs */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-2">
+                    {Array.from({ length: paymentPartsCount }).map((_, idx) => {
+                      const pct = paymentPercentages[idx] ?? 0;
+                      const amt = Math.round((contractSum * pct) / 100);
+                      const title = idx === 0 ? "Предоплата (1-я часть)" : `${idx + 1}-я часть оплаты`;
+                      
+                      return (
+                        <div key={idx} className="p-4 bg-gray-50/50 border border-gray-100 rounded-2xl space-y-3">
+                          <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block">
+                            {title}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            <div className="relative flex-1">
+                              <input
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={pct}
+                                onChange={(e) => {
+                                  const val = Math.min(100, Math.max(0, parseInt(e.target.value) || 0));
+                                  handlePercentageChange(idx, val);
+                                }}
+                                className="w-full pl-3 pr-8 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold shadow-sm"
+                              />
+                              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-gray-400">
+                                %
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-xs text-gray-500 font-bold">
+                            Сумма: <span className="text-indigo-600 font-extrabold">{amt.toLocaleString()} ₽</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Balance / Остаток оплаты */}
+                  {(() => {
+                    const totalPct = paymentPercentages.slice(0, paymentPartsCount).reduce((s, p) => s + p, 0);
+                    const totalAmt = paymentPercentages.slice(0, paymentPartsCount).reduce((s, p) => s + Math.round((contractSum * p) / 100), 0);
+                    const restPct = Math.max(0, 100 - totalPct);
+                    const restAmt = Math.max(0, contractSum - totalAmt);
+                    
+                    return (
+                      <div className="p-5 bg-emerald-50/50 border border-emerald-100 rounded-2xl flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-emerald-500 rounded-xl flex items-center justify-center">
+                            <Coins className="w-5 h-5 text-white" />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-black text-emerald-950">
+                              Остаток оплаты
+                            </h4>
+                            <p className="text-xs text-emerald-600 font-medium mt-0.5">
+                              Остаток от всех предоплат ({restPct}%)
+                            </p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xl font-black text-emerald-950">
+                            {restAmt.toLocaleString()} ₽
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
               {/* Breakdown Sections */}
                 {/* Materials, Edges and Facades (New Unified Section) */}
                 <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm overflow-hidden">
@@ -933,6 +1097,11 @@ export const ProjectSetCheckoutModal = ({
                               sketches,
                               totalPrice: contractSum,
                               summary,
+                              paymentMethod,
+                              paymentPartsCount,
+                              paymentPercentages,
+                              paymentAmounts: paymentPercentages.slice(0, paymentPartsCount).map(pct => Math.round((contractSum * pct) / 100)),
+                              paymentRestAmount: contractSum - paymentPercentages.slice(0, paymentPartsCount).reduce((s, p) => s + Math.round((contractSum * p) / 100), 0),
                             });
                           } catch (err) {
                             console.error(err);
@@ -989,6 +1158,11 @@ export const ProjectSetCheckoutModal = ({
                           sketches,
                           totalPrice: contractSum,
                           summary,
+                          paymentMethod,
+                          paymentPartsCount,
+                          paymentPercentages,
+                          paymentAmounts: paymentPercentages.slice(0, paymentPartsCount).map(pct => Math.round((contractSum * pct) / 100)),
+                          paymentRestAmount: contractSum - paymentPercentages.slice(0, paymentPartsCount).reduce((s, p) => s + Math.round((contractSum * p) / 100), 0),
                         });
                       } catch (err) {
                         console.error(err);

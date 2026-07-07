@@ -11,16 +11,9 @@ import jwt from "jsonwebtoken";
 const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || "default_jwt_secret_change_me";
 
-// Simple in-memory cache for database documents & collections to avoid slow DB roundtrips and CPU overhead
-const docCache = new Map<string, any>();
-const colCache = new Map<string, any>();
-
+// Simple in-memory cache is disabled to prevent stale/divergent data in multi-instance Cloud Run containers
 function invalidateCache(docPath: string) {
-  docCache.delete(docPath);
-  const parts = docPath.split('/');
-  parts.pop();
-  const collection = parts.join('/');
-  colCache.delete(collection);
+  // In-memory caching fully disabled
 }
 
 async function startServer() {
@@ -501,17 +494,15 @@ async function startServer() {
     try {
       const docPath = req.params[0];
       
-      // Explicitly set cache headers to allow standard conditional request ETag caching (no-cache)
-      res.setHeader("Cache-Control", "private, no-cache, no-transform, must-revalidate");
-      
-      if (docCache.has(docPath)) {
-        return res.json(docCache.get(docPath));
-      }
+      // Fully prevent any client or intermediary caching of database queries
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+      res.setHeader("Surrogate-Control", "no-store");
       
       const doc = await prisma.dbDocument.findUnique({ where: { path: docPath } });
       if (doc) {
         const parsed = JSON.parse(doc.data);
-        docCache.set(docPath, parsed);
         res.json(parsed);
       } else {
         res.status(404).json({ error: "Not found" });
@@ -526,16 +517,14 @@ async function startServer() {
     try {
       const colPath = req.params[0];
       
-      // Explicitly set cache headers to allow standard conditional request ETag caching (no-cache)
-      res.setHeader("Cache-Control", "private, no-cache, no-transform, must-revalidate");
-      
-      if (colCache.has(colPath)) {
-        return res.json(colCache.get(colPath));
-      }
+      // Fully prevent any client or intermediary caching of database queries
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+      res.setHeader("Surrogate-Control", "no-store");
       
       const docs = await prisma.dbDocument.findMany({ where: { collection: colPath } });
       const mapped = docs.map(d => ({ id: d.docId, data: JSON.parse(d.data), path: d.path }));
-      colCache.set(colPath, mapped);
       res.json(mapped);
     } catch (e) {
       console.error("Error in GET /api/db/col/*:", e);

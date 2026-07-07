@@ -277,11 +277,135 @@ export const Bitrix24Modal = ({
       const readyDt = project.readyDate || data.readyDate || "";
       const totalS = project.totalPrice || data.totalSum || computedSummary.totalOverall || 0;
 
+      // 1. Latest ready date across all projects
+      let latestReadyDateStr = "";
+      let latestReadyDateObj: Date | null = null;
+      associatedProjects.forEach((p) => {
+        const dStr = p.readyDate || p.data?.readyDate;
+        if (dStr) {
+          const dObj = new Date(dStr);
+          if (!isNaN(dObj.getTime())) {
+            if (!latestReadyDateObj || dObj > latestReadyDateObj) {
+              latestReadyDateObj = dObj;
+              latestReadyDateStr = dStr;
+            }
+          }
+        }
+      });
+      if (!latestReadyDateStr) {
+        latestReadyDateStr = project.readyDate || data.readyDate || "";
+      }
+      let formattedReadyDate = latestReadyDateStr;
+      if (latestReadyDateStr && latestReadyDateStr.includes("T")) {
+        formattedReadyDate = latestReadyDateStr.split("T")[0];
+      }
+
+      // 2. Manufacturing period (max lead time)
+      let maxLeadTimeDays = 0;
+      associatedProjects.forEach((p) => {
+        const days = parseInt(p.leadTimeDays || p.data?.leadTimeDays);
+        if (!isNaN(days) && days > maxLeadTimeDays) {
+          maxLeadTimeDays = days;
+        }
+      });
+      if (maxLeadTimeDays === 0) {
+        maxLeadTimeDays = parseInt(project.leadTimeDays || data.leadTimeDays) || 30;
+      }
+
+      // 3. Delivery Address
+      let deliveryAddressStr = "";
+      associatedProjects.forEach((p) => {
+        const sData = p.data?.serviceData || {};
+        const addr = sData.address || {};
+        if (addr.street) {
+          const parts = [
+            addr.street,
+            addr.house ? `д. ${addr.house}` : "",
+            addr.apartment ? `кв. ${addr.apartment}` : ""
+          ].filter(Boolean);
+          const fullAddr = parts.join(", ");
+          if (fullAddr && !deliveryAddressStr.includes(fullAddr)) {
+            if (deliveryAddressStr) deliveryAddressStr += "; ";
+            deliveryAddressStr += fullAddr;
+          }
+        }
+      });
+      if (!deliveryAddressStr) {
+        const sData = project.data?.serviceData || data.serviceData || {};
+        const addr = sData.address || {};
+        if (addr.street) {
+          const parts = [
+            addr.street,
+            addr.house ? `д. ${addr.house}` : "",
+            addr.apartment ? `кв. ${addr.apartment}` : ""
+          ].filter(Boolean);
+          deliveryAddressStr = parts.join(", ");
+        }
+      }
+
+      // 4. Floor
+      let deliveryFloorVal = "";
+      associatedProjects.forEach((p) => {
+        const sData = p.data?.serviceData || {};
+        const addr = sData.address || {};
+        if (addr.floor) {
+          if (!deliveryFloorVal.includes(String(addr.floor))) {
+            if (deliveryFloorVal) deliveryFloorVal += ", ";
+            deliveryFloorVal += String(addr.floor);
+          }
+        }
+      });
+      if (!deliveryFloorVal) {
+        const sData = project.data?.serviceData || data.serviceData || {};
+        const addr = sData.address || {};
+        if (addr.floor) {
+          deliveryFloorVal = String(addr.floor);
+        }
+      }
+
+      // 5. Elevator
+      let deliveryElevatorVal = "";
+      associatedProjects.forEach((p) => {
+        const sData = p.data?.serviceData || {};
+        const addr = sData.address || {};
+        if (addr.elevator && addr.elevator !== "none") {
+          const elText = addr.elevator === "passenger" ? "Пассажирский" : "Грузовой";
+          if (!deliveryElevatorVal.includes(elText)) {
+            if (deliveryElevatorVal) deliveryElevatorVal += ", ";
+            deliveryElevatorVal += elText;
+          }
+        }
+      });
+      if (!deliveryElevatorVal) {
+        const sData = project.data?.serviceData || data.serviceData || {};
+        const addr = sData.address || {};
+        if (addr.elevator && addr.elevator !== "none") {
+          deliveryElevatorVal = addr.elevator === "passenger" ? "Пассажирский" : "Грузовой";
+        } else {
+          deliveryElevatorVal = "Отсутствует";
+        }
+      }
+
+      // 6. Delivery selected
+      let deliveryFurnitureVal = "Нет";
+      associatedProjects.forEach((p) => {
+        const sData = p.data?.serviceData || {};
+        if (sData.delivery) {
+          deliveryFurnitureVal = "Да";
+        }
+      });
+      if (deliveryFurnitureVal === "Нет") {
+        const sData = project.data?.serviceData || data.serviceData || {};
+        if (sData.delivery) {
+          deliveryFurnitureVal = "Да";
+        }
+      }
+
       // Add comments
       let comments = `Создано из приложения Mebelev.\n`;
       if (contractNum) comments += `Договор №: ${contractNum}\n`;
       if (contractDt) comments += `Дата договора: ${contractDt}\n`;
-      if (readyDt) comments += `Дата готовности: ${readyDt}\n`;
+      if (formattedReadyDate) comments += `Дата готовности: ${formattedReadyDate}\n`;
       if (data.comment) comments += `Комментарий: ${data.comment}`;
       fields.COMMENTS = comments;
 
@@ -290,6 +414,12 @@ export const Bitrix24Modal = ({
       if (mapping.totalSum && totalS) fields[mapping.totalSum] = totalS;
       if (mapping.contractDate && contractDt) fields[mapping.contractDate] = contractDt;
       if (mapping.readyDate && readyDt) fields[mapping.readyDate] = readyDt;
+      if (mapping.appReadyDate && formattedReadyDate) fields[mapping.appReadyDate] = formattedReadyDate;
+      if (mapping.leadTimeDays && maxLeadTimeDays) fields[mapping.leadTimeDays] = maxLeadTimeDays;
+      if (mapping.deliveryAddress && deliveryAddressStr) fields[mapping.deliveryAddress] = deliveryAddressStr;
+      if (mapping.deliveryFloor && deliveryFloorVal) fields[mapping.deliveryFloor] = deliveryFloorVal;
+      if (mapping.deliveryElevator && deliveryElevatorVal) fields[mapping.deliveryElevator] = deliveryElevatorVal;
+      if (mapping.deliveryFurniture) fields[mapping.deliveryFurniture] = deliveryFurnitureVal;
       
       // Values from structural summary
       if (mapping.hardwareSum && computedSummary.totalHardwarePrice) {
