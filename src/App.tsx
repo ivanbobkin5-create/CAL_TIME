@@ -469,13 +469,16 @@ function collection(db: any, path: string, ...rest: any[]) {
 
 function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any) => void, intervalMs: number = 15000) { 
   const isCol = ref.path.split('/').length % 2 !== 0;
+  let active = true;
   
   const fetchSnapshot = async () => {
     try {
       if (isCol) {
         const res = await fetch(`/api/db/col/${ref.path}`);
+        if (!active) return;
         if (res.ok) {
           const data = await res.json();
+          if (!active) return;
           callback({
             docs: data.map((d: any) => ({
               id: d.id,
@@ -487,18 +490,22 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
         }
       } else {
         const res = await fetch(`/api/db/doc/${ref.path}`);
+        if (!active) return;
         if (res.ok) {
           const data = await res.json();
+          if (!active) return;
           callback({
             exists: () => true,
             data: () => data,
             id: ref.path.split('/').pop()
           });
         } else {
+          if (!active) return;
           callback({ exists: () => false, data: () => null });
         }
       }
     } catch (e) {
+      if (!active) return;
       if (errorCb) errorCb(e);
       else console.error("Snapshot error:", e);
     }
@@ -516,6 +523,7 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
   }
   
   return () => {
+    active = false;
     clearInterval(interval);
     if (typeof window !== "undefined") {
       window.removeEventListener("meb_sync_completed", handleSyncComplete);
@@ -1964,7 +1972,9 @@ const packDetails = (
         (detail.color && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|шимо|бодега|wood|oak|ash|walnut|pine|wenge|shimo/i.test(detail.color)) ||
         (detail.name && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|шимо|бодега|wood|oak|ash|walnut|pine|wenge|shimo/i.test(detail.name))
       );
-      const canRotateDetail = detail.manuallyRotated ? false : (hasWoodTexture ? false : (allowRotation || detail.canRotate));
+      const physicallyMustRotate = (detail.width + kerf > sheetWidth || detail.height + kerf > sheetHeight) &&
+        (detail.height + kerf <= sheetWidth && detail.width + kerf <= sheetHeight);
+      const canRotateDetail = physicallyMustRotate || (detail.manuallyRotated ? false : (hasWoodTexture ? false : (allowRotation || detail.canRotate)));
 
       // 1. Try to fit on ANY existing shelf on existing sheets
       for (let sIdx = 0; sIdx < sheets.length; sIdx++) {
@@ -2096,7 +2106,9 @@ const packDetails = (
         (detail.color && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|шимо|бодега|wood|oak|ash|walnut|pine|wenge|shimo/i.test(detail.color)) ||
         (detail.name && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|шимо|бодега|wood|oak|ash|walnut|pine|wenge|shimo/i.test(detail.name))
       );
-      const canRotateDetail = detail.manuallyRotated ? false : (hasWoodTexture ? false : (allowRotation || detail.canRotate));
+      const physicallyMustRotate = (detail.width + kerf > sheetWidth || detail.height + kerf > sheetHeight) &&
+        (detail.height + kerf <= sheetWidth && detail.width + kerf <= sheetHeight);
+      const canRotateDetail = physicallyMustRotate || (detail.manuallyRotated ? false : (hasWoodTexture ? false : (allowRotation || detail.canRotate)));
 
       // 1. Try to fit in ANY free rectangle on ANY sheet
       for (let sIdx = 0; sIdx < sheets.length; sIdx++) {
@@ -7248,13 +7260,16 @@ const SummaryView = ({
               1000;
           }
           const totalCuttingMeters = transverseMeters + longitudinalMeters;
-          const salesEdgeQty = Math.ceil(cutEdgeLen / 5) * 5;
+          const isSelfAdhesive = cut.edgeType === "Самоклеющаяся";
+          const salesEdgeQty = isSelfAdhesive
+            ? Math.ceil(cutEdgeLen / 3)
+            : Math.ceil(cutEdgeLen / 5) * 5;
 
           const cuttingServiceName = isBacksplash
             ? "Распил стеновой панели, п.м."
             : "Распил столешницы, п.м.";
           const edgeServiceName =
-            cut.edgeType === "Самоклеющаяся"
+            isSelfAdhesive
               ? "Обработка самоклеющейся кромкой столешницы, п.м."
               : "Обработка ABC кромкой столешницы, п.м.";
 
@@ -7293,9 +7308,9 @@ const SummaryView = ({
               worktopRows.push({
                 type: "edge",
                 name: "Кромка для столешницы",
-                sub: `Для: ${item.name} (Мат-ал)`,
+                sub: `Для: ${item.name} (Мат-ал)${isSelfAdhesive ? " [Самоклеющаяся]" : ""}`,
                 decor: cut.edgeDecor || "Не указан",
-                qty: `${salesEdgeQty} м`,
+                qty: isSelfAdhesive ? `${salesEdgeQty} шт` : `${salesEdgeQty} м`,
                 price: Math.round(cut.edgePrice * wtCoef),
                 total: Math.round(cut.edgePrice * wtCoef * salesEdgeQty),
                 coef: wtCoef,
@@ -8066,14 +8081,17 @@ const SummaryView = ({
       }
 
       const totalCuttingMeters = transverseMeters + longitudinalMeters;
-      const salesEdgeQty = Math.ceil(edgeLen / 5) * 5;
+      const isSelfAdhesive = cut.edgeType === "Самоклеющаяся";
+      const salesEdgeQty = isSelfAdhesive
+        ? Math.ceil(edgeLen / 3)
+        : Math.ceil(edgeLen / 5) * 5;
 
       // Service Names from requested catalog
       const cuttingServiceName = isBacksplash
         ? "Распил стеновой панели, п.м."
         : "Распил столешницы, п.м.";
       const edgeServiceName =
-        cut.edgeType === "Самоклеющаяся"
+        isSelfAdhesive
           ? "Обработка самоклеющейся кромкой столешницы, п.м."
           : "Обработка ABC кромкой столешницы, п.м.";
 
@@ -8118,9 +8136,9 @@ const SummaryView = ({
           summaryRows.push({
             type: "product_edge",
             name: "Кромка для столешницы",
-            sub: `Для: ${product.name} (Мат-ал)`,
+            sub: `Для: ${product.name} (Мат-ал)${isSelfAdhesive ? " [Самоклеющаяся]" : ""}`,
             decor: cut.edgeDecor || "Не указан",
-            qty: `${salesEdgeQty} м`,
+            qty: isSelfAdhesive ? `${salesEdgeQty} шт` : `${salesEdgeQty} м`,
             price: Math.round(cut.edgePrice * wtCoef),
             total: Math.round(cut.edgePrice * wtCoef * salesEdgeQty),
             coef: wtCoef,
@@ -23909,6 +23927,21 @@ export default function App() {
                               const isCheaper = diff < 0;
                               const isMoreExpensive = diff > 0;
 
+                              // Find quantity from currentSummaryRows or addedProducts
+                              const matchingRow = currentSummaryRows?.find((r: any) => 
+                                (r.rawProduct && String(r.rawProduct.id) === String(selectedProductForDetail.id)) ||
+                                (r.productId && String(r.productId) === String(selectedProductForDetail.id))
+                              ) || addedProducts?.find((p: any) => String(p.id) === String(selectedProductForDetail.id));
+                              
+                              const qty = matchingRow ? (matchingRow.qty || matchingRow.quantity || 1) : 1;
+                              const totalAnalogPrice = analogPrice * qty;
+                              const totalDiff = diff * qty;
+                              const totalDiffRepr = totalDiff > 0
+                                ? `дороже на ${totalDiff.toLocaleString()} ₽ за ${qty} шт.`
+                                : totalDiff < 0
+                                ? `дешевле на ${Math.abs(totalDiff).toLocaleString()} ₽ за ${qty} шт.`
+                                : `цена совпадает за ${qty} шт.`;
+
                               return (
                                 <div key={idx} className="flex justify-between items-center bg-white p-3 rounded-xl border border-amber-100 shadow-sm hover:border-amber-300 transition-colors text-left">
                                   <div className="flex items-center gap-2.5 min-w-0">
@@ -23925,16 +23958,29 @@ export default function App() {
                                       <div className="font-bold text-gray-800 text-xs truncate max-w-[180px] sm:max-w-[300px]" title={analogProd.name}>
                                         {analogProd.name}
                                       </div>
-                                      <div className="flex items-center gap-1.5 mt-0.5 text-[10px] font-bold">
-                                        <span className="text-gray-500 font-semibold">
-                                          {analogPrice.toLocaleString()} ₽
-                                        </span>
-                                        <span className={cn(
-                                          "px-1.5 py-0.2 rounded font-black uppercase text-[8px]",
-                                          isCheaper ? "bg-emerald-50 text-emerald-800" : isMoreExpensive ? "bg-rose-50 text-rose-800" : "bg-gray-100 text-gray-600"
-                                        )}>
-                                          {diffRepr}
-                                        </span>
+                                      <div className="flex flex-col gap-0.5 mt-0.5 text-[10px]">
+                                        <div className="flex items-center gap-1.5 font-bold">
+                                          <span className="text-gray-500 font-semibold">
+                                            {analogPrice.toLocaleString()} ₽ / шт.
+                                          </span>
+                                          <span className={cn(
+                                            "px-1.5 py-0.2 rounded font-black uppercase text-[8px]",
+                                            isCheaper ? "bg-emerald-50 text-emerald-800" : isMoreExpensive ? "bg-rose-50 text-rose-800" : "bg-gray-100 text-gray-600"
+                                          )}>
+                                            {diffRepr}
+                                          </span>
+                                        </div>
+                                        {qty > 1 && (
+                                          <div className="flex flex-col gap-0.5 text-[9px] text-gray-400 font-semibold mt-0.5 border-t border-gray-50 pt-0.5">
+                                            <span>Всего за {qty} шт: <strong className="text-gray-600">{totalAnalogPrice.toLocaleString()} ₽</strong></span>
+                                            <span className={cn(
+                                              "font-black uppercase text-[7.5px]",
+                                              isCheaper ? "text-emerald-700" : isMoreExpensive ? "text-rose-700" : "text-gray-500"
+                                            )}>
+                                              {totalDiffRepr}
+                                            </span>
+                                          </div>
+                                        )}
                                       </div>
                                     </div>
                                   </div>
