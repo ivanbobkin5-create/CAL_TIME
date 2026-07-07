@@ -473,7 +473,7 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
   const fetchSnapshot = async () => {
     try {
       if (isCol) {
-        const res = await fetch(`/api/db/col/${ref.path}?_t=${Date.now()}`);
+        const res = await fetch(`/api/db/col/${ref.path}`);
         if (res.ok) {
           const data = await res.json();
           callback({
@@ -486,7 +486,7 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
           });
         }
       } else {
-        const res = await fetch(`/api/db/doc/${ref.path}?_t=${Date.now()}`);
+        const res = await fetch(`/api/db/doc/${ref.path}`);
         if (res.ok) {
           const data = await res.json();
           callback({
@@ -529,7 +529,7 @@ function doc(db: any, col: string, ...rest: any[]) {
 }
 
 async function getDoc(docRef: any) { 
-  const res = await fetch(`/api/db/doc/${docRef.path}?_t=${Date.now()}`);
+  const res = await fetch(`/api/db/doc/${docRef.path}`);
   if (res.ok) {
     const data = await res.json();
     return {

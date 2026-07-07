@@ -11,6 +11,18 @@ import jwt from "jsonwebtoken";
 const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || "default_jwt_secret_change_me";
 
+// Simple in-memory cache for database documents & collections to avoid slow DB roundtrips and CPU overhead
+const docCache = new Map<string, any>();
+const colCache = new Map<string, any>();
+
+function invalidateCache(docPath: string) {
+  docCache.delete(docPath);
+  const parts = docPath.split('/');
+  parts.pop();
+  const collection = parts.join('/');
+  colCache.delete(collection);
+}
+
 async function startServer() {
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -18,13 +30,17 @@ async function startServer() {
   app.use(cors());
   app.use(express.json({ limit: '50mb' }));
 
-  // Disable caching for all API responses
+  // Disable caching for general API responses, but allow cache validation (no-cache) for db endpoints
   app.use((req, res, next) => {
     if (req.path.startsWith("/api")) {
-      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-      res.setHeader("Pragma", "no-cache");
-      res.setHeader("Expires", "0");
-      res.setHeader("Surrogate-Control", "no-store");
+      if (req.path.startsWith("/api/db/col") || req.path.startsWith("/api/db/doc")) {
+        res.setHeader("Cache-Control", "private, no-cache, no-transform, must-revalidate");
+      } else {
+        res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+        res.setHeader("Pragma", "no-cache");
+        res.setHeader("Expires", "0");
+        res.setHeader("Surrogate-Control", "no-store");
+      }
     }
     next();
   });
@@ -482,16 +498,49 @@ async function startServer() {
 
   // TimeWeb Database Document API
   app.get("/api/db/doc/*", async (req, res) => {
-    const docPath = req.params[0];
-    const doc = await prisma.dbDocument.findUnique({ where: { path: docPath } });
-    if (doc) res.json(JSON.parse(doc.data));
-    else res.status(404).json({ error: "Not found" });
+    try {
+      const docPath = req.params[0];
+      
+      // Explicitly set cache headers to allow standard conditional request ETag caching (no-cache)
+      res.setHeader("Cache-Control", "private, no-cache, no-transform, must-revalidate");
+      
+      if (docCache.has(docPath)) {
+        return res.json(docCache.get(docPath));
+      }
+      
+      const doc = await prisma.dbDocument.findUnique({ where: { path: docPath } });
+      if (doc) {
+        const parsed = JSON.parse(doc.data);
+        docCache.set(docPath, parsed);
+        res.json(parsed);
+      } else {
+        res.status(404).json({ error: "Not found" });
+      }
+    } catch (e) {
+      console.error("Error in GET /api/db/doc/*:", e);
+      res.status(500).json({ error: String(e) });
+    }
   });
 
   app.get("/api/db/col/*", async (req, res) => {
-    const colPath = req.params[0];
-    const docs = await prisma.dbDocument.findMany({ where: { collection: colPath } });
-    res.json(docs.map(d => ({ id: d.docId, data: JSON.parse(d.data), path: d.path })));
+    try {
+      const colPath = req.params[0];
+      
+      // Explicitly set cache headers to allow standard conditional request ETag caching (no-cache)
+      res.setHeader("Cache-Control", "private, no-cache, no-transform, must-revalidate");
+      
+      if (colCache.has(colPath)) {
+        return res.json(colCache.get(colPath));
+      }
+      
+      const docs = await prisma.dbDocument.findMany({ where: { collection: colPath } });
+      const mapped = docs.map(d => ({ id: d.docId, data: JSON.parse(d.data), path: d.path }));
+      colCache.set(colPath, mapped);
+      res.json(mapped);
+    } catch (e) {
+      console.error("Error in GET /api/db/col/*:", e);
+      res.status(500).json({ error: String(e) });
+    }
   });
 
   app.post("/api/db/doc/*", async (req, res) => {
@@ -518,6 +567,8 @@ async function startServer() {
           update: { data: JSON.stringify(data) }
         });
       }
+      
+      invalidateCache(docPath);
       res.json({ status: "ok" });
     } catch (e) {
       console.error("Error in POST /api/db/doc/*:", e);
@@ -542,6 +593,8 @@ async function startServer() {
           data: { path: docPath, collection, docId, data: JSON.stringify(data) }
         });
       }
+      
+      invalidateCache(docPath);
       res.json({ status: "ok" });
     } catch (e) {
       console.error("Error in PATCH /api/db/doc/*:", e);
@@ -553,6 +606,8 @@ async function startServer() {
     try {
       const docPath = req.params[0];
       await prisma.dbDocument.deleteMany({ where: { path: docPath } });
+      
+      invalidateCache(docPath);
       res.json({ status: "ok" });
     } catch (e) {
       console.error("Error in DELETE /api/db/doc/*:", e);
