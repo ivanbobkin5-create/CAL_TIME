@@ -58,6 +58,9 @@ function writeBatch(db: any) {
 }
 async function deleteDoc(docRef: any) {
   await fetch(`/api/db/doc/${docRef.path}`, { method: 'DELETE' });
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("meb_sync_completed"));
+  }
 }
 function onSnapshot(ref: any, callback: (snap: any) => void) {
   const fetchData = async () => {
@@ -115,7 +118,7 @@ interface Project {
   createdBy: string;
   createdByName: string;
   data: any;
-  status?: "draft" | "sent" | "transferred";
+  status?: "draft" | "sent" | "transferred" | "deleted";
   sketches?: string[];
   specification?: any;
   sourceCompanyId?: string;
@@ -125,6 +128,7 @@ interface Project {
   setId?: string;
   revisionComment?: string;
   totalPrice?: number;
+  isDeleted?: boolean;
 }
 
 export const ProjectsView = ({
@@ -142,6 +146,9 @@ export const ProjectsView = ({
   companyData,
   projects = [],
   sets = [],
+  isProjectsLoading = false,
+  isSetsLoading = false,
+  onDeleteProject,
 }: {
   companyId?: string;
   userId?: string;
@@ -157,12 +164,15 @@ export const ProjectsView = ({
   companyData?: any;
   projects?: Project[];
   sets?: any[];
+  isProjectsLoading?: boolean;
+  isSetsLoading?: boolean;
+  onDeleteProject?: (projectId: string) => void;
 }) => {
   console.log("DEBUG: companyData in ProjectsView:", companyData);
   const companySettings = companyData;
   const [searchQuery, setSearchQuery] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [loadingSets, setLoadingSets] = useState(true);
+  const [loading, setLoading] = useState(() => projects.length === 0 && isProjectsLoading);
+  const [loadingSets, setLoadingSets] = useState(() => sets.length === 0 && isSetsLoading);
 
   // Removed old useEffect for companySettings fetch
 
@@ -339,7 +349,14 @@ export const ProjectsView = ({
     }
   }, [companyId, userRole, userId]);
 
-  // Removed redundant fetchData useEffect
+  useEffect(() => {
+    setLoading(isProjectsLoading);
+  }, [isProjectsLoading]);
+
+  useEffect(() => {
+    setLoadingSets(isSetsLoading);
+  }, [isSetsLoading]);
+
   useEffect(() => {
     if (projects.length > 0) setLoading(false);
     if (sets.length > 0) setLoadingSets(false);
@@ -414,6 +431,7 @@ export const ProjectsView = ({
           await deleteDoc(
             doc(db, "companies", companyId, "projects", projectId),
           );
+          onDeleteProject?.(projectId);
         } catch (error) {
           setDeletedProjects(prev => {
             const next = new Set(prev);
@@ -432,18 +450,13 @@ export const ProjectsView = ({
 
   const myProjects = useMemo(() => {
     const baseProjects = (() => {
-        if (!userRole || userRole === "admin") {
-        return projects;
-        }
-        if (userRole === "supervisor") {
-        return projects.filter(
-            (p) => p.createdBy === userId || p.status === "transferred"
-        );
+        if (!userRole || userRole === "admin" || userRole === "supervisor") {
+          return projects;
         }
         // Employees, managers, and other roles can only see projects they created
         return projects.filter((p) => p.createdBy === userId);
     })();
-    return baseProjects.filter(p => !deletedProjects.has(p.id));
+    return baseProjects.filter(p => !deletedProjects.has(p.id) && !p.isDeleted && p.status !== "deleted");
   }, [projects, userRole, userId, deletedProjects]);
 
   const filteredProjects = myProjects.filter((p) => {
@@ -464,13 +477,8 @@ export const ProjectsView = ({
   });
 
   const mySets = useMemo(() => {
-    if (!userRole || userRole === "admin") {
+    if (!userRole || userRole === "admin" || userRole === "supervisor") {
       return sets;
-    }
-    if (userRole === "supervisor") {
-      return sets.filter(
-        (s) => s.createdBy === userId || s.status === "transferred"
-      );
     }
     return sets.filter((s) => s.createdBy === userId);
   }, [sets, userRole, userId]);

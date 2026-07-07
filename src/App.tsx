@@ -123,6 +123,7 @@ import {
   Phone,
   MessageSquare,
   FileText,
+  Copy,
 } from "lucide-react";
 
 // --- START OF OFFLINE CACHE AND SYNC ENGINE ---
@@ -545,6 +546,9 @@ async function setDoc(docRef: any, data: any, options?: { merge?: boolean }) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ data, merge: options?.merge })
   });
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("meb_sync_completed"));
+  }
 }
 
 async function updateDoc(docRef: any, data: any, options?: any) { 
@@ -553,12 +557,18 @@ async function updateDoc(docRef: any, data: any, options?: any) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ data, merge: options?.merge })
   });
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("meb_sync_completed"));
+  }
 }
 
 async function deleteDoc(docRef: any) { 
   await fetch(`/api/db/doc/${docRef.path}`, {
     method: 'DELETE'
   });
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("meb_sync_completed"));
+  }
 }
 
 const reportPriceChange = async (companyId: string, userId: string, userName: string, materialId: string, oldPrice: number, newPrice: number) => {
@@ -589,6 +599,9 @@ async function addDoc(colRef: any, data: any) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ data })
   });
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("meb_sync_completed"));
+  }
   return { id, path, data };
 }
 
@@ -14635,6 +14648,78 @@ const ProductsView = ({
     setIsAddingProduct(true);
   };
 
+  const handleCreateBasedOn = (product: any) => {
+    setEditingProduct(null);
+    setNewProduct({
+      name: product.name ? `${product.name} (копия)` : "",
+      category: product.category || productCategories[0],
+      purchasePrice: product.purchasePrice || 0,
+      images: product.images || (product.image ? [product.image] : []),
+      article: product.article ? `${product.article}_копия` : "",
+      analogs: product.analogs || [],
+      vendorArticle: product.vendorArticle || "",
+      manufacturerArticle: product.manufacturerArticle || "",
+      hingeDamping: product.hingeDamping || "",
+      vat: product.vat || 20,
+      includeVat: product.includeVat ?? true,
+      color: product.color || "",
+      description: product.description || "",
+      unit: product.unit || "шт",
+      manufacturer: product.manufacturer || "",
+      drawerSubCategory: product.drawerSubCategory || "",
+      runnerType: product.runnerType || "",
+      extensionType: product.extensionType || "Полное",
+      depth: product.depth || "",
+      heightTelescopic: product.heightTelescopic || "",
+      drawerType: product.drawerType || "Стандартный",
+      hingeType: product.hingeType || "Накладная",
+      moduleGroup: product.moduleGroup || "",
+      moduleType: product.moduleType || "",
+      moduleHeight: product.moduleHeight || "",
+      moduleDepth: product.moduleDepth || "",
+      moduleWidth: product.moduleWidth || "",
+      moduleMaterial: product.moduleMaterial || "ЛДСП Nordeco Белый 16 мм",
+      moduleEdge: product.moduleEdge || "0,4 мм",
+      segment: product.segment || "Средний",
+      moduleFittings: product.moduleFittings || [],
+      moduleStandardEquipment: product.moduleStandardEquipment || [],
+      wtManufacturer: product.wtManufacturer || "Скиф",
+      wtType: product.wtType || "ЛДСП",
+      wtLength: product.wtLength || "3000",
+      wtDepth: product.wtDepth || "600",
+      wtThickness: product.wtThickness || "38",
+      wtSlope: product.wtSlope || "R3",
+      requiredProducts: product.requiredProducts || [],
+      useCustomCoeffs: product.useCustomCoeffs || false,
+      customCoeffRetail: product.customCoeffRetail || globalCoefficients?.retail?.products?.[product.category] || 1.5,
+      customCoeffWholesale: product.customCoeffWholesale || globalCoefficients?.wholesale?.products?.[product.category] || 1.3,
+      customCoeffDesigner: product.customCoeffDesigner || globalCoefficients?.designer?.products?.[product.category] || 1.4,
+      dryerWidth: product.dryerWidth || "",
+      dryerBase: product.dryerBase || "",
+      lightingType: product.lightingType || "",
+    });
+    setIsAddingProduct(true);
+  };
+
+  useEffect(() => {
+    const handleEditEvent = (e: any) => {
+      if (e.detail) {
+        handleEditProduct(e.detail);
+      }
+    };
+    const handleCreateCopyEvent = (e: any) => {
+      if (e.detail) {
+        handleCreateBasedOn(e.detail);
+      }
+    };
+    window.addEventListener("products_view_edit", handleEditEvent);
+    window.addEventListener("products_view_create_copy", handleCreateCopyEvent);
+    return () => {
+      window.removeEventListener("products_view_edit", handleEditEvent);
+      window.removeEventListener("products_view_create_copy", handleCreateCopyEvent);
+    };
+  }, [handleEditProduct, handleCreateBasedOn]);
+
   const handleDeleteProduct = (product: any) => {
     if (userRole === 'admin' || userRole === 'supervisor') {
         showConfirm(
@@ -17886,6 +17971,16 @@ const ProductsView = ({
                       >
                         <Edit2 className="w-4 h-4" />
                       </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCreateBasedOn(product);
+                        }}
+                        className="p-2 bg-white text-teal-600 hover:bg-teal-600 hover:text-white rounded-xl shadow-lg transition-all"
+                        title="Создать на основании"
+                      >
+                        <Copy className="w-4 h-4" />
+                      </button>
                       {(userRole === 'admin' || userRole === 'supervisor') && (
                         <button
                           onClick={(e) => {
@@ -19074,8 +19169,10 @@ export default function App() {
     string | null
   >(null);
   const [projects, setProjects] = useState<any[]>([]);
+  const [isProjectsLoading, setIsProjectsLoading] = useState(true);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
   const [projectSets, setProjectSets] = useState<any[]>([]);
+  const [isSetsLoading, setIsSetsLoading] = useState(true);
   const [procurementOrders, setProcurementOrders] = useState<any[]>([]);
   const [selectedProjectForSpec, setSelectedProjectForSpec] = useState<
     any | null
@@ -19933,10 +20030,13 @@ export default function App() {
   useEffect(() => {
     if (!isAuthenticated || !companyData?.id || !userData?.uid) return;
 
+    setIsProjectsLoading(true);
+    setIsSetsLoading(true);
+
     let qProjects;
     let qSets;
 
-    if (userRole === "admin") {
+    if (userRole === "admin" || userRole === "supervisor") {
       qProjects = query(
         collection(db, "companies", companyData.id, "projects"),
         orderBy("createdAt", "desc"),
@@ -19944,19 +20044,6 @@ export default function App() {
       );
       qSets = query(
         collection(db, "companies", companyData.id, "sets"),
-        orderBy("createdAt", "desc"),
-        limit(100),
-      );
-    } else if (userRole === "supervisor") {
-      qProjects = query(
-        collection(db, "companies", companyData.id, "projects"),
-        or(where("createdBy", "==", userData.uid), where("status", "==", "transferred")),
-        orderBy("createdAt", "desc"),
-        limit(100),
-      );
-      qSets = query(
-        collection(db, "companies", companyData.id, "sets"),
-        or(where("createdBy", "==", userData.uid), where("status", "==", "transferred")),
         orderBy("createdAt", "desc"),
         limit(100),
       );
@@ -19980,8 +20067,12 @@ export default function App() {
       (snapshot) => {
         const projs = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
         setProjects(projs);
+        setIsProjectsLoading(false);
       },
-      (error) => console.error("Error syncing projects:", error)
+      (error) => {
+        console.error("Error syncing projects:", error);
+        setIsProjectsLoading(false);
+      }
     );
 
     const unsubSets = onSnapshot(
@@ -19989,8 +20080,12 @@ export default function App() {
       (snapshot) => {
         const setsData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
         setProjectSets(setsData);
+        setIsSetsLoading(false);
       },
-      (error) => console.error("Error syncing sets:", error)
+      (error) => {
+        console.error("Error syncing sets:", error);
+        setIsSetsLoading(false);
+      }
     );
 
     const unsubProcOrders = onSnapshot(
@@ -22903,8 +22998,19 @@ export default function App() {
               companyData={companyData}
               userId={userData?.uid}
               userRole={userRole}
+              isProjectsLoading={isProjectsLoading}
+              isSetsLoading={isSetsLoading}
               onLoadProject={(project) => {
                 loadProject(project);
+              }}
+              onDeleteProject={(deletedId) => {
+                setProjects(prev => prev.filter(p => p.id !== deletedId));
+                if (currentProjectId === deletedId) {
+                  setCurrentProjectId(null);
+                  setCurrentProjectName(null);
+                  setCurrentProjectTotal(0);
+                  setResults(null);
+                }
               }}
               onOpenSpecification={(project) => {
                 if (project.status === 'sent' || project.status === 'transferred') {
@@ -23368,13 +23474,51 @@ export default function App() {
                     </div>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setSelectedProductForDetail(null)}
-                  className="w-10 h-10 flex items-center justify-center bg-gray-50 hover:bg-gray-100 rounded-full transition-all text-gray-400 cursor-pointer"
-                >
-                  <X className="w-6 h-6" />
-                </button>
+                <div className="flex items-center gap-3">
+                  {selectedProductForDetail.source !== "manufacturer" && activeTab === "products" && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          window.dispatchEvent(
+                            new CustomEvent("products_view_create_copy", {
+                              detail: selectedProductForDetail,
+                            })
+                          );
+                          setSelectedProductForDetail(null);
+                        }}
+                        className="px-4 py-2 flex items-center gap-2 bg-teal-50 hover:bg-teal-100 text-teal-700 text-xs font-bold rounded-xl transition-all cursor-pointer border border-teal-100"
+                        title="Создать копию этого товара как основание"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Создать на основании</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          window.dispatchEvent(
+                            new CustomEvent("products_view_edit", {
+                              detail: selectedProductForDetail,
+                            })
+                          );
+                          setSelectedProductForDetail(null);
+                        }}
+                        className="px-4 py-2 flex items-center gap-2 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold rounded-xl transition-all cursor-pointer border border-blue-100"
+                        title="Редактировать товар"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                        <span>Редактировать</span>
+                      </button>
+                    </>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedProductForDetail(null)}
+                    className="w-10 h-10 flex items-center justify-center bg-gray-50 hover:bg-gray-100 rounded-full transition-all text-gray-400 cursor-pointer"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
               </div>
 
               <div className="p-10 container mx-auto">
