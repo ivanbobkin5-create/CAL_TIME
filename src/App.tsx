@@ -473,7 +473,7 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
   const fetchSnapshot = async () => {
     try {
       if (isCol) {
-        const res = await fetch(`/api/db/col/${ref.path}`);
+        const res = await fetch(`/api/db/col/${ref.path}?_t=${Date.now()}`);
         if (res.ok) {
           const data = await res.json();
           callback({
@@ -486,7 +486,7 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
           });
         }
       } else {
-        const res = await fetch(`/api/db/doc/${ref.path}`);
+        const res = await fetch(`/api/db/doc/${ref.path}?_t=${Date.now()}`);
         if (res.ok) {
           const data = await res.json();
           callback({
@@ -529,7 +529,7 @@ function doc(db: any, col: string, ...rest: any[]) {
 }
 
 async function getDoc(docRef: any) { 
-  const res = await fetch(`/api/db/doc/${docRef.path}`);
+  const res = await fetch(`/api/db/doc/${docRef.path}?_t=${Date.now()}`);
   if (res.ok) {
     const data = await res.json();
     return {
@@ -3975,7 +3975,7 @@ const PriceView = ({
                         );
                       })() : (
                             <div className={cn(
-                              (brand.includes("AGT") || brand.includes("Evosoft"))
+                              (brand.includes("AGT") || brand.includes("Evosoft") || isServices)
                                 ? "flex flex-col gap-2"
                                 : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3"
                             )}>
@@ -3988,7 +3988,7 @@ const PriceView = ({
                                     key={decor}
                                     className={cn(
                                       "border border-gray-100 rounded-lg hover:border-blue-200 transition-colors group bg-white shadow-sm relative",
-                                      (brand.includes("AGT") || brand.includes("Evosoft")) 
+                                      (brand.includes("AGT") || brand.includes("Evosoft") || isServices) 
                                         ? "flex items-center justify-between p-3" 
                                         : "p-2"
                                     )}
@@ -4016,16 +4016,17 @@ const PriceView = ({
                                     )}
                                     <div
                                       className={cn(
-                                        "font-bold text-gray-500 truncate leading-tight",
-                                        (brand.includes("AGT") || brand.includes("Evosoft")) ? "text-sm text-gray-700" : "text-[10px] mb-1.5"
+                                        "font-bold text-gray-500 leading-tight pr-4",
+                                        (brand.includes("AGT") || brand.includes("Evosoft") || isServices) ? "text-sm text-gray-700" : "text-[10px] mb-1.5",
+                                        !isServices && "truncate"
                                       )}
                                       title={decor}
                                     >
                                       {decor}
                                     </div>
-                                    <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center justify-between gap-2 shrink-0">
                                       <div className={cn(
-                                        (brand.includes("AGT") || brand.includes("Evosoft")) ? "w-32" : "w-full"
+                                        (brand.includes("AGT") || brand.includes("Evosoft") || isServices) ? "w-32" : "w-full"
                                       )}>
                                         <PriceInputWithSave 
                                           priceKey={priceKey}
@@ -9657,9 +9658,42 @@ const SummaryView = ({
                           </div>
                         </td>
                         <td className="px-6 py-2">
-                          <span className="text-sm font-medium text-gray-400">
-                            {row.decor}
-                          </span>
+                          {row.rawProduct && (
+                            (row.rawProduct.category === "Столешницы и стеновые") && (
+                              row.rawProduct.wtManufacturer === "Скиф" || 
+                              row.rawProduct.manufacturer === "Скиф" || 
+                              (row.rawProduct.name && /скиф/i.test(row.rawProduct.name))
+                            )
+                          ) ? (
+                            <div className="min-w-[120px]">
+                              <input
+                                type="text"
+                                value={selectedDecor[row.key!] || ""}
+                                onChange={(e) => {
+                                  if (setSelectedDecor) {
+                                    setSelectedDecor((prev) => ({
+                                      ...prev,
+                                      [row.key!]: e.target.value,
+                                    }));
+                                  }
+                                }}
+                                placeholder="Введите декор Скиф..."
+                                className="w-full max-w-[180px] px-2.5 py-1 border border-blue-200 rounded-lg text-xs font-semibold text-blue-700 bg-blue-50/20 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all placeholder:text-blue-300 placeholder:font-normal"
+                              />
+                            </div>
+                          ) : (
+                            <span
+                              className={cn(
+                                "text-sm font-medium",
+                                row.decor === "Не выбран" ||
+                                  row.decor === "Не указан"
+                                  ? "text-gray-400 italic"
+                                  : "text-blue-600"
+                              )}
+                            >
+                              {row.decor}
+                            </span>
+                          )}
                         </td>
                         <td className="px-6 py-2 text-right text-sm whitespace-nowrap">
                           {row.type === "product" ? (
@@ -14159,6 +14193,7 @@ const ProductsView = ({
 
   const [quantities, setQuantities] = useState<Record<string, any>>({});
   const [isAddingProduct, setIsAddingProduct] = useState(false);
+  const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
 
   const [productViews, setProductViews] = useState<Record<string, number>>(() => {
@@ -14530,6 +14565,7 @@ const ProductsView = ({
       updatedAt: new Date().toISOString(),
     };
 
+    setIsSavingProduct(true);
     try {
       console.log("Saving product:", product);
       await onSaveProduct(product);
@@ -14538,6 +14574,8 @@ const ProductsView = ({
     } catch (e) {
       console.error("Failed to save product", e);
       alert("Ошибка при сохранении товара: " + (e instanceof Error ? e.message : "Неизвестная ошибка"));
+    } finally {
+      setIsSavingProduct(false);
     }
   };
 
@@ -17707,18 +17745,26 @@ const ProductsView = ({
               <div className="flex justify-end gap-3 mt-10 pt-6 border-t border-gray-100">
                 <button
                   onClick={resetForm}
-                  className="px-8 py-3 bg-gray-100 text-gray-600 font-bold rounded-xl hover:bg-gray-200 transition-colors"
+                  disabled={isSavingProduct}
+                  className="px-8 py-3 bg-gray-100 text-gray-600 font-bold rounded-xl hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   Отмена
                 </button>
                 <button
                   onClick={handleCreateProduct}
-                  disabled={!newProduct.name}
-                  className="px-12 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 disabled:bg-gray-300"
+                  disabled={!newProduct.name || isSavingProduct}
+                  className="px-12 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2 justify-center"
                 >
-                  {editingProduct
-                    ? "Сохранить изменения"
-                    : "Добавить в каталог"}
+                  {isSavingProduct ? (
+                    <>
+                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                      <span>Сохранение...</span>
+                    </>
+                  ) : editingProduct ? (
+                    "Сохранить изменения"
+                  ) : (
+                    "Добавить в каталог"
+                  )}
                 </button>
               </div>
             </div>
@@ -18082,6 +18128,35 @@ const ProductsView = ({
                           )}
                         </div>
                       )}
+                    {product.category === "Столешницы и стеновые" && (
+                      <div className="flex flex-wrap gap-1.5 mb-3">
+                        {product.wtManufacturer && (
+                          <span className="px-1.5 py-0.5 bg-amber-50 text-amber-700 text-[10px] font-bold rounded border border-amber-100">
+                            {product.wtManufacturer}
+                          </span>
+                        )}
+                        {product.wtLength && (
+                          <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 text-[10px] font-bold rounded border border-blue-100">
+                            Длина: {product.wtLength} мм
+                          </span>
+                        )}
+                        {product.wtDepth && (
+                          <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-600 text-[10px] font-bold rounded border border-indigo-100">
+                            Глубина: {product.wtDepth} мм
+                          </span>
+                        )}
+                        {product.wtThickness && (
+                          <span className="px-1.5 py-0.5 bg-purple-50 text-purple-600 text-[10px] font-bold rounded border border-purple-100">
+                            Толщина: {product.wtThickness} мм
+                          </span>
+                        )}
+                        {product.wtType && (
+                          <span className="px-1.5 py-0.5 bg-gray-50 text-gray-600 text-[10px] font-bold rounded border border-gray-100">
+                            {product.wtType}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     {product.requiredProducts && product.requiredProducts.length > 0 && (
                       <div className="mt-2 p-2 bg-blue-50/40 rounded-xl border border-blue-100/30">
                         <div className="text-[9px] font-black uppercase text-blue-700 tracking-wider flex items-center gap-1 mb-1 leading-none">
@@ -20679,20 +20754,29 @@ export default function App() {
 
       console.log("Final product to save:", finalProduct);
       
-      // Perform write in background for optimistic feel
-      setDoc(
-        doc(db, "companies", companyData.id, "products", pId),
-        finalProduct,
-      ).then(() => {
-        console.log("setDoc completed successfully");
-      }).catch(error => {
-        console.error("Error in setDoc:", error);
+      // 1. Optimistic update so the product appears in the UI instantly (0ms delay)
+      setOwnProducts((prev) => {
+        const idx = prev.findIndex((p) => String(p.id) === String(pId));
+        if (idx !== -1) {
+          const updated = [...prev];
+          updated[idx] = finalProduct;
+          return updated;
+        } else {
+          return [finalProduct, ...prev];
+        }
       });
 
+      // 2. Perform write and await it so we know it has successfully reached the server
+      await setDoc(
+        doc(db, "companies", companyData.id, "products", pId),
+        finalProduct,
+      );
+      console.log("setDoc completed successfully");
+
       if (isNew && finalProduct.status === 'pending') {
-        showAlert("На проверке", "Товар в процессе сохранения и отправлен на модерацию");
+        showAlert("На проверке", "Товар успешно сохранен и отправлен на модерацию");
       } else {
-        showAlert("Успех", "Товар в процессе сохранения");
+        showAlert("Успех", "Товар успешно сохранен");
       }
     } catch (error) {
       console.error("Error in saveProduct:", error);
@@ -20701,6 +20785,7 @@ export default function App() {
         OperationType.WRITE,
         `companies/${companyData.id}/products`,
       );
+      throw error; // Rethrow to let handleCreateProduct handle it in its catch block
     }
   };
 
