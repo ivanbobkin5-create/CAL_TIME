@@ -225,6 +225,9 @@ function updateLocalCache(url: string, method: string, bodyStr: string | null) {
 }
 
 let isSyncing = false;
+let lastFailedUrl = "";
+let lastFailedCount = 0;
+
 async function triggerSync() {
   if (isSyncing || typeof window === 'undefined' || !navigator.onLine) return;
   isSyncing = true;
@@ -254,7 +257,8 @@ async function triggerSync() {
         
         if (isSuccess || isClientError) {
           syncedAny = true;
-          // Re-read because a new item might have been added to the end of the queue while we fetched
+          lastFailedUrl = "";
+          lastFailedCount = 0;
           const latestQueueStr = localStorage.getItem("meb_pending_writes") || "[]";
           let latestQueue: any[] = [];
           try { latestQueue = JSON.parse(latestQueueStr); } catch (_) {}
@@ -264,11 +268,30 @@ async function triggerSync() {
             localStorage.setItem("meb_pending_writes", JSON.stringify(latestQueue));
           }
         } else {
-          // Server error or temporary issue: stop processing
+          // Server error or temporary issue: handle potential head-of-line blocking
+          if (lastFailedUrl === req.url) {
+            lastFailedCount++;
+          } else {
+            lastFailedUrl = req.url;
+            lastFailedCount = 1;
+          }
+          
+          if (lastFailedCount >= 3) {
+            console.error("Head-of-line blocking detected on server error. Skipping blocked request:", req.url);
+            const latestQueueStr = localStorage.getItem("meb_pending_writes") || "[]";
+            let latestQueue: any[] = [];
+            try { latestQueue = JSON.parse(latestQueueStr); } catch (_) {}
+            if (latestQueue.length > 0) {
+              latestQueue.shift();
+              localStorage.setItem("meb_pending_writes", JSON.stringify(latestQueue));
+            }
+            lastFailedUrl = "";
+            lastFailedCount = 0;
+            continue;
+          }
           break;
         }
       } catch (err) {
-        // Network connection error: stop processing
         break;
       }
     }
@@ -290,6 +313,97 @@ if (typeof window !== "undefined") {
   setInterval(triggerSync, 30000);
 }
 
+function applyPendingWrites(url: string, data: any) {
+  try {
+    const queueStr = localStorage.getItem("meb_pending_writes") || "[]";
+    let queue: any[] = [];
+    try { queue = JSON.parse(queueStr); } catch (_) {}
+    if (queue.length === 0) return data;
+
+    const isCol = url.includes("/api/db/col/");
+    const baseApi = isCol ? "/api/db/col/" : "/api/db/doc/";
+    const pathIndex = url.indexOf(baseApi);
+    if (pathIndex === -1) return data;
+
+    let fullPath = url.substring(pathIndex);
+    const qIndex = fullPath.indexOf('?');
+    if (qIndex !== -1) {
+      fullPath = fullPath.substring(0, qIndex);
+    }
+    const targetPath = fullPath.replace(baseApi, "");
+
+    let result = JSON.parse(JSON.stringify(data)); // Deep clone
+
+    for (const req of queue) {
+      const reqIsDoc = req.url.includes("/api/db/doc/");
+      const reqBaseApi = reqIsDoc ? "/api/db/doc/" : "/api/db/col/";
+      const reqPathIndex = req.url.indexOf(reqBaseApi);
+      if (reqPathIndex === -1) continue;
+
+      let reqFullPath = req.url.substring(reqPathIndex);
+      const reqQIndex = reqFullPath.indexOf('?');
+      if (reqQIndex !== -1) {
+        reqFullPath = reqFullPath.substring(0, reqQIndex);
+      }
+      const reqDocPath = reqFullPath.replace(reqBaseApi, "");
+
+      let requestData: any = null;
+      let isMerge = false;
+      if (req.body) {
+        try {
+          const parsed = JSON.parse(req.body);
+          requestData = parsed.data !== undefined ? parsed.data : parsed;
+          isMerge = parsed.merge || false;
+        } catch (_) {}
+      }
+
+      if (isCol) {
+        const segments = reqDocPath.split("/");
+        const docId = segments[segments.length - 1];
+        const colPath = segments.slice(0, -1).join("/");
+
+        if (colPath === targetPath && Array.isArray(result)) {
+          if (req.method === "DELETE") {
+            result = result.filter((item: any) => item.id !== docId);
+          } else {
+            const idx = result.findIndex((item: any) => item.id === docId);
+            let currentDocData = idx !== -1 ? result[idx].data : {};
+            let updatedDocData: any;
+            if (req.method === "PATCH" || isMerge) {
+              updatedDocData = { ...currentDocData, ...requestData };
+            } else {
+              updatedDocData = requestData;
+            }
+
+            if (idx !== -1) {
+              result[idx] = { id: docId, data: updatedDocData };
+            } else {
+              result.push({ id: docId, data: updatedDocData });
+            }
+          }
+        }
+      } else {
+        if (reqDocPath === targetPath) {
+          if (req.method === "DELETE") {
+            result = null;
+          } else {
+            if (req.method === "PATCH" || isMerge) {
+              result = { ...result, ...requestData };
+            } else {
+              result = requestData;
+            }
+          }
+        }
+      }
+    }
+
+    return result;
+  } catch (err) {
+    console.error("Error applying pending writes:", err);
+    return data;
+  }
+}
+
 const customFetch = async function (this: any, input: any, init?: any): Promise<Response> {
   const url = typeof input === "string" ? input : (input instanceof Request ? input.url : "");
   const method = (init && init.method) ? init.method.toUpperCase() : "GET";
@@ -298,9 +412,9 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
     const isWrite = ["POST", "PUT", "PATCH", "DELETE"].includes(method);
     
     if (!isWrite) {
-      // GET Request: try fetch with 4.5s timeout, then fallback to cache
+      // GET Request: try fetch with 15s timeout, then fallback to cache
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 4500);
+      const timeoutId = setTimeout(() => controller.abort(), 15000);
       try {
         const fetchOptions = { ...init, signal: controller.signal };
         const res = await originalFetch(url, fetchOptions);
@@ -308,30 +422,35 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
         
         if (res.ok) {
           try {
-            // Read response stream as text first to validate format and content integrity
             const text = await res.text();
             try {
-              // Verify the payload is a valid fully parsed JSON object (not and index.html document or truncated)
-              JSON.parse(text);
-              
-              // Safe cache entry write (guard against QuotaExceededErrors)
+              let parsed = JSON.parse(text);
+              parsed = applyPendingWrites(url, parsed);
+              const processedText = JSON.stringify(parsed);
               try {
-                localStorage.setItem(`meb_cache:${url}`, text);
+                localStorage.setItem(`meb_cache:${url}`, processedText);
               } catch (_) {}
               
-              // Return reconstructed clean response
-              return new Response(text, {
+              return new Response(processedText, {
                 status: 200,
                 headers: { "Content-Type": "application/json" }
               });
             } catch (jsonErr) {
-              console.warn("Fetched stream failed JSON validation, using cache fallback for path:", url);
+              console.warn("Fetched stream failed JSON validation, using cache fallback:", url);
               const cached = localStorage.getItem(`meb_cache:${url}`);
               if (cached) {
-                return new Response(cached, {
-                  status: 200,
-                  headers: { "Content-Type": "application/json" }
-                });
+                try {
+                  const parsed = applyPendingWrites(url, JSON.parse(cached));
+                  return new Response(JSON.stringify(parsed), {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" }
+                  });
+                } catch (_) {
+                  return new Response(cached, {
+                    status: 200,
+                    headers: { "Content-Type": "application/json" }
+                  });
+                }
               }
               if (url.includes("/api/db/doc/users/")) {
                 return new Response(JSON.stringify({ error: "Invalid user profile data" }), {
@@ -346,13 +465,21 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
               });
             }
           } catch (streamErr) {
-            console.warn("Fetched response stream failed to read, using cache fallback for path:", url);
+            console.warn("Fetched response stream failed to read, using cache fallback:", url);
             const cached = localStorage.getItem(`meb_cache:${url}`);
             if (cached) {
-              return new Response(cached, {
-                status: 200,
-                headers: { "Content-Type": "application/json" }
-              });
+              try {
+                const parsed = applyPendingWrites(url, JSON.parse(cached));
+                return new Response(JSON.stringify(parsed), {
+                  status: 200,
+                  headers: { "Content-Type": "application/json" }
+                });
+              } catch (_) {
+                return new Response(cached, {
+                  status: 200,
+                  headers: { "Content-Type": "application/json" }
+                });
+              }
             }
             if (url.includes("/api/db/doc/users/")) {
               return new Response(JSON.stringify({ error: "Failed to read user profile" }), {
@@ -367,16 +494,23 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
             });
           }
         } else {
-          // If response status is not successful, look in cache
           const cached = localStorage.getItem(`meb_cache:${url}`);
           if (cached) {
-            return new Response(cached, {
-              status: 200,
-              headers: { "Content-Type": "application/json" }
-            });
+            try {
+              const parsed = applyPendingWrites(url, JSON.parse(cached));
+              return new Response(JSON.stringify(parsed), {
+                status: 200,
+                headers: { "Content-Type": "application/json" }
+              });
+            } catch (_) {
+              return new Response(cached, {
+                status: 200,
+                headers: { "Content-Type": "application/json" }
+              });
+            }
           }
           if (url.includes("/api/db/doc/users/")) {
-            return res; // Propagate original non-success response
+            return res;
           }
           const emptyFallback = url.includes("/col/") ? "[]" : "{}";
           return new Response(emptyFallback, {
@@ -386,13 +520,20 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
         }
       } catch (err) {
         clearTimeout(timeoutId);
-        // Network connection error fallback
         const cached = localStorage.getItem(`meb_cache:${url}`);
         if (cached) {
-          return new Response(cached, {
-            status: 200,
-            headers: { "Content-Type": "application/json" }
-          });
+          try {
+            const parsed = applyPendingWrites(url, JSON.parse(cached));
+            return new Response(JSON.stringify(parsed), {
+              status: 200,
+              headers: { "Content-Type": "application/json" }
+            });
+          } catch (_) {
+            return new Response(cached, {
+              status: 200,
+              headers: { "Content-Type": "application/json" }
+            });
+          }
         }
         if (url.includes("/api/db/doc/users/")) {
           return new Response(JSON.stringify({ error: "Network error loading user profile" }), {
@@ -407,7 +548,7 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
         });
       }
     } else {
-      // Write request: append to sync queue
+      // Write request: POST, PUT, PATCH, DELETE
       let bodyStr: string | null = null;
       if (init && init.body) {
         if (typeof init.body === "string") {
@@ -417,13 +558,24 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
         }
       }
       
-      // Update local storage representation instantly
-      updateLocalCache(url, method, bodyStr);
-      
-      // Queue the pending write
       const queueStr = localStorage.getItem("meb_pending_writes") || "[]";
       let queue: any[] = [];
       try { queue = JSON.parse(queueStr); } catch (_) {}
+      
+      if (typeof window !== "undefined" && navigator.onLine && queue.length === 0) {
+        try {
+          const res = await originalFetch(url, init);
+          if (res.ok) {
+            updateLocalCache(url, method, bodyStr);
+            window.dispatchEvent(new CustomEvent("meb_sync_completed"));
+          }
+          return res;
+        } catch (err) {
+          console.warn("Direct online write fetch failed, falling back to offline sync queue:", err);
+        }
+      }
+      
+      updateLocalCache(url, method, bodyStr);
       
       queue.push({
         url,
@@ -434,10 +586,8 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
       });
       localStorage.setItem("meb_pending_writes", JSON.stringify(queue));
       
-      // Attempt immediate background sync
       setTimeout(triggerSync, 100);
       
-      // Return synthetic Response to keep frontend fully operational
       return new Response(JSON.stringify({ success: true, offline: true }), {
         status: 200,
         headers: { "Content-Type": "application/json" }
@@ -495,55 +645,148 @@ function collection(db: any, path: string, ...rest: any[]) {
   return { path: fullPath }; 
 }
 
+const activePollingSubscriptions = new Map<string, {
+  url: string;
+  isCol: boolean;
+  subscribers: Set<{
+    callback: (snap: any) => void;
+    errorCb?: (err: any) => void;
+  }>;
+  interval: any;
+  lastFetchedText: string | null;
+}>();
+
 function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any) => void, intervalMs: number = 15000) { 
   const isCol = ref.path.split('/').length % 2 !== 0;
-  let active = true;
+  const colUrl = `/api/db/col/${ref.path}`;
+  const docUrl = `/api/db/doc/${ref.path}`;
+  const url = isCol ? colUrl : docUrl;
   
-  const fetchSnapshot = async () => {
-    try {
-      if (isCol) {
-        const res = await fetch(`/api/db/col/${ref.path}`);
-        if (!active) return;
-        if (res.ok) {
-          const data = await res.json();
-          if (!active) return;
+  const subscriber = { callback, errorCb };
+  
+  // 1. Immediately invoke callback with cached data if available (instant 0ms render)
+  try {
+    const cachedStr = localStorage.getItem(`meb_cache:${url}`);
+    if (cachedStr) {
+      const parsed = JSON.parse(cachedStr);
+      if (isCol && Array.isArray(parsed)) {
+        setTimeout(() => {
           callback({
-            docs: data.map((d: any) => ({
+            docs: parsed.map((d: any) => ({
               id: d.id,
               data: () => d.data,
               exists: () => true
             })),
-            size: data.length
+            size: parsed.length
           });
-        }
-      } else {
-        const res = await fetch(`/api/db/doc/${ref.path}`);
-        if (!active) return;
-        if (res.ok) {
-          const data = await res.json();
-          if (!active) return;
+        }, 0);
+      } else if (!isCol && parsed && typeof parsed === "object") {
+        setTimeout(() => {
           callback({
             exists: () => true,
-            data: () => data,
+            data: () => parsed,
             id: ref.path.split('/').pop()
           });
-        } else {
-          if (!active) return;
-          callback({ exists: () => false, data: () => null });
+        }, 0);
+      }
+    }
+  } catch (e) {
+    console.warn("Error loading cached snapshot:", e);
+  }
+  
+  // 2. Register in shared polling registry
+  let group = activePollingSubscriptions.get(url);
+  const isNewGroup = !group;
+  
+  if (isNewGroup) {
+    group = {
+      url,
+      isCol,
+      subscribers: new Set(),
+      interval: null,
+      lastFetchedText: localStorage.getItem(`meb_cache:${url}`)
+    };
+    activePollingSubscriptions.set(url, group);
+  }
+  
+  group!.subscribers.add(subscriber);
+  
+  const fetchGroupSnapshot = async () => {
+    if (!group) return;
+    try {
+      const res = await fetch(url);
+      if (res.ok) {
+        const text = await res.text();
+        
+        // Prevent duplicate callback invocations if data hasn't changed
+        if (text === group.lastFetchedText) {
+          return;
+        }
+        
+        // JSON validation
+        let parsed: any;
+        try {
+          parsed = JSON.parse(text);
+        } catch (jsonErr) {
+          console.warn("Polled snapshot returned invalid JSON for:", url);
+          return;
+        }
+        
+        group.lastFetchedText = text;
+        try {
+          localStorage.setItem(`meb_cache:${url}`, text);
+        } catch (_) {}
+        
+        // Notify all subscribers of the collection or document
+        for (const sub of group.subscribers) {
+          try {
+            if (isCol && Array.isArray(parsed)) {
+              sub.callback({
+                docs: parsed.map((d: any) => ({
+                  id: d.id,
+                  data: () => d.data,
+                  exists: () => true
+                })),
+                size: parsed.length
+              });
+            } else if (!isCol && parsed && typeof parsed === "object") {
+              sub.callback({
+                exists: () => true,
+                data: () => parsed,
+                id: ref.path.split('/').pop()
+              });
+            }
+          } catch (cbErr) {
+            console.error("Error in subscriber callback:", cbErr);
+          }
+        }
+      } else if (res.status === 404 && !isCol) {
+        group.lastFetchedText = "null";
+        for (const sub of group.subscribers) {
+          try {
+            sub.callback({ exists: () => false, data: () => null });
+          } catch (_) {}
         }
       }
     } catch (e) {
-      if (!active) return;
-      if (errorCb) errorCb(e);
-      else console.error("Snapshot error:", e);
+      for (const sub of group.subscribers) {
+        if (sub.errorCb) {
+          try { sub.errorCb(e); } catch (_) {}
+        } else {
+          console.error("Snapshot shared error:", e);
+        }
+      }
     }
   };
-
-  fetchSnapshot();
-  const interval = setInterval(fetchSnapshot, intervalMs); 
+  
+  // Only register one interval/fetch per path
+  if (isNewGroup) {
+    fetchGroupSnapshot();
+    group!.interval = setInterval(fetchGroupSnapshot, intervalMs);
+  }
   
   const handleSyncComplete = () => {
-    fetchSnapshot();
+    fetchGroupSnapshot();
   };
   
   if (typeof window !== "undefined") {
@@ -551,10 +794,16 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
   }
   
   return () => {
-    active = false;
-    clearInterval(interval);
+    if (!group) return;
+    group.subscribers.delete(subscriber);
+    
     if (typeof window !== "undefined") {
       window.removeEventListener("meb_sync_completed", handleSyncComplete);
+    }
+    
+    if (group.subscribers.size === 0) {
+      clearInterval(group.interval);
+      activePollingSubscriptions.delete(url);
     }
   };
 }
@@ -19020,7 +19269,7 @@ export default function App() {
               }
             }
             
-            if (docData.isRoot || docData.email === 'lk.ivanbobkin@gmail.com' || docData.email === 'lk.ivanbobkin@yandex.ru') {
+            if (docData.isRoot || docData.email === 'lk.ivanbobkin@gmail.com') {
               setIsAppAdmin(true);
               setUserRole('admin');
             }
@@ -19050,6 +19299,12 @@ export default function App() {
       return unsub;
     }
   }, [isAuthenticated, userData?.uid, sessionId]);
+
+  useEffect(() => {
+    if (userData?.email === 'lk.ivanbobkin@gmail.com') {
+      setShowAdminPanel(true);
+    }
+  }, [userData]);
 
   const handleLogin = useCallback(async (data: any) => {
     try {
@@ -19150,7 +19405,7 @@ export default function App() {
          if (authUser.token) localStorage.setItem('auth_token', authUser.token);
          
          // Set global admin status
-         if (docData.isRoot || docData.email === 'lk.ivanbobkin@gmail.com' || docData.email === 'lk.ivanbobkin@yandex.ru') {
+         if (docData.isRoot || docData.email === 'lk.ivanbobkin@gmail.com') {
            setIsAppAdmin(true);
            setShowAdminPanel(true);
            setUserRole('admin');
@@ -19483,7 +19738,12 @@ export default function App() {
       return val;
     });
   }, []);
-  const [coefficients, setCoefficients] = useState({
+  const lastSettingsLocalUpdateRef = useRef<number>(0);
+  const touchSettingsLocal = () => {
+    lastSettingsLocalUpdateRef.current = Date.now();
+  };
+
+  const [coefficients, setCoefficientsRaw] = useState({
     retail: {
       ldsp: 4,
       hdf: 4,
@@ -19527,6 +19787,16 @@ export default function App() {
       ),
     },
   });
+
+  const setCoefficients = useCallback((val: any) => {
+    touchSettingsLocal();
+    setCoefficientsRaw((prev: any) => {
+      if (typeof val === "function") {
+        return val(prev);
+      }
+      return val;
+    });
+  }, []);
   const [hardwareKitPrice, setHardwareKitPrice] = useState<{
     retail: number;
     wholesale: number;
@@ -19840,7 +20110,7 @@ export default function App() {
     {},
   );
 
-  const [companyInfo, setCompanyInfo] = useState<any>({
+  const [companyInfo, setCompanyInfoRaw] = useState<any>({
     name: "",
     legalForm: "ИП",
     director: "",
@@ -19858,6 +20128,16 @@ export default function App() {
     socials: { vk: "", telegram: "" },
     legalAddress: "",
   });
+
+  const setCompanyInfo = useCallback((val: any) => {
+    touchSettingsLocal();
+    setCompanyInfoRaw((prev: any) => {
+      if (typeof val === "function") {
+        return val(prev);
+      }
+      return val;
+    });
+  }, []);
 
   useEffect(() => {
     setCuttingType(defaultCuttingType);
@@ -20046,6 +20326,11 @@ export default function App() {
       doc(db, "companies", companyId, "settings", "general"),
       (snapshot) => {
         if (snapshot.exists()) {
+          const isRecentlyEdited = (Date.now() - lastSettingsLocalUpdateRef.current) < 15000;
+          if (isRecentlyEdited) {
+            console.log("Prevented overwriting local settings with remote snapshot (user is typing/editing)");
+            return;
+          }
           const data = snapshot.data();
           // Removed duplicate category sync to avoid conflicts with dedicated categories document
           if (data.defaultCuttingType)
@@ -20240,7 +20525,15 @@ export default function App() {
     let qProjects;
     let qSets;
 
-    if (userRole === "admin" || userRole === "supervisor") {
+    const isAdminOrSupervisor = 
+      userRole === "admin" || 
+      userRole === "supervisor" || 
+      companyData?.ownerUid === userData?.uid ||
+      userData?.role === "admin" ||
+      userData?.accessLevel === "admin" ||
+      userData?.accessLevel === "supervisor";
+
+    if (isAdminOrSupervisor) {
       qProjects = query(
         collection(db, "companies", companyData.id, "projects"),
         orderBy("createdAt", "desc"),
@@ -20316,7 +20609,7 @@ export default function App() {
       unsubProcOrders();
       unsubSuppliers();
     };
-  }, [isAuthenticated, companyData?.id, userData?.uid, userRole]);
+  }, [isAuthenticated, companyData?.id, userData?.uid, userRole, userData?.role, userData?.accessLevel, companyData?.ownerUid]);
 
   // Sync Production Settings (for Contract mode)
   useEffect(() => {
@@ -22465,7 +22758,7 @@ export default function App() {
             </nav>
 
             <div className="p-4 border-t border-gray-100">
-              {companyData && (
+              {companyData && userData?.email !== 'lk.ivanbobkin@gmail.com' && (
                 <button
                   onClick={() => setShowAdminPanel(false)}
                   className="w-full flex items-center gap-4 p-3 rounded-xl text-blue-600 hover:bg-blue-50 transition-all mb-4"
@@ -22846,7 +23139,7 @@ export default function App() {
               </div>
             </nav>
             <div className="px-2 pb-2 pt-1.5 bg-gray-50/50 space-y-0.5">
-              {isAppAdmin && allCompanies.length > 0 && (
+              {false && isAppAdmin && allCompanies.length > 0 && (
                 <div className={cn("px-2 py-1.5 flex flex-col gap-1 text-left bg-white rounded-xl border border-blue-100 shadow-sm mb-1.5", isSidebarOpen ? "" : "items-center")}>
                   {isSidebarOpen ? (
                     <>

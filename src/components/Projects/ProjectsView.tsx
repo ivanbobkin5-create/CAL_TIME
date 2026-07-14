@@ -450,14 +450,19 @@ export const ProjectsView = ({
 
   const myProjects = useMemo(() => {
     const baseProjects = (() => {
-        if (!userRole || userRole === "admin" || userRole === "supervisor") {
+        const isAdminOrSupervisor = 
+          userRole === "admin" || 
+          userRole === "supervisor" || 
+          companyData?.ownerUid === userId;
+
+        if (!userRole || isAdminOrSupervisor) {
           return projects;
         }
         // Employees, managers, and other roles can only see projects they created
         return projects.filter((p) => p.createdBy === userId);
     })();
     return baseProjects.filter(p => !deletedProjects.has(p.id) && !p.isDeleted && p.status !== "deleted");
-  }, [projects, userRole, userId, deletedProjects]);
+  }, [projects, userRole, userId, deletedProjects, companyData?.ownerUid]);
 
   const filteredProjects = myProjects.filter((p) => {
     const employee = companyEmployees.find(emp => emp.uid === p.createdBy);
@@ -477,11 +482,16 @@ export const ProjectsView = ({
   });
 
   const mySets = useMemo(() => {
-    if (!userRole || userRole === "admin" || userRole === "supervisor") {
+    const isAdminOrSupervisor = 
+      userRole === "admin" || 
+      userRole === "supervisor" || 
+      companyData?.ownerUid === userId;
+
+    if (!userRole || isAdminOrSupervisor) {
       return sets;
     }
     return sets.filter((s) => s.createdBy === userId);
-  }, [sets, userRole, userId]);
+  }, [sets, userRole, userId, companyData?.ownerUid]);
 
   const filteredSets = mySets.filter((s) => {
     return (

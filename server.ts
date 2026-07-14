@@ -7,6 +7,7 @@ import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
 import jwt from "jsonwebtoken";
+import compression from "compression";
 
 const prisma = new PrismaClient();
 const JWT_SECRET = process.env.JWT_SECRET || "default_jwt_secret_change_me";
@@ -46,6 +47,7 @@ async function startServer() {
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
   app.use(cors());
+  app.use(compression());
   app.use(express.json({ limit: '50mb' }));
 
   // Disable caching for general API responses, but allow cache validation (no-cache) for db endpoints
@@ -466,19 +468,29 @@ async function startServer() {
       const cleanArticle = typeof article === 'string' ? article.trim().toLowerCase() : "";
       const cleanName = typeof name === 'string' ? name.trim().toLowerCase() : "";
       
-      const docs = await prisma.dbDocument.findMany({
-        where: {
-          collection: {
-            startsWith: "companies/",
-            endsWith: "/products"
-          }
-        }
-      });
+      const docs = await prisma.$queryRaw<any[]>`
+        SELECT id, "docId", collection, path,
+          CASE 
+            WHEN (data::jsonb ? 'images') OR (data::jsonb ? 'image')
+            THEN (data::jsonb - 'images' - 'image')::text
+            ELSE data
+          END as data
+        FROM "DbDocument"
+        WHERE collection LIKE 'companies/%/products'
+      `;
+      
+      const normalizedDocs = docs.map(d => ({
+        id: d.id,
+        docId: d.docId || d.docid,
+        collection: d.collection,
+        path: d.path,
+        data: d.data
+      }));
       
       const duplicates: any[] = [];
       const seenIds = new Set<string>();
 
-      for (const doc of docs) {
+      for (const doc of normalizedDocs) {
         if (currentCompanyId && doc.collection.includes(`companies/${currentCompanyId}/`)) {
           continue;
         }
