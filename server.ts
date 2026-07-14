@@ -16,6 +16,31 @@ function invalidateCache(docPath: string) {
   // In-memory caching fully disabled
 }
 
+// Robust database query wrapper with exponential backoff retry to handle transient connection drops/timeouts
+async function dbQueryWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 200): Promise<T> {
+  let lastErr: any;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      lastErr = err;
+      const isKnownRequest = err?.name === 'PrismaClientKnownRequestError';
+      const isInitError = err?.name === 'PrismaClientInitializationError';
+      const isRustPanic = err?.name === 'PrismaClientRustPanicError';
+      const isConnectionError = isKnownRequest || isInitError || isRustPanic || String(err).includes("Can't reach database") || String(err).includes("Connection") || String(err).includes("closed") || String(err).includes("socket");
+      
+      if (isConnectionError && attempt < retries) {
+        console.warn(`[DB RETRY] Database query failed (attempt ${attempt}/${retries}). Retrying in ${delayMs}ms... Error:`, err?.message || err);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        delayMs *= 2; // exponential backoff
+      } else {
+        throw err;
+      }
+    }
+  }
+  throw lastErr;
+}
+
 async function startServer() {
   const app = express();
   const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
@@ -492,7 +517,7 @@ async function startServer() {
   // TimeWeb Database Document API
   app.get("/api/db/doc/*", async (req, res) => {
     try {
-      const docPath = req.params[0];
+      const docPath = req.params[0] || "";
       
       // Fully prevent any client or intermediary caching of database queries
       res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
@@ -500,7 +525,7 @@ async function startServer() {
       res.setHeader("Expires", "0");
       res.setHeader("Surrogate-Control", "no-store");
       
-      const doc = await prisma.dbDocument.findUnique({ where: { path: docPath } });
+      const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
       if (doc) {
         const parsed = JSON.parse(doc.data);
         res.json(parsed);
@@ -515,7 +540,7 @@ async function startServer() {
 
   app.get("/api/db/col/*", async (req, res) => {
     try {
-      const colPath = req.params[0];
+      const colPath = req.params[0] || "";
       
       // Fully prevent any client or intermediary caching of database queries
       res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
@@ -523,7 +548,7 @@ async function startServer() {
       res.setHeader("Expires", "0");
       res.setHeader("Surrogate-Control", "no-store");
       
-      const docs = await prisma.dbDocument.findMany({ where: { collection: colPath } });
+      const docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({ where: { collection: colPath } }));
       const mapped = docs.map(d => ({ id: d.docId, data: JSON.parse(d.data), path: d.path }));
       res.json(mapped);
     } catch (e) {
@@ -534,27 +559,27 @@ async function startServer() {
 
   app.post("/api/db/doc/*", async (req, res) => {
     try {
-      const docPath = req.params[0];
+      const docPath = req.params[0] || "";
       const parts = docPath.split('/');
       const docId = parts.pop()!;
       const collection = parts.join('/');
       const { data, merge } = req.body;
 
       if (merge) {
-        const existing = await prisma.dbDocument.findUnique({ where: { path: docPath } });
+        const existing = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
         const existingData = existing ? JSON.parse(existing.data) : {};
         const newData = { ...existingData, ...data };
-        await prisma.dbDocument.upsert({
+        await dbQueryWithRetry(() => prisma.dbDocument.upsert({
           where: { path: docPath },
           create: { path: docPath, collection, docId, data: JSON.stringify(newData) },
           update: { data: JSON.stringify(newData) }
-        });
+        }));
       } else {
-        await prisma.dbDocument.upsert({
+        await dbQueryWithRetry(() => prisma.dbDocument.upsert({
           where: { path: docPath },
           create: { path: docPath, collection, docId, data: JSON.stringify(data) },
           update: { data: JSON.stringify(data) }
-        });
+        }));
       }
       
       invalidateCache(docPath);
@@ -567,20 +592,20 @@ async function startServer() {
 
   app.patch("/api/db/doc/*", async (req, res) => {
     try {
-      const docPath = req.params[0];
+      const docPath = req.params[0] || "";
       const { data } = req.body;
-      const existing = await prisma.dbDocument.findUnique({ where: { path: docPath } });
+      const existing = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
       if (existing) {
         const existingData = JSON.parse(existing.data);
         const newData = { ...existingData, ...data };
-        await prisma.dbDocument.update({ where: { path: docPath }, data: { data: JSON.stringify(newData) } });
+        await dbQueryWithRetry(() => prisma.dbDocument.update({ where: { path: docPath }, data: { data: JSON.stringify(newData) } }));
       } else {
         const parts = docPath.split('/');
         const docId = parts.pop()!;
         const collection = parts.join('/');
-        await prisma.dbDocument.create({
+        await dbQueryWithRetry(() => prisma.dbDocument.create({
           data: { path: docPath, collection, docId, data: JSON.stringify(data) }
-        });
+        }));
       }
       
       invalidateCache(docPath);
@@ -593,8 +618,8 @@ async function startServer() {
 
   app.delete("/api/db/doc/*", async (req, res) => {
     try {
-      const docPath = req.params[0];
-      await prisma.dbDocument.deleteMany({ where: { path: docPath } });
+      const docPath = req.params[0] || "";
+      await dbQueryWithRetry(() => prisma.dbDocument.deleteMany({ where: { path: docPath } }));
       
       invalidateCache(docPath);
       res.json({ status: "ok" });
@@ -802,15 +827,15 @@ async function startServer() {
       const newPassword = "Joe240193";
       const hashedPassword = await bcrypt.hash(newPassword, 10);
       
-      const authUser = await prisma.authUser.upsert({
+      const authUser = await dbQueryWithRetry(() => prisma.authUser.upsert({
         where: { email },
         update: { password: hashedPassword, verified: true },
         create: { email, password: hashedPassword, verified: true }
-      });
+      }));
 
       // Ensure they have the admin document
       const userDocPath = `users/${authUser.uid}`;
-      const existingDoc = await prisma.dbDocument.findUnique({ where: { path: userDocPath } });
+      const existingDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: userDocPath } }));
       if (!existingDoc) {
         const userData = { 
           uid: authUser.uid, 
@@ -819,24 +844,24 @@ async function startServer() {
           isRoot: true,
           createdAt: new Date().toISOString()
         };
-        await prisma.dbDocument.create({
+        await dbQueryWithRetry(() => prisma.dbDocument.create({
           data: {
             path: userDocPath,
             collection: "users",
             docId: authUser.uid,
             data: JSON.stringify(userData)
           }
-        });
+        }));
         console.log(`--- [BOOTSTRAP ADMIN] Created admin document: ${userDocPath} ---`);
       } else {
         const userData = JSON.parse(existingDoc.data);
         if (userData.role !== "admin" || !userData.isRoot) {
           userData.role = "admin";
           userData.isRoot = true;
-          await prisma.dbDocument.update({
+          await dbQueryWithRetry(() => prisma.dbDocument.update({
             where: { path: userDocPath },
             data: { data: JSON.stringify(userData) }
-          });
+          }));
           console.log(`--- [BOOTSTRAP ADMIN] Updated admin document flags: ${userDocPath} ---`);
         }
       }

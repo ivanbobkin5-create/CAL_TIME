@@ -333,6 +333,12 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
                   headers: { "Content-Type": "application/json" }
                 });
               }
+              if (url.includes("/api/db/doc/users/")) {
+                return new Response(JSON.stringify({ error: "Invalid user profile data" }), {
+                  status: 500,
+                  headers: { "Content-Type": "application/json" }
+                });
+              }
               const emptyFallback = url.includes("/col/") ? "[]" : "{}";
               return new Response(emptyFallback, {
                 status: 200,
@@ -345,6 +351,12 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
             if (cached) {
               return new Response(cached, {
                 status: 200,
+                headers: { "Content-Type": "application/json" }
+              });
+            }
+            if (url.includes("/api/db/doc/users/")) {
+              return new Response(JSON.stringify({ error: "Failed to read user profile" }), {
+                status: 500,
                 headers: { "Content-Type": "application/json" }
               });
             }
@@ -363,6 +375,9 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
               headers: { "Content-Type": "application/json" }
             });
           }
+          if (url.includes("/api/db/doc/users/")) {
+            return res; // Propagate original non-success response
+          }
           const emptyFallback = url.includes("/col/") ? "[]" : "{}";
           return new Response(emptyFallback, {
             status: 200,
@@ -376,6 +391,12 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
         if (cached) {
           return new Response(cached, {
             status: 200,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+        if (url.includes("/api/db/doc/users/")) {
+          return new Response(JSON.stringify({ error: "Network error loading user profile" }), {
+            status: 503,
             headers: { "Content-Type": "application/json" }
           });
         }
@@ -18959,6 +18980,15 @@ export default function App() {
           const userRes = await fetch(`/api/db/doc/users/${savedUid}`);
           if (userRes.ok) {
             const docData = await userRes.json();
+            if (!docData || !docData.uid) {
+              console.warn("Invalid user profile document retrieved in restoreAuth:", docData);
+              // Clean up localStorage to prevent loop and let them login with a real account
+              localStorage.removeItem('auth_uid');
+              localStorage.removeItem('auth_email');
+              localStorage.removeItem('auth_token');
+              setIsLoading(false);
+              return;
+            }
             setUserData(docData);
             {
             const rawRole = docData.accessLevel || docData.role || 'manager';
@@ -18990,7 +19020,7 @@ export default function App() {
               }
             }
             
-            if (docData.isRoot || docData.email === 'lk.ivanbobkin@gmail.com') {
+            if (docData.isRoot || docData.email === 'lk.ivanbobkin@gmail.com' || docData.email === 'lk.ivanbobkin@yandex.ru') {
               setIsAppAdmin(true);
               setUserRole('admin');
             }
@@ -19060,8 +19090,27 @@ export default function App() {
 
       // Load user data from TimeWeb DB API
       const userRes = await fetch(`/api/db/doc/users/${authUser.uid}`);
+      let hasValidProfile = false;
+      let docData: any = null;
+      let loadErrorMessage = "Профиль пользователя или данные компании не найдены в системе. Пожалуйста, обратитесь к администратору компании.";
+
       if (userRes.ok) {
-         const docData = await userRes.json();
+         docData = await userRes.json();
+         if (docData && docData.uid) {
+            hasValidProfile = true;
+         }
+      } else {
+         try {
+           const errJson = await userRes.json();
+           if (errJson && errJson.error) {
+             loadErrorMessage = `Ошибка при загрузке профиля: ${errJson.error}`;
+           }
+         } catch (_) {
+           loadErrorMessage = `Не удалось загрузить профиль пользователя. Статус сервера: ${userRes.status}`;
+         }
+      }
+
+      if (hasValidProfile && docData) {
          setUserData(docData);
          {
             const rawRole = docData.accessLevel || docData.role || 'manager';
@@ -19101,7 +19150,7 @@ export default function App() {
          if (authUser.token) localStorage.setItem('auth_token', authUser.token);
          
          // Set global admin status
-         if (docData.isRoot || docData.email === 'lk.ivanbobkin@gmail.com') {
+         if (docData.isRoot || docData.email === 'lk.ivanbobkin@gmail.com' || docData.email === 'lk.ivanbobkin@yandex.ru') {
            setIsAppAdmin(true);
            setShowAdminPanel(true);
            setUserRole('admin');
@@ -19109,17 +19158,7 @@ export default function App() {
          
          setIsAuthenticated(true);
       } else {
-         // Fallback
-         const fallbackData = { uid: authUser.uid, email: authUser.email, role: 'manager' };
-         setUserData(fallbackData);
-         setUserRole('manager');
-         auth.currentUser = { uid: authUser.uid, email: authUser.email };
-         
-         localStorage.setItem('auth_uid', authUser.uid);
-         localStorage.setItem('auth_email', authUser.email);
-         if (authUser.token) localStorage.setItem('auth_token', authUser.token);
-         
-         setIsAuthenticated(true);
+         throw new Error(loadErrorMessage);
       }
       
       setIsLoading(false);
@@ -22807,6 +22846,48 @@ export default function App() {
               </div>
             </nav>
             <div className="px-2 pb-2 pt-1.5 bg-gray-50/50 space-y-0.5">
+              {isAppAdmin && allCompanies.length > 0 && (
+                <div className={cn("px-2 py-1.5 flex flex-col gap-1 text-left bg-white rounded-xl border border-blue-100 shadow-sm mb-1.5", isSidebarOpen ? "" : "items-center")}>
+                  {isSidebarOpen ? (
+                    <>
+                      <span className="text-[9px] font-bold text-blue-600 uppercase tracking-widest leading-none mb-1 block">Контекст компании:</span>
+                      <select
+                        value={companyData?.id || ""}
+                        onChange={async (e) => {
+                          const targetCompanyId = e.target.value;
+                          if (!targetCompanyId) return;
+                          try {
+                            const compRes = await fetch(`/api/db/doc/companies/${targetCompanyId}`);
+                            if (compRes.ok) {
+                              const compData = await compRes.json();
+                              setCompanyData({ id: targetCompanyId, ...compData });
+                              setUserData((prev: any) => {
+                                const updatedUser = { ...prev, companyId: targetCompanyId };
+                                fetch(`/api/db/doc/users/${prev.uid}`, {
+                                  method: 'PATCH',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ data: { companyId: targetCompanyId } })
+                                });
+                                return updatedUser;
+                              });
+                            }
+                          } catch (err) {
+                            console.error("Failed to switch company context:", err);
+                          }
+                        }}
+                        className="w-full text-[11px] font-bold bg-gray-50 border border-gray-200 rounded-lg p-1 text-gray-700 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                      >
+                        <option value="system">-- Системный context --</option>
+                        {allCompanies.map((c) => (
+                          <option key={c.id} value={c.id}>{c.name || `Компания ${c.id}`}</option>
+                        ))}
+                      </select>
+                    </>
+                  ) : (
+                    <Building2 className="w-5 h-5 text-blue-600 cursor-pointer hover:scale-105 transition-transform" onClick={() => setIsSidebarOpen(true)} />
+                  )}
+                </div>
+              )}
               <button
                 onClick={() => setActiveTab("profile")}
                 className={cn(

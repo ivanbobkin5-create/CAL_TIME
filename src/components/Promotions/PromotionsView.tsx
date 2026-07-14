@@ -752,11 +752,14 @@ export const PromotionsView = ({
                               className="w-full px-3 py-2 text-xs border border-gray-205 rounded-xl bg-white outline-none focus:ring-2 focus:ring-indigo-500 text-gray-700 font-bold"
                             >
                               <option value="">-- Все категории --</option>
-                              {productCategories.map((c, index) => (
-                                <option key={c.id + '-' + index} value={c.name}>
-                                  {c.name}
-                                </option>
-                              ))}
+                              {productCategories.map((c, index) => {
+                                const name = typeof c === 'object' && c !== null ? (c as any).name : String(c);
+                                return (
+                                  <option key={`${name}-${index}`} value={name}>
+                                    {name}
+                                  </option>
+                                );
+                              })}
                             </select>
                           </div>
 
@@ -1035,11 +1038,14 @@ export const PromotionsView = ({
                               className="w-full px-3 py-2 text-xs border border-gray-205 rounded-xl bg-white outline-none focus:ring-2 focus:ring-indigo-500 text-gray-700 font-bold"
                             >
                               <option value="">-- Все категории --</option>
-                              {productCategories.map((c, index) => (
-                                <option key={c.id + '-' + index} value={c.name}>
-                                  {c.name}
-                                </option>
-                              ))}
+                              {productCategories.map((c, index) => {
+                                const name = typeof c === 'object' && c !== null ? (c as any).name : String(c);
+                                return (
+                                  <option key={`${name}-${index}`} value={name}>
+                                    {name}
+                                  </option>
+                                );
+                              })}
                             </select>
                           </div>
 
@@ -1237,9 +1243,12 @@ export const PromotionsView = ({
                         required
                       >
                         <option value="">-- Все категории --</option>
-                        {productCategories.map((c) => (
-                          <option key={c.id} value={c.name}>{c.name}</option>
-                        ))}
+                        {productCategories.map((c, index) => {
+                          const name = typeof c === 'object' && c !== null ? (c as any).name : String(c);
+                          return (
+                            <option key={`${name}-${index}`} value={name}>{name}</option>
+                          );
+                        })}
                       </select>
                     </div>
 
@@ -1810,9 +1819,12 @@ export const PromotionsView = ({
                       className="h-8 px-2 py-1 text-xs bg-white border border-gray-200 rounded-xl outline-none focus:ring-1 focus:ring-indigo-500 text-gray-750 font-medium min-w-[150px]"
                     >
                       <option value="">-- Все категории --</option>
-                      {productCategories.map((c) => (
-                        <option key={c.id} value={c.name}>{c.name}</option>
-                      ))}
+                      {productCategories.map((c, index) => {
+                        const name = typeof c === 'object' && c !== null ? (c as any).name : String(c);
+                        return (
+                          <option key={`${name}-${index}`} value={name}>{name}</option>
+                        );
+                      })}
                     </select>
                   </div>
 
