@@ -70,6 +70,152 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
+  // Public Catalog/Landing Page API
+  app.get("/api/public/company/:aliasOrId", async (req, res) => {
+    try {
+      const { aliasOrId } = req.params;
+      
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+      res.setHeader("Surrogate-Control", "no-store");
+      
+      let companyDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({
+        where: { path: `companies/${aliasOrId}` }
+      }));
+      
+      let companyData: any = null;
+      let companyId: string = "";
+      
+      if (companyDoc) {
+        companyData = JSON.parse(companyDoc.data);
+        companyId = companyDoc.docId;
+      } else {
+        const allCompanyDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+          where: { collection: "companies" }
+        }));
+        
+        for (const doc of allCompanyDocs) {
+          try {
+            const parsed = JSON.parse(doc.data);
+            if (parsed.landingPage?.alias === aliasOrId) {
+              companyDoc = doc;
+              companyData = parsed;
+              companyId = doc.docId;
+              break;
+            }
+          } catch (e) {
+            // Ignore malformed JSON
+          }
+        }
+      }
+      
+      if (!companyDoc || !companyData) {
+        return res.status(404).json({ error: "Компания не найдена" });
+      }
+      
+      const productDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+        where: { collection: `companies/${companyId}/products` }
+      }));
+      let ownProducts = productDocs.map(d => ({ id: d.docId, ...JSON.parse(d.data) }));
+      
+      let manufacturerProducts: any[] = [];
+      if (companyData.manufacturerId) {
+        const mProductDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+          where: { collection: `companies/${companyData.manufacturerId}/products` }
+        }));
+        manufacturerProducts = mProductDocs.map(d => ({ id: d.docId, ...JSON.parse(d.data) }));
+      }
+      
+      let allProducts = [...ownProducts, ...manufacturerProducts];
+      
+      const generalSettingsDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({
+        where: { path: `companies/${companyId}/settings/general` }
+      }));
+      const generalSettings = generalSettingsDoc ? JSON.parse(generalSettingsDoc.data) : null;
+      
+      const pricesDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({
+        where: { path: `companies/${companyId}/settings/prices` }
+      }));
+      const prices = pricesDoc ? JSON.parse(pricesDoc.data) : null;
+      
+      const visibleCategories = companyData.landingPage?.visibleCategories || [];
+      if (visibleCategories.length > 0) {
+        allProducts = allProducts.filter(p => visibleCategories.includes(p.category));
+      }
+      
+      res.json({
+        company: {
+          id: companyId,
+          name: companyData.name || "",
+          phone: companyData.phone || "",
+          city: companyData.city || "",
+          type: companyData.type || "",
+          landingPage: companyData.landingPage || null
+        },
+        products: allProducts,
+        generalSettings: generalSettings,
+        prices: prices?.prices || {}
+      });
+      
+    } catch (e) {
+      console.error("Error in public company lookup:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/public/company/:companyId/order", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const { customerName, customerPhone, customerEmail, customerComment, cartItems, totalPrice } = req.body;
+      
+      if (!customerName || !customerPhone) {
+        return res.status(400).json({ error: "Имя и телефон обязательны" });
+      }
+      
+      const orderId = "order_" + Date.now().toString();
+      const projectPath = `companies/${companyId}/projects/${orderId}`;
+      
+      const projectData = {
+        id: orderId,
+        name: `🛍️ Заказ с сайта: ${customerName}`,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        createdBy: "landing",
+        createdByName: `Покупатель: ${customerName}`,
+        status: "landing_order",
+        totalPrice: totalPrice || 0,
+        clientInfo: {
+          name: customerName,
+          phone: customerPhone,
+          email: customerEmail || "",
+          comment: customerComment || ""
+        },
+        data: {
+          addedProducts: cartItems || [],
+          addedServices: [],
+          summaryRows: [],
+          results: {},
+          isModularProgram: true
+        }
+      };
+      
+      await dbQueryWithRetry(() => prisma.dbDocument.create({
+        data: {
+          path: projectPath,
+          collection: `companies/${companyId}/projects`,
+          docId: orderId,
+          data: JSON.stringify(projectData)
+        }
+      }));
+      
+      res.json({ success: true, orderId });
+    } catch (e) {
+      console.error("Error in public company order creation:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   app.get("/api/admin/setup-root", async (req, res) => {
     console.log("--- [ADMIN SETUP] Route hit! ---");
     try {

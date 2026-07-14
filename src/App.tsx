@@ -38,6 +38,8 @@ import { AdminProductsApprovalView } from "./components/Admin/AdminProductsAppro
 import { AdminSettingsView } from "./components/Admin/AdminSettingsView";
 import { AppAdminView } from "./components/Admin/AppAdminView";
 import { LandingPage } from "./components/Landing/LandingPage";
+import { LandingSettingsView } from "./components/Landing/LandingSettingsView";
+import { PublicLandingView } from "./components/Landing/PublicLandingView";
 import { Supplier, ProcurementSettings } from "./types";
 import { SuppliersSettings } from "./components/Admin/SuppliersSettings";
 import { ProcurementView } from "./components/Procurement/ProcurementView";
@@ -10464,7 +10466,7 @@ const SettingsView = ({
   const isProcurementAllowed = companyData?.procurementAllowed !== undefined ? !!companyData.procurementAllowed : !!companyData?.procurementEnabled;
   const [newCategory, setNewCategory] = useState("");
   const [activeSubTab, setActiveSubTab] = useState<
-    "general" | "services" | "production" | "account" | "facades" | "bitrix24" | "promotions" | "suppliers" | "specification"
+    "general" | "services" | "production" | "account" | "facades" | "bitrix24" | "promotions" | "suppliers" | "specification" | "landing"
   >("general");
   const [showBrandCoeffModal, setShowBrandCoeffModal] = useState(false);
   
@@ -10775,6 +10777,7 @@ const SettingsView = ({
             ? [{ id: "production", label: "Производство", icon: Factory }]
             : []),
           { id: "promotions", label: "Акции", icon: Percent },
+          { id: "landing", label: "Внешний сайт (Каталог)", icon: Globe },
           { id: "bitrix24", label: "Bitrix24", icon: Link },
           { id: "suppliers", label: "Поставщики", icon: Database },
           { id: "specification", label: "Настройки спецификаций и КП", icon: ClipboardList },
@@ -10796,6 +10799,16 @@ const SettingsView = ({
       </div>
 
       <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-8 space-y-12">
+        {activeSubTab === "landing" && (
+          <LandingSettingsView
+            companyData={companyData}
+            setCompanyData={setCompanyData}
+            productCategories={productCategories}
+            onSaveSettings={() => onSaveSettings(false)}
+            showAlert={showAlert}
+          />
+        )}
+
         {activeSubTab === "suppliers" && (
           <div className="animate-in fade-in duration-300">
             <SuppliersSettings
@@ -19261,6 +19274,12 @@ export default function App() {
           setCompanyInfo((prev: any) => ({ ...prev, vat: Number(genData.vat) }));
         }
         if (genData.productionFormat) setProductionFormat(genData.productionFormat);
+        if (genData.landingPage) {
+          setCompanyData((prev: any) => ({
+            ...prev,
+            landingPage: genData.landingPage,
+          }));
+        }
       }
 
       // 4. Get Global prices
@@ -20603,6 +20622,12 @@ export default function App() {
               setSpecificationConfigReal(data.specificationConfig);
             }
           }
+          if (data.landingPage) {
+            setCompanyData((prev: any) => ({
+              ...prev,
+              landingPage: data.landingPage,
+            }));
+          }
         }
       },
       (error) =>
@@ -21710,6 +21735,7 @@ export default function App() {
           companyInfo,
           catalogMaterials,
           specificationConfig,
+          landingPage: companyData.landingPage || null,
         },
       );
 
@@ -21743,6 +21769,7 @@ export default function App() {
           phone: companyInfo?.phone || companyData.phone || "",
           city: companyInfo?.city || companyData.city || "",
           bitrix24: companyData.bitrix24 || null,
+          landingPage: companyData.landingPage || null,
         },
         { merge: true }
       );
@@ -22802,6 +22829,13 @@ export default function App() {
         </motion.div>
       </div>
     );
+  }
+
+  // Detect public customer landing page
+  const currentPath = window.location.pathname;
+  if (currentPath.startsWith("/c/")) {
+    const aliasOrId = currentPath.split("/c/")[1];
+    return <PublicLandingView aliasOrId={aliasOrId} />;
   }
 
   if (!isAuthenticated) {
