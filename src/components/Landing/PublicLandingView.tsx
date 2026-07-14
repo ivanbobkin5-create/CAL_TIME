@@ -45,6 +45,8 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("");
+  const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
+  const [priceRange, setPriceRange] = useState<{ min: string, max: string }>({ min: "", max: "" });
   const [selectedProductDetail, setSelectedProductDetail] = useState<any | null>(null);
   
   // Checkout Form state
@@ -57,9 +59,30 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
 
   // Fetch public data on load
   useEffect(() => {
+    // Try to load from cache first for instant render
+    const cacheKey = `meb_public_cache:${aliasOrId}`;
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      try {
+        const data = JSON.parse(cached);
+        if (data.company) {
+          setCompany(data.company);
+          setProducts(data.products || []);
+          setGeneralSettings(data.generalSettings);
+          setPrices(data.prices || {});
+          
+          const cats = Array.from(new Set((data.products || []).map((p: any) => p.category))) as string[];
+          if (cats.length > 0 && !selectedCategory) {
+            setSelectedCategory(cats[0]);
+          }
+          setLoading(false); // Instant load
+        }
+      } catch (_) {}
+    }
+
     async function loadPublicData() {
       try {
-        setLoading(true);
+        if (!cached) setLoading(true);
         setError(null);
         const res = await fetch(`/api/public/company/${aliasOrId}`);
         if (!res.ok) {
@@ -69,18 +92,22 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
           throw new Error("Не удалось загрузить каталог товаров");
         }
         const data = await res.json();
+        
+        // Save to cache for next time
+        localStorage.setItem(cacheKey, JSON.stringify(data));
+        
         setCompany(data.company);
         setProducts(data.products || []);
         setGeneralSettings(data.generalSettings);
         setPrices(data.prices || {});
         
-        // Auto-select first category
+        // Auto-select first category if none selected
         const cats = Array.from(new Set((data.products || []).map((p: any) => p.category))) as string[];
-        if (cats.length > 0) {
+        if (cats.length > 0 && !selectedCategory) {
           setSelectedCategory(cats[0]);
         }
       } catch (err: any) {
-        setError(err.message || "Ошибка соединения с сервером");
+        if (!cached) setError(err.message || "Ошибка соединения с сервером");
       } finally {
         setLoading(false);
       }
@@ -140,12 +167,20 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
     return mainPrice;
   };
 
-  // Get categories list
+  // Get categories and brands list
   const categories = useMemo(() => {
     return Array.from(new Set(products.map(p => p.category))) as string[];
   }, [products]);
 
-  // Filter products matching category and search terms
+  const availableBrands = useMemo(() => {
+    const brands = products
+      .filter(p => !selectedCategory || p.category === selectedCategory)
+      .map(p => p.brand)
+      .filter(Boolean);
+    return Array.from(new Set(brands)) as string[];
+  }, [products, selectedCategory]);
+
+  // Filter products matching category, search, brands and price
   const filteredProducts = useMemo(() => {
     return products.filter(p => {
       const matchesCategory = !selectedCategory || p.category === selectedCategory;
@@ -156,9 +191,15 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
         (p.article && p.article.toLowerCase().includes(searchLower)) ||
         (p.description && p.description.toLowerCase().includes(searchLower));
         
-      return matchesCategory && matchesSearch;
+      const matchesBrand = selectedBrands.length === 0 || selectedBrands.includes(p.brand);
+      
+      const retailPrice = getProductRetailPrice(p);
+      const matchesMinPrice = !priceRange.min || retailPrice >= parseFloat(priceRange.min);
+      const matchesMaxPrice = !priceRange.max || retailPrice <= parseFloat(priceRange.max);
+
+      return matchesCategory && matchesSearch && matchesBrand && matchesMinPrice && matchesMaxPrice;
     });
-  }, [products, selectedCategory, search]);
+  }, [products, selectedCategory, search, selectedBrands, priceRange, getProductRetailPrice]);
 
   // Cart operations
   const addToCart = (product: any) => {
@@ -427,7 +468,10 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
                 {categories.map(cat => (
                   <button
                     key={cat}
-                    onClick={() => setSelectedCategory(cat)}
+                    onClick={() => {
+                      setSelectedCategory(cat);
+                      setSelectedBrands([]); // Сброс брендов при смене категории
+                    }}
                     className={`px-4 py-2.5 rounded-xl text-left font-bold text-xs transition-all flex items-center justify-between gap-2 whitespace-nowrap md:whitespace-normal w-full border ${
                       selectedCategory === cat
                         ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/10"
@@ -444,6 +488,68 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
                 ))}
               </div>
             </div>
+
+            <div className="space-y-1.5 pt-2 border-t border-gray-50">
+              <h3 className="font-bold text-gray-900 text-sm uppercase tracking-wider mb-2">Цена</h3>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={priceRange.min}
+                  onChange={(e) => setPriceRange(prev => ({ ...prev, min: e.target.value }))}
+                  placeholder="От"
+                  className="w-full px-3 py-2 bg-gray-50 border-0 focus:bg-white focus:ring-2 focus:ring-blue-500 rounded-xl text-[10px] font-bold"
+                />
+                <span className="text-gray-300">—</span>
+                <input
+                  type="number"
+                  value={priceRange.max}
+                  onChange={(e) => setPriceRange(prev => ({ ...prev, max: e.target.value }))}
+                  placeholder="До"
+                  className="w-full px-3 py-2 bg-gray-50 border-0 focus:bg-white focus:ring-2 focus:ring-blue-500 rounded-xl text-[10px] font-bold"
+                />
+              </div>
+            </div>
+
+            {availableBrands.length > 0 && (
+              <div className="space-y-1.5 pt-2 border-t border-gray-50">
+                <h3 className="font-bold text-gray-900 text-sm uppercase tracking-wider mb-2">Бренды</h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {availableBrands.map(brand => {
+                    const isSelected = selectedBrands.includes(brand);
+                    return (
+                      <button
+                        key={brand}
+                        onClick={() => {
+                          setSelectedBrands(prev => 
+                            isSelected ? prev.filter(b => b !== brand) : [...prev, brand]
+                          );
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border ${
+                          isSelected
+                            ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                            : "bg-white text-gray-500 border-gray-100 hover:border-gray-200"
+                        }`}
+                      >
+                        {brand}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            
+            {(selectedBrands.length > 0 || priceRange.min || priceRange.max || search) && (
+              <button
+                onClick={() => {
+                  setSelectedBrands([]);
+                  setPriceRange({ min: "", max: "" });
+                  setSearch("");
+                }}
+                className="w-full py-2 text-[10px] font-black uppercase tracking-widest text-gray-400 hover:text-red-500 transition-colors pt-2 border-t border-gray-50"
+              >
+                Сбросить фильтры
+              </button>
+            )}
           </div>
         </aside>
 

@@ -33,7 +33,7 @@ interface LandingSettingsViewProps {
   companyData: any;
   setCompanyData: React.Dispatch<React.SetStateAction<any>>;
   productCategories: string[];
-  onSaveSettings: (silent?: boolean) => void;
+  onSaveSettings: (silent?: boolean) => Promise<void>;
   showAlert: (title: string, message: string) => void;
 }
 
@@ -54,6 +54,7 @@ export function LandingSettingsView({
   showAlert,
 }: LandingSettingsViewProps) {
   const [copied, setCopied] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   // Default configuration
   const landingConfig: LandingPageConfig = {
@@ -101,6 +102,15 @@ export function LandingSettingsView({
       ? current.filter((c) => c !== category)
       : [...current, category];
     handleUpdateConfig({ visibleCategories: next });
+  };
+
+  const handleSave = async () => {
+    try {
+      setIsSaving(true);
+      await onSaveSettings(false);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const publicUrl = `${window.location.origin}/c/${landingConfig.alias || companyData?.id}`;
@@ -432,11 +442,16 @@ export function LandingSettingsView({
       {/* Save Button */}
       <div className="pt-6 border-t border-gray-100 flex justify-end">
         <button
-          onClick={() => onSaveSettings(false)}
-          className="px-8 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all flex items-center gap-2 active:scale-95"
+          onClick={handleSave}
+          disabled={isSaving}
+          className="px-8 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <CheckCircle2 className="w-5 h-5" />
-          Сохранить параметры витрины
+          {isSaving ? (
+            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          ) : (
+            <CheckCircle2 className="w-5 h-5" />
+          )}
+          {isSaving ? "Сохранение..." : "Сохранить параметры витрины"}
         </button>
       </div>
     </div>

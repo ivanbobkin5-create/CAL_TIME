@@ -728,13 +728,15 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
                   data: () => d.data,
                   exists: () => true
                 })),
-                size: parsed.length
+                size: parsed.length,
+                metadata: { fromCache: false }
               });
             } else if (!isCol && parsed && typeof parsed === "object") {
               sub.callback({
                 exists: () => true,
                 data: () => parsed,
-                id: ref.path.split('/').pop()
+                id: ref.path.split('/').pop(),
+                metadata: { fromCache: false }
               });
             }
           } catch (cbErr) {
@@ -10415,7 +10417,7 @@ const SettingsView = ({
   productionFormat: string;
   productionSettings: any;
   companyType?: string;
-  onSaveSettings: (silent?: boolean) => void;
+  onSaveSettings: (silent?: boolean) => Promise<void>;
   salonsUsingMe: any[];
   salonsInTable: any[];
   toggleSpecialCondition: (id: string) => void;
@@ -19214,15 +19216,26 @@ export default function App() {
 
   const preloadAllData = async (companyId: string, uid: string, fetchedUserData?: any) => {
     try {
-      setPreloadProgress(5);
-      setPreloadStatus("Подключение к серверу...");
+      // Parallel fetch for initial data
+      setPreloadStatus("Загрузка данных...");
+      setPreloadProgress(50);
+      
+      const [catRes, prodRes, genRes, priceRes, promoRes, empRes, prodColRes, projRes, setsColRes] = await Promise.all([
+        fetch(`/api/db/doc/companies/${companyId}/settings/categories`),
+        fetch(`/api/db/doc/companies/${companyId}/settings/production`),
+        fetch(`/api/db/doc/companies/${companyId}/settings/general`),
+        fetch(`/api/db/doc/companies/${companyId}/settings/prices`),
+        fetch(`/api/db/doc/companies/${companyId}/settings/promotions`),
+        fetch(`/api/db/col/companies/${companyId}/employees`),
+        fetch(`/api/db/col/companies/${companyId}/products`),
+        fetch(`/api/db/col/companies/${companyId}/projects`),
+        fetch(`/api/db/col/companies/${companyId}/sets`)
+      ]);
 
-      // 1. Get Category settings
-      setPreloadStatus("Загрузка категорий...");
-      setPreloadProgress(15);
-      const catRes = await fetch(`/api/db/doc/companies/${companyId}/settings/categories`);
+      // Process results
       if (catRes.ok) {
         const catData = await catRes.json();
+        localStorage.setItem(`meb_cache:/api/db/doc/companies/${companyId}/settings/categories`, JSON.stringify(catData));
         let cats = catData.categories || INITIAL_PRODUCT_CATEGORIES;
         setProductCategories(cats);
         setCoefficients((prev: any) => ({
@@ -19231,12 +19244,24 @@ export default function App() {
         }));
       }
 
-      // 2. Get Production config
-      setPreloadStatus("Загрузка параметров производства...");
-      setPreloadProgress(30);
-      const prodRes = await fetch(`/api/db/doc/companies/${companyId}/settings/production`);
+      // 8. Load manufacturer products if applicable
+      const mfgId = fetchedUserData?.manufacturerId || companyData?.manufacturerId;
+      if (mfgId) {
+        const mfgRes = await fetch(`/api/db/col/companies/${mfgId}/products`);
+        if (mfgRes.ok) {
+          const mfgData = await mfgRes.json();
+          localStorage.setItem(`meb_cache:/api/db/col/companies/${mfgId}/products`, JSON.stringify(mfgData));
+          const mappedMfg = mfgData.map((d: any) => ({
+            id: d.id,
+            ...d.data,
+          }));
+          setManufacturerProducts(mappedMfg);
+        }
+      }
+      
       if (prodRes.ok) {
         const prodData = await prodRes.json();
+        localStorage.setItem(`meb_cache:/api/db/doc/companies/${companyId}/settings/production`, JSON.stringify(prodData));
         const isContract = ("productionId" in prodData && prodData.productionId) || ("city" in prodData && prodData.city);
         if (isContract) {
           setContractConfig(prodData);
@@ -19252,12 +19277,9 @@ export default function App() {
         }
       }
 
-      // 3. Get General config
-      setPreloadStatus("Загрузка общих настроек...");
-      setPreloadProgress(45);
-      const genRes = await fetch(`/api/db/doc/companies/${companyId}/settings/general`);
       if (genRes.ok) {
         const genData = await genRes.json();
+        localStorage.setItem(`meb_cache:/api/db/doc/companies/${companyId}/settings/general`, JSON.stringify(genData));
         if (genData.defaultCuttingType) setDefaultCuttingType(genData.defaultCuttingType);
         if (genData.companyInfo) setCompanyInfo(genData.companyInfo);
         if (genData.coefficients) setCoefficients(genData.coefficients);
@@ -19283,12 +19305,9 @@ export default function App() {
         }
       }
 
-      // 4. Get Global prices
-      setPreloadStatus("Загрузка прайс-листов...");
-      setPreloadProgress(60);
-      const priceRes = await fetch(`/api/db/doc/companies/${companyId}/settings/prices`);
       if (priceRes.ok) {
         const priceData = await priceRes.json();
+        localStorage.setItem(`meb_cache:/api/db/doc/companies/${companyId}/settings/prices`, JSON.stringify(priceData));
         if (priceData.prices) {
           setPrices((currentPrices: any) => {
             const merged = { ...priceData.prices };
@@ -19305,62 +19324,32 @@ export default function App() {
         }
       }
 
-      // 5. Get Promotions
-      setPreloadStatus("Загрузка акций...");
-      setPreloadProgress(70);
-      const promoRes = await fetch(`/api/db/doc/companies/${companyId}/settings/promotions`);
       if (promoRes.ok) {
         const promoData = await promoRes.json();
+        localStorage.setItem(`meb_cache:/api/db/doc/companies/${companyId}/settings/promotions`, JSON.stringify(promoData));
         if (Array.isArray(promoData.promotions)) {
           setPromotions(promoData.promotions);
         }
       }
 
-      // 6. Get Employees (For admins / supervisors)
-      setPreloadStatus("Загрузка списка сотрудников...");
-      setPreloadProgress(80);
-      const empRes = await fetch(`/api/db/col/companies/${companyId}/employees`);
       if (empRes.ok) {
         const empData = await empRes.json();
-        try {
-          localStorage.setItem(`meb_cache:/api/db/col/companies/${companyId}/employees`, JSON.stringify(empData));
-        } catch (_) {}
+        localStorage.setItem(`meb_cache:/api/db/col/companies/${companyId}/employees`, JSON.stringify(empData));
       }
 
-      // 7. Get Products (Owner products)
-      setPreloadStatus("Загрузка каталога товаров...");
-      setPreloadProgress(90);
-      const prodColRes = await fetch(`/api/db/col/companies/${companyId}/products`);
       if (prodColRes.ok) {
         const prodColData = await prodColRes.json();
+        localStorage.setItem(`meb_cache:/api/db/col/companies/${companyId}/products`, JSON.stringify(prodColData));
         const mappedProds = prodColData.map((d: any) => ({
           id: d.id,
           ...d.data,
         }));
         setOwnProducts(mappedProds);
       }
-
-      // 8. Load manufacturer products if applicable
-      const mfgId = fetchedUserData?.manufacturerId || companyData?.manufacturerId;
-      if (mfgId) {
-        setPreloadStatus("Загрузка товаров фабрики...");
-        const mfgRes = await fetch(`/api/db/col/companies/${mfgId}/products`);
-        if (mfgRes.ok) {
-          const mfgData = await mfgRes.json();
-          const mappedMfg = mfgData.map((d: any) => ({
-            id: d.id,
-            ...d.data,
-          }));
-          setManufacturerProducts(mappedMfg);
-        }
-      }
-
-      // 9. Sync Projects and Sets
-      setPreloadStatus("Загрузка проектов и комплектов...");
-      setPreloadProgress(98);
-      const projRes = await fetch(`/api/db/col/companies/${companyId}/projects`);
+      
       if (projRes.ok) {
         const projData = await projRes.json();
+        localStorage.setItem(`meb_cache:/api/db/col/companies/${companyId}/projects`, JSON.stringify(projData));
         const mappedProjs = projData.map((d: any) => ({
           id: d.id,
           ...d.data,
@@ -19368,9 +19357,9 @@ export default function App() {
         setProjects(mappedProjs);
       }
 
-      const setsColRes = await fetch(`/api/db/col/companies/${companyId}/sets`);
       if (setsColRes.ok) {
         const setsColData = await setsColRes.json();
+        localStorage.setItem(`meb_cache:/api/db/col/companies/${companyId}/sets`, JSON.stringify(setsColData));
         const mappedSets = setsColData.map((d: any) => ({
           id: d.id,
           ...d.data,
@@ -20374,7 +20363,9 @@ export default function App() {
           ...doc.data(),
         }));
         console.log("Loaded own products:", products);
-        setOwnProducts(products);
+        if (products.length > 0 || !isPreloaded) {
+          setOwnProducts(products);
+        }
       },
       (error) =>
         handleDbError(
@@ -20395,7 +20386,9 @@ export default function App() {
             ...doc.data(),
           }));
           console.log("Loaded manufacturer products:", products);
-          setManufacturerProducts(products);
+          if (products.length > 0 || !isPreloaded) {
+            setManufacturerProducts(products);
+          }
         },
         (error) =>
           handleDbError(
@@ -20760,7 +20753,9 @@ export default function App() {
       qProjects, 
       (snapshot) => {
         const projs = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        setProjects(projs);
+        if (projs.length > 0 || !isPreloaded) {
+          setProjects(projs);
+        }
         setIsProjectsLoading(false);
       },
       (error) => {
@@ -20773,7 +20768,9 @@ export default function App() {
       qSets, 
       (snapshot) => {
         const setsData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        setProjectSets(setsData);
+        if (setsData.length > 0 || !isPreloaded) {
+          setProjectSets(setsData);
+        }
         setIsSetsLoading(false);
       },
       (error) => {
@@ -21726,61 +21723,64 @@ export default function App() {
     console.log("DEBUG: saveGeneralSettings started. silent:", silent);
     console.log("DEBUG: Current companyData.bitrix24:", companyData.bitrix24);
     try {
-      await setDoc(
-        doc(db, "companies", companyData.id, "settings", "general"),
-        {
-          coefficients,
-          calcMode,
-          trimming,
-          hardwareKitPrice,
-          assemblyPercentage,
-          assemblyPercentages,
-          assemblyIncludes,
-          deliveryTariffs,
-          mapLink,
-          productCategories,
-          defaultCuttingType,
-          companyInfo,
-          catalogMaterials,
-          specificationConfig,
-          landingPage: companyData.landingPage || null,
-        },
-      );
+      // Parallelize setting saves for speed
+      const savePromises = [
+        setDoc(
+          doc(db, "companies", companyData.id, "settings", "general"),
+          {
+            coefficients,
+            calcMode,
+            trimming,
+            hardwareKitPrice,
+            assemblyPercentage,
+            assemblyPercentages,
+            assemblyIncludes,
+            deliveryTariffs,
+            mapLink,
+            productCategories,
+            defaultCuttingType,
+            companyInfo,
+            catalogMaterials,
+            specificationConfig,
+            landingPage: companyData.landingPage || null,
+          },
+        ),
+        setDoc(
+          doc(db, "companies", companyData.id, "settings", "prices"),
+          {
+            prices,
+            updatedAt: new Date().toISOString(),
+          },
+          { merge: true },
+        ),
+        // Sync specific fields to the main company doc
+        setDoc(
+          doc(db, "companies", companyData.id),
+          {
+            name: companyInfo?.name || companyData.name || "",
+            phone: companyInfo?.phone || companyData.phone || "",
+            city: companyInfo?.city || companyData.city || "",
+            bitrix24: companyData.bitrix24 || null,
+            landingPage: companyData.landingPage || null,
+          },
+          { merge: true }
+        )
+      ];
 
-      // Save prices to the dedicated prices document as well
-      await setDoc(
-        doc(db, "companies", companyData.id, "settings", "prices"),
-        {
-          prices,
-          updatedAt: new Date().toISOString(),
-        },
-        { merge: true },
-      );
-
-      // If production or own production format, also save production settings
+      // Add production config if applicable
       if (
         companyData.type === "Мебельное производство" ||
         productionFormat === "own"
       ) {
-        await setDoc(
-          doc(db, "companies", companyData.id, "settings", "production"),
-          ownProductionConfig,
+        savePromises.push(
+          setDoc(
+            doc(db, "companies", companyData.id, "settings", "production"),
+            ownProductionConfig,
+          )
         );
       }
 
-      // Sync specific fields to the main company doc
-      console.log("DEBUG: Syncing company doc with bitrix24:", companyData.bitrix24);
-      await setDoc(
-        doc(db, "companies", companyData.id),
-        {
-          name: companyInfo?.name || companyData.name || "",
-          phone: companyInfo?.phone || companyData.phone || "",
-          city: companyInfo?.city || companyData.city || "",
-          bitrix24: companyData.bitrix24 || null,
-          landingPage: companyData.landingPage || null,
-        },
-        { merge: true }
-      );
+      await Promise.all(savePromises);
 
       if (!silent) {
         showAlert("Успех", "Настройки успешно сохранены");
