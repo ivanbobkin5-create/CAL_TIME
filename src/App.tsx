@@ -18969,6 +18969,7 @@ export default function App() {
   const isProcurementAllowed = companyData?.procurementAllowed !== undefined ? !!companyData.procurementAllowed : !!companyData?.procurementEnabled;
   const [isLoading, setIsLoading] = useState(true);
   const [preloadProgress, setPreloadProgress] = useState<number>(0);
+  const [isPreloaded, setIsPreloaded] = useState(false);
   const [preloadStatus, setPreloadStatus] = useState<string>("Инициализация...");
   const [isAppAdmin, setIsAppAdmin] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
@@ -19383,7 +19384,9 @@ export default function App() {
       setPreloadStatus("Синхронизация завершена!");
       await new Promise(resolve => setTimeout(resolve, 300));
     } catch (err) {
-      console.error("Preloading error, continuing with fallback:", err);
+      console.error("Preloading error:", err);
+    } finally {
+      setIsPreloaded(true);
     }
   };
 
@@ -20351,11 +20354,16 @@ export default function App() {
 
   const [showManufacturerCoeffs, setShowManufacturerCoeffs] = useState(false);
 
+  const isSyncedRef = useRef(false);
+  
   // Data Synchronization
   useEffect(() => {
-    if (!isAuthenticated || !companyData?.id) return;
-
+    if (!isAuthenticated || !companyData?.id || !isPreloaded || isSyncedRef.current) return;
+    
+    isSyncedRef.current = true;
     const companyId = companyData.id;
+
+    // ... (rest of the code)
 
     // Sync Products
     const productsUnsubscribe = onSnapshot(
@@ -20706,7 +20714,7 @@ export default function App() {
 
   // Sync Projects and Sets
   useEffect(() => {
-    if (!isAuthenticated || !companyData?.id || !userData?.uid) return;
+    if (!isAuthenticated || !companyData?.id || !userData?.uid || !isPreloaded) return;
 
     setIsProjectsLoading(true);
     setIsSetsLoading(true);
