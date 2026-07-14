@@ -37,7 +37,8 @@ function onSnapshot(ref: any, callback: (snap: any) => void) {
     }
   };
   fetchData();
-  return () => {};
+  const interval = setInterval(fetchData, 10000);
+  return () => clearInterval(interval);
 }
 function doc(db: any, ...pathParts: string[]) {
   return { path: pathParts.join('/') };

@@ -452,12 +452,6 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
                   });
                 }
               }
-              if (url.includes("/api/db/doc/users/")) {
-                return new Response(JSON.stringify({ error: "Invalid user profile data" }), {
-                  status: 500,
-                  headers: { "Content-Type": "application/json" }
-                });
-              }
               const emptyFallback = url.includes("/col/") ? "[]" : "{}";
               return new Response(emptyFallback, {
                 status: 200,
@@ -481,12 +475,6 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
                 });
               }
             }
-            if (url.includes("/api/db/doc/users/")) {
-              return new Response(JSON.stringify({ error: "Failed to read user profile" }), {
-                status: 500,
-                headers: { "Content-Type": "application/json" }
-              });
-            }
             const emptyFallback = url.includes("/col/") ? "[]" : "{}";
             return new Response(emptyFallback, {
               status: 200,
@@ -508,9 +496,6 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
                 headers: { "Content-Type": "application/json" }
               });
             }
-          }
-          if (url.includes("/api/db/doc/users/")) {
-            return res;
           }
           const emptyFallback = url.includes("/col/") ? "[]" : "{}";
           return new Response(emptyFallback, {
@@ -534,12 +519,6 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
               headers: { "Content-Type": "application/json" }
             });
           }
-        }
-        if (url.includes("/api/db/doc/users/")) {
-          return new Response(JSON.stringify({ error: "Network error loading user profile" }), {
-            status: 503,
-            headers: { "Content-Type": "application/json" }
-          });
         }
         const emptyFallback = url.includes("/col/") ? "[]" : "{}";
         return new Response(emptyFallback, {
@@ -18976,6 +18955,8 @@ export default function App() {
   const [companyData, setCompanyData] = useState<any>(null);
   const isProcurementAllowed = companyData?.procurementAllowed !== undefined ? !!companyData.procurementAllowed : !!companyData?.procurementEnabled;
   const [isLoading, setIsLoading] = useState(true);
+  const [preloadProgress, setPreloadProgress] = useState<number>(0);
+  const [preloadStatus, setPreloadStatus] = useState<string>("Инициализация...");
   const [isAppAdmin, setIsAppAdmin] = useState(false);
   const [showAdminPanel, setShowAdminPanel] = useState(false);
   const [showAdminLogin, setShowAdminLogin] = useState(false);
@@ -19217,6 +19198,176 @@ export default function App() {
   // Removed the auto-redirect to admin panel
   // Users will access it manually using the button in the bottom left menu
 
+  const preloadAllData = async (companyId: string, uid: string, fetchedUserData?: any) => {
+    try {
+      setPreloadProgress(5);
+      setPreloadStatus("Подключение к серверу...");
+
+      // 1. Get Category settings
+      setPreloadStatus("Загрузка категорий...");
+      setPreloadProgress(15);
+      const catRes = await fetch(`/api/db/doc/companies/${companyId}/settings/categories`);
+      if (catRes.ok) {
+        const catData = await catRes.json();
+        let cats = catData.categories || INITIAL_PRODUCT_CATEGORIES;
+        setProductCategories(cats);
+        setCoefficients((prev: any) => ({
+          ...prev,
+          products: catData.coefficients || {},
+        }));
+      }
+
+      // 2. Get Production config
+      setPreloadStatus("Загрузка параметров производства...");
+      setPreloadProgress(30);
+      const prodRes = await fetch(`/api/db/doc/companies/${companyId}/settings/production`);
+      if (prodRes.ok) {
+        const prodData = await prodRes.json();
+        const isContract = ("productionId" in prodData && prodData.productionId) || ("city" in prodData && prodData.city);
+        if (isContract) {
+          setContractConfig(prodData);
+        } else {
+          setOwnProductionConfig((prev: any) => ({
+            ...prev,
+            ...prodData,
+            photos: prodData.photos || prev?.photos || [],
+            specialConditionIds: prodData.specialConditionIds || [],
+            standardCoefficients: prodData.standardCoefficients || {},
+            salonCoefficients: prodData.salonCoefficients || {},
+          }));
+        }
+      }
+
+      // 3. Get General config
+      setPreloadStatus("Загрузка общих настроек...");
+      setPreloadProgress(45);
+      const genRes = await fetch(`/api/db/doc/companies/${companyId}/settings/general`);
+      if (genRes.ok) {
+        const genData = await genRes.json();
+        if (genData.defaultCuttingType) setDefaultCuttingType(genData.defaultCuttingType);
+        if (genData.companyInfo) setCompanyInfo(genData.companyInfo);
+        if (genData.coefficients) setCoefficients(genData.coefficients);
+        if (genData.calcMode) setCalcMode(genData.calcMode);
+        if (genData.trimming !== undefined) setTrimming(genData.trimming);
+        if (genData.hardwareKitPrice !== undefined) setHardwareKitPrice(genData.hardwareKitPrice);
+        if (genData.assemblyPercentage !== undefined) setAssemblyPercentage(genData.assemblyPercentage);
+        if (genData.assemblyPercentages !== undefined) setAssemblyPercentages(genData.assemblyPercentages);
+        if (genData.assemblyIncludes !== undefined) setAssemblyIncludes(genData.assemblyIncludes);
+        if (genData.deliveryTariffs) setDeliveryTariffs(genData.deliveryTariffs);
+        if (genData.mapLink) setMapLink(genData.mapLink);
+        if (genData.catalogMaterials) setCatalogMaterials(genData.catalogMaterials);
+        if (genData.specificationConfig) setSpecificationConfigReal(genData.specificationConfig);
+        if (genData.vat !== undefined) {
+          setCompanyInfo((prev: any) => ({ ...prev, vat: Number(genData.vat) }));
+        }
+        if (genData.productionFormat) setProductionFormat(genData.productionFormat);
+      }
+
+      // 4. Get Global prices
+      setPreloadStatus("Загрузка прайс-листов...");
+      setPreloadProgress(60);
+      const priceRes = await fetch(`/api/db/doc/companies/${companyId}/settings/prices`);
+      if (priceRes.ok) {
+        const priceData = await priceRes.json();
+        if (priceData.prices) {
+          setPrices((currentPrices: any) => {
+            const merged = { ...priceData.prices };
+            if (currentPrices) {
+              Object.keys(currentPrices).forEach((k) => {
+                if (k.startsWith("manual_") || k.startsWith("edgePrice_") || (currentPrices[k] !== undefined && priceData.prices[k] === undefined)) {
+                  merged[k] = currentPrices[k];
+                }
+              });
+              Object.assign(merged, globalPriceBuffer);
+            }
+            return merged;
+          });
+        }
+      }
+
+      // 5. Get Promotions
+      setPreloadStatus("Загрузка акций...");
+      setPreloadProgress(70);
+      const promoRes = await fetch(`/api/db/doc/companies/${companyId}/settings/promotions`);
+      if (promoRes.ok) {
+        const promoData = await promoRes.json();
+        if (Array.isArray(promoData.promotions)) {
+          setPromotions(promoData.promotions);
+        }
+      }
+
+      // 6. Get Employees (For admins / supervisors)
+      setPreloadStatus("Загрузка списка сотрудников...");
+      setPreloadProgress(80);
+      const empRes = await fetch(`/api/db/col/companies/${companyId}/employees`);
+      if (empRes.ok) {
+        const empData = await empRes.json();
+        try {
+          localStorage.setItem(`meb_cache:/api/db/col/companies/${companyId}/employees`, JSON.stringify(empData));
+        } catch (_) {}
+      }
+
+      // 7. Get Products (Owner products)
+      setPreloadStatus("Загрузка каталога товаров...");
+      setPreloadProgress(90);
+      const prodColRes = await fetch(`/api/db/col/companies/${companyId}/products`);
+      if (prodColRes.ok) {
+        const prodColData = await prodColRes.json();
+        const mappedProds = prodColData.map((d: any) => ({
+          id: d.id,
+          ...d.data,
+        }));
+        setOwnProducts(mappedProds);
+      }
+
+      // 8. Load manufacturer products if applicable
+      const mfgId = fetchedUserData?.manufacturerId || companyData?.manufacturerId;
+      if (mfgId) {
+        setPreloadStatus("Загрузка товаров фабрики...");
+        const mfgRes = await fetch(`/api/db/col/companies/${mfgId}/products`);
+        if (mfgRes.ok) {
+          const mfgData = await mfgRes.json();
+          const mappedMfg = mfgData.map((d: any) => ({
+            id: d.id,
+            ...d.data,
+          }));
+          setManufacturerProducts(mappedMfg);
+        }
+      }
+
+      // 9. Sync Projects and Sets
+      setPreloadStatus("Загрузка проектов и комплектов...");
+      setPreloadProgress(98);
+      const projRes = await fetch(`/api/db/col/companies/${companyId}/projects`);
+      if (projRes.ok) {
+        const projData = await projRes.json();
+        const mappedProjs = projData.map((d: any) => ({
+          id: d.id,
+          ...d.data,
+        }));
+        setProjects(mappedProjs);
+      }
+
+      const setsColRes = await fetch(`/api/db/col/companies/${companyId}/sets`);
+      if (setsColRes.ok) {
+        const setsColData = await setsColRes.json();
+        const mappedSets = setsColData.map((d: any) => ({
+          id: d.id,
+          ...d.data,
+          isDeleted: d.data.isDeleted || false,
+          status: d.data.status || "active"
+        }));
+        setProjectSets(mappedSets);
+      }
+
+      setPreloadProgress(100);
+      setPreloadStatus("Синхронизация завершена!");
+      await new Promise(resolve => setTimeout(resolve, 300));
+    } catch (err) {
+      console.error("Preloading error, continuing with fallback:", err);
+    }
+  };
+
   // Auth Persistence and Session Tracking
   useEffect(() => {
     const savedUid = localStorage.getItem('auth_uid');
@@ -19250,9 +19401,10 @@ export default function App() {
             auth.currentUser = { uid: savedUid, email: savedEmail, ...docData };
             
             if (docData.companyId) {
+              let compData: any = null;
               const compRes = await fetch(`/api/db/doc/companies/${docData.companyId}`);
               if (compRes.ok) {
-                const compData = await compRes.json();
+                compData = await compRes.json();
                 setCompanyData({ id: docData.companyId, ...compData });
               }
               const empRes = await fetch(`/api/db/doc/companies/${docData.companyId}/employees/${savedUid}`);
@@ -19267,6 +19419,9 @@ export default function App() {
                   setUserRole(empData.accessLevel);
                 }
               }
+              
+              // Preload all settings and catalog before unlocking the app
+              await preloadAllData(docData.companyId, savedUid, { ...docData, ...compData });
             }
             
             if (docData.isRoot || docData.email === 'lk.ivanbobkin@gmail.com') {
@@ -19397,6 +19552,9 @@ export default function App() {
                setUserRole(empData.accessLevel);
              }
            }
+           
+           // Preload all settings and catalog before unlocking the app
+           await preloadAllData(docData.companyId, authUser.uid, { ...docData });
          }
 
          // Persistence
@@ -19538,6 +19696,12 @@ export default function App() {
       localStorage.removeItem('auth_uid');
       localStorage.removeItem('auth_email');
       localStorage.removeItem('auth_token');
+      localStorage.removeItem('meb_pending_writes');
+      Object.keys(localStorage).forEach((key) => {
+        if (key.startsWith('meb_cache:')) {
+          localStorage.removeItem(key);
+        }
+      });
       auth.currentUser = null;
       setIsAuthenticated(false);
       setUserData(null);
@@ -22516,30 +22680,24 @@ export default function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.4 }}
-            className="flex flex-col items-center gap-3"
+            className="flex flex-col items-center gap-1"
           >
-            <div className="flex gap-1">
-              {[0, 1, 2].map((i) => (
-                <motion.div
-                  key={i}
-                  animate={{
-                    scale: [1, 1.5, 1],
-                    opacity: [0.3, 1, 0.3],
-                  }}
-                  transition={{
-                    duration: 1,
-                    repeat: Infinity,
-                    delay: i * 0.2,
-                  }}
-                  className="w-1.5 h-1.5 bg-indigo-600 rounded-full"
-                />
-              ))}
+            <div className="w-64 bg-gray-100 h-2 rounded-full mt-6 overflow-hidden">
+              <motion.div 
+                className="bg-indigo-600 h-full rounded-full"
+                initial={{ width: "0%" }}
+                animate={{ width: `${preloadProgress}%` }}
+                transition={{ duration: 0.2 }}
+              />
             </div>
-            <p className="text-sm font-bold text-gray-400 uppercase tracking-[0.2em] text-center max-w-xs leading-loose">
-              Синхронизация данных... <br />
-              <span className="text-[10px] text-gray-300">
-                Кэшируем для работы оффлайн
-              </span>
+            <p className="text-sm font-semibold text-indigo-600 mt-3 tracking-wide text-center">
+              {preloadProgress}%
+            </p>
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-[0.15em] text-center max-w-xs mt-1 animate-pulse">
+              {preloadStatus}
+            </p>
+            <p className="text-[10px] text-gray-400 font-medium tracking-wide mt-2 text-center">
+              Кэшируем для работы оффлайн
             </p>
           </motion.div>
         </motion.div>
