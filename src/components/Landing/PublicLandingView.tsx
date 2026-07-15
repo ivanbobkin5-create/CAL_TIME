@@ -179,7 +179,7 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
       .filter(Boolean);
     return Array.from(new Set(brands)) as string[];
   }, [products, selectedCategory]);
-
+  
   // Filter products matching category, search, brands and price
   const filteredProducts = useMemo(() => {
     return products.filter(p => {

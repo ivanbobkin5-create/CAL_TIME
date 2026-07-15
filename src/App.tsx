@@ -658,7 +658,8 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
               data: () => d.data,
               exists: () => true
             })),
-            size: parsed.length
+            size: parsed.length,
+            metadata: { fromCache: true }
           });
         }, 0);
       } else if (!isCol && parsed && typeof parsed === "object") {
@@ -666,7 +667,8 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
           callback({
             exists: () => true,
             data: () => parsed,
-            id: ref.path.split('/').pop()
+            id: ref.path.split('/').pop(),
+            metadata: { fromCache: true }
           });
         }, 0);
       }
@@ -19719,6 +19721,8 @@ export default function App() {
       setCompanyData(null);
       setIsAppAdmin(false);
       setShowAdminPanel(false);
+      setIsPreloaded(false);
+      isSyncedRef.current = false;
     } catch (error) {
       console.error("Logout error:", error);
     }
@@ -20363,7 +20367,8 @@ export default function App() {
           ...doc.data(),
         }));
         console.log("Loaded own products:", products);
-        if (products.length > 0 || !isPreloaded) {
+        const isFromCache = snapshot.metadata?.fromCache;
+        if (products.length > 0 || !isPreloaded || isFromCache) {
           setOwnProducts(products);
         }
       },
@@ -20386,7 +20391,8 @@ export default function App() {
             ...doc.data(),
           }));
           console.log("Loaded manufacturer products:", products);
-          if (products.length > 0 || !isPreloaded) {
+          const isFromCache = snapshot.metadata?.fromCache;
+          if (products.length > 0 || !isPreloaded || isFromCache) {
             setManufacturerProducts(products);
           }
         },
@@ -20753,7 +20759,8 @@ export default function App() {
       qProjects, 
       (snapshot) => {
         const projs = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        if (projs.length > 0 || !isPreloaded) {
+        const isFromCache = snapshot.metadata?.fromCache;
+        if (projs.length > 0 || !isPreloaded || isFromCache) {
           setProjects(projs);
         }
         setIsProjectsLoading(false);
@@ -20768,7 +20775,8 @@ export default function App() {
       qSets, 
       (snapshot) => {
         const setsData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        if (setsData.length > 0 || !isPreloaded) {
+        const isFromCache = snapshot.metadata?.fromCache;
+        if (setsData.length > 0 || !isPreloaded || isFromCache) {
           setProjectSets(setsData);
         }
         setIsSetsLoading(false);
@@ -20783,7 +20791,10 @@ export default function App() {
       collection(db, "companies", companyData.id, "projectSets"),
       (snapshot) => {
         const ordersData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        setProcurementOrders(ordersData);
+        const isFromCache = snapshot.metadata?.fromCache;
+        if (ordersData.length > 0 || !isPreloaded || isFromCache) {
+          setProcurementOrders(ordersData);
+        }
       },
       (error) => console.error("Error syncing procurement orders:", error)
     );
@@ -20792,7 +20803,10 @@ export default function App() {
       collection(db, "companies", companyData.id, "suppliers"),
       (snapshot) => {
         const suppliersData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        setSuppliers(suppliersData);
+        const isFromCache = snapshot.metadata?.fromCache;
+        if (suppliersData.length > 0 || !isPreloaded || isFromCache) {
+          setSuppliers(suppliersData);
+        }
       },
       (error) => console.error("Error syncing suppliers:", error)
     );

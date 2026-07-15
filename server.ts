@@ -44,7 +44,7 @@ async function dbQueryWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 
 
 async function startServer() {
   const app = express();
-  const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+  const PORT = 3000;
 
   app.use(cors());
   app.use(compression());

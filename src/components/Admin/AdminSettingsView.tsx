@@ -6,6 +6,7 @@ function collection(db: any, ...pathParts: string[]) {
   return { path: pathParts.join('/') };
 }
 function onSnapshot(ref: any, callback: (snap: any) => void) {
+  let isFirstLoad = true;
   const fetchData = async () => {
     try {
       if (ref.path.split('/').length % 2 === 0) {
@@ -13,9 +14,9 @@ function onSnapshot(ref: any, callback: (snap: any) => void) {
         const res = await fetch(`/api/db/doc/${ref.path}`);
         if (res.ok) {
           const data = await res.json();
-          callback({ exists: () => true, data: () => data });
+          callback({ exists: () => true, data: () => data, metadata: { fromCache: false } });
         } else {
-          callback({ exists: () => false });
+          callback({ exists: () => false, metadata: { fromCache: false } });
         }
       } else {
         // Collection ref
@@ -28,10 +29,12 @@ function onSnapshot(ref: any, callback: (snap: any) => void) {
               data: () => d.data,
               exists: () => true
             })),
-            size: data.length
+            size: data.length,
+            metadata: { fromCache: false }
           });
         }
       }
+      isFirstLoad = false;
     } catch (e) {
       console.error("Snapshot error:", e);
     }
@@ -158,7 +161,7 @@ export const AdminSettingsView = ({
 
     const unsubscribeEmployees = onSnapshot(collection(db, 'companies', companyId, 'employees'), (snapshot) => {
       const emps = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Employee));
-      setEmployees(emps);
+      setEmployees(prev => (emps.length > 0 || prev.length === 0) ? emps : prev);
     });
 
     const unsubscribeCompany = onSnapshot(doc(db, 'companies', companyId), (docSnap) => {
