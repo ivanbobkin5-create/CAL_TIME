@@ -71,9 +71,17 @@ async function startServer() {
   });
 
   // Public Catalog/Landing Page API
+  // In-memory cache for public company data
+  const publicCompanyCache = new Map<string, { data: any, timestamp: number }>();
+  const PUBLIC_CACHE_TTL = 60 * 1000;
+
   app.get("/api/public/company/:aliasOrId", async (req, res) => {
     try {
       const { aliasOrId } = req.params;
+      const cached = publicCompanyCache.get(aliasOrId);
+      if (cached && (Date.now() - cached.timestamp < PUBLIC_CACHE_TTL)) {
+        return res.json(cached.data);
+      }
       
       res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
       res.setHeader("Pragma", "no-cache");
@@ -114,29 +122,27 @@ async function startServer() {
         return res.status(404).json({ error: "Компания не найдена" });
       }
       
-      const productDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
-        where: { collection: `companies/${companyId}/products` }
-      }));
-      let ownProducts = productDocs.map(d => ({ id: d.docId, ...JSON.parse(d.data) }));
-      
-      let manufacturerProducts: any[] = [];
-      if (companyData.manufacturerId) {
-        const mProductDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+      // Parallelize child data fetching
+      const [productDocs, mProductDocsRes, generalSettingsDoc, pricesDoc] = await Promise.all([
+        dbQueryWithRetry(() => prisma.dbDocument.findMany({
+          where: { collection: `companies/${companyId}/products` }
+        })),
+        companyData.manufacturerId ? dbQueryWithRetry(() => prisma.dbDocument.findMany({
           where: { collection: `companies/${companyData.manufacturerId}/products` }
-        }));
-        manufacturerProducts = mProductDocs.map(d => ({ id: d.docId, ...JSON.parse(d.data) }));
-      }
+        })) : Promise.resolve([]),
+        dbQueryWithRetry(() => prisma.dbDocument.findUnique({
+          where: { path: `companies/${companyId}/settings/general` }
+        })),
+        dbQueryWithRetry(() => prisma.dbDocument.findUnique({
+          where: { path: `companies/${companyId}/settings/prices` }
+        }))
+      ]);
       
+      let ownProducts = productDocs.map(d => ({ id: d.docId, ...JSON.parse(d.data) }));
+      let manufacturerProducts = mProductDocsRes.map(d => ({ id: d.docId, ...JSON.parse(d.data) }));
       let allProducts = [...ownProducts, ...manufacturerProducts];
       
-      const generalSettingsDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({
-        where: { path: `companies/${companyId}/settings/general` }
-      }));
       const generalSettings = generalSettingsDoc ? JSON.parse(generalSettingsDoc.data) : null;
-      
-      const pricesDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({
-        where: { path: `companies/${companyId}/settings/prices` }
-      }));
       const prices = pricesDoc ? JSON.parse(pricesDoc.data) : null;
       
       const visibleCategories = companyData.landingPage?.visibleCategories || [];
@@ -144,7 +150,7 @@ async function startServer() {
         allProducts = allProducts.filter(p => visibleCategories.includes(p.category));
       }
       
-      res.json({
+      const responseData = {
         company: {
           id: companyId,
           name: companyData.name || "",
@@ -156,7 +162,10 @@ async function startServer() {
         products: allProducts,
         generalSettings: generalSettings,
         prices: prices?.prices || {}
-      });
+      };
+      
+      publicCompanyCache.set(aliasOrId, { data: responseData, timestamp: Date.now() });
+      res.json(responseData);
       
     } catch (e) {
       console.error("Error in public company lookup:", e);

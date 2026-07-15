@@ -48,6 +48,7 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
   const [selectedBrands, setSelectedBrands] = useState<string[]>([]);
   const [priceRange, setPriceRange] = useState<{ min: string, max: string }>({ min: "", max: "" });
   const [selectedProductDetail, setSelectedProductDetail] = useState<any | null>(null);
+  const [selectedVariationId, setSelectedVariationId] = useState<string | null>(null);
   
   // Checkout Form state
   const [customerName, setCustomerName] = useState("");
@@ -94,7 +95,19 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
         const data = await res.json();
         
         // Save to cache for next time
-        localStorage.setItem(cacheKey, JSON.stringify(data));
+        try {
+          localStorage.setItem(cacheKey, JSON.stringify(data));
+        } catch (e) {
+          console.warn("Failed to save public landing cache:", e);
+          // If quota exceeded, clear all public landing caches to make room
+          if (e instanceof Error && e.name === 'QuotaExceededError') {
+             Object.keys(localStorage).forEach(key => {
+               if (key.startsWith('meb_public_cache:')) {
+                 localStorage.removeItem(key);
+               }
+             });
+          }
+        }
         
         setCompany(data.company);
         setProducts(data.products || []);
@@ -145,9 +158,18 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
   };
 
   // Calculate retail price for a product
-  const getProductRetailPrice = (product: any): number => {
+  const getProductRetailPrice = (product: any, variationId?: string | null): number => {
     const coeff = getProductCoefficient(product);
-    const basePrice = product.purchasePrice !== undefined ? product.purchasePrice : (product.price || 0);
+    
+    let basePrice = product.purchasePrice !== undefined ? product.purchasePrice : (product.price || 0);
+    
+    if (variationId && product.variations) {
+      const variation = product.variations.find((v: any) => v.id === variationId);
+      if (variation) {
+        basePrice = variation.purchasePrice;
+      }
+    }
+    
     let mainPrice = Math.round(basePrice * coeff);
 
     // If there are required companion products included, add their retail prices as well!
@@ -189,7 +211,11 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
       const matchesSearch = !search || 
         p.name.toLowerCase().includes(searchLower) || 
         (p.article && p.article.toLowerCase().includes(searchLower)) ||
-        (p.description && p.description.toLowerCase().includes(searchLower));
+        (p.description && p.description.toLowerCase().includes(searchLower)) ||
+        (p.variations && Array.isArray(p.variations) && p.variations.some((v: any) => 
+          v.name.toLowerCase().includes(searchLower) || 
+          (v.article && v.article.toLowerCase().includes(searchLower))
+        ));
         
       const matchesBrand = selectedBrands.length === 0 || selectedBrands.includes(p.brand);
       
@@ -202,14 +228,17 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
   }, [products, selectedCategory, search, selectedBrands, priceRange, getProductRetailPrice]);
 
   // Cart operations
-  const addToCart = (product: any) => {
-    const price = getProductRetailPrice(product);
+  const addToCart = (product: any, variationId?: string | null) => {
+    const price = getProductRetailPrice(product, variationId);
+    const cartKey = variationId ? `${product.id}_${variationId}` : product.id;
+    
     setCart(prev => {
-      const existing = prev[product.id];
+      const existing = prev[cartKey];
       return {
         ...prev,
-        [product.id]: {
+        [cartKey]: {
           product,
+          variationId: variationId || undefined,
           qty: (existing?.qty || 0) + 1,
           price
         }
@@ -217,16 +246,17 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
     });
   };
 
-  const removeFromCart = (productId: string) => {
+  const removeFromCart = (productId: string, variationId?: string | null) => {
+    const cartKey = variationId ? `${productId}_${variationId}` : productId;
     setCart(prev => {
-      const existing = prev[productId];
+      const existing = prev[cartKey];
       if (!existing) return prev;
       
       const next = { ...prev };
       if (existing.qty <= 1) {
-        delete next[productId];
+        delete next[cartKey];
       } else {
-        next[productId] = {
+        next[cartKey] = {
           ...existing,
           qty: existing.qty - 1
         };
@@ -235,25 +265,25 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
     });
   };
 
-  const deleteFromCart = (productId: string) => {
+  const deleteFromCart = (cartKey: string) => {
     setCart(prev => {
       const next = { ...prev };
-      delete next[productId];
+      delete next[cartKey];
       return next;
     });
   };
 
-  const updateCartQty = (productId: string, val: number) => {
+  const updateCartQty = (cartKey: string, val: number) => {
     if (val <= 0) {
-      deleteFromCart(productId);
+      deleteFromCart(cartKey);
       return;
     }
     setCart(prev => {
-      const existing = prev[productId];
+      const existing = prev[cartKey];
       if (!existing) return prev;
       return {
         ...prev,
-        [productId]: {
+        [cartKey]: {
           ...existing,
           qty: val
         }
@@ -274,17 +304,21 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
       setSubmittingOrder(true);
       
       // Map cart items for backend saving
-      const cartItems = Object.values(cart).map(item => ({
-        id: item.product.id,
-        name: item.product.name,
-        article: item.product.article || "",
-        category: item.product.category,
-        quantity: item.qty,
-        price: item.price,
-        purchasePrice: item.product.purchasePrice || item.product.price || 0,
-        brand: item.product.brand || "",
-        images: item.product.images || []
-      }));
+      const cartItems = Object.values(cart).map((item: any) => {
+        const variation = item.variationId ? item.product.variations?.find((v: any) => v.id === item.variationId) : null;
+        return {
+          id: item.product.id,
+          name: variation ? `${item.product.name} (${variation.name})` : item.product.name,
+          article: variation?.article || item.product.article || "",
+          category: item.product.category,
+          quantity: item.qty,
+          price: item.price,
+          purchasePrice: variation ? variation.purchasePrice : (item.product.purchasePrice || item.product.price || 0),
+          brand: item.product.brand || "",
+          images: item.product.images || [],
+          variationId: item.variationId || null
+        };
+      });
 
       const res = await fetch(`/api/public/company/${company.id}/order`, {
         method: "POST",
@@ -786,9 +820,9 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
                   <p className="text-xs text-gray-400 max-w-xs leading-relaxed">Выберите понравившиеся товары из каталога и добавьте их в корзину для оформления расчета.</p>
                 </div>
               ) : (
-                Object.values(cart).map(item => (
+                Object.entries(cart).map(([cartKey, item]: [string, any]) => (
                   <div 
-                    key={item.product.id} 
+                    key={cartKey} 
                     className="flex gap-3 p-3 bg-gray-50 rounded-2xl border border-gray-100 relative group"
                   >
                     <div className="w-14 h-14 bg-white rounded-xl overflow-hidden border border-gray-200 flex-shrink-0 flex items-center justify-center">
@@ -808,6 +842,11 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
                       <h4 className="font-bold text-xs text-gray-900 truncate pr-6" title={item.product.name}>
                         {item.product.name}
                       </h4>
+                      {item.variationId && (
+                        <p className="text-[10px] text-blue-600 font-black">
+                          Вариант: {item.product.variations?.find((v: any) => v.id === item.variationId)?.name || item.variationId}
+                        </p>
+                      )}
                       <p className="text-[10px] text-gray-400 font-bold">{item.product.category}</p>
                       
                       <div className="flex items-center justify-between gap-2 mt-2">
@@ -817,14 +856,14 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
 
                         <div className="flex items-center bg-white rounded-xl p-0.5 border border-gray-200">
                           <button
-                            onClick={() => removeFromCart(item.product.id)}
+                            onClick={() => removeFromCart(item.product.id, item.variationId)}
                             className="p-1 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-lg transition-all"
                           >
                             <Minus className="w-3 h-3" />
                           </button>
                           <span className="px-2 font-bold text-xs text-gray-700">{item.qty}</span>
                           <button
-                            onClick={() => addToCart(item.product)}
+                            onClick={() => addToCart(item.product, item.variationId)}
                             className="p-1 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-lg transition-all"
                           >
                             <Plus className="w-3 h-3" />
@@ -834,7 +873,7 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
                     </div>
 
                     <button
-                      onClick={() => deleteFromCart(item.product.id)}
+                      onClick={() => deleteFromCart(cartKey)}
                       className="absolute top-2 right-2 p-1 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all rounded-lg"
                       title="Удалить из корзины"
                     >
@@ -927,12 +966,17 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
       {selectedProductDetail && (() => {
         const product = selectedProductDetail;
         const displayImage = product.images?.[0] || product.image;
-        const itemPrice = getProductRetailPrice(product);
-        const inCartItem = cart[product.id];
+        const itemPrice = getProductRetailPrice(product, selectedVariationId);
+        
+        const cartKey = selectedVariationId ? `${product.id}_${selectedVariationId}` : product.id;
+        const inCartItem = cart[cartKey];
         
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-xs select-none">
-            <div className="absolute inset-0" onClick={() => setSelectedProductDetail(null)} />
+            <div className="absolute inset-0" onClick={() => {
+              setSelectedProductDetail(null);
+              setSelectedVariationId(null);
+            }} />
             
             <div className="relative w-full max-w-2xl bg-white rounded-3xl overflow-hidden shadow-2xl flex flex-col md:flex-row max-h-[90vh] md:max-h-none animate-in scale-in duration-300">
               
@@ -959,19 +1003,22 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
               </div>
 
               {/* Right Column: Info and Buying panel */}
-              <div className="w-full md:w-1/2 p-6 flex flex-col justify-between">
+              <div className="w-full md:w-1/2 p-6 flex flex-col justify-between overflow-y-auto">
                 <div>
                   <div className="flex justify-between items-start gap-4 mb-4">
                     <h3 className="font-bold text-gray-950 text-lg md:text-xl leading-snug">{product.name}</h3>
                     <button 
-                      onClick={() => setSelectedProductDetail(null)}
+                      onClick={() => {
+                        setSelectedProductDetail(null);
+                        setSelectedVariationId(null);
+                      }}
                       className="p-1 hover:bg-gray-100 rounded-xl text-gray-400 hover:text-gray-900 transition-colors"
                     >
                       <X className="w-5 h-5" />
                     </button>
                   </div>
 
-                  <div className="space-y-4 max-h-[300px] overflow-y-auto pr-1">
+                  <div className="space-y-4 pr-1">
                     {product.article && (
                       <span className="inline-block px-2 py-1 bg-gray-100 text-gray-600 text-xs font-bold rounded">
                         Арт: {product.article}
@@ -982,6 +1029,38 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
                       <div>
                         <h5 className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1">Описание</h5>
                         <p className="text-xs text-gray-600 leading-relaxed">{product.description}</p>
+                      </div>
+                    )}
+
+                    {/* Variations Selection */}
+                    {product.variations && product.variations.length > 0 && (
+                      <div className="space-y-2">
+                        <h5 className="text-[10px] font-black text-gray-400 uppercase tracking-wider mb-2">Выберите вариант / размер</h5>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={() => setSelectedVariationId(null)}
+                            className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all ${
+                              selectedVariationId === null 
+                                ? "bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-200" 
+                                : "bg-white border-gray-200 text-gray-600 hover:border-blue-300"
+                            }`}
+                          >
+                            Стандарт
+                          </button>
+                          {product.variations.map((v: any) => (
+                            <button
+                              key={v.id}
+                              onClick={() => setSelectedVariationId(v.id)}
+                              className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all ${
+                                selectedVariationId === v.id 
+                                  ? "bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-200" 
+                                  : "bg-white border-gray-200 text-gray-600 hover:border-blue-300"
+                              }`}
+                            >
+                              {v.name}
+                            </button>
+                          ))}
+                        </div>
                       </div>
                     )}
 
@@ -1046,14 +1125,14 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
                   ) : inCartItem ? (
                     <div className="flex items-center bg-blue-50 rounded-2xl p-1 border border-blue-100">
                       <button
-                        onClick={() => removeFromCart(product.id)}
+                        onClick={() => removeFromCart(product.id, selectedVariationId)}
                         className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-xl transition-all"
                       >
                         <Minus className="w-4 h-4" />
                       </button>
                       <span className="px-3.5 font-bold text-sm text-blue-700">{inCartItem.qty}</span>
                       <button
-                        onClick={() => addToCart(product)}
+                        onClick={() => addToCart(product, selectedVariationId)}
                         className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-xl transition-all"
                       >
                         <Plus className="w-4 h-4" />
@@ -1061,7 +1140,7 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
                     </div>
                   ) : (
                     <button
-                      onClick={() => addToCart(product)}
+                      onClick={() => addToCart(product, selectedVariationId)}
                       className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl text-xs shadow-lg shadow-blue-500/10 transition-all hover:-translate-y-0.5"
                     >
                       Добавить в корзину

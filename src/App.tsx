@@ -643,39 +643,45 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
   const docUrl = `/api/db/doc/${ref.path}`;
   const url = isCol ? colUrl : docUrl;
   
-  const subscriber = { callback, errorCb };
-  
   // 1. Immediately invoke callback with cached data if available (instant 0ms render)
+  let initialCacheDataCalled = false;
   try {
     const cachedStr = localStorage.getItem(`meb_cache:${url}`);
     if (cachedStr) {
       const parsed = JSON.parse(cachedStr);
       if (isCol && Array.isArray(parsed)) {
-        setTimeout(() => {
-          callback({
-            docs: parsed.map((d: any) => ({
-              id: d.id,
-              data: () => d.data,
-              exists: () => true
-            })),
-            size: parsed.length,
-            metadata: { fromCache: true }
-          });
-        }, 0);
+        initialCacheDataCalled = true;
+        callback({
+          docs: parsed.map((d: any) => ({
+            id: d.id,
+            data: () => d.data,
+            exists: () => true
+          })),
+          size: parsed.length,
+          metadata: { fromCache: true }
+        });
       } else if (!isCol && parsed && typeof parsed === "object") {
-        setTimeout(() => {
-          callback({
-            exists: () => true,
-            data: () => parsed,
-            id: ref.path.split('/').pop(),
-            metadata: { fromCache: true }
-          });
-        }, 0);
+        initialCacheDataCalled = true;
+        callback({
+          exists: () => true,
+          data: () => parsed,
+          id: ref.path.split('/').pop(),
+          metadata: { fromCache: true }
+        });
       }
     }
   } catch (e) {
     console.warn("Error loading cached snapshot:", e);
   }
+  
+  let hasNotifiedFresh = false;
+  const safeCallback = (snap: any) => {
+    if (!snap.metadata?.fromCache) hasNotifiedFresh = true;
+    if (snap.metadata?.fromCache && hasNotifiedFresh) return;
+    callback(snap);
+  };
+  
+  const snapSubscriber = { callback: safeCallback, errorCb };
   
   // 2. Register in shared polling registry
   let group = activePollingSubscriptions.get(url);
@@ -692,7 +698,7 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
     activePollingSubscriptions.set(url, group);
   }
   
-  group!.subscribers.add(subscriber);
+  group!.subscribers.add(snapSubscriber);
   
   const fetchGroupSnapshot = async () => {
     if (!group) return;
@@ -780,7 +786,7 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
   
   return () => {
     if (!group) return;
-    group.subscribers.delete(subscriber);
+    group.subscribers.delete(snapSubscriber);
     
     if (typeof window !== "undefined") {
       window.removeEventListener("meb_sync_completed", handleSyncComplete);
@@ -14639,6 +14645,7 @@ const ProductsView = ({
     images: [] as string[],
     article: "",
     analogs: [] as string[],
+    variations: [] as { id: string; name: string; article?: string; purchasePrice: number; [key: string]: any }[],
     vendorArticle: "",
     manufacturerArticle: "",
     vat: companyInfo?.vat !== undefined ? companyInfo.vat : 20,
@@ -14927,6 +14934,7 @@ const ProductsView = ({
       purchasePrice: 0,
       images: [],
       article: "",
+      variations: [],
       analogs: [],
       vendorArticle: "",
       manufacturerArticle: "",
@@ -15022,6 +15030,7 @@ const ProductsView = ({
       dryerWidth: product.dryerWidth || "",
       dryerBase: product.dryerBase || "",
       lightingType: product.lightingType || "",
+      variations: product.variations || [],
     });
     setIsAddingProduct(true);
   };
@@ -15075,6 +15084,7 @@ const ProductsView = ({
       dryerWidth: product.dryerWidth || "",
       dryerBase: product.dryerBase || "",
       lightingType: product.lightingType || "",
+      variations: product.variations || [],
     });
     setIsAddingProduct(true);
   };
@@ -15155,7 +15165,10 @@ const ProductsView = ({
       };
 
       const matchesSearch =
-        checkMatch(p.name) || checkMatch(p.description) || checkMatch(p.article);
+        checkMatch(p.name) || 
+        checkMatch(p.description) || 
+        checkMatch(p.article) ||
+        (p.variations && Array.isArray(p.variations) && p.variations.some((v: any) => checkMatch(v.name) || checkMatch(v.article)));
       const matchesCategory =
         !selectedCategory || p.category === selectedCategory;
 
@@ -16135,6 +16148,101 @@ const ProductsView = ({
                         })}
                       </div>
                     </div>
+                  </div>
+
+                  {/* Variations Section */}
+                  <div className="p-5 bg-purple-50/50 border border-purple-100 rounded-2xl space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-bold text-purple-950">Вариации товара</h4>
+                        <p className="text-[10px] text-purple-700 font-medium">Добавьте варианты (например, разные размеры или цвета) для одной карточки</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewProduct(prev => ({
+                            ...prev,
+                            variations: [
+                              ...(prev.variations || []),
+                              { id: Math.random().toString(36).substr(2, 9), name: "", purchasePrice: 0 }
+                            ]
+                          }));
+                        }}
+                        className="px-3 py-1.5 bg-purple-600 text-white text-[10px] font-black uppercase tracking-wider rounded-lg hover:bg-purple-700 transition-all flex items-center gap-1.5"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        Добавить
+                      </button>
+                    </div>
+
+                    {newProduct.variations && newProduct.variations.length > 0 ? (
+                      <div className="space-y-3">
+                        {newProduct.variations.map((v, idx) => (
+                          <div key={v.id || idx} className="bg-white p-4 rounded-xl border border-purple-100 shadow-sm space-y-3">
+                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
+                              <div className="md:col-span-4">
+                                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Название / Размер</label>
+                                <input
+                                  type="text"
+                                  value={v.name}
+                                  onChange={(e) => {
+                                    const updated = [...(newProduct.variations || [])];
+                                    updated[idx] = { ...v, name: e.target.value };
+                                    setNewProduct(prev => ({ ...prev, variations: updated }));
+                                  }}
+                                  placeholder="Напр: 1000 мм"
+                                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
+                                />
+                              </div>
+                              <div className="md:col-span-3">
+                                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Артикул</label>
+                                <input
+                                  type="text"
+                                  value={v.article || ""}
+                                  onChange={(e) => {
+                                    const updated = [...(newProduct.variations || [])];
+                                    updated[idx] = { ...v, article: e.target.value };
+                                    setNewProduct(prev => ({ ...prev, variations: updated }));
+                                  }}
+                                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
+                                />
+                              </div>
+                              <div className="md:col-span-3">
+                                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Закупка (₽)</label>
+                                <input
+                                  type="number"
+                                  value={v.purchasePrice || ""}
+                                  onChange={(e) => {
+                                    const updated = [...(newProduct.variations || [])];
+                                    updated[idx] = { ...v, purchasePrice: parseFloat(e.target.value) || 0 };
+                                    setNewProduct(prev => ({ ...prev, variations: updated }));
+                                  }}
+                                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
+                                />
+                              </div>
+                              <div className="md:col-span-2 flex justify-end">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setNewProduct(prev => ({
+                                      ...prev,
+                                      variations: (prev.variations || []).filter((_, i) => i !== idx)
+                                    }));
+                                  }}
+                                  className="p-2 hover:bg-red-50 text-red-500 rounded-lg transition-colors"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="py-8 text-center border-2 border-dashed border-purple-100 rounded-2xl bg-purple-50/20">
+                        <span className="text-xs text-purple-400 font-bold">Вариаций пока нет</span>
+                      </div>
+                    )}
                   </div>
 
                   {newProduct.category === "Столешницы и стеновые" && (
@@ -18342,6 +18450,11 @@ const ProductsView = ({
                     <span className="px-2 py-1 bg-white/95 backdrop-blur shadow-sm text-[10px] font-bold uppercase tracking-wider text-blue-600 rounded-lg">
                       {product.category}
                     </span>
+                    {product.variations && product.variations.length > 0 && (
+                      <span className="px-2 py-1 bg-indigo-600 text-white shadow-sm text-[9px] font-black uppercase tracking-wider rounded-lg">
+                        {product.variations.length} вар.
+                      </span>
+                    )}
                   </div>
 
                   {/* Quick Actions */}
@@ -18548,11 +18661,19 @@ const ProductsView = ({
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex flex-col min-w-0">
                         <span className="text-xl font-black text-gray-900 whitespace-nowrap">
+                          {product.variations && product.variations.length > 0 ? "от " : ""}
                           {(() => {
                             const coeff = getProductCoefficient(product, customerType, resolveBrandCoefficient);
-                            const displayPrice = product.purchasePrice
-                              ? Math.round(product.purchasePrice * coeff)
-                              : product.price;
+                            let minPurchasePrice = product.purchasePrice || product.price || 0;
+                            
+                            if (product.variations && product.variations.length > 0) {
+                              const variationPrices = product.variations.map((v: any) => v.purchasePrice).filter((p: any) => p !== undefined);
+                              if (variationPrices.length > 0) {
+                                minPurchasePrice = Math.min(minPurchasePrice, ...variationPrices);
+                              }
+                            }
+
+                            const displayPrice = Math.round(minPurchasePrice * coeff);
                             return (displayPrice ?? 0).toLocaleString();
                           })()} ₽
                         </span>
@@ -21794,10 +21915,16 @@ export default function App() {
         );
       }
 
-      await Promise.all(savePromises);
+      // Non-blocking save to make it feel instant
+      Promise.all(savePromises).then(() => {
+        console.log("Settings background save complete");
+      }).catch(err => {
+        console.error("Settings background save error:", err);
+        showAlert("Ошибка", "Не удалось сохранить некоторые настройки в фоновом режиме.");
+      });
 
       if (!silent) {
-        showAlert("Успех", "Настройки успешно сохранены");
+        showAlert("Успех", "Настройки сохранены");
       }
     } catch (error) {
       handleDbError(
