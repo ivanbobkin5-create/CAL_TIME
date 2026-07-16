@@ -14853,6 +14853,10 @@ const ProductsView = ({
     null,
   );
   const [lightingSubFilter, setLightingSubFilter] = useState<string | null>(null);
+  const [handleTypeFilter, setHandleTypeFilter] = useState<string | null>(null);
+  const [handleLengthFilter, setHandleLengthFilter] = useState<string | null>(null);
+  const [handleColorFilter, setHandleColorFilter] = useState<string | null>(null);
+  const [handleMaterialFilter, setHandleMaterialFilter] = useState<string | null>(null);
   const [selectedStdProductId, setSelectedStdProductId] = useState("");
   const [selectedStdQty, setSelectedStdQty] = useState(1);
   const [stdCategoryFilter, setStdCategoryFilter] = useState("");
@@ -14890,6 +14894,12 @@ const ProductsView = ({
   }, [companyData?.id]);
 
   const [quantities, setQuantities] = useState<Record<string, any>>({});
+  const [variationsAddModal, setVariationsAddModal] = useState<{
+    isOpen: boolean;
+    product: any;
+    quantities: Record<string, number>;
+    selectedIds: Record<string, boolean>;
+  } | null>(null);
   const [isAddingProduct, setIsAddingProduct] = useState(false);
   const [isSavingProduct, setIsSavingProduct] = useState(false);
   const [editingProduct, setEditingProduct] = useState<any>(null);
@@ -15054,6 +15064,10 @@ const ProductsView = ({
     customCoeffDesigner: globalCoefficients?.designer?.products?.[productCategories[0]] ?? 1.4,
     dryerWidth: "",
     dryerBase: "",
+    handleType: "",
+    handleLength: "",
+    handleColor: "",
+    handleMaterial: "",
   });
 
   const availableDryerBrands = ["Boyard", "GTV", "Hettich", "Blum", "Rejs"];
@@ -15105,6 +15119,23 @@ const ProductsView = ({
 
   const handleAdd = (product: any) => {
     const qty = quantities[product.id] === undefined ? 1 : (parseInt(quantities[product.id]) || 1);
+    
+    if (product.variations && product.variations.length > 0) {
+      const initialQuantities: Record<string, number> = {};
+      const initialSelected: Record<string, boolean> = {};
+      product.variations.forEach((v: any, index: number) => {
+        const vId = v.id || String(index);
+        initialQuantities[vId] = qty;
+        initialSelected[vId] = index === 0;
+      });
+      setVariationsAddModal({
+        isOpen: true,
+        product,
+        quantities: initialQuantities,
+        selectedIds: initialSelected
+      });
+      return;
+    }
     
     if (product.requiredProducts && product.requiredProducts.length > 0) {
       const items = product.requiredProducts.map((rp: any) => {
@@ -15330,6 +15361,10 @@ const ProductsView = ({
       dryerBase: "",
       hingeDamping: "",
       lightingType: "",
+      handleType: "",
+      handleLength: "",
+      handleColor: "",
+      handleMaterial: "",
     });
     setEditingProduct(null);
     setIsAddingProduct(false);
@@ -15384,6 +15419,10 @@ const ProductsView = ({
       dryerWidth: product.dryerWidth || "",
       dryerBase: product.dryerBase || "",
       lightingType: product.lightingType || "",
+      handleType: product.handleType || "",
+      handleLength: product.handleLength || "",
+      handleColor: product.handleColor || "",
+      handleMaterial: product.handleMaterial || "",
       variations: product.variations || [],
     });
     setIsAddingProduct(true);
@@ -15438,6 +15477,10 @@ const ProductsView = ({
       dryerWidth: product.dryerWidth || "",
       dryerBase: product.dryerBase || "",
       lightingType: product.lightingType || "",
+      handleType: product.handleType || "",
+      handleLength: product.handleLength || "",
+      handleColor: product.handleColor || "",
+      handleMaterial: product.handleMaterial || "",
       variations: product.variations || [],
     });
     setIsAddingProduct(true);
@@ -15493,7 +15536,8 @@ const ProductsView = ({
   };
 
   const filteredProducts = useMemo(() => {
-    const filtered = catalogProducts.filter((p) => {
+    // Stage 1: Filter catalogProducts by category and status
+    const initialFiltered = catalogProducts.filter((p) => {
       // Исключаем кромочные материалы из товарного каталога
       if (p.category === "Кромочные материалы" || p.category === "Кромка") {
         return false;
@@ -15511,7 +15555,70 @@ const ProductsView = ({
       }
       
       return true; // Show approved products normally
-    }).filter((p) => {
+    });
+
+    const isHandlesSelected = selectedCategory === "Ручки и крючки";
+    const hasAnyHandleFilterActive = !!(
+      handleLengthFilter ||
+      handleColorFilter ||
+      handleMaterialFilter ||
+      handleTypeFilter ||
+      manufacturerFilter
+    );
+
+    let itemsToProcess = initialFiltered;
+
+    // If "Ручки и крючки" category is active and at least one handle filter is selected,
+    // we flatten products that have variations into individual "virtual products" representing those variations
+    if (isHandlesSelected && hasAnyHandleFilterActive) {
+      const expanded: any[] = [];
+      initialFiltered.forEach((p) => {
+        if (p.category === "Ручки и крючки") {
+          if (p.variations && Array.isArray(p.variations) && p.variations.length > 0) {
+            p.variations.forEach((v: any, idx: number) => {
+              const vId = v.id || String(idx);
+              const defaultCoeff = coefficients.products?.[p.category] || 1.5;
+              const coeff = p.useCustomCoeffs && p.customCoeffRetail
+                ? p.customCoeffRetail
+                : defaultCoeff;
+              const vPurchasePrice = v.purchasePrice !== undefined && v.purchasePrice > 0 
+                ? v.purchasePrice 
+                : (p.purchasePrice || 0);
+              const finalPrice = Math.round(vPurchasePrice * coeff);
+
+              expanded.push({
+                ...p,
+                id: `${p.id}_var_${vId}`,
+                parentProductId: p.id,
+                variationId: vId,
+                name: `${p.name} (${v.name || `Вариант ${idx + 1}`})`,
+                purchasePrice: vPurchasePrice,
+                price: finalPrice,
+                article: v.article || p.article || "",
+                vendorArticle: v.vendorArticle || p.vendorArticle || "",
+                manufacturerArticle: v.manufacturerArticle || p.manufacturerArticle || "",
+                isVariation: true,
+                variations: [], // clear variations array inside virtual product to prevent modal popup
+                
+                // Keep handles properties so filter matches them
+                handleLength: v.length || p.handleLength || "",
+                handleColor: v.color || p.handleColor || "",
+                handleMaterial: v.material || p.handleMaterial || "",
+                handleType: p.handleType || "",
+                manufacturer: p.manufacturer || ""
+              });
+            });
+          } else {
+            expanded.push(p);
+          }
+        } else {
+          expanded.push(p);
+        }
+      });
+      itemsToProcess = expanded;
+    }
+
+    const filtered = itemsToProcess.filter((p) => {
       const searchTerms = switchLayout(search);
       const checkMatch = (field: string) => {
         const val = (field || "").toLowerCase();
@@ -15523,6 +15630,7 @@ const ProductsView = ({
         checkMatch(p.description) || 
         checkMatch(p.article) ||
         (p.variations && Array.isArray(p.variations) && p.variations.some((v: any) => checkMatch(v.name) || checkMatch(v.article)));
+      
       const matchesCategory =
         !selectedCategory || p.category === selectedCategory;
 
@@ -15621,6 +15729,38 @@ const ProductsView = ({
         matchesDryerBrand = p.manufacturer === dryerBrandFilter;
       }
 
+      let matchesHandleLength = true;
+      if (isHandlesSelected && handleLengthFilter) {
+        const pLen = String(p.handleLength || "").trim().toLowerCase();
+        const fLen = String(handleLengthFilter).trim().toLowerCase();
+        matchesHandleLength = pLen === fLen || pLen.includes(fLen) || fLen.includes(pLen);
+      }
+
+      let matchesHandleColor = true;
+      if (isHandlesSelected && handleColorFilter) {
+        const pCol = String(p.handleColor || p.color || "").trim().toLowerCase();
+        const fCol = String(handleColorFilter).trim().toLowerCase();
+        matchesHandleColor = pCol === fCol || pCol.includes(fCol) || fCol.includes(pCol);
+      }
+
+      let matchesHandleMaterial = true;
+      if (isHandlesSelected && handleMaterialFilter) {
+        const pMat = String(p.handleMaterial || p.material || "").trim().toLowerCase();
+        const fMat = String(handleMaterialFilter).trim().toLowerCase();
+        matchesHandleMaterial = pMat === fMat || pMat.includes(fMat) || fMat.includes(pMat);
+      }
+
+      let matchesHandleType = true;
+      if (isHandlesSelected && handleTypeFilter) {
+        const pType = String(p.handleType || "").trim().toLowerCase();
+        const fType = String(handleTypeFilter).trim().toLowerCase();
+        matchesHandleType = pType === fType;
+      }
+
+      if (isHandlesSelected && manufacturerFilter) {
+        matchesManufacturer = p.manufacturer === manufacturerFilter;
+      }
+
       return (
         matchesSearch &&
         matchesCategory &&
@@ -15638,7 +15778,11 @@ const ProductsView = ({
         matchesModuleType &&
         matchesDryerWidth &&
         matchesDryerBase &&
-        matchesDryerBrand
+        matchesDryerBrand &&
+        matchesHandleLength &&
+        matchesHandleColor &&
+        matchesHandleMaterial &&
+        matchesHandleType
       );
     });
 
@@ -15677,7 +15821,76 @@ const ProductsView = ({
     dryerWidthFilter,
     dryerBaseFilter,
     dryerBrandFilter,
+    handleTypeFilter,
+    handleLengthFilter,
+    handleColorFilter,
+    handleMaterialFilter,
+    coefficients,
   ]);
+
+  const handleProductsInCatalog = useMemo(() => {
+    return catalogProducts.filter(p => p.category === "Ручки и крючки");
+  }, [catalogProducts]);
+
+  const availableLengths = useMemo(() => {
+    const set = new Set<string>();
+    handleProductsInCatalog.forEach(p => {
+      if (p.handleLength) set.add(String(p.handleLength).trim());
+      if (p.variations && Array.isArray(p.variations)) {
+        p.variations.forEach((v: any) => {
+          if (v.length) set.add(String(v.length).trim());
+        });
+      }
+    });
+    return Array.from(set).sort((a, b) => {
+      const numA = parseInt(a);
+      const numB = parseInt(b);
+      if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+      return a.localeCompare(b);
+    });
+  }, [handleProductsInCatalog]);
+
+  const availableColors = useMemo(() => {
+    const set = new Set<string>();
+    handleProductsInCatalog.forEach(p => {
+      if (p.handleColor) set.add(String(p.handleColor).trim());
+      if (p.variations && Array.isArray(p.variations)) {
+        p.variations.forEach((v: any) => {
+          if (v.color) set.add(String(v.color).trim());
+        });
+      }
+    });
+    return Array.from(set).sort();
+  }, [handleProductsInCatalog]);
+
+  const availableMaterials = useMemo(() => {
+    const set = new Set<string>();
+    handleProductsInCatalog.forEach(p => {
+      if (p.handleMaterial) set.add(String(p.handleMaterial).trim());
+      if (p.variations && Array.isArray(p.variations)) {
+        p.variations.forEach((v: any) => {
+          if (v.material) set.add(String(v.material).trim());
+        });
+      }
+    });
+    return Array.from(set).sort();
+  }, [handleProductsInCatalog]);
+
+  const availableTypes = useMemo(() => {
+    const set = new Set<string>(["Врезные", "Накладные", "Кнопка", "Профильная", "Рейлинговая", "Скоба", "Торцевая", "GOLA"]);
+    handleProductsInCatalog.forEach(p => {
+      if (p.handleType) set.add(String(p.handleType).trim());
+    });
+    return Array.from(set).sort();
+  }, [handleProductsInCatalog]);
+
+  const availableManufacturers = useMemo(() => {
+    const set = new Set<string>();
+    handleProductsInCatalog.forEach(p => {
+      if (p.manufacturer) set.add(String(p.manufacturer).trim());
+    });
+    return Array.from(set).sort();
+  }, [handleProductsInCatalog]);
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -16297,6 +16510,108 @@ const ProductsView = ({
         </div>
       )}
 
+      {selectedCategory === "Ручки и крючки" && (
+        <div className="flex flex-wrap items-center gap-4 mb-6 p-4 bg-purple-50/50 rounded-2xl border border-purple-100 animate-in fade-in slide-in-from-top-2 text-xs">
+          <div className="flex items-center gap-1.5 text-purple-700">
+            <Layers className="w-4 h-4 flex-shrink-0" />
+            <span className="text-[10px] font-black uppercase tracking-widest">
+              Фильтры ручек:
+            </span>
+          </div>
+
+          {/* Тип ручки */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-gray-500 font-bold">Тип:</span>
+            <select
+              value={handleTypeFilter || ""}
+              onChange={(e) => setHandleTypeFilter(e.target.value || null)}
+              className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer shadow-sm text-xs min-w-[120px]"
+            >
+              <option value="">Все типы</option>
+              {availableTypes.map((t) => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Длина */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-gray-500 font-bold">Длина:</span>
+            <select
+              value={handleLengthFilter || ""}
+              onChange={(e) => setHandleLengthFilter(e.target.value || null)}
+              className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer shadow-sm text-xs min-w-[100px]"
+            >
+              <option value="">Все длины</option>
+              {availableLengths.map((l) => (
+                <option key={l} value={l}>{l}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Цвет */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-gray-500 font-bold">Цвет:</span>
+            <select
+              value={handleColorFilter || ""}
+              onChange={(e) => setHandleColorFilter(e.target.value || null)}
+              className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer shadow-sm text-xs min-w-[100px]"
+            >
+              <option value="">Все цвета</option>
+              {availableColors.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Материал */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-gray-500 font-bold">Материал:</span>
+            <select
+              value={handleMaterialFilter || ""}
+              onChange={(e) => setHandleMaterialFilter(e.target.value || null)}
+              className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer shadow-sm text-xs min-w-[110px]"
+            >
+              <option value="">Все материалы</option>
+              {availableMaterials.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Производитель */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-gray-500 font-bold">Бренд:</span>
+            <select
+              value={manufacturerFilter || ""}
+              onChange={(e) => setManufacturerFilter(e.target.value || null)}
+              className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer shadow-sm text-xs min-w-[120px]"
+            >
+              <option value="">Все бренды</option>
+              {availableManufacturers.map((m) => (
+                <option key={m} value={m}>{m}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Сбросить все */}
+          {(handleTypeFilter || handleLengthFilter || handleColorFilter || handleMaterialFilter || manufacturerFilter) && (
+            <button
+              onClick={() => {
+                setHandleTypeFilter(null);
+                setHandleLengthFilter(null);
+                setHandleColorFilter(null);
+                setHandleMaterialFilter(null);
+                setManufacturerFilter(null);
+              }}
+              className="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 font-bold rounded-xl transition-all ml-auto cursor-pointer"
+            >
+              Сбросить фильтры
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Product Modal */}
       {isAddingProduct && (
         <div className="fixed inset-0 bg-black/50 z-[110] flex items-center justify-center p-4 backdrop-blur-sm">
@@ -16514,11 +16829,46 @@ const ProductsView = ({
                       <button
                         type="button"
                         onClick={() => {
+                          const hasMainArticles = newProduct.article || newProduct.vendorArticle || newProduct.manufacturerArticle;
+                          
+                          if (!newProduct.variations || newProduct.variations.length === 0) {
+                            if (hasMainArticles) {
+                              setNewProduct(prev => ({
+                                ...prev,
+                                article: "",
+                                vendorArticle: "",
+                                manufacturerArticle: "",
+                                variations: [
+                                  {
+                                    id: Math.random().toString(36).substr(2, 9),
+                                    name: "Вариант 1",
+                                    article: prev.article || "",
+                                    vendorArticle: prev.vendorArticle || "",
+                                    manufacturerArticle: prev.manufacturerArticle || "",
+                                    purchasePrice: prev.purchasePrice || 0
+                                  }
+                                ]
+                              }));
+                              showAlert(
+                                "Артикулы перенесены",
+                                "Артикул, артикул поставщика и артикул производителя перенесены во вновь созданную вариацию. Основная карточка товара теперь стала общей."
+                              );
+                              return;
+                            }
+                          }
+                          
                           setNewProduct(prev => ({
                             ...prev,
                             variations: [
                               ...(prev.variations || []),
-                              { id: Math.random().toString(36).substr(2, 9), name: "", purchasePrice: 0 }
+                              {
+                                id: Math.random().toString(36).substr(2, 9),
+                                name: "",
+                                article: "",
+                                vendorArticle: "",
+                                manufacturerArticle: "",
+                                purchasePrice: 0
+                              }
                             ]
                           }));
                         }}
@@ -16534,7 +16884,7 @@ const ProductsView = ({
                         {newProduct.variations.map((v, idx) => (
                           <div key={v.id || idx} className="bg-white p-4 rounded-xl border border-purple-100 shadow-sm space-y-3">
                             <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                              <div className="md:col-span-4">
+                              <div className="md:col-span-3">
                                 <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Название / Размер</label>
                                 <input
                                   type="text"
@@ -16548,7 +16898,7 @@ const ProductsView = ({
                                   className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
                                 />
                               </div>
-                              <div className="md:col-span-3">
+                              <div className="md:col-span-2">
                                 <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Артикул</label>
                                 <input
                                   type="text"
@@ -16561,7 +16911,33 @@ const ProductsView = ({
                                   className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
                                 />
                               </div>
-                              <div className="md:col-span-3">
+                              <div className="md:col-span-2">
+                                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Арт. поставщика</label>
+                                <input
+                                  type="text"
+                                  value={v.vendorArticle || ""}
+                                  onChange={(e) => {
+                                    const updated = [...(newProduct.variations || [])];
+                                    updated[idx] = { ...v, vendorArticle: e.target.value };
+                                    setNewProduct(prev => ({ ...prev, variations: updated }));
+                                  }}
+                                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
+                                />
+                              </div>
+                              <div className="md:col-span-2">
+                                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Арт. производит.</label>
+                                <input
+                                  type="text"
+                                  value={v.manufacturerArticle || ""}
+                                  onChange={(e) => {
+                                    const updated = [...(newProduct.variations || [])];
+                                    updated[idx] = { ...v, manufacturerArticle: e.target.value };
+                                    setNewProduct(prev => ({ ...prev, variations: updated }));
+                                  }}
+                                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
+                                />
+                              </div>
+                              <div className="md:col-span-2">
                                 <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Закупка (₽)</label>
                                 <input
                                   type="number"
@@ -16574,7 +16950,7 @@ const ProductsView = ({
                                   className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
                                 />
                               </div>
-                              <div className="md:col-span-2 flex justify-end">
+                              <div className="md:col-span-1 flex justify-end">
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -16589,6 +16965,53 @@ const ProductsView = ({
                                 </button>
                               </div>
                             </div>
+
+                            {newProduct.category === "Ручки и крючки" && (
+                              <div className="grid grid-cols-3 gap-3 pt-3 border-t border-purple-100/50">
+                                <div>
+                                  <label className="block text-[10px] font-black uppercase text-purple-600 mb-1">Длина (мм) для вариации</label>
+                                  <input
+                                    type="text"
+                                    value={v.length || ""}
+                                    onChange={(e) => {
+                                      const updated = [...(newProduct.variations || [])];
+                                      updated[idx] = { ...v, length: e.target.value };
+                                      setNewProduct(prev => ({ ...prev, variations: updated }));
+                                    }}
+                                    placeholder="Напр: 96"
+                                    className="w-full px-3 py-2 text-xs border border-purple-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold bg-purple-50/10 text-purple-950"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-black uppercase text-purple-600 mb-1">Цвет для вариации</label>
+                                  <input
+                                    type="text"
+                                    value={v.color || ""}
+                                    onChange={(e) => {
+                                      const updated = [...(newProduct.variations || [])];
+                                      updated[idx] = { ...v, color: e.target.value };
+                                      setNewProduct(prev => ({ ...prev, variations: updated }));
+                                    }}
+                                    placeholder="Напр: Золото"
+                                    className="w-full px-3 py-2 text-xs border border-purple-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold bg-purple-50/10 text-purple-950"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] font-black uppercase text-purple-600 mb-1">Материал для вариации</label>
+                                  <input
+                                    type="text"
+                                    value={v.material || ""}
+                                    onChange={(e) => {
+                                      const updated = [...(newProduct.variations || [])];
+                                      updated[idx] = { ...v, material: e.target.value };
+                                      setNewProduct(prev => ({ ...prev, variations: updated }));
+                                    }}
+                                    placeholder="Напр: Металл"
+                                    className="w-full px-3 py-2 text-xs border border-purple-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold bg-purple-50/10 text-purple-950"
+                                  />
+                                </div>
+                              </div>
+                            )}
                           </div>
                         ))}
                       </div>
@@ -17885,6 +18308,112 @@ const ProductsView = ({
                     </div>
                   )}
 
+                  {newProduct.category === "Ручки и крючки" && (
+                    <div className="space-y-4 p-5 bg-purple-50/40 border border-purple-100 rounded-2xl animate-in slide-in-from-top-2">
+                      <h4 className="text-sm font-bold text-purple-950 flex items-center gap-1.5 border-b border-purple-100 pb-2">
+                        <Sparkles className="w-4 h-4 text-purple-600" />
+                        Спецификация ручки
+                      </h4>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-2">
+                            Тип ручки
+                          </label>
+                          <select
+                            value={newProduct.handleType || ""}
+                            onChange={(e) =>
+                              setNewProduct((prev) => ({
+                                ...prev,
+                                handleType: e.target.value,
+                              }))
+                            }
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                          >
+                            <option value="">Выберите тип</option>
+                            {["Врезные", "Накладные", "Кнопка", "Профильная", "Рейлинговая", "Скоба", "Торцевая", "GOLA"].map((t) => (
+                              <option key={t} value={t}>
+                                {t}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-2">
+                            Длина / Размер (мм)
+                          </label>
+                          <input
+                            type="text"
+                            value={newProduct.handleLength || ""}
+                            onChange={(e) =>
+                              setNewProduct((prev) => ({
+                                ...prev,
+                                handleLength: e.target.value,
+                              }))
+                            }
+                            placeholder="Например: 128"
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-2">
+                            Цвет
+                          </label>
+                          <input
+                            type="text"
+                            value={newProduct.handleColor || ""}
+                            onChange={(e) =>
+                              setNewProduct((prev) => ({
+                                ...prev,
+                                handleColor: e.target.value,
+                              }))
+                            }
+                            placeholder="Например: Черный матовый"
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-2">
+                            Материал
+                          </label>
+                          <input
+                            type="text"
+                            value={newProduct.handleMaterial || ""}
+                            onChange={(e) =>
+                              setNewProduct((prev) => ({
+                                ...prev,
+                                handleMaterial: e.target.value,
+                              }))
+                            }
+                            placeholder="Например: Металл (ЦАМ)"
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-2">
+                          Бренд / Производитель
+                        </label>
+                        <input
+                          type="text"
+                          value={newProduct.manufacturer || ""}
+                          onChange={(e) =>
+                            setNewProduct((prev) => ({
+                              ...prev,
+                              manufacturer: e.target.value,
+                            }))
+                          }
+                          placeholder="Например: Brass, Boyard, GTV"
+                          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                        />
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 gap-4">
                     <div>
                       <label className="block text-sm font-bold text-gray-700 mb-2">
@@ -18576,6 +19105,233 @@ const ProductsView = ({
 
 
 
+      {variationsAddModal && variationsAddModal.isOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[120] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-xl rounded-[28px] shadow-2xl p-6 flex flex-col space-y-5 max-h-[90vh] overflow-hidden">
+            <div>
+              <div className="flex items-center gap-2 mb-1.5 text-purple-600">
+                <Layers className="w-5 h-5 flex-shrink-0" />
+                <h3 className="text-lg font-extrabold text-gray-900">
+                  Выбор вариации товара
+                </h3>
+              </div>
+              <p className="text-xs text-gray-500 leading-normal">
+                Выберите один или несколько вариантов товара <strong className="text-gray-800">«{variationsAddModal.product.name}»</strong> для добавления в проект и укажите их количество:
+              </p>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2 p-1.5 bg-gray-50 rounded-2xl border border-gray-100">
+              {variationsAddModal.product.variations.map((v: any, idx: number) => {
+                const vId = v.id || String(idx);
+                const isSelected = !!variationsAddModal.selectedIds[vId];
+                const qty = variationsAddModal.quantities[vId] || 1;
+                
+                // Calculate selling price
+                const defaultCoeff = coefficients.products?.[variationsAddModal.product.category] || 1.5;
+                const coeff = variationsAddModal.product.useCustomCoeffs && variationsAddModal.product.customCoeffRetail
+                  ? variationsAddModal.product.customCoeffRetail
+                  : defaultCoeff;
+                const vPurchasePrice = v.purchasePrice !== undefined && v.purchasePrice > 0 
+                  ? v.purchasePrice 
+                  : (variationsAddModal.product.purchasePrice || 0);
+                const finalPrice = Math.round(vPurchasePrice * coeff);
+
+                return (
+                  <div 
+                    key={vId} 
+                    onClick={() => {
+                      setVariationsAddModal(prev => {
+                        if (!prev) return prev;
+                        const nextSelected = { ...prev.selectedIds };
+                        nextSelected[vId] = !nextSelected[vId];
+                        return { ...prev, selectedIds: nextSelected };
+                      });
+                    }}
+                    className={cn(
+                      "p-4 rounded-xl border transition-all cursor-pointer flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-sm select-none",
+                      isSelected 
+                        ? "bg-purple-50/50 border-purple-200 ring-1 ring-purple-200" 
+                        : "bg-white border-gray-100 hover:border-gray-200"
+                    )}
+                  >
+                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                      <div className="pt-0.5" onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => {
+                            setVariationsAddModal(prev => {
+                              if (!prev) return prev;
+                              const nextSelected = { ...prev.selectedIds };
+                              nextSelected[vId] = !nextSelected[vId];
+                              return { ...prev, selectedIds: nextSelected };
+                            });
+                          }}
+                          className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer"
+                        />
+                      </div>
+                      <div className="min-w-0">
+                        <strong className="text-gray-900 block text-sm font-bold truncate">
+                          {v.name || `Вариант ${idx + 1}`}
+                        </strong>
+                        <div className="flex flex-wrap gap-x-3 gap-y-1 mt-1 text-[11px] text-gray-500">
+                          {v.article && (
+                            <span>Арт: <strong className="text-gray-700">{v.article}</strong></span>
+                          )}
+                          {v.vendorArticle && (
+                            <span>Пост: <strong className="text-gray-700">{v.vendorArticle}</strong></span>
+                          )}
+                          {v.manufacturerArticle && (
+                            <span>Произв: <strong className="text-gray-700">{v.manufacturerArticle}</strong></span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between sm:justify-end gap-4 flex-shrink-0" onClick={(e) => e.stopPropagation()}>
+                      <div className="text-right">
+                        <span className="text-[10px] text-gray-400 block uppercase font-black">Цена</span>
+                        <strong className="text-purple-700 text-sm font-extrabold block">
+                          {finalPrice.toLocaleString()} ₽
+                        </strong>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 bg-gray-100 p-1 rounded-xl">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setVariationsAddModal(prev => {
+                              if (!prev) return prev;
+                              const nextQuantities = { ...prev.quantities };
+                              nextQuantities[vId] = Math.max(1, (nextQuantities[vId] || 1) - 1);
+                              return { ...prev, quantities: nextQuantities };
+                            });
+                          }}
+                          disabled={!isSelected}
+                          className="p-1 hover:bg-white rounded-lg text-gray-500 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Minus className="w-3.5 h-3.5" />
+                        </button>
+                        <input
+                          type="number"
+                          min="1"
+                          value={qty}
+                          disabled={!isSelected}
+                          onChange={(e) => {
+                            const val = parseInt(e.target.value) || 1;
+                            setVariationsAddModal(prev => {
+                              if (!prev) return prev;
+                              const nextQuantities = { ...prev.quantities };
+                              nextQuantities[vId] = Math.max(1, val);
+                              return { ...prev, quantities: nextQuantities };
+                            });
+                          }}
+                          className="w-10 text-center font-black text-xs bg-transparent outline-none disabled:text-gray-400"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setVariationsAddModal(prev => {
+                              if (!prev) return prev;
+                              const nextQuantities = { ...prev.quantities };
+                              nextQuantities[vId] = (nextQuantities[vId] || 1) + 1;
+                              return { ...prev, quantities: nextQuantities };
+                            });
+                          }}
+                          disabled={!isSelected}
+                          className="p-1 hover:bg-white rounded-lg text-gray-500 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div className="flex items-center justify-between pt-2 border-t border-gray-50 w-full gap-3">
+              <button
+                type="button"
+                onClick={() => setVariationsAddModal(null)}
+                className="px-5 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition-colors"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const selectedCount = Object.values(variationsAddModal.selectedIds).filter(Boolean).length;
+                  if (selectedCount === 0) {
+                    showAlert("Внимание", "Пожалуйста, выберите хотя бы одну вариацию для добавления.");
+                    return;
+                  }
+
+                  variationsAddModal.product.variations.forEach((v: any, idx: number) => {
+                    const vId = v.id || String(idx);
+                    if (variationsAddModal.selectedIds[vId]) {
+                      const qty = variationsAddModal.quantities[vId] || 1;
+                      
+                      // Calculate selling price
+                      const defaultCoeff = coefficients.products?.[variationsAddModal.product.category] || 1.5;
+                      const coeff = variationsAddModal.product.useCustomCoeffs && variationsAddModal.product.customCoeffRetail
+                        ? variationsAddModal.product.customCoeffRetail
+                        : defaultCoeff;
+                      const vPurchasePrice = v.purchasePrice !== undefined && v.purchasePrice > 0 
+                        ? v.purchasePrice 
+                        : (variationsAddModal.product.purchasePrice || 0);
+                      const finalPrice = Math.round(vPurchasePrice * coeff);
+
+                      const variationProduct = {
+                        ...variationsAddModal.product,
+                        id: `${variationsAddModal.product.id}_var_${vId}`,
+                        parentProductId: variationsAddModal.product.id,
+                        variationId: vId,
+                        name: `${variationsAddModal.product.name} (${v.name || `Вариант ${idx + 1}`})`,
+                        purchasePrice: vPurchasePrice,
+                        price: finalPrice,
+                        article: v.article || variationsAddModal.product.article || "",
+                        vendorArticle: v.vendorArticle || variationsAddModal.product.vendorArticle || "",
+                        manufacturerArticle: v.manufacturerArticle || variationsAddModal.product.manufacturerArticle || "",
+                        isVariation: true,
+                        variations: [] // clear variations inside the added product instance to avoid recursion
+                      };
+
+                      // Check for requiredProducts in the variation's parent product
+                      if (variationProduct.requiredProducts && variationProduct.requiredProducts.length > 0) {
+                        onAddProduct(variationProduct, qty);
+                        variationProduct.requiredProducts.forEach((rp: any) => {
+                          const cp = catalogProducts.find((item: any) => String(item.id) === String(rp.id));
+                          if (cp) {
+                            onAddProduct({
+                              ...cp,
+                              parentCatalogId: variationProduct.id,
+                              qtyPerParent: rp.qty || 1,
+                            }, (rp.qty || 1) * qty);
+                          }
+                        });
+                      } else {
+                        onAddProduct(variationProduct, qty);
+                      }
+                    }
+                  });
+
+                  setQuantities((prev) => ({ ...prev, [variationsAddModal.product.id]: 1 }));
+                  setVariationsAddModal(null);
+                  showAlert("Успех", "Выбранные вариации добавлены в проект!");
+                }}
+                className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-purple-100 flex items-center gap-1.5"
+              >
+                <ShoppingBag className="w-3.5 h-3.5" />
+                Добавить в проект
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+
       {requiredProductsModal && requiredProductsModal.isOpen && (
         <div className="fixed inset-0 bg-black/60 z-[120] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-lg rounded-[28px] shadow-2xl p-6 flex flex-col space-y-5 max-h-[90vh] overflow-hidden">
@@ -18935,6 +19691,35 @@ const ProductsView = ({
                           )}
                         </div>
                       )}
+                    {product.category === "Ручки и крючки" && (
+                      <div className="flex flex-wrap gap-1.5 mb-3">
+                        {product.handleType && (
+                          <span className="px-1.5 py-0.5 bg-purple-50 text-purple-700 text-[10px] font-bold rounded border border-purple-100">
+                            Тип: {product.handleType}
+                          </span>
+                        )}
+                        {product.handleLength && (
+                          <span className="px-1.5 py-0.5 bg-blue-50 text-blue-600 text-[10px] font-bold rounded border border-blue-100">
+                            Длина: {product.handleLength}
+                          </span>
+                        )}
+                        {product.handleColor && (
+                          <span className="px-1.5 py-0.5 bg-pink-50 text-pink-600 text-[10px] font-bold rounded border border-pink-100">
+                            Цвет: {product.handleColor}
+                          </span>
+                        )}
+                        {product.handleMaterial && (
+                          <span className="px-1.5 py-0.5 bg-teal-50 text-teal-600 text-[10px] font-bold rounded border border-teal-100">
+                            Мат: {product.handleMaterial}
+                          </span>
+                        )}
+                        {product.manufacturer && (
+                          <span className="px-1.5 py-0.5 bg-gray-50 text-gray-600 text-[10px] font-bold rounded border border-gray-100">
+                            Бренд: {product.manufacturer}
+                          </span>
+                        )}
+                      </div>
+                    )}
                     {product.category === "Столешницы и стеновые" && (
                       <div className="flex flex-wrap gap-1.5 mb-3">
                         {product.wtManufacturer && (
