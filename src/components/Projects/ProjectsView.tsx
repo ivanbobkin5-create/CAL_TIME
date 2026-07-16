@@ -450,15 +450,16 @@ export const ProjectsView = ({
 
   const myProjects = useMemo(() => {
     const baseProjects = (() => {
-        const isAdminOrSupervisor = 
+        const isManagerOrHigher = 
           userRole === "admin" || 
           userRole === "supervisor" || 
+          userRole === "manager" ||
           companyData?.ownerUid === userId;
 
-        if (!userRole || isAdminOrSupervisor) {
+        if (!userRole || isManagerOrHigher) {
           return projects;
         }
-        // Employees, managers, and other roles can only see projects they created
+        // Employees, workers, and other roles can only see projects they created
         return projects.filter((p) => p.createdBy === userId);
     })();
     return baseProjects.filter(p => !deletedProjects.has(p.id) && !p.isDeleted && p.status !== "deleted");

@@ -25,12 +25,10 @@ async function dbQueryWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 
       return await fn();
     } catch (err: any) {
       lastErr = err;
-      const isKnownRequest = err?.name === 'PrismaClientKnownRequestError';
-      const isInitError = err?.name === 'PrismaClientInitializationError';
-      const isRustPanic = err?.name === 'PrismaClientRustPanicError';
-      const isConnectionError = isKnownRequest || isInitError || isRustPanic || String(err).includes("Can't reach database") || String(err).includes("Connection") || String(err).includes("closed") || String(err).includes("socket");
+      const isValidationError = err?.name === 'PrismaClientValidationError';
+      const shouldRetry = !isValidationError;
       
-      if (isConnectionError && attempt < retries) {
+      if (shouldRetry && attempt < retries) {
         console.warn(`[DB RETRY] Database query failed (attempt ${attempt}/${retries}). Retrying in ${delayMs}ms... Error:`, err?.message || err);
         await new Promise(resolve => setTimeout(resolve, delayMs));
         delayMs *= 2; // exponential backoff

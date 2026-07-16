@@ -131,6 +131,28 @@ import {
 // --- START OF OFFLINE CACHE AND SYNC ENGINE ---
 const originalFetch = window.fetch;
 
+const safeSetLocalStorage = (key: string, value: string) => {
+  try {
+    localStorage.setItem(key, value);
+  } catch (e: any) {
+    console.warn("Storage quota exceeded or error writing to localStorage:", e);
+    try {
+      const keys: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith("meb_cache:")) {
+          keys.push(k);
+        }
+      }
+      // Remove up to 20 items to free up space
+      keys.slice(0, Math.min(keys.length, 20)).forEach(k => localStorage.removeItem(k));
+      localStorage.setItem(key, value);
+    } catch (retryErr) {
+      console.error("Failed to write to localStorage even after cleanup:", retryErr);
+    }
+  }
+};
+
 function updateLocalCache(url: string, method: string, bodyStr: string | null) {
   try {
     const isDoc = url.includes("/api/db/doc/");
@@ -173,7 +195,7 @@ function updateLocalCache(url: string, method: string, bodyStr: string | null) {
             if (Array.isArray(colData)) {
               const filtered = colData.filter((item: any) => item.id !== docId);
               try {
-                localStorage.setItem(`meb_cache:${colUrl}`, JSON.stringify(filtered));
+                safeSetLocalStorage(`meb_cache:${colUrl}`, JSON.stringify(filtered));
               } catch (_) {}
             }
           } catch (_) {}
@@ -195,7 +217,7 @@ function updateLocalCache(url: string, method: string, bodyStr: string | null) {
         }
         
         try {
-          localStorage.setItem(`meb_cache:${docUrl}`, JSON.stringify(updatedDoc));
+          safeSetLocalStorage(`meb_cache:${docUrl}`, JSON.stringify(updatedDoc));
         } catch (_) {}
         
         const cachedColStr = localStorage.getItem(`meb_cache:${colUrl}`);
@@ -217,7 +239,7 @@ function updateLocalCache(url: string, method: string, bodyStr: string | null) {
         }
         
         try {
-          localStorage.setItem(`meb_cache:${colUrl}`, JSON.stringify(colData));
+          safeSetLocalStorage(`meb_cache:${colUrl}`, JSON.stringify(colData));
         } catch (_) {}
       }
     }
@@ -430,7 +452,7 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
               parsed = applyPendingWrites(url, parsed);
               const processedText = JSON.stringify(parsed);
               try {
-                localStorage.setItem(`meb_cache:${url}`, processedText);
+                safeSetLocalStorage(`meb_cache:${url}`, processedText);
               } catch (_) {}
               
               return new Response(processedText, {
@@ -723,7 +745,7 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
         
         group.lastFetchedText = text;
         try {
-          localStorage.setItem(`meb_cache:${url}`, text);
+          safeSetLocalStorage(`meb_cache:${url}`, text);
         } catch (_) {}
         
         // Notify all subscribers of the collection or document
@@ -19339,162 +19361,163 @@ export default function App() {
 
   const preloadAllData = async (companyId: string, uid: string, fetchedUserData?: any) => {
     try {
-      // Parallel fetch for initial data
-      setPreloadStatus("Загрузка данных...");
-      setPreloadProgress(50);
+      setPreloadStatus("Инициализация...");
+      setPreloadProgress(10);
+
+      // 1. Immediate cache restoration for instant UI response
+      const cacheKeys = [
+        `meb_cache:/api/db/doc/companies/${companyId}/settings/categories`,
+        `meb_cache:/api/db/doc/companies/${companyId}/settings/production`,
+        `meb_cache:/api/db/doc/companies/${companyId}/settings/general`,
+        `meb_cache:/api/db/doc/companies/${companyId}/settings/prices`,
+        `meb_cache:/api/db/doc/companies/${companyId}/settings/promotions`,
+        `meb_cache:/api/db/col/companies/${companyId}/employees`,
+        `meb_cache:/api/db/col/companies/${companyId}/products`,
+        `meb_cache:/api/db/col/companies/${companyId}/projects`,
+        `meb_cache:/api/db/col/companies/${companyId}/sets`
+      ];
+
+      cacheKeys.forEach(key => {
+        const cached = localStorage.getItem(key);
+        if (cached) {
+          try {
+            const data = JSON.parse(cached);
+            if (key.includes('categories')) {
+              setProductCategories(data.categories || INITIAL_PRODUCT_CATEGORIES);
+              setCoefficients((prev: any) => ({ ...prev, products: data.coefficients || {} }));
+            }
+            if (key.includes('production')) {
+              const isContract = ("productionId" in data && data.productionId) || ("city" in data && data.city);
+              if (isContract) setContractConfig(data);
+              else setOwnProductionConfig((prev: any) => ({ ...prev, ...data }));
+            }
+            if (key.includes('general')) {
+              if (data.defaultCuttingType) setDefaultCuttingType(data.defaultCuttingType);
+              if (data.companyInfo) setCompanyInfo(data.companyInfo);
+              if (data.coefficients) setCoefficients(data.coefficients);
+              if (data.calcMode) setCalcMode(data.calcMode);
+            }
+            if (key.includes('prices') && data.prices) setPrices((curr: any) => ({ ...curr, ...data.prices }));
+            if (key.includes('promotions') && Array.isArray(data.promotions)) setPromotions(data.promotions);
+            if (key.includes('products')) setOwnProducts(data.map((d: any) => ({ id: d.id, ...d.data })));
+            if (key.includes('projects')) setProjects(data.map((d: any) => ({ id: d.id, ...d.data })));
+            if (key.includes('sets')) setProjectSets(data.map((d: any) => ({ id: d.id, ...d.data })));
+          } catch (e) {
+            console.warn("Cache parse error for", key, e);
+          }
+        }
+      });
+
+      // If we have some basic cached data, let's open the app immediately
+      const hasBasicCache = localStorage.getItem(`meb_cache:/api/db/col/companies/${companyId}/products`);
+      if (hasBasicCache) {
+        setPreloadProgress(100);
+        setPreloadStatus("Загрузка из кэша...");
+        // Non-blocking background sync starts now
+        setIsPreloaded(true);
+      }
+
+      // 2. Parallel background fetch for fresh data
+      setPreloadStatus("Синхронизация данных...");
+      setPreloadProgress(30);
       
-      const [catRes, prodRes, genRes, priceRes, promoRes, empRes, prodColRes, projRes, setsColRes] = await Promise.all([
-        fetch(`/api/db/doc/companies/${companyId}/settings/categories`),
-        fetch(`/api/db/doc/companies/${companyId}/settings/production`),
-        fetch(`/api/db/doc/companies/${companyId}/settings/general`),
-        fetch(`/api/db/doc/companies/${companyId}/settings/prices`),
-        fetch(`/api/db/doc/companies/${companyId}/settings/promotions`),
-        fetch(`/api/db/col/companies/${companyId}/employees`),
-        fetch(`/api/db/col/companies/${companyId}/products`),
-        fetch(`/api/db/col/companies/${companyId}/projects`),
-        fetch(`/api/db/col/companies/${companyId}/sets`)
+      const fetchWithTimeout = (url: string, timeout = 10000) => {
+        return Promise.race([
+          fetch(url),
+          new Promise<Response>((_, reject) => setTimeout(() => reject(new Error(`Timeout fetching ${url}`)), timeout))
+        ]);
+      };
+
+      const [catRes, prodRes, genRes, priceRes, promoRes, empRes, prodColRes, projRes, setsColRes] = await Promise.allSettled([
+        fetchWithTimeout(`/api/db/doc/companies/${companyId}/settings/categories`),
+        fetchWithTimeout(`/api/db/doc/companies/${companyId}/settings/production`),
+        fetchWithTimeout(`/api/db/doc/companies/${companyId}/settings/general`),
+        fetchWithTimeout(`/api/db/doc/companies/${companyId}/settings/prices`),
+        fetchWithTimeout(`/api/db/doc/companies/${companyId}/settings/promotions`),
+        fetchWithTimeout(`/api/db/col/companies/${companyId}/employees`),
+        fetchWithTimeout(`/api/db/col/companies/${companyId}/products`),
+        fetchWithTimeout(`/api/db/col/companies/${companyId}/projects`),
+        fetchWithTimeout(`/api/db/col/companies/${companyId}/sets`)
       ]);
 
-      // Process results
-      if (catRes.ok) {
-        const catData = await catRes.json();
-        localStorage.setItem(`meb_cache:/api/db/doc/companies/${companyId}/settings/categories`, JSON.stringify(catData));
-        let cats = catData.categories || INITIAL_PRODUCT_CATEGORIES;
-        setProductCategories(cats);
-        setCoefficients((prev: any) => ({
-          ...prev,
-          products: catData.coefficients || {},
-        }));
+      // Process settled results
+      const results: any[] = await Promise.all([
+        catRes.status === 'fulfilled' && catRes.value.ok ? catRes.value.json() : Promise.resolve(null),
+        prodRes.status === 'fulfilled' && prodRes.value.ok ? prodRes.value.json() : Promise.resolve(null),
+        genRes.status === 'fulfilled' && genRes.value.ok ? genRes.value.json() : Promise.resolve(null),
+        priceRes.status === 'fulfilled' && priceRes.value.ok ? priceRes.value.json() : Promise.resolve(null),
+        promoRes.status === 'fulfilled' && promoRes.value.ok ? promoRes.value.json() : Promise.resolve(null),
+        empRes.status === 'fulfilled' && empRes.value.ok ? empRes.value.json() : Promise.resolve(null),
+        prodColRes.status === 'fulfilled' && prodColRes.value.ok ? prodColRes.value.json() : Promise.resolve(null),
+        projRes.status === 'fulfilled' && projRes.value.ok ? projRes.value.json() : Promise.resolve(null),
+        setsColRes.status === 'fulfilled' && setsColRes.value.ok ? setsColRes.value.json() : Promise.resolve(null)
+      ]);
+
+      const [catData, prodData, genData, priceData, promoData, empData, prodColData, projData, setsColData] = results;
+
+      if (catData) {
+        safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyId}/settings/categories`, JSON.stringify(catData));
+        setProductCategories(catData.categories || INITIAL_PRODUCT_CATEGORIES);
+        setCoefficients((prev: any) => ({ ...prev, products: catData.coefficients || {} }));
       }
 
-      // 8. Load manufacturer products if applicable
+      // Load manufacturer products if applicable
       const mfgId = fetchedUserData?.manufacturerId || companyData?.manufacturerId;
       if (mfgId) {
-        const mfgRes = await fetch(`/api/db/col/companies/${mfgId}/products`);
-        if (mfgRes.ok) {
-          const mfgData = await mfgRes.json();
-          localStorage.setItem(`meb_cache:/api/db/col/companies/${mfgId}/products`, JSON.stringify(mfgData));
-          const mappedMfg = mfgData.map((d: any) => ({
-            id: d.id,
-            ...d.data,
-          }));
-          setManufacturerProducts(mappedMfg);
-        }
+        fetchWithTimeout(`/api/db/col/companies/${mfgId}/products`).then(async (mfgRes) => {
+          if (mfgRes.ok) {
+            const mfgData = await mfgRes.json();
+            safeSetLocalStorage(`meb_cache:/api/db/col/companies/${mfgId}/products`, JSON.stringify(mfgData));
+            setManufacturerProducts(mfgData.map((d: any) => ({ id: d.id, ...d.data })));
+          }
+        }).catch(e => console.warn("MFG products fetch failed", e));
       }
       
-      if (prodRes.ok) {
-        const prodData = await prodRes.json();
-        localStorage.setItem(`meb_cache:/api/db/doc/companies/${companyId}/settings/production`, JSON.stringify(prodData));
+      if (prodData) {
+        safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyId}/settings/production`, JSON.stringify(prodData));
         const isContract = ("productionId" in prodData && prodData.productionId) || ("city" in prodData && prodData.city);
-        if (isContract) {
-          setContractConfig(prodData);
-        } else {
-          setOwnProductionConfig((prev: any) => ({
-            ...prev,
-            ...prodData,
-            photos: prodData.photos || prev?.photos || [],
-            specialConditionIds: prodData.specialConditionIds || [],
-            standardCoefficients: prodData.standardCoefficients || {},
-            salonCoefficients: prodData.salonCoefficients || {},
-          }));
-        }
+        if (isContract) setContractConfig(prodData);
+        else setOwnProductionConfig((prev: any) => ({ ...prev, ...prodData }));
       }
 
-      if (genRes.ok) {
-        const genData = await genRes.json();
-        localStorage.setItem(`meb_cache:/api/db/doc/companies/${companyId}/settings/general`, JSON.stringify(genData));
+      if (genData) {
+        safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyId}/settings/general`, JSON.stringify(genData));
         if (genData.defaultCuttingType) setDefaultCuttingType(genData.defaultCuttingType);
         if (genData.companyInfo) setCompanyInfo(genData.companyInfo);
         if (genData.coefficients) setCoefficients(genData.coefficients);
         if (genData.calcMode) setCalcMode(genData.calcMode);
-        if (genData.trimming !== undefined) setTrimming(genData.trimming);
-        if (genData.hardwareKitPrice !== undefined) setHardwareKitPrice(genData.hardwareKitPrice);
-        if (genData.assemblyPercentage !== undefined) setAssemblyPercentage(genData.assemblyPercentage);
-        if (genData.assemblyPercentages !== undefined) setAssemblyPercentages(genData.assemblyPercentages);
-        if (genData.assemblyIncludes !== undefined) setAssemblyIncludes(genData.assemblyIncludes);
-        if (genData.deliveryTariffs) setDeliveryTariffs(genData.deliveryTariffs);
-        if (genData.mapLink) setMapLink(genData.mapLink);
-        if (genData.catalogMaterials) setCatalogMaterials(genData.catalogMaterials);
-        if (genData.specificationConfig) setSpecificationConfigReal(genData.specificationConfig);
-        if (genData.vat !== undefined) {
-          setCompanyInfo((prev: any) => ({ ...prev, vat: Number(genData.vat) }));
-        }
-        if (genData.productionFormat) setProductionFormat(genData.productionFormat);
-        if (genData.landingPage) {
-          setCompanyData((prev: any) => ({
-            ...prev,
-            landingPage: genData.landingPage,
-          }));
-        }
       }
 
-      if (priceRes.ok) {
-        const priceData = await priceRes.json();
-        localStorage.setItem(`meb_cache:/api/db/doc/companies/${companyId}/settings/prices`, JSON.stringify(priceData));
-        if (priceData.prices) {
-          setPrices((currentPrices: any) => {
-            const merged = { ...priceData.prices };
-            if (currentPrices) {
-              Object.keys(currentPrices).forEach((k) => {
-                if (k.startsWith("manual_") || k.startsWith("edgePrice_") || (currentPrices[k] !== undefined && priceData.prices[k] === undefined)) {
-                  merged[k] = currentPrices[k];
-                }
-              });
-              Object.assign(merged, globalPriceBuffer);
-            }
-            return merged;
-          });
-        }
+      if (priceData) {
+        safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyId}/settings/prices`, JSON.stringify(priceData));
+        if (priceData.prices) setPrices((curr: any) => ({ ...curr, ...priceData.prices }));
       }
 
-      if (promoRes.ok) {
-        const promoData = await promoRes.json();
-        localStorage.setItem(`meb_cache:/api/db/doc/companies/${companyId}/settings/promotions`, JSON.stringify(promoData));
-        if (Array.isArray(promoData.promotions)) {
-          setPromotions(promoData.promotions);
-        }
+      if (promoData) {
+        safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyId}/settings/promotions`, JSON.stringify(promoData));
+        if (Array.isArray(promoData.promotions)) setPromotions(promoData.promotions);
       }
 
-      if (empRes.ok) {
-        const empData = await empRes.json();
-        localStorage.setItem(`meb_cache:/api/db/col/companies/${companyId}/employees`, JSON.stringify(empData));
-      }
+      if (empData) safeSetLocalStorage(`meb_cache:/api/db/col/companies/${companyId}/employees`, JSON.stringify(empData));
 
-      if (prodColRes.ok) {
-        const prodColData = await prodColRes.json();
-        localStorage.setItem(`meb_cache:/api/db/col/companies/${companyId}/products`, JSON.stringify(prodColData));
-        const mappedProds = prodColData.map((d: any) => ({
-          id: d.id,
-          ...d.data,
-        }));
-        setOwnProducts(mappedProds);
+      if (prodColData) {
+        safeSetLocalStorage(`meb_cache:/api/db/col/companies/${companyId}/products`, JSON.stringify(prodColData));
+        setOwnProducts(prodColData.map((d: any) => ({ id: d.id, ...d.data })));
       }
       
-      if (projRes.ok) {
-        const projData = await projRes.json();
-        localStorage.setItem(`meb_cache:/api/db/col/companies/${companyId}/projects`, JSON.stringify(projData));
-        const mappedProjs = projData.map((d: any) => ({
-          id: d.id,
-          ...d.data,
-        }));
-        setProjects(mappedProjs);
+      if (projData) {
+        safeSetLocalStorage(`meb_cache:/api/db/col/companies/${companyId}/projects`, JSON.stringify(projData));
+        setProjects(projData.map((d: any) => ({ id: d.id, ...d.data })));
       }
 
-      if (setsColRes.ok) {
-        const setsColData = await setsColRes.json();
-        localStorage.setItem(`meb_cache:/api/db/col/companies/${companyId}/sets`, JSON.stringify(setsColData));
-        const mappedSets = setsColData.map((d: any) => ({
-          id: d.id,
-          ...d.data,
-          isDeleted: d.data.isDeleted || false,
-          status: d.data.status || "active"
-        }));
-        setProjectSets(mappedSets);
+      if (setsColData) {
+        safeSetLocalStorage(`meb_cache:/api/db/col/companies/${companyId}/sets`, JSON.stringify(setsColData));
+        setProjectSets(setsColData.map((d: any) => ({ id: d.id, ...d.data })));
       }
 
       setPreloadProgress(100);
-      setPreloadStatus("Синхронизация завершена!");
-      await new Promise(resolve => setTimeout(resolve, 300));
+      setPreloadStatus("Готово!");
+      await new Promise(resolve => setTimeout(resolve, 200));
     } catch (err) {
       console.error("Preloading error:", err);
     } finally {
@@ -20854,36 +20877,41 @@ export default function App() {
       qProjects = query(
         collection(db, "companies", companyData.id, "projects"),
         orderBy("createdAt", "desc"),
-        limit(100),
+        limit(500),
       );
       qSets = query(
         collection(db, "companies", companyData.id, "sets"),
         orderBy("createdAt", "desc"),
-        limit(100),
+        limit(500),
       );
     } else {
       qProjects = query(
         collection(db, "companies", companyData.id, "projects"),
         where("createdBy", "==", userData.uid),
         orderBy("createdAt", "desc"),
-        limit(100),
+        limit(500),
       );
       qSets = query(
         collection(db, "companies", companyData.id, "sets"),
         where("createdBy", "==", userData.uid),
         orderBy("createdAt", "desc"),
-        limit(100),
+        limit(500),
       );
     }
 
     const unsubProjects = onSnapshot(
       qProjects, 
       (snapshot) => {
-        const projs = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        const isFromCache = snapshot.metadata?.fromCache;
-        if (projs.length > 0 || !isPreloaded || isFromCache) {
-          setProjects(projs);
-        }
+        const projs = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          return { 
+            id: doc.id, 
+            ...data,
+            createdAt: data.createdAt || new Date(0).toISOString() // Fallback for old projects
+          };
+        });
+        console.log(`DEBUG: Fetched ${projs.length} projects for company ${companyData.id}`);
+        setProjects(projs);
         setIsProjectsLoading(false);
       },
       (error) => {
@@ -20895,11 +20923,11 @@ export default function App() {
     const unsubSets = onSnapshot(
       qSets, 
       (snapshot) => {
-        const setsData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        const isFromCache = snapshot.metadata?.fromCache;
-        if (setsData.length > 0 || !isPreloaded || isFromCache) {
-          setProjectSets(setsData);
-        }
+        const setsData = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          return { id: doc.id, ...data, createdAt: data.createdAt || new Date(0).toISOString() };
+        });
+        setProjectSets(setsData);
         setIsSetsLoading(false);
       },
       (error) => {
@@ -20911,11 +20939,11 @@ export default function App() {
     const unsubProcOrders = onSnapshot(
       collection(db, "companies", companyData.id, "projectSets"),
       (snapshot) => {
-        const ordersData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        const isFromCache = snapshot.metadata?.fromCache;
-        if (ordersData.length > 0 || !isPreloaded || isFromCache) {
-          setProcurementOrders(ordersData);
-        }
+        const ordersData = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          return { id: doc.id, ...data, createdAt: data.createdAt || new Date(0).toISOString() };
+        });
+        setProcurementOrders(ordersData);
       },
       (error) => console.error("Error syncing procurement orders:", error)
     );
@@ -20924,10 +20952,7 @@ export default function App() {
       collection(db, "companies", companyData.id, "suppliers"),
       (snapshot) => {
         const suppliersData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        const isFromCache = snapshot.metadata?.fromCache;
-        if (suppliersData.length > 0 || !isPreloaded || isFromCache) {
-          setSuppliers(suppliersData);
-        }
+        setSuppliers(suppliersData);
       },
       (error) => console.error("Error syncing suppliers:", error)
     );
