@@ -215,7 +215,7 @@ class IndexedDBCache {
 
 const idbCache = new IndexedDBCache();
 
-const compressImage = (base64: string, maxWidth = 800, maxHeight = 800, quality = 0.7): Promise<string> => {
+const compressImage = (base64: string, maxWidth = 400, maxHeight = 400, quality = 0.6): Promise<string> => {
   if (!base64 || !base64.startsWith("data:image/")) {
     return Promise.resolve(base64);
   }
@@ -266,10 +266,10 @@ const hydrateCollectionWithImages = async (url: string, parsedList: any[]): Prom
         const cachedDoc = JSON.parse(cachedDocStr);
         const img = cachedDoc?.image || cachedDoc?.images?.[0];
         if (img) {
-          // Self-healing: if the base64 string is extremely large (e.g. >150,000 chars),
+          // Self-healing: if the base64 string is large (e.g. >50,000 chars),
           // compress it in the background and update the cache to save memory!
-          if (img.length > 150000 && img.startsWith("data:image/")) {
-            compressImage(img, 800, 800, 0.7).then((compressedImg) => {
+          if (img.length > 50000 && img.startsWith("data:image/")) {
+            compressImage(img, 400, 400, 0.6).then((compressedImg) => {
               if (compressedImg.length < img.length) {
                 const updatedDoc = {
                   ...cachedDoc,
@@ -1101,30 +1101,35 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
     fetchGroupSnapshot();
   };
   
-  const handleImageCached = async (e: Event) => {
+  let imageCachedTimeout: any = null;
+  const handleImageCached = (e: Event) => {
     const customEvent = e as CustomEvent;
     const { productId, companyId } = customEvent.detail || {};
     
     if (group && group.lastFetchedText && isCol && url.includes(`/companies/${companyId}/products`)) {
-      try {
-        const parsed = JSON.parse(group.lastFetchedText);
-        if (Array.isArray(parsed) && parsed.some((item: any) => item.id === productId)) {
-          const hydrated = await hydrateCollectionWithImages(url, parsed);
-          for (const sub of group.subscribers) {
-            try {
-              sub.callback({
-                docs: hydrated.map((d: any) => ({
-                  id: d.id,
-                  data: () => d.data,
-                  exists: () => true
-                })),
-                size: hydrated.length,
-                metadata: { fromCache: true }
-              });
-            } catch (_) {}
+      if (imageCachedTimeout) clearTimeout(imageCachedTimeout);
+      imageCachedTimeout = setTimeout(async () => {
+        try {
+          if (!group || !group.lastFetchedText) return;
+          const parsed = JSON.parse(group.lastFetchedText);
+          if (Array.isArray(parsed) && parsed.some((item: any) => item.id === productId)) {
+            const hydrated = await hydrateCollectionWithImages(url, parsed);
+            for (const sub of group.subscribers) {
+              try {
+                sub.callback({
+                  docs: hydrated.map((d: any) => ({
+                    id: d.id,
+                    data: () => d.data,
+                    exists: () => true
+                  })),
+                  size: hydrated.length,
+                  metadata: { fromCache: true }
+                });
+              } catch (_) {}
+            }
           }
-        }
-      } catch (_) {}
+        } catch (_) {}
+      }, 500);
     }
   };
   
@@ -1134,6 +1139,7 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
   }
   
   return () => {
+    if (imageCachedTimeout) clearTimeout(imageCachedTimeout);
     if (!group) return;
     group.subscribers.delete(snapSubscriber);
     
@@ -11488,7 +11494,7 @@ const SettingsView = ({
                             const r = new FileReader();
                             r.onloadend = async () => {
                               const rawBase64 = r.result as string;
-                              const compressed = await compressImage(rawBase64, 400, 400, 0.7);
+                              const compressed = await compressImage(rawBase64, 200, 200, 0.5);
                               setSpecificationConfig((p: any) => ({
                                 ...p,
                                 companyLogo: compressed,
@@ -14857,6 +14863,38 @@ const ProductsView = ({
   const [handleLengthFilter, setHandleLengthFilter] = useState<string | null>(null);
   const [handleColorFilter, setHandleColorFilter] = useState<string | null>(null);
   const [handleMaterialFilter, setHandleMaterialFilter] = useState<string | null>(null);
+  const [handlesOrHooksFilter, setHandlesOrHooksFilter] = useState<"handles" | "hooks">("handles");
+  const [hookTypeFilter, setHookTypeFilter] = useState<string | null>(null);
+
+  const [sinkGroupFilter, setSinkGroupFilter] = useState<string | null>("Мойки");
+  const [sinkBrandFilter, setSinkBrandFilter] = useState<string | null>(null);
+  const [sinkMaterialFilter, setSinkMaterialFilter] = useState<string | null>(null);
+  const [sinkInstallTypeFilter, setSinkInstallTypeFilter] = useState<string | null>(null);
+  const [sinkWidthFilter, setSinkWidthFilter] = useState<string | null>(null);
+  const [sinkShapeFilter, setSinkShapeFilter] = useState<string | null>(null);
+  const [sinkHasWingFilter, setSinkHasWingFilter] = useState<string | null>(null);
+  const [sinkWingPosFilter, setSinkWingPosFilter] = useState<string | null>(null);
+  const [sinkBowlsFilter, setSinkBowlsFilter] = useState<string | null>(null);
+
+  const [faucetBrandFilter, setFaucetBrandFilter] = useState<string | null>(null);
+  const [faucetMaterialFilter, setFaucetMaterialFilter] = useState<string | null>(null);
+  const [faucetFilterConnFilter, setFaucetFilterConnFilter] = useState<string | null>(null);
+
+  const [filterBrandFilter, setFilterBrandFilter] = useState<string | null>(null);
+  const [sinkColorFilter, setSinkColorFilter] = useState<string | null>(null);
+
+  const [wardrobeGroupFilter, setWardrobeGroupFilter] = useState<string | null>(null);
+  const [wardrobeUsageFilter, setWardrobeUsageFilter] = useState<string | null>(null);
+  const [wardrobeBrandFilter, setWardrobeBrandFilter] = useState<string | null>(null);
+  const [wardrobeColorFilter, setWardrobeColorFilter] = useState<string | null>(null);
+
+  const [fastenerGroupFilter, setFastenerGroupFilter] = useState<string | null>(null);
+  const [fastenerBrandFilter, setFastenerBrandFilter] = useState<string | null>(null);
+  const [fastenerMaxLoadFilter, setFastenerMaxLoadFilter] = useState<string | null>(null);
+  const [fastenerUsageFilter, setFastenerUsageFilter] = useState<string | null>(null);
+  const [fastenerPlinthHeightFilter, setFastenerPlinthHeightFilter] = useState<string | null>(null);
+  const [fastenerPlinthColorFilter, setFastenerPlinthColorFilter] = useState<string | null>(null);
+  const [fastenerPlinthMaterialFilter, setFastenerPlinthMaterialFilter] = useState<string | null>(null);
   const [selectedStdProductId, setSelectedStdProductId] = useState("");
   const [selectedStdQty, setSelectedStdQty] = useState(1);
   const [stdCategoryFilter, setStdCategoryFilter] = useState("");
@@ -14865,6 +14903,22 @@ const ProductsView = ({
 
   const [dryerWidthFilter, setDryerWidthFilter] = useState<string | null>(null);
   const [dryerBaseFilter, setDryerBaseFilter] = useState<string | null>(null);
+  
+  // Basket Filters
+  const [basketBrandFilter, setBasketBrandFilter] = useState<string | null>(null);
+  const [basketRunnerTypeFilter, setBasketRunnerTypeFilter] = useState<string | null>(null);
+  const [basketTypeFilter, setBasketTypeFilter] = useState<string | null>(null);
+  const [basketColorFilter, setBasketColorFilter] = useState<string | null>(null);
+  const [basketWidthFilter, setBasketWidthFilter] = useState<string | null>(null);
+
+  // Countertop/Wall Panel Filters
+  const [wtGroupFilter, setWtGroupFilter] = useState<string | null>(null);
+  const [wtTypeFilter, setWtTypeFilter] = useState<string | null>(null);
+  const [wtManufacturerFilter, setWtManufacturerFilter] = useState<string | null>(null);
+  const [wtLengthFilter, setWtLengthFilter] = useState<string | null>(null);
+  const [wtDepthFilter, setWtDepthFilter] = useState<string | null>(null);
+  const [wtThicknessFilter, setWtThicknessFilter] = useState<string | null>(null);
+  const [wtEdgeFilter, setWtEdgeFilter] = useState<string | null>(null);
   const [dryerBrandFilter, setDryerBrandFilter] = useState<string | null>(null);
   const [addedDryerBrands, setAddedDryerBrands] = useState<string[]>([]);
   const [isAddingNewBrand, setIsAddingNewBrand] = useState(false);
@@ -15094,6 +15148,24 @@ const ProductsView = ({
     handleLength: "",
     handleColor: "",
     handleMaterial: "",
+    handleOrHook: "handle",
+    hookType: "",
+    sinkGroup: "Мойки",
+    sinkBrand: "",
+    sinkMaterial: "",
+    sinkInstallType: "",
+    sinkWidth: "",
+    sinkShape: "",
+    sinkHasWing: "",
+    sinkWingPos: "",
+    sinkBowls: "",
+    faucetBrand: "",
+    faucetMaterial: "",
+    faucetFilterConn: "",
+    filterBrand: "",
+    wardrobeGroup: "",
+    wardrobeUsage: "",
+    wardrobeBrand: "",
   });
 
   const availableDryerBrands = ["Boyard", "GTV", "Hettich", "Blum", "Rejs"];
@@ -15125,7 +15197,7 @@ const ProductsView = ({
         const reader = new FileReader();
         reader.onloadend = async () => {
           const rawBase64 = reader.result as string;
-          const compressed = await compressImage(rawBase64, 800, 800, 0.7);
+          const compressed = await compressImage(rawBase64, 400, 400, 0.6);
           setNewProduct((prev) => ({
             ...prev,
             images: [...prev.images, compressed],
@@ -15391,6 +15463,24 @@ const ProductsView = ({
       handleLength: "",
       handleColor: "",
       handleMaterial: "",
+      handleOrHook: "handle",
+      hookType: "",
+      sinkGroup: "Мойки",
+      sinkBrand: "",
+      sinkMaterial: "",
+      sinkInstallType: "",
+      sinkWidth: "",
+      sinkShape: "",
+      sinkHasWing: "",
+      sinkWingPos: "",
+      sinkBowls: "",
+      faucetBrand: "",
+      faucetMaterial: "",
+      faucetFilterConn: "",
+      filterBrand: "",
+      wardrobeGroup: "",
+      wardrobeUsage: "",
+      wardrobeBrand: "",
     });
     setEditingProduct(null);
     setIsAddingProduct(false);
@@ -15449,6 +15539,24 @@ const ProductsView = ({
       handleLength: product.handleLength || "",
       handleColor: product.handleColor || "",
       handleMaterial: product.handleMaterial || "",
+      handleOrHook: product.handleOrHook || (isProductHook(product) ? "hook" : "handle"),
+      hookType: product.hookType || "",
+      sinkGroup: product.sinkGroup || "Мойки",
+      sinkBrand: product.sinkBrand || "",
+      sinkMaterial: product.sinkMaterial || "",
+      sinkInstallType: product.sinkInstallType || "",
+      sinkWidth: product.sinkWidth || "",
+      sinkShape: product.sinkShape || "",
+      sinkHasWing: product.sinkHasWing || "",
+      sinkWingPos: product.sinkWingPos || "",
+      sinkBowls: product.sinkBowls || "",
+      faucetBrand: product.faucetBrand || "",
+      faucetMaterial: product.faucetMaterial || "",
+      faucetFilterConn: product.faucetFilterConn || "",
+      filterBrand: product.filterBrand || "",
+      wardrobeGroup: product.wardrobeGroup || "",
+      wardrobeUsage: product.wardrobeUsage || "",
+      wardrobeBrand: product.wardrobeBrand || "",
       variations: product.variations || [],
     });
     setIsAddingProduct(true);
@@ -15507,6 +15615,24 @@ const ProductsView = ({
       handleLength: product.handleLength || "",
       handleColor: product.handleColor || "",
       handleMaterial: product.handleMaterial || "",
+      handleOrHook: product.handleOrHook || (isProductHook(product) ? "hook" : "handle"),
+      hookType: product.hookType || "",
+      sinkGroup: product.sinkGroup || "Мойки",
+      sinkBrand: product.sinkBrand || "",
+      sinkMaterial: product.sinkMaterial || "",
+      sinkInstallType: product.sinkInstallType || "",
+      sinkWidth: product.sinkWidth || "",
+      sinkShape: product.sinkShape || "",
+      sinkHasWing: product.sinkHasWing || "",
+      sinkWingPos: product.sinkWingPos || "",
+      sinkBowls: product.sinkBowls || "",
+      faucetBrand: product.faucetBrand || "",
+      faucetMaterial: product.faucetMaterial || "",
+      faucetFilterConn: product.faucetFilterConn || "",
+      filterBrand: product.filterBrand || "",
+      wardrobeGroup: product.wardrobeGroup || "",
+      wardrobeUsage: product.wardrobeUsage || "",
+      wardrobeBrand: product.wardrobeBrand || "",
       variations: product.variations || [],
     });
     setIsAddingProduct(true);
@@ -15561,6 +15687,16 @@ const ProductsView = ({
     }
   };
 
+  const isProductHook = (p: any) => {
+    if (!p) return false;
+    if (p.handleOrHook === "hook") return true;
+    if (p.handleOrHook === "handle") return false;
+    if (p.hookType) return true;
+    const nameLower = (p.name || "").toLowerCase();
+    const descLower = (p.description || "").toLowerCase();
+    return nameLower.includes("крюч") || descLower.includes("крюч");
+  };
+
   const filteredProducts = useMemo(() => {
     // Stage 1: Filter catalogProducts by category and status
     const initialFiltered = catalogProducts.filter((p) => {
@@ -15589,6 +15725,7 @@ const ProductsView = ({
       handleColorFilter ||
       handleMaterialFilter ||
       handleTypeFilter ||
+      hookTypeFilter ||
       manufacturerFilter
     );
 
@@ -15600,6 +15737,10 @@ const ProductsView = ({
       const expanded: any[] = [];
       initialFiltered.forEach((p) => {
         if (p.category === "Ручки и крючки") {
+          const isHook = isProductHook(p);
+          if (handlesOrHooksFilter === "handles" && isHook) return;
+          if (handlesOrHooksFilter === "hooks" && !isHook) return;
+
           if (p.variations && Array.isArray(p.variations) && p.variations.length > 0) {
             p.variations.forEach((v: any, idx: number) => {
               const vId = v.id || String(idx);
@@ -15631,6 +15772,7 @@ const ProductsView = ({
                 handleColor: p.handleColor?.trim() || p.color?.trim() || v.color || "",
                 handleMaterial: p.handleMaterial?.trim() || v.material || "",
                 handleType: p.handleType || "",
+                hookType: p.hookType || "",
                 manufacturer: p.manufacturer || "",
                 images: v.image ? [v.image] : p.images,
               });
@@ -15643,6 +15785,14 @@ const ProductsView = ({
         }
       });
       itemsToProcess = expanded;
+    } else if (isHandlesSelected) {
+      // If no filters are active, we still filter them based on handlesOrHooksFilter!
+      itemsToProcess = initialFiltered.filter(p => {
+        if (p.category !== "Ручки и крючки") return true;
+        const isHook = isProductHook(p);
+        if (handlesOrHooksFilter === "handles") return !isHook;
+        return isHook;
+      });
     }
 
     const filtered = itemsToProcess.filter((p) => {
@@ -15784,8 +15934,200 @@ const ProductsView = ({
         matchesHandleType = pType === fType;
       }
 
+      let matchesHookType = true;
+      if (isHandlesSelected && hookTypeFilter) {
+        const pHookType = String(p.hookType || "").trim().toLowerCase();
+        const fHookType = String(hookTypeFilter).trim().toLowerCase();
+        matchesHookType = pHookType === fHookType;
+      }
+
       if (isHandlesSelected && manufacturerFilter) {
         matchesManufacturer = p.manufacturer === manufacturerFilter;
+      }
+
+      let matchesSinkGroup = true;
+      if (selectedCategory === "Мойки и аксессуары" && sinkGroupFilter) {
+        matchesSinkGroup = (p.sinkGroup || "Мойки") === sinkGroupFilter;
+      }
+
+      let matchesSinkBrand = true;
+      if (selectedCategory === "Мойки и аксессуары" && sinkGroupFilter === "Мойки" && sinkBrandFilter) {
+        matchesSinkBrand = (p.sinkBrand || p.manufacturer) === sinkBrandFilter;
+      }
+
+      let matchesSinkMaterial = true;
+      if (selectedCategory === "Мойки и аксессуары" && sinkGroupFilter === "Мойки" && sinkMaterialFilter) {
+        matchesSinkMaterial = (p.sinkMaterial || p.material) === sinkMaterialFilter;
+      }
+
+      let matchesSinkInstallType = true;
+      if (selectedCategory === "Мойки и аксессуары" && sinkGroupFilter === "Мойки" && sinkInstallTypeFilter) {
+        matchesSinkInstallType = p.sinkInstallType === sinkInstallTypeFilter;
+      }
+
+      let matchesSinkWidth = true;
+      if (selectedCategory === "Мойки и аксессуары" && sinkGroupFilter === "Мойки" && sinkWidthFilter) {
+        matchesSinkWidth = p.sinkWidth === sinkWidthFilter;
+      }
+
+      let matchesSinkShape = true;
+      if (selectedCategory === "Мойки и аксессуары" && sinkGroupFilter === "Мойки" && sinkShapeFilter) {
+        matchesSinkShape = p.sinkShape === sinkShapeFilter;
+      }
+
+      let matchesSinkHasWing = true;
+      if (selectedCategory === "Мойки и аксессуары" && sinkGroupFilter === "Мойки" && sinkHasWingFilter) {
+        matchesSinkHasWing = p.sinkHasWing === sinkHasWingFilter;
+      }
+
+      let matchesSinkWingPos = true;
+      if (selectedCategory === "Мойки и аксессуары" && sinkGroupFilter === "Мойки" && sinkWingPosFilter) {
+        matchesSinkWingPos = p.sinkWingPos === sinkWingPosFilter;
+      }
+
+      let matchesSinkBowls = true;
+      if (selectedCategory === "Мойки и аксессуары" && sinkGroupFilter === "Мойки" && sinkBowlsFilter) {
+        matchesSinkBowls = p.sinkBowls === sinkBowlsFilter;
+      }
+
+      let matchesFaucetBrand = true;
+      if (selectedCategory === "Мойки и аксессуары" && sinkGroupFilter === "Смесители" && faucetBrandFilter) {
+        matchesFaucetBrand = (p.faucetBrand || p.manufacturer) === faucetBrandFilter;
+      }
+
+      let matchesFaucetMaterial = true;
+      if (selectedCategory === "Мойки и аксессуары" && sinkGroupFilter === "Смесители" && faucetMaterialFilter) {
+        matchesFaucetMaterial = (p.faucetMaterial || p.material) === faucetMaterialFilter;
+      }
+
+      let matchesFaucetFilterConn = true;
+      if (selectedCategory === "Мойки и аксессуары" && sinkGroupFilter === "Смесители" && faucetFilterConnFilter) {
+        matchesFaucetFilterConn = p.faucetFilterConn === faucetFilterConnFilter;
+      }
+
+      let matchesFilterBrand = true;
+      if (selectedCategory === "Мойки и аксессуары" && sinkGroupFilter === "Фильтры" && filterBrandFilter) {
+        matchesFilterBrand = (p.filterBrand || p.manufacturer) === filterBrandFilter;
+      }
+
+      let matchesSinkColor = true;
+      if (selectedCategory === "Мойки и аксессуары" && sinkColorFilter) {
+        matchesSinkColor = (p.color || "") === sinkColorFilter;
+      }
+
+      let matchesFastenerGroup = true;
+      if (selectedCategory === "Крепежные элементы и цоколь" && fastenerGroupFilter) {
+        matchesFastenerGroup = (p.fastenerGroup || "") === fastenerGroupFilter;
+      }
+
+      let matchesFastenerBrand = true;
+      if (selectedCategory === "Крепежные элементы и цоколь" && fastenerBrandFilter) {
+        matchesFastenerBrand = (p.fastenerBrand || p.brand || p.manufacturer || "") === fastenerBrandFilter;
+      }
+
+      let matchesFastenerMaxLoad = true;
+      if (selectedCategory === "Крепежные элементы и цоколь" && fastenerMaxLoadFilter) {
+        matchesFastenerMaxLoad = String(p.fastenerMaxLoad || "") === fastenerMaxLoadFilter;
+      }
+
+      let matchesFastenerUsage = true;
+      if (selectedCategory === "Крепежные элементы и цоколь" && fastenerUsageFilter) {
+        matchesFastenerUsage = (p.fastenerUsage || "") === fastenerUsageFilter;
+      }
+
+      let matchesFastenerPlinthHeight = true;
+      if (selectedCategory === "Крепежные элементы и цоколь" && fastenerPlinthHeightFilter) {
+        matchesFastenerPlinthHeight = (p.fastenerPlinthHeight || "") === fastenerPlinthHeightFilter;
+      }
+
+      let matchesFastenerPlinthColor = true;
+      if (selectedCategory === "Крепежные элементы и цоколь" && fastenerPlinthColorFilter) {
+        matchesFastenerPlinthColor = (p.fastenerPlinthColor || p.color || "") === fastenerPlinthColorFilter;
+      }
+
+      let matchesFastenerPlinthMaterial = true;
+      if (selectedCategory === "Крепежные элементы и цоколь" && fastenerPlinthMaterialFilter) {
+        matchesFastenerPlinthMaterial = (p.fastenerPlinthMaterial || p.material || "") === fastenerPlinthMaterialFilter;
+      }
+
+      let matchesWardrobeGroup = true;
+      if (selectedCategory === "Оснащение шкафов" && wardrobeGroupFilter) {
+        matchesWardrobeGroup = (p.wardrobeGroup || "") === wardrobeGroupFilter;
+      }
+
+      let matchesWardrobeUsage = true;
+      if (selectedCategory === "Оснащение шкафов" && wardrobeUsageFilter) {
+        matchesWardrobeUsage = (p.wardrobeUsage || "") === wardrobeUsageFilter;
+      }
+
+      let matchesWardrobeBrand = true;
+      if (selectedCategory === "Оснащение шкафов" && wardrobeBrandFilter) {
+        matchesWardrobeBrand = (p.wardrobeBrand || p.manufacturer) === wardrobeBrandFilter;
+      }
+
+      let matchesWardrobeColor = true;
+      if (selectedCategory === "Оснащение шкафов" && wardrobeColorFilter) {
+        matchesWardrobeColor = (p.color || "") === wardrobeColorFilter;
+      }
+
+      let matchesBasketBrand = true;
+      if (selectedCategory === "Выдвижные корзины" && basketBrandFilter) {
+        matchesBasketBrand = (p.manufacturer || p.brand || "") === basketBrandFilter;
+      }
+
+      let matchesBasketRunnerType = true;
+      if (selectedCategory === "Выдвижные корзины" && basketRunnerTypeFilter) {
+        matchesBasketRunnerType = (p.basketRunnerType || "") === basketRunnerTypeFilter;
+      }
+
+      let matchesBasketType = true;
+      if (selectedCategory === "Выдвижные корзины" && basketTypeFilter) {
+        matchesBasketType = (p.basketType || "") === basketTypeFilter;
+      }
+
+      let matchesBasketColor = true;
+      if (selectedCategory === "Выдвижные корзины" && basketColorFilter) {
+        matchesBasketColor = (p.color || "") === basketColorFilter;
+      }
+
+      let matchesBasketWidth = true;
+      if (selectedCategory === "Выдвижные корзины" && basketWidthFilter) {
+        matchesBasketWidth = (p.basketWidth || "") === basketWidthFilter;
+      }
+
+      let matchesWtGroup = true;
+      if (selectedCategory === "Столешницы и стеновые" && wtGroupFilter) {
+        matchesWtGroup = (p.wtGroup || "") === wtGroupFilter;
+      }
+
+      let matchesWtType = true;
+      if (selectedCategory === "Столешницы и стеновые" && wtTypeFilter) {
+        matchesWtType = (p.wtType || "") === wtTypeFilter;
+      }
+
+      let matchesWtManufacturer = true;
+      if (selectedCategory === "Столешницы и стеновые" && wtManufacturerFilter) {
+        matchesWtManufacturer = (p.wtManufacturer || p.manufacturer || "") === wtManufacturerFilter;
+      }
+
+      let matchesWtLength = true;
+      if (selectedCategory === "Столешницы и стеновые" && wtLengthFilter) {
+        matchesWtLength = String(p.wtLength || "") === wtLengthFilter;
+      }
+
+      let matchesWtDepth = true;
+      if (selectedCategory === "Столешницы и стеновые" && wtDepthFilter) {
+        matchesWtDepth = String(p.wtDepth || "") === wtDepthFilter;
+      }
+
+      let matchesWtThickness = true;
+      if (selectedCategory === "Столешницы и стеновые" && wtThicknessFilter) {
+        matchesWtThickness = String(p.wtThickness || "") === wtThicknessFilter;
+      }
+
+      let matchesWtEdge = true;
+      if (selectedCategory === "Столешницы и стеновые" && wtEdgeFilter) {
+        matchesWtEdge = (p.wtEdge || "") === wtEdgeFilter;
       }
 
       return (
@@ -15809,7 +16151,45 @@ const ProductsView = ({
         matchesHandleLength &&
         matchesHandleColor &&
         matchesHandleMaterial &&
-        matchesHandleType
+        matchesHandleType &&
+        matchesHookType &&
+        matchesSinkGroup &&
+        matchesSinkBrand &&
+        matchesSinkMaterial &&
+        matchesSinkInstallType &&
+        matchesSinkWidth &&
+        matchesSinkShape &&
+        matchesSinkHasWing &&
+        matchesSinkWingPos &&
+        matchesSinkBowls &&
+        matchesFaucetBrand &&
+        matchesFaucetMaterial &&
+        matchesFaucetFilterConn &&
+        matchesFilterBrand &&
+        matchesSinkColor &&
+        matchesFastenerGroup &&
+        matchesFastenerBrand &&
+        matchesFastenerMaxLoad &&
+        matchesFastenerUsage &&
+        matchesFastenerPlinthHeight &&
+        matchesFastenerPlinthColor &&
+        matchesFastenerPlinthMaterial &&
+        matchesWardrobeGroup &&
+        matchesWardrobeUsage &&
+        matchesWardrobeBrand &&
+        matchesWardrobeColor &&
+        matchesBasketBrand &&
+        matchesBasketRunnerType &&
+        matchesBasketType &&
+        matchesBasketColor &&
+        matchesBasketWidth &&
+        matchesWtGroup &&
+        matchesWtType &&
+        matchesWtManufacturer &&
+        matchesWtLength &&
+        matchesWtDepth &&
+        matchesWtThickness &&
+        matchesWtEdge
       );
     });
 
@@ -15852,12 +16232,56 @@ const ProductsView = ({
     handleLengthFilter,
     handleColorFilter,
     handleMaterialFilter,
+    handlesOrHooksFilter,
+    hookTypeFilter,
+    sinkGroupFilter,
+    sinkBrandFilter,
+    sinkMaterialFilter,
+    sinkInstallTypeFilter,
+    sinkWidthFilter,
+    sinkShapeFilter,
+    sinkHasWingFilter,
+    sinkWingPosFilter,
+    sinkBowlsFilter,
+    faucetBrandFilter,
+    faucetMaterialFilter,
+    faucetFilterConnFilter,
+    filterBrandFilter,
+    wardrobeGroupFilter,
+    wardrobeUsageFilter,
+    wardrobeBrandFilter,
+    wardrobeColorFilter,
+    sinkColorFilter,
+    fastenerGroupFilter,
+    fastenerBrandFilter,
+    fastenerMaxLoadFilter,
+    fastenerUsageFilter,
+    fastenerPlinthHeightFilter,
+    fastenerPlinthColorFilter,
+    fastenerPlinthMaterialFilter,
+    basketBrandFilter,
+    basketRunnerTypeFilter,
+    basketTypeFilter,
+    basketColorFilter,
+    basketWidthFilter,
+    wtGroupFilter,
+    wtTypeFilter,
+    wtManufacturerFilter,
+    wtLengthFilter,
+    wtDepthFilter,
+    wtThicknessFilter,
+    wtEdgeFilter,
     coefficients,
   ]);
 
   const handleProductsInCatalog = useMemo(() => {
-    return catalogProducts.filter(p => p.category === "Ручки и крючки");
-  }, [catalogProducts]);
+    return catalogProducts.filter(p => {
+      if (p.category !== "Ручки и крючки") return false;
+      const isHook = isProductHook(p);
+      if (handlesOrHooksFilter === "handles") return !isHook;
+      return isHook;
+    });
+  }, [catalogProducts, handlesOrHooksFilter]);
 
   const availableLengths = useMemo(() => {
     const set = new Set<string>();
@@ -15904,12 +16328,16 @@ const ProductsView = ({
   }, [handleProductsInCatalog]);
 
   const availableTypes = useMemo(() => {
-    const set = new Set<string>(["Врезные", "Накладные", "Кнопка", "Профильная", "Рейлинговая", "Скоба", "Торцевая", "GOLA"]);
+    const defaultSet = handlesOrHooksFilter === "handles"
+      ? ["Врезные", "Накладные", "Кнопка", "Профильная", "Рейлинговая", "Скоба", "Торцевая", "GOLA"]
+      : ["Однорожковый", "Двухрожковый", "Трехрожковый"];
+    const set = new Set<string>(defaultSet);
     handleProductsInCatalog.forEach(p => {
-      if (p.handleType) set.add(String(p.handleType).trim());
+      const typeVal = handlesOrHooksFilter === "handles" ? p.handleType : p.hookType;
+      if (typeVal) set.add(String(typeVal).trim());
     });
     return Array.from(set).sort();
-  }, [handleProductsInCatalog]);
+  }, [handleProductsInCatalog, handlesOrHooksFilter]);
 
   const availableManufacturers = useMemo(() => {
     const set = new Set<string>();
@@ -16537,44 +16965,671 @@ const ProductsView = ({
         </div>
       )}
 
+      {selectedCategory === "Крепежные элементы и цоколь" && (
+        <div className="flex flex-wrap items-center gap-4 mb-6 p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100 animate-in fade-in slide-in-from-top-2 text-xs">
+          <div className="flex flex-wrap items-center gap-4 w-full">
+            {/* Группа товара */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-gray-500 font-bold">Группа товара:</span>
+              <select
+                value={fastenerGroupFilter || ""}
+                onChange={(e) => {
+                  const val = e.target.value || null;
+                  setFastenerGroupFilter(val);
+                  if (val !== "Цоколь") {
+                    setFastenerPlinthHeightFilter(null);
+                    setFastenerPlinthColorFilter(null);
+                    setFastenerPlinthMaterialFilter(null);
+                  }
+                }}
+                className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer shadow-sm text-xs min-w-[130px]"
+              >
+                <option value="">Все группы</option>
+                {["Навесы", "Цоколь", "Крепеж"].map((g) => (
+                  <option key={g} value={g}>{g}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Бренд */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-gray-500 font-bold">Бренд:</span>
+              <select
+                value={fastenerBrandFilter || ""}
+                onChange={(e) => setFastenerBrandFilter(e.target.value || null)}
+                className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer shadow-sm text-xs min-w-[120px]"
+              >
+                <option value="">Все бренды</option>
+                {["CAMAR", "Boyard", "Hafele", "Hettich", "ABS", "Китай"].map((b) => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Максимальная нагрузка кг */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-gray-500 font-bold">Нагрузка:</span>
+              <input
+                type="text"
+                placeholder="кг"
+                value={fastenerMaxLoadFilter || ""}
+                onChange={(e) => setFastenerMaxLoadFilter(e.target.value || null)}
+                className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm text-xs w-[100px]"
+              />
+            </div>
+
+            {/* Назначение */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-gray-500 font-bold">Назначение:</span>
+              <select
+                value={fastenerUsageFilter || ""}
+                onChange={(e) => setFastenerUsageFilter(e.target.value || null)}
+                className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer shadow-sm text-xs min-w-[150px]"
+              >
+                <option value="">Все назначения</option>
+                {[
+                  "Для верхних",
+                  "для нижних",
+                  "Для нижних с ящиками",
+                  "Для полок",
+                  "Для стеновых панелей"
+                ].map((u) => (
+                  <option key={u} value={u}>{u}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Фильтры цоколя: показываем только если выбрана группа "Цоколь" или группа не выбрана */}
+            {(fastenerGroupFilter === "Цоколь" || !fastenerGroupFilter) && (
+              <>
+                {/* Высота */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-gray-500 font-bold">Высота:</span>
+                  <select
+                    value={fastenerPlinthHeightFilter || ""}
+                    onChange={(e) => setFastenerPlinthHeightFilter(e.target.value || null)}
+                    className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer shadow-sm text-xs min-w-[100px]"
+                  >
+                    <option value="">Все высоты</option>
+                    {["100 мм", "120 мм", "150 мм"].map((h) => (
+                      <option key={h} value={h}>{h}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Цвет */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-gray-500 font-bold">Цвет:</span>
+                  <select
+                    value={fastenerPlinthColorFilter || ""}
+                    onChange={(e) => setFastenerPlinthColorFilter(e.target.value || null)}
+                    className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer shadow-sm text-xs min-w-[150px] max-w-[200px]"
+                  >
+                    <option value="">Все цвета</option>
+                    {[
+                      "Алебастр белый", "Антрацит Софт тач", "Графит зернистый", "Дуб капучино", 
+                      "Дуб серый", "Золото браш", "Латте", "Орех макадамия", "алюминий гладкий", 
+                      "белый", "белый глянец", "бетон светлый", "ваниль", "венге 1527", 
+                      "дуб беленый", "дуб мелинга белая", "дуб млечный", "дуб сонома", 
+                      "капучино SoftTouch", "клен", "орех", "таволато", "орех экко", 
+                      "светло-серый", "титан", "черный", "черный глянец", "ясень шимо светлый", "ясень шимо темный"
+                    ].map((col) => (
+                      <option key={col} value={col}>{col}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Материал */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-gray-500 font-bold">Материал:</span>
+                  <select
+                    value={fastenerPlinthMaterialFilter || ""}
+                    onChange={(e) => setFastenerPlinthMaterialFilter(e.target.value || null)}
+                    className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer shadow-sm text-xs min-w-[110px]"
+                  >
+                    <option value="">Все материалы</option>
+                    {["Пластик", "Алюминий"].map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+              </>
+            )}
+
+            {/* Кнопка сброса */}
+            {(fastenerGroupFilter || fastenerBrandFilter || fastenerMaxLoadFilter || fastenerUsageFilter || fastenerPlinthHeightFilter || fastenerPlinthColorFilter || fastenerPlinthMaterialFilter) && (
+              <button
+                onClick={() => {
+                  setFastenerGroupFilter(null);
+                  setFastenerBrandFilter(null);
+                  setFastenerMaxLoadFilter(null);
+                  setFastenerUsageFilter(null);
+                  setFastenerPlinthHeightFilter(null);
+                  setFastenerPlinthColorFilter(null);
+                  setFastenerPlinthMaterialFilter(null);
+                }}
+                className="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 font-bold rounded-xl transition-all ml-auto cursor-pointer text-xs"
+              >
+                Сбросить фильтры
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {selectedCategory === "Выдвижные корзины" && (
+        <div className="flex flex-wrap items-center gap-4 mb-6 p-4 bg-sky-50/50 rounded-2xl border border-sky-100 text-xs">
+            <select value={basketBrandFilter || ""} onChange={(e) => setBasketBrandFilter(e.target.value || null)} className="px-2 py-1 border rounded">
+                <option value="">Бренд</option>
+                {["Boyard", "Ekotech", "Hafele", "Hettich", "Kalibra", "Китай"].map(b => <option key={b} value={b}>{b}</option>)}
+            </select>
+            <select value={basketRunnerTypeFilter || ""} onChange={(e) => setBasketRunnerTypeFilter(e.target.value || null)} className="px-2 py-1 border rounded">
+                <option value="">Тип направляющих</option>
+                {["Скрытого монтажа", "Шариковые"].map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+             <select value={basketTypeFilter || ""} onChange={(e) => setBasketTypeFilter(e.target.value || null)} className="px-2 py-1 border rounded">
+                <option value="">Тип</option>
+                {["Бутылочницы", "Бутылочницы в верхнюю базу", "Угловые механизмы", "Колонны", "Мусорные ведра и системы сортировки"].map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <select value={basketColorFilter || ""} onChange={(e) => setBasketColorFilter(e.target.value || null)} className="px-2 py-1 border rounded">
+                <option value="">Цвет</option>
+                {["антрацит", "графит", "серебристый", "серый", "хром"].map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+             <select value={basketWidthFilter || ""} onChange={(e) => setBasketWidthFilter(e.target.value || null)} className="px-2 py-1 border rounded">
+                <option value="">Ширина</option>
+                {["150 мм", "200 мм", "300 мм", "400 мм", "450 мм", "500 мм", "600 мм", "700 мм", "800 мм", "900 мм"].map(w => <option key={w} value={w}>{w}</option>)}
+            </select>
+        </div>
+      )}
+      {selectedCategory === "Столешницы и стеновые" && (
+        <div className="flex flex-wrap items-center gap-4 mb-6 p-4 bg-sky-50/50 rounded-2xl border border-sky-100 text-xs">
+            <select value={wtGroupFilter || ""} onChange={(e) => setWtGroupFilter(e.target.value || null)} className="px-2 py-1 border rounded">
+                <option value="">Группа</option>
+                {["Столешница", "Стеновая панель"].map(g => <option key={g} value={g}>{g}</option>)}
+            </select>
+             <select value={wtTypeFilter || ""} onChange={(e) => setWtTypeFilter(e.target.value || null)} className="px-2 py-1 border rounded">
+                <option value="">Тип</option>
+                {["ЛДСП", "МДФ", "Компакт-ламинат"].map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <input placeholder="Бренд" value={wtManufacturerFilter || ""} onChange={(e) => setWtManufacturerFilter(e.target.value || null)} className="px-2 py-1 border rounded" />
+            <input placeholder="Длина" value={wtLengthFilter || ""} onChange={(e) => setWtLengthFilter(e.target.value || null)} className="px-2 py-1 border rounded" />
+            <input placeholder="Глубина" value={wtDepthFilter || ""} onChange={(e) => setWtDepthFilter(e.target.value || null)} className="px-2 py-1 border rounded" />
+            <input placeholder="Толщина" value={wtThicknessFilter || ""} onChange={(e) => setWtThicknessFilter(e.target.value || null)} className="px-2 py-1 border rounded" />
+            <input placeholder="Завал" value={wtEdgeFilter || ""} onChange={(e) => setWtEdgeFilter(e.target.value || null)} className="px-2 py-1 border rounded" />
+        </div>
+      )}
+      {selectedCategory === "Оснащение шкафов" && (
+        <div className="flex flex-wrap items-center gap-4 mb-6 p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100 animate-in fade-in slide-in-from-top-2 text-xs">
+          <div className="flex flex-wrap items-center gap-4 w-full">
+            {/* Группа товара */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-gray-500 font-bold">Группа товара:</span>
+              <select
+                value={wardrobeGroupFilter || ""}
+                onChange={(e) => setWardrobeGroupFilter(e.target.value || null)}
+                className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer shadow-sm text-xs min-w-[150px]"
+              >
+                <option value="">Все группы</option>
+                {[
+                  "Наполнения для шкафов",
+                  "Корзины сетчатые",
+                  "Вешалки для шкафов купе и прихожих",
+                  "Штанги и держатели",
+                  "Пантографы",
+                  "Полки для обуви"
+                ].map((g) => (
+                  <option key={g} value={g}>{g}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Применение */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-gray-500 font-bold">Применение:</span>
+              <select
+                value={wardrobeUsageFilter || ""}
+                onChange={(e) => setWardrobeUsageFilter(e.target.value || null)}
+                className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer shadow-sm text-xs min-w-[130px]"
+              >
+                <option value="">Все применения</option>
+                {[
+                  "Для аксессуаров",
+                  "Для белья",
+                  "Для брюк",
+                  "Для вешалок",
+                  "Для галстуков",
+                  "Для головных уборов",
+                  "Для обуви",
+                  "Для ремней",
+                  "Для юбок"
+                ].map((u) => (
+                  <option key={u} value={u}>{u}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Бренд */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-gray-500 font-bold">Бренд:</span>
+              <select
+                value={wardrobeBrandFilter || ""}
+                onChange={(e) => setWardrobeBrandFilter(e.target.value || null)}
+                className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer shadow-sm text-xs min-w-[110px]"
+              >
+                <option value="">Все бренды</option>
+                {["Unihopper", "Kessebohmer", "Hettich", "Dorwell", "Aristo"].map((b) => (
+                  <option key={b} value={b}>{b}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Цвет */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-gray-500 font-bold">Цвет:</span>
+              <select
+                value={wardrobeColorFilter || ""}
+                onChange={(e) => setWardrobeColorFilter(e.target.value || null)}
+                className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-emerald-500 cursor-pointer shadow-sm text-xs min-w-[110px]"
+              >
+                <option value="">Все цвета</option>
+                {[
+                  "Алюминий",
+                  "золото",
+                  "мокко",
+                  "темный матовый",
+                  "хром",
+                  "слоновая кость хром",
+                  "черный",
+                  "чёрный матовый",
+                  "шампань"
+                ].map((c) => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Цвет */}
+          <div className="flex items-center gap-1.5">
+            <span className="text-gray-500 font-bold">Цвет:</span>
+            <select
+              value={sinkColorFilter || ""}
+              onChange={(e) => setSinkColorFilter(e.target.value || null)}
+              className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-sm text-xs min-w-[110px]"
+            >
+              <option value="">Все цвета</option>
+              {[
+                "Алюминий",
+                "золото",
+                "мокко",
+                "темный матовый",
+                "хром",
+                "слоновая кость хром",
+                "черный",
+                "чёрный матовый",
+                "шампань"
+              ].map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Сбросить все */}
+            {(wardrobeGroupFilter || wardrobeUsageFilter || wardrobeBrandFilter || wardrobeColorFilter) && (
+              <button
+                onClick={() => {
+                  setWardrobeGroupFilter(null);
+                  setWardrobeUsageFilter(null);
+                  setWardrobeBrandFilter(null);
+                  setWardrobeColorFilter(null);
+                }}
+                className="px-3 py-1.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-700 font-bold rounded-xl transition-all ml-auto cursor-pointer"
+              >
+                Сбросить фильтры
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {selectedCategory === "Мойки и аксессуары" && (
+        <div className="flex flex-wrap items-center gap-4 mb-6 p-4 bg-blue-50/50 rounded-2xl border border-blue-100 animate-in fade-in slide-in-from-top-2 text-xs">
+          {/* Переключатель групп */}
+          <div className="flex bg-blue-100/50 p-1 rounded-xl gap-1">
+            {["Мойки", "Смесители", "Фильтры", "Дозаторы", "Аксессуары"].map((grp) => (
+              <button
+                type="button"
+                key={grp}
+                onClick={() => {
+                  setSinkGroupFilter(grp);
+                  // Reset other group-specific filters on switch
+                  setSinkBrandFilter(null);
+                  setSinkMaterialFilter(null);
+                  setSinkInstallTypeFilter(null);
+                  setSinkWidthFilter(null);
+                  setSinkShapeFilter(null);
+                  setSinkHasWingFilter(null);
+                  setSinkWingPosFilter(null);
+                  setSinkBowlsFilter(null);
+                  setFaucetBrandFilter(null);
+                  setFaucetMaterialFilter(null);
+                  setFaucetFilterConnFilter(null);
+                  setFilterBrandFilter(null);
+                }}
+                className={cn(
+                  "px-3 py-1.5 rounded-lg font-bold transition-all text-xs cursor-pointer",
+                  sinkGroupFilter === grp
+                    ? "bg-blue-600 text-white shadow-sm"
+                    : "text-blue-700 hover:bg-blue-100/70"
+                )}
+              >
+                {grp}
+              </button>
+            ))}
+          </div>
+
+          <div className="h-4 w-px bg-blue-200"></div>
+
+          {/* Filters for Мойки */}
+          {sinkGroupFilter === "Мойки" && (
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <span className="text-gray-500 font-bold">Бренд:</span>
+                <select
+                  value={sinkBrandFilter || ""}
+                  onChange={(e) => setSinkBrandFilter(e.target.value || null)}
+                  className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-sm text-xs min-w-[110px]"
+                >
+                  <option value="">Все бренды</option>
+                  {["Granfest", "Granula", "Omoikiri", "Paulmark", "Ulgran"].map((b) => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-gray-500 font-bold">Материал:</span>
+                <select
+                  value={sinkMaterialFilter || ""}
+                  onChange={(e) => setSinkMaterialFilter(e.target.value || null)}
+                  className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-sm text-xs min-w-[110px]"
+                >
+                  <option value="">Все материалы</option>
+                  {["Кварц", "Нержавеющая сталь", "Гранит", "Керамика", "Мрамор"].map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-gray-500 font-bold">Монтаж:</span>
+                <select
+                  value={sinkInstallTypeFilter || ""}
+                  onChange={(e) => setSinkInstallTypeFilter(e.target.value || null)}
+                  className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-sm text-xs min-w-[110px]"
+                >
+                  <option value="">Все типы</option>
+                  {["Накладной", "Подстольный"].map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-gray-500 font-bold">Ширина модуля:</span>
+                <select
+                  value={sinkWidthFilter || ""}
+                  onChange={(e) => setSinkWidthFilter(e.target.value || null)}
+                  className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-sm text-xs min-w-[90px]"
+                >
+                  <option value="">Все ширины</option>
+                  {["300 мм", "400 мм", "450 мм", "500 мм", "550 мм", "600 мм", "700 мм", "800 мм", "900 мм", "1000 мм"].map((w) => (
+                    <option key={w} value={w}>{w}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-gray-500 font-bold">Форма:</span>
+                <select
+                  value={sinkShapeFilter || ""}
+                  onChange={(e) => setSinkShapeFilter(e.target.value || null)}
+                  className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-sm text-xs min-w-[110px]"
+                >
+                  <option value="">Все формы</option>
+                  {["квадратная", "квадратная с крылом", "круглая", "овальная", "прямоугольная", "прямоугольная с крылом", "угловая"].map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-gray-500 font-bold">Крыло:</span>
+                <select
+                  value={sinkHasWingFilter || ""}
+                  onChange={(e) => setSinkHasWingFilter(e.target.value || null)}
+                  className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-sm text-xs"
+                >
+                  <option value="">Все</option>
+                  <option value="Да">Да</option>
+                  <option value="Нет">Нет</option>
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-gray-500 font-bold">Расположение крыла:</span>
+                <select
+                  value={sinkWingPosFilter || ""}
+                  onChange={(e) => setSinkWingPosFilter(e.target.value || null)}
+                  className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-sm text-xs min-w-[100px]"
+                >
+                  <option value="">Все</option>
+                  {["крыло слева", "крыло справа", "оборачиваемое"].map((p) => (
+                    <option key={p} value={p}>{p}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-gray-500 font-bold">Чаш:</span>
+                <select
+                  value={sinkBowlsFilter || ""}
+                  onChange={(e) => setSinkBowlsFilter(e.target.value || null)}
+                  className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-sm text-xs"
+                >
+                  <option value="">Все</option>
+                  <option value="1">1</option>
+                  <option value="2">2</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* Filters for Смесители */}
+          {sinkGroupFilter === "Смесители" && (
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <span className="text-gray-500 font-bold">Бренд:</span>
+                <select
+                  value={faucetBrandFilter || ""}
+                  onChange={(e) => setFaucetBrandFilter(e.target.value || null)}
+                  className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-sm text-xs min-w-[110px]"
+                >
+                  <option value="">Все бренды</option>
+                  {["Granfest", "Granula", "Omoikiri", "Paulmark", "Ulgran"].map((b) => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-gray-500 font-bold">Материал:</span>
+                <select
+                  value={faucetMaterialFilter || ""}
+                  onChange={(e) => setFaucetMaterialFilter(e.target.value || null)}
+                  className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-sm text-xs min-w-[110px]"
+                >
+                  <option value="">Все материалы</option>
+                  {["Латунь", "Нержавеющая сталь", "Сталь", "Керамика"].map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <span className="text-gray-500 font-bold">Подключение фильтра:</span>
+                <select
+                  value={faucetFilterConnFilter || ""}
+                  onChange={(e) => setFaucetFilterConnFilter(e.target.value || null)}
+                  className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-sm text-xs"
+                >
+                  <option value="">Все</option>
+                  <option value="Да">Да</option>
+                  <option value="Нет">Нет</option>
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* Filters for Фильтры */}
+          {sinkGroupFilter === "Фильтры" && (
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <span className="text-gray-500 font-bold">Бренд:</span>
+                <select
+                  value={filterBrandFilter || ""}
+                  onChange={(e) => setFilterBrandFilter(e.target.value || null)}
+                  className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer shadow-sm text-xs min-w-[110px]"
+                >
+                  <option value="">Все бренды</option>
+                  {["Аквафор", "Барьер", "Гейзер"].map((b) => (
+                    <option key={b} value={b}>{b}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* Сбросить все */}
+          {(sinkBrandFilter || sinkMaterialFilter || sinkInstallTypeFilter || sinkWidthFilter || sinkShapeFilter || sinkHasWingFilter || sinkWingPosFilter || sinkBowlsFilter || faucetBrandFilter || faucetMaterialFilter || faucetFilterConnFilter || filterBrandFilter || sinkColorFilter) && (
+            <button
+              onClick={() => {
+                setSinkBrandFilter(null);
+                setSinkMaterialFilter(null);
+                setSinkInstallTypeFilter(null);
+                setSinkWidthFilter(null);
+                setSinkShapeFilter(null);
+                setSinkHasWingFilter(null);
+                setSinkWingPosFilter(null);
+                setSinkBowlsFilter(null);
+                setFaucetBrandFilter(null);
+                setFaucetMaterialFilter(null);
+                setFaucetFilterConnFilter(null);
+                setFilterBrandFilter(null);
+                setSinkColorFilter(null);
+              }}
+              className="px-3 py-1.5 bg-blue-100 hover:bg-blue-200 text-blue-700 font-bold rounded-xl transition-all ml-auto cursor-pointer"
+            >
+              Сбросить фильтры
+            </button>
+          )}
+        </div>
+      )}
+
       {selectedCategory === "Ручки и крючки" && (
         <div className="flex flex-wrap items-center gap-4 mb-6 p-4 bg-purple-50/50 rounded-2xl border border-purple-100 animate-in fade-in slide-in-from-top-2 text-xs">
-          <div className="flex items-center gap-1.5 text-purple-700">
-            <Layers className="w-4 h-4 flex-shrink-0" />
-            <span className="text-[10px] font-black uppercase tracking-widest">
-              Фильтры ручек:
-            </span>
+          {/* Переключатель Ручки / Крючки */}
+          <div className="flex bg-purple-100/50 p-1 rounded-xl gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                setHandlesOrHooksFilter("handles");
+                setHandleTypeFilter(null);
+                setHandleLengthFilter(null);
+                setHandleColorFilter(null);
+                setHandleMaterialFilter(null);
+                setManufacturerFilter(null);
+                setHookTypeFilter(null);
+              }}
+              className={cn(
+                "px-3 py-1.5 rounded-lg font-bold transition-all text-xs cursor-pointer",
+                handlesOrHooksFilter === "handles"
+                  ? "bg-purple-600 text-white shadow-sm"
+                  : "text-purple-700 hover:bg-purple-100/70"
+              )}
+            >
+              Ручки
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setHandlesOrHooksFilter("hooks");
+                setHandleTypeFilter(null);
+                setHandleLengthFilter(null);
+                setHandleColorFilter(null);
+                setHandleMaterialFilter(null);
+                setManufacturerFilter(null);
+                setHookTypeFilter(null);
+              }}
+              className={cn(
+                "px-3 py-1.5 rounded-lg font-bold transition-all text-xs cursor-pointer",
+                handlesOrHooksFilter === "hooks"
+                  ? "bg-purple-600 text-white shadow-sm"
+                  : "text-purple-700 hover:bg-purple-100/70"
+              )}
+            >
+              Крючки
+            </button>
           </div>
 
-          {/* Тип ручки */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-gray-500 font-bold">Тип:</span>
-            <select
-              value={handleTypeFilter || ""}
-              onChange={(e) => setHandleTypeFilter(e.target.value || null)}
-              className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer shadow-sm text-xs min-w-[120px]"
-            >
-              <option value="">Все типы</option>
-              {availableTypes.map((t) => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
-          </div>
+          <div className="h-4 w-px bg-purple-200"></div>
 
-          {/* Длина */}
-          <div className="flex items-center gap-1.5">
-            <span className="text-gray-500 font-bold">Длина:</span>
-            <select
-              value={handleLengthFilter || ""}
-              onChange={(e) => setHandleLengthFilter(e.target.value || null)}
-              className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer shadow-sm text-xs min-w-[100px]"
-            >
-              <option value="">Все длины</option>
-              {availableLengths.map((l) => (
-                <option key={l} value={l}>{l}</option>
-              ))}
-            </select>
-          </div>
+          {/* Тип ручки или тип крючка */}
+          {handlesOrHooksFilter === "handles" ? (
+            <div className="flex items-center gap-1.5">
+              <span className="text-gray-500 font-bold">Тип:</span>
+              <select
+                value={handleTypeFilter || ""}
+                onChange={(e) => setHandleTypeFilter(e.target.value || null)}
+                className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer shadow-sm text-xs min-w-[120px]"
+              >
+                <option value="">Все типы</option>
+                {availableTypes.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <span className="text-gray-500 font-bold">Тип крючка:</span>
+              <select
+                value={hookTypeFilter || ""}
+                onChange={(e) => setHookTypeFilter(e.target.value || null)}
+                className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer shadow-sm text-xs min-w-[120px]"
+              >
+                <option value="">Все типы</option>
+                {availableTypes.map((t) => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Длина (только для ручек) */}
+          {handlesOrHooksFilter === "handles" && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-gray-500 font-bold">Длина:</span>
+              <select
+                value={handleLengthFilter || ""}
+                onChange={(e) => setHandleLengthFilter(e.target.value || null)}
+                className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer shadow-sm text-xs min-w-[100px]"
+              >
+                <option value="">Все длины</option>
+                {availableLengths.map((l) => (
+                  <option key={l} value={l}>{l}</option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Цвет */}
           <div className="flex items-center gap-1.5">
@@ -16622,7 +17677,7 @@ const ProductsView = ({
           </div>
 
           {/* Сбросить все */}
-          {(handleTypeFilter || handleLengthFilter || handleColorFilter || handleMaterialFilter || manufacturerFilter) && (
+          {(handleTypeFilter || handleLengthFilter || handleColorFilter || handleMaterialFilter || manufacturerFilter || hookTypeFilter) && (
             <button
               onClick={() => {
                 setHandleTypeFilter(null);
@@ -16630,6 +17685,7 @@ const ProductsView = ({
                 setHandleColorFilter(null);
                 setHandleMaterialFilter(null);
                 setManufacturerFilter(null);
+                setHookTypeFilter(null);
               }}
               className="px-3 py-1.5 bg-purple-100 hover:bg-purple-200 text-purple-700 font-bold rounded-xl transition-all ml-auto cursor-pointer"
             >
@@ -16950,7 +18006,7 @@ const ProductsView = ({
                                             const reader = new FileReader();
                                             reader.onloadend = async () => {
                                               const rawBase64 = reader.result as string;
-                                              const compressed = await compressImage(rawBase64, 800, 800, 0.7);
+                                              const compressed = await compressImage(rawBase64, 400, 400, 0.6);
                                               const updated = [...(newProduct.variations || [])];
                                               updated[idx] = { ...v, image: compressed };
                                               setNewProduct(prev => ({ ...prev, variations: updated }));
@@ -16964,75 +18020,84 @@ const ProductsView = ({
                                   )}
                                 </div>
 
-                                <div className="flex-1 grid grid-cols-1 md:grid-cols-11 gap-3 items-end">
-                                  <div className="md:col-span-3">
-                                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Название / Размер</label>
-                                    <input
-                                      type="text"
-                                      value={v.name}
-                                      onChange={(e) => {
-                                        const updated = [...(newProduct.variations || [])];
-                                        updated[idx] = { ...v, name: e.target.value };
-                                        setNewProduct(prev => ({ ...prev, variations: updated }));
-                                      }}
-                                      placeholder="Напр: 1000 мм"
-                                      className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
-                                    />
+                                <div className="flex-1 space-y-3">
+                                  {/* Row 1: Name and Purchase Price */}
+                                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                                    <div className="sm:col-span-8">
+                                      <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Название / Размер</label>
+                                      <input
+                                        type="text"
+                                        value={v.name}
+                                        onChange={(e) => {
+                                          const updated = [...(newProduct.variations || [])];
+                                          updated[idx] = { ...v, name: e.target.value };
+                                          setNewProduct(prev => ({ ...prev, variations: updated }));
+                                        }}
+                                        placeholder="Напр: 1000 мм"
+                                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold text-gray-800"
+                                      />
+                                    </div>
+                                    <div className="sm:col-span-4">
+                                      <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Закупка (₽)</label>
+                                      <input
+                                        type="number"
+                                        value={v.purchasePrice || ""}
+                                        onChange={(e) => {
+                                          const updated = [...(newProduct.variations || [])];
+                                          updated[idx] = { ...v, purchasePrice: parseFloat(e.target.value) || 0 };
+                                          setNewProduct(prev => ({ ...prev, variations: updated }));
+                                        }}
+                                        placeholder="0"
+                                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold text-purple-950 bg-purple-50/5"
+                                      />
+                                    </div>
                                   </div>
-                                  <div className="md:col-span-2">
-                                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Артикул</label>
-                                    <input
-                                      type="text"
-                                      value={v.article || ""}
-                                      onChange={(e) => {
-                                        const updated = [...(newProduct.variations || [])];
-                                        updated[idx] = { ...v, article: e.target.value };
-                                        setNewProduct(prev => ({ ...prev, variations: updated }));
-                                      }}
-                                      className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
-                                    />
-                                  </div>
-                                  <div className="md:col-span-2">
-                                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Арт. поставщика</label>
-                                    <input
-                                      type="text"
-                                      value={v.vendorArticle || ""}
-                                      onChange={(e) => {
-                                        const updated = [...(newProduct.variations || [])];
-                                        updated[idx] = { ...v, vendorArticle: e.target.value };
-                                        setNewProduct(prev => ({ ...prev, variations: updated }));
-                                      }}
-                                      className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
-                                    />
-                                  </div>
-                                  <div className="md:col-span-2">
-                                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Арт. производит.</label>
-                                    <input
-                                      type="text"
-                                      value={v.manufacturerArticle || ""}
-                                      onChange={(e) => {
-                                        const updated = [...(newProduct.variations || [])];
-                                        updated[idx] = { ...v, manufacturerArticle: e.target.value };
-                                        setNewProduct(prev => ({ ...prev, variations: updated }));
-                                      }}
-                                      className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
-                                    />
-                                  </div>
-                                  <div className="md:col-span-2">
-                                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Закупка (₽)</label>
-                                    <input
-                                      type="number"
-                                      value={v.purchasePrice || ""}
-                                      onChange={(e) => {
-                                        const updated = [...(newProduct.variations || [])];
-                                        updated[idx] = { ...v, purchasePrice: parseFloat(e.target.value) || 0 };
-                                        setNewProduct(prev => ({ ...prev, variations: updated }));
-                                      }}
-                                      className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
-                                    />
+
+                                  {/* Row 2: Articles */}
+                                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                                    <div>
+                                      <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Артикул</label>
+                                      <input
+                                        type="text"
+                                        value={v.article || ""}
+                                        onChange={(e) => {
+                                          const updated = [...(newProduct.variations || [])];
+                                          updated[idx] = { ...v, article: e.target.value };
+                                          setNewProduct(prev => ({ ...prev, variations: updated }));
+                                        }}
+                                        placeholder="Внутренний арт."
+                                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold text-gray-800"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Арт. поставщика</label>
+                                      <input
+                                        type="text"
+                                        value={v.vendorArticle || ""}
+                                        onChange={(e) => {
+                                          const updated = [...(newProduct.variations || [])];
+                                          updated[idx] = { ...v, vendorArticle: e.target.value };
+                                          setNewProduct(prev => ({ ...prev, variations: updated }));
+                                        }}
+                                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold text-gray-800"
+                                      />
+                                    </div>
+                                    <div>
+                                      <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Арт. производит.</label>
+                                      <input
+                                        type="text"
+                                        value={v.manufacturerArticle || ""}
+                                        onChange={(e) => {
+                                          const updated = [...(newProduct.variations || [])];
+                                          updated[idx] = { ...v, manufacturerArticle: e.target.value };
+                                          setNewProduct(prev => ({ ...prev, variations: updated }));
+                                        }}
+                                        className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold text-gray-800"
+                                      />
+                                    </div>
                                   </div>
                                 </div>
-                                <div className="flex-shrink-0 sm:mt-5">
+                                <div className="flex-shrink-0 sm:self-center">
                                   <button
                                     type="button"
                                     onClick={() => {
@@ -17457,6 +18522,19 @@ const ProductsView = ({
                              <datalist id="dryer-brands">
                                {availableDryerBrands.map(brand => <option key={brand} value={brand} />)}
                              </datalist>
+                              <datalist id="predefined-colors">
+                                {["Алюминий", "золото", "мокко", "темный матовый", "хром", "слоновая кость хром", "черный", "чёрный матовый", "шампань"].map(c => <option key={c} value={c} />)}
+                              </datalist>
+                              <datalist id="plinth-colors">
+                                {[
+                                  "Алебастр белый", "Антрацит Софт тач", "Графит зернистый", "Дуб капучино", 
+                                  "Дуб серый", "Золото браш", "Латте", "Орех макадамия", "алюминий гладкий", 
+                                  "белый", "белый глянец", "бетон светлый", "ваниль", "венге 1527", 
+                                  "дуб беленый", "дуб мелинга белая", "дуб млечный", "дуб сонома", 
+                                  "капучино SoftTouch", "клен", "орех", "таволато", "орех экко", 
+                                  "светло-серый", "титан", "черный", "черный глянец", "ясень шимо светлый", "ясень шимо темный"
+                                ].map(c => <option key={c} value={c} />)}
+                              </datalist>
                             </div>
                           </div>
                         </div>
@@ -18416,62 +19494,129 @@ const ProductsView = ({
 
                   {newProduct.category === "Ручки и крючки" && (
                     <div className="space-y-4 p-5 bg-purple-50/40 border border-purple-100 rounded-2xl animate-in slide-in-from-top-2">
-                      <h4 className="text-sm font-bold text-purple-950 flex items-center gap-1.5 border-b border-purple-100 pb-2">
-                        <Sparkles className="w-4 h-4 text-purple-600" />
-                        Спецификация ручки
-                      </h4>
+                      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-purple-100 pb-2 mb-4">
+                        <h4 className="text-sm font-bold text-purple-950 flex items-center gap-1.5">
+                          <Sparkles className="w-4 h-4 text-purple-600" />
+                          Спецификация ({newProduct.handleOrHook === "hook" ? "крючок" : "ручка"})
+                        </h4>
 
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-bold text-gray-700 mb-2">
-                            Тип ручки
-                          </label>
-                          <select
-                            value={newProduct.handleType || ""}
-                            onChange={(e) =>
+                        {/* Переключатель Ручка / Крючок */}
+                        <div className="flex bg-purple-200/50 p-0.5 rounded-lg gap-0.5">
+                          <button
+                            type="button"
+                            onClick={() =>
                               setNewProduct((prev) => ({
                                 ...prev,
-                                handleType: e.target.value,
+                                handleOrHook: "handle",
                               }))
                             }
-                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                            className={cn(
+                              "px-2.5 py-1 rounded-md font-bold transition-all text-[10px] cursor-pointer",
+                              newProduct.handleOrHook !== "hook"
+                                ? "bg-purple-600 text-white shadow-sm"
+                                : "text-purple-700 hover:bg-purple-100/70"
+                            )}
                           >
-                            <option value="">Выберите тип</option>
-                            {["Врезные", "Накладные", "Кнопка", "Профильная", "Рейлинговая", "Скоба", "Торцевая", "GOLA"].map((t) => (
-                              <option key={t} value={t}>
-                                {t}
-                              </option>
-                            ))}
-                          </select>
+                            Ручка
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setNewProduct((prev) => ({
+                                ...prev,
+                                handleOrHook: "hook",
+                              }))
+                            }
+                            className={cn(
+                              "px-2.5 py-1 rounded-md font-bold transition-all text-[10px] cursor-pointer",
+                              newProduct.handleOrHook === "hook"
+                                ? "bg-purple-600 text-white shadow-sm"
+                                : "text-purple-700 hover:bg-purple-100/70"
+                            )}
+                          >
+                            Крючок
+                          </button>
                         </div>
+                      </div>
 
-                        {!(newProduct.variations && newProduct.variations.length > 0) ? (
+                      <div className="grid grid-cols-2 gap-4">
+                        {newProduct.handleOrHook !== "hook" ? (
                           <div>
                             <label className="block text-sm font-bold text-gray-700 mb-2">
-                              Длина / Размер (мм)
+                              Тип ручки
                             </label>
-                            <input
-                              type="text"
-                              value={newProduct.handleLength || ""}
+                            <select
+                              value={newProduct.handleType || ""}
                               onChange={(e) =>
                                 setNewProduct((prev) => ({
                                   ...prev,
-                                  handleLength: e.target.value,
+                                  handleType: e.target.value,
                                 }))
                               }
-                              placeholder="Например: 128"
                               className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
-                            />
+                            >
+                              <option value="">Выберите тип</option>
+                              {["Врезные", "Накладные", "Кнопка", "Профильная", "Рейлинговая", "Скоба", "Торцевая", "GOLA"].map((t) => (
+                                <option key={t} value={t}>
+                                  {t}
+                                </option>
+                              ))}
+                            </select>
                           </div>
                         ) : (
-                          <div className="flex flex-col justify-end">
-                            <label className="block text-sm font-bold text-gray-400 mb-2">
-                              Длина / Размер (мм)
+                          <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-2">
+                              Тип крючка
                             </label>
-                            <div className="px-4 py-3 bg-purple-50 border border-dashed border-purple-200 rounded-xl text-xs text-purple-800 font-medium">
-                              Задается индивидуально в вариациях ниже
-                            </div>
+                            <select
+                              value={newProduct.hookType || ""}
+                              onChange={(e) =>
+                                setNewProduct((prev) => ({
+                                  ...prev,
+                                  hookType: e.target.value,
+                                }))
+                              }
+                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                            >
+                              <option value="">Выберите тип крючка</option>
+                              {["Однорожковый", "Двухрожковый", "Трехрожковый"].map((t) => (
+                                <option key={t} value={t}>
+                                  {t}
+                                </option>
+                              ))}
+                            </select>
                           </div>
+                        )}
+
+                        {newProduct.handleOrHook !== "hook" && (
+                          !(newProduct.variations && newProduct.variations.length > 0) ? (
+                            <div>
+                              <label className="block text-sm font-bold text-gray-700 mb-2">
+                                Длина / Размер (мм)
+                              </label>
+                              <input
+                                type="text"
+                                value={newProduct.handleLength || ""}
+                                onChange={(e) =>
+                                  setNewProduct((prev) => ({
+                                    ...prev,
+                                    handleLength: e.target.value,
+                                  }))
+                                }
+                                placeholder="Например: 128"
+                                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                              />
+                            </div>
+                          ) : (
+                            <div className="flex flex-col justify-end">
+                              <label className="block text-sm font-bold text-gray-400 mb-2">
+                                Длина / Размер (мм)
+                              </label>
+                              <div className="px-4 py-3 bg-purple-50 border border-dashed border-purple-200 rounded-xl text-xs text-purple-800 font-medium">
+                                Задается индивидуально в вариациях ниже
+                              </div>
+                            </div>
+                          )
                         )}
 
                         <div>
@@ -18480,11 +19625,13 @@ const ProductsView = ({
                           </label>
                           <input
                             type="text"
+                            list="predefined-colors"
                             value={newProduct.handleColor || ""}
                             onChange={(e) =>
                               setNewProduct((prev) => ({
                                 ...prev,
                                 handleColor: e.target.value,
+                                color: e.target.value,
                               }))
                             }
                             placeholder="Например: Черный матовый"
@@ -18587,6 +19734,439 @@ const ProductsView = ({
                             ))}
                           </select>
                         )}
+                      </div>
+                    </div>
+                  )}
+
+                  {newProduct.category === "Мойки и аксессуары" && (
+                    <div className="space-y-4 p-5 bg-blue-50/40 border border-blue-100 rounded-2xl animate-in slide-in-from-top-2">
+                      <h4 className="text-sm font-bold text-blue-950 flex items-center gap-1.5 border-b border-blue-100 pb-2 mb-2">
+                        <Sparkles className="w-4 h-4 text-blue-600" />
+                        Спецификация мойки и аксессуаров
+                      </h4>
+
+                      <div className="mb-4">
+                        <label className="block text-sm font-bold text-gray-700 mb-2">Группа товара</label>
+                        <div className="grid grid-cols-5 gap-2 bg-gray-50 p-1.5 rounded-xl border border-gray-200">
+                          {["Мойки", "Смесители", "Фильтры", "Дозаторы", "Аксессуары"].map((grp) => (
+                            <button
+                              type="button"
+                              key={grp}
+                              onClick={() => setNewProduct(prev => ({ ...prev, sinkGroup: grp }))}
+                              className={`py-2 px-1 text-center text-[11px] font-bold rounded-lg transition-all cursor-pointer ${
+                                newProduct.sinkGroup === grp
+                                  ? "bg-blue-600 text-white shadow"
+                                  : "text-gray-600 hover:bg-gray-100 hover:text-gray-900"
+                              }`}
+                            >
+                              {grp}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="mb-4">
+                        <label className="block text-sm font-bold text-gray-700 mb-2">Цвет / Декор</label>
+                        <input
+                          type="text"
+                          list="predefined-colors"
+                          value={newProduct.color || ""}
+                          onChange={(e) => setNewProduct(prev => ({ ...prev, color: e.target.value }))}
+                          placeholder="Выберите или введите цвет (например: хром, черный)"
+                          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                        />
+                      </div>
+
+                      {newProduct.sinkGroup === "Мойки" && (
+                        <div className="grid grid-cols-2 gap-4 animate-in fade-in duration-200">
+                          <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-2">Бренд (Мойки)</label>
+                            <select
+                              value={newProduct.sinkBrand || ""}
+                              onChange={(e) => setNewProduct(prev => ({ ...prev, sinkBrand: e.target.value, manufacturer: e.target.value }))}
+                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                            >
+                              <option value="">Выберите бренд</option>
+                              {["Granfest", "Granula", "Omoikiri", "Paulmark", "Ulgran"].map((b) => (
+                                <option key={b} value={b}>{b}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-2">Материал</label>
+                            <select
+                              value={newProduct.sinkMaterial || ""}
+                              onChange={(e) => setNewProduct(prev => ({ ...prev, sinkMaterial: e.target.value }))}
+                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                            >
+                              <option value="">Выберите материал</option>
+                              {["Кварц", "Нержавеющая сталь", "Гранит", "Керамика", "Мрамор"].map((m) => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-2">Тип монтажа</label>
+                            <select
+                              value={newProduct.sinkInstallType || ""}
+                              onChange={(e) => setNewProduct(prev => ({ ...prev, sinkInstallType: e.target.value }))}
+                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                            >
+                              <option value="">Выберите тип монтажа</option>
+                              {["Накладной", "Подстольный"].map((t) => (
+                                <option key={t} value={t}>{t}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-2">Ширина модуля</label>
+                            <select
+                              value={newProduct.sinkWidth || ""}
+                              onChange={(e) => setNewProduct(prev => ({ ...prev, sinkWidth: e.target.value }))}
+                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                            >
+                              <option value="">Выберите ширину</option>
+                              {["300 мм", "400 мм", "450 мм", "500 мм", "550 мм", "600 мм", "700 мм", "800 мм", "900 мм", "1000 мм"].map((w) => (
+                                <option key={w} value={w}>{w}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-2">Форма</label>
+                            <select
+                              value={newProduct.sinkShape || ""}
+                              onChange={(e) => setNewProduct(prev => ({ ...prev, sinkShape: e.target.value }))}
+                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                            >
+                              <option value="">Выберите форму</option>
+                              {["квадратная", "квадратная с крылом", "круглая", "овальная", "прямоугольная", "прямоугольная с крылом", "угловая"].map((s) => (
+                                <option key={s} value={s}>{s}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-2">Наличие крыла</label>
+                            <select
+                              value={newProduct.sinkHasWing || ""}
+                              onChange={(e) => setNewProduct(prev => ({ ...prev, sinkHasWing: e.target.value }))}
+                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                            >
+                              <option value="">Выберите наличие крыла</option>
+                              {["Да", "Нет"].map((w) => (
+                                <option key={w} value={w}>{w}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-2">Расположение крыла</label>
+                            <select
+                              value={newProduct.sinkWingPos || ""}
+                              onChange={(e) => setNewProduct(prev => ({ ...prev, sinkWingPos: e.target.value }))}
+                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                            >
+                              <option value="">Выберите расположение</option>
+                              {["крыло слева", "крыло справа", "оборачиваемое"].map((p) => (
+                                <option key={p} value={p}>{p}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-2">Количество чаш</label>
+                            <select
+                              value={newProduct.sinkBowls || ""}
+                              onChange={(e) => setNewProduct(prev => ({ ...prev, sinkBowls: e.target.value }))}
+                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                            >
+                              <option value="">Выберите количество</option>
+                              {["1", "2"].map((b) => (
+                                <option key={b} value={b}>{b}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      )}
+
+                      {newProduct.sinkGroup === "Смесители" && (
+                        <div className="grid grid-cols-2 gap-4 animate-in fade-in duration-200">
+                          <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-2">Бренд (Смеситель)</label>
+                            <select
+                              value={newProduct.faucetBrand || ""}
+                              onChange={(e) => setNewProduct(prev => ({ ...prev, faucetBrand: e.target.value, manufacturer: e.target.value }))}
+                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                            >
+                              <option value="">Выберите бренд</option>
+                              {["Granfest", "Granula", "Omoikiri", "Paulmark", "Ulgran"].map((b) => (
+                                <option key={b} value={b}>{b}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-2">Материал</label>
+                            <select
+                              value={newProduct.faucetMaterial || ""}
+                              onChange={(e) => setNewProduct(prev => ({ ...prev, faucetMaterial: e.target.value }))}
+                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                            >
+                              <option value="">Выберите материал</option>
+                              {["Латунь", "Нержавеющая сталь", "Сталь", "Керамика"].map((m) => (
+                                <option key={m} value={m}>{m}</option>
+                              ))}
+                            </select>
+                          </div>
+
+                          <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-2">Подключение фильтра</label>
+                            <select
+                              value={newProduct.faucetFilterConn || ""}
+                              onChange={(e) => setNewProduct(prev => ({ ...prev, faucetFilterConn: e.target.value }))}
+                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                            >
+                              <option value="">Выберите подключение</option>
+                              {["Да", "Нет"].map((c) => (
+                                <option key={c} value={c}>{c}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      )}
+
+                      {newProduct.sinkGroup === "Фильтры" && (
+                        <div className="grid grid-cols-2 gap-4 animate-in fade-in duration-200">
+                          <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-2">Бренд (Фильтр)</label>
+                            <select
+                              value={newProduct.filterBrand || ""}
+                              onChange={(e) => setNewProduct(prev => ({ ...prev, filterBrand: e.target.value, manufacturer: e.target.value }))}
+                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                            >
+                              <option value="">Выберите бренд</option>
+                              {["Аквафор", "Барьер", "Гейзер"].map((b) => (
+                                <option key={b} value={b}>{b}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {newProduct.category === "Крепежные элементы и цоколь" && (
+                    <div className="space-y-4 p-5 bg-orange-50/40 border border-orange-100 rounded-2xl animate-in slide-in-from-top-2">
+                      <h4 className="text-sm font-bold text-orange-950 flex items-center gap-1.5 border-b border-orange-100 pb-2 mb-2">
+                        <Sparkles className="w-4 h-4 text-orange-600" />
+                        Спецификация крепежных элементов и цоколя
+                      </h4>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-2">Группа товара</label>
+                          <select
+                            value={newProduct.fastenerGroup || ""}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setNewProduct(prev => ({
+                                ...prev,
+                                fastenerGroup: val,
+                                ...(val !== "Цоколь" ? {
+                                  fastenerPlinthHeight: "",
+                                  fastenerPlinthColor: "",
+                                  fastenerPlinthMaterial: ""
+                                } : {})
+                              }));
+                            }}
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                          >
+                            <option value="">Выберите группу</option>
+                            {["Навесы", "Цоколь", "Крепеж"].map((g) => (
+                              <option key={g} value={g}>{g}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-2">Бренд</label>
+                          <select
+                            value={newProduct.fastenerBrand || newProduct.brand || newProduct.manufacturer || ""}
+                            onChange={(e) => setNewProduct(prev => ({
+                              ...prev,
+                              fastenerBrand: e.target.value,
+                              brand: e.target.value,
+                              manufacturer: e.target.value
+                            }))}
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                          >
+                            <option value="">Выберите бренд</option>
+                            {["CAMAR", "Boyard", "Hafele", "Hettich", "ABS", "Китай"].map((b) => (
+                              <option key={b} value={b}>{b}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-2">Максимальная нагрузка кг</label>
+                          <input
+                            type="text"
+                            value={newProduct.fastenerMaxLoad || ""}
+                            onChange={(e) => setNewProduct(prev => ({ ...prev, fastenerMaxLoad: e.target.value }))}
+                            placeholder="Например: 120"
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-2">Назначение</label>
+                          <select
+                            value={newProduct.fastenerUsage || ""}
+                            onChange={(e) => setNewProduct(prev => ({ ...prev, fastenerUsage: e.target.value }))}
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                          >
+                            <option value="">Выберите назначение</option>
+                            {[
+                              "Для верхних",
+                              "для нижних",
+                              "Для нижних с ящиками",
+                              "Для полок",
+                              "Для стеновых панелей"
+                            ].map((u) => (
+                              <option key={u} value={u}>{u}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {newProduct.fastenerGroup === "Цоколь" && (
+                          <>
+                            <div>
+                              <label className="block text-sm font-bold text-gray-700 mb-2">Высота цоколя</label>
+                              <select
+                                value={newProduct.fastenerPlinthHeight || ""}
+                                onChange={(e) => setNewProduct(prev => ({ ...prev, fastenerPlinthHeight: e.target.value }))}
+                                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                              >
+                                <option value="">Выберите высоту</option>
+                                {["100 мм", "120 мм", "150 мм"].map((h) => (
+                                  <option key={h} value={h}>{h}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div>
+                              <label className="block text-sm font-bold text-gray-700 mb-2">Материал цоколя</label>
+                              <select
+                                value={newProduct.fastenerPlinthMaterial || ""}
+                                onChange={(e) => setNewProduct(prev => ({ ...prev, fastenerPlinthMaterial: e.target.value, material: e.target.value }))}
+                                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                              >
+                                <option value="">Выберите материал</option>
+                                {["Пластик", "Алюминий"].map((m) => (
+                                  <option key={m} value={m}>{m}</option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="col-span-2">
+                              <label className="block text-sm font-bold text-gray-700 mb-2">Цвет цоколя</label>
+                              <input
+                                type="text"
+                                list="plinth-colors"
+                                value={newProduct.fastenerPlinthColor || newProduct.color || ""}
+                                onChange={(e) => setNewProduct(prev => ({ ...prev, fastenerPlinthColor: e.target.value, color: e.target.value }))}
+                                placeholder="Выберите или введите цвет цоколя"
+                                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                              />
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {newProduct.category === "Оснащение шкафов" && (
+                    <div className="space-y-4 p-5 bg-emerald-50/40 border border-emerald-100 rounded-2xl animate-in slide-in-from-top-2">
+                      <h4 className="text-sm font-bold text-emerald-950 flex items-center gap-1.5 border-b border-emerald-100 pb-2 mb-2">
+                        <Sparkles className="w-4 h-4 text-emerald-600" />
+                        Спецификация оснащения шкафов
+                      </h4>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-2">Группа товара</label>
+                          <select
+                            value={newProduct.wardrobeGroup || ""}
+                            onChange={(e) => setNewProduct(prev => ({ ...prev, wardrobeGroup: e.target.value }))}
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                          >
+                            <option value="">Выберите группу</option>
+                            {[
+                              "Наполнения для шкафов",
+                              "Корзины сетчатые",
+                              "Вешалки для шкафов купе и прихожих",
+                              "Штанги и держатели",
+                              "Пантографы",
+                              "Полки для обуви"
+                            ].map((g) => (
+                              <option key={g} value={g}>{g}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-2">Применение</label>
+                          <select
+                            value={newProduct.wardrobeUsage || ""}
+                            onChange={(e) => setNewProduct(prev => ({ ...prev, wardrobeUsage: e.target.value }))}
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                          >
+                            <option value="">Выберите применение</option>
+                            {[
+                              "Для аксессуаров",
+                              "Для белья",
+                              "Для брюк",
+                              "Для вешалок",
+                              "Для галстуков",
+                              "Для головных уборов",
+                              "Для обуви",
+                              "Для ремней",
+                              "Для юбок"
+                            ].map((u) => (
+                              <option key={u} value={u}>{u}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-2">Бренд</label>
+                          <select
+                            value={newProduct.wardrobeBrand || ""}
+                            onChange={(e) => setNewProduct(prev => ({ ...prev, wardrobeBrand: e.target.value, manufacturer: e.target.value }))}
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                          >
+                            <option value="">Выберите бренд</option>
+                            {["Unihopper", "Kessebohmer", "Hettich", "Dorwell", "Aristo"].map((b) => (
+                              <option key={b} value={b}>{b}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-2">Цвет / Декор</label>
+                          <input
+                            type="text"
+                            list="predefined-colors"
+                            value={newProduct.color || ""}
+                            onChange={(e) => setNewProduct(prev => ({ ...prev, color: e.target.value }))}
+                            placeholder="Выберите или введите цвет"
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                          />
+                        </div>
                       </div>
                     </div>
                   )}
