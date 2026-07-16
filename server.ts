@@ -731,7 +731,26 @@ async function startServer() {
       res.setHeader("Surrogate-Control", "no-store");
       
       const docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({ where: { collection: colPath } }));
-      const mapped = docs.map(d => ({ id: d.docId, data: JSON.parse(d.data), path: d.path }));
+      let mapped = docs.map(d => ({ id: d.docId, data: JSON.parse(d.data), path: d.path }));
+      
+      // If fetching a products collection, strip heavy images for high-speed, lightweight delivery
+      if (colPath.endsWith("/products")) {
+        mapped = mapped.map(item => {
+          const hasImage = !!(item.data.image || (item.data.images && item.data.images.length > 0));
+          const lightData = { ...item.data };
+          // Remove heavy base64 strings
+          delete lightData.image;
+          delete lightData.images;
+          return {
+            ...item,
+            data: {
+              ...lightData,
+              hasImage
+            }
+          };
+        });
+      }
+      
       res.json(mapped);
     } catch (e: any) {
       const errMsg = (e?.stack || e?.message || String(e)).replace(/\r?\n/g, " -- ");

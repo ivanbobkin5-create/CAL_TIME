@@ -131,6 +131,124 @@ import {
 // --- START OF OFFLINE CACHE AND SYNC ENGINE ---
 const originalFetch = window.fetch;
 
+class IndexedDBCache {
+  private dbName = "meb_offline_cache";
+  private storeName = "api_cache";
+  private dbPromise: Promise<IDBDatabase> | null = null;
+
+  private initDB(): Promise<IDBDatabase> {
+    if (this.dbPromise) return this.dbPromise;
+    this.dbPromise = new Promise((resolve, reject) => {
+      const request = indexedDB.open(this.dbName, 1);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains(this.storeName)) {
+          db.createObjectStore(this.storeName);
+        }
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    return this.dbPromise;
+  }
+
+  async get(key: string): Promise<string | null> {
+    try {
+      const db = await this.initDB();
+      return new Promise((resolve) => {
+        const tx = db.transaction(this.storeName, "readonly");
+        const store = tx.objectStore(this.storeName);
+        const req = store.get(key);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => resolve(null);
+      });
+    } catch (_) {
+      return null;
+    }
+  }
+
+  async set(key: string, value: string): Promise<boolean> {
+    try {
+      const db = await this.initDB();
+      return new Promise((resolve) => {
+        const tx = db.transaction(this.storeName, "readwrite");
+        const store = tx.objectStore(this.storeName);
+        const req = store.put(value, key);
+        req.onsuccess = () => resolve(true);
+        req.onerror = () => resolve(false);
+      });
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async remove(key: string): Promise<boolean> {
+    try {
+      const db = await this.initDB();
+      return new Promise((resolve) => {
+        const tx = db.transaction(this.storeName, "readwrite");
+        const store = tx.objectStore(this.storeName);
+        const req = store.delete(key);
+        req.onsuccess = () => resolve(true);
+        req.onerror = () => resolve(false);
+      });
+    } catch (_) {
+      return false;
+    }
+  }
+
+  async clear(): Promise<boolean> {
+    try {
+      const db = await this.initDB();
+      return new Promise((resolve) => {
+        const tx = db.transaction(this.storeName, "readwrite");
+        const store = tx.objectStore(this.storeName);
+        const req = store.clear();
+        req.onsuccess = () => resolve(true);
+        req.onerror = () => resolve(false);
+      });
+    } catch (_) {
+      return false;
+    }
+  }
+}
+
+const idbCache = new IndexedDBCache();
+
+const hydrateCollectionWithImages = async (url: string, parsedList: any[]): Promise<any[]> => {
+  if (!url.endsWith("/products") || !Array.isArray(parsedList)) {
+    return parsedList;
+  }
+  
+  // Asynchronously check and inject cached image data for every product in the collection
+  const hydratedList = await Promise.all(parsedList.map(async (item: any) => {
+    if (!item || !item.id) return item;
+    
+    // Check if we have the full product stored in IndexedDB under its document path
+    const docKey = `meb_cache:${url.replace("/col/", "/doc/")}/${item.id}`;
+    try {
+      const cachedDocStr = await idbCache.get(docKey);
+      if (cachedDocStr) {
+        const cachedDoc = JSON.parse(cachedDocStr);
+        const img = cachedDoc?.image || cachedDoc?.images?.[0];
+        if (img) {
+          return {
+            ...item,
+            data: {
+              ...item.data,
+              image: img,
+              images: [img]
+            }
+          };
+        }
+      }
+    } catch (_) {}
+    return item;
+  }));
+  
+  return hydratedList;
+};
+
 const pruneDeep = (obj: any): any => {
   if (obj === null || obj === undefined) return obj;
   if (typeof obj === "string") {
@@ -196,8 +314,14 @@ const pruneCollectionForCache = (key: string, valueStr: string): string => {
   return valueStr;
 };
 
-const safeSetLocalStorage = (key: string, value: string) => {
+const safeSetLocalStorage = async (key: string, value: string) => {
   try {
+    // 1. Store 100% complete raw data in IndexedDB (has virtually no quota limits)
+    if (key.startsWith("meb_cache:")) {
+      await idbCache.set(key, value);
+    }
+
+    // 2. Store highly-pruned fallback in localStorage for 0ms synchronous startup
     const prunedValue = pruneCollectionForCache(key, value);
     localStorage.setItem(key, prunedValue);
   } catch (e: any) {
@@ -239,7 +363,7 @@ const safeSetLocalStorage = (key: string, value: string) => {
   }
 };
 
-function updateLocalCache(url: string, method: string, bodyStr: string | null) {
+async function updateLocalCache(url: string, method: string, bodyStr: string | null) {
   try {
     const isDoc = url.includes("/api/db/doc/");
     const baseApi = isDoc ? "/api/db/doc/" : "/api/db/col/";
@@ -273,21 +397,22 @@ function updateLocalCache(url: string, method: string, bodyStr: string | null) {
       
       if (method === "DELETE") {
         localStorage.removeItem(`meb_cache:${docUrl}`);
+        await idbCache.remove(`meb_cache:${docUrl}`);
         
-        const cachedColStr = localStorage.getItem(`meb_cache:${colUrl}`);
+        const cachedColStr = (await idbCache.get(`meb_cache:${colUrl}`)) || localStorage.getItem(`meb_cache:${colUrl}`);
         if (cachedColStr) {
           try {
             const colData = JSON.parse(cachedColStr);
             if (Array.isArray(colData)) {
               const filtered = colData.filter((item: any) => item.id !== docId);
               try {
-                safeSetLocalStorage(`meb_cache:${colUrl}`, JSON.stringify(filtered));
+                await safeSetLocalStorage(`meb_cache:${colUrl}`, JSON.stringify(filtered));
               } catch (_) {}
             }
           } catch (_) {}
         }
       } else {
-        const cachedDocStr = localStorage.getItem(`meb_cache:${docUrl}`);
+        const cachedDocStr = (await idbCache.get(`meb_cache:${docUrl}`)) || localStorage.getItem(`meb_cache:${docUrl}`);
         let currentDoc: any = {};
         if (cachedDocStr) {
           try {
@@ -303,10 +428,10 @@ function updateLocalCache(url: string, method: string, bodyStr: string | null) {
         }
         
         try {
-          safeSetLocalStorage(`meb_cache:${docUrl}`, JSON.stringify(updatedDoc));
+          await safeSetLocalStorage(`meb_cache:${docUrl}`, JSON.stringify(updatedDoc));
         } catch (_) {}
         
-        const cachedColStr = localStorage.getItem(`meb_cache:${colUrl}`);
+        const cachedColStr = (await idbCache.get(`meb_cache:${colUrl}`)) || localStorage.getItem(`meb_cache:${colUrl}`);
         let colData: any[] = [];
         if (cachedColStr) {
           try {
@@ -325,7 +450,7 @@ function updateLocalCache(url: string, method: string, bodyStr: string | null) {
         }
         
         try {
-          safeSetLocalStorage(`meb_cache:${colUrl}`, JSON.stringify(colData));
+          await safeSetLocalStorage(`meb_cache:${colUrl}`, JSON.stringify(colData));
         } catch (_) {}
       }
     }
@@ -538,7 +663,7 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
               parsed = applyPendingWrites(url, parsed);
               const processedText = JSON.stringify(parsed);
               try {
-                safeSetLocalStorage(`meb_cache:${url}`, processedText);
+                await safeSetLocalStorage(`meb_cache:${url}`, processedText);
               } catch (_) {}
               
               return new Response(processedText, {
@@ -547,7 +672,7 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
               });
             } catch (jsonErr) {
               console.warn("Fetched stream failed JSON validation, using cache fallback:", url);
-              const cached = localStorage.getItem(`meb_cache:${url}`);
+              const cached = (await idbCache.get(`meb_cache:${url}`)) || localStorage.getItem(`meb_cache:${url}`);
               if (cached) {
                 try {
                   const parsed = applyPendingWrites(url, JSON.parse(cached));
@@ -570,7 +695,7 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
             }
           } catch (streamErr) {
             console.warn("Fetched response stream failed to read, using cache fallback:", url);
-            const cached = localStorage.getItem(`meb_cache:${url}`);
+            const cached = (await idbCache.get(`meb_cache:${url}`)) || localStorage.getItem(`meb_cache:${url}`);
             if (cached) {
               try {
                 const parsed = applyPendingWrites(url, JSON.parse(cached));
@@ -592,7 +717,7 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
             });
           }
         } else {
-          const cached = localStorage.getItem(`meb_cache:${url}`);
+          const cached = (await idbCache.get(`meb_cache:${url}`)) || localStorage.getItem(`meb_cache:${url}`);
           if (cached) {
             try {
               const parsed = applyPendingWrites(url, JSON.parse(cached));
@@ -615,7 +740,7 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
         }
       } catch (err) {
         clearTimeout(timeoutId);
-        const cached = localStorage.getItem(`meb_cache:${url}`);
+        const cached = (await idbCache.get(`meb_cache:${url}`)) || localStorage.getItem(`meb_cache:${url}`);
         if (cached) {
           try {
             const parsed = applyPendingWrites(url, JSON.parse(cached));
@@ -655,7 +780,7 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
         try {
           const res = await originalFetch(url, init);
           if (res.ok) {
-            updateLocalCache(url, method, bodyStr);
+            await updateLocalCache(url, method, bodyStr);
             window.dispatchEvent(new CustomEvent("meb_sync_completed"));
           }
           return res;
@@ -664,7 +789,7 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
         }
       }
       
-      updateLocalCache(url, method, bodyStr);
+      await updateLocalCache(url, method, bodyStr);
       
       queue.push({
         url,
@@ -751,7 +876,7 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
   const docUrl = `/api/db/doc/${ref.path}`;
   const url = isCol ? colUrl : docUrl;
   
-  // 1. Immediately invoke callback with cached data if available (instant 0ms render)
+  // 1. Immediately invoke callback with cached data if available (instant 0ms render from localStorage)
   let initialCacheDataCalled = false;
   try {
     const cachedStr = localStorage.getItem(`meb_cache:${url}`);
@@ -759,14 +884,16 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
       const parsed = JSON.parse(cachedStr);
       if (isCol && Array.isArray(parsed)) {
         initialCacheDataCalled = true;
-        callback({
-          docs: parsed.map((d: any) => ({
-            id: d.id,
-            data: () => d.data,
-            exists: () => true
-          })),
-          size: parsed.length,
-          metadata: { fromCache: true }
+        hydrateCollectionWithImages(url, parsed).then((hydrated) => {
+          callback({
+            docs: hydrated.map((d: any) => ({
+              id: d.id,
+              data: () => d.data,
+              exists: () => true
+            })),
+            size: hydrated.length,
+            metadata: { fromCache: true }
+          });
         });
       } else if (!isCol && parsed && typeof parsed === "object") {
         initialCacheDataCalled = true;
@@ -791,6 +918,35 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
   
   const snapSubscriber = { callback: safeCallback, errorCb };
   
+  // 1b. Asynchronously query IndexedDB cache for robust, un-truncated full dataset (loads all 613 products instantly)
+  idbCache.get(`meb_cache:${url}`).then((cachedStr) => {
+    if (cachedStr && !hasNotifiedFresh) {
+      try {
+        const parsed = JSON.parse(cachedStr);
+        if (isCol && Array.isArray(parsed)) {
+          hydrateCollectionWithImages(url, parsed).then((hydrated) => {
+            safeCallback({
+              docs: hydrated.map((d: any) => ({
+                id: d.id,
+                data: () => d.data,
+                exists: () => true
+              })),
+              size: hydrated.length,
+              metadata: { fromCache: true }
+            });
+          });
+        } else if (!isCol && parsed && typeof parsed === "object") {
+          safeCallback({
+            exists: () => true,
+            data: () => parsed,
+            id: ref.path.split('/').pop(),
+            metadata: { fromCache: true }
+          });
+        }
+      } catch (e) {}
+    }
+  });
+  
   // 2. Register in shared polling registry
   let group = activePollingSubscriptions.get(url);
   const isNewGroup = !group;
@@ -803,6 +959,11 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
       interval: null,
       lastFetchedText: localStorage.getItem(`meb_cache:${url}`)
     };
+    idbCache.get(`meb_cache:${url}`).then((cachedStr) => {
+      if (group && cachedStr && !group.lastFetchedText) {
+        group.lastFetchedText = cachedStr;
+      }
+    });
     activePollingSubscriptions.set(url, group);
   }
   
@@ -834,31 +995,34 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
           safeSetLocalStorage(`meb_cache:${url}`, text);
         } catch (_) {}
         
-        // Notify all subscribers of the collection or document
-        for (const sub of group.subscribers) {
-          try {
-            if (isCol && Array.isArray(parsed)) {
-              sub.callback({
-                docs: parsed.map((d: any) => ({
-                  id: d.id,
-                  data: () => d.data,
-                  exists: () => true
-                })),
-                size: parsed.length,
-                metadata: { fromCache: false }
-              });
-            } else if (!isCol && parsed && typeof parsed === "object") {
-              sub.callback({
-                exists: () => true,
-                data: () => parsed,
-                id: ref.path.split('/').pop(),
-                metadata: { fromCache: false }
-              });
+        // Hydrate the collection with cached product images
+        hydrateCollectionWithImages(url, parsed).then((hydrated) => {
+          // Notify all subscribers of the collection or document
+          for (const sub of group.subscribers) {
+            try {
+              if (isCol && Array.isArray(hydrated)) {
+                sub.callback({
+                  docs: hydrated.map((d: any) => ({
+                    id: d.id,
+                    data: () => d.data,
+                    exists: () => true
+                  })),
+                  size: hydrated.length,
+                  metadata: { fromCache: false }
+                });
+              } else if (!isCol && parsed && typeof parsed === "object") {
+                sub.callback({
+                  exists: () => true,
+                  data: () => parsed,
+                  id: ref.path.split('/').pop(),
+                  metadata: { fromCache: false }
+                });
+              }
+            } catch (cbErr) {
+              console.error("Error in subscriber callback:", cbErr);
             }
-          } catch (cbErr) {
-            console.error("Error in subscriber callback:", cbErr);
           }
-        }
+        });
       } else if (res.status === 404 && !isCol) {
         group.lastFetchedText = "null";
         for (const sub of group.subscribers) {
@@ -888,8 +1052,36 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
     fetchGroupSnapshot();
   };
   
+  const handleImageCached = async (e: Event) => {
+    const customEvent = e as CustomEvent;
+    const { productId, companyId } = customEvent.detail || {};
+    
+    if (group && group.lastFetchedText && isCol && url.includes(`/companies/${companyId}/products`)) {
+      try {
+        const parsed = JSON.parse(group.lastFetchedText);
+        if (Array.isArray(parsed) && parsed.some((item: any) => item.id === productId)) {
+          const hydrated = await hydrateCollectionWithImages(url, parsed);
+          for (const sub of group.subscribers) {
+            try {
+              sub.callback({
+                docs: hydrated.map((d: any) => ({
+                  id: d.id,
+                  data: () => d.data,
+                  exists: () => true
+                })),
+                size: hydrated.length,
+                metadata: { fromCache: true }
+              });
+            } catch (_) {}
+          }
+        }
+      } catch (_) {}
+    }
+  };
+  
   if (typeof window !== "undefined") {
     window.addEventListener("meb_sync_completed", handleSyncComplete);
+    window.addEventListener("meb_image_cached", handleImageCached);
   }
   
   return () => {
@@ -898,6 +1090,7 @@ function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any
     
     if (typeof window !== "undefined") {
       window.removeEventListener("meb_sync_completed", handleSyncComplete);
+      window.removeEventListener("meb_image_cached", handleImageCached);
     }
     
     if (group.subscribers.size === 0) {
@@ -19463,8 +19656,8 @@ export default function App() {
         `meb_cache:/api/db/col/companies/${companyId}/sets`
       ];
 
-      cacheKeys.forEach(key => {
-        const cached = localStorage.getItem(key);
+      for (const key of cacheKeys) {
+        const cached = (await idbCache.get(key)) || localStorage.getItem(key);
         if (cached) {
           try {
             const data = JSON.parse(cached);
@@ -19492,10 +19685,10 @@ export default function App() {
             console.warn("Cache parse error for", key, e);
           }
         }
-      });
+      }
 
       // If we have some basic cached data, let's open the app immediately
-      const hasBasicCache = localStorage.getItem(`meb_cache:/api/db/col/companies/${companyId}/products`);
+      const hasBasicCache = (await idbCache.get(`meb_cache:/api/db/col/companies/${companyId}/products`)) || localStorage.getItem(`meb_cache:/api/db/col/companies/${companyId}/products`);
       if (hasBasicCache) {
         setPreloadProgress(100);
         setPreloadStatus("Загрузка из кэша...");
@@ -19542,7 +19735,7 @@ export default function App() {
       const [catData, prodData, genData, priceData, promoData, empData, prodColData, projData, setsColData] = results;
 
       if (catData) {
-        safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyId}/settings/categories`, JSON.stringify(catData));
+        await safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyId}/settings/categories`, JSON.stringify(catData));
         setProductCategories(catData.categories || INITIAL_PRODUCT_CATEGORIES);
         setCoefficients((prev: any) => ({ ...prev, products: catData.coefficients || {} }));
       }
@@ -19553,21 +19746,21 @@ export default function App() {
         fetchWithTimeout(`/api/db/col/companies/${mfgId}/products`).then(async (mfgRes) => {
           if (mfgRes.ok) {
             const mfgData = await mfgRes.json();
-            safeSetLocalStorage(`meb_cache:/api/db/col/companies/${mfgId}/products`, JSON.stringify(mfgData));
+            await safeSetLocalStorage(`meb_cache:/api/db/col/companies/${mfgId}/products`, JSON.stringify(mfgData));
             setManufacturerProducts(mfgData.map((d: any) => ({ id: d.id, ...d.data })));
           }
         }).catch(e => console.warn("MFG products fetch failed", e));
       }
       
       if (prodData) {
-        safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyId}/settings/production`, JSON.stringify(prodData));
+        await safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyId}/settings/production`, JSON.stringify(prodData));
         const isContract = ("productionId" in prodData && prodData.productionId) || ("city" in prodData && prodData.city);
         if (isContract) setContractConfig(prodData);
         else setOwnProductionConfig((prev: any) => ({ ...prev, ...prodData }));
       }
 
       if (genData) {
-        safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyId}/settings/general`, JSON.stringify(genData));
+        await safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyId}/settings/general`, JSON.stringify(genData));
         if (genData.defaultCuttingType) setDefaultCuttingType(genData.defaultCuttingType);
         if (genData.companyInfo) setCompanyInfo(genData.companyInfo);
         if (genData.coefficients) setCoefficients(genData.coefficients);
@@ -19575,29 +19768,29 @@ export default function App() {
       }
 
       if (priceData) {
-        safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyId}/settings/prices`, JSON.stringify(priceData));
+        await safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyId}/settings/prices`, JSON.stringify(priceData));
         if (priceData.prices) setPrices((curr: any) => ({ ...curr, ...priceData.prices }));
       }
 
       if (promoData) {
-        safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyId}/settings/promotions`, JSON.stringify(promoData));
+        await safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyId}/settings/promotions`, JSON.stringify(promoData));
         if (Array.isArray(promoData.promotions)) setPromotions(promoData.promotions);
       }
 
-      if (empData) safeSetLocalStorage(`meb_cache:/api/db/col/companies/${companyId}/employees`, JSON.stringify(empData));
+      if (empData) await safeSetLocalStorage(`meb_cache:/api/db/col/companies/${companyId}/employees`, JSON.stringify(empData));
 
       if (prodColData) {
-        safeSetLocalStorage(`meb_cache:/api/db/col/companies/${companyId}/products`, JSON.stringify(prodColData));
+        await safeSetLocalStorage(`meb_cache:/api/db/col/companies/${companyId}/products`, JSON.stringify(prodColData));
         setOwnProducts(prodColData.map((d: any) => ({ id: d.id, ...d.data })));
       }
       
       if (projData) {
-        safeSetLocalStorage(`meb_cache:/api/db/col/companies/${companyId}/projects`, JSON.stringify(projData));
+        await safeSetLocalStorage(`meb_cache:/api/db/col/companies/${companyId}/projects`, JSON.stringify(projData));
         setProjects(projData.map((d: any) => ({ id: d.id, ...d.data })));
       }
 
       if (setsColData) {
-        safeSetLocalStorage(`meb_cache:/api/db/col/companies/${companyId}/sets`, JSON.stringify(setsColData));
+        await safeSetLocalStorage(`meb_cache:/api/db/col/companies/${companyId}/sets`, JSON.stringify(setsColData));
         setProjectSets(setsColData.map((d: any) => ({ id: d.id, ...d.data })));
       }
 
@@ -19945,6 +20138,7 @@ export default function App() {
           localStorage.removeItem(key);
         }
       });
+      await idbCache.clear();
       auth.currentUser = null;
       setIsAuthenticated(false);
       setUserData(null);
@@ -20579,6 +20773,85 @@ export default function App() {
 
   const isSyncedRef = useRef(false);
   
+  // Background Sync for Product Images to IndexedDB (keeps server/DB load at near 0%)
+  const activeSyncFetches = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (!isAuthenticated || !companyData?.id) return;
+    
+    let isCancelled = false;
+    
+    const runSync = async () => {
+      const companyId = companyData.id;
+      const mfgId = companyData.manufacturerId;
+      
+      const allProds = [
+        ...ownProducts.map(p => ({ ...p, companyId })),
+        ...(mfgId ? manufacturerProducts.map(p => ({ ...p, companyId: mfgId })) : [])
+      ];
+      
+      if (allProds.length === 0) return;
+      
+      // Filter products that have hasImage === true but do not have cached full document in IndexedDB
+      const missing = [];
+      for (const product of allProds) {
+        if (!product.id || !product.hasImage) continue;
+        
+        const docKey = `meb_cache:/api/db/doc/companies/${product.companyId}/products/${product.id}`;
+        let alreadyCached = false;
+        try {
+          const cachedDocStr = await idbCache.get(docKey);
+          if (cachedDocStr) {
+            const parsed = JSON.parse(cachedDocStr);
+            if (parsed && (parsed.image || parsed.images)) {
+              alreadyCached = true;
+            }
+          }
+        } catch (_) {}
+        
+        if (!alreadyCached && !activeSyncFetches.current.has(product.id)) {
+          missing.push(product);
+        }
+      }
+      
+      if (missing.length === 0 || isCancelled) return;
+      
+      console.log(`[Sync] Triggering background sync for ${missing.length} missing product images`);
+      
+      // Process one-by-one sequentially with a 250ms delay
+      for (const product of missing) {
+        if (isCancelled) break;
+        if (activeSyncFetches.current.has(product.id)) continue;
+        activeSyncFetches.current.add(product.id);
+        
+        try {
+          const docUrl = `/api/db/doc/companies/${product.companyId}/products/${product.id}`;
+          const res = await fetch(docUrl);
+          if (res.ok && !isCancelled) {
+            const fullDoc = await res.json();
+            await safeSetLocalStorage(`meb_cache:${docUrl}`, JSON.stringify(fullDoc));
+            console.log(`[Sync] Successfully downloaded and cached image for product: ${product.id}`);
+            
+            // Dispatch sync event with product and company details to trigger dynamic collection re-hydration
+            window.dispatchEvent(new CustomEvent("meb_image_cached", {
+              detail: { productId: product.id, companyId: product.companyId }
+            }));
+          }
+        } catch (err) {
+          console.warn(`[Sync] Failed to background-sync image for product ${product.id}:`, err);
+        } finally {
+          await new Promise(resolve => setTimeout(resolve, 250));
+        }
+      }
+    };
+    
+    // Defer the background sync slightly after initial render to let UI load smoothly
+    const timer = setTimeout(runSync, 3000);
+    return () => {
+      isCancelled = true;
+      clearTimeout(timer);
+    };
+  }, [isAuthenticated, companyData?.id, companyData?.manufacturerId, ownProducts.length, manufacturerProducts.length]);
+
   // Data Synchronization
   useEffect(() => {
     if (!isAuthenticated || !companyData?.id || !isPreloaded || isSyncedRef.current) return;
