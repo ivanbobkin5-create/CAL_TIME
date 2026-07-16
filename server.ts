@@ -9,7 +9,16 @@ import nodemailer from "nodemailer";
 import jwt from "jsonwebtoken";
 import compression from "compression";
 
-const prisma = new PrismaClient();
+const dbUrl = process.env.DATABASE_URL || "";
+const adjustedDbUrl = dbUrl 
+  ? dbUrl + (dbUrl.includes("?") ? "&" : "?") + "connection_limit=15&pool_timeout=20"
+  : undefined;
+
+const prisma = new PrismaClient(
+  adjustedDbUrl 
+    ? { datasources: { db: { url: adjustedDbUrl } } }
+    : undefined
+);
 const JWT_SECRET = process.env.JWT_SECRET || "default_jwt_secret_change_me";
 
 // Simple in-memory cache is disabled to prevent stale/divergent data in multi-instance Cloud Run containers
@@ -18,7 +27,7 @@ function invalidateCache(docPath: string) {
 }
 
 // Robust database query wrapper with exponential backoff retry to handle transient connection drops/timeouts
-async function dbQueryWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 200): Promise<T> {
+async function dbQueryWithRetry<T>(fn: () => Promise<T>, retries = 5, delayMs = 300): Promise<T> {
   let lastErr: any;
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -29,9 +38,16 @@ async function dbQueryWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 
       const shouldRetry = !isValidationError;
       
       if (shouldRetry && attempt < retries) {
-        console.warn(`[DB RETRY] Database query failed (attempt ${attempt}/${retries}). Retrying in ${delayMs}ms... Error:`, err?.message || err);
+        let errorDetails = "";
+        if (err && typeof err === 'object') {
+          errorDetails = `[Name: ${err.name || "N/A"}] [Code: ${err.code || "N/A"}] [Meta: ${err.meta ? JSON.stringify(err.meta) : "N/A"}] [Message: ${err.message || "N/A"}]`;
+        } else {
+          errorDetails = String(err);
+        }
+        const errMsg = errorDetails.replace(/\r?\n/g, " -- ");
+        console.warn(`[DB RETRY] Database query failed (attempt ${attempt}/${retries}). Retrying in ${delayMs}ms... Error: ${errMsg}`);
         await new Promise(resolve => setTimeout(resolve, delayMs));
-        delayMs *= 2; // exponential backoff
+        delayMs = Math.min(delayMs * 2, 2000); // exponential backoff with max 2s cap
       } else {
         throw err;
       }
@@ -697,8 +713,9 @@ async function startServer() {
       } else {
         res.status(404).json({ error: "Not found" });
       }
-    } catch (e) {
-      console.error("Error in GET /api/db/doc/*:", e);
+    } catch (e: any) {
+      const errMsg = (e?.stack || e?.message || String(e)).replace(/\r?\n/g, " -- ");
+      console.error("Error in GET /api/db/doc/*:", errMsg);
       res.status(500).json({ error: String(e) });
     }
   });
@@ -716,8 +733,9 @@ async function startServer() {
       const docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({ where: { collection: colPath } }));
       const mapped = docs.map(d => ({ id: d.docId, data: JSON.parse(d.data), path: d.path }));
       res.json(mapped);
-    } catch (e) {
-      console.error("Error in GET /api/db/col/*:", e);
+    } catch (e: any) {
+      const errMsg = (e?.stack || e?.message || String(e)).replace(/\r?\n/g, " -- ");
+      console.error("Error in GET /api/db/col/*:", errMsg);
       res.status(500).json({ error: String(e) });
     }
   });
@@ -749,8 +767,9 @@ async function startServer() {
       
       invalidateCache(docPath);
       res.json({ status: "ok" });
-    } catch (e) {
-      console.error("Error in POST /api/db/doc/*:", e);
+    } catch (e: any) {
+      const errMsg = (e?.stack || e?.message || String(e)).replace(/\r?\n/g, " -- ");
+      console.error("Error in POST /api/db/doc/*:", errMsg);
       res.status(500).json({ error: String(e) });
     }
   });
@@ -775,8 +794,9 @@ async function startServer() {
       
       invalidateCache(docPath);
       res.json({ status: "ok" });
-    } catch (e) {
-      console.error("Error in PATCH /api/db/doc/*:", e);
+    } catch (e: any) {
+      const errMsg = (e?.stack || e?.message || String(e)).replace(/\r?\n/g, " -- ");
+      console.error("Error in PATCH /api/db/doc/*:", errMsg);
       res.status(500).json({ error: String(e) });
     }
   });
@@ -788,8 +808,9 @@ async function startServer() {
       
       invalidateCache(docPath);
       res.json({ status: "ok" });
-    } catch (e) {
-      console.error("Error in DELETE /api/db/doc/*:", e);
+    } catch (e: any) {
+      const errMsg = (e?.stack || e?.message || String(e)).replace(/\r?\n/g, " -- ");
+      console.error("Error in DELETE /api/db/doc/*:", errMsg);
       res.status(500).json({ error: String(e) });
     }
   });

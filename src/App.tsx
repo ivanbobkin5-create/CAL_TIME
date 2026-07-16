@@ -131,24 +131,110 @@ import {
 // --- START OF OFFLINE CACHE AND SYNC ENGINE ---
 const originalFetch = window.fetch;
 
+const pruneDeep = (obj: any): any => {
+  if (obj === null || obj === undefined) return obj;
+  if (typeof obj === "string") {
+    if (obj.length > 200) {
+      // Truncate long strings (like base64 or heavy descriptions/SVG/drawings) for cache
+      return obj.substring(0, 200) + "...[TRUNCATED_FOR_CACHE]";
+    }
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(item => pruneDeep(item));
+  }
+  if (typeof obj === "object") {
+    const pruned: any = {};
+    for (const k in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, k)) {
+        const lowerK = k.toLowerCase();
+        // Skip keys that hold heavy data like design structures, canvas representations, or pictures
+        if (
+          lowerK.includes("photo") || 
+          lowerK.includes("image") || 
+          lowerK.includes("file") || 
+          lowerK.includes("base64") || 
+          lowerK.includes("drawing") || 
+          lowerK.includes("attachment") ||
+          lowerK.includes("design") ||
+          lowerK.includes("preview") ||
+          lowerK.includes("svg") ||
+          lowerK.includes("canvas") ||
+          lowerK.includes("spec") ||
+          lowerK.includes("model")
+        ) {
+          continue;
+        }
+        pruned[k] = pruneDeep(obj[k]);
+      }
+    }
+    return pruned;
+  }
+  return obj;
+};
+
+const pruneCollectionForCache = (key: string, valueStr: string): string => {
+  try {
+    if (!valueStr) return valueStr;
+    let parsed = JSON.parse(valueStr);
+    
+    // For collections of products, projects, or sets, prune number of items to max 15
+    if (key.includes("/col/") && (key.includes("/products") || key.includes("/projects") || key.includes("/sets"))) {
+      if (Array.isArray(parsed)) {
+        if (parsed.length > 15) {
+          parsed = parsed.slice(0, 15);
+        }
+      }
+    }
+    
+    // Recursively strip heavy properties and truncate any remaining long text
+    parsed = pruneDeep(parsed);
+    return JSON.stringify(parsed);
+  } catch (e) {
+    // Ignore errors and return original
+  }
+  return valueStr;
+};
+
 const safeSetLocalStorage = (key: string, value: string) => {
   try {
-    localStorage.setItem(key, value);
+    const prunedValue = pruneCollectionForCache(key, value);
+    localStorage.setItem(key, prunedValue);
   } catch (e: any) {
-    console.warn("Storage quota exceeded or error writing to localStorage:", e);
+    console.warn("Storage quota exceeded or error writing to localStorage for key:", key, e);
     try {
-      const keys: string[] = [];
+      // Gather all cache keys and their sizes
+      const cacheEntries: { key: string; size: number }[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i);
         if (k && k.startsWith("meb_cache:")) {
-          keys.push(k);
+          const val = localStorage.getItem(k);
+          cacheEntries.push({ key: k, size: val ? val.length : 0 });
         }
       }
-      // Remove up to 20 items to free up space
-      keys.slice(0, Math.min(keys.length, 20)).forEach(k => localStorage.removeItem(k));
-      localStorage.setItem(key, value);
-    } catch (retryErr) {
-      console.error("Failed to write to localStorage even after cleanup:", retryErr);
+      
+      // Sort by size descending (largest first)
+      cacheEntries.sort((a, b) => b.size - a.size);
+      
+      // Remove largest entries one by one until it fits or we have cleaned up enough
+      let freed = 0;
+      for (const entry of cacheEntries) {
+        localStorage.removeItem(entry.key);
+        freed += entry.size;
+        try {
+          const prunedValue = pruneCollectionForCache(key, value);
+          localStorage.setItem(key, prunedValue);
+          console.warn(`Successfully saved ${key} after clearing ${entry.key} (${entry.size} chars)`);
+          return; // Success!
+        } catch (retryErr) {
+          // Keep trying
+        }
+      }
+      
+      // If we cleared all caches and still fail, try cleaning up even non-cache entries that are safe to remove
+      console.warn("Could not write to localStorage even after full cache cleanup. Key:", key);
+    } catch (cleanupErr) {
+      console.warn("Failed to clean up localStorage:", cleanupErr);
     }
   }
 };
