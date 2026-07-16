@@ -215,6 +215,40 @@ class IndexedDBCache {
 
 const idbCache = new IndexedDBCache();
 
+const compressImage = (base64: string, maxWidth = 800, maxHeight = 800, quality = 0.7): Promise<string> => {
+  if (!base64 || !base64.startsWith("data:image/")) {
+    return Promise.resolve(base64);
+  }
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+      if (width > height) {
+        if (width > maxWidth) {
+          height *= maxWidth / width;
+          width = maxWidth;
+        }
+      } else {
+        if (height > maxHeight) {
+          width *= maxHeight / height;
+          height = maxHeight;
+        }
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.onerror = () => {
+      resolve(base64);
+    };
+    img.src = base64;
+  });
+};
+
 const hydrateCollectionWithImages = async (url: string, parsedList: any[]): Promise<any[]> => {
   if (!url.endsWith("/products") || !Array.isArray(parsedList)) {
     return parsedList;
@@ -232,6 +266,21 @@ const hydrateCollectionWithImages = async (url: string, parsedList: any[]): Prom
         const cachedDoc = JSON.parse(cachedDocStr);
         const img = cachedDoc?.image || cachedDoc?.images?.[0];
         if (img) {
+          // Self-healing: if the base64 string is extremely large (e.g. >150,000 chars),
+          // compress it in the background and update the cache to save memory!
+          if (img.length > 150000 && img.startsWith("data:image/")) {
+            compressImage(img, 800, 800, 0.7).then((compressedImg) => {
+              if (compressedImg.length < img.length) {
+                const updatedDoc = {
+                  ...cachedDoc,
+                  image: compressedImg,
+                  images: [compressedImg]
+                };
+                idbCache.set(docKey, JSON.stringify(updatedDoc));
+              }
+            }).catch(() => {});
+          }
+
           return {
             ...item,
             data: {
@@ -11437,10 +11486,12 @@ const SettingsView = ({
                           const file = e.target.files?.[0];
                           if (file) {
                             const r = new FileReader();
-                            r.onloadend = () => {
+                            r.onloadend = async () => {
+                              const rawBase64 = r.result as string;
+                              const compressed = await compressImage(rawBase64, 400, 400, 0.7);
                               setSpecificationConfig((p: any) => ({
                                 ...p,
-                                companyLogo: r.result,
+                                companyLogo: compressed,
                               }));
                             };
                             r.readAsDataURL(file);
@@ -15032,10 +15083,12 @@ const ProductsView = ({
     if (files) {
       Array.from(files).forEach((file) => {
         const reader = new FileReader();
-        reader.onloadend = () => {
+        reader.onloadend = async () => {
+          const rawBase64 = reader.result as string;
+          const compressed = await compressImage(rawBase64, 800, 800, 0.7);
           setNewProduct((prev) => ({
             ...prev,
-            images: [...prev.images, reader.result as string],
+            images: [...prev.images, compressed],
           }));
         };
         reader.readAsDataURL(file);
