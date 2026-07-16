@@ -14870,6 +14870,10 @@ const ProductsView = ({
   const [isAddingNewBrand, setIsAddingNewBrand] = useState(false);
   const [newBrandInput, setNewBrandInput] = useState("");
 
+  const [addedHandleBrands, setAddedHandleBrands] = useState<string[]>([]);
+  const [isAddingNewHandleBrand, setIsAddingNewHandleBrand] = useState(false);
+  const [newHandleBrandInput, setNewHandleBrandInput] = useState("");
+
   const [duplicateMatches, setDuplicateMatches] = useState<any[]>([]);
   const [isCheckingDuplicates, setIsCheckingDuplicates] = useState(false);
 
@@ -14991,6 +14995,28 @@ const ProductsView = ({
       .forEach((p) => brands.add(p.manufacturer));
     return Array.from(brands).sort();
   }, [catalogProducts, addedDryerBrands]);
+
+  const allHandleBrands = useMemo(() => {
+    const brands = new Set<string>([
+      "Boyard",
+      "GTV",
+      "Gamet",
+      "Giusti",
+      "Kerron",
+      "Metakor",
+      "Mico",
+      "Nomet",
+      "Viefe",
+      "Валмакс",
+      "Китай",
+      "Россия",
+      ...addedHandleBrands
+    ]);
+    catalogProducts
+      .filter((p) => p.category === "Ручки и крючки" && p.manufacturer)
+      .forEach((p) => brands.add(p.manufacturer));
+    return Array.from(brands).sort();
+  }, [catalogProducts, addedHandleBrands]);
 
   const availableDryerWidths = useMemo(() => {
     const widths = new Set<string>();
@@ -15602,10 +15628,11 @@ const ProductsView = ({
                 
                 // Keep handles properties so filter matches them
                 handleLength: v.length || p.handleLength || "",
-                handleColor: v.color || p.handleColor || "",
-                handleMaterial: v.material || p.handleMaterial || "",
+                handleColor: p.handleColor?.trim() || p.color?.trim() || v.color || "",
+                handleMaterial: p.handleMaterial?.trim() || v.material || "",
                 handleType: p.handleType || "",
-                manufacturer: p.manufacturer || ""
+                manufacturer: p.manufacturer || "",
+                images: v.image ? [v.image] : p.images,
               });
             });
           } else {
@@ -16881,139 +16908,218 @@ const ProductsView = ({
 
                     {newProduct.variations && newProduct.variations.length > 0 ? (
                       <div className="space-y-3">
-                        {newProduct.variations.map((v, idx) => (
-                          <div key={v.id || idx} className="bg-white p-4 rounded-xl border border-purple-100 shadow-sm space-y-3">
-                            <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-end">
-                              <div className="md:col-span-3">
-                                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Название / Размер</label>
-                                <input
-                                  type="text"
-                                  value={v.name}
-                                  onChange={(e) => {
-                                    const updated = [...(newProduct.variations || [])];
-                                    updated[idx] = { ...v, name: e.target.value };
-                                    setNewProduct(prev => ({ ...prev, variations: updated }));
-                                  }}
-                                  placeholder="Напр: 1000 мм"
-                                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
-                                />
-                              </div>
-                              <div className="md:col-span-2">
-                                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Артикул</label>
-                                <input
-                                  type="text"
-                                  value={v.article || ""}
-                                  onChange={(e) => {
-                                    const updated = [...(newProduct.variations || [])];
-                                    updated[idx] = { ...v, article: e.target.value };
-                                    setNewProduct(prev => ({ ...prev, variations: updated }));
-                                  }}
-                                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
-                                />
-                              </div>
-                              <div className="md:col-span-2">
-                                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Арт. поставщика</label>
-                                <input
-                                  type="text"
-                                  value={v.vendorArticle || ""}
-                                  onChange={(e) => {
-                                    const updated = [...(newProduct.variations || [])];
-                                    updated[idx] = { ...v, vendorArticle: e.target.value };
-                                    setNewProduct(prev => ({ ...prev, variations: updated }));
-                                  }}
-                                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
-                                />
-                              </div>
-                              <div className="md:col-span-2">
-                                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Арт. производит.</label>
-                                <input
-                                  type="text"
-                                  value={v.manufacturerArticle || ""}
-                                  onChange={(e) => {
-                                    const updated = [...(newProduct.variations || [])];
-                                    updated[idx] = { ...v, manufacturerArticle: e.target.value };
-                                    setNewProduct(prev => ({ ...prev, variations: updated }));
-                                  }}
-                                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
-                                />
-                              </div>
-                              <div className="md:col-span-2">
-                                <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Закупка (₽)</label>
-                                <input
-                                  type="number"
-                                  value={v.purchasePrice || ""}
-                                  onChange={(e) => {
-                                    const updated = [...(newProduct.variations || [])];
-                                    updated[idx] = { ...v, purchasePrice: parseFloat(e.target.value) || 0 };
-                                    setNewProduct(prev => ({ ...prev, variations: updated }));
-                                  }}
-                                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
-                                />
-                              </div>
-                              <div className="md:col-span-1 flex justify-end">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setNewProduct(prev => ({
-                                      ...prev,
-                                      variations: (prev.variations || []).filter((_, i) => i !== idx)
-                                    }));
-                                  }}
-                                  className="p-2 hover:bg-red-50 text-red-500 rounded-lg transition-colors"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                            </div>
+                        {newProduct.variations.map((v, idx) => {
+                          const isColorOverridden = !!(newProduct.handleColor?.trim() || newProduct.color?.trim());
+                          const isMaterialOverridden = !!newProduct.handleMaterial?.trim();
 
-                            {newProduct.category === "Ручки и крючки" && (
-                              <div className="grid grid-cols-3 gap-3 pt-3 border-t border-purple-100/50">
-                                <div>
-                                  <label className="block text-[10px] font-black uppercase text-purple-600 mb-1">Длина (мм) для вариации</label>
-                                  <input
-                                    type="text"
-                                    value={v.length || ""}
-                                    onChange={(e) => {
-                                      const updated = [...(newProduct.variations || [])];
-                                      updated[idx] = { ...v, length: e.target.value };
-                                      setNewProduct(prev => ({ ...prev, variations: updated }));
-                                    }}
-                                    placeholder="Напр: 96"
-                                    className="w-full px-3 py-2 text-xs border border-purple-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold bg-purple-50/10 text-purple-950"
-                                  />
+                          const displayColor = isColorOverridden ? (newProduct.handleColor?.trim() || newProduct.color?.trim()) : (v.color || "");
+                          const displayMaterial = isMaterialOverridden ? newProduct.handleMaterial?.trim() : (v.material || "");
+
+                          return (
+                            <div key={v.id || idx} className="bg-white p-4 rounded-xl border border-purple-100 shadow-sm space-y-3 animate-in fade-in duration-200">
+                              <div className="flex flex-col sm:flex-row items-start gap-4 w-full">
+                                {/* Variation Image Slot */}
+                                <div className="relative w-14 h-14 rounded-lg border border-dashed border-purple-200 flex flex-col items-center justify-center cursor-pointer hover:border-purple-400 hover:bg-purple-50/50 transition-all text-purple-400 flex-shrink-0 overflow-hidden sm:mt-5 bg-gray-50/50">
+                                  {v.image ? (
+                                    <>
+                                      <img src={v.image} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          const updated = [...(newProduct.variations || [])];
+                                          updated[idx] = { ...v, image: "" };
+                                          setNewProduct(prev => ({ ...prev, variations: updated }));
+                                        }}
+                                        className="absolute inset-0 bg-black/60 opacity-0 hover:opacity-100 flex items-center justify-center text-white transition-opacity duration-150"
+                                        title="Удалить фото"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer">
+                                      <Upload className="w-3.5 h-3.5 text-purple-400" />
+                                      <span className="text-[8px] font-black uppercase text-purple-500 mt-0.5">Фото</span>
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={(e) => {
+                                          const files = e.target.files;
+                                          if (files && files[0]) {
+                                            const reader = new FileReader();
+                                            reader.onloadend = async () => {
+                                              const rawBase64 = reader.result as string;
+                                              const compressed = await compressImage(rawBase64, 800, 800, 0.7);
+                                              const updated = [...(newProduct.variations || [])];
+                                              updated[idx] = { ...v, image: compressed };
+                                              setNewProduct(prev => ({ ...prev, variations: updated }));
+                                            };
+                                            reader.readAsDataURL(files[0]);
+                                          }
+                                        }}
+                                        className="hidden"
+                                      />
+                                    </label>
+                                  )}
                                 </div>
-                                <div>
-                                  <label className="block text-[10px] font-black uppercase text-purple-600 mb-1">Цвет для вариации</label>
-                                  <input
-                                    type="text"
-                                    value={v.color || ""}
-                                    onChange={(e) => {
-                                      const updated = [...(newProduct.variations || [])];
-                                      updated[idx] = { ...v, color: e.target.value };
-                                      setNewProduct(prev => ({ ...prev, variations: updated }));
-                                    }}
-                                    placeholder="Напр: Золото"
-                                    className="w-full px-3 py-2 text-xs border border-purple-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold bg-purple-50/10 text-purple-950"
-                                  />
+
+                                <div className="flex-1 grid grid-cols-1 md:grid-cols-11 gap-3 items-end">
+                                  <div className="md:col-span-3">
+                                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Название / Размер</label>
+                                    <input
+                                      type="text"
+                                      value={v.name}
+                                      onChange={(e) => {
+                                        const updated = [...(newProduct.variations || [])];
+                                        updated[idx] = { ...v, name: e.target.value };
+                                        setNewProduct(prev => ({ ...prev, variations: updated }));
+                                      }}
+                                      placeholder="Напр: 1000 мм"
+                                      className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
+                                    />
+                                  </div>
+                                  <div className="md:col-span-2">
+                                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Артикул</label>
+                                    <input
+                                      type="text"
+                                      value={v.article || ""}
+                                      onChange={(e) => {
+                                        const updated = [...(newProduct.variations || [])];
+                                        updated[idx] = { ...v, article: e.target.value };
+                                        setNewProduct(prev => ({ ...prev, variations: updated }));
+                                      }}
+                                      className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
+                                    />
+                                  </div>
+                                  <div className="md:col-span-2">
+                                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Арт. поставщика</label>
+                                    <input
+                                      type="text"
+                                      value={v.vendorArticle || ""}
+                                      onChange={(e) => {
+                                        const updated = [...(newProduct.variations || [])];
+                                        updated[idx] = { ...v, vendorArticle: e.target.value };
+                                        setNewProduct(prev => ({ ...prev, variations: updated }));
+                                      }}
+                                      className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
+                                    />
+                                  </div>
+                                  <div className="md:col-span-2">
+                                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Арт. производит.</label>
+                                    <input
+                                      type="text"
+                                      value={v.manufacturerArticle || ""}
+                                      onChange={(e) => {
+                                        const updated = [...(newProduct.variations || [])];
+                                        updated[idx] = { ...v, manufacturerArticle: e.target.value };
+                                        setNewProduct(prev => ({ ...prev, variations: updated }));
+                                      }}
+                                      className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
+                                    />
+                                  </div>
+                                  <div className="md:col-span-2">
+                                    <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Закупка (₽)</label>
+                                    <input
+                                      type="number"
+                                      value={v.purchasePrice || ""}
+                                      onChange={(e) => {
+                                        const updated = [...(newProduct.variations || [])];
+                                        updated[idx] = { ...v, purchasePrice: parseFloat(e.target.value) || 0 };
+                                        setNewProduct(prev => ({ ...prev, variations: updated }));
+                                      }}
+                                      className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold"
+                                    />
+                                  </div>
                                 </div>
-                                <div>
-                                  <label className="block text-[10px] font-black uppercase text-purple-600 mb-1">Материал для вариации</label>
-                                  <input
-                                    type="text"
-                                    value={v.material || ""}
-                                    onChange={(e) => {
-                                      const updated = [...(newProduct.variations || [])];
-                                      updated[idx] = { ...v, material: e.target.value };
-                                      setNewProduct(prev => ({ ...prev, variations: updated }));
+                                <div className="flex-shrink-0 sm:mt-5">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setNewProduct(prev => ({
+                                        ...prev,
+                                        variations: (prev.variations || []).filter((_, i) => i !== idx)
+                                      }));
                                     }}
-                                    placeholder="Напр: Металл"
-                                    className="w-full px-3 py-2 text-xs border border-purple-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold bg-purple-50/10 text-purple-950"
-                                  />
+                                    className="p-2 hover:bg-red-50 text-red-500 rounded-lg transition-colors cursor-pointer"
+                                    title="Удалить вариацию"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
                                 </div>
                               </div>
-                            )}
-                          </div>
-                        ))}
+
+                              {newProduct.category === "Ручки и крючки" && (
+                                <div className="grid grid-cols-3 gap-3 pt-3 border-t border-purple-100/50">
+                                  <div>
+                                    <label className="block text-[10px] font-black uppercase text-purple-600 mb-1">Длина (мм) для вариации</label>
+                                    <input
+                                      type="text"
+                                      value={v.length || ""}
+                                      onChange={(e) => {
+                                        const updated = [...(newProduct.variations || [])];
+                                        updated[idx] = { ...v, length: e.target.value };
+                                        setNewProduct(prev => ({ ...prev, variations: updated }));
+                                      }}
+                                      placeholder="Напр: 96"
+                                      className="w-full px-3 py-2 text-xs border border-purple-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold bg-purple-50/10 text-purple-950"
+                                    />
+                                  </div>
+                                  <div className="relative group/tooltip">
+                                    <label className="block text-[10px] font-black uppercase text-purple-600 mb-1">
+                                      Цвет для вариации
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={displayColor}
+                                      disabled={isColorOverridden}
+                                      onChange={(e) => {
+                                        const updated = [...(newProduct.variations || [])];
+                                        updated[idx] = { ...v, color: e.target.value };
+                                        setNewProduct(prev => ({ ...prev, variations: updated }));
+                                      }}
+                                      placeholder="Напр: Золото"
+                                      title={isColorOverridden ? "Чтобы изменить цвет вариации, удалите общий цвет у карточки товара" : "Цвет вариации"}
+                                      className={`w-full px-3 py-2 text-xs border border-purple-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold bg-purple-50/10 text-purple-950 ${
+                                        isColorOverridden ? "bg-gray-100/80 text-gray-400 cursor-not-allowed border-gray-200" : ""
+                                      }`}
+                                    />
+                                    {isColorOverridden && (
+                                      <div className="absolute z-10 hidden group-hover/tooltip:block bg-gray-900 text-white text-[10px] p-2 rounded-lg -top-12 left-0 right-0 shadow-lg text-center font-sans font-medium leading-tight">
+                                        Чтобы изменить цвет, очистите поле 'Цвет' в спецификации карточки
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="relative group/tooltip">
+                                    <label className="block text-[10px] font-black uppercase text-purple-600 mb-1">
+                                      Материал для вариации
+                                    </label>
+                                    <input
+                                      type="text"
+                                      value={displayMaterial}
+                                      disabled={isMaterialOverridden}
+                                      onChange={(e) => {
+                                        const updated = [...(newProduct.variations || [])];
+                                        updated[idx] = { ...v, material: e.target.value };
+                                        setNewProduct(prev => ({ ...prev, variations: updated }));
+                                      }}
+                                      placeholder="Напр: Металл"
+                                      title={isMaterialOverridden ? "Чтобы изменить материал вариации, удалите общий материал у карточки товара" : "Материал вариации"}
+                                      className={`w-full px-3 py-2 text-xs border border-purple-200 rounded-lg outline-none focus:ring-1 focus:ring-purple-500 font-bold bg-purple-50/10 text-purple-950 ${
+                                        isMaterialOverridden ? "bg-gray-100/80 text-gray-400 cursor-not-allowed border-gray-200" : ""
+                                      }`}
+                                    />
+                                    {isMaterialOverridden && (
+                                      <div className="absolute z-10 hidden group-hover/tooltip:block bg-gray-900 text-white text-[10px] p-2 rounded-lg -top-12 left-0 right-0 shadow-lg text-center font-sans font-medium leading-tight">
+                                        Чтобы изменить материал, очистите поле 'Материал' в спецификации карточки
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     ) : (
                       <div className="py-8 text-center border-2 border-dashed border-purple-100 rounded-2xl bg-purple-50/20">
@@ -18339,23 +18445,34 @@ const ProductsView = ({
                           </select>
                         </div>
 
-                        <div>
-                          <label className="block text-sm font-bold text-gray-700 mb-2">
-                            Длина / Размер (мм)
-                          </label>
-                          <input
-                            type="text"
-                            value={newProduct.handleLength || ""}
-                            onChange={(e) =>
-                              setNewProduct((prev) => ({
-                                ...prev,
-                                handleLength: e.target.value,
-                              }))
-                            }
-                            placeholder="Например: 128"
-                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
-                          />
-                        </div>
+                        {!(newProduct.variations && newProduct.variations.length > 0) ? (
+                          <div>
+                            <label className="block text-sm font-bold text-gray-700 mb-2">
+                              Длина / Размер (мм)
+                            </label>
+                            <input
+                              type="text"
+                              value={newProduct.handleLength || ""}
+                              onChange={(e) =>
+                                setNewProduct((prev) => ({
+                                  ...prev,
+                                  handleLength: e.target.value,
+                                }))
+                              }
+                              placeholder="Например: 128"
+                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                            />
+                          </div>
+                        ) : (
+                          <div className="flex flex-col justify-end">
+                            <label className="block text-sm font-bold text-gray-400 mb-2">
+                              Длина / Размер (мм)
+                            </label>
+                            <div className="px-4 py-3 bg-purple-50 border border-dashed border-purple-200 rounded-xl text-xs text-purple-800 font-medium">
+                              Задается индивидуально в вариациях ниже
+                            </div>
+                          </div>
+                        )}
 
                         <div>
                           <label className="block text-sm font-bold text-gray-700 mb-2">
@@ -18394,139 +18511,209 @@ const ProductsView = ({
                         </div>
                       </div>
 
-                      <div>
-                        <label className="block text-sm font-bold text-gray-700 mb-2">
-                          Бренд / Производитель
+                      <div className="bg-white p-3.5 border border-purple-100 rounded-xl">
+                        <label className="block text-xs font-bold text-purple-950 mb-1.5 uppercase tracking-wide flex items-center justify-between">
+                          <span>Бренд (Производитель)</span>
+                          {!isAddingNewHandleBrand && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsAddingNewHandleBrand(true);
+                                setNewHandleBrandInput("");
+                              }}
+                              className="text-[10px] text-purple-600 hover:text-purple-800 font-bold underline transition-all cursor-pointer"
+                            >
+                              + Создать бренд
+                            </button>
+                          )}
                         </label>
-                        <input
-                          type="text"
-                          value={newProduct.manufacturer || ""}
-                          onChange={(e) =>
-                            setNewProduct((prev) => ({
-                              ...prev,
-                              manufacturer: e.target.value,
-                            }))
-                          }
-                          placeholder="Например: Brass, Boyard, GTV"
-                          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
-                        />
+
+                        {isAddingNewHandleBrand ? (
+                          <div className="flex gap-2 items-center animate-in fade-in zoom-in-95 duration-200">
+                            <input
+                              type="text"
+                              value={newHandleBrandInput}
+                              onChange={(e) => setNewHandleBrandInput(e.target.value)}
+                              placeholder="Имя бренда, например: Brass"
+                              className="flex-1 px-3 py-1.5 text-xs border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-500"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const val = newHandleBrandInput.trim();
+                                if (val) {
+                                  if (!addedHandleBrands.includes(val)) {
+                                    setAddedHandleBrands((prev) => [...prev, val]);
+                                  }
+                                  setNewProduct((prev) => ({
+                                    ...prev,
+                                    manufacturer: val,
+                                  }));
+                                }
+                                setIsAddingNewHandleBrand(false);
+                                setNewHandleBrandInput("");
+                              }}
+                              className="px-3 py-1.5 bg-purple-600 text-white font-bold rounded-lg text-xs hover:bg-purple-700 cursor-pointer shadow-sm transition-colors"
+                            >
+                              Добавить
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsAddingNewHandleBrand(false);
+                                setNewHandleBrandInput("");
+                              }}
+                              className="px-2.5 py-1.5 text-xs text-gray-500 hover:bg-gray-100 font-bold rounded-lg cursor-pointer"
+                            >
+                              Отмена
+                            </button>
+                          </div>
+                        ) : (
+                          <select
+                            value={newProduct.manufacturer || ""}
+                            onChange={(e) =>
+                              setNewProduct((prev) => ({
+                                ...prev,
+                                manufacturer: e.target.value,
+                              }))
+                            }
+                            className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg outline-none focus:ring-2 focus:ring-purple-500 bg-gray-50/50"
+                          >
+                            <option value="">Выберите или добавьте бренд</option>
+                            {allHandleBrands.map((b) => (
+                              <option key={b} value={b}>
+                                {b}
+                              </option>
+                            ))}
+                          </select>
+                        )}
                       </div>
                     </div>
                   )}
 
-                  <div className="grid grid-cols-1 gap-4">
-                    <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-2">
-                        Артикул
-                      </label>
-                      <input
-                        type="text"
-                        value={newProduct.article}
-                        onChange={(e) =>
-                          setNewProduct((prev) => ({
-                            ...prev,
-                            article: e.target.value,
-                          }))
-                        }
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
-                        placeholder="Внутренний артикул"
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
+                  {!(newProduct.variations && newProduct.variations.length > 0) && (
+                    <div className="grid grid-cols-1 gap-4">
                       <div>
                         <label className="block text-sm font-bold text-gray-700 mb-2">
-                          Арт. поставщика
+                          Артикул
                         </label>
                         <input
                           type="text"
-                          value={newProduct.vendorArticle}
+                          value={newProduct.article}
                           onChange={(e) =>
                             setNewProduct((prev) => ({
                               ...prev,
-                              vendorArticle: e.target.value,
+                              article: e.target.value,
                             }))
                           }
                           className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
+                          placeholder="Внутренний артикул"
                         />
                       </div>
-                      <div>
-                        <label className="block text-sm font-bold text-gray-700 mb-2">
-                          Арт. производителя
-                        </label>
-                        <input
-                          type="text"
-                          value={newProduct.manufacturerArticle}
-                          onChange={(e) =>
-                            setNewProduct((prev) => ({
-                              ...prev,
-                              manufacturerArticle: e.target.value,
-                            }))
-                          }
-                          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
-                        />
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-2">
+                            Арт. поставщика
+                          </label>
+                          <input
+                            type="text"
+                            value={newProduct.vendorArticle}
+                            onChange={(e) =>
+                              setNewProduct((prev) => ({
+                                ...prev,
+                                vendorArticle: e.target.value,
+                              }))
+                            }
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-2">
+                            Арт. производителя
+                          </label>
+                          <input
+                            type="text"
+                            value={newProduct.manufacturerArticle}
+                            onChange={(e) =>
+                              setNewProduct((prev) => ({
+                                ...prev,
+                                manufacturerArticle: e.target.value,
+                              }))
+                            }
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
+                          />
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
 
                   <div className="p-5 bg-blue-50/50 border border-blue-100 rounded-2xl space-y-4">
-                    <div className="flex items-center justify-between">
-                      <label className="text-sm font-bold text-blue-900">
-                        Закупочная цена (без НДС)
-                      </label>
-                      <div className="relative w-32">
-                        <input
-                          type="number"
-                          value={newProduct.purchasePrice || ""}
-                          onFocus={(e) => e.target.select()}
-                          onChange={(e) =>
-                            setNewProduct((prev) => ({
-                              ...prev,
-                              purchasePrice: parseFloat(e.target.value) || 0,
-                            }))
-                          }
-                          className="w-full pl-4 pr-10 py-2 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-blue-700"
-                        />
-                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-400 font-bold">
-                          ₽
-                        </span>
-                      </div>
-                    </div>
+                    {!(newProduct.variations && newProduct.variations.length > 0) ? (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <label className="text-sm font-bold text-blue-900">
+                            Закупочная цена (без НДС)
+                          </label>
+                          <div className="relative w-32">
+                            <input
+                              type="number"
+                              value={newProduct.purchasePrice || ""}
+                              onFocus={(e) => e.target.select()}
+                              onChange={(e) =>
+                                setNewProduct((prev) => ({
+                                  ...prev,
+                                  purchasePrice: parseFloat(e.target.value) || 0,
+                                }))
+                              }
+                              className="w-full pl-4 pr-10 py-2 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-blue-700"
+                            />
+                            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-blue-400 font-bold">
+                              ₽
+                            </span>
+                          </div>
+                        </div>
 
-                    <div className="grid grid-cols-2 gap-4 border-t border-blue-100 pt-4">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs text-blue-600 font-bold uppercase">
-                          НДС (%)
-                        </span>
-                        <input
-                          type="number"
-                          value={newProduct.vat}
-                          onFocus={(e) => e.target.select()}
-                          onChange={(e) =>
-                            setNewProduct((prev) => ({
-                              ...prev,
-                              vat: parseInt(e.target.value) || 0,
-                            }))
-                          }
-                          className="w-16 px-2 py-1 border border-blue-200 rounded-lg text-center font-bold text-blue-700"
-                        />
+                        <div className="grid grid-cols-2 gap-4 border-t border-blue-100 pt-4">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-blue-600 font-bold uppercase">
+                              НДС (%)
+                            </span>
+                            <input
+                              type="number"
+                              value={newProduct.vat}
+                              onFocus={(e) => e.target.select()}
+                              onChange={(e) =>
+                                setNewProduct((prev) => ({
+                                  ...prev,
+                                  vat: parseInt(e.target.value) || 0,
+                                }))
+                              }
+                              className="w-16 px-2 py-1 border border-blue-200 rounded-lg text-center font-bold text-blue-700"
+                            />
+                          </div>
+                          <label className="flex items-center gap-2 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={newProduct.includeVat}
+                              onChange={(e) =>
+                                setNewProduct((prev) => ({
+                                  ...prev,
+                                  includeVat: e.target.checked,
+                                }))
+                              }
+                              className="w-4 h-4 text-blue-600 rounded"
+                            />
+                            <span className="text-xs text-blue-600 font-medium">
+                              НДС включен в цену
+                            </span>
+                          </label>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="bg-purple-50 border border-purple-200 p-3.5 rounded-xl text-xs text-purple-950 font-medium leading-relaxed font-sans">
+                        У товара есть вариации. Закупочные цены и артикулы задаются индивидуально для каждой вариации в списке ниже.
                       </div>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={newProduct.includeVat}
-                          onChange={(e) =>
-                            setNewProduct((prev) => ({
-                              ...prev,
-                              includeVat: e.target.checked,
-                            }))
-                          }
-                          className="w-4 h-4 text-blue-600 rounded"
-                        />
-                        <span className="text-xs text-blue-600 font-medium">
-                          НДС включен в цену
-                        </span>
-                      </label>
-                    </div>
+                    )}
 
                     <div className="border-t border-blue-100 pt-4 space-y-3">
                       <label className="flex items-center gap-2 cursor-pointer">
@@ -18592,7 +18779,7 @@ const ProductsView = ({
                             </div>
                             <div>
                               <label className="block text-[10px] font-bold text-emerald-900 mb-1">
-                                Дизайнары
+                                Дизайнеры
                               </label>
                               <input
                                 type="number"
@@ -18615,7 +18802,11 @@ const ProductsView = ({
                     </div>
 
                     <div className="pt-2 border-t border-blue-100/50 mt-1">
-                      {newProduct.useCustomCoeffs ? (
+                      {newProduct.variations && newProduct.variations.length > 0 ? (
+                        <div className="bg-purple-50/50 border border-dashed border-purple-200/50 p-3 rounded-xl text-[11px] text-purple-800 italic text-center font-sans">
+                          Итоговые розничные/оптовые цены рассчитываются для каждой вариации отдельно на основе её цены закупки.
+                        </div>
+                      ) : newProduct.useCustomCoeffs ? (
                         <div className="space-y-1.5 bg-emerald-50/20 p-2.5 rounded-xl border border-emerald-200/40">
                           <div className="text-[10px] uppercase font-bold text-emerald-800 tracking-wider">
                             Итоговые цены со своими коэф.:
