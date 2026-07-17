@@ -340,13 +340,19 @@ async function startServer() {
     console.log(`--- [SMTP CONFIG] User: ${process.env.SMTP_USER}, From: ${process.env.SMTP_FROM || 'not set'} ---`);
 
     try {
+      const smtpPort = String(process.env.SMTP_PORT || "587").trim();
+      const isSecure = smtpPort === "465" || String(process.env.SMTP_SECURE).trim() === "true";
+      const smtpHost = String(process.env.SMTP_HOST).trim();
+      const smtpUser = String(process.env.SMTP_USER).trim();
+      const smtpPass = String(process.env.SMTP_PASS).trim();
+      
       const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST,
-        port: parseInt(process.env.SMTP_PORT || "587"),
-        secure: process.env.SMTP_PORT === "465", 
+        host: smtpHost,
+        port: parseInt(smtpPort),
+        secure: isSecure, 
         auth: {
-          user: process.env.SMTP_USER,
-          pass: process.env.SMTP_PASS,
+          user: smtpUser,
+          pass: smtpPass,
         },
         // Better diagnostics
         logger: true,
