@@ -364,7 +364,15 @@ async function startServer() {
       // If SMTP_FROM contains <, it's likely already formatted.
       let fromField: string;
       if (process.env.SMTP_FROM) {
-        fromField = process.env.SMTP_FROM.replace(/[\.\s]+$/, '');
+        let cleanedFrom = process.env.SMTP_FROM.trim();
+        // Remove surrounding quotes if present (e.g. if entered literally in ENV string)
+        if (cleanedFrom.startsWith('"') && cleanedFrom.endsWith('"')) {
+            cleanedFrom = cleanedFrom.substring(1, cleanedFrom.length - 1);
+        }
+        if (cleanedFrom.startsWith("'") && cleanedFrom.endsWith("'")) {
+            cleanedFrom = cleanedFrom.substring(1, cleanedFrom.length - 1);
+        }
+        fromField = cleanedFrom.replace(/[\.\s]+$/, '');
       } else {
         fromField = `"Мебельный калькулятор" <${process.env.SMTP_USER}>`;
       }

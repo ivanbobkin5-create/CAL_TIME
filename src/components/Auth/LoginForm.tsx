@@ -67,7 +67,12 @@ export const LoginForm = ({
         setMessage({ type: 'success', text: 'Инструкции отправлены на вашу почту (проверьте также папку Спам)' });
         setTimeout(() => setView('reset'), 2000);
       } else {
-        setMessage({ type: 'error', text: 'Ошибка. Проверьте правильность email' });
+        let errText = 'Ошибка. Проверьте правильность email';
+        try {
+          const errData = await res.json();
+          if (errData.error) errText = errData.error;
+        } catch(e) {}
+        setMessage({ type: 'error', text: errText });
       }
     } catch (e) {
       setMessage({ type: 'error', text: 'Сетевая ошибка' });
