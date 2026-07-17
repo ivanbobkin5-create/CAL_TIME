@@ -340,48 +340,43 @@ async function startServer() {
     console.log(`--- [SMTP CONFIG] User: ${process.env.SMTP_USER}, From: ${process.env.SMTP_FROM || 'not set'} ---`);
 
     try {
-      const smtpPort = String(process.env.SMTP_PORT || "587").trim();
-      const isSecure = smtpPort === "465" || String(process.env.SMTP_SECURE).trim() === "true";
-      const smtpHost = String(process.env.SMTP_HOST).trim();
-      const smtpUser = String(process.env.SMTP_USER).trim();
-      const smtpPass = String(process.env.SMTP_PASS).trim();
+      const smtpHost = (process.env.SMTP_HOST || 'smtp.timeweb.ru').trim();
+      const smtpPort = Number(process.env.SMTP_PORT) || 465;
+      const smtpUser = (process.env.SMTP_USER || 'noreply@mebel-plan.ru').trim();
+      const smtpPass = (process.env.SMTP_PASS || '').trim();
       
       const transporter = nodemailer.createTransport({
         host: smtpHost,
-        port: parseInt(smtpPort),
-        secure: isSecure, 
+        port: smtpPort,
+        secure: smtpPort === 465, // важно для 465
         auth: {
           user: smtpUser,
-          pass: smtpPass,
+          pass: smtpPass
         },
-        // Better diagnostics
         logger: true,
         debug: true,
-        connectionTimeout: 10000, // 10 seconds
-        greetingTimeout: 10000,
-        socketTimeout: 10000,
-        tls: {
-          // Do not fail on invalid certs
-          rejectUnauthorized: false
-        }
+        connectionTimeout: 10000,
+        socketTimeout: 10000
       });
 
-      // Validating "from" field to avoid 550 error.
-      // If SMTP_FROM contains <, it's likely already formatted.
-      let fromField: string;
-      if (process.env.SMTP_FROM) {
-        let cleanedFrom = process.env.SMTP_FROM.trim();
-        // Remove surrounding quotes if present (e.g. if entered literally in ENV string)
-        if (cleanedFrom.startsWith('"') && cleanedFrom.endsWith('"')) {
-            cleanedFrom = cleanedFrom.substring(1, cleanedFrom.length - 1);
-        }
-        if (cleanedFrom.startsWith("'") && cleanedFrom.endsWith("'")) {
-            cleanedFrom = cleanedFrom.substring(1, cleanedFrom.length - 1);
-        }
-        fromField = cleanedFrom.replace(/[\.\s]+$/, '');
+      let fromField = (process.env.SMTP_FROM || '').trim();
+      if (!fromField) {
+        fromField = `"Мебельный калькулятор" <${smtpUser}>`;
       } else {
-        fromField = `"Мебельный калькулятор" <${process.env.SMTP_USER}>`;
+        // Clean quotes
+        if (fromField.startsWith('"') && fromField.endsWith('"')) {
+            fromField = fromField.substring(1, fromField.length - 1);
+        }
+        if (fromField.startsWith("'") && fromField.endsWith("'")) {
+            fromField = fromField.substring(1, fromField.length - 1);
+        }
+        // ensure format "Name" <email> if it has brackets
+        if (!fromField.includes('<')) {
+           fromField = `"${fromField}" <${smtpUser}>`;
+        }
       }
+
+      console.log(`--- [SMTP CONFIG USED] Host: ${smtpHost}, Port: ${smtpPort}, Secure: ${smtpPort === 465}, User: ${smtpUser}, From: ${fromField} ---`);
 
       const info = await transporter.sendMail({
         from: fromField,
