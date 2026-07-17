@@ -22469,9 +22469,9 @@ export default function App() {
     } catch (error) {
       console.error("Register error:", error);
       showAlert("Ошибка регистрации", (error as Error).message);
+      throw error;
     }
   }, [showAlert, INITIAL_PRODUCT_CATEGORIES]);
-
 
   const handleLogout = async () => {
     try {
@@ -26269,10 +26269,14 @@ export default function App() {
                 )}
               >
                 <div className={cn(
-                  "w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-all",
+                  "w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-all overflow-hidden",
                   activeTab === "profile" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-500"
                 )}>
-                  <User className="w-4 h-4" />
+                  {userData?.photoURL ? (
+                    <img src={userData.photoURL} alt="Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    <User className="w-4 h-4" />
+                  )}
                 </div>
 
                 {isSidebarOpen && (
@@ -27402,10 +27406,40 @@ export default function App() {
                       </div>
                     </div>
 
-                    <ProductRequiredProductsList
-                      requiredProducts={selectedProductForDetail.requiredProducts}
-                      catalogProducts={catalogProducts}
-                    />
+                    {selectedProductForDetail.requiredProducts && selectedProductForDetail.requiredProducts.length > 0 && (
+                      <div className="bg-blue-50/50 p-6 rounded-3xl border border-blue-100/70 space-y-4">
+                        <h4 className="text-[10px] font-black text-blue-800 uppercase tracking-widest border-b border-blue-200/50 pb-3 flex items-center gap-2">
+                          <Package className="w-4 h-4 text-blue-600" />
+                          В комплекте (сопутствующие товары)
+                        </h4>
+                        <div className="space-y-2">
+                          {selectedProductForDetail.requiredProducts.map((rp: any, idx: number) => {
+                            const cp = catalogProducts.find((item: any) => String(item.id) === String(rp.id));
+                            if (!cp) return null;
+                            return (
+                              <div key={idx} className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-blue-100/50 shadow-sm">
+                                <div className="w-8 h-8 rounded-lg overflow-hidden bg-gray-50 flex-shrink-0">
+                                  {(cp.images?.[0] || cp.image) ? (
+                                    <img src={cp.images?.[0] || cp.image} className="w-full h-full object-cover" />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-gray-300">
+                                      <ImageIcon className="w-4 h-4" />
+                                    </div>
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-xs font-bold text-gray-800 truncate" title={cp.name}>{cp.name}</div>
+                                  <div className="text-[10px] text-gray-500 font-medium">Арт: {cp.article || "—"}</div>
+                                </div>
+                                <div className="text-xs font-black text-blue-600 shrink-0 bg-blue-50 px-2 py-1 rounded-lg">
+                                  {rp.qty} шт.
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
 
                     {(() => {
                       let analogsList = [];

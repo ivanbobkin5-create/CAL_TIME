@@ -1,20 +1,12 @@
-import "dotenv/config";
-import { PrismaClient } from "@prisma/client";
-const prisma = new PrismaClient();
-async function test() {
-  try {
-    const user = await prisma.authUser.create({
-      data: { email: "test-npx-register2@example.com", password: "mypassword" }
-    });
-    console.log(user);
-    const doc = await prisma.dbDocument.create({
-      data: { path: "users/" + user.uid, collection: "users", docId: user.uid, data: JSON.stringify({ name: "Test User" }) }
-    });
-    console.log(doc);
-  } catch (e) {
-    console.error(e);
-  } finally {
-    await prisma.$disconnect();
-  }
+import fetch from "node-fetch";
+
+async function main() {
+  const res = await fetch("http://localhost:3000/api/auth/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: "testuser55@gmail.com", password: "password123", verified: false })
+  });
+  console.log("Status:", res.status);
+  console.log("Body:", await res.text());
 }
-test();
+main();
