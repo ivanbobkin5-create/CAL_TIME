@@ -15198,6 +15198,14 @@ const ProductsView = ({
     wardrobeGroup: "",
     wardrobeUsage: "",
     wardrobeBrand: "",
+    fastenerGroup: "",
+    fastenerBrand: "",
+    fastenerMaxLoad: "",
+    fastenerUsage: "",
+    fastenerPlinthHeight: "",
+    fastenerPlinthColor: "",
+    fastenerPlinthMaterial: "",
+    brand: "",
   });
 
   const sensors = useSensors(
@@ -15539,6 +15547,14 @@ const ProductsView = ({
       wardrobeGroup: "",
       wardrobeUsage: "",
       wardrobeBrand: "",
+      fastenerGroup: "",
+      fastenerBrand: "",
+      fastenerMaxLoad: "",
+      fastenerUsage: "",
+      fastenerPlinthHeight: "",
+      fastenerPlinthColor: "",
+      fastenerPlinthMaterial: "",
+      brand: "",
     });
     setEditingProduct(null);
     setIsAddingProduct(false);
@@ -15615,6 +15631,14 @@ const ProductsView = ({
       wardrobeGroup: product.wardrobeGroup || "",
       wardrobeUsage: product.wardrobeUsage || "",
       wardrobeBrand: product.wardrobeBrand || "",
+      fastenerGroup: product.fastenerGroup || "",
+      fastenerBrand: product.fastenerBrand || "",
+      fastenerMaxLoad: product.fastenerMaxLoad || "",
+      fastenerUsage: product.fastenerUsage || "",
+      fastenerPlinthHeight: product.fastenerPlinthHeight || "",
+      fastenerPlinthColor: product.fastenerPlinthColor || "",
+      fastenerPlinthMaterial: product.fastenerPlinthMaterial || "",
+      brand: product.brand || "",
       variations: product.variations || [],
     });
     setIsAddingProduct(true);
@@ -15691,6 +15715,14 @@ const ProductsView = ({
       wardrobeGroup: product.wardrobeGroup || "",
       wardrobeUsage: product.wardrobeUsage || "",
       wardrobeBrand: product.wardrobeBrand || "",
+      fastenerGroup: product.fastenerGroup || "",
+      fastenerBrand: product.fastenerBrand || "",
+      fastenerMaxLoad: product.fastenerMaxLoad || "",
+      fastenerUsage: product.fastenerUsage || "",
+      fastenerPlinthHeight: product.fastenerPlinthHeight || "",
+      fastenerPlinthColor: product.fastenerPlinthColor || "",
+      fastenerPlinthMaterial: product.fastenerPlinthMaterial || "",
+      brand: product.brand || "",
       variations: product.variations || [],
     });
     setIsAddingProduct(true);
@@ -22172,6 +22204,28 @@ export default function App() {
   const [isSessionBlocked, setIsSessionBlocked] = useState(false);
   const [isEndingSessions, setIsEndingSessions] = useState(false);
   const [sessionId] = useState(() => Math.random().toString(36).substr(2, 9));
+  const [hostMappedAlias, setHostMappedAlias] = useState<string | null>(null);
+
+  useEffect(() => {
+    const checkCustomDomain = async () => {
+      const hostname = window.location.hostname;
+      // Skip if we are on the main app domain or localhost
+      if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('.run.app')) {
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/public/lookup-by-host?host=${hostname}`);
+        if (res.ok) {
+          const data = await res.json();
+          setHostMappedAlias(data.alias || data.id);
+        }
+      } catch (e) {
+        console.error("Custom domain lookup failed", e);
+      }
+    };
+    checkCustomDomain();
+  }, []);
 
   const [productionFormat, setProductionFormat] =
     useState<ProductionFormat>("contract");
@@ -26136,6 +26190,11 @@ export default function App() {
   if (currentPath.startsWith("/c/")) {
     const aliasOrId = currentPath.split("/c/")[1];
     return <PublicLandingView aliasOrId={aliasOrId} />;
+  }
+
+  // Handle custom domain at root
+  if (hostMappedAlias && currentPath === "/") {
+    return <PublicLandingView aliasOrId={hostMappedAlias} />;
   }
 
   if (!isAuthenticated) {

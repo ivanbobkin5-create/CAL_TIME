@@ -84,6 +84,29 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
+  app.get("/api/public/lookup-by-host", async (req, res) => {
+    try {
+      const { host } = req.query;
+      if (!host || typeof host !== "string") return res.status(400).json({ error: "Host is required" });
+      
+      const allCompanyDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+        where: { collection: "companies" }
+      }));
+      
+      for (const doc of allCompanyDocs) {
+        try {
+          const parsed = JSON.parse(doc.data);
+          if (parsed.landingPage?.customDomain === host || (parsed.landingPage?.customDomain && parsed.landingPage.customDomain.replace(/^https?:\/\//, '') === host)) {
+            return res.json({ id: doc.docId, alias: parsed.landingPage.alias });
+          }
+        } catch (e) {}
+      }
+      res.status(404).json({ error: "No company found for this host" });
+    } catch (e) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   // Public Catalog/Landing Page API
   // In-memory cache for public company data
   const publicCompanyCache = new Map<string, { data: any, timestamp: number }>();

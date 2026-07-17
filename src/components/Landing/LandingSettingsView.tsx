@@ -29,6 +29,7 @@ interface LandingPageConfig {
   visibleCategories: string[];
   showPromoSection?: boolean;
   promoDisplayType?: "slider" | "category";
+  customDomain?: string;
 }
 
 interface LandingSettingsViewProps {
@@ -74,6 +75,7 @@ export function LandingSettingsView({
     visibleCategories: [],
     showPromoSection: false,
     promoDisplayType: "slider",
+    customDomain: "",
     ...(companyData?.landingPage || {}),
   };
 
@@ -100,6 +102,10 @@ export function LandingSettingsView({
     handleUpdateConfig({ alias: sanitized });
   };
 
+  const handleDomainChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    handleUpdateConfig({ customDomain: e.target.value.toLowerCase().trim() });
+  };
+
   const handleToggleCategory = (category: string) => {
     const current = landingConfig.visibleCategories || [];
     const next = current.includes(category)
@@ -117,7 +123,9 @@ export function LandingSettingsView({
     }
   };
 
-  const publicUrl = `${window.location.origin}/c/${landingConfig.alias || companyData?.id}`;
+  const publicUrl = landingConfig.customDomain 
+    ? (landingConfig.customDomain.startsWith('http') ? landingConfig.customDomain : `https://${landingConfig.customDomain}`)
+    : `${window.location.origin}/c/${landingConfig.alias || companyData?.id}`;
 
   const handleCopyLink = () => {
     navigator.clipboard.writeText(publicUrl);
@@ -250,6 +258,27 @@ export function LandingSettingsView({
                 </div>
                 <p className="mt-1.5 text-[11px] text-gray-400">
                   Только латинские буквы, цифры и дефис. По умолчанию используется ID вашей компании.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-black uppercase text-gray-500 tracking-wider mb-2">
+                  Собственный домен
+                </label>
+                <div className="flex rounded-xl shadow-sm">
+                  <span className="inline-flex items-center px-3 rounded-l-xl border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-xs font-medium">
+                    https://
+                  </span>
+                  <input
+                    type="text"
+                    value={landingConfig.customDomain || ""}
+                    onChange={handleDomainChange}
+                    placeholder="shop.kuhni-vsem.ru"
+                    className="block w-full min-w-0 flex-1 rounded-none rounded-r-xl border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500 font-mono"
+                  />
+                </div>
+                <p className="mt-1.5 text-[11px] text-gray-400">
+                  Укажите ваш домен, чтобы витрина была доступна по вашему адресу.
                 </p>
               </div>
 
