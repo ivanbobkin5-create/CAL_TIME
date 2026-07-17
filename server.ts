@@ -356,7 +356,8 @@ async function startServer() {
         logger: true,
         debug: true,
         connectionTimeout: 10000,
-        socketTimeout: 10000
+        socketTimeout: 10000,
+        tls: { rejectUnauthorized: false }
       });
 
       let fromField = (process.env.SMTP_FROM || '').trim();
