@@ -14,6 +14,7 @@ import {
   ImageIcon, 
   Eye, 
   ArrowLeft,
+  ChevronLeft,
   ChevronRight,
   MessageSquare,
   Sparkles,
@@ -191,8 +192,31 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
 
   // Get categories and brands list
   const categories = useMemo(() => {
-    return Array.from(new Set(products.map(p => p.category))) as string[];
+    const landing = company?.landingPage || {};
+    const baseCategories = Array.from(new Set(products.map(p => p.category))) as string[];
+    
+    return baseCategories.filter(cat => {
+      if (cat === "Акционные товары") {
+        return landing.showPromoSection && landing.promoDisplayType === "category";
+      }
+      return true;
+    });
+  }, [products, company]);
+
+  const promoProducts = useMemo(() => {
+    return products.filter(p => p.category === "Акционные товары");
   }, [products]);
+
+  const [activePromoIndex, setActivePromoIndex] = useState(0);
+
+  useEffect(() => {
+    if (promoProducts.length > 1) {
+      const interval = setInterval(() => {
+        setActivePromoIndex(prev => (prev + 1) % promoProducts.length);
+      }, 5000);
+      return () => clearInterval(interval);
+    }
+  }, [promoProducts]);
 
   const availableBrands = useMemo(() => {
     const brands = products
@@ -204,7 +228,13 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
   
   // Filter products matching category, search, brands and price
   const filteredProducts = useMemo(() => {
+    const landing = company?.landingPage || {};
     return products.filter(p => {
+      // If promo section is disabled, hide all promo products from main grid
+      if (p.category === "Акционные товары" && !landing.showPromoSection) {
+        return false;
+      }
+      
       const matchesCategory = !selectedCategory || p.category === selectedCategory;
       
       const searchLower = search.toLowerCase();
@@ -481,6 +511,71 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
         
         {/* Left Side: Dynamic Categories & Search */}
         <aside className="w-full md:w-64 flex-shrink-0 space-y-6">
+          {/* Promo Slider in Sidebar */}
+          {landing.showPromoSection && landing.promoDisplayType === "slider" && promoProducts.length > 0 && (
+            <div className="bg-gradient-to-br from-amber-500 to-orange-600 rounded-3xl p-0.5 shadow-lg shadow-amber-500/20 overflow-hidden group">
+              <div className="bg-white rounded-[22px] overflow-hidden">
+                <div className="p-3 bg-amber-50 border-b border-amber-100 flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-600 fill-amber-600" />
+                    <span className="text-[10px] font-black uppercase tracking-wider text-amber-800">Акция дня</span>
+                  </div>
+                  <div className="flex gap-1">
+                    <button 
+                      onClick={() => setActivePromoIndex(prev => (prev - 1 + promoProducts.length) % promoProducts.length)}
+                      className="p-1 hover:bg-amber-100 rounded-lg text-amber-600 transition-colors"
+                    >
+                      <ChevronLeft className="w-3 h-3" />
+                    </button>
+                    <button 
+                      onClick={() => setActivePromoIndex(prev => (prev + 1) % promoProducts.length)}
+                      className="p-1 hover:bg-amber-100 rounded-lg text-amber-600 transition-colors"
+                    >
+                      <ChevronRight className="w-3 h-3" />
+                    </button>
+                  </div>
+                </div>
+
+                <div className="relative aspect-square cursor-pointer overflow-hidden" onClick={() => setSelectedProductDetail(promoProducts[activePromoIndex])}>
+                  {promoProducts[activePromoIndex].images?.[0] ? (
+                    <img 
+                      src={promoProducts[activePromoIndex].images[0]} 
+                      alt={promoProducts[activePromoIndex].name}
+                      className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-gray-50 flex items-center justify-center">
+                      <ImageIcon className="w-8 h-8 text-gray-200" />
+                    </div>
+                  )}
+                  <div className="absolute top-2 right-2 bg-red-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm">
+                    -{Math.round(Math.random() * 20 + 10)}%
+                  </div>
+                </div>
+
+                <div className="p-4 space-y-2">
+                  <h4 className="font-bold text-xs text-gray-900 line-clamp-1">{promoProducts[activePromoIndex].name}</h4>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex flex-col">
+                      <span className="text-[14px] font-black text-gray-900">
+                        {getProductRetailPrice(promoProducts[activePromoIndex]).toLocaleString()} ₽
+                      </span>
+                    </div>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        addToCart(promoProducts[activePromoIndex]);
+                      }}
+                      className="p-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl shadow-md shadow-amber-500/20 transition-all active:scale-90"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="bg-white p-5 rounded-3xl border border-gray-100 shadow-sm space-y-5">
             <div className="space-y-1">
               <h3 className="font-bold text-gray-900 text-sm uppercase tracking-wider">Поиск по каталогу</h3>
@@ -788,174 +883,245 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
         </div>
       </footer>
 
-      {/* Cart Drawer Modal */}
+      {/* Cart Center Modal */}
       {isCartOpen && (
-        <div className="fixed inset-0 z-50 flex justify-end bg-black/40 backdrop-blur-xs select-none">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm select-none p-4">
           <div 
             className="absolute inset-0" 
             onClick={() => setIsCartOpen(false)} 
           />
           
-          <div className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col animate-in slide-in-from-right duration-300">
-            {/* Header */}
-            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+          <div className="relative w-full max-w-4xl bg-white h-full max-h-[90vh] md:h-auto rounded-[32px] shadow-2xl flex flex-col md:flex-row overflow-hidden animate-in zoom-in-95 duration-300">
+            {/* Header for Mobile */}
+            <div className="md:hidden p-5 border-b border-gray-100 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <ShoppingCart className="w-5 h-5 text-blue-600" />
-                <h3 className="font-bold text-gray-900 text-lg">Корзина заказа</h3>
+                <h3 className="font-bold text-gray-900">Ваша корзина</h3>
               </div>
-              <button 
-                onClick={() => setIsCartOpen(false)}
-                className="p-1 text-gray-400 hover:text-gray-900 rounded-xl transition-colors"
-              >
+              <button onClick={() => setIsCartOpen(false)} className="p-1 text-gray-400">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Cart Items */}
-            <div className="flex-1 overflow-y-auto p-5 space-y-4">
-              {Object.keys(cart).length === 0 ? (
-                <div className="flex flex-col items-center justify-center h-full text-center text-gray-400 space-y-3">
-                  <ShoppingCart className="w-12 h-12 text-gray-200" />
-                  <div className="font-bold">Ваша корзина пуста</div>
-                  <p className="text-xs text-gray-400 max-w-xs leading-relaxed">Выберите понравившиеся товары из каталога и добавьте их в корзину для оформления расчета.</p>
+            {/* Left: Cart Items List */}
+            <div className="flex-[1.5] flex flex-col min-h-0 bg-white">
+              <div className="hidden md:flex p-6 border-b border-gray-100 items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 flex items-center justify-center text-blue-600">
+                    <ShoppingCart className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-black text-gray-900 text-xl tracking-tight">Корзина заказа</h3>
+                    <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">Всего товаров: {totalCartCount}</p>
+                  </div>
                 </div>
-              ) : (
-                Object.entries(cart).map(([cartKey, item]: [string, any]) => (
-                  <div 
-                    key={cartKey} 
-                    className="flex gap-3 p-3 bg-gray-50 rounded-2xl border border-gray-100 relative group"
-                  >
-                    <div className="w-14 h-14 bg-white rounded-xl overflow-hidden border border-gray-200 flex-shrink-0 flex items-center justify-center">
-                      {(item.product.images?.[0] || item.product.image) ? (
-                        <img 
-                          src={item.product.images?.[0] || item.product.image} 
-                          alt={item.product.name} 
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        <ImageIcon className="w-6 h-6 text-gray-200" />
-                      )}
+                <button 
+                  onClick={() => setIsCartOpen(false)}
+                  className="p-2 text-gray-400 hover:text-gray-900 hover:bg-gray-100 rounded-xl transition-all"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                {Object.keys(cart).length === 0 ? (
+                  <div className="flex flex-col items-center justify-center h-full text-center text-gray-400 space-y-4 py-12">
+                    <div className="w-20 h-20 bg-gray-50 rounded-3xl flex items-center justify-center">
+                      <ShoppingCart className="w-10 h-10 text-gray-200" />
+                    </div>
+                    <div className="font-bold text-lg text-gray-900">Ваша корзина пуста</div>
+                    <p className="text-sm text-gray-400 max-w-xs leading-relaxed">Выберите понравившиеся модули и комплектующие в каталоге, чтобы отправить запрос на расчет.</p>
+                  </div>
+                ) : (
+                  Object.entries(cart).map(([cartKey, item]: [string, any]) => {
+                    const product = item.product;
+                    // Find required products details
+                    const subProducts = (product.requiredProducts || []).map((rp: any) => {
+                      const sp = products.find((p: any) => String(p.id) === String(rp.id));
+                      return sp ? { ...sp, qty: rp.qty } : null;
+                    }).filter(Boolean);
+
+                    return (
+                      <div 
+                        key={cartKey} 
+                        className="flex flex-col gap-4 p-5 bg-gray-50/50 rounded-[24px] border border-gray-100 relative group transition-all hover:bg-white hover:shadow-xl hover:shadow-blue-500/5 hover:border-blue-100"
+                      >
+                        <div className="flex gap-4">
+                          <div className="w-20 h-20 bg-white rounded-2xl overflow-hidden border border-gray-200 flex-shrink-0 flex items-center justify-center shadow-sm">
+                            {(product.images?.[0] || product.image) ? (
+                              <img 
+                                src={product.images?.[0] || product.image} 
+                                alt={product.name} 
+                                referrerPolicy="no-referrer"
+                                className="w-full h-full object-cover"
+                              />
+                            ) : (
+                              <ImageIcon className="w-8 h-8 text-gray-200" />
+                            )}
+                          </div>
+
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <h4 className="font-black text-sm text-gray-900 leading-tight mb-1">
+                                  {product.name}
+                                </h4>
+                                {item.variationId && (
+                                  <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-blue-50 text-blue-600 rounded-md text-[10px] font-black uppercase tracking-wider mb-1">
+                                    Вариант: {product.variations?.find((v: any) => v.id === item.variationId)?.name || item.variationId}
+                                  </div>
+                                )}
+                                <p className="text-[10px] text-gray-400 font-black uppercase tracking-wider">{product.category}</p>
+                              </div>
+                              <button
+                                onClick={() => deleteFromCart(cartKey)}
+                                className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                                title="Удалить из корзины"
+                              >
+                                <Trash2 className="w-4.5 h-4.5" />
+                              </button>
+                            </div>
+
+                            <div className="flex items-center justify-between gap-2 mt-4">
+                              <div className="flex flex-col">
+                                <span className="text-lg font-black text-gray-900 leading-none">
+                                  {(item.price * item.qty).toLocaleString()} ₽
+                                </span>
+                                <span className="text-[10px] text-gray-400 font-bold mt-1">
+                                  {item.price.toLocaleString()} ₽ за ед.
+                                </span>
+                              </div>
+
+                              <div className="flex items-center bg-white rounded-xl p-1 border border-gray-200 shadow-sm">
+                                <button
+                                  onClick={() => removeFromCart(product.id, item.variationId)}
+                                  className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                >
+                                  <Minus className="w-3.5 h-3.5" />
+                                </button>
+                                <span className="px-3 font-black text-sm text-gray-900">{item.qty}</span>
+                                <button
+                                  onClick={() => addToCart(product, item.variationId)}
+                                  className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Sub-products (Required Items) */}
+                        {subProducts.length > 0 && (
+                          <div className="pt-4 border-t border-gray-100 space-y-2">
+                            <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-2 flex items-center gap-2">
+                              <Sparkles className="w-3 h-3 text-amber-500 fill-amber-500" />
+                              В комплекте:
+                            </p>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {subProducts.map((sp: any, idx: number) => (
+                                <div key={idx} className="flex items-center gap-2 bg-white/60 p-2 rounded-xl border border-gray-100">
+                                  <div className="w-8 h-8 rounded-lg overflow-hidden bg-gray-50 flex-shrink-0">
+                                    {(sp.images?.[0] || sp.image) ? (
+                                      <img src={sp.images?.[0] || sp.image} className="w-full h-full object-cover" />
+                                    ) : (
+                                      <div className="w-full h-full flex items-center justify-center text-gray-200"><ImageIcon className="w-3 h-3" /></div>
+                                    )}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <p className="text-[10px] font-bold text-gray-800 truncate">{sp.name}</p>
+                                    <p className="text-[9px] text-blue-600 font-black tracking-tight">{sp.qty} шт.</p>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* Right: Checkout Sidebar */}
+            {Object.keys(cart).length > 0 && (
+              <div className="flex-1 bg-gray-50 border-l border-gray-100 flex flex-col min-h-0">
+                <div className="p-8 border-b border-gray-200/50 bg-white/50 backdrop-blur">
+                  <h3 className="font-black text-gray-900 text-lg uppercase tracking-tight mb-6">Оформление заказа</h3>
+                  
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center group">
+                      <span className="text-sm font-bold text-gray-400 group-hover:text-gray-600 transition-colors">Сумма заказа:</span>
+                      <span className="text-2xl font-black text-gray-900 tracking-tighter">{totalCartPrice.toLocaleString()} ₽</span>
+                    </div>
+                    <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100/50">
+                      <p className="text-[10px] leading-relaxed text-blue-700 font-medium">
+                        * Менеджер свяжется с вами для уточнения деталей проекта, согласования материалов и расчета стоимости доставки.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-8">
+                  <form onSubmit={handleCheckoutSubmit} className="space-y-6">
+                    <div className="space-y-2">
+                      <label className="block text-[11px] font-black uppercase text-gray-500 tracking-widest ml-1">Ваше Имя *</label>
+                      <input
+                        type="text"
+                        required
+                        value={customerName}
+                        onChange={(e) => setCustomerName(e.target.value)}
+                        placeholder="Как к вам обращаться?"
+                        className="w-full px-5 py-4 bg-white border border-gray-200 rounded-2xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all shadow-sm"
+                      />
                     </div>
 
-                    <div className="flex-1 min-w-0 space-y-1">
-                      <h4 className="font-bold text-xs text-gray-900 truncate pr-6" title={item.product.name}>
-                        {item.product.name}
-                      </h4>
-                      {item.variationId && (
-                        <p className="text-[10px] text-blue-600 font-black">
-                          Вариант: {item.product.variations?.find((v: any) => v.id === item.variationId)?.name || item.variationId}
-                        </p>
-                      )}
-                      <p className="text-[10px] text-gray-400 font-bold">{item.product.category}</p>
-                      
-                      <div className="flex items-center justify-between gap-2 mt-2">
-                        <span className="text-sm font-black text-gray-900">
-                          {item.price.toLocaleString()} ₽ <span className="text-[9px] text-gray-400 font-medium">/ шт.</span>
-                        </span>
+                    <div className="space-y-2">
+                      <label className="block text-[11px] font-black uppercase text-gray-500 tracking-widest ml-1">Контактный телефон *</label>
+                      <input
+                        type="tel"
+                        required
+                        value={customerPhone}
+                        onChange={(e) => setCustomerPhone(e.target.value)}
+                        placeholder="+7 (___) ___-__-__"
+                        className="w-full px-5 py-4 bg-white border border-gray-200 rounded-2xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all shadow-sm"
+                      />
+                    </div>
 
-                        <div className="flex items-center bg-white rounded-xl p-0.5 border border-gray-200">
-                          <button
-                            onClick={() => removeFromCart(item.product.id, item.variationId)}
-                            className="p-1 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-lg transition-all"
-                          >
-                            <Minus className="w-3 h-3" />
-                          </button>
-                          <span className="px-2 font-bold text-xs text-gray-700">{item.qty}</span>
-                          <button
-                            onClick={() => addToCart(item.product, item.variationId)}
-                            className="p-1 text-gray-500 hover:text-blue-600 hover:bg-gray-100 rounded-lg transition-all"
-                          >
-                            <Plus className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
+                    <div className="space-y-2">
+                      <label className="block text-[11px] font-black uppercase text-gray-500 tracking-widest ml-1">Комментарий</label>
+                      <textarea
+                        rows={3}
+                        value={customerComment}
+                        onChange={(e) => setCustomerComment(e.target.value)}
+                        placeholder="Напишите здесь свои пожелания или особенности заказа..."
+                        className="w-full px-5 py-4 bg-white border border-gray-200 rounded-2xl text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all shadow-sm resize-none"
+                      />
                     </div>
 
                     <button
-                      onClick={() => deleteFromCart(cartKey)}
-                      className="absolute top-2 right-2 p-1 text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all rounded-lg"
-                      title="Удалить из корзины"
+                      type="submit"
+                      disabled={submittingOrder}
+                      className="w-full py-5 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-[20px] shadow-xl shadow-blue-500/30 transition-all flex items-center justify-center gap-3 text-sm active:scale-95 disabled:opacity-50 group mt-4 uppercase tracking-widest"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      {submittingOrder ? (
+                        <>
+                          <Loader2 className="w-5 h-5 animate-spin" />
+                          Обработка...
+                        </>
+                      ) : (
+                        <>
+                          Отправить заявку
+                          <ChevronRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                        </>
+                      )}
                     </button>
-                  </div>
-                ))
-              )}
-            </div>
-
-            {/* Summary and Order Form */}
-            {Object.keys(cart).length > 0 && (
-              <div className="p-5 border-t border-gray-100 bg-gray-50 space-y-4">
-                <div className="flex justify-between items-center text-sm">
-                  <span className="font-bold text-gray-500">Предварительный итог:</span>
-                  <span className="text-xl font-black text-gray-900">{totalCartPrice.toLocaleString()} ₽</span>
+                    <p className="text-[10px] text-center text-gray-400 font-medium px-4">
+                      Нажимая кнопку, вы соглашаетесь с условиями обработки персональных данных
+                    </p>
+                  </form>
                 </div>
-
-                <form onSubmit={handleCheckoutSubmit} className="space-y-3 pt-3 border-t border-gray-200">
-                  <div className="space-y-1">
-                    <label className="block text-[10px] font-black uppercase text-gray-400 tracking-wider">ФИО *</label>
-                    <input
-                      type="text"
-                      required
-                      value={customerName}
-                      onChange={(e) => setCustomerName(e.target.value)}
-                      placeholder="Иван Иванов"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-xl text-xs focus:ring-1 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-[10px] font-black uppercase text-gray-400 tracking-wider">Телефон *</label>
-                    <input
-                      type="tel"
-                      required
-                      value={customerPhone}
-                      onChange={(e) => setCustomerPhone(e.target.value)}
-                      placeholder="+7 (999) 123-45-67"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-xl text-xs focus:ring-1 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-[10px] font-black uppercase text-gray-400 tracking-wider">Email (необязательно)</label>
-                    <input
-                      type="email"
-                      value={customerEmail}
-                      onChange={(e) => setCustomerEmail(e.target.value)}
-                      placeholder="client@mail.ru"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-xl text-xs focus:ring-1 focus:ring-blue-500"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="block text-[10px] font-black uppercase text-gray-400 tracking-wider">Комментарии к заказу</label>
-                    <textarea
-                      rows={2}
-                      value={customerComment}
-                      onChange={(e) => setCustomerComment(e.target.value)}
-                      placeholder="Нужна доставка и сборка, а также правый глухой угол..."
-                      className="w-full px-3 py-2 border border-gray-300 rounded-xl text-xs focus:ring-1 focus:ring-blue-500 resize-none"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    disabled={submittingOrder}
-                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl shadow-lg shadow-blue-500/25 transition-all flex items-center justify-center gap-2 text-xs active:scale-95 disabled:opacity-55"
-                  >
-                    {submittingOrder ? (
-                      <>
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                        Отправка заявки...
-                      </>
-                    ) : (
-                      <>
-                        Отправить запрос на расчет
-                      </>
-                    )}
-                  </button>
-                </form>
               </div>
             )}
           </div>

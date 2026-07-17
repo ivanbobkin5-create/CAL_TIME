@@ -27,6 +27,8 @@ interface LandingPageConfig {
   telegram: string;
   whatsapp: string;
   visibleCategories: string[];
+  showPromoSection?: boolean;
+  promoDisplayType?: "slider" | "category";
 }
 
 interface LandingSettingsViewProps {
@@ -70,6 +72,8 @@ export function LandingSettingsView({
     telegram: "",
     whatsapp: "",
     visibleCategories: [],
+    showPromoSection: false,
+    promoDisplayType: "slider",
     ...(companyData?.landingPage || {}),
   };
 
@@ -410,7 +414,60 @@ export function LandingSettingsView({
             </div>
 
             <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1">
-              {productCategories.filter(cat => cat !== "Кромочные материалы" && cat !== "Кромка").map((category) => {
+              {/* Promo Section Toggle */}
+              <div className="p-3 bg-amber-50 rounded-xl border border-amber-100 space-y-3 mb-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-600" />
+                    <span className="text-xs font-bold text-amber-900">Акционные товары</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleUpdateConfig({ showPromoSection: !landingConfig.showPromoSection })}
+                    className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none ${
+                      landingConfig.showPromoSection ? "bg-amber-500" : "bg-gray-300"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+                        landingConfig.showPromoSection ? "translate-x-5" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                </div>
+
+                {landingConfig.showPromoSection && (
+                  <div className="space-y-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                    <span className="text-[10px] font-black uppercase text-amber-700 tracking-wider block">Отображать как:</span>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateConfig({ promoDisplayType: "slider" })}
+                        className={`px-3 py-2 rounded-lg text-[10px] font-bold border transition-all ${
+                          landingConfig.promoDisplayType === "slider"
+                            ? "bg-white border-amber-500 text-amber-700 shadow-sm"
+                            : "bg-amber-100/50 border-transparent text-amber-600 hover:bg-amber-100"
+                        }`}
+                      >
+                        Слайдер слева
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleUpdateConfig({ promoDisplayType: "category" })}
+                        className={`px-3 py-2 rounded-lg text-[10px] font-bold border transition-all ${
+                          landingConfig.promoDisplayType === "category"
+                            ? "bg-white border-amber-500 text-amber-700 shadow-sm"
+                            : "bg-amber-100/50 border-transparent text-amber-600 hover:bg-amber-100"
+                        }`}
+                      >
+                        Обычная категория
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {productCategories.filter(cat => cat !== "Кромочные материалы" && cat !== "Кромка" && cat !== "Акционные товары").map((category) => {
                 const isSelected = (landingConfig.visibleCategories || []).includes(category);
                 return (
                   <button

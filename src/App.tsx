@@ -1,3 +1,19 @@
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
+import { ProductRequiredProductsList } from "./components/ProductRequiredProductsList";
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import * as ReactDOM from "react-dom";
@@ -8513,6 +8529,18 @@ const SummaryView = ({
         }
         
         matchedProd = inCat.find((p: any) => matchProductSegment(p, activeSegment)) || inCat[0];
+        if (category === "Ручки и крючки" && matchedProd && matchedProd.variations) {
+            const v = matchedProd.variations.find((v: any) => v.name && String(v.name).includes("128"));
+            if (v) {
+                matchedProd = {
+                    ...matchedProd,
+                    id: `${matchedProd.id}_var_${v.id || 0}`,
+                    name: `${matchedProd.name} (${v.name})`,
+                    purchasePrice: v.purchasePrice || matchedProd.purchasePrice,
+                    article: v.article || matchedProd.article
+                };
+            }
+        }
       }
       
       if (matchedProd) {
@@ -14691,6 +14719,8 @@ const ProductsView = ({
   resolveBrandCoefficient,
   selectedProductForDetail,
   setSelectedProductForDetail,
+  selectedAssociations,
+  toggleAssociation,
 }: {
   onAddProduct: (product: any, qty: number) => void;
   catalogProducts: any[];
@@ -14738,6 +14768,8 @@ const ProductsView = ({
   updateDoc: any;
   selectedProductForDetail: any;
   setSelectedProductForDetail: React.Dispatch<React.SetStateAction<any>>;
+  selectedAssociations: Record<string, Set<string>>;
+  toggleAssociation: (productId: string, associatedProductId: string) => void;
 }) => {
   const [showChecklistWindow, setShowChecklistWindow] = useState(false);
   const [requiredProductsModal, setRequiredProductsModal] = useState<{
@@ -15167,6 +15199,32 @@ const ProductsView = ({
     wardrobeUsage: "",
     wardrobeBrand: "",
   });
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  );
+
+  const handleVariationsDragEnd = (event: any) => {
+    const { active, over } = event;
+    if (active && over && active.id !== over.id) {
+      setNewProduct((prev) => {
+        const variations = prev.variations || [];
+        const oldIndex = variations.findIndex((v, idx) => (v.id || String(idx)) === String(active.id));
+        const newIndex = variations.findIndex((v, idx) => (v.id || String(idx)) === String(over.id));
+        if (oldIndex !== -1 && newIndex !== -1) {
+          return {
+            ...prev,
+            variations: arrayMove(variations, oldIndex, newIndex),
+          };
+        }
+        return prev;
+      });
+    }
+  };
 
   const availableDryerBrands = ["Boyard", "GTV", "Hettich", "Blum", "Rejs"];
 
@@ -17118,44 +17176,65 @@ const ProductsView = ({
       )}
 
       {selectedCategory === "Выдвижные корзины" && (
-        <div className="flex flex-wrap items-center gap-4 mb-6 p-4 bg-sky-50/50 rounded-2xl border border-sky-100 text-xs">
-            <select value={basketBrandFilter || ""} onChange={(e) => setBasketBrandFilter(e.target.value || null)} className="px-2 py-1 border rounded">
-                <option value="">Бренд</option>
-                {["Boyard", "Ekotech", "Hafele", "Hettich", "Kalibra", "Китай"].map(b => <option key={b} value={b}>{b}</option>)}
-            </select>
-            <select value={basketRunnerTypeFilter || ""} onChange={(e) => setBasketRunnerTypeFilter(e.target.value || null)} className="px-2 py-1 border rounded">
-                <option value="">Тип направляющих</option>
-                {["Скрытого монтажа", "Шариковые"].map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-             <select value={basketTypeFilter || ""} onChange={(e) => setBasketTypeFilter(e.target.value || null)} className="px-2 py-1 border rounded">
-                <option value="">Тип</option>
-                {["Бутылочницы", "Бутылочницы в верхнюю базу", "Угловые механизмы", "Колонны", "Мусорные ведра и системы сортировки"].map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <select value={basketColorFilter || ""} onChange={(e) => setBasketColorFilter(e.target.value || null)} className="px-2 py-1 border rounded">
-                <option value="">Цвет</option>
-                {["антрацит", "графит", "серебристый", "серый", "хром"].map(c => <option key={c} value={c}>{c}</option>)}
-            </select>
-             <select value={basketWidthFilter || ""} onChange={(e) => setBasketWidthFilter(e.target.value || null)} className="px-2 py-1 border rounded">
-                <option value="">Ширина</option>
-                {["150 мм", "200 мм", "300 мм", "400 мм", "450 мм", "500 мм", "600 мм", "700 мм", "800 мм", "900 мм"].map(w => <option key={w} value={w}>{w}</option>)}
-            </select>
+        <div className="flex flex-wrap items-center gap-4 mb-6 p-4 bg-sky-50/50 rounded-2xl border border-sky-100 text-xs shadow-sm">
+            <div className="flex items-center gap-2">
+                <span className="font-bold text-gray-600">Бренд:</span>
+                <select value={basketBrandFilter || ""} onChange={(e) => setBasketBrandFilter(e.target.value || null)} className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-sky-500 cursor-pointer shadow-sm text-xs">
+                    <option value="">Все</option>
+                    {["Boyard", "Ekotech", "Hafele", "Hettich", "Kalibra", "Китай"].map(b => <option key={b} value={b}>{b}</option>)}
+                </select>
+            </div>
+            <div className="flex items-center gap-2">
+                <span className="font-bold text-gray-600">Направляющие:</span>
+                <select value={basketRunnerTypeFilter || ""} onChange={(e) => setBasketRunnerTypeFilter(e.target.value || null)} className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-sky-500 cursor-pointer shadow-sm text-xs">
+                    <option value="">Все</option>
+                    {["Скрытого монтажа", "Шариковые"].map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+            </div>
+            <div className="flex items-center gap-2">
+                <span className="font-bold text-gray-600">Тип:</span>
+                <select value={basketTypeFilter || ""} onChange={(e) => setBasketTypeFilter(e.target.value || null)} className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-sky-500 cursor-pointer shadow-sm text-xs">
+                    <option value="">Все</option>
+                    {["Бутылочницы", "Бутылочницы в верхнюю базу", "Угловые механизмы", "Колонны", "Мусорные ведра и системы сортировки"].map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+            </div>
+            <div className="flex items-center gap-2">
+                <span className="font-bold text-gray-600">Цвет:</span>
+                <select value={basketColorFilter || ""} onChange={(e) => setBasketColorFilter(e.target.value || null)} className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-sky-500 cursor-pointer shadow-sm text-xs">
+                    <option value="">Все</option>
+                    {["антрацит", "графит", "серебристый", "серый", "хром"].map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
+            </div>
+            <div className="flex items-center gap-2">
+                <span className="font-bold text-gray-600">Ширина:</span>
+                <select value={basketWidthFilter || ""} onChange={(e) => setBasketWidthFilter(e.target.value || null)} className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-sky-500 cursor-pointer shadow-sm text-xs">
+                    <option value="">Все</option>
+                    {["150 мм", "200 мм", "300 мм", "400 мм", "450 мм", "500 мм", "600 мм", "700 мм", "800 мм", "900 мм"].map(w => <option key={w} value={w}>{w}</option>)}
+                </select>
+            </div>
         </div>
       )}
       {selectedCategory === "Столешницы и стеновые" && (
-        <div className="flex flex-wrap items-center gap-4 mb-6 p-4 bg-sky-50/50 rounded-2xl border border-sky-100 text-xs">
-            <select value={wtGroupFilter || ""} onChange={(e) => setWtGroupFilter(e.target.value || null)} className="px-2 py-1 border rounded">
-                <option value="">Группа</option>
-                {["Столешница", "Стеновая панель"].map(g => <option key={g} value={g}>{g}</option>)}
-            </select>
-             <select value={wtTypeFilter || ""} onChange={(e) => setWtTypeFilter(e.target.value || null)} className="px-2 py-1 border rounded">
-                <option value="">Тип</option>
-                {["ЛДСП", "МДФ", "Компакт-ламинат"].map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-            <input placeholder="Бренд" value={wtManufacturerFilter || ""} onChange={(e) => setWtManufacturerFilter(e.target.value || null)} className="px-2 py-1 border rounded" />
-            <input placeholder="Длина" value={wtLengthFilter || ""} onChange={(e) => setWtLengthFilter(e.target.value || null)} className="px-2 py-1 border rounded" />
-            <input placeholder="Глубина" value={wtDepthFilter || ""} onChange={(e) => setWtDepthFilter(e.target.value || null)} className="px-2 py-1 border rounded" />
-            <input placeholder="Толщина" value={wtThicknessFilter || ""} onChange={(e) => setWtThicknessFilter(e.target.value || null)} className="px-2 py-1 border rounded" />
-            <input placeholder="Завал" value={wtEdgeFilter || ""} onChange={(e) => setWtEdgeFilter(e.target.value || null)} className="px-2 py-1 border rounded" />
+        <div className="flex flex-wrap items-center gap-4 mb-6 p-4 bg-sky-50/50 rounded-2xl border border-sky-100 text-xs shadow-sm">
+            <div className="flex items-center gap-2">
+                <span className="font-bold text-gray-600">Группа:</span>
+                <select value={wtGroupFilter || ""} onChange={(e) => setWtGroupFilter(e.target.value || null)} className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-sky-500 cursor-pointer shadow-sm text-xs">
+                    <option value="">Все</option>
+                    {["Столешница", "Стеновая панель"].map(g => <option key={g} value={g}>{g}</option>)}
+                </select>
+            </div>
+             <div className="flex items-center gap-2">
+                <span className="font-bold text-gray-600">Тип:</span>
+                <select value={wtTypeFilter || ""} onChange={(e) => setWtTypeFilter(e.target.value || null)} className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-sky-500 cursor-pointer shadow-sm text-xs">
+                    <option value="">Все</option>
+                    {["ЛДСП", "МДФ", "Компакт-ламинат"].map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+            </div>
+            <input placeholder="Бренд" value={wtManufacturerFilter || ""} onChange={(e) => setWtManufacturerFilter(e.target.value || null)} className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-sky-500 shadow-sm text-xs w-[120px]" />
+            <input placeholder="Длина" value={wtLengthFilter || ""} onChange={(e) => setWtLengthFilter(e.target.value || null)} className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-sky-500 shadow-sm text-xs w-[100px]" />
+            <input placeholder="Глубина" value={wtDepthFilter || ""} onChange={(e) => setWtDepthFilter(e.target.value || null)} className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-sky-500 shadow-sm text-xs w-[100px]" />
+            <input placeholder="Толщина" value={wtThicknessFilter || ""} onChange={(e) => setWtThicknessFilter(e.target.value || null)} className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-sky-500 shadow-sm text-xs w-[100px]" />
+            <input placeholder="Завал" value={wtEdgeFilter || ""} onChange={(e) => setWtEdgeFilter(e.target.value || null)} className="px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-700 outline-none focus:ring-2 focus:ring-sky-500 shadow-sm text-xs w-[100px]" />
         </div>
       )}
       {selectedCategory === "Оснащение шкафов" && (
@@ -17963,8 +18042,17 @@ const ProductsView = ({
                     </div>
 
                     {newProduct.variations && newProduct.variations.length > 0 ? (
-                      <div className="space-y-3">
-                        {newProduct.variations.map((v, idx) => {
+                      <DndContext
+                        sensors={sensors}
+                        collisionDetection={closestCenter}
+                        onDragEnd={handleVariationsDragEnd}
+                      >
+                        <SortableContext
+                          items={newProduct.variations.map((v, idx) => v.id || idx)}
+                          strategy={verticalListSortingStrategy}
+                        >
+                          <div className="space-y-3">
+                            {newProduct.variations.map((v, idx) => {
                           const isColorOverridden = !!(newProduct.handleColor?.trim() || newProduct.color?.trim());
                           const isMaterialOverridden = !!newProduct.handleMaterial?.trim();
 
@@ -17972,7 +18060,8 @@ const ProductsView = ({
                           const displayMaterial = isMaterialOverridden ? newProduct.handleMaterial?.trim() : (v.material || "");
 
                           return (
-                            <div key={v.id || idx} className="bg-white p-4 rounded-xl border border-purple-100 shadow-sm space-y-3 animate-in fade-in duration-200">
+                            <SortableVariationItem key={v.id || idx} v={v} idx={idx}>
+                              <div key={v.id || idx} className="bg-white p-4 rounded-xl border border-purple-100 shadow-sm space-y-3 animate-in fade-in duration-200">
                               <div className="flex flex-col sm:flex-row items-start gap-4 w-full">
                                 {/* Variation Image Slot */}
                                 <div className="relative w-14 h-14 rounded-lg border border-dashed border-purple-200 flex flex-col items-center justify-center cursor-pointer hover:border-purple-400 hover:bg-purple-50/50 transition-all text-purple-400 flex-shrink-0 overflow-hidden sm:mt-5 bg-gray-50/50">
@@ -18183,9 +18272,12 @@ const ProductsView = ({
                                 </div>
                               )}
                             </div>
+                          </SortableVariationItem>
                           );
                         })}
                       </div>
+                    </SortableContext>
+                  </DndContext>
                     ) : (
                       <div className="py-8 text-center border-2 border-dashed border-purple-100 rounded-2xl bg-purple-50/20">
                         <span className="text-xs text-purple-400 font-bold">Вариаций пока нет</span>
@@ -19992,55 +20084,59 @@ const ProductsView = ({
                           </select>
                         </div>
 
-                        <div>
-                          <label className="block text-sm font-bold text-gray-700 mb-2">Бренд</label>
-                          <select
-                            value={newProduct.fastenerBrand || newProduct.brand || newProduct.manufacturer || ""}
-                            onChange={(e) => setNewProduct(prev => ({
-                              ...prev,
-                              fastenerBrand: e.target.value,
-                              brand: e.target.value,
-                              manufacturer: e.target.value
-                            }))}
-                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
-                          >
-                            <option value="">Выберите бренд</option>
-                            {["CAMAR", "Boyard", "Hafele", "Hettich", "ABS", "Китай"].map((b) => (
-                              <option key={b} value={b}>{b}</option>
-                            ))}
-                          </select>
-                        </div>
+                        {(newProduct.fastenerGroup !== "Цоколь" && newProduct.fastenerGroup !== "Крепеж") && (
+                          <>
+                            <div>
+                              <label className="block text-sm font-bold text-gray-700 mb-2">Бренд</label>
+                              <select
+                                value={newProduct.fastenerBrand || newProduct.brand || newProduct.manufacturer || ""}
+                                onChange={(e) => setNewProduct(prev => ({
+                                  ...prev,
+                                  fastenerBrand: e.target.value,
+                                  brand: e.target.value,
+                                  manufacturer: e.target.value
+                                }))}
+                                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                              >
+                                <option value="">Выберите бренд</option>
+                                {["CAMAR", "Boyard", "Hafele", "Hettich", "ABS", "Китай"].map((b) => (
+                                  <option key={b} value={b}>{b}</option>
+                                ))}
+                              </select>
+                            </div>
 
-                        <div>
-                          <label className="block text-sm font-bold text-gray-700 mb-2">Максимальная нагрузка кг</label>
-                          <input
-                            type="text"
-                            value={newProduct.fastenerMaxLoad || ""}
-                            onChange={(e) => setNewProduct(prev => ({ ...prev, fastenerMaxLoad: e.target.value }))}
-                            placeholder="Например: 120"
-                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
-                          />
-                        </div>
+                            <div>
+                              <label className="block text-sm font-bold text-gray-700 mb-2">Максимальная нагрузка кг</label>
+                              <input
+                                type="text"
+                                value={newProduct.fastenerMaxLoad || ""}
+                                onChange={(e) => setNewProduct(prev => ({ ...prev, fastenerMaxLoad: e.target.value }))}
+                                placeholder="Например: 120"
+                                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                              />
+                            </div>
 
-                        <div>
-                          <label className="block text-sm font-bold text-gray-700 mb-2">Назначение</label>
-                          <select
-                            value={newProduct.fastenerUsage || ""}
-                            onChange={(e) => setNewProduct(prev => ({ ...prev, fastenerUsage: e.target.value }))}
-                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
-                          >
-                            <option value="">Выберите назначение</option>
-                            {[
-                              "Для верхних",
-                              "для нижних",
-                              "Для нижних с ящиками",
-                              "Для полок",
-                              "Для стеновых панелей"
-                            ].map((u) => (
-                              <option key={u} value={u}>{u}</option>
-                            ))}
-                          </select>
-                        </div>
+                            <div>
+                              <label className="block text-sm font-bold text-gray-700 mb-2">Назначение</label>
+                              <select
+                                value={newProduct.fastenerUsage || ""}
+                                onChange={(e) => setNewProduct(prev => ({ ...prev, fastenerUsage: e.target.value }))}
+                                className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none bg-white font-medium shadow-sm transition-all text-gray-800"
+                              >
+                                <option value="">Выберите назначение</option>
+                                {[
+                                  "Для верхних",
+                                  "для нижних",
+                                  "Для нижних с ящиками",
+                                  "Для полок",
+                                  "Для стеновых панелей"
+                                ].map((u) => (
+                                  <option key={u} value={u}>{u}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </>
+                        )}
 
                         {newProduct.fastenerGroup === "Цоколь" && (
                           <>
@@ -20596,10 +20692,23 @@ const ProductsView = ({
                           >
                             <option value="">-- Выберите сопутствующий товар --</option>
                             {catalogProducts
-                              .filter((p) => {
-                                if (p.id === (editingProduct?.id || null)) return false;
-                                if (relatedCategoryFilter && p.category !== relatedCategoryFilter) return false;
+                              .flatMap((p) => {
+                                if (p.id === (editingProduct?.id || null)) return [];
+                                if (relatedCategoryFilter && p.category !== relatedCategoryFilter) return [];
                                 
+                                const variants = (p.variations || []).map((v: any, vIdx: number) => ({
+                                  ...p,
+                                  id: `${p.id}_var_${v.id || vIdx}`,
+                                  name: `${p.name} (${v.name || `Вариант ${vIdx + 1}`})`,
+                                  isVariation: true,
+                                  variationId: v.id || vIdx,
+                                  purchasePrice: v.purchasePrice > 0 ? v.purchasePrice : p.purchasePrice,
+                                  article: v.article || p.article || ""
+                                }));
+
+                                return [p, ...variants];
+                              })
+                              .filter((p) => {
                                 const sLower = relatedSearchQuery.toLowerCase().trim();
                                 if (sLower) {
                                   const text = `${p.name || ''} ${p.article || ''} ${p.category || ''}`.toLowerCase();
@@ -20609,8 +20718,9 @@ const ProductsView = ({
                               })
                               .map((p) => {
                                 const displayName = p.name ? (p.name.length > 50 ? p.name.substring(0, 48) + "..." : p.name) : "";
+                                const coeff = getProductCoefficient(p, customerType, resolveBrandCoefficient);
                                 const displayPrice = p.purchasePrice
-                                  ? Math.round(p.purchasePrice * getProductCoefficient(p, customerType, resolveBrandCoefficient))
+                                  ? Math.round(p.purchasePrice * coeff)
                                   : p.price;
                                 return (
                                   <option key={p.id} value={p.id} title={p.name}>
@@ -20673,7 +20783,24 @@ const ProductsView = ({
                     {(newProduct.requiredProducts || []).length > 0 ? (
                       <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
                         {(newProduct.requiredProducts || []).map((rp: any, idx: number) => {
-                          const rpProduct = catalogProducts.find((cp) => String(cp.id) === String(rp.id));
+                          let rpProduct: any = null;
+                          if (String(rp.id).includes("_var_")) {
+                             const [parentId] = String(rp.id).split("_var_");
+                             const parent = catalogProducts.find(cp => String(cp.id) === String(parentId));
+                             if (parent) {
+                               const vId = String(rp.id).split("_var_")[1];
+                               const v = parent.variations?.find((v: any, vIdx: number) => String(v.id || vIdx) === String(vId));
+                               if (v) {
+                                 rpProduct = {
+                                   ...parent,
+                                   name: `${parent.name} (${v.name || `Вариант`})`,
+                                   unit: v.unit || parent.unit
+                                 };
+                               }
+                             }
+                          } else {
+                             rpProduct = catalogProducts.find((cp) => String(cp.id) === String(rp.id));
+                          }
                           return (
                             <div key={idx} className="flex items-center justify-between p-2 bg-white rounded-xl border border-gray-100 text-xs">
                               <span className="font-semibold text-gray-700 truncate max-w-[200px] sm:max-w-[320px]" title={rpProduct?.name || rp.id}>
@@ -20878,7 +21005,7 @@ const ProductsView = ({
 
       {variationsAddModal && variationsAddModal.isOpen && (
         <div className="fixed inset-0 bg-black/60 z-[120] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-xl rounded-[28px] shadow-2xl p-6 flex flex-col space-y-5 max-h-[90vh] overflow-hidden">
+          <div className="bg-white w-full max-w-4xl rounded-[28px] shadow-2xl p-6 flex flex-col space-y-5 max-h-[90vh] overflow-hidden">
             <div>
               <div className="flex items-center gap-2 mb-1.5 text-purple-600">
                 <Layers className="w-5 h-5 flex-shrink-0" />
@@ -21447,6 +21574,12 @@ const ProductsView = ({
                           )}
                         </div>
                       )}
+                    <ProductRequiredProductsList 
+                      requiredProducts={product.requiredProducts} 
+                      catalogProducts={catalogProducts}
+                      selectedIds={selectedAssociations[product.id] || new Set<string>()}
+                      onToggle={(assocId) => toggleAssociation(product.id, assocId)}
+                    />
                     {isDryerCategory(product.category) &&
                       (product.dryerWidth || product.dryerBase) && (
                         <div className="flex flex-wrap gap-1.5 mb-3">
@@ -21928,8 +22061,33 @@ const EdgePriceInputWithSave = ({
   );
 };
 
+const SortableVariationItem = ({ v, idx, children, ...props }: any) => {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: v.id || idx });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners} {...props}>
+      {children}
+    </div>
+  );
+};
+
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [selectedAssociations, setSelectedAssociations] = useState<Record<string, Set<string>>>({});
+  
+  const toggleAssociation = (productId: string, associatedProductId: string) => {
+      setSelectedAssociations(prev => {
+          const productAssociations = prev[productId] || new Set<string>();
+          const newAssociations = new Set(productAssociations);
+          if (newAssociations.has(associatedProductId)) {
+              newAssociations.delete(associatedProductId);
+          } else {
+              newAssociations.add(associatedProductId);
+          }
+          return { ...prev, [productId]: newAssociations };
+      });
+  };
+
   const [authMode, setAuthMode] = useState<"login" | "register" | "landing">(
     "landing",
   );
@@ -26994,6 +27152,8 @@ export default function App() {
             />
           ) : activeTab === "products" ? (
             <ProductsView
+              selectedAssociations={selectedAssociations}
+              toggleAssociation={toggleAssociation}
               onAddProduct={onAddProduct}
               catalogProducts={catalogProducts}
               productCategories={productCategories}
