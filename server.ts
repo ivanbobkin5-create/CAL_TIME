@@ -364,7 +364,7 @@ async function startServer() {
       // If SMTP_FROM contains <, it's likely already formatted.
       let fromField: string;
       if (process.env.SMTP_FROM) {
-        fromField = process.env.SMTP_FROM;
+        fromField = process.env.SMTP_FROM.replace(/[\.\s]+$/, '');
       } else {
         fromField = `"Мебельный калькулятор" <${process.env.SMTP_USER}>`;
       }
