@@ -12,8 +12,8 @@ import {
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-
 import { ProductRequiredProductsList } from "./components/ProductRequiredProductsList";
+
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import * as ReactDOM from "react-dom";
@@ -8575,39 +8575,6 @@ const SummaryView = ({
 
         finalProductsList.push(computedItem);
         computedFittingsList.push(computedItem);
-
-        // Required companion products logic for automatic fittings
-        if (matchedProd.requiredProducts && Array.isArray(matchedProd.requiredProducts)) {
-          matchedProd.requiredProducts.forEach((rp: any) => {
-            const rpProd = catalogProducts.find((p: any) => String(p.id) === String(rp.id));
-            if (rpProd) {
-              const companionKeyString = `${keyString}_companion_${rp.id}`;
-              const isCompanionRemoved = !!removedFittings[companionKeyString];
-              if (!isCompanionRemoved) {
-                const defaultCompanionQty = Math.round((rp.qty || 1) * finalQty);
-                const finalCompanionQty = customFittingQuantities[companionKeyString] !== undefined
-                  ? customFittingQuantities[companionKeyString]
-                  : defaultCompanionQty;
-
-                if (finalCompanionQty > 0) {
-                  const companionItem = {
-                    ...rpProd,
-                    quantity: finalCompanionQty,
-                    isComputedFitting: true,
-                    computedCategory: "Сопутствующие товары",
-                    computedSub: `Сопутствующий для: ${matchedProd.name}`,
-                    demandKey: companionKeyString,
-                    parentDemandKey: keyString,
-                    isCompanion: true,
-                    fitParams: { category: "Сопутствующие товары" }
-                  };
-                  finalProductsList.push(companionItem);
-                  computedFittingsList.push(companionItem);
-                }
-              }
-            }
-          });
-        }
       }
     });
 
@@ -14719,8 +14686,6 @@ const ProductsView = ({
   resolveBrandCoefficient,
   selectedProductForDetail,
   setSelectedProductForDetail,
-  selectedAssociations,
-  toggleAssociation,
 }: {
   onAddProduct: (product: any, qty: number) => void;
   catalogProducts: any[];
@@ -14768,8 +14733,6 @@ const ProductsView = ({
   updateDoc: any;
   selectedProductForDetail: any;
   setSelectedProductForDetail: React.Dispatch<React.SetStateAction<any>>;
-  selectedAssociations: Record<string, Set<string>>;
-  toggleAssociation: (productId: string, associatedProductId: string) => void;
 }) => {
   const [showChecklistWindow, setShowChecklistWindow] = useState(false);
   const [requiredProductsModal, setRequiredProductsModal] = useState<{
@@ -15301,33 +15264,8 @@ const ProductsView = ({
       return;
     }
     
-    if (product.requiredProducts && product.requiredProducts.length > 0) {
-      const items = product.requiredProducts.map((rp: any) => {
-        const cp = catalogProducts.find((item: any) => String(item.id) === String(rp.id));
-        const relatedProdObj = cp || {
-          id: rp.id,
-          name: `Товар [ID: ${rp.id}]`,
-          price: 0,
-          category: "Неизвестно",
-          unit: "шт",
-        };
-        return {
-          product: relatedProdObj,
-          defaultQtyPerItem: rp.qty || 1,
-          selectedQty: (rp.qty || 1) * qty,
-        };
-      });
-
-      setRequiredProductsModal({
-        isOpen: true,
-        mainProduct: product,
-        mainQty: qty,
-        requiredItems: items,
-      });
-    } else {
-      onAddProduct(product, qty);
-      setQuantities((prev) => ({ ...prev, [product.id]: 1 }));
-    }
+    onAddProduct(product, qty);
+    setQuantities((prev) => ({ ...prev, [product.id]: 1 }));
   };
 
   const populateSamples = async () => {
@@ -20657,216 +20595,6 @@ const ProductsView = ({
                     />
                   </div>
 
-                  <div className="bg-blue-50/50 p-5 rounded-2xl border border-blue-100 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-bold text-blue-950 flex items-center gap-2">
-                        <Link className="w-4 h-4 text-blue-600" />
-                        Обязательные сопутствующие товары
-                      </h4>
-                      <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-black uppercase">
-                        {(newProduct.requiredProducts || []).length}
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-500 leading-normal">
-                      Связанные товары автоматически добавляются при выборе этого товара в проект (пользователь сможет настроить количество или отказаться).
-                    </p>
-
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {/* Step 1: Category dropdown */}
-                        <div>
-                          <label className="block text-[10px] font-black text-blue-800 uppercase tracking-widest mb-1">Шаг 1: Категория</label>
-                          <select
-                            value={relatedCategoryFilter}
-                            onChange={(e) => {
-                              setRelatedCategoryFilter(e.target.value);
-                              setRelatedProductFilterId("");
-                            }}
-                            className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-500 text-gray-700 font-bold"
-                          >
-                            <option value="">-- Все категории --</option>
-                            {productCategories.map((c) => (
-                              <option key={c} value={c}>
-                                {c}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-
-                        {/* Step 2: Search Input text box */}
-                        <div>
-                          <label className="block text-[10px] font-black text-blue-800 uppercase tracking-widest mb-1">Шаг 2: Поиск по названию/арт.</label>
-                          <div className="relative">
-                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 w-3.5 h-3.5" />
-                            <input
-                              type="text"
-                              value={relatedSearchQuery}
-                              onChange={(e) => {
-                                setRelatedSearchQuery(e.target.value);
-                                setRelatedProductFilterId("");
-                              }}
-                              className="w-full h-8 pl-8 pr-3 text-xs border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-white font-medium"
-                              placeholder="Артикул или название..."
-                            />
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Step 3: Product and Qty Selection list */}
-                      <div className="flex flex-col sm:flex-row gap-2 w-full min-w-0">
-                        <div className="flex-1 min-w-0">
-                          <label className="block text-[10px] font-black text-blue-800 uppercase tracking-widest mb-1">Шаг 3: Товар из списка</label>
-                          <select
-                            id="related-product-select-custom"
-                            value={relatedProductFilterId}
-                            onChange={(e) => setRelatedProductFilterId(e.target.value)}
-                            className="w-full px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-blue-500 text-gray-700 font-medium truncate"
-                          >
-                            <option value="">-- Выберите сопутствующий товар --</option>
-                            {catalogProducts
-                              .flatMap((p) => {
-                                if (p.id === (editingProduct?.id || null)) return [];
-                                if (relatedCategoryFilter && p.category !== relatedCategoryFilter) return [];
-                                
-                                const variants = (p.variations || []).map((v: any, vIdx: number) => ({
-                                  ...p,
-                                  id: `${p.id}_var_${v.id || vIdx}`,
-                                  name: `${p.name} (${v.name || `Вариант ${vIdx + 1}`})`,
-                                  isVariation: true,
-                                  variationId: v.id || vIdx,
-                                  purchasePrice: v.purchasePrice > 0 ? v.purchasePrice : p.purchasePrice,
-                                  article: v.article || p.article || ""
-                                }));
-
-                                return [p, ...variants];
-                              })
-                              .filter((p) => {
-                                const sLower = relatedSearchQuery.toLowerCase().trim();
-                                if (sLower) {
-                                  const text = `${p.name || ''} ${p.article || ''} ${p.category || ''}`.toLowerCase();
-                                  if (!text.includes(sLower)) return false;
-                                }
-                                return true;
-                              })
-                              .map((p) => {
-                                const displayName = p.name ? (p.name.length > 50 ? p.name.substring(0, 48) + "..." : p.name) : "";
-                                const coeff = getProductCoefficient(p, customerType, resolveBrandCoefficient);
-                                const displayPrice = p.purchasePrice
-                                  ? Math.round(p.purchasePrice * coeff)
-                                  : p.price;
-                                return (
-                                  <option key={p.id} value={p.id} title={p.name}>
-                                    [{p.category}] {displayName} ({(displayPrice || 0).toLocaleString()} ₽) {p.article ? `| Арт: ${p.article}` : ""}
-                                  </option>
-                                );
-                              })}
-                          </select>
-                        </div>
-                        
-                        <div className="w-full sm:w-auto flex items-end gap-2">
-                          <div className="w-16">
-                            <label className="block text-[10px] font-black text-blue-800 uppercase tracking-widest mb-1 text-center">Кол-во</label>
-                            <input
-                              id="related-product-qty-custom"
-                              type="number"
-                              min="1"
-                              defaultValue="1"
-                              className="w-full h-9 px-2 text-sm border border-gray-200 rounded-xl text-center outline-none focus:ring-2 focus:ring-blue-500 font-bold"
-                            />
-                          </div>
-                          
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const prodId = relatedProductFilterId;
-                              const qtyEl = document.getElementById("related-product-qty-custom") as HTMLInputElement;
-                              if (prodId && qtyEl) {
-                                const qty = parseInt(qtyEl.value) || 1;
-                                
-                                const exists = (newProduct.requiredProducts || []).some((rp: any) => rp.id === prodId);
-                                if (exists) {
-                                  alert("Этот товар уже добавлен в список сопутствующих!");
-                                  return;
-                                }
-
-                                setNewProduct((prev: any) => ({
-                                  ...prev,
-                                  requiredProducts: [
-                                    ...(prev.requiredProducts || []),
-                                    { id: prodId, qty }
-                                  ]
-                                }));
-
-                                setRelatedProductFilterId("");
-                                setRelatedSearchQuery("");
-                                qtyEl.value = "1";
-                              } else {
-                                alert("Пожалуйста, сначала выберите товар на Шаге 3.");
-                              }
-                            }}
-                            className="h-9 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs transition-colors shrink-0 flex items-center justify-center gap-1 cursor-pointer"
-                          >
-                            Добавить
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {(newProduct.requiredProducts || []).length > 0 ? (
-                      <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                        {(newProduct.requiredProducts || []).map((rp: any, idx: number) => {
-                          let rpProduct: any = null;
-                          if (String(rp.id).includes("_var_")) {
-                             const [parentId] = String(rp.id).split("_var_");
-                             const parent = catalogProducts.find(cp => String(cp.id) === String(parentId));
-                             if (parent) {
-                               const vId = String(rp.id).split("_var_")[1];
-                               const v = parent.variations?.find((v: any, vIdx: number) => String(v.id || vIdx) === String(vId));
-                               if (v) {
-                                 rpProduct = {
-                                   ...parent,
-                                   name: `${parent.name} (${v.name || `Вариант`})`,
-                                   unit: v.unit || parent.unit
-                                 };
-                               }
-                             }
-                          } else {
-                             rpProduct = catalogProducts.find((cp) => String(cp.id) === String(rp.id));
-                          }
-                          return (
-                            <div key={idx} className="flex items-center justify-between p-2 bg-white rounded-xl border border-gray-100 text-xs">
-                              <span className="font-semibold text-gray-700 truncate max-w-[200px] sm:max-w-[320px]" title={rpProduct?.name || rp.id}>
-                                {rpProduct?.name || `Товар (Удален) [ID: ${rp.id}]`}
-                              </span>
-                              <div className="flex items-center gap-3">
-                                <span className="font-black text-blue-600">
-                                  {rp.qty} {rpProduct?.unit || "шт."}
-                                </span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setNewProduct((prev: any) => ({
-                                      ...prev,
-                                      requiredProducts: (prev.requiredProducts || []).filter((item: any) => String(item.id) !== String(rp.id))
-                                    }));
-                                  }}
-                                  className="text-red-500 hover:bg-red-50 p-1 rounded-lg transition-colors"
-                                  title="Удалить сопутствующий товар"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="text-center py-4 border border-dashed border-gray-200 rounded-xl text-gray-400 text-xs font-medium">
-                        Товары не выбраны
-                      </div>
-                    )}
-                  </div>
-
                   {/* Analogs UI Selector */}
                   <div className="bg-amber-50/50 p-5 rounded-2xl border border-amber-100 space-y-4">
                     <div className="flex items-center justify-between">
@@ -21262,144 +20990,6 @@ const ProductsView = ({
 
 
 
-      {requiredProductsModal && requiredProductsModal.isOpen && (
-        <div className="fixed inset-0 bg-black/60 z-[120] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white w-full max-w-lg rounded-[28px] shadow-2xl p-6 flex flex-col space-y-5 max-h-[90vh] overflow-hidden">
-            <div>
-              <div className="flex items-center gap-2 mb-1.5 text-blue-600">
-                <Link className="w-5 h-5 flex-shrink-0" />
-                <h3 className="text-lg font-extrabold text-gray-900">
-                  Сопутствующие товары
-                </h3>
-              </div>
-              <p className="text-xs text-gray-500 leading-normal">
-                К товару <strong className="text-gray-800">«{requiredProductsModal.mainProduct.name}»</strong> ({requiredProductsModal.mainQty} {requiredProductsModal.mainProduct.unit || "шт."}) привязаны обязательные сопутствующие товары. Настройте количество к добавлению:
-              </p>
-            </div>
-
-            <div className="flex-1 overflow-y-auto space-y-2 p-1.5 bg-gray-50 rounded-2xl border border-gray-100 max-h-64">
-              {requiredProductsModal.requiredItems.map((item, idx) => (
-                <div key={idx} className="bg-white p-3 rounded-xl border border-gray-100 flex items-center justify-between gap-3 text-xs shadow-sm">
-                  <div className="flex-1 min-w-0">
-                    <span className="font-extrabold text-[9px] uppercase text-blue-500 block mb-0.5">
-                      {item.product.category}
-                    </span>
-                    <strong className="text-gray-800 truncate block text-sm" title={item.product.name}>
-                      {item.product.name}
-                    </strong>
-                    <span className="text-[10px] text-gray-400 font-bold block mt-0.5">
-                      На единицу основного: {item.defaultQtyPerItem} {item.product.unit || "шт."}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-xl flex-shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRequiredProductsModal((prev: any) => {
-                          if (!prev) return prev;
-                          const nextItems = [...prev.requiredItems];
-                          nextItems[idx] = {
-                            ...nextItems[idx],
-                            selectedQty: Math.max(0, nextItems[idx].selectedQty - 1)
-                          };
-                          return { ...prev, requiredItems: nextItems };
-                        });
-                      }}
-                      className="p-1 hover:bg-white rounded-lg text-gray-500 transition-all active:scale-95"
-                    >
-                      <Minus className="w-4 h-4" />
-                    </button>
-                    <input
-                      type="number"
-                      min="0"
-                      value={item.selectedQty}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value) || 0;
-                        setRequiredProductsModal((prev: any) => {
-                          if (!prev) return prev;
-                          const nextItems = [...prev.requiredItems];
-                          nextItems[idx] = {
-                            ...nextItems[idx],
-                            selectedQty: Math.max(0, val)
-                          };
-                          return { ...prev, requiredItems: nextItems };
-                        });
-                      }}
-                      className="w-10 text-center font-black text-xs bg-transparent outline-none"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setRequiredProductsModal((prev: any) => {
-                          if (!prev) return prev;
-                          const nextItems = [...prev.requiredItems];
-                          nextItems[idx] = {
-                            ...nextItems[idx],
-                            selectedQty: nextItems[idx].selectedQty + 1
-                          };
-                          return { ...prev, requiredItems: nextItems };
-                        });
-                      }}
-                      className="p-1 hover:bg-white rounded-lg text-gray-500 transition-all active:scale-95"
-                    >
-                      <Plus className="w-4 h-4" />
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <p className="text-[10px] text-gray-400 text-center uppercase tracking-wider font-extrabold">
-              Укажите 0, чтобы отказаться от добавления сопутствующего товара
-            </p>
-
-            <div className="flex flex-col sm:flex-row gap-2 justify-end pt-2 border-t border-gray-50 w-full">
-              <button
-                type="button"
-                onClick={() => {
-                  onAddProduct(requiredProductsModal.mainProduct, requiredProductsModal.mainQty);
-                  setQuantities((prev) => ({ ...prev, [requiredProductsModal.mainProduct.id]: 1 }));
-                  setRequiredProductsModal(null);
-                  showAlert("Готово", `В проект добавлен только основной товар: "${requiredProductsModal.mainProduct.name}" (${requiredProductsModal.mainQty} шт.)`);
-                }}
-                className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition-colors"
-              >
-                Только основной товар
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  onAddProduct(requiredProductsModal.mainProduct, requiredProductsModal.mainQty);
-                  
-                  let addedCount = 0;
-                  requiredProductsModal.requiredItems.forEach((item) => {
-                    if (item.selectedQty > 0) {
-                      onAddProduct({
-                        ...item.product,
-                        parentCatalogId: requiredProductsModal.mainProduct.id,
-                        qtyPerParent: item.defaultQtyPerItem,
-                      }, item.selectedQty);
-                      addedCount++;
-                    }
-                  });
-
-                  setQuantities((prev) => ({ ...prev, [requiredProductsModal.mainProduct.id]: 1 }));
-                  setRequiredProductsModal(null);
-                  
-                  const msg = addedCount > 0 
-                    ? `Товар "${requiredProductsModal.mainProduct.name}" (${requiredProductsModal.mainQty} шт.) и сопутствующие товары удачно добавлены в проект.`
-                    : `Товар "${requiredProductsModal.mainProduct.name}" (${requiredProductsModal.mainQty} шт.) добавлен в проект.`;
-                  showAlert("Успех", msg);
-                }}
-                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition-all shadow-md shadow-blue-100 text-center"
-              >
-                Добавить комплект
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Product List */}
       {catalogProducts.length === 0 ? (
         <div className="text-center py-20 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
@@ -21606,12 +21196,6 @@ const ProductsView = ({
                           )}
                         </div>
                       )}
-                    <ProductRequiredProductsList 
-                      requiredProducts={product.requiredProducts} 
-                      catalogProducts={catalogProducts}
-                      selectedIds={selectedAssociations[product.id] || new Set<string>()}
-                      onToggle={(assocId) => toggleAssociation(product.id, assocId)}
-                    />
                     {isDryerCategory(product.category) &&
                       (product.dryerWidth || product.dryerBase) && (
                         <div className="flex flex-wrap gap-1.5 mb-3">
@@ -21685,52 +21269,8 @@ const ProductsView = ({
                         )}
                       </div>
                     )}
-                    {product.requiredProducts && product.requiredProducts.length > 0 && (
-                      <div className="mt-2 p-2 bg-blue-50/40 rounded-xl border border-blue-100/30">
-                        <div className="text-[9px] font-black uppercase text-blue-700 tracking-wider flex items-center gap-1 mb-1 leading-none">
-                          <Link className="w-2.5 h-2.5 flex-shrink-0" />
-                          В комплекте:
-                        </div>
-                        <div className="space-y-0.5 max-h-16 overflow-y-auto pr-0.5">
-                          {product.requiredProducts.map((rp: any, idx: number) => {
-                            const cp = catalogProducts.find((item: any) => String(item.id) === String(rp.id));
-                            const cpCoeff = cp ? getProductCoefficient(cp, customerType, resolveBrandCoefficient) : 1;
-                            const cpPrice = cp ? (cp.purchasePrice ? Math.round(cp.purchasePrice * cpCoeff) : cp.price) : 0;
-                            const rowCost = (cpPrice || 0) * rp.qty;
-                            return (
-                              <div key={idx} className="flex justify-between text-[10px] text-gray-500 leading-tight">
-                                <span className="truncate max-w-[120px]" title={cp?.name || "Товар"}>
-                                  + {cp?.name || "Товар"}
-                                </span>
-                                <span className="font-extrabold text-blue-600 flex-shrink-0 ml-1">
-                                  {rp.qty} шт. (+{rowCost.toLocaleString()} ₽)
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        {(() => {
-                          const mainCoeff = getProductCoefficient(product, customerType, resolveBrandCoefficient);
-                           const mainPrice = product.purchasePrice ? Math.round(product.purchasePrice * mainCoeff) : (product.price || 0);
-                          let companionTotal = 0;
-                          product.requiredProducts.forEach((rp: any) => {
-                            const cp = catalogProducts.find((item: any) => String(item.id) === String(rp.id));
-                            if (cp) {
-                              const cpCoeff = getProductCoefficient(cp, customerType, resolveBrandCoefficient);
-                              const cpPrice = cp.purchasePrice ? Math.round(cp.purchasePrice * cpCoeff) : (cp.price || 0);
-                              companionTotal += rp.qty * cpPrice;
-                            }
-                          });
-                          const totalSetPrice = mainPrice + companionTotal;
-                          return (
-                            <div className="mt-1.5 pt-1 border-t border-blue-100/30 text-[9px] text-gray-500 font-bold text-right">
-                              Итого комплект: <span className="text-blue-700 font-extrabold">{totalSetPrice.toLocaleString()} ₽</span>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    )}
                   </div>
+                  <ProductRequiredProductsList requiredProducts={product.requiredProducts} catalogProducts={catalogProducts} />
 
                   <div className="mt-4 pt-4 border-t border-gray-50 space-y-4">
                     <div className="flex items-center justify-between gap-2">
@@ -22105,21 +21645,7 @@ const SortableVariationItem = ({ v, idx, children, ...props }: any) => {
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [selectedAssociations, setSelectedAssociations] = useState<Record<string, Set<string>>>({});
   
-  const toggleAssociation = (productId: string, associatedProductId: string) => {
-      setSelectedAssociations(prev => {
-          const productAssociations = prev[productId] || new Set<string>();
-          const newAssociations = new Set(productAssociations);
-          if (newAssociations.has(associatedProductId)) {
-              newAssociations.delete(associatedProductId);
-          } else {
-              newAssociations.add(associatedProductId);
-          }
-          return { ...prev, [productId]: newAssociations };
-      });
-  };
-
   const [authMode, setAuthMode] = useState<"login" | "register" | "landing">(
     "landing",
   );
@@ -27211,8 +26737,6 @@ export default function App() {
             />
           ) : activeTab === "products" ? (
             <ProductsView
-              selectedAssociations={selectedAssociations}
-              toggleAssociation={toggleAssociation}
               onAddProduct={onAddProduct}
               catalogProducts={catalogProducts}
               productCategories={productCategories}
@@ -27878,51 +27402,10 @@ export default function App() {
                       </div>
                     </div>
 
-                    {selectedProductForDetail.requiredProducts && selectedProductForDetail.requiredProducts.length > 0 && (
-                      <div className="bg-blue-50/50 p-6 rounded-3xl border border-blue-100 space-y-4">
-                        <h4 className="text-[10px] font-black text-blue-700 uppercase tracking-widest border-b border-blue-200/50 pb-3 flex items-center gap-2">
-                          <Link className="w-3.5 h-3.5" />
-                          Обязательные сопутствующие товары
-                        </h4>
-                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-                          {selectedProductForDetail.requiredProducts.map((rp: any, idx: number) => {
-                            const cp = catalogProducts.find((item: any) => String(item.id) === String(rp.id));
-                            const cpCoeff = cp ? getProductCoefficient(cp, customerType, resolveBrandCoefficient) : 1;
-                            const cpPrice = cp ? (cp.purchasePrice ? Math.round(cp.purchasePrice * cpCoeff) : cp.price) : 0;
-                            const totalAddedPrice = rp.qty * cpPrice;
-                            return (
-                              <div key={idx} className="flex justify-between items-center bg-white p-3 rounded-xl border border-blue-100/40 text-xs text-left">
-                                <span className="font-semibold text-gray-700 truncate max-w-[240px]" title={cp?.name || `Товар [ID: ${rp.id}]`}>
-                                  {cp?.name || `Товар [ID: ${rp.id}]`} {cp ? `(${cpPrice.toLocaleString()} ₽)` : ""}
-                                </span>
-                                <span className="font-black text-blue-600 shrink-0">
-                                  + {totalAddedPrice.toLocaleString()} ₽
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        {(() => {
-                          const mainCoeff = getProductCoefficient(selectedProductForDetail, customerType, resolveBrandCoefficient);
-                          const mainPrice = selectedProductForDetail.purchasePrice ? Math.round(selectedProductForDetail.purchasePrice * mainCoeff) : (selectedProductForDetail.price || 0);
-                          let companionTotal = 0;
-                          selectedProductForDetail.requiredProducts.forEach((rp: any) => {
-                            const cp = catalogProducts.find((item: any) => String(item.id) === String(rp.id));
-                            if (cp) {
-                              const cpCoeff = getProductCoefficient(cp, customerType, resolveBrandCoefficient);
-                              const cpPrice = cp.purchasePrice ? Math.round(cp.purchasePrice * cpCoeff) : (cp.price || 0);
-                              companionTotal += rp.qty * cpPrice;
-                            }
-                          });
-                          const totalSetPrice = mainPrice + companionTotal;
-                          return (
-                            <div className="text-xs text-right text-gray-500 font-semibold pt-2 border-t border-blue-200/50">
-                              Итого комплект: <span className="text-blue-700 font-black text-sm">{totalSetPrice.toLocaleString()} ₽</span>
-                            </div>
-                          );
-                        })()}
-                      </div>
-                    )}
+                    <ProductRequiredProductsList
+                      requiredProducts={selectedProductForDetail.requiredProducts}
+                      catalogProducts={catalogProducts}
+                    />
 
                     {(() => {
                       let analogsList = [];

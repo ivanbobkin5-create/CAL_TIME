@@ -42,7 +42,7 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
   const [prices, setPrices] = useState<Record<string, number>>({});
   
   // Shopping Cart state
-  const [cart, setCart] = useState<Record<string, { product: any; qty: number; price: number }>>({});
+  const [cart, setCart] = useState<Record<string, { product: any; qty: number; price: number; variationId?: string }>>({});
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("");
@@ -50,6 +50,7 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
   const [priceRange, setPriceRange] = useState<{ min: string, max: string }>({ min: "", max: "" });
   const [selectedProductDetail, setSelectedProductDetail] = useState<any | null>(null);
   const [selectedVariationId, setSelectedVariationId] = useState<string | null>(null);
+  const [selectedCompanionIds, setSelectedCompanionIds] = useState<Set<string>>(new Set());
   
   // Checkout Form state
   const [customerName, setCustomerName] = useState("");
@@ -159,7 +160,7 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
   };
 
   // Calculate retail price for a product
-  const getProductRetailPrice = (product: any, variationId?: string | null): number => {
+  const getProductRetailPrice = (product: any, variationId?: string | null, includedCompanionIds?: Set<string>): number => {
     const coeff = getProductCoefficient(product);
     
     let basePrice = product.purchasePrice !== undefined ? product.purchasePrice : (product.price || 0);
@@ -173,15 +174,21 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
     
     let mainPrice = Math.round(basePrice * coeff);
 
-    // If there are required companion products included, add their retail prices as well!
+    // If there are required companion products, add only SELECTED ones
     if (product.requiredProducts && product.requiredProducts.length > 0) {
       let companionTotal = 0;
       product.requiredProducts.forEach((rp: any) => {
-        const cp = products.find((item: any) => String(item.id) === String(rp.id));
-        if (cp) {
-          const cpCoeff = getProductCoefficient(cp);
-          const cpBasePrice = cp.purchasePrice !== undefined ? cp.purchasePrice : (cp.price || 0);
-          companionTotal += rp.qty * Math.round(cpBasePrice * cpCoeff);
+        // If includedCompanionIds is provided, check if this companion is selected
+        // If NOT provided (e.g. in grid view), we show price with ALL companions by default or as defined
+        const isSelected = includedCompanionIds ? includedCompanionIds.has(String(rp.id)) : true;
+        
+        if (isSelected) {
+          const cp = products.find((item: any) => String(item.id) === String(rp.id));
+          if (cp) {
+            const cpCoeff = getProductCoefficient(cp);
+            const cpBasePrice = cp.purchasePrice !== undefined ? cp.purchasePrice : (cp.price || 0);
+            companionTotal += rp.qty * Math.round(cpBasePrice * cpCoeff);
+          }
         }
       });
       mainPrice += companionTotal;
@@ -258,21 +265,43 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
   }, [products, selectedCategory, search, selectedBrands, priceRange, getProductRetailPrice]);
 
   // Cart operations
-  const addToCart = (product: any, variationId?: string | null) => {
-    const price = getProductRetailPrice(product, variationId);
+  const addToCart = (product: any, variationId?: string | null, companionIds?: Set<string>) => {
+    const price = getProductRetailPrice(product, variationId, companionIds);
     const cartKey = variationId ? `${product.id}_${variationId}` : product.id;
     
     setCart(prev => {
-      const existing = prev[cartKey];
-      return {
-        ...prev,
-        [cartKey]: {
-          product,
-          variationId: variationId || undefined,
-          qty: (existing?.qty || 0) + 1,
-          price
-        }
+      const newCart = { ...prev };
+      
+      // 1. Add Main Product
+      const existing = newCart[cartKey];
+      newCart[cartKey] = {
+        product,
+        variationId: variationId || undefined,
+        qty: (existing?.qty || 0) + 1,
+        price: getProductRetailPrice(product, variationId, new Set()) // Base price without companions for cart display
       };
+
+      // 2. Add selected companion products as separate items
+      if (product.requiredProducts && product.requiredProducts.length > 0) {
+        product.requiredProducts.forEach((rp: any) => {
+          const isSelected = companionIds ? companionIds.has(String(rp.id)) : true;
+          if (isSelected) {
+            const cp = products.find((item: any) => String(item.id) === String(rp.id));
+            if (cp) {
+              const cpKey = String(cp.id);
+              const cpPrice = getProductRetailPrice(cp, null, new Set());
+              const existingCp = newCart[cpKey];
+              newCart[cpKey] = {
+                product: cp,
+                qty: (existingCp?.qty || 0) + (rp.qty || 1),
+                price: cpPrice
+              };
+            }
+          }
+        });
+      }
+
+      return newCart;
     });
   };
 
@@ -536,7 +565,15 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
                   </div>
                 </div>
 
-                <div className="relative aspect-square cursor-pointer overflow-hidden" onClick={() => setSelectedProductDetail(promoProducts[activePromoIndex])}>
+                <div className="relative aspect-square cursor-pointer overflow-hidden" onClick={() => {
+                  const p = promoProducts[activePromoIndex];
+                  setSelectedProductDetail(p);
+                  if (p.requiredProducts && p.requiredProducts.length > 0) {
+                    setSelectedCompanionIds(new Set(p.requiredProducts.map((rp: any) => String(rp.id))));
+                  } else {
+                    setSelectedCompanionIds(new Set());
+                  }
+                }}>
                   {promoProducts[activePromoIndex].images?.[0] ? (
                     <img 
                       src={promoProducts[activePromoIndex].images[0]} 
@@ -725,7 +762,14 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
                     >
                       {/* Image Frame */}
                       <div
-                        onClick={() => setSelectedProductDetail(product)}
+                        onClick={() => {
+                          setSelectedProductDetail(product);
+                          if (product.requiredProducts && product.requiredProducts.length > 0) {
+                            setSelectedCompanionIds(new Set(product.requiredProducts.map((rp: any) => String(rp.id))));
+                          } else {
+                            setSelectedCompanionIds(new Set());
+                          }
+                        }}
                         className="relative h-48 bg-gray-50 flex items-center justify-center cursor-pointer overflow-hidden select-none"
                       >
                         {displayImage ? (
@@ -1257,20 +1301,63 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
                       </div>
                     </div>
 
-                    {/* Companion products set details! */}
+                    {/* Companion products set details with checkboxes */}
                     {product.requiredProducts && product.requiredProducts.length > 0 && (
-                      <div className="p-3 bg-blue-50/50 rounded-2xl border border-blue-100/30">
-                        <span className="text-[10px] font-black uppercase text-blue-700 tracking-wider flex items-center gap-1.5 mb-2 leading-none">
-                          <Check className="w-3 h-3 text-blue-600" /> В комплект по умолчанию входят:
-                        </span>
-                        <div className="space-y-1">
+                      <div className="p-4 bg-blue-50/50 rounded-2xl border border-blue-100/30 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black uppercase text-blue-700 tracking-wider flex items-center gap-1.5 leading-none">
+                            <Sparkles className="w-3 h-3 text-blue-600" /> Сопутствующие товары:
+                          </span>
+                          <span className="text-[9px] font-bold text-blue-500 bg-blue-100/50 px-2 py-0.5 rounded-full">
+                            Рекомендуем
+                          </span>
+                        </div>
+                        
+                        <div className="space-y-2">
                           {product.requiredProducts.map((rp: any, idx: number) => {
                             const cp = products.find((item: any) => String(item.id) === String(rp.id));
+                            if (!cp) return null;
+                            
+                            const isChecked = selectedCompanionIds.has(String(rp.id));
+                            const cpCoeff = getProductCoefficient(cp);
+                            const cpBasePrice = cp.purchasePrice !== undefined ? cp.purchasePrice : (cp.price || 0);
+                            const cpRetailPrice = Math.round(cpBasePrice * cpCoeff);
+
                             return (
-                              <div key={idx} className="flex justify-between text-xs text-gray-600 leading-normal">
-                                <span>• {cp?.name || "Товар"}</span>
-                                <span className="font-extrabold text-blue-600 ml-2">{rp.qty} шт.</span>
-                              </div>
+                              <label 
+                                key={idx} 
+                                className={`flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer ${
+                                  isChecked 
+                                    ? "bg-white border-blue-200 shadow-sm" 
+                                    : "bg-transparent border-transparent opacity-60 grayscale"
+                                }`}
+                              >
+                                <div className="flex items-center gap-3 min-w-0">
+                                  <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all ${
+                                    isChecked ? "bg-blue-600 border-blue-600" : "bg-white border-gray-300"
+                                  }`}>
+                                    <input
+                                      type="checkbox"
+                                      className="hidden"
+                                      checked={isChecked}
+                                      onChange={() => {
+                                        const next = new Set(selectedCompanionIds);
+                                        if (isChecked) next.delete(String(rp.id));
+                                        else next.add(String(rp.id));
+                                        setSelectedCompanionIds(next);
+                                      }}
+                                    />
+                                    {isChecked && <Check className="w-3 h-3 text-white" strokeWidth={4} />}
+                                  </div>
+                                  <div className="truncate">
+                                    <div className="text-[11px] font-bold text-gray-800 truncate">{cp.name}</div>
+                                    <div className="text-[10px] text-gray-500">{rp.qty} {cp.unit || "шт."}</div>
+                                  </div>
+                                </div>
+                                <div className="text-[11px] font-black text-blue-600 ml-2 whitespace-nowrap">
+                                  +{(cpRetailPrice * rp.qty).toLocaleString()} ₽
+                                </div>
+                              </label>
                             );
                           })}
                         </div>
@@ -1282,34 +1369,26 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
                 {/* Buying section in detailed modal */}
                 <div className="mt-8 pt-4 border-t border-gray-100 flex items-center justify-between gap-4">
                   <div className="flex flex-col">
-                    <span className="text-[10px] uppercase font-black text-gray-400 tracking-wider">Розничная цена</span>
-                    <span className="text-xl font-black text-gray-950">{itemPrice.toLocaleString()} ₽</span>
+                    <span className="text-[10px] uppercase font-black text-gray-400 tracking-wider">Итоговая стоимость</span>
+                    <span className="text-xl font-black text-gray-950">
+                      {getProductRetailPrice(product, selectedVariationId, selectedCompanionIds).toLocaleString()} ₽
+                    </span>
                   </div>
 
                   {product.saleBlocked ? (
                     <span className="px-4 py-2 bg-amber-50 text-amber-600 border border-amber-100 rounded-xl font-bold text-sm">Продажа временно закрыта</span>
-                  ) : inCartItem ? (
-                    <div className="flex items-center bg-blue-50 rounded-2xl p-1 border border-blue-100">
-                      <button
-                        onClick={() => removeFromCart(product.id, selectedVariationId)}
-                        className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-xl transition-all"
-                      >
-                        <Minus className="w-4 h-4" />
-                      </button>
-                      <span className="px-3.5 font-bold text-sm text-blue-700">{inCartItem.qty}</span>
-                      <button
-                        onClick={() => addToCart(product, selectedVariationId)}
-                        className="p-1.5 text-blue-600 hover:bg-blue-100 rounded-xl transition-all"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
                   ) : (
                     <button
-                      onClick={() => addToCart(product, selectedVariationId)}
-                      className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl text-xs shadow-lg shadow-blue-500/10 transition-all hover:-translate-y-0.5"
+                      onClick={() => {
+                        addToCart(product, selectedVariationId, selectedCompanionIds);
+                        setSelectedProductDetail(null);
+                        setSelectedVariationId(null);
+                        // Open cart automatically to show feedback
+                        setIsCartOpen(true);
+                      }}
+                      className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-2xl text-xs shadow-lg shadow-blue-500/20 transition-all hover:-translate-y-0.5 active:scale-95"
                     >
-                      Добавить в корзину
+                      Добавить комплект
                     </button>
                   )}
                 </div>
