@@ -39,6 +39,15 @@ export const SpecificationPrintView = ({
   if (!includes.delivery && (summary.totalDeliveryPrice || 0) > 0) separateItems.push({ name: "Доставка", val: (summary.totalDeliveryPrice || 0) });
   if (!includes.assembly && (summary.totalAssemblyPrice || 0) > 0) separateItems.push({ name: "Сборка", val: (summary.totalAssemblyPrice || 0) });
 
+  const formatPrintDate = (dateVal: any, opts?: Intl.DateTimeFormatOptions) => {
+    if (!dateVal) return "«___» ___________ 202_ г.";
+    const d = typeof dateVal === "object" && (dateVal as any)?.seconds ? new Date((dateVal as any).seconds * 1000) : new Date(dateVal);
+    if (isNaN(d.getTime()) || d.getFullYear() <= 1970) {
+      return "«___» ___________ 202_ г.";
+    }
+    return d.toLocaleDateString("ru-RU", opts);
+  };
+
   const handleSavePdf = () => {
     if (!contentRef.current) return;
     setIsGeneratingPdf(true);
@@ -97,7 +106,7 @@ export const SpecificationPrintView = ({
           <div className="page-break-after-always mb-16">
             <h1 className="text-xl font-bold mb-4 uppercase">
               Эскизы к договору № {setData.contractNumber} от{" "}
-              {new Date(setData.contractDate).toLocaleDateString("ru-RU")}
+              {formatPrintDate(setData.contractDate)}
             </h1>
 
             <div className="space-y-8 mt-4">
@@ -129,7 +138,7 @@ export const SpecificationPrintView = ({
         <div>
           <h1 className="text-xl font-bold mb-6 uppercase">
             Спецификация к договору № {setData.contractNumber} от{" "}
-            {new Date(setData.contractDate).toLocaleDateString("ru-RU")}
+            {formatPrintDate(setData.contractDate)}
           </h1>
 
           <div className="mb-6 p-4 bg-gray-50 rounded-xl border border-gray-200 grid grid-cols-2 gap-8 text-sm break-inside-avoid shadow-sm">
@@ -155,7 +164,7 @@ export const SpecificationPrintView = ({
                 <div className="mt-4">
                   <p className="text-gray-500 mb-1">Дата готовности:</p>
                   <p className="font-bold text-lg">
-                    {new Date(setData.readyDate).toLocaleDateString("ru-RU", {
+                    {formatPrintDate(setData.readyDate, {
                       day: "numeric",
                       month: "long",
                       year: "numeric",

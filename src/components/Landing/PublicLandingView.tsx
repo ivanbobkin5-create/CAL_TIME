@@ -9,6 +9,7 @@ import {
   MapPin, 
   Search, 
   Check, 
+  CheckCircle2,
   Loader2, 
   X, 
   ImageIcon, 
@@ -345,6 +346,32 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
         [cartKey]: {
           ...existing,
           qty: val
+        }
+      };
+    });
+  };
+
+  const getQtyInCartForProduct = (productId: string) => {
+    return Object.values(cart).reduce((sum: number, item: any) => {
+      if (String(item.product?.id) === String(productId)) {
+        return sum + item.qty;
+      }
+      return sum;
+    }, 0);
+  };
+
+  const addRequiredToCart = (productToAdd: any, countToAdd: number) => {
+    if (!productToAdd || countToAdd <= 0) return;
+    const cartKey = String(productToAdd.id);
+    const price = getProductRetailPrice(productToAdd, null, new Set());
+    setCart(prev => {
+      const existing = prev[cartKey];
+      return {
+        ...prev,
+        [cartKey]: {
+          product: productToAdd,
+          qty: (existing?.qty || 0) + countToAdd,
+          price
         }
       };
     });
@@ -1055,32 +1082,132 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
                           </div>
                         </div>
 
-                        {/* Sub-products (Required Items) */}
-                        {subProducts.length > 0 && (
-                          <div className="pt-4 border-t border-gray-100 space-y-2">
-                            <p className="text-[10px] font-black uppercase text-gray-400 tracking-widest mb-2 flex items-center gap-2">
-                              <Sparkles className="w-3 h-3 text-amber-500 fill-amber-500" />
-                              В комплекте:
-                            </p>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {subProducts.map((sp: any, idx: number) => (
-                                <div key={idx} className="flex items-center gap-2 bg-white/60 p-2 rounded-xl border border-gray-100">
-                                  <div className="w-8 h-8 rounded-lg overflow-hidden bg-gray-50 flex-shrink-0">
-                                    {(sp.images?.[0] || sp.image) ? (
-                                      <img src={sp.images?.[0] || sp.image} className="w-full h-full object-cover" />
-                                    ) : (
-                                      <div className="w-full h-full flex items-center justify-center text-gray-200"><ImageIcon className="w-3 h-3" /></div>
-                                    )}
+                        {/* Standard equipment (included in price) */}
+                        {(() => {
+                          const stdEquip = (product.moduleStandardEquipment || []).map((se: any) => {
+                            const found = products.find((p: any) => String(p.id) === String(se.id));
+                            return found ? { ...found, qty: se.qty } : { id: se.id, name: "Компонент", qty: se.qty, unit: "шт." };
+                          });
+
+                          if (stdEquip.length === 0) return null;
+
+                          return (
+                            <div className="pt-3 border-t border-gray-100 space-y-2">
+                              <div className="flex items-center gap-1.5 text-[11px] font-bold text-emerald-800 bg-emerald-50/80 px-2.5 py-1 rounded-lg border border-emerald-100/80 w-fit">
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                <span>Входит в стандартную комплектацию:</span>
+                              </div>
+                              <div className="flex flex-wrap gap-1.5">
+                                {stdEquip.map((st: any, idx: number) => (
+                                  <div 
+                                    key={idx} 
+                                    className="flex items-center gap-1.5 bg-white px-2.5 py-1 rounded-xl border border-gray-200 text-[11px] text-gray-800 shadow-2xs"
+                                  >
+                                    <Check className="w-3 h-3 text-emerald-600 shrink-0" />
+                                    <span className="font-semibold text-gray-900">{st.name}</span>
+                                    <span className="font-black text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100">
+                                      {st.qty * item.qty} {st.unit || "шт."}
+                                    </span>
                                   </div>
-                                  <div className="min-w-0">
-                                    <p className="text-[10px] font-bold text-gray-800 truncate">{sp.name}</p>
-                                    <p className="text-[9px] text-blue-600 font-black tracking-tight">{sp.qty} шт.</p>
-                                  </div>
-                                </div>
-                              ))}
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          );
+                        })()}
+
+                        {/* Completing Hardware / Required Companions Verification */}
+                        {(() => {
+                          const reqProds = (product.requiredProducts || []).map((rp: any) => {
+                            const found = products.find((p: any) => String(p.id) === String(rp.id));
+                            return found ? { ...found, requiredQty: rp.qty } : null;
+                          }).filter(Boolean);
+
+                          if (reqProds.length === 0) return null;
+
+                          return (
+                            <div className="pt-3 border-t border-gray-100 space-y-2.5">
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-1.5 text-[11px] font-black text-amber-900 uppercase tracking-tight">
+                                  <Sparkles className="w-3.5 h-3.5 text-amber-500 fill-amber-500 shrink-0" />
+                                  <span>Комплектуемая фурнитура для модуля:</span>
+                                </div>
+                                <span className="text-[10px] font-extrabold text-amber-800 bg-amber-100/90 px-2 py-0.5 rounded-md">
+                                  Проверка сопутки
+                                </span>
+                              </div>
+
+                              <div className="space-y-2">
+                                {reqProds.map((reqP: any) => {
+                                  const neededQty = (reqP.requiredQty || 1) * item.qty;
+                                  const currentInCart = getQtyInCartForProduct(reqP.id);
+                                  const isFulfilled = currentInCart >= neededQty;
+                                  const reqPrice = getProductRetailPrice(reqP, null, new Set());
+
+                                  return (
+                                    <div
+                                      key={reqP.id}
+                                      className={`p-2.5 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${
+                                        isFulfilled
+                                          ? "bg-emerald-50/40 border-emerald-200/80 text-emerald-950"
+                                          : "bg-amber-50/70 border-amber-300 shadow-2xs text-gray-900"
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-2.5 min-w-0">
+                                        <div className={`w-9 h-9 rounded-xl overflow-hidden shrink-0 border flex items-center justify-center font-bold text-xs ${
+                                          isFulfilled ? "bg-emerald-100 border-emerald-200 text-emerald-700" : "bg-amber-100 border-amber-200 text-amber-800"
+                                        }`}>
+                                          {(reqP.images?.[0] || reqP.image) ? (
+                                            <img src={reqP.images?.[0] || reqP.image} alt={reqP.name} className="w-full h-full object-cover" />
+                                          ) : (
+                                            isFulfilled ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />
+                                          )}
+                                        </div>
+
+                                        <div className="min-w-0">
+                                          <div className="flex items-center gap-1.5 flex-wrap">
+                                            <span className="text-xs font-extrabold text-gray-900 leading-tight">{reqP.name}</span>
+                                            <span className="text-[10px] text-gray-500 font-bold">
+                                              {reqPrice > 0 ? `${reqPrice.toLocaleString()} ₽/шт` : 'Бесплатно'}
+                                            </span>
+                                          </div>
+                                          <div className="text-[11px] font-bold mt-0.5">
+                                            {isFulfilled ? (
+                                              <span className="text-emerald-700 flex items-center gap-1">
+                                                <Check className="w-3.5 h-3.5 shrink-0 text-emerald-600" />
+                                                Добавлено: {currentInCart} из {neededQty} {reqP.unit || "шт."}
+                                              </span>
+                                            ) : (
+                                              <span className="text-amber-900">
+                                                Выберите {neededQty} {reqP.unit || "шт."} <span className="text-amber-700 font-medium">(в корзине: {currentInCart} шт.)</span>
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      <div className="shrink-0 flex items-center gap-2 self-end sm:self-auto">
+                                        {!isFulfilled ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => addRequiredToCart(reqP, neededQty - currentInCart)}
+                                            className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 active:scale-95 text-white font-black text-xs rounded-xl transition-all flex items-center gap-1.5 shadow-sm"
+                                          >
+                                            <Plus className="w-3.5 h-3.5" />
+                                            <span>Добавить ({neededQty - currentInCart} шт.)</span>
+                                          </button>
+                                        ) : (
+                                          <div className="flex items-center gap-1 text-[10px] font-black text-emerald-700 bg-emerald-100/90 px-2.5 py-1 rounded-lg border border-emerald-200/60">
+                                            <Check className="w-3 h-3" /> Комплект собран
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })()}
                       </div>
                     );
                   })

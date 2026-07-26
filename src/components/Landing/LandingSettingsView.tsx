@@ -280,6 +280,29 @@ export function LandingSettingsView({
                 <p className="mt-1.5 text-[11px] text-gray-400">
                   Укажите ваш домен, чтобы витрина была доступна по вашему адресу.
                 </p>
+
+                <div className="mt-3 p-3.5 bg-blue-50/90 border border-blue-200/70 rounded-xl text-xs text-blue-950 space-y-2 font-sans">
+                  <div className="font-bold flex items-center gap-1.5 text-blue-900">
+                    <Info className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span>Настройка DNS для привязки домена:</span>
+                  </div>
+                  <p className="text-blue-800 text-[11px] leading-relaxed">
+                    В панели вашего регистратора доменов (Reg.ru, Timeweb, Cloudflare и др.) перейдите в раздел управления DNS и пропишите записи:
+                  </p>
+                  <div className="bg-white/90 p-2.5 rounded-lg border border-blue-200/80 font-mono text-[11px] space-y-1.5 text-gray-800 shadow-2xs">
+                    <div>
+                      <span className="font-bold text-gray-500">Поддомен (напр. catalog.site.ru):</span>
+                      <div className="text-blue-700 mt-0.5">Тип: <b>CNAME</b> | Имя: <b>catalog</b> | Значение: <b>имя хоста приложения</b></div>
+                    </div>
+                    <div className="pt-1.5 border-t border-blue-100">
+                      <span className="font-bold text-gray-500">Основной домен (напр. site.ru):</span>
+                      <div className="text-blue-700 mt-0.5">Тип: <b>A</b> | Имя: <b>@</b> | Значение: <b>IP-адрес сервера / прокси</b></div>
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-blue-600/80 italic">
+                    * Применение DNS-записей обычно занимает от 15 минут до 24 часов.
+                  </p>
+                </div>
               </div>
 
               <div>

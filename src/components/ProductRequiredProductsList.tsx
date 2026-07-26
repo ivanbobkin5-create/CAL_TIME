@@ -5,34 +5,77 @@ export const ProductRequiredProductsList = ({
   requiredProducts, 
   catalogProducts,
   selectedIds,
-  onToggle 
+  onToggle,
+  customerType,
+  getProductCoefficient,
+  resolveBrandCoefficient
 }: { 
   requiredProducts: any[]; 
   catalogProducts: any[];
   selectedIds?: Set<string>;
   onToggle?: (id: string) => void;
+  customerType?: string;
+  getProductCoefficient?: any;
+  resolveBrandCoefficient?: any;
 }) => {
   if (!requiredProducts || requiredProducts.length === 0) return null;
 
   const isInteractive = onToggle && selectedIds;
 
+  const getItemPriceInfo = (rp: any) => {
+    const prod = catalogProducts.find(p => String(p.id) === String(rp.id));
+    if (!prod) return { prod: null, unitPrice: 0, totalPrice: 0 };
+    
+    let coeff = 1;
+    if (typeof getProductCoefficient === 'function') {
+      coeff = getProductCoefficient(prod, customerType || 'retail', resolveBrandCoefficient);
+    } else {
+      coeff = prod.coefficient || 1;
+    }
+
+    const basePrice = prod.purchasePrice !== undefined ? prod.purchasePrice : (prod.price || 0);
+    const unitPrice = Math.round(basePrice * coeff);
+    const qty = rp.qty || 1;
+    return { prod, unitPrice, totalPrice: unitPrice * qty };
+  };
+
+  const totalExtraCost = requiredProducts.reduce((sum, rp) => {
+    const isSelected = isInteractive ? selectedIds.has(String(rp.id)) : true;
+    if (!isSelected) return sum;
+    const { totalPrice } = getItemPriceInfo(rp);
+    return sum + totalPrice;
+  }, 0);
+
   return (
-    <div className="mt-3 p-3 bg-white rounded-xl border border-blue-100 shadow-sm">
-      <h4 className="text-[10px] font-black uppercase text-blue-700 mb-2 tracking-wider">В комплекте:</h4>
+    <div className="mt-3 p-3 bg-blue-50/40 rounded-xl border border-blue-100 shadow-xs">
+      <div className="flex items-center justify-between mb-2 gap-2">
+        <h4 className="text-[10px] font-black uppercase text-blue-800 tracking-wider">
+          Сопутствующие товары
+        </h4>
+        {totalExtraCost > 0 && (
+          <span className="text-[10px] font-extrabold text-blue-700 bg-blue-100/80 px-2 py-0.5 rounded-md whitespace-nowrap">
+            +{totalExtraCost.toLocaleString()} ₽ к стоимости
+          </span>
+        )}
+      </div>
+
       <div className="space-y-1.5">
         {requiredProducts.map(rp => {
-          const prod = catalogProducts.find(p => String(p.id) === String(rp.id));
+          const { prod, unitPrice, totalPrice } = getItemPriceInfo(rp);
           const isSelected = isInteractive ? selectedIds.has(String(rp.id)) : true;
           
           if (!isInteractive) {
             return (
               <div 
                 key={rp.id} 
-                className="flex items-center gap-2 p-1.5 text-[11px] text-gray-600 border-b border-gray-50 last:border-0"
+                className="flex items-center gap-2 p-1.5 text-[11px] text-gray-700 border-b border-blue-50 last:border-0"
               >
-                <div className="w-1 h-1 rounded-full bg-blue-300 flex-shrink-0" />
-                <span className="flex-1 truncate">{prod?.name || 'Товар'}</span>
-                <span className="font-bold text-blue-600">{rp.qty} шт.</span>
+                <div className="w-1.5 h-1.5 rounded-full bg-blue-400 flex-shrink-0" />
+                <span className="flex-1 truncate font-medium">{prod?.name || 'Товар'}</span>
+                <span className="text-[10px] text-gray-500 font-semibold">{rp.qty} шт.</span>
+                <span className="font-bold text-blue-700 ml-1 whitespace-nowrap">
+                  +{totalPrice.toLocaleString()} ₽
+                </span>
               </div>
             );
           }
@@ -40,14 +83,22 @@ export const ProductRequiredProductsList = ({
           return (
             <button 
               key={rp.id} 
+              type="button"
               onClick={() => onToggle!(String(rp.id))}
-              className={`w-full flex items-center gap-2 p-1.5 rounded-lg text-[11px] transition-colors ${isSelected ? 'bg-blue-50 text-blue-900' : 'text-gray-600 hover:bg-gray-50'}`}
+              className={`w-full flex items-center gap-2 p-1.5 rounded-lg text-[11px] transition-colors ${
+                isSelected ? 'bg-white border border-blue-200 text-blue-900 shadow-xs' : 'text-gray-500 hover:bg-white/60 opacity-70'
+              }`}
             >
-              <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-500 border-blue-500' : 'border-gray-300'}`}>
-                {isSelected && <Check className="w-3 h-3 text-white" />}
+              <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${
+                isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'
+              }`}>
+                {isSelected && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
               </div>
-              <span className="flex-1 text-left truncate">{prod?.name || 'Товар'}</span>
-              <span className="font-bold">{rp.qty} шт.</span>
+              <span className="flex-1 text-left truncate font-medium">{prod?.name || 'Товар'}</span>
+              <span className="text-[10px] text-gray-500 font-semibold">{rp.qty} шт.</span>
+              <span className="font-bold text-blue-700 whitespace-nowrap">
+                +{totalPrice.toLocaleString()} ₽
+              </span>
             </button>
           );
         })}

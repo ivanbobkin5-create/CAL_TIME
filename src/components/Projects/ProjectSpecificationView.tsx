@@ -42,6 +42,7 @@ function collection(db: any, ...pathParts: string[]) {
 const serverTimestamp = () => new Date().toISOString();
 import { cn } from '../../lib/utils';
 import { SketchAnnotator } from './SketchAnnotator';
+import { CoefficientDiffBanner } from './CoefficientDiffBanner';
 
 
 interface Project {
@@ -65,7 +66,8 @@ export const ProjectSpecificationView = ({
   userRole,
   companyId,
   manufacturerId,
-  upsertEdgeToPriceList
+  upsertEdgeToPriceList,
+  currentCoefficients
 }: { 
   project: Project; 
   onClose: () => void;
@@ -75,11 +77,115 @@ export const ProjectSpecificationView = ({
   companyId: string;
   manufacturerId?: string;
   upsertEdgeToPriceList?: (decor: string, thickness: string, price: number, brandLdsp: string) => Promise<void>;
+  currentCoefficients?: any;
 }) => {
   const [sketches, setSketches] = useState<string[]>(project.sketches || []);
   const [selectedSketch, setSelectedSketch] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Coefficient mode tracking for this project
+  const [activeCoefficientsMode, setActiveCoefficientsMode] = useState<'saved' | 'current'>(
+    project.data?.pricingApplied === 'current' ? 'current' : 'saved'
+  );
+  const [localTotalPrice, setLocalTotalPrice] = useState<number>(project.totalPrice || 0);
+
+  // Derive saved snapshot or fallback
+  const savedSnapshot = project.data?.coefficientsSnapshot || (project.data ? {
+    savedAt: (project as any).updatedAt || (project as any).createdAt || new Date().toISOString(),
+    coefficients: project.data?.coefficients,
+    resolvedCoefficients: project.data?.resolvedCoefficients || currentCoefficients,
+  } : undefined);
+
+  // Calculate alternative price under new coefficients if available
+  const recalculateTotal = (rows: any[], targetCoeffs: any, sourceCoeffs: any): number => {
+    if (!rows || !targetCoeffs) return project.totalPrice || 0;
+    let sum = 0;
+    rows.forEach((row) => {
+      let srcCoef = row.coef || 1;
+      let tgtCoef = 1;
+
+      if (row.type === 'material') {
+        tgtCoef = targetCoeffs.ldsp || 1;
+        srcCoef = sourceCoeffs?.ldsp || row.coef || 1;
+      } else if (row.type === 'edge' || row.type === 'product_edge') {
+        tgtCoef = targetCoeffs.edge || 1;
+        srcCoef = sourceCoeffs?.edge || row.coef || 1;
+      } else if (row.type === 'hardware' || row.type === 'product') {
+        const cat = row.category || row.rawProduct?.category;
+        tgtCoef = (cat && targetCoeffs.products?.[cat]) || targetCoeffs.hardware || 1;
+        srcCoef = (cat && sourceCoeffs?.products?.[cat]) || sourceCoeffs?.hardware || row.coef || 1;
+      } else if (row.type === 'facade') {
+        tgtCoef = targetCoeffs.facadeSheet || targetCoeffs.facadeCustom || 1;
+        srcCoef = sourceCoeffs?.facadeSheet || sourceCoeffs?.facadeCustom || row.coef || 1;
+      } else {
+        tgtCoef = row.coef || 1;
+        srcCoef = row.coef || 1;
+      }
+
+      if (srcCoef > 0 && tgtCoef > 0 && Math.abs(tgtCoef - srcCoef) > 0.001) {
+        sum += Math.round((row.total || 0) * (tgtCoef / srcCoef));
+      } else {
+        sum += (row.total || 0);
+      }
+    });
+    return sum > 0 ? sum : (project.totalPrice || 0);
+  };
+
+  const summaryRows = project.data?.summaryRows || [];
+  const sourceCoeffs = savedSnapshot?.resolvedCoefficients || savedSnapshot?.coefficients || currentCoefficients;
+  
+  const savedTotalAmount = project.totalPrice || 0;
+  const currentTotalAmount = currentCoefficients && sourceCoeffs
+    ? recalculateTotal(summaryRows, currentCoefficients, sourceCoeffs)
+    : savedTotalAmount;
+
+  const handleApplyCurrentCoefficients = async () => {
+    if (!companyId || !project.id) return;
+    setIsSubmitting(true);
+    try {
+      const updatedTotal = currentTotalAmount;
+      setActiveCoefficientsMode('current');
+      setLocalTotalPrice(updatedTotal);
+
+      await updateDoc(doc(db, 'companies', companyId, 'projects', project.id), {
+        totalPrice: updatedTotal,
+        'data.pricingApplied': 'current',
+        'data.coefficientsSnapshot': {
+          savedAt: new Date().toISOString(),
+          coefficients: currentCoefficients,
+          resolvedCoefficients: currentCoefficients,
+          previousSnapshot: savedSnapshot
+        }
+      });
+    } catch (e) {
+      console.error('Error applying current coefficients:', e);
+      setError('Ошибка при перерасчете проекта по новым коэффициентам');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleRevertSavedCoefficients = async () => {
+    if (!companyId || !project.id) return;
+    setIsSubmitting(true);
+    try {
+      const originalSnapshot = project.data?.coefficientsSnapshot?.previousSnapshot || savedSnapshot;
+      setActiveCoefficientsMode('saved');
+      setLocalTotalPrice(savedTotalAmount);
+
+      await updateDoc(doc(db, 'companies', companyId, 'projects', project.id), {
+        totalPrice: savedTotalAmount,
+        'data.pricingApplied': 'saved',
+        'data.coefficientsSnapshot': originalSnapshot
+      });
+    } catch (e) {
+      console.error('Error reverting saved coefficients:', e);
+      setError('Ошибка при возврате к исходным коэффициентам');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleRemoveSketch = (index: number) => {
     setSketches(prev => prev.filter((_, i) => i !== index));
@@ -220,6 +326,19 @@ export const ProjectSpecificationView = ({
               </div>
             )}
 
+            {/* Coefficient Difference Banner */}
+            {savedSnapshot && currentCoefficients && (
+              <CoefficientDiffBanner
+                savedSnapshot={savedSnapshot}
+                currentCoefficients={currentCoefficients}
+                activeMode={activeCoefficientsMode}
+                savedTotal={savedTotalAmount}
+                currentTotal={currentTotalAmount}
+                onApplyCurrentCoefficients={handleApplyCurrentCoefficients}
+                onRevertSavedCoefficients={handleRevertSavedCoefficients}
+              />
+            )}
+
             {/* Materials, Edges and Facades Section (New Styled Format) */}
             <section className="space-y-6">
               <div className="bg-[#f0f7ff] rounded-[1.5rem] border border-[#e0eefc] p-6 shadow-sm">
@@ -228,10 +347,10 @@ export const ProjectSpecificationView = ({
                     <div className="w-1.5 h-4 bg-blue-600 rounded-full" />
                     <h3 className="text-sm font-bold text-[#003580]">Материалы, кромка и фасады</h3>
                   </div>
-                  {project.totalPrice && (
+                  {localTotalPrice > 0 && (
                     <div className="text-right">
                       <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-1">Итоговая сумма:</span>
-                      <span className="text-xl font-black text-blue-600">{project.totalPrice.toLocaleString()} ₽</span>
+                      <span className="text-xl font-black text-blue-600">{localTotalPrice.toLocaleString()} ₽</span>
                     </div>
                   )}
                 </div>

@@ -16,6 +16,15 @@ import {
   Link,
   TrendingUp,
   MoreVertical,
+  ChevronDown,
+  ChevronUp,
+  Layers,
+  FolderPlus,
+  Unlink,
+  Package,
+  Box,
+  X,
+  Check,
 } from "lucide-react";
 // TimeWeb DB Setup
 const db = {};
@@ -109,6 +118,7 @@ import { ProjectSpecificationModal } from "./ProjectSpecificationModal";
 import { Bitrix24Modal } from "./Bitrix24Modal";
 import { ProjectAnalyticsModal } from "./ProjectAnalyticsModal";
 import { TransferProjectModal } from "./TransferProjectModal";
+import { getCoefficientDifferences } from "./CoefficientDiffBanner";
 
 
 interface Project {
@@ -143,12 +153,14 @@ export const ProjectsView = ({
   showConfirm,
   showAlert,
   onCreateSet,
+  onOpenSetProposal,
   companyData,
   projects = [],
   sets = [],
   isProjectsLoading = false,
   isSetsLoading = false,
   onDeleteProject,
+  currentCoefficients,
 }: {
   companyId?: string;
   userId?: string;
@@ -161,12 +173,14 @@ export const ProjectsView = ({
   showConfirm: (title: string, message: string, onConfirm: () => void) => void;
   showAlert?: (title: string, message: string) => void;
   onCreateSet?: (projects: Project[], set?: any) => void;
+  onOpenSetProposal?: (set: any, projects: Project[]) => void;
   companyData?: any;
   projects?: Project[];
   sets?: any[];
   isProjectsLoading?: boolean;
   isSetsLoading?: boolean;
   onDeleteProject?: (projectId: string) => void;
+  currentCoefficients?: any;
 }) => {
   console.log("DEBUG: companyData in ProjectsView:", companyData);
   const companySettings = companyData;
@@ -418,6 +432,28 @@ export const ProjectsView = ({
     setIsSelectionMode(false);
   };
 
+  const handleSingleProjectDelete = async (projectId: string) => {
+    if (!companyId) return;
+    setDeletedProjects(prev => new Set(prev).add(projectId));
+    try {
+      await deleteDoc(
+        doc(db, "companies", companyId, "projects", projectId),
+      );
+      onDeleteProject?.(projectId);
+    } catch (error) {
+      setDeletedProjects(prev => {
+        const next = new Set(prev);
+        next.delete(projectId);
+        return next;
+      });
+      handleDbError(
+        error,
+        OperationType.DELETE,
+        `companies/${companyId}/projects/${projectId}`,
+      );
+    }
+  };
+
   const handleDelete = async (e: React.MouseEvent, projectId: string) => {
     e.stopPropagation();
     if (!companyId) return;
@@ -425,64 +461,129 @@ export const ProjectsView = ({
     showConfirm(
       "Удаление проекта",
       "Вы уверены, что хотите удалить этот проект?",
-      async () => {
-        setDeletedProjects(prev => new Set(prev).add(projectId));
-        try {
-          await deleteDoc(
-            doc(db, "companies", companyId, "projects", projectId),
-          );
-          onDeleteProject?.(projectId);
-        } catch (error) {
-          setDeletedProjects(prev => {
-            const next = new Set(prev);
-            next.delete(projectId);
-            return next;
-          });
-          handleDbError(
-            error,
-            OperationType.DELETE,
-            `companies/${companyId}/projects/${projectId}`,
-          );
-        }
-      },
+      () => handleSingleProjectDelete(projectId)
     );
   };
 
-  const myProjects = useMemo(() => {
-    const baseProjects = (() => {
-        const isManagerOrHigher = 
-          userRole === "admin" || 
-          userRole === "supervisor" || 
-          userRole === "manager" ||
-          companyData?.ownerUid === userId;
+  const [collapsedSetIds, setCollapsedSetIds] = useState<Set<string>>(new Set());
+  const [addProjectToSetModal, setAddProjectToSetModal] = useState<any | null>(null);
 
-        if (!userRole || isManagerOrHigher) {
-          return projects;
+  // Unlink a single project from a set
+  const handleUnlinkProject = async (project: Project, set: any) => {
+    if (!companyId) return;
+    try {
+      await updateDoc(doc(db, "companies", companyId, "projects", project.id), {
+        setId: null,
+      });
+      const updatedProjectIds = (set.projectIds || []).filter((id: string) => id !== project.id);
+      await updateDoc(doc(db, "companies", companyId, "sets", set.id), {
+        projectIds: updatedProjectIds,
+      });
+      if (showAlert) showAlert("Успешно", `Проект "${project.name}" исключен из комплекта`);
+    } catch (err) {
+      console.error("Error unlinking project from set:", err);
+      if (showAlert) showAlert("Ошибка", "Не удалось исключить проект из комплекта");
+    }
+  };
+
+  // Dissolve set (keeps projects as standalone)
+  const handleDissolveSet = async (set: any) => {
+    if (!companyId) return;
+    showConfirm(
+      "Расформировать комплект",
+      `Вы хотите расформировать комплект "${set.name || 'без названия'}"? Все входящие в него проекты сохранятся как отдельные проекты.`,
+      async () => {
+        try {
+          const subProjs = userProjects.filter(p => p.setId === set.id || set.projectIds?.includes(p.id));
+          const batch = writeBatch(db);
+          for (const sp of subProjs) {
+            batch.update(doc(db, "companies", companyId, "projects", sp.id), { setId: null });
+          }
+          batch.delete(doc(db, "companies", companyId, "sets", set.id));
+          await batch.commit();
+          if (showAlert) showAlert("Успешно", "Комплект расформирован. Проекты теперь отображаются по отдельности.");
+        } catch (err) {
+          console.error("Error dissolving set:", err);
+          if (showAlert) showAlert("Ошибка", "Не удалось расформировать комплект");
         }
-        // Employees, workers, and other roles can only see projects they created
-        return projects.filter((p) => p.createdBy === userId);
-    })();
+      }
+    );
+  };
+
+  // Delete set AND all its projects
+  const handleDeleteSetWithProjects = async (set: any, subProjs: Project[]) => {
+    if (!companyId) return;
+    showConfirm(
+      "Удаление комплекта и всех проектов",
+      `Внимание! Это действие удалит комплект "${set.name || 'без названия'}" и ВСЕ (${subProjs.length}) входящие в него проекты. Продолжить?`,
+      async () => {
+        try {
+          const batch = writeBatch(db);
+          for (const sp of subProjs) {
+            batch.delete(doc(db, "companies", companyId, "projects", sp.id));
+            if (onDeleteProject) onDeleteProject(sp.id);
+          }
+          batch.delete(doc(db, "companies", companyId, "sets", set.id));
+          await batch.commit();
+          if (showAlert) showAlert("Успешно", "Комплект и все входящие в него проекты удалены");
+        } catch (err) {
+          console.error("Error deleting set with projects:", err);
+          if (showAlert) showAlert("Ошибка", "Не удалось удалить комплект");
+        }
+      }
+    );
+  };
+
+  // Rename set
+  const handleRenameSet = async (set: any) => {
+    if (!companyId) return;
+    const newName = prompt("Введите новое название комплекта:", set.name || "");
+    if (newName && newName.trim()) {
+      try {
+        await updateDoc(doc(db, "companies", companyId, "sets", set.id), {
+          name: newName.trim(),
+        });
+        if (showAlert) showAlert("Успешно", "Название комплекта обновлено");
+      } catch (err) {
+        console.error("Error renaming set:", err);
+      }
+    }
+  };
+
+  // Add standalone project to set
+  const handleAddProjectToSet = async (projectId: string, set: any) => {
+    if (!companyId) return;
+    try {
+      await updateDoc(doc(db, "companies", companyId, "projects", projectId), {
+        setId: set.id,
+      });
+      const updatedProjectIds = Array.from(new Set([...(set.projectIds || []), projectId]));
+      await updateDoc(doc(db, "companies", companyId, "sets", set.id), {
+        projectIds: updatedProjectIds,
+      });
+      setAddProjectToSetModal(null);
+      if (showAlert) showAlert("Успешно", "Проект добавлен в комплект");
+    } catch (err) {
+      console.error("Error adding project to set:", err);
+      if (showAlert) showAlert("Ошибка", "Не удалось добавить проект в комплект");
+    }
+  };
+
+  const userProjects = useMemo(() => {
+    const isManagerOrHigher = 
+      userRole === "admin" || 
+      userRole === "supervisor" || 
+      userRole === "manager" ||
+      companyData?.ownerUid === userId;
+
+    const baseProjects = (!userRole || isManagerOrHigher)
+      ? projects
+      : projects.filter((p) => p.createdBy === userId);
+
     return baseProjects.filter(p => !deletedProjects.has(p.id) && !p.isDeleted && p.status !== "deleted");
   }, [projects, userRole, userId, deletedProjects, companyData?.ownerUid]);
 
-  const filteredProjects = myProjects.filter((p) => {
-    const employee = companyEmployees.find(emp => emp.uid === p.createdBy);
-    const displayManagerName = employee ? (employee.name || employee.displayName || employee.email) : (p.createdByName || "Пользователь");
-
-    if (selectedManagerId && p.createdBy !== selectedManagerId) {
-      return false;
-    }
-
-    const matchesSearch =
-      p.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      displayManagerName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      ((p as any).contractNumber || p.data?.contractNumber || "").toLowerCase().includes(searchQuery.toLowerCase());
-
-    if (activeFilter === "all") return matchesSearch;
-    return matchesSearch && (p.status || "draft") === activeFilter;
-  });
-
-  const mySets = useMemo(() => {
+  const userSets = useMemo(() => {
     const isAdminOrSupervisor = 
       userRole === "admin" || 
       userRole === "supervisor" || 
@@ -494,12 +595,88 @@ export const ProjectsView = ({
     return sets.filter((s) => s.createdBy === userId);
   }, [sets, userRole, userId, companyData?.ownerUid]);
 
-  const filteredSets = mySets.filter((s) => {
-    return (
-      s.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      s.contractNumber?.toLowerCase().includes(searchQuery.toLowerCase())
-    );
-  });
+  // Map set.id -> subProjects
+  const setSubProjectsMap = useMemo(() => {
+    const map: Record<string, Project[]> = {};
+    userSets.forEach(s => { map[s.id] = []; });
+
+    userProjects.forEach(p => {
+      if (p.setId && map[p.setId]) {
+        map[p.setId].push(p);
+      } else {
+        const foundSet = userSets.find(s => s.projectIds?.includes(p.id));
+        if (foundSet) {
+          map[foundSet.id].push(p);
+        }
+      }
+    });
+    return map;
+  }, [userSets, userProjects]);
+
+  // Set of all project IDs assigned to sets
+  const assignedProjectIds = useMemo(() => {
+    const ids = new Set<string>();
+    Object.values(setSubProjectsMap).forEach(list => {
+      list.forEach(p => ids.add(p.id));
+    });
+    return ids;
+  }, [setSubProjectsMap]);
+
+  // Standalone projects (not part of any set)
+  const standaloneProjects = useMemo(() => {
+    return userProjects.filter(p => !assignedProjectIds.has(p.id));
+  }, [userProjects, assignedProjectIds]);
+
+  // Search and manager filter helper
+  const matchesSearchAndManager = (item: any, isSet: boolean, subProjs: Project[] = []) => {
+    if (selectedManagerId) {
+      if (isSet) {
+        const setManager = item.createdBy;
+        const subMatch = subProjs.some(sp => sp.createdBy === selectedManagerId);
+        if (setManager !== selectedManagerId && !subMatch) return false;
+      } else {
+        if (item.createdBy !== selectedManagerId) return false;
+      }
+    }
+
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+
+    if (isSet) {
+      const nameMatch = item.name?.toLowerCase().includes(q);
+      const contractMatch = (item.contractNumber || "").toLowerCase().includes(q);
+      const subMatch = subProjs.some(sp => sp.name?.toLowerCase().includes(q) || (sp as any).contractNumber?.toLowerCase().includes(q));
+      return nameMatch || contractMatch || subMatch;
+    } else {
+      const employee = companyEmployees.find(emp => emp.uid === item.createdBy);
+      const displayManagerName = employee ? (employee.name || employee.displayName || employee.email) : (item.createdByName || "Пользователь");
+      const contractMatch = ((item as any).contractNumber || item.data?.contractNumber || "").toLowerCase().includes(q);
+      return item.name?.toLowerCase().includes(q) || displayManagerName.toLowerCase().includes(q) || contractMatch;
+    }
+  };
+
+  const filteredDisplaySets = useMemo(() => {
+    return userSets.filter(s => {
+      const subProjs = setSubProjectsMap[s.id] || [];
+      if (!matchesSearchAndManager(s, true, subProjs)) return false;
+
+      if (activeFilter === "all" || activeFilter === "sets") return true;
+
+      const setStatus = s.status || (subProjs.length > 0 && subProjs.every(p => p.status === "sent") ? "sent" : "draft");
+      return setStatus === activeFilter;
+    });
+  }, [userSets, setSubProjectsMap, searchQuery, selectedManagerId, activeFilter, companyEmployees]);
+
+  const filteredStandaloneProjects = useMemo(() => {
+    return standaloneProjects.filter(p => {
+      if (!matchesSearchAndManager(p, false)) return false;
+      if (activeFilter === "all") return true;
+      if (activeFilter === "sets") return false;
+      return (p.status || "draft") === activeFilter;
+    });
+  }, [standaloneProjects, searchQuery, selectedManagerId, activeFilter, companyEmployees]);
+
+  const totalItemsCount = filteredDisplaySets.length + filteredStandaloneProjects.length;
 
   return (
     <div className="p-4 md:p-8" onClick={() => setOpenMenuId(null)}>
@@ -508,12 +685,12 @@ export const ProjectsView = ({
           <div className="flex items-center gap-3">
             <FolderOpen className="w-8 h-8 text-blue-600" />
             <h1 className="text-3xl font-bold text-gray-900">
-              Проекты {activeFilter === "sets" && "и Комплекты"}
+              Проекты и Комплекты
             </h1>
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {isSelectionMode && activeFilter !== "sets" && (
+            {isSelectionMode && (
               <button
                 onClick={handleCreateSet}
                 className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-100 animate-in zoom-in duration-300"
@@ -586,237 +763,523 @@ export const ProjectsView = ({
           </div>
         </div>
 
-        {activeFilter === "sets" ? (
-          <div className="mb-12">
-            <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-              <Combine className="w-6 h-6 text-indigo-600" />
-              Комплекты
-            </h2>
-            {loadingSets ? (
-              <div className="flex items-center justify-center h-32">
-                <div className="w-6 h-6 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
-              </div>
-            ) : filteredSets.length === 0 ? (
-              <div className="bg-white p-6 rounded-3xl border border-gray-100 text-center shadow-sm">
-                <p className="text-gray-500 text-sm">Комплектов пока нет</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredSets.map((set) => (
-                  <div
-                    key={set.id}
-                    className="group bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-xl hover:border-indigo-200 transition-all relative overflow-hidden"
-                  >
-                    <div className="flex items-start gap-4 mb-4">
-                      <div className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all bg-indigo-50 text-indigo-600 group-hover:bg-indigo-600 group-hover:text-white">
-                        <Combine className="w-6 h-6" />
-                      </div>
-                      <div className="flex-1 min-w-0 pr-24">
-                        <div className="flex items-center gap-2 mb-1 flex-wrap">
-                          <h3 className="font-bold text-gray-900 truncate group-hover:text-indigo-600 transition-colors min-w-0">
-                            {set.name || "Комплект"}
-                          </h3>
-                          <span className="px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-wider bg-indigo-100 text-indigo-700 flex-shrink-0">
-                            {set.projectIds?.length || 0} шт
-                          </span>
-                        </div>
-                        <div className="text-sm text-gray-500">
-                          Сумма: {(set.totalPrice || 0).toLocaleString()} ₽
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : null}
-
-        {activeFilter === "sets" ? null : loading ? (
+        {loading || loadingSets ? (
           <div className="flex items-center justify-center h-64">
             <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
           </div>
-        ) : filteredProjects.length === 0 ? (
+        ) : totalItemsCount === 0 ? (
           <div className="bg-white p-12 rounded-3xl border border-gray-100 text-center shadow-sm">
             <FileText className="w-16 h-16 text-gray-200 mx-auto mb-4" />
             <h2 className="text-xl font-bold text-gray-900 mb-2">
-              Проектов не найдено
+              Ничего не найдено
             </h2>
-            <p className="text-gray-500">В этой категории пока нет проектов</p>
+            <p className="text-gray-500">В этой категории пока нет проектов или комплектов</p>
           </div>
         ) : (
-          <div>
-             {activeFilter !== "all" && (
-               <h2 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-                <FileText className="w-6 h-6 text-blue-600" />
-                {activeFilter === "draft"
-                  ? "Черновики"
-                  : activeFilter === "sent"
-                    ? "Оформленные"
-                    : activeFilter === "transferred"
-                      ? "Переданные"
-                      : "Проекты"}
-              </h2>
-             )}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {filteredProjects.map((project) => (
-                  /* ... project card content ...*/
-                  <div
-                    key={project.id}
-                    onClick={() =>
-                      isSelectionMode
-                        ? toggleProjectSelection({} as any, project.id)
-                        : onLoadProject(project)
-                    }
-                    className={cn(
-                      "group bg-white p-5 rounded-3xl border transition-all cursor-pointer relative",
-                      selectedProjectIds.has(project.id)
-                        ? "border-indigo-500 ring-2 ring-indigo-500/20 shadow-lg"
-                        : "border-gray-100 shadow-sm hover:shadow-xl hover:border-blue-200",
-                    )}
-                  >
-                      {/* Row 1: Header */}
-                      <div className="flex items-start gap-4 mb-4">
-                        <div className={cn(
-                          "w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all",
-                          project.status === "sent" ? "bg-orange-50 text-orange-600" : project.status === "transferred" ? "bg-green-50 text-green-600" : "bg-blue-50 text-blue-600"
-                        )}>
-                          <FileText className="w-6 h-6" />
+          <div className="space-y-8">
+            {/* 1. SET CARDS LIST */}
+            {filteredDisplaySets.length > 0 && (
+              <div className="space-y-6">
+                {activeFilter === "all" && filteredStandaloneProjects.length > 0 && (
+                  <h2 className="text-sm font-bold text-indigo-900 uppercase tracking-wider flex items-center gap-2">
+                    <Combine className="w-4 h-4 text-indigo-600" />
+                    Комплекты проектов ({filteredDisplaySets.length})
+                  </h2>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
+                  {filteredDisplaySets.map((set) => {
+                    const subProjects = setSubProjectsMap[set.id] || [];
+                    const setTotal = subProjects.length > 0 
+                      ? subProjects.reduce((sum: number, p: any) => sum + Number(p.totalPrice || (p.data?.results ? Object.values(p.data.results).reduce((acc: number, r: any) => acc + Number(r.totalPrice || 0), 0) : 0)), 0)
+                      : Number(set.totalPrice || 0);
+
+                    const employee = companyEmployees.find(emp => emp.uid === set.createdBy);
+                    const displayManagerName = employee ? (employee.name || employee.displayName || employee.email) : (set.createdByName || "Пользователь");
+
+                    return (
+                      <div 
+                        key={set.id}
+                        className="bg-white rounded-3xl border-2 border-indigo-100 hover:border-indigo-300 shadow-sm hover:shadow-xl transition-all overflow-hidden relative flex flex-col justify-between"
+                      >
+                        <div className="h-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-600" />
+                        
+                        <div className="p-5 md:p-6 flex-1 flex flex-col justify-between">
+                          <div>
+                            {/* Header Row */}
+                            <div className="flex items-start justify-between gap-4 mb-4">
+                              <div className="flex items-center gap-3 min-w-0">
+                                <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center flex-shrink-0 font-bold shadow-inner">
+                                  <Combine className="w-6 h-6" />
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap mb-1">
+                                    <h3 className="font-bold text-gray-900 text-base md:text-lg truncate">
+                                      {set.name || `Заказ №${set.contractNumber || set.id.slice(0, 6)}`}
+                                    </h3>
+                                    <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-100 text-indigo-700 flex items-center gap-1 flex-shrink-0">
+                                      <Layers className="w-3 h-3" /> Комплект ({subProjects.length})
+                                    </span>
+                                    {set.contractNumber && (
+                                      <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-gray-100 text-gray-700 flex-shrink-0">
+                                        № {set.contractNumber}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-4 text-xs text-gray-500 flex-wrap">
+                                    <span className="flex items-center gap-1">
+                                      <Calendar className="w-3.5 h-3.5 text-gray-400" />
+                                      {new Date(set.createdAt).toLocaleDateString("ru-RU")}
+                                    </span>
+                                    <span className="flex items-center gap-1">
+                                      <User className="w-3.5 h-3.5 text-gray-400" />
+                                      {displayManagerName}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 flex-shrink-0">
+                                <div className="text-right">
+                                  <div className="text-[10px] text-gray-400 font-bold uppercase">Сумма комплекта</div>
+                                  <div className="text-lg md:text-xl font-extrabold text-indigo-700">
+                                    {setTotal.toLocaleString()} ₽
+                                  </div>
+                                </div>
+
+                                {/* Menu */}
+                                <div className="relative">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setOpenMenuId(openMenuId === set.id ? null : set.id);
+                                    }}
+                                    className="p-2 hover:bg-gray-100 rounded-xl transition-colors text-gray-500"
+                                  >
+                                    <MoreVertical className="w-5 h-5" />
+                                  </button>
+
+                                  {openMenuId === set.id && (
+                                    <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-2xl shadow-xl border border-gray-100 py-2 z-50 animate-in fade-in zoom-in-95 duration-100">
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setOpenMenuId(null);
+                                          if (onCreateSet && subProjects.length > 0) {
+                                            onCreateSet(subProjects, set);
+                                          }
+                                        }}
+                                        className="w-full text-left px-4 py-2.5 text-xs font-semibold text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2"
+                                      >
+                                        <ClipboardList className="w-4 h-4 text-indigo-500" />
+                                        Оформить комплект
+                                      </button>
+
+                                      {onOpenSetProposal && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setOpenMenuId(null);
+                                            onOpenSetProposal(set, subProjects);
+                                          }}
+                                          className="w-full text-left px-4 py-2.5 text-xs font-semibold text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2"
+                                        >
+                                          <FileText className="w-4 h-4 text-emerald-500" />
+                                          Комм. предложение (КП)
+                                        </button>
+                                      )}
+
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setOpenMenuId(null);
+                                          handleRenameSet(set);
+                                        }}
+                                        className="w-full text-left px-4 py-2.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                      >
+                                        <Edit2 className="w-4 h-4 text-gray-500" />
+                                        Переименовать
+                                      </button>
+
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setOpenMenuId(null);
+                                          setAddProjectToSetModal(set);
+                                        }}
+                                        className="w-full text-left px-4 py-2.5 text-xs font-semibold text-gray-700 hover:bg-gray-50 flex items-center gap-2"
+                                      >
+                                        <FolderPlus className="w-4 h-4 text-blue-500" />
+                                        Добавить проект в комплект
+                                      </button>
+
+                                      <div className="my-1 border-t border-gray-100" />
+
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setOpenMenuId(null);
+                                          handleDissolveSet(set);
+                                        }}
+                                        className="w-full text-left px-4 py-2.5 text-xs font-semibold text-amber-600 hover:bg-amber-50 flex items-center gap-2"
+                                      >
+                                        <Unlink className="w-4 h-4" />
+                                        Расформировать комплект
+                                      </button>
+
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setOpenMenuId(null);
+                                          handleDeleteSetWithProjects(set, subProjects);
+                                        }}
+                                        className="w-full text-left px-4 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-50 flex items-center gap-2"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                        Удалить комплект и все проекты
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Nested Sub-Projects List */}
+                            <div className="mt-4 pt-3 border-t border-indigo-100/60">
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-[11px] font-bold text-indigo-900/80 uppercase tracking-wider flex items-center gap-1.5">
+                                  <Layers className="w-3.5 h-3.5 text-indigo-500" /> Входящие проекты ({subProjects.length}):
+                                </span>
+                                <button
+                                  onClick={() => {
+                                    setCollapsedSetIds(prev => {
+                                      const next = new Set(prev);
+                                      if (next.has(set.id)) next.delete(set.id);
+                                      else next.add(set.id);
+                                      return next;
+                                    });
+                                  }}
+                                  className="text-xs text-indigo-600 font-bold hover:underline flex items-center gap-1"
+                                >
+                                  {collapsedSetIds.has(set.id) ? (
+                                    <>Показать ({subProjects.length}) <ChevronDown className="w-3.5 h-3.5" /></>
+                                  ) : (
+                                    <>Свернуть <ChevronUp className="w-3.5 h-3.5" /></>
+                                  )}
+                                </button>
+                              </div>
+
+                              {!collapsedSetIds.has(set.id) && (
+                                <div className="space-y-2 mt-2">
+                                  {subProjects.length === 0 ? (
+                                    <div className="text-xs text-gray-400 italic p-3 bg-gray-50 rounded-2xl text-center">
+                                      В этом комплекте нет активных проектов
+                                    </div>
+                                  ) : (
+                                    subProjects.map((subProject) => {
+                                      const projPrice = subProject.totalPrice || (subProject.data?.results ? Object.values(subProject.data.results).reduce((acc: number, r: any) => acc + (r.totalPrice || 0), 0) : 0);
+                                      return (
+                                        <div
+                                          key={subProject.id}
+                                          className="group/item flex items-center justify-between gap-3 p-3 bg-slate-50 hover:bg-indigo-50/60 rounded-2xl border border-slate-100 hover:border-indigo-200 transition-all"
+                                        >
+                                          <div className="flex items-center gap-3 min-w-0">
+                                            <div className="w-8 h-8 rounded-xl bg-white border border-gray-200 flex items-center justify-center text-indigo-600 flex-shrink-0 group-hover/item:border-indigo-300 shadow-2xs">
+                                              <FileText className="w-4 h-4" />
+                                            </div>
+                                            <div className="min-w-0">
+                                              <div className="font-bold text-gray-900 text-sm truncate">
+                                                {subProject.name || "Без названия"}
+                                              </div>
+                                              <div className="text-xs text-indigo-600 font-extrabold">
+                                                {projPrice.toLocaleString()} ₽
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          <div className="flex items-center gap-2 flex-shrink-0">
+                                            <button
+                                              onClick={() => onLoadProject(subProject)}
+                                              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+                                              title="Открыть проект для редактирования"
+                                            >
+                                              <span>Открыть</span>
+                                              <ArrowRight className="w-3.5 h-3.5" />
+                                            </button>
+
+                                            <button
+                                              onClick={() => handleUnlinkProject(subProject, set)}
+                                              className="p-1.5 hover:bg-amber-100 text-amber-700 rounded-xl transition-colors text-xs font-medium"
+                                              title="Исключить из комплекта"
+                                            >
+                                              <Unlink className="w-3.5 h-3.5" />
+                                            </button>
+
+                                            {onDeleteProject && (
+                                              <button
+                                                onClick={() => {
+                                                  showConfirm(
+                                                    "Удаление проекта",
+                                                    `Вы уверены, что хотите удалить проект "${subProject.name}"?`,
+                                                    () => handleSingleProjectDelete(subProject.id)
+                                                  );
+                                                }}
+                                                className="p-1.5 hover:bg-red-100 text-red-600 rounded-xl transition-colors"
+                                                title="Удалить проект"
+                                              >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                              </button>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex-1 min-w-0">
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* 2. STANDALONE PROJECTS LIST */}
+            {filteredStandaloneProjects.length > 0 && (
+              <div className="space-y-6">
+                {activeFilter === "all" && filteredDisplaySets.length > 0 && (
+                  <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wider flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-blue-600" />
+                    Отдельные проекты ({filteredStandaloneProjects.length})
+                  </h2>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {filteredStandaloneProjects.map((project) => (
+                    <div
+                      key={project.id}
+                      onClick={() =>
+                        isSelectionMode
+                          ? toggleProjectSelection({} as any, project.id)
+                          : onLoadProject(project)
+                      }
+                      className={cn(
+                        "group bg-white p-5 rounded-3xl border transition-all cursor-pointer relative flex flex-col justify-between",
+                        selectedProjectIds.has(project.id)
+                          ? "border-indigo-500 ring-2 ring-indigo-500/20 shadow-lg"
+                          : "border-gray-100 shadow-sm hover:shadow-xl hover:border-blue-200",
+                      )}
+                    >
+                      {/* Row 1: Header */}
+                      <div>
+                        <div className="flex items-start gap-4 mb-4">
+                          <div className={cn(
+                            "w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0 transition-all",
+                            project.status === "sent" ? "bg-orange-50 text-orange-600" : project.status === "transferred" ? "bg-green-50 text-green-600" : "bg-blue-50 text-blue-600"
+                          )}>
+                            <FileText className="w-6 h-6" />
+                          </div>
+                          <div className="flex-1 min-w-0">
                             <h3 className="font-bold text-gray-900 truncate text-base mb-1">{project.name}</h3>
                             <div className="flex items-center gap-1.5 text-[11px] text-gray-400">
-                                <Calendar className="w-3 h-3" />
-                                {(() => {
-                                    if (!project.createdAt) return "Нет даты";
-                                    const createdDate = new Date(project.createdAt);
-                                    return !isNaN(createdDate.getTime()) ? createdDate.toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" }) : `Дата: ${project.createdAt}`;
-                                })()}
+                              <Calendar className="w-3 h-3" />
+                              {(() => {
+                                const raw = project.createdAt || (project as any).updatedAt || (project as any).savedAt;
+                                if (!raw) return "Нет даты";
+                                const d = typeof raw === "object" && (raw as any)?.seconds 
+                                  ? new Date((raw as any).seconds * 1000) 
+                                  : new Date(raw);
+                                if (isNaN(d.getTime()) || d.getFullYear() <= 1970) {
+                                  return "Нет даты";
+                                }
+                                return d.toLocaleDateString("ru-RU", { day: "numeric", month: "short", year: "numeric" });
+                              })()}
                             </div>
                             {((project as any).contractNumber || project.data?.contractNumber) && (
                               <div className="mt-1.5 flex items-center gap-1 text-[10px] font-bold text-blue-700 bg-blue-50/70 px-2 py-0.5 rounded-lg w-fit">
                                 <span>Договор № {((project as any).contractNumber || project.data?.contractNumber)}</span>
                               </div>
                             )}
-                        </div>
-                        {/* Actions Row */}
-                        <div className="flex flex-col items-center gap-2">
+                          </div>
+                          {/* Actions Row */}
+                          <div className="flex flex-col items-center gap-2">
                             <button
-                                onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === project.id ? null : project.id); }}
-                                className="p-1 text-gray-400 hover:text-gray-900 rounded-lg"
+                              onClick={(e) => { e.stopPropagation(); setOpenMenuId(openMenuId === project.id ? null : project.id); }}
+                              className="p-1 text-gray-400 hover:text-gray-900 rounded-lg"
                             >
-                                <MoreVertical className="w-5 h-5" />
+                              <MoreVertical className="w-5 h-5" />
                             </button>
                             <div 
-                                onClick={(e) => toggleProjectSelection(e, project.id)}
-                                className={cn(
-                                    "w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all",
-                                    selectedProjectIds.has(project.id) ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white border-gray-200"
-                                )}>
-                                {selectedProjectIds.has(project.id) && <CheckCircle2 className="w-4 h-4" />}
+                              onClick={(e) => toggleProjectSelection(e, project.id)}
+                              className={cn(
+                                "w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all",
+                                selectedProjectIds.has(project.id) ? "bg-indigo-600 border-indigo-600 text-white" : "bg-white border-gray-200"
+                              )}>
+                              {selectedProjectIds.has(project.id) && <CheckCircle2 className="w-4 h-4" />}
                             </div>
+                          </div>
                         </div>
+
+                        {/* Menu */}
+                        {openMenuId === project.id && (
+                          <div className="absolute top-14 right-4 w-48 bg-white rounded-xl shadow-2xl border border-gray-100 py-1 z-[100]" onClick={(e) => e.stopPropagation()}>
+                            {isSelectionMode && (
+                              <button onClick={(e) => { handleCreateSet(); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-bold text-indigo-600 flex items-center gap-2 border-b border-gray-50">
+                                <Combine className="w-4 h-4" /> Собрать комплект
+                              </button>
+                            )}
+                            <button onClick={(e) => { e.stopPropagation(); onLoadProject(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 bg-blue-50 text-blue-600 text-sm font-bold flex items-center gap-2">
+                              <ArrowRight className="w-4 h-4" /> Открыть
+                            </button>
+                            {(userRole === "manager" || userRole === "admin") && (
+                              <button onClick={(e) => { onOpenSpecification(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-blue-600 flex items-center gap-2">
+                                <ClipboardList className="w-4 h-4" /> {project.status === "sent" || project.status === "transferred" ? "Спецификация" : "Оформить"}
+                              </button>
+                            )}
+                            {(userRole === "manager" || userRole === "admin") && onOpenProposal && (
+                              <button onClick={(e) => { e.stopPropagation(); onOpenProposal(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-indigo-600 flex items-center gap-2">
+                                <FileText className="w-4 h-4" /> Комм. предложение (КП)
+                              </button>
+                            )}
+                            {project.status === "sent" && (
+                              <button onClick={(e) => { handleTransfer(e, project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-blue-600 flex items-center gap-2">
+                                <Send className="w-4 h-4" /> Передать руководителю
+                              </button>
+                            )}
+                            {(userRole === "manager" || userRole === "admin") && (
+                              <button onClick={(e) => { setSelectedBitrixProject(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-orange-600 flex items-center gap-2">
+                                <Send className="w-4 h-4" /> Bitrix24
+                              </button>
+                            )}
+                            {(userRole === "manager" || userRole === "admin") && (
+                              <button onClick={(e) => { e.stopPropagation(); setSelectedTransferProject(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-blue-600 flex items-center gap-2">
+                                <Send className="w-4 h-4" /> Отдать проект
+                              </button>
+                            )}
+                            {(userRole === "manager" || userRole === "admin") && (
+                              <button onClick={(e) => { setSelectedAnalyticsProject(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-indigo-600 flex items-center gap-2">
+                                <TrendingUp className="w-4 h-4" /> Анализ
+                              </button>
+                            )}
+                            <button onClick={(e) => { handleDelete(e, project.id); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-red-600 flex items-center gap-2">
+                              <Trash2 className="w-4 h-4" /> Удалить
+                            </button>
+                          </div>
+                        )}
                       </div>
 
-                      {/* Open menu */}
-                        {openMenuId === project.id && (
-                            <div className="absolute top-14 right-4 w-48 bg-white rounded-xl shadow-2xl border border-gray-100 py-1 z-[100]" onClick={(e) => e.stopPropagation()}>
-                                {isSelectionMode && (
-                                    <button onClick={(e) => { handleCreateSet(); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-bold text-indigo-600 flex items-center gap-2 border-b border-gray-50">
-                                        <Combine className="w-4 h-4" /> Собрать комплект
-                                    </button>
-                                )}
-                                <button onClick={(e) => { e.stopPropagation(); onLoadProject(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 bg-blue-50 text-blue-600 text-sm font-bold flex items-center gap-2">
-                                    <ArrowRight className="w-4 h-4" /> Открыть
-                                </button>
-                                {(userRole === "manager" || userRole === "admin") && (
-                                    <button onClick={(e) => { onOpenSpecification(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-blue-600 flex items-center gap-2">
-                                        <ClipboardList className="w-4 h-4" /> {project.status === "sent" || project.status === "transferred" ? "Спецификация" : "Оформить"}
-                                    </button>
-                                )}
-                                {(userRole === "manager" || userRole === "admin") && onOpenProposal && (
-                                    <button onClick={(e) => { e.stopPropagation(); onOpenProposal(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-indigo-600 flex items-center gap-2">
-                                        <FileText className="w-4 h-4" /> Комм. предложение (КП)
-                                    </button>
-                                )}
-                                {project.status === "sent" && (
-                                    <button onClick={(e) => { console.log("Transfer requested for:", project.id); handleTransfer(e, project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-blue-600 flex items-center gap-2">
-                                        <Send className="w-4 h-4" /> Передать руководителю
-                                    </button>
-                                )}
-                                {(userRole === "manager" || userRole === "admin") && (
-                                    <button onClick={(e) => { setSelectedBitrixProject(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-orange-600 flex items-center gap-2">
-                                        <Send className="w-4 h-4" /> Bitrix24
-                                    </button>
-                                )}
-                                {(userRole === "manager" || userRole === "admin") && (
-                                    <button onClick={(e) => { e.stopPropagation(); setSelectedTransferProject(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-blue-600 flex items-center gap-2">
-                                        <Send className="w-4 h-4" /> Отдать проект
-                                    </button>
-                                )}
-                                {(userRole === "manager" || userRole === "admin") && (
-                                    <button onClick={(e) => { setSelectedAnalyticsProject(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-indigo-600 flex items-center gap-2">
-                                        <TrendingUp className="w-4 h-4" /> Анализ
-                                    </button>
-                                )}
-                                <button onClick={(e) => { handleDelete(e, project.id); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-red-600 flex items-center gap-2">
-                                    <Trash2 className="w-4 h-4" /> Удалить
-                                </button>
-                            </div>
-                        )}
-                      
                       {/* Row 2: Bottom Summary */}
-                      <div className="flex items-center justify-between pt-4 border-t border-gray-50 mt-auto">
+                      <div className="flex items-center justify-between pt-4 border-t border-gray-50 mt-4">
                         {(() => {
-                           const employee = companyEmployees.find(emp => emp.uid === project.createdBy);
-                           const displayManagerName = employee ? (employee.name || employee.displayName || employee.email) : (project.createdByName || "Пользователь");
-                           const avatarLetter = (displayManagerName?.charAt(0) || "U").toUpperCase();
-                           return (
-                             <div className="flex items-center gap-3">
-                                 <div className="w-10 h-10 bg-gray-100 rounded-full flex-shrink-0 flex items-center justify-center text-sm font-bold text-gray-500 overflow-hidden">
-                                     {project.data?.createdByPhoto ? (
-                                         <img src={project.data.createdByPhoto} alt={displayManagerName} className="w-full h-full object-cover" />
-                                     ) : (
-                                         avatarLetter
-                                     )}
-                                 </div>
-                                 <div className="flex flex-col">
-                                     <span className="text-[10px] text-gray-500 font-bold uppercase">Менеджер</span>
-                                     <span className="text-xs text-gray-900 font-bold truncate max-w-[124px]" title={displayManagerName}>
-                                         {displayManagerName}
-                                     </span>
-                                 </div>
-                             </div>
-                           );
+                          const employee = companyEmployees.find(emp => emp.uid === project.createdBy);
+                          const displayManagerName = employee ? (employee.name || employee.displayName || employee.email) : (project.createdByName || "Пользователь");
+                          const avatarLetter = (displayManagerName?.charAt(0) || "U").toUpperCase();
+                          return (
+                            <div className="flex items-center gap-3">
+                              <div className="w-10 h-10 bg-gray-100 rounded-full flex-shrink-0 flex items-center justify-center text-sm font-bold text-gray-500 overflow-hidden">
+                                {project.data?.createdByPhoto ? (
+                                  <img src={project.data.createdByPhoto} alt={displayManagerName} className="w-full h-full object-cover" />
+                                ) : (
+                                  avatarLetter
+                                )}
+                              </div>
+                              <div className="flex flex-col">
+                                <span className="text-[10px] text-gray-500 font-bold uppercase">Менеджер</span>
+                                <span className="text-xs text-gray-900 font-bold truncate max-w-[124px]" title={displayManagerName}>
+                                  {displayManagerName}
+                                </span>
+                              </div>
+                            </div>
+                          );
                         })()}
                         
                         <div className="flex flex-col items-end gap-2">
-                            <div className="flex items-center gap-1.5">
-                                {project.status && project.status !== "draft" && (
-                                    <span className={cn(
-                                        "px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider",
-                                        project.status === "sent" ? "bg-orange-100 text-orange-700" : "bg-green-100 text-green-700"
-                                    )}>
-                                    {project.status === "sent" ? "Оформлен" : "Передан"}
-                                    </span>
-                                )}
-                                {project.bitrix24DealId && (
-                                    <div className="px-2 py-1 rounded-lg text-[10px] bg-blue-100 text-blue-700 font-black flex items-center gap-1">
-                                        CRM
-                                    </div>
-                                )}
-                            </div>
-                            <span className="text-xl font-extrabold text-slate-800 tracking-tight">
-                                {(project.totalPrice || (project.data?.results ? Object.values(project.data.results).reduce((acc: number, r: any) => acc + (r.totalPrice || 0), 0) : 0)).toLocaleString()} ₽
-                            </span>
+                          <div className="flex items-center gap-1.5">
+                            {project.status && project.status !== "draft" && (
+                              <span className={cn(
+                                "px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider",
+                                project.status === "sent" ? "bg-orange-100 text-orange-700" : "bg-green-100 text-green-700"
+                              )}>
+                                {project.status === "sent" ? "Оформлен" : "Передан"}
+                              </span>
+                            )}
+                            {project.bitrix24DealId && (
+                              <div className="px-2 py-1 rounded-lg text-[10px] bg-blue-100 text-blue-700 font-black flex items-center gap-1">
+                                CRM
+                              </div>
+                            )}
+                            {(() => {
+                              const savedCoeffs = project.data?.coefficientsSnapshot?.resolvedCoefficients || project.data?.coefficients;
+                              const hasDiffs = savedCoeffs && currentCoefficients && getCoefficientDifferences(savedCoeffs, currentCoefficients, project.data?.coefficientsSnapshot?.customerType || 'retail').length > 0;
+                              if (!hasDiffs) return null;
+                              return (
+                                <div className="px-2 py-1 rounded-lg text-[10px] bg-amber-100 border border-amber-300 text-amber-900 font-extrabold flex items-center gap-1 shadow-2xs" title="Коэффициенты наценок компании изменились с момента расчета">
+                                  ⚠️ Коэф. изменились
+                                </div>
+                              );
+                            })()}
+                          </div>
+                          <span className="text-xl font-extrabold text-slate-800 tracking-tight">
+                            {(project.totalPrice || (project.data?.results ? Object.values(project.data.results).reduce((acc: number, r: any) => acc + (r.totalPrice || 0), 0) : 0)).toLocaleString()} ₽
+                          </span>
                         </div>
                       </div>
-                  </div>
-                ))}
-            </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
+
+      {/* Modal: Add Standalone Project to Set */}
+      {addProjectToSetModal && (
+        <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setAddProjectToSetModal(null)}>
+          <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-gray-100" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
+              <h3 className="font-bold text-gray-900 text-lg flex items-center gap-2">
+                <FolderPlus className="w-5 h-5 text-indigo-600" />
+                Добавить проект в комплект
+              </h3>
+              <button onClick={() => setAddProjectToSetModal(null)} className="p-1 hover:bg-gray-100 rounded-full text-gray-400">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <p className="text-xs text-gray-500 mb-4">
+              Выберите отдельный проект для добавления в комплект "{addProjectToSetModal.name || 'Без названия'}":
+            </p>
+
+            <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+              {standaloneProjects.length === 0 ? (
+                <div className="text-xs text-gray-400 italic p-4 text-center bg-gray-50 rounded-2xl">
+                  Нет свободных отдельных проектов для добавления
+                </div>
+              ) : (
+                standaloneProjects.map(sp => (
+                  <div key={sp.id} className="flex items-center justify-between p-3 bg-gray-50 hover:bg-indigo-50 rounded-2xl transition-colors border border-gray-100">
+                    <div>
+                      <div className="font-bold text-gray-900 text-sm">{sp.name}</div>
+                      <div className="text-xs text-indigo-600 font-bold">{(sp.totalPrice || 0).toLocaleString()} ₽</div>
+                    </div>
+                    <button
+                      onClick={() => handleAddProjectToSet(sp.id, addProjectToSetModal)}
+                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs"
+                    >
+                      Добавить
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {selectedBitrixProject && (
         <Bitrix24Modal
           project={selectedBitrixProject}
@@ -833,32 +1296,32 @@ export const ProjectsView = ({
         />
       )}
       {selectedTransferProject && (
-          <TransferProjectModal
-              project={selectedTransferProject}
-              companyId={companyId || ""}
-              companyEmployees={companyEmployees}
-              onClose={() => setSelectedTransferProject(null)}
-              showAlert={showAlert}
-              onConfirm={async (targetUserId) => {
-                  try {
-                    const targetEmp = companyEmployees.find(e => e.uid === targetUserId);
-                    const targetName = targetEmp ? (targetEmp.name || targetEmp.displayName || targetEmp.email) : "Пользователь";
-                    await updateDoc(
-                        doc(db, "companies", companyId!, "projects", selectedTransferProject.id),
-                        {
-                            createdBy: targetUserId,
-                            createdByName: targetName,
-                            status: "draft"
-                        }
-                    );
-                    setSelectedTransferProject(null);
-                    if (showAlert) showAlert("Успешно", "Проект передан");
-                  } catch (e) {
-                      console.error(e);
-                      if (showAlert) showAlert("Ошибка", "Не удалось передать проект");
-                  }
-              }}
-          />
+        <TransferProjectModal
+          project={selectedTransferProject}
+          companyId={companyId || ""}
+          companyEmployees={companyEmployees}
+          onClose={() => setSelectedTransferProject(null)}
+          showAlert={showAlert}
+          onConfirm={async (targetUserId) => {
+            try {
+              const targetEmp = companyEmployees.find(e => e.uid === targetUserId);
+              const targetName = targetEmp ? (targetEmp.name || targetEmp.displayName || targetEmp.email) : "Пользователь";
+              await updateDoc(
+                doc(db, "companies", companyId!, "projects", selectedTransferProject.id),
+                {
+                  createdBy: targetUserId,
+                  createdByName: targetName,
+                  status: "draft"
+                }
+              );
+              setSelectedTransferProject(null);
+              if (showAlert) showAlert("Успешно", "Проект передан");
+            } catch (e) {
+              console.error(e);
+              if (showAlert) showAlert("Ошибка", "Не удалось передать проект");
+            }
+          }}
+        />
       )}
     </div>
   );

@@ -12,6 +12,7 @@ import {
   Plus
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { CoefficientDiffBanner } from './CoefficientDiffBanner';
 
 // TimeWeb DB Setup
 const db = {};
@@ -66,7 +67,8 @@ export const ProjectSpecificationModal = ({
   onClose, 
   userRole,
   companyId,
-  manufacturerId
+  manufacturerId,
+  currentCoefficients
 }: { 
   project: Project; 
   isOpen: boolean; 
@@ -74,14 +76,24 @@ export const ProjectSpecificationModal = ({
   userRole: string;
   companyId: string;
   manufacturerId?: string;
+  currentCoefficients?: any;
 }) => {
   const [sketches, setSketches] = useState<string[]>(project.sketches || []);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showRevisionModal, setShowRevisionModal] = useState(false);
   const [revisionComment, setRevisionComment] = useState("");
+  const [activeCoefficientsMode, setActiveCoefficientsMode] = useState<'saved' | 'current'>(
+    project.data?.pricingApplied === 'current' ? 'current' : 'saved'
+  );
 
   if (!isOpen) return null;
+
+  const savedSnapshot = project.data?.coefficientsSnapshot || (project.data ? {
+    savedAt: (project as any).updatedAt || (project as any).createdAt || new Date().toISOString(),
+    coefficients: project.data?.coefficients,
+    resolvedCoefficients: project.data?.resolvedCoefficients || currentCoefficients,
+  } : undefined);
 
   const handleReturnToRevision = async () => {
     if (!revisionComment.trim()) {
@@ -212,6 +224,18 @@ export const ProjectSpecificationModal = ({
         </div>
 
         <div className="flex-1 overflow-y-auto p-8 space-y-8">
+          {savedSnapshot && currentCoefficients && (
+            <CoefficientDiffBanner
+              savedSnapshot={savedSnapshot}
+              currentCoefficients={currentCoefficients}
+              activeMode={activeCoefficientsMode}
+              savedTotal={(project as any).totalPrice || 0}
+              currentTotal={(project as any).totalPrice || 0}
+              onApplyCurrentCoefficients={() => setActiveCoefficientsMode('current')}
+              onRevertSavedCoefficients={() => setActiveCoefficientsMode('saved')}
+            />
+          )}
+
           {error && (
             <div className="p-4 bg-red-50 border border-red-100 text-red-700 rounded-2xl flex items-center gap-3 text-sm">
               <AlertCircle className="w-5 h-5 flex-shrink-0" />
