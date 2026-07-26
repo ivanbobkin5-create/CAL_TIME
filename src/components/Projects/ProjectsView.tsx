@@ -213,6 +213,8 @@ export const ProjectsView = ({
   const [selectedTransferProject, setSelectedTransferProject] = useState<Project | null>(null);
   const [companyEmployees, setCompanyEmployees] = useState<any[]>([]);
   const [selectedManagerId, setSelectedManagerId] = useState<string>("");
+  const [renamingSet, setRenamingSet] = useState<any | null>(null);
+  const [newSetNameInput, setNewSetNameInput] = useState("");
 
   const handleTransfer = async (e: React.MouseEvent, project: Project) => {
     e.stopPropagation();
@@ -535,18 +537,23 @@ export const ProjectsView = ({
   };
 
   // Rename set
-  const handleRenameSet = async (set: any) => {
-    if (!companyId) return;
-    const newName = prompt("Введите новое название комплекта:", set.name || "");
-    if (newName && newName.trim()) {
-      try {
-        await updateDoc(doc(db, "companies", companyId, "sets", set.id), {
-          name: newName.trim(),
-        });
-        if (showAlert) showAlert("Успешно", "Название комплекта обновлено");
-      } catch (err) {
-        console.error("Error renaming set:", err);
-      }
+  const handleRenameSet = (set: any) => {
+    setRenamingSet(set);
+    setNewSetNameInput(set.name || `Заказ №${set.contractNumber || set.id?.slice(0, 6)}`);
+  };
+
+  const handleSaveRenameSet = async () => {
+    if (!companyId || !renamingSet || !newSetNameInput.trim()) return;
+    try {
+      await updateDoc(doc(db, "companies", companyId, "sets", renamingSet.id), {
+        name: newSetNameInput.trim(),
+      });
+      if (showAlert) showAlert("Успешно", "Название комплекта обновлено");
+      setRenamingSet(null);
+      setNewSetNameInput("");
+    } catch (err) {
+      console.error("Error renaming set:", err);
+      if (showAlert) showAlert("Ошибка", "Не удалось переименовать комплект");
     }
   };
 
@@ -800,7 +807,7 @@ export const ProjectsView = ({
                     return (
                       <div 
                         key={set.id}
-                        className="bg-white rounded-3xl border-2 border-indigo-100 hover:border-indigo-300 shadow-sm hover:shadow-xl transition-all overflow-hidden relative flex flex-col justify-between"
+                        className="bg-white rounded-3xl border-2 border-indigo-100 hover:border-indigo-300 shadow-sm hover:shadow-xl transition-all overflow-visible relative flex flex-col justify-between"
                       >
                         <div className="h-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-600" />
                         
@@ -1322,6 +1329,91 @@ export const ProjectsView = ({
             }
           }}
         />
+      )}
+
+      {/* Sticky Bottom Action Bar for Selection Mode */}
+      {isSelectionMode && selectedProjectIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white px-6 py-3.5 rounded-2xl shadow-2xl flex items-center gap-6 border border-slate-700 animate-in slide-in-from-bottom duration-300">
+          <div className="flex items-center gap-2 text-sm font-bold">
+            <span className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs">
+              {selectedProjectIds.size}
+            </span>
+            <span>Выбрано проектов</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                setIsSelectionMode(false);
+                setSelectedProjectIds(new Set());
+              }}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold transition-all"
+            >
+              Отмена
+            </button>
+            <button
+              onClick={handleCreateSet}
+              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-500/30 transition-all flex items-center gap-2"
+            >
+              <Combine className="w-4 h-4" />
+              <span>Создать комплект ({selectedProjectIds.size})</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Rename Set Modal */}
+      {renamingSet && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-gray-100 space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+                  <Edit2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 text-base">Переименовать комплект</h3>
+                  <p className="text-xs text-gray-500">Укажите новое название для комплекта</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setRenamingSet(null)}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-xs font-bold text-gray-700">Название комплекта / Заказа</label>
+              <input
+                type="text"
+                value={newSetNameInput}
+                onChange={(e) => setNewSetNameInput(e.target.value)}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all text-gray-900"
+                placeholder="Например: Кухня и шкаф (Заказ №123)"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleSaveRenameSet();
+                }}
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                onClick={() => setRenamingSet(null)}
+                className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={handleSaveRenameSet}
+                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-200 transition-all"
+              >
+                Сохранить
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

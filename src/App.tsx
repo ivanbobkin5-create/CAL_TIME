@@ -1311,6 +1311,7 @@ type ProductionFormat = "own" | "contract";
 const isDryerCategory = (cat: string) => cat === "Посудосушитель" || cat === "Посудосушители";
 
 const INITIAL_PRODUCT_CATEGORIES = [
+  "Кухонные гарнитуры",
   "Столешницы и стеновые",
   "Крепежные элементы и цоколь",
   "Ручки и крючки",
@@ -15506,6 +15507,10 @@ const ProductsView = ({
   const [hingeDampingFilter, setHingeDampingFilter] = useState<string | null>(null);
   const [drawerSubFilter, setDrawerSubFilter] = useState<string | null>(null);
   const [drawerRunnerTypeFilter, setDrawerRunnerTypeFilter] = useState<string | null>(null);
+  const [kitchenTypeFilter, setKitchenTypeFilter] = useState<string | null>(null);
+  const [kitchenStyleFilter, setKitchenStyleFilter] = useState<string | null>(null);
+  const [kitchenMinPriceFilter, setKitchenMinPriceFilter] = useState<string>("");
+  const [kitchenMaxPriceFilter, setKitchenMaxPriceFilter] = useState<string>("");
   const [moduleGroupFilter, setModuleGroupFilter] = useState<string | null>(
     null,
   );
@@ -16509,9 +16514,21 @@ const ProductsView = ({
       const matchesCategory =
         !selectedCategory || p.category === selectedCategory;
 
-      let matchesHingeType = true;
-      if (selectedCategory === "Петли" && hingeTypeFilter) {
-        matchesHingeType = p.hingeType === hingeTypeFilter;
+      let matchesKitchenType = true;
+      if (selectedCategory === "Кухонные гарнитуры" && kitchenTypeFilter) {
+        matchesKitchenType = p.kitchenType === kitchenTypeFilter;
+      }
+
+      let matchesKitchenStyle = true;
+      if (selectedCategory === "Кухонные гарнитуры" && kitchenStyleFilter) {
+        matchesKitchenStyle = p.kitchenStyle === kitchenStyleFilter;
+      }
+
+      let matchesKitchenPrice = true;
+      if (selectedCategory === "Кухонные гарнитуры") {
+        const pPrice = p.economyPrice || p.price || 0;
+        if (kitchenMinPriceFilter && pPrice < Number(kitchenMinPriceFilter)) matchesKitchenPrice = false;
+        if (kitchenMaxPriceFilter && pPrice > Number(kitchenMaxPriceFilter)) matchesKitchenPrice = false;
       }
 
       let matchesHingeDamping = true;
@@ -16887,7 +16904,10 @@ const ProductsView = ({
         matchesWtLength &&
         matchesWtDepth &&
         matchesWtThickness &&
-        matchesWtEdge
+        matchesWtEdge &&
+        matchesKitchenType &&
+        matchesKitchenStyle &&
+        matchesKitchenPrice
       );
     });
 
@@ -16926,6 +16946,10 @@ const ProductsView = ({
     dryerWidthFilter,
     dryerBaseFilter,
     dryerBrandFilter,
+    kitchenTypeFilter,
+    kitchenStyleFilter,
+    kitchenMinPriceFilter,
+    kitchenMaxPriceFilter,
     handleTypeFilter,
     handleLengthFilter,
     handleColorFilter,
@@ -17555,6 +17579,68 @@ const ProductsView = ({
                 </option>
               ))}
             </select>
+          </div>
+        </div>
+      )}
+
+      {selectedCategory === "Кухонные гарнитуры" && (
+        <div className="flex flex-wrap items-center gap-4 mb-6 p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100 animate-in fade-in slide-in-from-top-2 text-xs">
+          <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">
+            Кухонные гарнитуры:
+          </span>
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-gray-600">Вид:</span>
+            {["Все", "Прямая", "Угловая", "П-образная", "с Островом"].map((type) => (
+              <button
+                key={type}
+                onClick={() => setKitchenTypeFilter(type === "Все" ? null : type)}
+                className={cn(
+                  "px-3 py-1 rounded-lg text-xs font-bold transition-all",
+                  kitchenTypeFilter === type || (type === "Все" && !kitchenTypeFilter)
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "bg-white text-gray-400 border border-gray-100 hover:border-indigo-200 hover:text-indigo-600"
+                )}
+              >
+                {type}
+              </button>
+            ))}
+          </div>
+          <div className="w-px h-4 bg-indigo-200 mx-2" />
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-gray-600">Стиль:</span>
+            {["Все", "Классический", "Современный", "Неоклассика"].map((style) => (
+              <button
+                key={style}
+                onClick={() => setKitchenStyleFilter(style === "Все" ? null : style)}
+                className={cn(
+                  "px-3 py-1 rounded-lg text-xs font-bold transition-all",
+                  kitchenStyleFilter === style || (style === "Все" && !kitchenStyleFilter)
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "bg-white text-gray-400 border border-gray-100 hover:border-indigo-200 hover:text-indigo-600"
+                )}
+              >
+                {style}
+              </button>
+            ))}
+          </div>
+          <div className="w-px h-4 bg-indigo-200 mx-2" />
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-gray-600">Цена от:</span>
+            <input
+              type="number"
+              placeholder="Мин ₽"
+              value={kitchenMinPriceFilter}
+              onChange={(e) => setKitchenMinPriceFilter(e.target.value)}
+              className="w-24 px-2 py-1 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            <span className="font-bold text-gray-600">до:</span>
+            <input
+              type="number"
+              placeholder="Макс ₽"
+              value={kitchenMaxPriceFilter}
+              onChange={(e) => setKitchenMaxPriceFilter(e.target.value)}
+              className="w-24 px-2 py-1 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500"
+            />
           </div>
         </div>
       )}
@@ -19058,6 +19144,83 @@ const ProductsView = ({
                             </select>
                           </div>
                         )}
+                      </div>
+                    </div>
+                  )}
+
+                  {newProduct.category === "Кухонные гарнитуры" && (
+                    <div className="space-y-4 p-5 bg-indigo-50/50 border border-indigo-100 rounded-2xl animate-in slide-in-from-top-2">
+                      <h4 className="text-sm font-bold text-indigo-950 uppercase tracking-wider">Параметры кухонного гарнитура</h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-indigo-900 mb-1">Вид гарнитура</label>
+                          <select
+                            value={newProduct.kitchenType || "Прямая"}
+                            onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenType: e.target.value }))}
+                            className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white text-xs font-bold"
+                          >
+                            <option value="Прямая">Прямая</option>
+                            <option value="Угловая">Угловая</option>
+                            <option value="П-образная">П-образная</option>
+                            <option value="с Островом">с Островом</option>
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-indigo-900 mb-1">Стиль</label>
+                          <select
+                            value={newProduct.kitchenStyle || "Современный"}
+                            onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenStyle: e.target.value }))}
+                            className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white text-xs font-bold"
+                          >
+                            <option value="Современный">Современный</option>
+                            <option value="Классический">Классический</option>
+                            <option value="Неоклассика">Неоклассика</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-3 pt-2">
+                        <div>
+                          <label className="block text-xs font-bold text-indigo-900 mb-1">Цена Эконом (₽)</label>
+                          <input
+                            type="number"
+                            value={newProduct.economyPrice || ""}
+                            onChange={(e) => setNewProduct(prev => ({ ...prev, economyPrice: Number(e.target.value) }))}
+                            className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white text-xs font-bold"
+                            placeholder="0"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-indigo-900 mb-1">Цена Средний (₽)</label>
+                          <input
+                            type="number"
+                            value={newProduct.mediumPrice || ""}
+                            onChange={(e) => setNewProduct(prev => ({ ...prev, mediumPrice: Number(e.target.value) }))}
+                            className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white text-xs font-bold"
+                            placeholder="0"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-indigo-900 mb-1">Цена Премиум (₽)</label>
+                          <input
+                            type="number"
+                            value={newProduct.premiumPrice || ""}
+                            onChange={(e) => setNewProduct(prev => ({ ...prev, premiumPrice: Number(e.target.value) }))}
+                            className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white text-xs font-bold"
+                            placeholder="0"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-indigo-900 mb-1">Комплектация модулями и описание состава</label>
+                        <textarea
+                          rows={3}
+                          value={newProduct.kitchenComposition || ""}
+                          onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenComposition: e.target.value }))}
+                          placeholder="Перечислите основные модули в составе гарнитура (например: Нижний стол под мойку 800, Шкаф верхний сушка 600...)"
+                          className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white text-xs"
+                        />
                       </div>
                     </div>
                   )}
@@ -24002,7 +24165,7 @@ export default function App() {
             let cats = data.categories || INITIAL_PRODUCT_CATEGORIES;
   
             // Ensure new system categories are present even for old users
-            const mandatoryCategories = ["Кухонные модули", "Освещение"];
+            const mandatoryCategories = ["Кухонные гарнитуры", "Кухонные модули", "Освещение"];
             let hasNew = false;
             mandatoryCategories.forEach((mc) => {
               if (!cats.includes(mc)) {
@@ -27536,28 +27699,62 @@ export default function App() {
                 setEditingSet(set || null);
                 setIsCheckoutModalOpen(true);
               }}
-              onOpenSetProposal={(set, setProjectsList) => {
-                const setData = {
-                  contractNumber: set.contractNumber || set.id?.slice(0, 8) || "КОМПЛЕКТ",
-                  contractDate: set.createdAt || new Date().toISOString(),
-                  readyDate: set.readyDate || null,
-                  summary: {
-                    totalMaterialsPrice: setProjectsList.reduce((acc, p) => acc + (p.totalPrice || 0), 0),
-                    totalHardwarePrice: 0,
-                    totalServicesPrice: 0,
-                    materials: [],
-                    hardware: [],
-                    services: [],
-                    totalDeliveryPrice: 0,
-                    totalAssemblyPrice: 0,
-                  },
-                  sketches: [],
-                };
-                setPrintProposalData({
-                  projects: setProjectsList,
-                  data: setData,
-                });
-              }}
+                             onOpenSetProposal={(set, setProjectsList) => {
+                 const allMaterials: any[] = [];
+                 const allHardware: any[] = [];
+                 const allServices: any[] = [];
+                 let totalMatPrice = 0;
+                 let totalHwPrice = 0;
+                 let totalServPrice = 0;
+                 let totalDelPrice = 0;
+                 let totalAsPrice = 0;
+                 const allSketches: any[] = [];
+
+                 setProjectsList.forEach(p => {
+                   const sum = p.data?.summary || {};
+                   const rows = p.data?.summaryRows || [];
+                   
+                   const mats = sum.materials || rows.filter((r: any) => r.type === 'material');
+                   allMaterials.push(...mats.map((m: any) => ({ ...m, projectName: p.name })));
+
+                   const hws = sum.hardware || rows.filter((r: any) => r.type === 'hardware' || r.type === 'product');
+                   allHardware.push(...hws.map((h: any) => ({ ...h, projectName: p.name })));
+
+                   const srvs = sum.services || rows.filter((r: any) => r.type === 'service');
+                   allServices.push(...srvs.map((s: any) => ({ ...s, projectName: p.name })));
+
+                   totalMatPrice += sum.totalMaterialsPrice || mats.reduce((acc: number, m: any) => acc + (m.total || 0), 0);
+                   totalHwPrice += sum.totalHardwarePrice || hws.reduce((acc: number, h: any) => acc + (h.total || 0), 0);
+                   totalServPrice += sum.totalServicesPrice || srvs.reduce((acc: number, s: any) => acc + (s.total || 0), 0);
+                   totalDelPrice += sum.totalDeliveryPrice || 0;
+                   totalAsPrice += sum.totalAssemblyPrice || 0;
+
+                   if (p.sketches) {
+                     allSketches.push(...p.sketches);
+                   }
+                 });
+
+                 const setData = {
+                   contractNumber: set.contractNumber || set.id?.slice(0, 8) || "КОМПЛЕКТ",
+                   contractDate: set.createdAt || new Date().toISOString(),
+                   readyDate: set.readyDate || null,
+                   summary: {
+                     totalMaterialsPrice: totalMatPrice,
+                     totalHardwarePrice: totalHwPrice,
+                     totalServicesPrice: totalServPrice,
+                     materials: allMaterials,
+                     hardware: allHardware,
+                     services: allServices,
+                     totalDeliveryPrice: totalDelPrice,
+                     totalAssemblyPrice: totalAsPrice,
+                   },
+                   sketches: allSketches,
+                 };
+                 setPrintProposalData({
+                   projects: setProjectsList,
+                   data: setData,
+                 });
+               }}
               companyType={companyData?.type}
               manufacturerId={companyData?.manufacturerId}
               showConfirm={showConfirm}

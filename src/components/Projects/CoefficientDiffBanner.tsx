@@ -9,7 +9,6 @@ import {
   ChevronUp, 
   CheckCircle2, 
   Info,
-  Sparkles,
   Zap
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -150,49 +149,14 @@ export const CoefficientDiffBanner: React.FC<CoefficientDiffBannerProps> = ({
   compact = false
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
-  const [demoModeActive, setDemoModeActive] = useState(false);
 
   const customerType = savedSnapshot?.customerType || 'retail';
   const savedCoeffsToCompare = savedSnapshot?.resolvedCoefficients || savedSnapshot?.coefficients;
 
   // Derive differences
-  let diffs = (savedSnapshot && savedCoeffsToCompare && currentCoefficients)
+  const diffs = (savedSnapshot && savedCoeffsToCompare && currentCoefficients)
     ? getCoefficientDifferences(savedCoeffsToCompare, currentCoefficients, customerType)
     : [];
-
-  // Demo fallback if user activates demo simulation or if no diffs were recorded yet
-  if (diffs.length === 0 && demoModeActive) {
-    const curNorm = normalizeCoefficients(currentCoefficients, customerType);
-    diffs = [
-      {
-        id: 'ldsp',
-        label: 'ЛДСП',
-        savedVal: Number(((curNorm.ldsp || 1.5) - 0.2).toFixed(2)),
-        currentVal: curNorm.ldsp || 1.5,
-        diffPercent: 13.3,
-        diffValue: 0.2,
-        type: 'increase',
-      },
-      {
-        id: 'hardware',
-        label: 'Фурнитура',
-        savedVal: Number(((curNorm.hardware || 1.5) - 0.15).toFixed(2)),
-        currentVal: curNorm.hardware || 1.5,
-        diffPercent: 10.0,
-        diffValue: 0.15,
-        type: 'increase',
-      },
-      {
-        id: 'assembly',
-        label: 'Сборка',
-        savedVal: Number(((curNorm.assembly || 1.3) + 0.1).toFixed(2)),
-        currentVal: curNorm.assembly || 1.3,
-        diffPercent: -7.7,
-        diffValue: -0.1,
-        type: 'decrease',
-      }
-    ];
-  }
 
   const formattedSavedDate = savedSnapshot?.savedAt
     ? new Date(savedSnapshot.savedAt).toLocaleDateString('ru-RU', {
@@ -205,12 +169,8 @@ export const CoefficientDiffBanner: React.FC<CoefficientDiffBannerProps> = ({
     : 'ранее';
 
   // Calculate prices for comparison
-  let calcSavedTotal = savedTotal || 0;
-  let calcCurrentTotal = currentTotal || 0;
-
-  if (demoModeActive && calcSavedTotal > 0 && (calcCurrentTotal === calcSavedTotal || !calcCurrentTotal)) {
-    calcCurrentTotal = Math.round(calcSavedTotal * 1.12);
-  }
+  const calcSavedTotal = savedTotal || 0;
+  const calcCurrentTotal = currentTotal || 0;
 
   const diffAmount = (calcCurrentTotal > 0 && calcSavedTotal > 0)
     ? calcCurrentTotal - calcSavedTotal
@@ -222,41 +182,30 @@ export const CoefficientDiffBanner: React.FC<CoefficientDiffBannerProps> = ({
 
   const isCurrentMode = activeMode === 'current';
 
-  // When no diffs exist and demo mode is off, show a reassuring green status block with option to simulate
+  // When no diffs exist, show reassuring green status block
   if (diffs.length === 0) {
     return (
       <div className={cn(
         "rounded-2xl border border-emerald-200/80 bg-emerald-50/50 p-3.5 sm:p-4 transition-all duration-200 shadow-2xs",
         className
       )}>
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-emerald-600 text-white rounded-xl shadow-xs">
-              <CheckCircle2 className="w-4 h-4" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-xs sm:text-sm text-emerald-950">
-                  Актуальные коэффициенты компании
-                </span>
-                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-emerald-200/70 text-emerald-900 tracking-wider">
-                  Совпадают
-                </span>
-              </div>
-              <p className="text-xs text-emerald-800/90 mt-0.5">
-                Расчет соответствует текущей тарифной сетке наценок и категорий компании.
-              </p>
-            </div>
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-emerald-600 text-white rounded-xl shadow-xs">
+            <CheckCircle2 className="w-4 h-4" />
           </div>
-
-          <button
-            onClick={() => setDemoModeActive(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-emerald-100/60 border border-emerald-300 text-emerald-900 rounded-xl font-bold text-xs shadow-2xs hover:scale-[1.02] active:scale-[0.98] transition-all self-stretch sm:self-auto justify-center"
-            title="Протестировать отображение предупреждения при изменении коэффициентов"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-spin" style={{ animationDuration: '4s' }} />
-            <span>Симуляция изменения коэф.</span>
-          </button>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-xs sm:text-sm text-emerald-950">
+                Актуальные коэффициенты компании
+              </span>
+              <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-emerald-200/70 text-emerald-900 tracking-wider">
+                Совпадают
+              </span>
+            </div>
+            <p className="text-xs text-emerald-800/90 mt-0.5">
+              Расчет соответствует текущей тарифной сетке наценок и категорий компании.
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -366,7 +315,6 @@ export const CoefficientDiffBanner: React.FC<CoefficientDiffBannerProps> = ({
             <button
               onClick={() => {
                 onApplyCurrentCoefficients();
-                setDemoModeActive(false);
               }}
               className="flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-bold text-xs shadow-md shadow-blue-200 hover:scale-[1.02] active:scale-[0.98] transition-all"
             >
@@ -378,7 +326,6 @@ export const CoefficientDiffBanner: React.FC<CoefficientDiffBannerProps> = ({
               <button
                 onClick={() => {
                   onRevertSavedCoefficients();
-                  setDemoModeActive(false);
                 }}
                 className="flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-gray-300 hover:bg-gray-50 text-gray-800 rounded-xl font-bold text-xs shadow-sm hover:scale-[1.02] active:scale-[0.98] transition-all"
               >
