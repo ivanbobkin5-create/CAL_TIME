@@ -15414,6 +15414,7 @@ const ProductsView = ({
       product: any;
       defaultQtyPerItem: number;
       selectedQty: number;
+      isSelected?: boolean;
     }[];
   } | null>(null);
 
@@ -16513,6 +16514,11 @@ const ProductsView = ({
       
       const matchesCategory =
         !selectedCategory || p.category === selectedCategory;
+
+      let matchesHingeType = true;
+      if (selectedCategory === "Петли" && hingeTypeFilter) {
+        matchesHingeType = p.hingeType === hingeTypeFilter;
+      }
 
       let matchesKitchenType = true;
       if (selectedCategory === "Кухонные гарнитуры" && kitchenTypeFilter) {
@@ -23774,7 +23780,61 @@ export default function App() {
     });
   };
 
+  const handleConfirmRequiredProducts = (includeCompanions: boolean, selectedItems?: any[]) => {
+    if (!requiredProductsModal) return;
+    const { mainProduct, mainQty } = requiredProductsModal;
+
+    setAddedProducts((prev) => {
+      const existing = prev.find((p) => p.id === mainProduct.id);
+      if (existing) {
+        return prev.map((p) =>
+          p.id === mainProduct.id ? { ...p, quantity: p.quantity + mainQty } : p,
+        );
+      }
+      return [...prev, { ...mainProduct, quantity: mainQty }];
+    });
+
+    if (includeCompanions && selectedItems) {
+      selectedItems.forEach((item) => {
+        if (item.isSelected === false) return;
+        const cp = catalogProducts.find((c: any) => String(c.id) === String(item.product.id));
+        if (cp) {
+          const compQty = (item.selectedQty || item.product.qty || 1);
+          setAddedProducts((prev) => {
+            const existing = prev.find((p) => p.id === cp.id && p.parentCatalogId === mainProduct.id);
+            if (existing) {
+              return prev.map((p) =>
+                p.id === cp.id && p.parentCatalogId === mainProduct.id
+                  ? { ...p, quantity: p.quantity + compQty }
+                  : p,
+              );
+            }
+            return [...prev, { ...cp, parentCatalogId: mainProduct.id, quantity: compQty }];
+          });
+        }
+      });
+    }
+
+    setRequiredProductsModal(null);
+    setActiveTab("summary");
+  };
+
   const onAddProduct = (product: any, quantity: number = 1) => {
+    if (product.requiredProducts && product.requiredProducts.length > 0) {
+      setRequiredProductsModal({
+        isOpen: true,
+        mainProduct: product,
+        mainQty: quantity,
+        requiredItems: product.requiredProducts.map((rp: any) => ({
+          product: rp,
+          defaultQtyPerItem: rp.qty || 1,
+          selectedQty: (rp.qty || 1) * quantity,
+          isSelected: true,
+        })),
+      });
+      return;
+    }
+
     if (product.category === "Кухонные модули" && !isModularProgram && !modularAsked) {
       setModularAsked(true);
       setModal({
@@ -28643,6 +28703,112 @@ export default function App() {
             catalogProducts={catalogProducts}
             onClose={() => setPrintProposalData(null)}
           />
+        )}
+
+        {requiredProductsModal?.isOpen && (
+          <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+              <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-black text-gray-900">Сопутствующие товары</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    К товару «{requiredProductsModal.mainProduct.name}» рекомендуются сопутствующие позиции
+                  </p>
+                </div>
+                <button
+                  onClick={() => setRequiredProductsModal(null)}
+                  className="w-8 h-8 rounded-full bg-white border border-gray-200 flex items-center justify-center text-gray-400 hover:text-gray-600 shadow-2xs transition-all cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="p-6 overflow-y-auto space-y-4 flex-1">
+                <div className="bg-blue-50/60 p-4 rounded-2xl border border-blue-100 flex items-center justify-between">
+                  <div>
+                    <div className="text-[10px] font-black uppercase text-blue-800 tracking-wider">Основной товар</div>
+                    <div className="text-sm font-bold text-gray-900 mt-0.5">{requiredProductsModal.mainProduct.name}</div>
+                  </div>
+                  <div className="text-xs font-black text-blue-700 bg-blue-100 px-3 py-1.5 rounded-xl">
+                    {requiredProductsModal.mainQty} шт.
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-xs font-black uppercase tracking-wider text-gray-500 mb-1">
+                    Отметьте нужные сопутствующие товары:
+                  </div>
+                  {requiredProductsModal.requiredItems.map((item, idx) => {
+                    const cp = catalogProducts.find((c: any) => String(c.id) === String(item.product.id));
+                    const coeff = getProductCoefficient(cp || {}, customerType, resolveBrandCoefficient);
+                    const basePrice = cp ? (cp.purchasePrice !== undefined ? cp.purchasePrice : (cp.price || 0)) : 0;
+                    const unitPrice = Math.round(basePrice * coeff);
+                    const totalPrice = unitPrice * item.selectedQty;
+
+                    return (
+                      <div
+                        key={idx}
+                        onClick={() => {
+                          const updated = [...requiredProductsModal.requiredItems];
+                          updated[idx].isSelected = !updated[idx].isSelected;
+                          setRequiredProductsModal({ ...requiredProductsModal, requiredItems: updated });
+                        }}
+                        className={`flex items-center gap-3 p-3 rounded-2xl border transition-all cursor-pointer ${
+                          item.isSelected ? 'bg-white border-blue-200 shadow-xs' : 'bg-gray-50/50 border-gray-200 opacity-60'
+                        }`}
+                      >
+                        <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-colors flex-shrink-0 ${
+                          item.isSelected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'
+                        }`}>
+                          {item.isSelected && <Check className="w-3.5 h-3.5 text-white" strokeWidth={3} />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-bold text-gray-800 truncate">{cp?.name || 'Товар'}</div>
+                          <div className="text-[10px] text-gray-500">Цена: {unitPrice.toLocaleString()} ₽ / шт.</div>
+                        </div>
+                        <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="number"
+                            min="1"
+                            value={item.selectedQty}
+                            onChange={(e) => {
+                              const val = Math.max(1, parseInt(e.target.value) || 1);
+                              const updated = [...requiredProductsModal.requiredItems];
+                              updated[idx].selectedQty = val;
+                              setRequiredProductsModal({ ...requiredProductsModal, requiredItems: updated });
+                            }}
+                            className="w-16 px-2 py-1 bg-white border border-gray-200 rounded-lg text-xs font-bold text-center outline-none focus:ring-2 focus:ring-blue-500"
+                          />
+                          <span className="text-xs font-bold text-blue-700 whitespace-nowrap min-w-[70px] text-right">
+                            +{totalPrice.toLocaleString()} ₽
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="p-6 border-t border-gray-100 bg-gray-50/50 flex items-center justify-between gap-3">
+                <button
+                  onClick={() => {
+                    handleConfirmRequiredProducts(false);
+                  }}
+                  className="px-5 py-2.5 text-xs font-bold text-gray-600 hover:bg-gray-100 rounded-xl transition-all cursor-pointer"
+                >
+                  Только основной товар
+                </button>
+                <button
+                  onClick={() => {
+                    handleConfirmRequiredProducts(true, requiredProductsModal.requiredItems);
+                  }}
+                  className="px-6 py-2.5 text-xs font-bold bg-blue-600 text-white rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all flex items-center gap-2 cursor-pointer"
+                >
+                  Добавить с сопутствующими
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {modal.isOpen && (
