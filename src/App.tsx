@@ -19144,15 +19144,15 @@ const ProductsView = ({
                   )}
 
                   {newProduct.category === "Кухонные гарнитуры" && (
-                    <div className="space-y-4 p-5 bg-indigo-50/50 border border-indigo-100 rounded-2xl animate-in slide-in-from-top-2">
-                      <h4 className="text-sm font-bold text-indigo-950 uppercase tracking-wider">Параметры кухонного гарнитура</h4>
+                    <div className="space-y-6 p-6 bg-indigo-50/60 border border-indigo-100 rounded-2xl animate-in slide-in-from-top-2 text-xs">
+                      <h4 className="text-sm font-black text-indigo-950 uppercase tracking-wider">Конструктор кухонного гарнитура</h4>
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-xs font-bold text-indigo-900 mb-1">Вид гарнитура</label>
+                          <label className="block font-bold text-indigo-900 mb-1">Вид гарнитура</label>
                           <select
                             value={newProduct.kitchenType || "Прямая"}
                             onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenType: e.target.value }))}
-                            className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white text-xs font-bold"
+                            className="w-full px-3 py-2.5 border border-indigo-200 rounded-xl bg-white font-bold"
                           >
                             <option value="Прямая">Прямая</option>
                             <option value="Угловая">Угловая</option>
@@ -19161,11 +19161,11 @@ const ProductsView = ({
                           </select>
                         </div>
                         <div>
-                          <label className="block text-xs font-bold text-indigo-900 mb-1">Стиль</label>
+                          <label className="block font-bold text-indigo-900 mb-1">Стиль</label>
                           <select
                             value={newProduct.kitchenStyle || "Современный"}
                             onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenStyle: e.target.value }))}
-                            className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white text-xs font-bold"
+                            className="w-full px-3 py-2.5 border border-indigo-200 rounded-xl bg-white font-bold"
                           >
                             <option value="Современный">Современный</option>
                             <option value="Классический">Классический</option>
@@ -19174,48 +19174,140 @@ const ProductsView = ({
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-3 pt-2">
-                        <div>
-                          <label className="block text-xs font-bold text-indigo-900 mb-1">Цена Эконом (₽)</label>
-                          <input
-                            type="number"
-                            value={newProduct.economyPrice || ""}
-                            onChange={(e) => setNewProduct(prev => ({ ...prev, economyPrice: Number(e.target.value) }))}
-                            className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white text-xs font-bold"
-                            placeholder="0"
-                          />
+                      {/* Modules selection from Кухонные модули */}
+                      <div className="space-y-3 bg-white p-4 rounded-2xl border border-indigo-100 shadow-2xs">
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-indigo-950">Модули в составе гарнитура:</span>
+                          <span className="text-[10px] text-gray-500 font-medium">Берутся из категории «Кухонные модули»</span>
                         </div>
-                        <div>
-                          <label className="block text-xs font-bold text-indigo-900 mb-1">Цена Средний (₽)</label>
-                          <input
-                            type="number"
-                            value={newProduct.mediumPrice || ""}
-                            onChange={(e) => setNewProduct(prev => ({ ...prev, mediumPrice: Number(e.target.value) }))}
-                            className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white text-xs font-bold"
-                            placeholder="0"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-xs font-bold text-indigo-900 mb-1">Цена Премиум (₽)</label>
-                          <input
-                            type="number"
-                            value={newProduct.premiumPrice || ""}
-                            onChange={(e) => setNewProduct(prev => ({ ...prev, premiumPrice: Number(e.target.value) }))}
-                            className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white text-xs font-bold"
-                            placeholder="0"
-                          />
+                        <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                          {catalogProducts.filter(p => p.category === "Кухонные модули").map(mod => {
+                            const selectedEntry = (newProduct.kitchenModules || []).find((m: any) => String(m.id) === String(mod.id));
+                            const qty = selectedEntry ? selectedEntry.qty : 0;
+                            return (
+                              <div key={mod.id} className="flex items-center justify-between p-2 rounded-xl bg-gray-50 hover:bg-indigo-50/50 transition-all border border-gray-100">
+                                <div className="flex-1 min-w-0 pr-2">
+                                  <div className="font-bold text-gray-800 truncate">{mod.name}</div>
+                                  <div className="text-[10px] text-gray-500">
+                                    {mod.moduleGroup || 'Модуль'} {mod.width ? `• ${mod.width} мм` : ''} {mod.moduleHeight ? `• h${mod.moduleHeight}` : ''}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={qty}
+                                    onChange={(e) => {
+                                      const val = parseInt(e.target.value) || 0;
+                                      const currentModules = [...(newProduct.kitchenModules || [])];
+                                      const existingIdx = currentModules.findIndex((m: any) => String(m.id) === String(mod.id));
+                                      if (val > 0) {
+                                        if (existingIdx >= 0) {
+                                          currentModules[existingIdx].qty = val;
+                                        } else {
+                                          currentModules.push({ id: mod.id, qty: val });
+                                        }
+                                      } else {
+                                        if (existingIdx >= 0) {
+                                          currentModules.splice(existingIdx, 1);
+                                        }
+                                      }
+                                      setNewProduct(prev => ({ ...prev, kitchenModules: currentModules }));
+                                    }}
+                                    className="w-16 px-2 py-1 bg-white border border-gray-200 rounded-lg text-center font-bold"
+                                    placeholder="0"
+                                  />
+                                  <span className="text-gray-500 font-medium text-[10px]">шт.</span>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
 
-                      <div>
-                        <label className="block text-xs font-bold text-indigo-900 mb-1">Комплектация модулями и описание состава</label>
-                        <textarea
-                          rows={3}
-                          value={newProduct.kitchenComposition || ""}
-                          onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenComposition: e.target.value }))}
-                          placeholder="Перечислите основные модули в составе гарнитура (например: Нижний стол под мойку 800, Шкаф верхний сушка 600...)"
-                          className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white text-xs"
-                        />
+                      {/* Facade calculation */}
+                      <div className="space-y-3 bg-white p-4 rounded-2xl border border-indigo-100 shadow-2xs">
+                        <span className="font-bold text-indigo-950">Фасады и расчет площади ($m^2$):</span>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <label className="block font-bold text-gray-700 mb-1">Материал фасадов</label>
+                            <select
+                              value={newProduct.facadeMaterial || "Пластик HPL"}
+                              onChange={(e) => setNewProduct(prev => ({ ...prev, facadeMaterial: e.target.value }))}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white font-bold"
+                            >
+                              <option value="Пластик HPL">Пластик HPL</option>
+                              <option value="Эмаль матовая">Эмаль матовая</option>
+                              <option value="Эмаль глянец">Эмаль глянец</option>
+                              <option value="Пленка ПВХ">Пленка ПВХ</option>
+                              <option value="Массив">Массив</option>
+                            </select>
+                          </div>
+                          <div>
+                            <label className="block font-bold text-gray-700 mb-1">Цена за 1 м² (₽)</label>
+                            <input
+                              type="number"
+                              value={newProduct.facadePricePerM2 || 12000}
+                              onChange={(e) => setNewProduct(prev => ({ ...prev, facadePricePerM2: Number(e.target.value) }))}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white font-bold"
+                              placeholder="12000"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex items-center justify-between pt-1">
+                          <span className="text-gray-500">Расчетная площадь фасадов (по модулям):</span>
+                          <span className="font-black text-indigo-700">
+                            {(() => {
+                              let totalM2 = 0;
+                              (newProduct.kitchenModules || []).forEach((km: any) => {
+                                const m = catalogProducts.find((cp: any) => String(cp.id) === String(km.id));
+                                if (m && m.width && (m.moduleHeight || m.height)) {
+                                  const wM = Number(m.width) / 1000;
+                                  const hM = Number(m.moduleHeight || m.height) / 1000;
+                                  totalM2 += wM * hM * km.qty;
+                                }
+                              });
+                              return totalM2.toFixed(2);
+                            })()} м²
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Pricing tiers */}
+                      <div className="space-y-3 bg-white p-4 rounded-2xl border border-indigo-100 shadow-2xs">
+                        <span className="font-bold text-indigo-950">Ценовые сегменты (Эконом, Средний, Премиум):</span>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div>
+                            <label className="block font-bold text-gray-700 mb-1">Эконом (₽)</label>
+                            <input
+                              type="number"
+                              value={newProduct.economyPrice || ""}
+                              onChange={(e) => setNewProduct(prev => ({ ...prev, economyPrice: Number(e.target.value) }))}
+                              className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white font-bold"
+                              placeholder="0"
+                            />
+                          </div>
+                          <div>
+                            <label className="block font-bold text-gray-700 mb-1">Средний (₽)</label>
+                            <input
+                              type="number"
+                              value={newProduct.mediumPrice || ""}
+                              onChange={(e) => setNewProduct(prev => ({ ...prev, mediumPrice: Number(e.target.value) }))}
+                              className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white font-bold"
+                              placeholder="0"
+                            />
+                          </div>
+                          <div>
+                            <label className="block font-bold text-gray-700 mb-1">Премиум (₽)</label>
+                            <input
+                              type="number"
+                              value={newProduct.premiumPrice || ""}
+                              onChange={(e) => setNewProduct(prev => ({ ...prev, premiumPrice: Number(e.target.value) }))}
+                              className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white font-bold"
+                              placeholder="0"
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
                   )}
