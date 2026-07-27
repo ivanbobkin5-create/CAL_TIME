@@ -15406,17 +15406,6 @@ const ProductsView = ({
   setSelectedProductForDetail: React.Dispatch<React.SetStateAction<any>>;
 }) => {
   const [showChecklistWindow, setShowChecklistWindow] = useState(false);
-  const [requiredProductsModal, setRequiredProductsModal] = useState<{
-    isOpen: boolean;
-    mainProduct: any;
-    mainQty: number;
-    requiredItems: {
-      product: any;
-      defaultQtyPerItem: number;
-      selectedQty: number;
-      isSelected?: boolean;
-    }[];
-  } | null>(null);
 
   // Function to determine if an item is present
   const isItemPresent = (itemName: string) => {
@@ -23779,6 +23768,18 @@ export default function App() {
       return next;
     });
   };
+
+  const [requiredProductsModal, setRequiredProductsModal] = useState<{
+    isOpen: boolean;
+    mainProduct: any;
+    mainQty: number;
+    requiredItems: {
+      product: any;
+      defaultQtyPerItem: number;
+      selectedQty: number;
+      isSelected?: boolean;
+    }[];
+  } | null>(null);
 
   const handleConfirmRequiredProducts = (includeCompanions: boolean, selectedItems?: any[]) => {
     if (!requiredProductsModal) return;
