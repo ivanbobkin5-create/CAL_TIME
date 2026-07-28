@@ -216,6 +216,11 @@ export const ProjectsView = ({
   const [renamingSet, setRenamingSet] = useState<any | null>(null);
   const [newSetNameInput, setNewSetNameInput] = useState("");
 
+  const [isSetsGroupCollapsed, setIsSetsGroupCollapsed] = useState(true);
+  const [isStandaloneGroupCollapsed, setIsStandaloneGroupCollapsed] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState<string>("all");
+  const [sortBy, setSortBy] = useState<"date-desc" | "date-asc" | "price-desc" | "price-asc">("date-desc");
+
   const handleTransfer = async (e: React.MouseEvent, project: Project) => {
     e.stopPropagation();
     if (!companyId) return;
@@ -662,28 +667,127 @@ export const ProjectsView = ({
     }
   };
 
+  const uniqueMonths = useMemo(() => {
+    const monthsSet = new Set<string>();
+
+    userProjects.forEach((p) => {
+      const raw = p.createdAt || (p as any).updatedAt || (p as any).savedAt;
+      if (raw) {
+        const d = new Date(raw);
+        if (!isNaN(d.getTime()) && d.getFullYear() > 1970) {
+          const monthStr = d.toISOString().slice(0, 7); // "YYYY-MM"
+          monthsSet.add(monthStr);
+        }
+      }
+    });
+
+    userSets.forEach((s) => {
+      if (s.createdAt) {
+        const d = new Date(s.createdAt);
+        if (!isNaN(d.getTime()) && d.getFullYear() > 1970) {
+          const monthStr = d.toISOString().slice(0, 7); // "YYYY-MM"
+          monthsSet.add(monthStr);
+        }
+      }
+    });
+
+    return Array.from(monthsSet).sort().reverse();
+  }, [userProjects, userSets]);
+
+  const formatMonth = (monthStr: string) => {
+    const [year, month] = monthStr.split("-");
+    const date = new Date(Number(year), Number(month) - 1, 1);
+    const formatted = date.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+    return formatted.charAt(0).toUpperCase() + formatted.slice(1);
+  };
+
   const filteredDisplaySets = useMemo(() => {
     return userSets.filter(s => {
       const subProjs = setSubProjectsMap[s.id] || [];
       if (!matchesSearchAndManager(s, true, subProjs)) return false;
+
+      if (selectedMonth !== "all") {
+        const sMonth = s.createdAt ? s.createdAt.slice(0, 7) : "";
+        if (sMonth !== selectedMonth) return false;
+      }
 
       if (activeFilter === "all" || activeFilter === "sets") return true;
 
       const setStatus = s.status || (subProjs.length > 0 && subProjs.every(p => p.status === "sent") ? "sent" : "draft");
       return setStatus === activeFilter;
     });
-  }, [userSets, setSubProjectsMap, searchQuery, selectedManagerId, activeFilter, companyEmployees]);
+  }, [userSets, setSubProjectsMap, searchQuery, selectedManagerId, activeFilter, selectedMonth, companyEmployees]);
 
   const filteredStandaloneProjects = useMemo(() => {
     return standaloneProjects.filter(p => {
       if (!matchesSearchAndManager(p, false)) return false;
+
+      if (selectedMonth !== "all") {
+        const raw = p.createdAt || (p as any).updatedAt || (p as any).savedAt;
+        const pMonth = raw ? new Date(raw).toISOString().slice(0, 7) : "";
+        if (pMonth !== selectedMonth) return false;
+      }
+
       if (activeFilter === "all") return true;
       if (activeFilter === "sets") return false;
       return (p.status || "draft") === activeFilter;
     });
-  }, [standaloneProjects, searchQuery, selectedManagerId, activeFilter, companyEmployees]);
+  }, [standaloneProjects, searchQuery, selectedManagerId, activeFilter, selectedMonth, companyEmployees]);
 
-  const totalItemsCount = filteredDisplaySets.length + filteredStandaloneProjects.length;
+  const sortedDisplaySets = useMemo(() => {
+    const result = [...filteredDisplaySets];
+    result.sort((a, b) => {
+      const timeA = new Date(a.createdAt).getTime();
+      const timeB = new Date(b.createdAt).getTime();
+
+      const subA = setSubProjectsMap[a.id] || [];
+      const totalA = subA.length > 0 
+        ? subA.reduce((sum: number, p: any) => sum + Number(p.totalPrice || (p.data?.results ? Object.values(p.data.results).reduce((acc: number, r: any) => acc + Number(r.totalPrice || 0), 0) : 0)), 0)
+        : Number(a.totalPrice || 0);
+
+      const subB = setSubProjectsMap[b.id] || [];
+      const totalB = subB.length > 0 
+        ? subB.reduce((sum: number, p: any) => sum + Number(p.totalPrice || (p.data?.results ? Object.values(p.data.results).reduce((acc: number, r: any) => acc + Number(r.totalPrice || 0), 0) : 0)), 0)
+        : Number(b.totalPrice || 0);
+
+      if (sortBy === "date-desc") {
+        return timeB - timeA;
+      } else if (sortBy === "date-asc") {
+        return timeA - timeB;
+      } else if (sortBy === "price-desc") {
+        return totalB - totalA;
+      } else if (sortBy === "price-asc") {
+        return totalA - totalB;
+      }
+      return 0;
+    });
+    return result;
+  }, [filteredDisplaySets, sortBy, setSubProjectsMap]);
+
+  const sortedStandaloneProjects = useMemo(() => {
+    const result = [...filteredStandaloneProjects];
+    result.sort((a, b) => {
+      const timeA = new Date(a.createdAt).getTime();
+      const timeB = new Date(b.createdAt).getTime();
+
+      const priceA = Number(a.totalPrice || (a.data?.results ? Object.values(a.data.results).reduce((acc: number, r: any) => acc + Number(r.totalPrice || 0), 0) : 0));
+      const priceB = Number(b.totalPrice || (b.data?.results ? Object.values(b.data.results).reduce((acc: number, r: any) => acc + Number(r.totalPrice || 0), 0) : 0));
+
+      if (sortBy === "date-desc") {
+        return timeB - timeA;
+      } else if (sortBy === "date-asc") {
+        return timeA - timeB;
+      } else if (sortBy === "price-desc") {
+        return priceB - priceA;
+      } else if (sortBy === "price-asc") {
+        return priceA - priceB;
+      }
+      return 0;
+    });
+    return result;
+  }, [filteredStandaloneProjects, sortBy]);
+
+  const totalItemsCount = sortedDisplaySets.length + sortedStandaloneProjects.length;
 
   return (
     <div className="p-4 md:p-8" onClick={() => setOpenMenuId(null)}>
@@ -737,6 +841,34 @@ export const ProjectsView = ({
               </div>
             )}
 
+            <div className="relative w-full md:w-48">
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="block w-full px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-gray-700"
+              >
+                <option value="all">Все месяцы</option>
+                {uniqueMonths.map((m) => (
+                  <option key={m} value={m}>
+                    {formatMonth(m)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="relative w-full md:w-52">
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as any)}
+                className="block w-full px-3.5 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-gray-700"
+              >
+                <option value="date-desc">Сначала новые (дата ↓)</option>
+                <option value="date-asc">Сначала старые (дата ↑)</option>
+                <option value="price-desc">Сначала дорогие (сумма ↓)</option>
+                <option value="price-asc">Сначала дешевые (сумма ↑)</option>
+              </select>
+            </div>
+
             <div className="flex bg-gray-100 p-1 rounded-xl">
               {(["all", "draft", "sent", "transferred", "sets"] as const).map(
                 (filter) => (
@@ -785,17 +917,25 @@ export const ProjectsView = ({
         ) : (
           <div className="space-y-8">
             {/* 1. SET CARDS LIST */}
-            {filteredDisplaySets.length > 0 && (
+            {sortedDisplaySets.length > 0 && (
               <div className="space-y-6">
-                {activeFilter === "all" && filteredStandaloneProjects.length > 0 && (
-                  <h2 className="text-sm font-bold text-indigo-900 uppercase tracking-wider flex items-center gap-2">
+                <div 
+                  onClick={() => setIsSetsGroupCollapsed(!isSetsGroupCollapsed)}
+                  className="flex items-center justify-between cursor-pointer hover:bg-indigo-50/50 p-3 rounded-2xl transition-colors border border-transparent hover:border-indigo-100 bg-indigo-50/20"
+                >
+                  <h2 className="text-sm font-bold text-indigo-950 uppercase tracking-wider flex items-center gap-2 select-none">
                     <Combine className="w-4 h-4 text-indigo-600" />
-                    Комплекты проектов ({filteredDisplaySets.length})
+                    Комплекты проектов ({sortedDisplaySets.length})
                   </h2>
-                )}
+                  <div className="flex items-center gap-1.5 text-xs text-indigo-600 font-bold">
+                    <span>{isSetsGroupCollapsed ? "Развернуть группу" : "Свернуть группу"}</span>
+                    {isSetsGroupCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                  </div>
+                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
-                  {filteredDisplaySets.map((set) => {
+                {!isSetsGroupCollapsed && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 animate-in fade-in duration-200">
+                    {sortedDisplaySets.map((set) => {
                     const subProjects = setSubProjectsMap[set.id] || [];
                     const setTotal = subProjects.length > 0 
                       ? subProjects.reduce((sum: number, p: any) => sum + Number(p.totalPrice || (p.data?.results ? Object.values(p.data.results).reduce((acc: number, r: any) => acc + Number(r.totalPrice || 0), 0) : 0)), 0)
@@ -1051,21 +1191,30 @@ export const ProjectsView = ({
                     );
                   })}
                 </div>
+                )}
               </div>
             )}
 
             {/* 2. STANDALONE PROJECTS LIST */}
-            {filteredStandaloneProjects.length > 0 && (
+            {sortedStandaloneProjects.length > 0 && (
               <div className="space-y-6">
-                {activeFilter === "all" && filteredDisplaySets.length > 0 && (
-                  <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wider flex items-center gap-2">
+                <div 
+                  onClick={() => setIsStandaloneGroupCollapsed(!isStandaloneGroupCollapsed)}
+                  className="flex items-center justify-between cursor-pointer hover:bg-gray-50 p-3 rounded-2xl transition-colors border border-transparent hover:border-gray-100 bg-gray-50/20"
+                >
+                  <h2 className="text-sm font-bold text-gray-700 uppercase tracking-wider flex items-center gap-2 select-none">
                     <FileText className="w-4 h-4 text-blue-600" />
-                    Отдельные проекты ({filteredStandaloneProjects.length})
+                    Отдельные проекты ({sortedStandaloneProjects.length})
                   </h2>
-                )}
+                  <div className="flex items-center gap-1.5 text-xs text-gray-500 font-bold">
+                    <span>{isStandaloneGroupCollapsed ? "Развернуть группу" : "Свернуть группу"}</span>
+                    {isStandaloneGroupCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
+                  </div>
+                </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {filteredStandaloneProjects.map((project) => (
+                {!isStandaloneGroupCollapsed && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in duration-200">
+                    {sortedStandaloneProjects.map((project) => (
                     <div
                       key={project.id}
                       onClick={() =>
@@ -1237,6 +1386,7 @@ export const ProjectsView = ({
                     </div>
                   ))}
                 </div>
+                )}
               </div>
             )}
           </div>

@@ -10,9 +10,17 @@ import jwt from "jsonwebtoken";
 import compression from "compression";
 
 const dbUrl = process.env.DATABASE_URL || "";
-const adjustedDbUrl = dbUrl 
-  ? dbUrl + (dbUrl.includes("?") ? "&" : "?") + "connection_limit=15&pool_timeout=20"
-  : undefined;
+let adjustedDbUrl: string | undefined = undefined;
+if (dbUrl) {
+  try {
+    const urlObj = new URL(dbUrl);
+    urlObj.searchParams.set("connection_limit", "30");
+    urlObj.searchParams.set("pool_timeout", "0");
+    adjustedDbUrl = urlObj.toString();
+  } catch (e) {
+    adjustedDbUrl = dbUrl + (dbUrl.includes("?") ? "&" : "?") + "connection_limit=30&pool_timeout=0";
+  }
+}
 
 const prisma = new PrismaClient(
   adjustedDbUrl 
@@ -84,6 +92,24 @@ async function startServer() {
     res.json({ status: "ok" });
   });
 
+function transliterate(str: string): string {
+  if (!str) return "";
+  const ruMap: Record<string, string> = {
+    'а': 'a', 'б': 'b', 'в': 'v', 'г': 'g', 'д': 'd', 'е': 'e', 'ё': 'yo', 'ж': 'zh',
+    'з': 'z', 'и': 'i', 'й': 'y', 'к': 'k', 'л': 'l', 'м': 'm', 'н': 'n', 'о': 'o',
+    'п': 'p', 'р': 'r', 'с': 's', 'т': 't', 'у': 'u', 'ф': 'f', 'х': 'h', 'ц': 'ts',
+    'ч': 'ch', 'ш': 'sh', 'щ': 'sch', 'ъ': '', 'ы': 'y', 'ь': '', 'э': 'e', 'ю': 'yu',
+    'я': 'ya'
+  };
+  
+  return str
+    .toLowerCase()
+    .split('')
+    .map((char) => ruMap[char] !== undefined ? ruMap[char] : (/[a-z0-9]/.test(char) ? char : ''))
+    .join('')
+    .replace(/[^a-z0-9-]/g, '');
+}
+
   app.get("/api/public/lookup-by-host", async (req, res) => {
     try {
       const { host } = req.query;
@@ -97,7 +123,8 @@ async function startServer() {
         try {
           const parsed = JSON.parse(doc.data);
           if (parsed.landingPage?.customDomain === host || (parsed.landingPage?.customDomain && parsed.landingPage.customDomain.replace(/^https?:\/\//, '') === host)) {
-            return res.json({ id: doc.docId, alias: parsed.landingPage.alias });
+            const autoAlias = transliterate(parsed.name || "");
+            return res.json({ id: doc.docId, alias: parsed.landingPage?.alias || autoAlias || doc.docId });
           }
         } catch (e) {}
       }
@@ -143,7 +170,10 @@ async function startServer() {
         for (const doc of allCompanyDocs) {
           try {
             const parsed = JSON.parse(doc.data);
-            if (parsed.landingPage?.alias === aliasOrId) {
+            const savedAlias = parsed.landingPage?.alias;
+            const autoAlias = transliterate(parsed.name || "");
+
+            if (savedAlias === aliasOrId || autoAlias === aliasOrId || doc.docId === aliasOrId) {
               companyDoc = doc;
               companyData = parsed;
               companyId = doc.docId;

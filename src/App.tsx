@@ -144,6 +144,9 @@ import {
   FileText,
   Copy,
   TrendingUp,
+  Sliders,
+  LayoutGrid,
+  Loader2,
 } from "lucide-react";
 
 // --- START OF OFFLINE CACHE AND SYNC ENGINE ---
@@ -3513,6 +3516,106 @@ const PriceView = ({
   const [autoSaving, setAutoSaving] = useState(false);
   const [lastSavedTime, setLastSavedTime] = useState<string | null>(null);
 
+  const [isServiceModalOpen, setIsServiceModalOpen] = useState(false);
+  const [editingService, setEditingService] = useState<any | null>(null);
+  const [serviceForm, setServiceForm] = useState({
+    name: "",
+    unit: "шт",
+    price: 0,
+  });
+
+  const handleOpenAddServiceModal = () => {
+    setEditingService(null);
+    setServiceForm({ name: "", unit: "шт", price: 0 });
+    setIsServiceModalOpen(true);
+  };
+
+  const handleOpenEditServiceModal = (srv: any) => {
+    const isCreatedByProd = srv.isProductionService || srv.createdByProduction || (!srv.createdBySalon && !isProduction);
+    if (!isProduction && isCreatedByProd) {
+      showAlert(
+        "Ограничение редактирования",
+        "Услуги, созданные производством, не могут редактироваться салонами. Вы можете изменить розничную цену прямо в таблице."
+      );
+      return;
+    }
+    setEditingService(srv);
+    setServiceForm({
+      name: srv.name || "",
+      unit: srv.unit || "шт",
+      price: prices[srv.name] !== undefined ? prices[srv.name] : srv.price || 0,
+    });
+    setIsServiceModalOpen(true);
+  };
+
+  const handleSaveServiceModal = () => {
+    if (!serviceForm.name.trim()) {
+      showAlert("Ошибка", "Введите название услуги");
+      return;
+    }
+    const cleanName = serviceForm.name.trim();
+    const cleanUnit = serviceForm.unit.trim() || "шт";
+    const numPrice = Number(serviceForm.price) || 0;
+
+    if (editingService) {
+      const oldName = editingService.name;
+      updateAndSaveCatalogServices((prev) =>
+        prev.map((item) =>
+          (item.id && item.id === editingService.id) || item.name === oldName
+            ? {
+                ...item,
+                name: cleanName,
+                unit: cleanUnit,
+                price: numPrice,
+              }
+            : item
+        )
+      );
+      setPrices((prev) => {
+        const next = { ...prev };
+        if (oldName && oldName !== cleanName) {
+          delete next[oldName];
+        }
+        next[cleanName] = numPrice;
+        if (companyId) {
+          setDoc(
+            doc(db, "companies", companyId, "settings", "prices"),
+            { prices: next },
+            { merge: true }
+          ).catch((err) => console.error("Error saving prices:", err));
+        }
+        return next;
+      });
+      showAlert("Успешно", `Услуга "${cleanName}" обновлена.`);
+    } else {
+      const newSrv = {
+        id: `srv_${Date.now()}`,
+        name: cleanName,
+        unit: cleanUnit,
+        price: numPrice,
+        createdByProduction: isProduction,
+        createdBySalon: !isProduction,
+      };
+      updateAndSaveCatalogServices((prev) => [...prev, newSrv]);
+      setPrices((prev) => {
+        const next = { ...prev, [cleanName]: numPrice };
+        if (companyId) {
+          setDoc(
+            doc(db, "companies", companyId, "settings", "prices"),
+            { prices: next },
+            { merge: true }
+          ).catch((err) => console.error("Error saving prices:", err));
+        }
+        return next;
+      });
+      showAlert("Успешно", `Услуга "${cleanName}" добавлена.`);
+    }
+
+    setIsServiceModalOpen(false);
+    setEditingService(null);
+    setServiceForm({ name: "", unit: "шт", price: 0 });
+  };
+
   const [edgeSubtab, setEdgeSubtab] = useState<"mapping" | "brands">("mapping");
   const [edgeMappingSearch, setEdgeMappingSearch] = useState("");
   const [selectedLdspBrandFilter, setSelectedLdspBrandFilter] = useState("all");
@@ -4518,52 +4621,7 @@ const PriceView = ({
                       </div>
                       {canEdit && (
                         <button
-                          onClick={() => {
-                            showPrompt(
-                              "Добавить услугу производства",
-                              "Введите название новой услуги (например: 'Врезка подсветки'):",
-                              "",
-                              (serviceName) => {
-                                if (!serviceName) return;
-                                showPrompt(
-                                  "Единица измерения",
-                                  `Укажите единицу измерения для "${serviceName}" (шт, м.п., м2):`,
-                                  "шт",
-                                  (unitVal) => {
-                                    showPrompt(
-                                      "Цена по умолчанию",
-                                      `Укажите стоимость услуги "${serviceName}" (в рублях):`,
-                                      "0",
-                                      (priceVal) => {
-                                        const numPrice = parseFloat(priceVal) || 0;
-                                        const newSrv = {
-                                          id: `srv_${Date.now()}`,
-                                          name: serviceName.trim(),
-                                          unit: unitVal.trim() || "шт",
-                                          price: numPrice,
-                                        };
-                                        updateAndSaveCatalogServices((prev) => [...prev, newSrv]);
-                                        if (numPrice > 0) {
-                                          setPrices((prev) => ({
-                                            ...prev,
-                                            [serviceName.trim()]: numPrice,
-                                          }));
-                                          if (companyId) {
-                                            setDoc(
-                                              doc(db, "companies", companyId, "settings", "prices"),
-                                              { prices: { ...prices, [serviceName.trim()]: numPrice } },
-                                              { merge: true }
-                                            );
-                                          }
-                                        }
-                                        showAlert("Услуга добавлена", `Услуга "${serviceName}" успешно сохранена.`);
-                                      }
-                                    );
-                                  }
-                                );
-                              }
-                            );
-                          }}
+                          onClick={handleOpenAddServiceModal}
                           className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-600 text-xs font-bold rounded-lg transition-colors flex items-center gap-1.5 shadow-sm"
                         >
                           <Plus className="w-3.5 h-3.5" />
@@ -4572,67 +4630,223 @@ const PriceView = ({
                       )}
                     </div>
 
-                    {/* Services list */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {catalogServices
-                        .filter((s) => {
-                          if (!priceSearch) return true;
-                          const searchTerms = switchLayout(priceSearch);
-                          return searchTerms.some((term) =>
-                            s.name.toLowerCase().includes(term)
-                          );
-                        })
-                        .map((srv) => (
-                          <div
-                            key={srv.id || srv.name}
-                            className="border border-gray-100 rounded-xl p-3 bg-white hover:border-indigo-200 transition-colors shadow-sm flex items-center justify-between gap-3 relative group"
-                          >
-                            <div className="flex flex-col min-w-0 pr-2">
-                              <span className="text-xs font-bold text-gray-800 line-clamp-2" title={srv.name}>
-                                {srv.name}
-                              </span>
-                              <span className="text-[10px] text-gray-400 font-medium mt-0.5">
-                                Ед. изм: <span className="text-gray-600 font-semibold">{srv.unit || "шт"}</span>
-                              </span>
+                    {/* Services List Table */}
+                    <div className="overflow-x-auto border border-gray-100 rounded-xl bg-white shadow-sm">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-gray-50/80 border-b border-gray-100 text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                            <th className="py-3 px-4">Название услуги</th>
+                            <th className="py-3 px-4 w-32">Ед. изм.</th>
+                            {!isProduction && (
+                              <th className="py-3 px-4 w-36 text-right">Опт (Производство)</th>
+                            )}
+                            <th className="py-3 px-4 w-44 text-right">
+                              {isProduction ? "Базовая цена" : "Розничная цена (Салон)"}
+                            </th>
+                            {canEdit && <th className="py-3 px-4 w-28 text-center">Действия</th>}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 text-xs font-medium text-gray-700">
+                          {catalogServices
+                            .filter((s) => {
+                              if (!priceSearch) return true;
+                              const searchTerms = switchLayout(priceSearch);
+                              return searchTerms.some((term) =>
+                                s.name.toLowerCase().includes(term)
+                              );
+                            })
+                            .map((srv) => {
+                              const isCreatedByProd = srv.isProductionService || srv.createdByProduction || (!srv.createdBySalon && !isProduction);
+                              return (
+                                <tr key={srv.id || srv.name} className="hover:bg-indigo-50/30 transition-colors">
+                                  <td className="py-3 px-4 font-bold text-gray-800">
+                                    <div className="flex items-center gap-2">
+                                      <span>{srv.name}</span>
+                                      {isCreatedByProd && !isProduction && (
+                                        <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full shrink-0">
+                                          От производства
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <span className="inline-block bg-gray-100 text-gray-700 font-bold px-2.5 py-1 rounded-lg text-[11px]">
+                                      {srv.unit || "шт"}
+                                    </span>
+                                  </td>
+                                  {!isProduction && (
+                                    <td className="py-3 px-4 text-right font-bold text-gray-500">
+                                      {(srv.price || 0).toLocaleString("ru-RU")} ₽
+                                    </td>
+                                  )}
+                                  <td className="py-3 px-4 text-right">
+                                    <div className="w-32 ml-auto">
+                                      <PriceInputWithSave
+                                        priceKey={srv.name}
+                                        value={prices[srv.name] !== undefined ? prices[srv.name] : srv.price || 0}
+                                        setPrices={setPrices}
+                                        db={db}
+                                        auth={auth}
+                                        userRole={userRole}
+                                        canEdit={canEdit}
+                                        prices={prices}
+                                        onShowHistory={onShowHistory}
+                                        logPriceChange={logPriceChange}
+                                      />
+                                    </div>
+                                  </td>
+                                  {canEdit && (
+                                    <td className="py-3 px-4 text-center">
+                                      <div className="flex items-center justify-center gap-1">
+                                        <button
+                                          onClick={() => handleOpenEditServiceModal(srv)}
+                                          className={cn(
+                                            "p-1.5 rounded-lg transition-colors",
+                                            !isProduction && isCreatedByProd
+                                              ? "text-gray-300 hover:text-gray-400 cursor-not-allowed"
+                                              : "text-blue-600 hover:bg-blue-50"
+                                          )}
+                                          title={!isProduction && isCreatedByProd ? "Услуга производства (редактирование заблокировано)" : "Редактировать услугу"}
+                                        >
+                                          <Edit2 className="w-3.5 h-3.5" />
+                                        </button>
+                                        <button
+                                          onClick={() => {
+                                            if (!isProduction && isCreatedByProd) {
+                                              showAlert("Ошибка", "Услуги производства нельзя удалить салону.");
+                                              return;
+                                            }
+                                            showConfirm(
+                                              "Удалить услугу",
+                                              `Вы действительно хотите удалить услугу "${srv.name}"?`,
+                                              () => {
+                                                updateAndSaveCatalogServices((prev) =>
+                                                  prev.filter((item) => item.id !== srv.id && item.name !== srv.name)
+                                                );
+                                              }
+                                            );
+                                          }}
+                                          className={cn(
+                                            "p-1.5 rounded-lg transition-colors",
+                                            !isProduction && isCreatedByProd
+                                              ? "text-gray-300 hover:text-gray-400 cursor-not-allowed"
+                                              : "text-red-500 hover:bg-red-50"
+                                          )}
+                                          title={!isProduction && isCreatedByProd ? "Услуга производства (удаление заблокировано)" : "Удалить услугу"}
+                                        >
+                                          <X className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    </td>
+                                  )}
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Service Create / Edit Modal */}
+                    {isServiceModalOpen && (
+                      <div
+                        className="fixed inset-0 bg-black/50 z-[200] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200"
+                        onClick={() => setIsServiceModalOpen(false)}
+                      >
+                        <div
+                          className="bg-white w-full max-w-md rounded-2xl p-6 shadow-2xl border border-gray-100"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <div className="flex items-center justify-between pb-4 border-b border-gray-100 mb-5">
+                            <h3 className="font-bold text-gray-800 text-base">
+                              {editingService ? "Редактировать услугу" : "Добавить новую услугу"}
+                            </h3>
+                            <button
+                              onClick={() => setIsServiceModalOpen(false)}
+                              className="p-1 text-gray-400 hover:text-gray-600 rounded-lg"
+                            >
+                              <X className="w-5 h-5" />
+                            </button>
+                          </div>
+
+                          <div className="space-y-4">
+                            <div>
+                              <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5">
+                                Название услуги *
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="Например: Врезка подсветки"
+                                value={serviceForm.name}
+                                onChange={(e) => setServiceForm({ ...serviceForm, name: e.target.value })}
+                                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
+                              />
                             </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <div className="w-28">
-                                <PriceInputWithSave
-                                  priceKey={srv.name}
-                                  value={prices[srv.name] !== undefined ? prices[srv.name] : srv.price || 0}
-                                  setPrices={setPrices}
-                                  db={db}
-                                  auth={auth}
-                                  userRole={userRole}
-                                  canEdit={canEdit}
-                                  prices={prices}
-                                  onShowHistory={onShowHistory}
-                                  logPriceChange={logPriceChange}
-                                />
+
+                            <div>
+                              <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5">
+                                Единица измерения *
+                              </label>
+                              <input
+                                type="text"
+                                placeholder="шт, м.п., м2, усл, компл..."
+                                value={serviceForm.unit}
+                                onChange={(e) => setServiceForm({ ...serviceForm, unit: e.target.value })}
+                                className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-medium mb-2"
+                              />
+                              <div className="flex flex-wrap gap-1.5">
+                                {["шт", "м.п.", "м2", "усл", "компл", "кг"].map((chip) => (
+                                  <button
+                                    key={chip}
+                                    type="button"
+                                    onClick={() => setServiceForm({ ...serviceForm, unit: chip })}
+                                    className={cn(
+                                      "px-2.5 py-1 text-xs font-bold rounded-lg transition-colors border",
+                                      serviceForm.unit === chip
+                                        ? "bg-indigo-600 text-white border-indigo-600"
+                                        : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
+                                    )}
+                                  >
+                                    {chip}
+                                  </button>
+                                ))}
                               </div>
-                              {canEdit && (
-                                <button
-                                  onClick={() => {
-                                    showConfirm(
-                                      "Удалить услугу",
-                                      `Вы действительно хотите удалить услугу "${srv.name}"?`,
-                                      () => {
-                                        updateAndSaveCatalogServices((prev) =>
-                                          prev.filter((item) => item.id !== srv.id && item.name !== srv.name)
-                                        );
-                                      }
-                                    );
-                                  }}
-                                  className="p-1 text-gray-300 hover:text-red-500 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
-                                  title="Удалить услугу"
-                                >
-                                  <X className="w-4 h-4" />
-                                </button>
-                              )}
+                            </div>
+
+                            <div>
+                              <label className="block text-xs font-bold text-gray-600 uppercase tracking-wider mb-1.5">
+                                {isProduction ? "Базовая цена (₽) *" : "Цена салона (₽) *"}
+                              </label>
+                              <div className="relative">
+                                <input
+                                  type="number"
+                                  placeholder="0"
+                                  value={serviceForm.price || ""}
+                                  onChange={(e) => setServiceForm({ ...serviceForm, price: parseFloat(e.target.value) || 0 })}
+                                  className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-bold text-indigo-600"
+                                />
+                                <span className="absolute right-3.5 top-2.5 text-sm font-bold text-gray-400">₽</span>
+                              </div>
                             </div>
                           </div>
-                        ))}
-                    </div>
+
+                          <div className="flex items-center justify-end gap-3 mt-6 pt-4 border-t border-gray-100">
+                            <button
+                              onClick={() => setIsServiceModalOpen(false)}
+                              className="px-4 py-2 text-xs font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition-colors"
+                            >
+                              Отмена
+                            </button>
+                            <button
+                              onClick={handleSaveServiceModal}
+                              disabled={!serviceForm.name.trim()}
+                              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-300 text-white font-bold text-xs rounded-xl transition-colors shadow-md shadow-indigo-100"
+                            >
+                              Сохранить
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : cat.title === "Кромочные материалы" ? (
                   <div className="bg-white rounded-2xl border border-gray-200/80 p-5 shadow-sm space-y-5">
@@ -11733,16 +11947,23 @@ const SettingsView = ({
     cat: string,
     value: number,
   ) => {
-    setCoefficients((prev) => ({
-      ...prev,
-      [type]: {
-        ...prev[type],
-        products: {
-          ...prev[type].products,
-          [cat]: value,
+    setCoefficients((prev) => {
+      const updatedProducts = {
+        ...prev[type].products,
+        [cat]: value,
+      };
+      if (isDryerCategory(cat)) {
+        updatedProducts["Посудосушитель"] = value;
+        updatedProducts["Посудосушители"] = value;
+      }
+      return {
+        ...prev,
+        [type]: {
+          ...prev[type],
+          products: updatedProducts,
         },
-      },
-    }));
+      };
+    });
   };
 
   return (
@@ -15740,6 +15961,12 @@ const ProductsView = ({
     return Array.from(widths).sort((a, b) => parseInt(a) - parseInt(b));
   }, [catalogProducts]);
 
+  // Kitchen Modules Picker Modal State
+  const [isKitchenModulesModalOpen, setIsKitchenModulesModalOpen] = useState(false);
+  const [kitchenModuleSearch, setKitchenModuleSearch] = useState("");
+  const [kitchenModuleGroupFilter, setKitchenModuleGroupFilter] = useState("Все");
+  const [kitchenModuleWidthFilter, setKitchenModuleWidthFilter] = useState("Все");
+
   const [newProduct, setNewProduct] = useState({
     name: "",
     category: productCategories[0],
@@ -15758,6 +15985,29 @@ const ProductsView = ({
     manufacturer: "",
     requiredProducts: [] as { id: string; qty: number }[],
     lightingType: "",
+    // Kitchen Set specific
+    kitchenType: "Прямая",
+    kitchenStyle: "Современный",
+    kitchenWidth: "",
+    kitchenHeight: "",
+    kitchenDepth: "",
+    kitchenWidthLeft: "",
+    kitchenWidthRight: "",
+    kitchenWidthWall1: "",
+    kitchenWidthWall2: "",
+    kitchenWidthWall3: "",
+    islandWidth: "",
+    islandDepth: "",
+    islandHeight: "",
+    kitchenModules: [] as { id: string; qty: number }[],
+    facadeBottomMaterial: "",
+    facadeBottomProduct: "",
+    facadeTopMaterial: "",
+    facadeTopProduct: "",
+    facadeMezzanineMaterial: "",
+    facadeMezzanineProduct: "",
+    facadeCaseMaterial: "",
+    facadeCaseProduct: "",
     // Drawer specific
     drawerSubCategory: "" as
       | ""
@@ -16048,11 +16298,8 @@ const ProductsView = ({
       console.log("Validation failed: name:", newProduct.name, "purchasePrice:", newProduct.purchasePrice);
       return;
     }
-    const defaultCoeff = coefficients.products?.[newProduct.category] || 1.5;
-    const coeff = newProduct.useCustomCoeffs && newProduct.customCoeffRetail
-      ? newProduct.customCoeffRetail
-      : defaultCoeff;
-    const finalPrice = newProduct.purchasePrice * coeff;
+    const coeff = getProductCoefficient(newProduct, customerType, resolveBrandCoefficient);
+    const finalPrice = Math.round(newProduct.purchasePrice * coeff);
 
     const product = {
       ...newProduct,
@@ -16078,8 +16325,15 @@ const ProductsView = ({
     }
   };
 
-  const resetForm = () => {
-    const defaultCat = productCategories[0];
+  const resetForm = (targetCategory?: any) => {
+    let defaultCat = (targetCategory && typeof targetCategory === "string" && productCategories.includes(targetCategory))
+      ? targetCategory
+      : (selectedCategory && productCategories.includes(selectedCategory) ? selectedCategory : productCategories[0]);
+    if (defaultCat === "Посудосушители" && productCategories.includes("Посудосушитель")) {
+      defaultCat = "Посудосушитель";
+    } else if (defaultCat === "Посудосушитель" && productCategories.includes("Посудосушители")) {
+      defaultCat = "Посудосушители";
+    }
     setNewProduct({
       name: "",
       category: defaultCat,
@@ -16158,9 +16412,41 @@ const ProductsView = ({
       fastenerPlinthColor: "",
       fastenerPlinthMaterial: "",
       brand: "",
+      kitchenType: "Прямая",
+      kitchenStyle: "Современный",
+      kitchenWidth: "",
+      kitchenHeight: "",
+      kitchenDepth: "",
+      kitchenWidthLeft: "",
+      kitchenWidthRight: "",
+      kitchenWidthWall1: "",
+      kitchenWidthWall2: "",
+      kitchenWidthWall3: "",
+      islandWidth: "",
+      islandDepth: "",
+      islandHeight: "",
+      kitchenModules: [],
+      facadeBottomMaterial: "",
+      facadeBottomProduct: "",
+      facadeTopMaterial: "",
+      facadeTopProduct: "",
+      facadeMezzanineMaterial: "",
+      facadeMezzanineProduct: "",
+      facadeCaseMaterial: "",
+      facadeCaseProduct: "",
     });
     setEditingProduct(null);
     setIsAddingProduct(false);
+  };
+
+  const getCategoryCoefficient = (coeffMap: any, catName?: string) => {
+    if (!coeffMap || !catName) return undefined;
+    if (coeffMap[catName] !== undefined) return coeffMap[catName];
+    if (catName === "Посудосушитель" && coeffMap["Посудосушители"] !== undefined) return coeffMap["Посудосушители"];
+    if (catName === "Посудосушители" && coeffMap["Посудосушитель"] !== undefined) return coeffMap["Посудосушитель"];
+    const lower = catName.toLowerCase().trim();
+    const key = Object.keys(coeffMap).find((k) => k.toLowerCase().trim() === lower);
+    return key ? coeffMap[key] : undefined;
   };
 
   const handleEditProduct = (product: any) => {
@@ -16174,6 +16460,28 @@ const ProductsView = ({
       analogs: product.analogs || [],
       vendorArticle: product.vendorArticle || "",
       manufacturerArticle: product.manufacturerArticle || "",
+      kitchenType: product.kitchenType || "Прямая",
+      kitchenStyle: product.kitchenStyle || "Современный",
+      kitchenWidth: product.kitchenWidth || "",
+      kitchenHeight: product.kitchenHeight || "",
+      kitchenDepth: product.kitchenDepth || "",
+      kitchenWidthLeft: product.kitchenWidthLeft || "",
+      kitchenWidthRight: product.kitchenWidthRight || "",
+      kitchenWidthWall1: product.kitchenWidthWall1 || "",
+      kitchenWidthWall2: product.kitchenWidthWall2 || "",
+      kitchenWidthWall3: product.kitchenWidthWall3 || "",
+      islandWidth: product.islandWidth || "",
+      islandDepth: product.islandDepth || "",
+      islandHeight: product.islandHeight || "",
+      kitchenModules: product.kitchenModules || [],
+      facadeBottomMaterial: product.facadeBottomMaterial || "",
+      facadeBottomProduct: product.facadeBottomProduct || "",
+      facadeTopMaterial: product.facadeTopMaterial || "",
+      facadeTopProduct: product.facadeTopProduct || "",
+      facadeMezzanineMaterial: product.facadeMezzanineMaterial || "",
+      facadeMezzanineProduct: product.facadeMezzanineProduct || "",
+      facadeCaseMaterial: product.facadeCaseMaterial || "",
+      facadeCaseProduct: product.facadeCaseProduct || "",
       hingeDamping: product.hingeDamping || "",
       vat: product.vat || 20,
       includeVat: product.includeVat ?? true,
@@ -16206,9 +16514,9 @@ const ProductsView = ({
       wtSlope: product.wtSlope || "R3",
       requiredProducts: product.requiredProducts || [],
       useCustomCoeffs: product.useCustomCoeffs || false,
-      customCoeffRetail: product.customCoeffRetail || globalCoefficients?.retail?.products?.[product.category] || 1.5,
-      customCoeffWholesale: product.customCoeffWholesale || globalCoefficients?.wholesale?.products?.[product.category] || 1.3,
-      customCoeffDesigner: product.customCoeffDesigner || globalCoefficients?.designer?.products?.[product.category] || 1.4,
+      customCoeffRetail: product.customCoeffRetail || getCategoryCoefficient(globalCoefficients?.retail?.products, product.category) || 1.5,
+      customCoeffWholesale: product.customCoeffWholesale || getCategoryCoefficient(globalCoefficients?.wholesale?.products, product.category) || 1.3,
+      customCoeffDesigner: product.customCoeffDesigner || getCategoryCoefficient(globalCoefficients?.designer?.products, product.category) || 1.4,
       dryerWidth: product.dryerWidth || "",
       dryerBase: product.dryerBase || "",
       lightingType: product.lightingType || "",
@@ -16258,6 +16566,28 @@ const ProductsView = ({
       analogs: product.analogs || [],
       vendorArticle: product.vendorArticle || "",
       manufacturerArticle: product.manufacturerArticle || "",
+      kitchenType: product.kitchenType || "Прямая",
+      kitchenStyle: product.kitchenStyle || "Современный",
+      kitchenWidth: product.kitchenWidth || "",
+      kitchenHeight: product.kitchenHeight || "",
+      kitchenDepth: product.kitchenDepth || "",
+      kitchenWidthLeft: product.kitchenWidthLeft || "",
+      kitchenWidthRight: product.kitchenWidthRight || "",
+      kitchenWidthWall1: product.kitchenWidthWall1 || "",
+      kitchenWidthWall2: product.kitchenWidthWall2 || "",
+      kitchenWidthWall3: product.kitchenWidthWall3 || "",
+      islandWidth: product.islandWidth || "",
+      islandDepth: product.islandDepth || "",
+      islandHeight: product.islandHeight || "",
+      kitchenModules: product.kitchenModules || [],
+      facadeBottomMaterial: product.facadeBottomMaterial || "",
+      facadeBottomProduct: product.facadeBottomProduct || "",
+      facadeTopMaterial: product.facadeTopMaterial || "",
+      facadeTopProduct: product.facadeTopProduct || "",
+      facadeMezzanineMaterial: product.facadeMezzanineMaterial || "",
+      facadeMezzanineProduct: product.facadeMezzanineProduct || "",
+      facadeCaseMaterial: product.facadeCaseMaterial || "",
+      facadeCaseProduct: product.facadeCaseProduct || "",
       hingeDamping: product.hingeDamping || "",
       vat: product.vat || 20,
       includeVat: product.includeVat ?? true,
@@ -16290,9 +16620,9 @@ const ProductsView = ({
       wtSlope: product.wtSlope || "R3",
       requiredProducts: product.requiredProducts || [],
       useCustomCoeffs: product.useCustomCoeffs || false,
-      customCoeffRetail: product.customCoeffRetail || globalCoefficients?.retail?.products?.[product.category] || 1.5,
-      customCoeffWholesale: product.customCoeffWholesale || globalCoefficients?.wholesale?.products?.[product.category] || 1.3,
-      customCoeffDesigner: product.customCoeffDesigner || globalCoefficients?.designer?.products?.[product.category] || 1.4,
+      customCoeffRetail: product.customCoeffRetail || getCategoryCoefficient(globalCoefficients?.retail?.products, product.category) || 1.5,
+      customCoeffWholesale: product.customCoeffWholesale || getCategoryCoefficient(globalCoefficients?.wholesale?.products, product.category) || 1.3,
+      customCoeffDesigner: product.customCoeffDesigner || getCategoryCoefficient(globalCoefficients?.designer?.products, product.category) || 1.4,
       dryerWidth: product.dryerWidth || "",
       dryerBase: product.dryerBase || "",
       lightingType: product.lightingType || "",
@@ -16437,10 +16767,7 @@ const ProductsView = ({
           if (p.variations && Array.isArray(p.variations) && p.variations.length > 0) {
             p.variations.forEach((v: any, idx: number) => {
               const vId = v.id || String(idx);
-              const defaultCoeff = coefficients.products?.[p.category] || 1.5;
-              const coeff = p.useCustomCoeffs && p.customCoeffRetail
-                ? p.customCoeffRetail
-                : defaultCoeff;
+              const coeff = getProductCoefficient(p, customerType, resolveBrandCoefficient);
               const vPurchasePrice = v.purchasePrice !== undefined && v.purchasePrice > 0 
                 ? v.purchasePrice 
                 : (p.purchasePrice || 0);
@@ -16461,7 +16788,11 @@ const ProductsView = ({
                 variations: [], // clear variations array inside virtual product to prevent modal popup
                 
                 // Keep handles properties so filter matches them
-                handleLength: v.length || p.handleLength || "",
+                analogs: (v.analogs && v.analogs.length > 0) ? v.analogs : (p.analogs || []),
+                requiredProducts: (v.requiredProducts && v.requiredProducts.length > 0) ? v.requiredProducts : (p.requiredProducts || []),
+                width: v.width || v.length || p.dryerWidth || p.width,
+                dryerWidth: v.width || v.length || p.dryerWidth || p.width,
+                handleLength: v.length || v.width || p.handleLength || "",
                 handleColor: p.handleColor?.trim() || p.color?.trim() || v.color || "",
                 handleMaterial: p.handleMaterial?.trim() || v.material || "",
                 handleType: p.handleType || "",
@@ -17259,7 +17590,10 @@ const ProductsView = ({
             />
           </div>
           <button
-            onClick={() => setIsAddingProduct(true)}
+            onClick={() => {
+              resetForm();
+              setIsAddingProduct(true);
+            }}
             className="flex items-center justify-center gap-2 px-6 h-10 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-md shadow-blue-100 flex-shrink-0"
           >
             <Plus className="w-5 h-5" />
@@ -18924,6 +19258,198 @@ const ProductsView = ({
                                 </div>
                               </div>
 
+                              {/* Row for Variation Dimension / Width */}
+                              <div className="pt-2 border-t border-purple-100/50">
+                                <div className="max-w-xs">
+                                  <label className="block text-[10px] font-black uppercase text-teal-700 mb-1">
+                                    {isDryerCategory(newProduct.category) ? "Ширина базы (мм)" : "Ширина / Размер (мм)"}
+                                  </label>
+                                  <input
+                                    type="text"
+                                    value={v.width || v.length || ""}
+                                    onChange={(e) => {
+                                      const updated = [...(newProduct.variations || [])];
+                                      updated[idx] = { ...v, width: e.target.value, length: e.target.value };
+                                      setNewProduct((prev: any) => ({ ...prev, variations: updated }));
+                                    }}
+                                    placeholder="Напр: 600"
+                                    className="w-full px-3 py-1.5 text-xs border border-teal-200 rounded-lg outline-none focus:ring-1 focus:ring-teal-500 font-bold bg-teal-50/20 text-teal-950"
+                                  />
+                                </div>
+                              </div>
+
+                              {/* Variation Analogs & Required Products */}
+                              <div className="pt-3 border-t border-purple-100/50 space-y-3">
+                                {/* Sub-block for Variation Analogs */}
+                                <div className="bg-amber-50/40 p-3 rounded-xl border border-amber-100/70 space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[11px] font-bold text-amber-900 flex items-center gap-1.5">
+                                      <Replace className="w-3.5 h-3.5 text-amber-600" />
+                                      Аналоги этой вариации ({(v.analogs || []).length})
+                                    </span>
+                                  </div>
+                                  
+                                  <div className="flex gap-2">
+                                    <select
+                                      id={`var-analog-select-${idx}`}
+                                      className="flex-1 px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-white outline-none focus:ring-1 focus:ring-amber-500 text-gray-700 font-medium truncate"
+                                      defaultValue=""
+                                    >
+                                      <option value="">-- Добавить аналог к вариации --</option>
+                                      {catalogProducts
+                                        .filter((cp) => {
+                                          const isNotSelf = cp.id !== (editingProduct?.id || null);
+                                          const isSameCat = cp.category === newProduct.category;
+                                          return isNotSelf && isSameCat;
+                                        })
+                                        .map((cp) => (
+                                          <option key={cp.id} value={cp.id}>
+                                            {cp.name} {cp.article ? `(Арт: ${cp.article})` : ""}
+                                          </option>
+                                        ))}
+                                    </select>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const sel = document.getElementById(`var-analog-select-${idx}`) as HTMLSelectElement;
+                                        if (sel && sel.value) {
+                                          const analogId = sel.value;
+                                          const currentAnalogs = v.analogs || [];
+                                          if (currentAnalogs.some((id: any) => String(id) === String(analogId))) {
+                                            alert("Этот аналог уже добавлен к вариации!");
+                                            return;
+                                          }
+                                          const updated = [...(newProduct.variations || [])];
+                                          updated[idx] = {
+                                            ...v,
+                                            analogs: [...currentAnalogs, analogId]
+                                          };
+                                          setNewProduct((prev: any) => ({ ...prev, variations: updated }));
+                                          sel.value = "";
+                                        }
+                                      }}
+                                      className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-xs transition-colors cursor-pointer"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+
+                                  {(v.analogs || []).length > 0 && (
+                                    <div className="space-y-1 pt-1">
+                                      {(v.analogs || []).map((analogId: string, aIdx: number) => {
+                                        const aProd = catalogProducts.find((cp) => String(cp.id) === String(analogId));
+                                        return (
+                                          <div key={aIdx} className="flex items-center justify-between p-1.5 bg-white rounded-lg border border-amber-100 text-[11px]">
+                                            <span className="font-medium text-gray-800 truncate max-w-[220px]" title={aProd?.name || analogId}>
+                                              {aProd?.name || `Товар [ID: ${analogId}]`}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                const updated = [...(newProduct.variations || [])];
+                                                updated[idx] = {
+                                                  ...v,
+                                                  analogs: (v.analogs || []).filter((id: any) => String(id) !== String(analogId))
+                                                };
+                                                setNewProduct((prev: any) => ({ ...prev, variations: updated }));
+                                              }}
+                                              className="text-red-500 hover:bg-red-50 p-0.5 rounded cursor-pointer"
+                                            >
+                                              <Trash2 className="w-3 h-3" />
+                                            </button>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Sub-block for Variation Required/Companion Products */}
+                                <div className="bg-indigo-50/40 p-3 rounded-xl border border-indigo-100/70 space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-[11px] font-bold text-indigo-900 flex items-center gap-1.5">
+                                      <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                                      Сопутствующие товары к этой вариации ({(v.requiredProducts || []).length})
+                                    </span>
+                                  </div>
+
+                                  <div className="flex gap-2">
+                                    <select
+                                      id={`var-required-select-${idx}`}
+                                      className="flex-1 px-2.5 py-1.5 text-xs border border-gray-200 rounded-lg bg-white outline-none focus:ring-1 focus:ring-indigo-500 text-gray-700 font-medium truncate"
+                                      defaultValue=""
+                                    >
+                                      <option value="">-- Добавить сопутствующий товар --</option>
+                                      {catalogProducts
+                                        .filter((cp) => cp.id !== (editingProduct?.id || null))
+                                        .map((cp) => (
+                                          <option key={cp.id} value={cp.id}>
+                                            [{cp.category || "Без категории"}] {cp.name} {cp.article ? `(Арт: ${cp.article})` : ""}
+                                          </option>
+                                        ))}
+                                    </select>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const sel = document.getElementById(`var-required-select-${idx}`) as HTMLSelectElement;
+                                        if (sel && sel.value) {
+                                          const reqId = sel.value;
+                                          const currentReqs = v.requiredProducts || [];
+                                          if (currentReqs.some((rp: any) => String(typeof rp === "object" ? rp.id : rp) === String(reqId))) {
+                                            alert("Этот товар уже добавлен в сопутствующие!");
+                                            return;
+                                          }
+                                          const updated = [...(newProduct.variations || [])];
+                                          updated[idx] = {
+                                            ...v,
+                                            requiredProducts: [...currentReqs, { id: reqId, qty: 1 }]
+                                          };
+                                          setNewProduct((prev: any) => ({ ...prev, variations: updated }));
+                                          sel.value = "";
+                                        }
+                                      }}
+                                      className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs transition-colors cursor-pointer"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+
+                                  {(v.requiredProducts || []).length > 0 && (
+                                    <div className="space-y-1 pt-1">
+                                      {(v.requiredProducts || []).map((rp: any, rIdx: number) => {
+                                        const rId = typeof rp === "object" ? rp.id : rp;
+                                        const rQty = typeof rp === "object" ? rp.qty || 1 : 1;
+                                        const rProd = catalogProducts.find((cp) => String(cp.id) === String(rId));
+                                        return (
+                                          <div key={rIdx} className="flex items-center justify-between p-1.5 bg-white rounded-lg border border-indigo-100 text-[11px]">
+                                            <span className="font-medium text-gray-800 truncate max-w-[200px]" title={rProd?.name || rId}>
+                                              {rProd?.name || `Товар [ID: ${rId}]`}
+                                            </span>
+                                            <div className="flex items-center gap-2">
+                                              <span className="text-[10px] text-gray-500 font-bold">{rQty} шт.</span>
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  const updated = [...(newProduct.variations || [])];
+                                                  updated[idx] = {
+                                                    ...v,
+                                                    requiredProducts: (v.requiredProducts || []).filter((item: any) => String(typeof item === "object" ? item.id : item) !== String(rId))
+                                                  };
+                                                  setNewProduct((prev: any) => ({ ...prev, variations: updated }));
+                                                }}
+                                                className="text-red-500 hover:bg-red-50 p-0.5 rounded cursor-pointer"
+                                              >
+                                                <Trash2 className="w-3 h-3" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
                               {newProduct.category === "Ручки и крючки" && (
                                 <div className="grid grid-cols-3 gap-3 pt-3 border-t border-purple-100/50">
                                   <div>
@@ -19145,17 +19671,23 @@ const ProductsView = ({
 
                   {newProduct.category === "Кухонные гарнитуры" && (
                     <div className="space-y-6 p-6 bg-indigo-50/60 border border-indigo-100 rounded-2xl animate-in slide-in-from-top-2 text-xs">
-                      <h4 className="text-sm font-black text-indigo-950 uppercase tracking-wider">Конструктор кухонного гарнитура</h4>
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-black text-indigo-950 uppercase tracking-wider flex items-center gap-2">
+                          <Sliders className="w-4 h-4 text-indigo-600" /> Конструктор кухонного гарнитура
+                        </h4>
+                      </div>
+
+                      {/* Вид гарнитура и Стиль */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <label className="block font-bold text-indigo-900 mb-1">Вид гарнитура</label>
                           <select
-                            value={newProduct.kitchenType || "Прямая"}
+                            value={(newProduct as any).kitchenType || "Прямая"}
                             onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenType: e.target.value }))}
-                            className="w-full px-3 py-2.5 border border-indigo-200 rounded-xl bg-white font-bold"
+                            className="w-full px-3 py-2.5 border border-indigo-200 rounded-xl bg-white font-bold text-indigo-950"
                           >
                             <option value="Прямая">Прямая</option>
-                            <option value="Угловая">Угловая</option>
+                            <option value="Угловая">Угловая (Г-образная)</option>
                             <option value="П-образная">П-образная</option>
                             <option value="с Островом">с Островом</option>
                           </select>
@@ -19163,103 +19695,522 @@ const ProductsView = ({
                         <div>
                           <label className="block font-bold text-indigo-900 mb-1">Стиль</label>
                           <select
-                            value={newProduct.kitchenStyle || "Современный"}
+                            value={(newProduct as any).kitchenStyle || "Современный"}
                             onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenStyle: e.target.value }))}
-                            className="w-full px-3 py-2.5 border border-indigo-200 rounded-xl bg-white font-bold"
+                            className="w-full px-3 py-2.5 border border-indigo-200 rounded-xl bg-white font-bold text-indigo-950"
                           >
                             <option value="Современный">Современный</option>
                             <option value="Классический">Классический</option>
                             <option value="Неоклассика">Неоклассика</option>
+                            <option value="Лофт">Лофт</option>
+                            <option value="Скандинавский">Скандинавский</option>
+                            <option value="Минимализм">Минимализм</option>
                           </select>
                         </div>
                       </div>
 
-                      {/* Modules selection from Кухонные модули */}
-                      <div className="space-y-3 bg-white p-4 rounded-2xl border border-indigo-100 shadow-2xs">
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-indigo-950">Модули в составе гарнитура:</span>
-                          <span className="text-[10px] text-gray-500 font-medium">Берутся из категории «Кухонные модули»</span>
+                      {/* Габариты гарнитура в зависимости от вида */}
+                      <div className="bg-white p-4 rounded-2xl border border-indigo-100 shadow-2xs space-y-3">
+                        <div className="font-bold text-indigo-950 flex items-center justify-between">
+                          <span>Габариты кухонного гарнитура:</span>
+                          <span className="text-[10px] text-gray-400 font-normal">Все измерения в миллиметрах (мм)</span>
                         </div>
-                        <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
-                          {catalogProducts.filter(p => p.category === "Кухонные модули").map(mod => {
-                            const selectedEntry = (newProduct.kitchenModules || []).find((m: any) => String(m.id) === String(mod.id));
-                            const qty = selectedEntry ? selectedEntry.qty : 0;
-                            return (
-                              <div key={mod.id} className="flex items-center justify-between p-2 rounded-xl bg-gray-50 hover:bg-indigo-50/50 transition-all border border-gray-100">
-                                <div className="flex-1 min-w-0 pr-2">
-                                  <div className="font-bold text-gray-800 truncate">{mod.name}</div>
-                                  <div className="text-[10px] text-gray-500">
-                                    {mod.moduleGroup || 'Модуль'} {mod.width ? `• ${mod.width} мм` : ''} {mod.moduleHeight ? `• h${mod.moduleHeight}` : ''}
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-2">
+
+                        {/* Прямая */}
+                        {((newProduct as any).kitchenType || "Прямая") === "Прямая" && (
+                          <div className="grid grid-cols-3 gap-3">
+                            <div>
+                              <label className="block text-gray-600 font-medium mb-1">Ширина (мм)</label>
+                              <input
+                                type="number"
+                                value={(newProduct as any).kitchenWidth || ""}
+                                onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenWidth: e.target.value }))}
+                                placeholder="3000"
+                                className="w-full px-3 py-2 border border-gray-200 rounded-xl font-bold"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-gray-600 font-medium mb-1">Высота (мм)</label>
+                              <input
+                                type="number"
+                                value={(newProduct as any).kitchenHeight || ""}
+                                onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenHeight: e.target.value }))}
+                                placeholder="2400"
+                                className="w-full px-3 py-2 border border-gray-200 rounded-xl font-bold"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-gray-600 font-medium mb-1">Глубина (мм)</label>
+                              <input
+                                type="number"
+                                value={(newProduct as any).kitchenDepth || ""}
+                                onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenDepth: e.target.value }))}
+                                placeholder="600"
+                                className="w-full px-3 py-2 border border-gray-200 rounded-xl font-bold"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Угловая */}
+                        {(newProduct as any).kitchenType === "Угловая" && (
+                          <div className="space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-gray-600 font-medium mb-1">Ширина левой стены (мм)</label>
+                                <input
+                                  type="number"
+                                  value={(newProduct as any).kitchenWidthLeft || ""}
+                                  onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenWidthLeft: e.target.value }))}
+                                  placeholder="2400"
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-xl font-bold"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-gray-600 font-medium mb-1">Ширина правой стены (мм)</label>
+                                <input
+                                  type="number"
+                                  value={(newProduct as any).kitchenWidthRight || ""}
+                                  onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenWidthRight: e.target.value }))}
+                                  placeholder="1800"
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-xl font-bold"
+                                />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-gray-600 font-medium mb-1">Общая высота (мм)</label>
+                                <input
+                                  type="number"
+                                  value={(newProduct as any).kitchenHeight || ""}
+                                  onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenHeight: e.target.value }))}
+                                  placeholder="2400"
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-xl font-bold"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-gray-600 font-medium mb-1">Глубина (мм)</label>
+                                <input
+                                  type="number"
+                                  value={(newProduct as any).kitchenDepth || ""}
+                                  onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenDepth: e.target.value }))}
+                                  placeholder="600"
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-xl font-bold"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* П-образная */}
+                        {(newProduct as any).kitchenType === "П-образная" && (
+                          <div className="space-y-3">
+                            <div className="grid grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-gray-600 font-medium mb-1">Ширина стены 1 (мм)</label>
+                                <input
+                                  type="number"
+                                  value={(newProduct as any).kitchenWidthWall1 || ""}
+                                  onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenWidthWall1: e.target.value }))}
+                                  placeholder="2000"
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-xl font-bold"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-gray-600 font-medium mb-1">Ширина стены 2 (мм)</label>
+                                <input
+                                  type="number"
+                                  value={(newProduct as any).kitchenWidthWall2 || ""}
+                                  onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenWidthWall2: e.target.value }))}
+                                  placeholder="3000"
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-xl font-bold"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-gray-600 font-medium mb-1">Ширина стены 3 (мм)</label>
+                                <input
+                                  type="number"
+                                  value={(newProduct as any).kitchenWidthWall3 || ""}
+                                  onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenWidthWall3: e.target.value }))}
+                                  placeholder="2000"
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-xl font-bold"
+                                />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="block text-gray-600 font-medium mb-1">Общая высота (мм)</label>
+                                <input
+                                  type="number"
+                                  value={(newProduct as any).kitchenHeight || ""}
+                                  onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenHeight: e.target.value }))}
+                                  placeholder="2400"
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-xl font-bold"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-gray-600 font-medium mb-1">Глубина (мм)</label>
+                                <input
+                                  type="number"
+                                  value={(newProduct as any).kitchenDepth || ""}
+                                  onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenDepth: e.target.value }))}
+                                  placeholder="600"
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-xl font-bold"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* с Островом */}
+                        {((newProduct as any).kitchenType === "с Островом" || (newProduct as any).kitchenType === "Островная") && (
+                          <div className="space-y-4">
+                            <div className="grid grid-cols-3 gap-3">
+                              <div>
+                                <label className="block text-gray-600 font-medium mb-1">Ширина гарнитура (мм)</label>
+                                <input
+                                  type="number"
+                                  value={(newProduct as any).kitchenWidth || ""}
+                                  onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenWidth: e.target.value }))}
+                                  placeholder="3600"
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-xl font-bold"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-gray-600 font-medium mb-1">Высота (мм)</label>
+                                <input
+                                  type="number"
+                                  value={(newProduct as any).kitchenHeight || ""}
+                                  onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenHeight: e.target.value }))}
+                                  placeholder="2400"
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-xl font-bold"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-gray-600 font-medium mb-1">Глубина (мм)</label>
+                                <input
+                                  type="number"
+                                  value={(newProduct as any).kitchenDepth || ""}
+                                  onChange={(e) => setNewProduct(prev => ({ ...prev, kitchenDepth: e.target.value }))}
+                                  placeholder="600"
+                                  className="w-full px-3 py-2 border border-gray-200 rounded-xl font-bold"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="pt-2 border-t border-indigo-100">
+                              <span className="block font-bold text-indigo-900 mb-2">Габариты кухонного острова:</span>
+                              <div className="grid grid-cols-3 gap-3">
+                                <div>
+                                  <label className="block text-gray-600 font-medium mb-1">Ширина острова (мм)</label>
                                   <input
                                     type="number"
-                                    min="0"
-                                    value={qty}
-                                    onChange={(e) => {
-                                      const val = parseInt(e.target.value) || 0;
-                                      const currentModules = [...(newProduct.kitchenModules || [])];
-                                      const existingIdx = currentModules.findIndex((m: any) => String(m.id) === String(mod.id));
-                                      if (val > 0) {
-                                        if (existingIdx >= 0) {
-                                          currentModules[existingIdx].qty = val;
-                                        } else {
-                                          currentModules.push({ id: mod.id, qty: val });
-                                        }
-                                      } else {
-                                        if (existingIdx >= 0) {
-                                          currentModules.splice(existingIdx, 1);
-                                        }
-                                      }
-                                      setNewProduct(prev => ({ ...prev, kitchenModules: currentModules }));
-                                    }}
-                                    className="w-16 px-2 py-1 bg-white border border-gray-200 rounded-lg text-center font-bold"
-                                    placeholder="0"
+                                    value={(newProduct as any).islandWidth || ""}
+                                    onChange={(e) => setNewProduct(prev => ({ ...prev, islandWidth: e.target.value }))}
+                                    placeholder="1600"
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-xl font-bold bg-indigo-50/30"
                                   />
-                                  <span className="text-gray-500 font-medium text-[10px]">шт.</span>
+                                </div>
+                                <div>
+                                  <label className="block text-gray-600 font-medium mb-1">Глубина острова (мм)</label>
+                                  <input
+                                    type="number"
+                                    value={(newProduct as any).islandDepth || ""}
+                                    onChange={(e) => setNewProduct(prev => ({ ...prev, islandDepth: e.target.value }))}
+                                    placeholder="900"
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-xl font-bold bg-indigo-50/30"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-gray-600 font-medium mb-1">Высота острова (мм)</label>
+                                  <input
+                                    type="number"
+                                    value={(newProduct as any).islandHeight || ""}
+                                    onChange={(e) => setNewProduct(prev => ({ ...prev, islandHeight: e.target.value }))}
+                                    placeholder="900"
+                                    className="w-full px-3 py-2 border border-gray-200 rounded-xl font-bold bg-indigo-50/30"
+                                  />
                                 </div>
                               </div>
-                            );
-                          })}
-                        </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
-                      {/* Facade calculation */}
+                      {/* Блок подбора Модулей в составе гарнитура */}
                       <div className="space-y-3 bg-white p-4 rounded-2xl border border-indigo-100 shadow-2xs">
-                        <span className="font-bold text-indigo-950">Фасады и расчет площади ($m^2$):</span>
-                        <div className="grid grid-cols-2 gap-3">
+                        <div className="flex items-center justify-between">
                           <div>
-                            <label className="block font-bold text-gray-700 mb-1">Материал фасадов</label>
-                            <select
-                              value={newProduct.facadeMaterial || "Пластик HPL"}
-                              onChange={(e) => setNewProduct(prev => ({ ...prev, facadeMaterial: e.target.value }))}
-                              className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white font-bold"
-                            >
-                              <option value="Пластик HPL">Пластик HPL</option>
-                              <option value="Эмаль матовая">Эмаль матовая</option>
-                              <option value="Эмаль глянец">Эмаль глянец</option>
-                              <option value="Пленка ПВХ">Пленка ПВХ</option>
-                              <option value="Массив">Массив</option>
-                            </select>
+                            <span className="font-bold text-indigo-950 text-sm">Модули в составе гарнитура</span>
+                            <p className="text-[10px] text-gray-500">Сформируйте точный перечень модулей кухни</p>
                           </div>
+                          <button
+                            type="button"
+                            onClick={() => setIsKitchenModulesModalOpen(true)}
+                            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                          >
+                            <Plus className="w-4 h-4" /> Добавить модуль
+                          </button>
+                        </div>
+
+                        {/* Список добавленных модулей */}
+                        {((newProduct as any).kitchenModules || []).length === 0 ? (
+                          <div className="py-6 text-center border-2 border-dashed border-gray-200 rounded-xl bg-gray-50/50">
+                            <p className="text-gray-500 font-medium">Модули ещё не добавлены в гарнитур</p>
+                            <p className="text-[11px] text-gray-400 mt-1">
+                              Нажмите кнопку <strong className="text-indigo-600 font-bold">«Добавить модуль»</strong>, чтобы выбрать нужные элементы из каталога.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                            {((newProduct as any).kitchenModules || []).map((km: any, idx: number) => {
+                              const mod = catalogProducts.find((cp: any) => String(cp.id) === String(km.id));
+                              if (!mod) return null;
+                              return (
+                                <div key={km.id || idx} className="flex items-center justify-between p-3 rounded-xl bg-gray-50 border border-gray-200/80 hover:border-indigo-200 transition-all">
+                                  <div className="flex-1 min-w-0 pr-3">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="font-bold text-gray-900 truncate">{mod.name}</span>
+                                      {mod.article && <span className="text-[10px] bg-gray-200 text-gray-700 px-1.5 py-0.5 rounded font-mono">Арт: {mod.article}</span>}
+                                      {mod.moduleGroup && <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded font-bold">{mod.moduleGroup}</span>}
+                                    </div>
+                                    <div className="text-[11px] text-gray-500 mt-0.5">
+                                      {mod.width ? `Ш: ${mod.width}мм ` : ''}
+                                      {mod.moduleHeight || mod.height ? `• В: ${mod.moduleHeight || mod.height}мм ` : ''}
+                                      {mod.moduleDepth || mod.depth ? `• Г: ${mod.moduleDepth || mod.depth}мм` : ''}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center gap-3">
+                                    <div className="flex items-center border border-gray-300 rounded-lg bg-white overflow-hidden">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const currentModules = [...((newProduct as any).kitchenModules || [])];
+                                          if (km.qty > 1) {
+                                            currentModules[idx].qty -= 1;
+                                          } else {
+                                            currentModules.splice(idx, 1);
+                                          }
+                                          setNewProduct(prev => ({ ...prev, kitchenModules: currentModules }));
+                                        }}
+                                        className="px-2 py-1 text-gray-600 hover:bg-gray-100 font-bold text-sm cursor-pointer"
+                                      >
+                                        -
+                                      </button>
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        value={km.qty}
+                                        onChange={(e) => {
+                                          const val = Math.max(1, parseInt(e.target.value) || 1);
+                                          const currentModules = [...((newProduct as any).kitchenModules || [])];
+                                          currentModules[idx].qty = val;
+                                          setNewProduct(prev => ({ ...prev, kitchenModules: currentModules }));
+                                        }}
+                                        className="w-12 text-center font-bold text-xs py-1 outline-none"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const currentModules = [...((newProduct as any).kitchenModules || [])];
+                                          currentModules[idx].qty += 1;
+                                          setNewProduct(prev => ({ ...prev, kitchenModules: currentModules }));
+                                        }}
+                                        className="px-2 py-1 text-gray-600 hover:bg-gray-100 font-bold text-sm cursor-pointer"
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const currentModules = [...((newProduct as any).kitchenModules || [])];
+                                        currentModules.splice(idx, 1);
+                                        setNewProduct(prev => ({ ...prev, kitchenModules: currentModules }));
+                                      }}
+                                      className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                      title="Удалить модуль"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Разграничение фасадов по зонам */}
+                      <div className="space-y-4 bg-white p-4 rounded-2xl border border-indigo-100 shadow-2xs">
+                        <div className="flex items-center justify-between border-b border-gray-100 pb-2">
                           <div>
-                            <label className="block font-bold text-gray-700 mb-1">Цена за 1 м² (₽)</label>
-                            <input
-                              type="number"
-                              value={newProduct.facadePricePerM2 || 12000}
-                              onChange={(e) => setNewProduct(prev => ({ ...prev, facadePricePerM2: Number(e.target.value) }))}
-                              className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white font-bold"
-                              placeholder="12000"
-                            />
+                            <span className="font-bold text-indigo-950 text-sm">Фасады кухонного гарнитура</span>
+                            <p className="text-[10px] text-gray-500">Укажите материалы и фасады компании отдельно для каждой зоны кухни</p>
                           </div>
                         </div>
-                        <div className="flex items-center justify-between pt-1">
-                          <span className="text-gray-500">Расчетная площадь фасадов (по модулям):</span>
-                          <span className="font-black text-indigo-700">
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {/* Нижние фасады */}
+                          <div className="p-3 bg-gray-50/80 rounded-xl border border-gray-200/60 space-y-2">
+                            <span className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-blue-500"></span> Нижние фасады
+                            </span>
+                            <div>
+                              <label className="block text-[11px] text-gray-500 mb-1">Фасад из товаров компании:</label>
+                              <select
+                                value={(newProduct as any).facadeBottomProduct || ""}
+                                onChange={(e) => {
+                                  const prodId = e.target.value;
+                                  const foundProd = catalogProducts.find(p => String(p.id) === String(prodId));
+                                  setNewProduct(prev => ({
+                                    ...prev,
+                                    facadeBottomProduct: prodId,
+                                    facadeBottomMaterial: foundProd ? foundProd.name : (prev as any).facadeBottomMaterial
+                                  }));
+                                }}
+                                className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
+                              >
+                                <option value="">-- Выбрать из каталога фасадов --</option>
+                                {catalogProducts.filter(p => p.category === "Фасады" || p.category === "Пильные фасады" || p.category?.toLowerCase().includes("фасад")).map(f => (
+                                  <option key={f.id} value={f.id}>{f.name} {f.article ? `(Арт: ${f.article})` : ''}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[11px] text-gray-500 mb-1">Название / Материал / Цвет:</label>
+                              <input
+                                type="text"
+                                value={(newProduct as any).facadeBottomMaterial || ""}
+                                onChange={(e) => setNewProduct(prev => ({ ...prev, facadeBottomMaterial: e.target.value }))}
+                                placeholder="Напр: Пластик HPL Дуб, Эмаль RAL 7016"
+                                className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Верхние фасады */}
+                          <div className="p-3 bg-gray-50/80 rounded-xl border border-gray-200/60 space-y-2">
+                            <span className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-indigo-500"></span> Верхние фасады
+                            </span>
+                            <div>
+                              <label className="block text-[11px] text-gray-500 mb-1">Фасад из товаров компании:</label>
+                              <select
+                                value={(newProduct as any).facadeTopProduct || ""}
+                                onChange={(e) => {
+                                  const prodId = e.target.value;
+                                  const foundProd = catalogProducts.find(p => String(p.id) === String(prodId));
+                                  setNewProduct(prev => ({
+                                    ...prev,
+                                    facadeTopProduct: prodId,
+                                    facadeTopMaterial: foundProd ? foundProd.name : (prev as any).facadeTopMaterial
+                                  }));
+                                }}
+                                className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
+                              >
+                                <option value="">-- Выбрать из каталога фасадов --</option>
+                                {catalogProducts.filter(p => p.category === "Фасады" || p.category === "Пильные фасады" || p.category?.toLowerCase().includes("фасад")).map(f => (
+                                  <option key={f.id} value={f.id}>{f.name} {f.article ? `(Арт: ${f.article})` : ''}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[11px] text-gray-500 mb-1">Название / Материал / Цвет:</label>
+                              <input
+                                type="text"
+                                value={(newProduct as any).facadeTopMaterial || ""}
+                                onChange={(e) => setNewProduct(prev => ({ ...prev, facadeTopMaterial: e.target.value }))}
+                                placeholder="Напр: Эмаль матовая Белая"
+                                className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Фасады антресолей */}
+                          <div className="p-3 bg-gray-50/80 rounded-xl border border-gray-200/60 space-y-2">
+                            <span className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-purple-500"></span> Фасады антресолей
+                            </span>
+                            <div>
+                              <label className="block text-[11px] text-gray-500 mb-1">Фасад из товаров компании:</label>
+                              <select
+                                value={(newProduct as any).facadeMezzanineProduct || ""}
+                                onChange={(e) => {
+                                  const prodId = e.target.value;
+                                  const foundProd = catalogProducts.find(p => String(p.id) === String(prodId));
+                                  setNewProduct(prev => ({
+                                    ...prev,
+                                    facadeMezzanineProduct: prodId,
+                                    facadeMezzanineMaterial: foundProd ? foundProd.name : (prev as any).facadeMezzanineMaterial
+                                  }));
+                                }}
+                                className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
+                              >
+                                <option value="">-- Выбрать из каталога фасадов --</option>
+                                {catalogProducts.filter(p => p.category === "Фасады" || p.category === "Пильные фасады" || p.category?.toLowerCase().includes("фасад")).map(f => (
+                                  <option key={f.id} value={f.id}>{f.name} {f.article ? `(Арт: ${f.article})` : ''}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[11px] text-gray-500 mb-1">Название / Материал / Цвет:</label>
+                              <input
+                                type="text"
+                                value={(newProduct as any).facadeMezzanineMaterial || ""}
+                                onChange={(e) => setNewProduct(prev => ({ ...prev, facadeMezzanineMaterial: e.target.value }))}
+                                placeholder="Напр: Эмаль матовая, Шпон"
+                                className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Фасады пенала */}
+                          <div className="p-3 bg-gray-50/80 rounded-xl border border-gray-200/60 space-y-2">
+                            <span className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-amber-500"></span> Фасады пеналов
+                            </span>
+                            <div>
+                              <label className="block text-[11px] text-gray-500 mb-1">Фасад из товаров компании:</label>
+                              <select
+                                value={(newProduct as any).facadeCaseProduct || ""}
+                                onChange={(e) => {
+                                  const prodId = e.target.value;
+                                  const foundProd = catalogProducts.find(p => String(p.id) === String(prodId));
+                                  setNewProduct(prev => ({
+                                    ...prev,
+                                    facadeCaseProduct: prodId,
+                                    facadeCaseMaterial: foundProd ? foundProd.name : (prev as any).facadeCaseMaterial
+                                  }));
+                                }}
+                                className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
+                              >
+                                <option value="">-- Выбрать из каталога фасадов --</option>
+                                {catalogProducts.filter(p => p.category === "Фасады" || p.category === "Пильные фасады" || p.category?.toLowerCase().includes("фасад")).map(f => (
+                                  <option key={f.id} value={f.id}>{f.name} {f.article ? `(Арт: ${f.article})` : ''}</option>
+                                ))}
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[11px] text-gray-500 mb-1">Название / Материал / Цвет:</label>
+                              <input
+                                type="text"
+                                value={(newProduct as any).facadeCaseMaterial || ""}
+                                onChange={(e) => setNewProduct(prev => ({ ...prev, facadeCaseMaterial: e.target.value }))}
+                                placeholder="Напр: Пленка ПВХ Текстурированная"
+                                className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Расчет суммарной площади фасадов */}
+                        <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                          <span className="text-gray-500 font-medium">Расчетная площадь всех фасадов (по выбранным модулям):</span>
+                          <span className="font-black text-indigo-700 text-sm">
                             {(() => {
                               let totalM2 = 0;
-                              (newProduct.kitchenModules || []).forEach((km: any) => {
+                              ((newProduct as any).kitchenModules || []).forEach((km: any) => {
                                 const m = catalogProducts.find((cp: any) => String(cp.id) === String(km.id));
                                 if (m && m.width && (m.moduleHeight || m.height)) {
                                   const wM = Number(m.width) / 1000;
@@ -19270,43 +20221,6 @@ const ProductsView = ({
                               return totalM2.toFixed(2);
                             })()} м²
                           </span>
-                        </div>
-                      </div>
-
-                      {/* Pricing tiers */}
-                      <div className="space-y-3 bg-white p-4 rounded-2xl border border-indigo-100 shadow-2xs">
-                        <span className="font-bold text-indigo-950">Ценовые сегменты (Эконом, Средний, Премиум):</span>
-                        <div className="grid grid-cols-3 gap-3">
-                          <div>
-                            <label className="block font-bold text-gray-700 mb-1">Эконом (₽)</label>
-                            <input
-                              type="number"
-                              value={newProduct.economyPrice || ""}
-                              onChange={(e) => setNewProduct(prev => ({ ...prev, economyPrice: Number(e.target.value) }))}
-                              className="w-full px-3 py-2 border border-gray-200 rounded-xl bg-white font-bold"
-                              placeholder="0"
-                            />
-                          </div>
-                          <div>
-                            <label className="block font-bold text-gray-700 mb-1">Средний (₽)</label>
-                            <input
-                              type="number"
-                              value={newProduct.mediumPrice || ""}
-                              onChange={(e) => setNewProduct(prev => ({ ...prev, mediumPrice: Number(e.target.value) }))}
-                              className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white font-bold"
-                              placeholder="0"
-                            />
-                          </div>
-                          <div>
-                            <label className="block font-bold text-gray-700 mb-1">Премиум (₽)</label>
-                            <input
-                              type="number"
-                              value={newProduct.premiumPrice || ""}
-                              onChange={(e) => setNewProduct(prev => ({ ...prev, premiumPrice: Number(e.target.value) }))}
-                              className="w-full px-3 py-2 border border-indigo-200 rounded-xl bg-white font-bold"
-                              placeholder="0"
-                            />
-                          </div>
                         </div>
                       </div>
                     </div>
@@ -19481,13 +20395,19 @@ const ProductsView = ({
                       
                           <div>
                             <label className="block text-sm font-bold text-emerald-900 mb-2">Ширина (мм)</label>
-                            <input
-                              type="number"
-                              value={newProduct.dryerWidth || ""}
-                              onChange={(e) => setNewProduct(prev => ({...prev, dryerWidth: e.target.value}))}
-                              className="w-full px-4 py-2 border border-emerald-200 rounded-lg"
-                              placeholder="Например: 600"
-                            />
+                            {!(newProduct.variations && newProduct.variations.length > 0) ? (
+                              <input
+                                type="number"
+                                value={newProduct.dryerWidth || ""}
+                                onChange={(e) => setNewProduct(prev => ({...prev, dryerWidth: e.target.value}))}
+                                className="w-full px-4 py-2 border border-emerald-200 rounded-lg"
+                                placeholder="Например: 600"
+                              />
+                            ) : (
+                              <div className="p-2.5 bg-emerald-100/60 rounded-lg text-xs text-emerald-950 font-medium">
+                                Ширина указывается у каждой вариации товара.
+                              </div>
+                            )}
                           </div>
 
                           <div>
@@ -20354,23 +21274,29 @@ const ProductsView = ({
                           <label className="block text-sm font-bold text-gray-700 mb-2">
                             Ширина (мм)
                           </label>
-                          <select
-                            value={newProduct.dryerWidth}
-                            onChange={(e) =>
-                              setNewProduct((prev) => ({
-                                ...prev,
-                                dryerWidth: e.target.value,
-                              }))
-                            }
-                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white font-medium shadow-sm transition-all"
-                          >
-                            <option value="">Выберите ширину</option>
-                            {["300", "400", "450", "500", "600", "700", "800", "900", "1000", "1200"].map((w) => (
-                              <option key={w} value={w}>
-                                {w} мм
-                              </option>
-                            ))}
-                          </select>
+                          {!(newProduct.variations && newProduct.variations.length > 0) ? (
+                            <select
+                              value={newProduct.dryerWidth}
+                              onChange={(e) =>
+                                setNewProduct((prev) => ({
+                                  ...prev,
+                                  dryerWidth: e.target.value,
+                                }))
+                              }
+                              className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white font-medium shadow-sm transition-all"
+                            >
+                              <option value="">Выберите ширину</option>
+                              {["300", "400", "450", "500", "600", "700", "800", "900", "1000", "1200"].map((w) => (
+                                <option key={w} value={w}>
+                                  {w} мм
+                                </option>
+                              ))}
+                            </select>
+                          ) : (
+                            <div className="px-3 py-2.5 bg-teal-50 border border-dashed border-teal-200 rounded-xl text-xs text-teal-900 font-medium leading-normal">
+                              У товара заданы вариации. Ширина (300–1200 мм) указывается индивидуально у каждой вариации в блоке ниже.
+                            </div>
+                          )}
                         </div>
 
                         <div>
@@ -21405,26 +22331,23 @@ const ProductsView = ({
                             </div>
                           </div>
                         </div>
-                      ) : (
-                        <>
-                          <div className="flex justify-between items-center text-sm font-bold text-blue-900 mb-1">
-                            <span>Итоговая цена для клиента:</span>
-                            <span className="text-xl">
-                              {(
-                                newProduct.purchasePrice *
-                                (coefficients.products?.[newProduct.category] ||
-                                  1.5)
-                              ).toLocaleString()}{" "}
-                              ₽
-                            </span>
-                          </div>
-                          <p className="text-[10px] text-blue-500 italic">
-                            * Рассчитано автоматически на основе коэффициента
-                            категории "{newProduct.category}" (
-                            {coefficients.products?.[newProduct.category] || 1.5})
-                          </p>
-                        </>
-                      )}
+                      ) : (() => {
+                          const activeCoeff = getProductCoefficient(newProduct, customerType, resolveBrandCoefficient);
+                          return (
+                            <>
+                              <div className="flex justify-between items-center text-sm font-bold text-blue-900 mb-1">
+                                <span>Итоговая цена для клиента:</span>
+                                <span className="text-xl">
+                                  {Math.round(newProduct.purchasePrice * activeCoeff).toLocaleString()} ₽
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-blue-500 italic">
+                                * Рассчитано автоматически на основе коэффициента
+                                категории "{newProduct.category}" ({activeCoeff})
+                              </p>
+                            </>
+                          );
+                        })()}
                     </div>
                   </div>
                 </div>
@@ -21655,6 +22578,117 @@ const ProductsView = ({
                       </div>
                     )}
                   </div>
+
+                  {/* Required / Companion Products UI Selector */}
+                  <div className="bg-indigo-50/50 p-5 rounded-2xl border border-indigo-100 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-bold text-indigo-950 flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-indigo-600" />
+                        Сопутствующие товары карточки
+                      </h4>
+                      <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-black uppercase">
+                        {(newProduct.requiredProducts || []).length}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 leading-normal">
+                      Выберите товары, предлагаемые как сопутствующие при добавлении этого товара в проект (например, поддон, крепеж, демпферы).
+                    </p>
+
+                    <div className="flex flex-col sm:flex-row gap-2 w-full min-w-0">
+                      <select
+                        id="required-product-main-select"
+                        className="w-full sm:flex-1 min-w-0 px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-indigo-500 text-gray-700 font-medium truncate"
+                        defaultValue=""
+                      >
+                        <option value="">-- Выберите сопутствующий товар --</option>
+                        {catalogProducts
+                          .filter((p) => p.id !== (editingProduct?.id || null))
+                          .map((p) => (
+                            <option key={p.id} value={p.id} title={p.name}>
+                              [{p.category || "Без категории"}] {p.name.length > 45 ? p.name.substring(0, 43) + "..." : p.name} {p.article ? `| Арт: ${p.article}` : ""}
+                            </option>
+                          ))}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const selectEl = document.getElementById("required-product-main-select") as HTMLSelectElement;
+                          if (selectEl && selectEl.value) {
+                            const prodId = selectEl.value;
+                            const current = newProduct.requiredProducts || [];
+                            const exists = current.some((rp: any) => String(typeof rp === "object" ? rp.id : rp) === String(prodId));
+                            if (exists) {
+                              alert("Этот товар уже добавлен в список сопутствующих!");
+                              return;
+                            }
+                            setNewProduct((prev: any) => ({
+                              ...prev,
+                              requiredProducts: [...(prev.requiredProducts || []), { id: prodId, qty: 1 }]
+                            }));
+                            selectEl.value = "";
+                          } else {
+                            alert("Пожалуйста, выберите товар из списка.");
+                          }
+                        }}
+                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition-colors shrink-0 cursor-pointer"
+                      >
+                        Добавить
+                      </button>
+                    </div>
+
+                    {(newProduct.requiredProducts || []).length > 0 ? (
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                        {(newProduct.requiredProducts || []).map((rp: any, idx: number) => {
+                          const reqId = typeof rp === "object" ? rp.id : rp;
+                          const reqQty = typeof rp === "object" ? rp.qty || 1 : 1;
+                          const reqProduct = catalogProducts.find((cp) => String(cp.id) === String(reqId));
+                          return (
+                            <div key={idx} className="flex items-center justify-between p-2 bg-white rounded-xl border border-gray-100 text-xs">
+                              <span className="font-semibold text-gray-700 truncate max-w-[200px] sm:max-w-[300px]" title={reqProduct?.name || reqId}>
+                                {reqProduct?.name || `Товар [ID: ${reqId}]`}
+                              </span>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={reqQty}
+                                  onChange={(e) => {
+                                    const newQty = parseInt(e.target.value) || 1;
+                                    const updated = (newProduct.requiredProducts || []).map((item: any, i: number) => {
+                                      if (i === idx) {
+                                        return typeof item === "object" ? { ...item, qty: newQty } : { id: item, qty: newQty };
+                                      }
+                                      return item;
+                                    });
+                                    setNewProduct((prev: any) => ({ ...prev, requiredProducts: updated }));
+                                  }}
+                                  className="w-12 px-1.5 py-0.5 text-center text-xs font-bold border border-gray-200 rounded-lg outline-none focus:ring-1 focus:ring-indigo-500"
+                                />
+                                <span className="text-[10px] text-gray-400 font-medium">шт.</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setNewProduct((prev: any) => ({
+                                      ...prev,
+                                      requiredProducts: (prev.requiredProducts || []).filter((_: any, i: number) => i !== idx)
+                                    }));
+                                  }}
+                                  className="text-red-500 hover:bg-red-50 p-1 rounded-lg transition-colors cursor-pointer"
+                                  title="Удалить сопутствующий товар"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="text-center py-4 border border-dashed border-gray-200 rounded-xl text-gray-400 text-xs font-medium">
+                        Сопутствующие товары не добавлены
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -21690,6 +22724,261 @@ const ProductsView = ({
 
 
 
+      {/* Модальное окно подбора модулей кухонного гарнитура */}
+      {isKitchenModulesModalOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[120] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-4xl rounded-[28px] shadow-2xl p-6 flex flex-col space-y-5 max-h-[90vh] overflow-hidden">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+              <div>
+                <h3 className="text-lg font-extrabold text-indigo-950 flex items-center gap-2">
+                  <LayoutGrid className="w-5 h-5 text-indigo-600" />
+                  Подбор модулей в кухонный гарнитур
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Найдите и добавьте нужные модули из категории «Кухонные модули»
+                </p>
+              </div>
+              <button
+                onClick={() => setIsKitchenModulesModalOpen(false)}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-all cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Фильтры и поиск */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100/60">
+              <div className="md:col-span-1">
+                <label className="block text-[11px] font-bold text-indigo-950 mb-1">Поиск модуля (название / артикул)</label>
+                <div className="relative">
+                  <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    value={kitchenModuleSearch}
+                    onChange={(e) => setKitchenModuleSearch(e.target.value)}
+                    placeholder="Например: Н600, Верхний..."
+                    className="w-full pl-9 pr-3 py-2 text-xs border border-gray-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-indigo-950 mb-1">Группа модуля</label>
+                <select
+                  value={kitchenModuleGroupFilter}
+                  onChange={(e) => setKitchenModuleGroupFilter(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-gray-800"
+                >
+                  <option value="Все">Все группы</option>
+                  <option value="Нижние">Нижние модули</option>
+                  <option value="Верхние">Верхние модули</option>
+                  <option value="Антресоли">Антресольные модули</option>
+                  <option value="Пеналы">Пеналы / Колонны</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-indigo-950 mb-1">Ширина модуля (мм)</label>
+                <select
+                  value={kitchenModuleWidthFilter}
+                  onChange={(e) => setKitchenModuleWidthFilter(e.target.value)}
+                  className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-gray-800"
+                >
+                  <option value="Все">Все ширины</option>
+                  {Array.from(
+                    new Set(
+                      catalogProducts
+                        .filter((p) => p.category === "Кухонные модули" && p.width)
+                        .map((p) => String(p.width))
+                    )
+                  )
+                    .sort((a, b) => parseInt(a) - parseInt(b))
+                    .map((w) => (
+                      <option key={w} value={w}>
+                        {w} мм
+                      </option>
+                    ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Список найденого из каталога */}
+            <div className="flex-1 overflow-y-auto pr-1 space-y-2.5 min-h-[250px]">
+              {(() => {
+                const filtered = catalogProducts
+                  .filter((p) => p.category === "Кухонные модули")
+                  .filter((p) => {
+                    if (kitchenModuleGroupFilter !== "Все" && p.moduleGroup !== kitchenModuleGroupFilter) {
+                      return false;
+                    }
+                    if (kitchenModuleWidthFilter !== "Все" && String(p.width) !== kitchenModuleWidthFilter) {
+                      return false;
+                    }
+                    if (kitchenModuleSearch.trim()) {
+                      const searchStr = kitchenModuleSearch.toLowerCase().trim();
+                      const nameMatch = p.name.toLowerCase().includes(searchStr);
+                      const artMatch = p.article && p.article.toLowerCase().includes(searchStr);
+                      const groupMatch = p.moduleGroup && p.moduleGroup.toLowerCase().includes(searchStr);
+                      return nameMatch || artMatch || groupMatch;
+                    }
+                    return true;
+                  });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="py-12 text-center border-2 border-dashed border-gray-200 rounded-2xl bg-gray-50/50">
+                      <p className="text-gray-500 font-bold">Модули не найдены</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        Попробуйте изменить параметры поиска или фильтры по группам и ширине
+                      </p>
+                    </div>
+                  );
+                }
+
+                return filtered.map((mod) => {
+                  const currentModules = (newProduct as any).kitchenModules || [];
+                  const existingIdx = currentModules.findIndex((m: any) => String(m.id) === String(mod.id));
+                  const isAdded = existingIdx >= 0;
+                  const currentQty = isAdded ? currentModules[existingIdx].qty : 0;
+
+                  return (
+                    <div
+                      key={mod.id}
+                      className={`flex flex-col sm:flex-row items-start sm:items-center justify-between p-3.5 rounded-2xl border transition-all gap-3 ${
+                        isAdded ? "bg-indigo-50/40 border-indigo-200 shadow-2xs" : "bg-white border-gray-200 hover:border-gray-300"
+                      }`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-extrabold text-gray-900 text-sm">{mod.name}</span>
+                          {mod.article && (
+                            <span className="text-[10px] font-mono bg-gray-100 text-gray-700 px-2 py-0.5 rounded-md font-semibold">
+                              Арт: {mod.article}
+                            </span>
+                          )}
+                          {mod.moduleGroup && (
+                            <span className="text-[10px] font-bold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-md">
+                              {mod.moduleGroup}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1 flex items-center gap-3 flex-wrap">
+                          {mod.width && <span>Ширина: <strong className="text-gray-700">{mod.width} мм</strong></span>}
+                          {(mod.moduleHeight || mod.height) && (
+                            <span>Высота: <strong className="text-gray-700">{mod.moduleHeight || mod.height} мм</strong></span>
+                          )}
+                          {(mod.moduleDepth || mod.depth) && (
+                            <span>Глубина: <strong className="text-gray-700">{mod.moduleDepth || mod.depth} мм</strong></span>
+                          )}
+                          {mod.moduleMaterial && (
+                            <span className="text-gray-400 italic">| {mod.moduleMaterial}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                        <div className="flex items-center border border-gray-300 rounded-xl bg-white overflow-hidden shadow-2xs">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = [...((newProduct as any).kitchenModules || [])];
+                              const idx = updated.findIndex((m: any) => String(m.id) === String(mod.id));
+                              if (idx >= 0) {
+                                if (updated[idx].qty > 1) {
+                                  updated[idx].qty -= 1;
+                                } else {
+                                  updated.splice(idx, 1);
+                                }
+                                setNewProduct((prev) => ({ ...prev, kitchenModules: updated }));
+                              }
+                            }}
+                            disabled={!isAdded}
+                            className="px-3 py-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-30 font-bold text-sm cursor-pointer"
+                          >
+                            -
+                          </button>
+                          <input
+                            type="number"
+                            min="0"
+                            value={currentQty}
+                            onChange={(e) => {
+                              const val = parseInt(e.target.value) || 0;
+                              const updated = [...((newProduct as any).kitchenModules || [])];
+                              const idx = updated.findIndex((m: any) => String(m.id) === String(mod.id));
+                              if (val > 0) {
+                                if (idx >= 0) {
+                                  updated[idx].qty = val;
+                                } else {
+                                  updated.push({ id: mod.id, qty: val });
+                                }
+                              } else {
+                                if (idx >= 0) {
+                                  updated.splice(idx, 1);
+                                }
+                              }
+                              setNewProduct((prev) => ({ ...prev, kitchenModules: updated }));
+                            }}
+                            className="w-12 text-center font-bold text-xs py-1.5 outline-none"
+                            placeholder="0"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = [...((newProduct as any).kitchenModules || [])];
+                              const idx = updated.findIndex((m: any) => String(m.id) === String(mod.id));
+                              if (idx >= 0) {
+                                updated[idx].qty += 1;
+                              } else {
+                                updated.push({ id: mod.id, qty: 1 });
+                              }
+                              setNewProduct((prev) => ({ ...prev, kitchenModules: updated }));
+                            }}
+                            className="px-3 py-1.5 text-gray-600 hover:bg-gray-100 font-bold text-sm cursor-pointer"
+                          >
+                            +
+                          </button>
+                        </div>
+
+                        {!isAdded ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = [...((newProduct as any).kitchenModules || [])];
+                              updated.push({ id: mod.id, qty: 1 });
+                              setNewProduct((prev) => ({ ...prev, kitchenModules: updated }));
+                            }}
+                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1 shadow-sm cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5" /> Добавить
+                          </button>
+                        ) : (
+                          <span className="px-3 py-1.5 bg-emerald-100 text-emerald-800 font-bold rounded-xl text-xs flex items-center gap-1">
+                            <Check className="w-3.5 h-3.5" /> В гарнитуре ({currentQty})
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+
+            <div className="flex justify-between items-center pt-4 border-t border-gray-100">
+              <span className="text-xs text-gray-500 font-medium">
+                Всего выбрано модулей: <strong className="text-indigo-600 font-bold">{((newProduct as any).kitchenModules || []).reduce((acc: number, item: any) => acc + (item.qty || 0), 0)} шт.</strong>
+              </span>
+              <button
+                type="button"
+                onClick={() => setIsKitchenModulesModalOpen(false)}
+                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-all shadow-md cursor-pointer"
+              >
+                Готово
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {variationsAddModal && variationsAddModal.isOpen && (
         <div className="fixed inset-0 bg-black/60 z-[120] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
           <div className="bg-white w-full max-w-4xl rounded-[28px] shadow-2xl p-6 flex flex-col space-y-5 max-h-[90vh] overflow-hidden">
@@ -21712,10 +23001,7 @@ const ProductsView = ({
                 const qty = variationsAddModal.quantities[vId] || 1;
                 
                 // Calculate selling price
-                const defaultCoeff = coefficients.products?.[variationsAddModal.product.category] || 1.5;
-                const coeff = variationsAddModal.product.useCustomCoeffs && variationsAddModal.product.customCoeffRetail
-                  ? variationsAddModal.product.customCoeffRetail
-                  : defaultCoeff;
+                const coeff = getProductCoefficient(variationsAddModal.product, customerType, resolveBrandCoefficient);
                 const vPurchasePrice = v.purchasePrice !== undefined && v.purchasePrice > 0 
                   ? v.purchasePrice 
                   : (variationsAddModal.product.purchasePrice || 0);
@@ -21858,14 +23144,15 @@ const ProductsView = ({
                       const qty = variationsAddModal.quantities[vId] || 1;
                       
                       // Calculate selling price
-                      const defaultCoeff = coefficients.products?.[variationsAddModal.product.category] || 1.5;
-                      const coeff = variationsAddModal.product.useCustomCoeffs && variationsAddModal.product.customCoeffRetail
-                        ? variationsAddModal.product.customCoeffRetail
-                        : defaultCoeff;
+                      const coeff = getProductCoefficient(variationsAddModal.product, customerType, resolveBrandCoefficient);
                       const vPurchasePrice = v.purchasePrice !== undefined && v.purchasePrice > 0 
                         ? v.purchasePrice 
                         : (variationsAddModal.product.purchasePrice || 0);
                       const finalPrice = Math.round(vPurchasePrice * coeff);
+
+                      const variationAnalogs = (v.analogs && v.analogs.length > 0) ? v.analogs : (variationsAddModal.product.analogs || []);
+                      const variationRequiredProducts = (v.requiredProducts && v.requiredProducts.length > 0) ? v.requiredProducts : (variationsAddModal.product.requiredProducts || []);
+                      const variationWidth = v.width || v.length || variationsAddModal.product.dryerWidth || variationsAddModal.product.width;
 
                       const variationProduct = {
                         ...variationsAddModal.product,
@@ -21878,6 +23165,10 @@ const ProductsView = ({
                         article: v.article || variationsAddModal.product.article || "",
                         vendorArticle: v.vendorArticle || variationsAddModal.product.vendorArticle || "",
                         manufacturerArticle: v.manufacturerArticle || variationsAddModal.product.manufacturerArticle || "",
+                        analogs: variationAnalogs,
+                        requiredProducts: variationRequiredProducts,
+                        dryerWidth: variationWidth,
+                        width: variationWidth,
                         isVariation: true,
                         variations: [] // clear variations inside the added product instance to avoid recursion
                       };
@@ -21928,7 +23219,10 @@ const ProductsView = ({
             Начните с добавления первого товара в вашу базу
           </p>
           <button
-            onClick={() => setIsAddingProduct(true)}
+            onClick={() => {
+              resetForm();
+              setIsAddingProduct(true);
+            }}
             className="px-6 py-2 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors"
           >
             Добавить товар
@@ -25149,6 +26443,8 @@ export default function App() {
             sketches: setData.sketches || [],
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
+            createdBy: userData.uid,
+            createdByName: userData.displayName || userData.email || "Пользователь",
             summary: setData.summary,
             paymentMethod: setData.paymentMethod || null,
             paymentPartsCount: setData.paymentPartsCount || null,
@@ -25764,13 +27060,16 @@ export default function App() {
         ),
       ];
 
-      await Promise.all(savePromises);
-      touchSettingsLocal();
-      lastTypedSpecificationConfigRef.current = Date.now();
-
       if (!silent) {
         showAlert("Успех", "Настройки сохранены");
       }
+
+      Promise.all(savePromises).then(() => {
+        touchSettingsLocal();
+        lastTypedSpecificationConfigRef.current = Date.now();
+      }).catch((error) => {
+        console.error("Error saving settings in background:", error);
+      });
     } catch (error) {
       console.error("Error saving settings:", error);
       handleDbError(
@@ -26372,9 +27671,23 @@ export default function App() {
         myMarkup.products?.[cat] ??
         myMarkup[`cat_${cat}`] ??
         myMarkup[cat] ??
+        (isDryerCategory(cat)
+          ? myMarkup.products?.["Посудосушитель"] ??
+            myMarkup.products?.["Посудосушители"] ??
+            myMarkup["cat_Посудосушитель"] ??
+            myMarkup["cat_Посудосушители"] ??
+            myMarkup["Посудосушитель"] ??
+            myMarkup["Посудосушители"]
+          : undefined) ??
         1;
       result.products[cat] = baseVal * markupVal;
     });
+
+    if (result.products["Посудосушитель"] && !result.products["Посудосушители"]) {
+      result.products["Посудосушители"] = result.products["Посудосушитель"];
+    } else if (result.products["Посудосушители"] && !result.products["Посудосушитель"]) {
+      result.products["Посудосушитель"] = result.products["Посудосушители"];
+    }
 
     return result;
   }, [
@@ -26396,9 +27709,15 @@ export default function App() {
           ? "designer"
           : "wholesale";
 
-    const baseMarkup = categoryId.startsWith("cat_")
-      ? currentCoefficients.products[categoryId.replace("cat_", "")] ?? 1.5
-      : (currentCoefficients as any)[categoryId] ?? 1.5;
+    const rawCat = categoryId.startsWith("cat_") ? categoryId.replace("cat_", "") : categoryId;
+    const baseMarkup =
+      currentCoefficients.products[rawCat] ??
+      (isDryerCategory(rawCat)
+        ? currentCoefficients.products["Посудосушитель"] ??
+          currentCoefficients.products["Посудосушители"]
+        : undefined) ??
+      (currentCoefficients as any)[rawCat] ??
+      1.5;
 
     // Check brand-specific overrides first
     if (ownProductionConfig.brandCoefficients) {
@@ -26661,6 +27980,43 @@ export default function App() {
     productionSettings,
   ]);
 
+  // Detect public customer landing page
+  const currentPath = window.location.pathname;
+  if (currentPath.startsWith("/c/")) {
+    const rawParts = currentPath.split("/c/")[1].split("/").filter(Boolean);
+    const aliasOrId = rawParts[0];
+    const subPath = rawParts.slice(1).join("/");
+    return <PublicLandingView aliasOrId={aliasOrId} initialSubPath={subPath} />;
+  }
+
+  // Handle direct custom slug routes (e.g. /mebelfaktura, /mebelfaktura/moduli, /mebelfaktura/catalog)
+  const pathSegments = currentPath.split("/").filter(Boolean);
+  const reservedSystemRoutes = ["", "login", "register", "admin", "dashboard", "api", "assets", "static", "favicon.ico"];
+
+  if (pathSegments.length > 0 && !reservedSystemRoutes.includes(pathSegments[0].toLowerCase())) {
+    const aliasOrId = pathSegments[0];
+    const subPath = pathSegments.slice(1).join("/");
+    return <PublicLandingView aliasOrId={aliasOrId} initialSubPath={subPath} />;
+  }
+
+  // Handle custom domain at root
+  if (hostMappedAlias && (currentPath === "/" || currentPath === "")) {
+    return <PublicLandingView aliasOrId={hostMappedAlias} initialSubPath="" />;
+  }
+
+  // If we are on a custom domain but its alias hasn't loaded yet, show a clean, native loading state instead of the admin dashboard loader
+  const hostname = window.location.hostname;
+  const isCustomDomain = hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.includes('.run.app');
+  if (isCustomDomain && !hostMappedAlias && (currentPath === "/" || currentPath === "")) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-6 select-none">
+        <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
+        <div className="font-extrabold text-gray-800 text-lg">Загрузка онлайн-витрины...</div>
+        <p className="text-sm text-gray-400 mt-2">Пожалуйста, подождите, мы собираем актуальные товары</p>
+      </div>
+    );
+  }
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-white overflow-hidden">
@@ -26824,18 +28180,6 @@ export default function App() {
         </motion.div>
       </div>
     );
-  }
-
-  // Detect public customer landing page
-  const currentPath = window.location.pathname;
-  if (currentPath.startsWith("/c/")) {
-    const aliasOrId = currentPath.split("/c/")[1];
-    return <PublicLandingView aliasOrId={aliasOrId} />;
-  }
-
-  // Handle custom domain at root
-  if (hostMappedAlias && currentPath === "/") {
-    return <PublicLandingView aliasOrId={hostMappedAlias} />;
   }
 
   if (!isAuthenticated) {

@@ -19,11 +19,32 @@ import {
   ChevronRight,
   MessageSquare,
   Sparkles,
-  Link2
+  Link2,
+  Flame,
+  Home,
+  Layers,
+  Box,
+  Settings,
+  Wrench,
+  Sparkle,
+  Tag,
+  Droplet,
+  Lightbulb,
+  Percent,
+  Compass,
+  Grid,
+  Sliders,
+  Maximize,
+  ShoppingBag,
+  FolderHeart,
+  HardDrive
 } from "lucide-react";
+
+import { transliterate } from "../../lib/utils";
 
 interface PublicLandingViewProps {
   aliasOrId: string;
+  initialSubPath?: string;
 }
 
 const GRADIENT_CLASSES: Record<string, string> = {
@@ -34,7 +55,42 @@ const GRADIENT_CLASSES: Record<string, string> = {
   "purple-violet": "from-purple-600 to-violet-800",
 };
 
-export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
+function resolveCategoryFromSubpath(cats: string[], subPath?: string): string {
+  if (!subPath) return cats[0] || "";
+  const norm = subPath.toLowerCase().trim();
+  if (norm === "catalog" || norm === "all" || norm === "vse") return ""; // Show all products
+  if (norm === "moduli" || norm === "modules") {
+    const matched = cats.find(c => c.toLowerCase().includes("модули") || c.toLowerCase().includes("модуль"));
+    if (matched) return matched;
+  }
+  if (norm === "kuhni" || norm === "kitchens" || norm === "sets") {
+    const matched = cats.find(c => c.toLowerCase().includes("гарнитур") || c.toLowerCase().includes("кухни"));
+    if (matched) return matched;
+  }
+  const directMatch = cats.find(c => c.toLowerCase() === norm || transliterate(c) === norm);
+  if (directMatch) return directMatch;
+  return cats[0] || "";
+}
+
+function getCategoryIcon(cat: string, className = "w-4 h-4") {
+  const norm = cat.toLowerCase();
+  if (norm.includes("модул")) return <Layers className={className} />;
+  if (norm.includes("гарнитур") || norm.includes("кухни")) return <Home className={className} />;
+  if (norm.includes("петл")) return <Settings className={className} />;
+  if (norm.includes("выдвиж") || norm.includes("системы")) return <Sliders className={className} />;
+  if (norm.includes("освещ") || norm.includes("свет")) return <Lightbulb className={className} />;
+  if (norm.includes("крепеж") || norm.includes("цокол")) return <Wrench className={className} />;
+  if (norm.includes("оснащ") || norm.includes("шкаф")) return <FolderHeart className={className} />;
+  if (norm.includes("корзин")) return <ShoppingBag className={className} />;
+  if (norm.includes("столешн") || norm.includes("стеновы")) return <Maximize className={className} />;
+  if (norm.includes("мойк") || norm.includes("смесител") || norm.includes("фильтр")) return <Droplet className={className} />;
+  if (norm.includes("ручк") || norm.includes("крючк")) return <Compass className={className} />;
+  if (norm.includes("сушител") || norm.includes("посуд")) return <Grid className={className} />;
+  if (norm.includes("акци") || norm.includes("промо") || norm.includes("скид")) return <Flame className={`${className} text-amber-500 fill-amber-500 animate-pulse`} />;
+  return <Tag className={className} />;
+}
+
+export function PublicLandingView({ aliasOrId, initialSubPath }: PublicLandingViewProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [company, setCompany] = useState<any>(null);
@@ -76,8 +132,8 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
           setPrices(data.prices || {});
           
           const cats = Array.from(new Set((data.products || []).map((p: any) => p.category))) as string[];
-          if (cats.length > 0 && !selectedCategory) {
-            setSelectedCategory(cats[0]);
+          if (cats.length > 0) {
+            setSelectedCategory(resolveCategoryFromSubpath(cats, initialSubPath));
           }
           setLoading(false); // Instant load
         }
@@ -102,7 +158,6 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
           localStorage.setItem(cacheKey, JSON.stringify(data));
         } catch (e) {
           console.warn("Failed to save public landing cache:", e);
-          // If quota exceeded, clear all public landing caches to make room
           if (e instanceof Error && e.name === 'QuotaExceededError') {
              Object.keys(localStorage).forEach(key => {
                if (key.startsWith('meb_public_cache:')) {
@@ -117,10 +172,9 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
         setGeneralSettings(data.generalSettings);
         setPrices(data.prices || {});
         
-        // Auto-select first category if none selected
         const cats = Array.from(new Set((data.products || []).map((p: any) => p.category))) as string[];
-        if (cats.length > 0 && !selectedCategory) {
-          setSelectedCategory(cats[0]);
+        if (cats.length > 0) {
+          setSelectedCategory(resolveCategoryFromSubpath(cats, initialSubPath));
         }
       } catch (err: any) {
         if (!cached) setError(err.message || "Ошибка соединения с сервером");
@@ -129,7 +183,7 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
       }
     }
     loadPublicData();
-  }, [aliasOrId]);
+  }, [aliasOrId, initialSubPath]);
 
   // Compute standard retail coefficient
   const getProductCoefficient = (product: any): number => {
@@ -480,15 +534,27 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col font-sans text-gray-800 selection:bg-blue-600 selection:text-white relative">
       {/* Top Floating Contact Header */}
-      <header className="sticky top-0 z-40 bg-white/90 backdrop-blur-md border-b border-gray-100 shadow-sm transition-all">
+      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-lg border-b border-gray-100/80 shadow-sm transition-all">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-lg shadow-md shadow-blue-500/20">
-              {company.name ? company.name[0].toUpperCase() : "C"}
-            </div>
+            {generalSettings?.specificationConfig?.companyLogo ? (
+              <img 
+                src={generalSettings.specificationConfig.companyLogo} 
+                alt={company.name} 
+                className="w-10 h-10 rounded-xl object-contain bg-white shadow-sm border border-gray-100"
+              />
+            ) : (
+              <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-lg shadow-md shadow-blue-500/20">
+                {company.name ? company.name[0].toUpperCase() : "C"}
+              </div>
+            )}
             <div>
               <h1 className="font-black text-base text-gray-900 tracking-tight leading-tight">{company.name}</h1>
-              {company.city && <span className="text-[10px] uppercase font-black text-gray-400 tracking-wider flex items-center gap-1 mt-0.5"><MapPin className="w-3 h-3 text-gray-300" /> {company.city}</span>}
+              {company.city && (
+                <span className="text-[10px] uppercase font-black text-gray-400 tracking-wider flex items-center gap-1 mt-0.5">
+                  <MapPin className="w-3 h-3 text-gray-300" /> {company.city}
+                </span>
+              )}
             </div>
           </div>
 
@@ -510,7 +576,7 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
                   href={`https://wa.me/${landing.whatsapp.replace(/[^0-9]/g, "")}`} 
                   target="_blank" 
                   rel="noreferrer" 
-                  className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all"
+                  className="p-2 bg-green-50 hover:bg-green-100 text-green-600 rounded-xl transition-all hover:scale-105 active:scale-95"
                   title="Написать в WhatsApp"
                 >
                   <MessageSquare className="w-4.5 h-4.5 fill-current" />
@@ -521,7 +587,7 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
                   href={`https://t.me/${landing.telegram}`} 
                   target="_blank" 
                   rel="noreferrer" 
-                  className="p-2 bg-sky-50 hover:bg-sky-100 text-sky-600 rounded-xl transition-all"
+                  className="p-2 bg-sky-50 hover:bg-sky-100 text-sky-600 rounded-xl transition-all hover:scale-105 active:scale-95"
                   title="Написать в Telegram"
                 >
                   <Link2 className="w-4.5 h-4.5" />
@@ -532,7 +598,7 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
             {/* Cart Button */}
             <button
               onClick={() => setIsCartOpen(true)}
-              className="relative p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors flex items-center gap-2 shadow-lg shadow-blue-500/10"
+              className="relative p-2.5 bg-blue-600 text-white rounded-xl hover:bg-blue-700 transition-colors flex items-center gap-2 shadow-lg shadow-blue-500/15 hover:scale-105 active:scale-95"
             >
               <ShoppingCart className="w-5 h-5" />
               {totalCartCount > 0 && (
@@ -546,19 +612,69 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
       </header>
 
       {/* Hero Banner Area */}
-      <section className={`bg-gradient-to-r ${heroGradClass} text-white py-16 px-4 select-none relative overflow-hidden`}>
-        <div className="absolute inset-0 bg-black/10 mix-blend-multiply" />
-        <div className="max-w-7xl mx-auto text-center relative z-10 space-y-4">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-white/10 backdrop-blur rounded-full text-xs font-bold tracking-wider text-blue-50">
-            <Sparkles className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
-            ОФИЦИАЛЬНАЯ ВИТРИНА МАГАЗИНА
+      <section className={`bg-gradient-to-r ${heroGradClass} text-white py-20 px-4 select-none relative overflow-hidden rounded-b-[2rem] md:rounded-b-[3rem] shadow-xl`}>
+        {/* Architectural Tech Blueprint Grid Pattern */}
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.06)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.06)_1px,transparent_1px)] bg-[size:3.5rem_3.5rem] pointer-events-none" />
+        
+        {/* Subtle dot matrix */}
+        <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.12)_1px,transparent_1px)] [background-size:16px_16px] pointer-events-none" />
+
+        {/* Ambient glows */}
+        <div className="absolute top-1/2 left-1/4 -translate-y-1/2 w-80 h-80 bg-blue-500/20 rounded-full blur-[100px] pointer-events-none animate-pulse" />
+        <div className="absolute top-1/3 right-1/4 -translate-y-1/2 w-96 h-96 bg-indigo-500/25 rounded-full blur-[120px] pointer-events-none" />
+
+        <div className="absolute inset-0 bg-black/15 mix-blend-multiply pointer-events-none" />
+        
+        <div className="max-w-7xl mx-auto text-center relative z-10 space-y-6">
+          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-white/10 backdrop-blur rounded-full text-[10px] font-black uppercase tracking-wider text-blue-50 border border-white/10">
+            <Sparkles className="w-3.5 h-3.5 text-amber-300 fill-amber-300 animate-pulse" />
+            Официальная онлайн-витрина
           </div>
-          <h2 className="text-3xl md:text-5xl font-black tracking-tight leading-tight max-w-4xl mx-auto">
+          <h2 className="text-3xl md:text-5xl font-black tracking-tight leading-tight max-w-4xl mx-auto drop-shadow-sm">
             {displayTitle}
           </h2>
-          <p className="text-base md:text-lg text-blue-100 max-w-2xl mx-auto leading-relaxed">
+          <p className="text-sm md:text-base text-blue-100/90 max-w-2xl mx-auto leading-relaxed font-medium drop-shadow-sm">
             {displayDesc}
           </p>
+
+          {/* Premium Floating Quick Specs / Feature Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl mx-auto pt-6 text-left">
+            <div className="bg-white/5 backdrop-blur-md rounded-2xl p-4 border border-white/10 hover:bg-white/10 transition-all group shadow-inner">
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-white/10 rounded-xl text-blue-200 group-hover:scale-110 transition-transform">
+                  <Layers className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-white leading-tight">Интерактивный подбор</h4>
+                  <p className="text-xs text-blue-100/70 mt-1 leading-normal">Каталог содержит только доступные к сборке модули и актуальную фурнитуру.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white/5 backdrop-blur-md rounded-2xl p-4 border border-white/10 hover:bg-white/10 transition-all group shadow-inner">
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-white/10 rounded-xl text-emerald-200 group-hover:scale-110 transition-transform">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-white leading-tight">Прямой расчет цен</h4>
+                  <p className="text-xs text-blue-100/70 mt-1 leading-normal">Цены генерируются по спецификации напрямую из материалов производства.</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white/5 backdrop-blur-md rounded-2xl p-4 border border-white/10 hover:bg-white/10 transition-all group shadow-inner">
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-white/10 rounded-xl text-amber-200 group-hover:scale-110 transition-transform">
+                  <MessageSquare className="w-5 h-5" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-sm text-white leading-tight">Быстрый запуск заказа</h4>
+                  <p className="text-xs text-blue-100/70 mt-1 leading-normal">Отправка заказа на мгновенную проверку дизайнеру и расчет доставки.</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
 
@@ -665,14 +781,19 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
                       setSelectedCategory(cat);
                       setSelectedBrands([]); // Сброс брендов при смене категории
                     }}
-                    className={`px-4 py-2.5 rounded-xl text-left font-bold text-xs transition-all flex items-center justify-between gap-2 whitespace-nowrap md:whitespace-normal w-full border ${
+                    className={`px-3 py-2.5 rounded-xl text-left font-bold text-xs transition-all flex items-center justify-between gap-2 whitespace-nowrap md:whitespace-normal w-full border ${
                       selectedCategory === cat
-                        ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/10"
+                        ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/10 hover:bg-blue-700"
                         : "bg-white text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-gray-100"
                     }`}
                   >
-                    <span>{cat}</span>
-                    <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-black ${
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className={`flex-shrink-0 p-1 rounded-lg ${selectedCategory === cat ? "bg-white/15 text-white" : "bg-gray-50 text-gray-400"}`}>
+                        {getCategoryIcon(cat, "w-3.5 h-3.5")}
+                      </div>
+                      <span className="truncate">{cat}</span>
+                    </div>
+                    <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-black ${
                       selectedCategory === cat ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"
                     }`}>
                       {products.filter(p => p.category === cat).length}
@@ -759,6 +880,51 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
 
           {/* Grid Container */}
           <div>
+            {/* Horizontal Category Slider for Quick Navigation */}
+            <div className="mb-6 bg-white p-3.5 rounded-2xl border border-gray-100 shadow-sm overflow-hidden select-none">
+              <span className="text-[10px] uppercase font-black text-gray-400 tracking-wider block mb-2.5 px-1">Быстрый переход по разделам:</span>
+              <div className="flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">
+                <button
+                  onClick={() => {
+                    setSelectedCategory("");
+                    setSelectedBrands([]);
+                  }}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap border ${
+                    selectedCategory === ""
+                      ? "bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-500/10"
+                      : "bg-gray-50 text-gray-600 border-gray-100 hover:bg-gray-100 hover:text-gray-900"
+                  }`}
+                >
+                  <Grid className="w-3.5 h-3.5" />
+                  <span>Все категории</span>
+                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-black leading-none ${selectedCategory === "" ? "bg-white/20 text-white" : "bg-gray-200/80 text-gray-500"}`}>
+                    {products.length}
+                  </span>
+                </button>
+
+                {categories.map(cat => (
+                  <button
+                    key={cat}
+                    onClick={() => {
+                      setSelectedCategory(cat);
+                      setSelectedBrands([]);
+                    }}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap border ${
+                      selectedCategory === cat
+                        ? "bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-500/10"
+                        : "bg-gray-50 text-gray-600 border-gray-100 hover:bg-gray-100 hover:text-gray-900"
+                    }`}
+                  >
+                    {getCategoryIcon(cat, "w-3.5 h-3.5")}
+                    <span>{cat}</span>
+                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-black leading-none ${selectedCategory === cat ? "bg-white/20 text-white" : "bg-gray-200/80 text-gray-500"}`}>
+                      {products.filter(p => p.category === cat).length}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <div className="flex items-center justify-between gap-4 mb-6">
               <h3 className="text-xl font-black text-gray-900 tracking-tight">
                 {selectedCategory || "Все товары"}
@@ -1429,67 +1595,72 @@ export function PublicLandingView({ aliasOrId }: PublicLandingViewProps) {
                     </div>
 
                     {/* Companion products set details with checkboxes */}
-                    {product.requiredProducts && product.requiredProducts.length > 0 && (
-                      <div className="p-4 bg-blue-50/50 rounded-2xl border border-blue-100/30 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-black uppercase text-blue-700 tracking-wider flex items-center gap-1.5 leading-none">
-                            <Sparkles className="w-3 h-3 text-blue-600" /> Сопутствующие товары:
-                          </span>
-                          <span className="text-[9px] font-bold text-blue-500 bg-blue-100/50 px-2 py-0.5 rounded-full">
-                            Рекомендуем
-                          </span>
-                        </div>
-                        
-                        <div className="space-y-2">
-                          {product.requiredProducts.map((rp: any, idx: number) => {
-                            const cp = products.find((item: any) => String(item.id) === String(rp.id));
-                            if (!cp) return null;
-                            
-                            const isChecked = selectedCompanionIds.has(String(rp.id));
-                            const cpCoeff = getProductCoefficient(cp);
-                            const cpBasePrice = cp.purchasePrice !== undefined ? cp.purchasePrice : (cp.price || 0);
-                            const cpRetailPrice = Math.round(cpBasePrice * cpCoeff);
+                    {(() => {
+                      const currentVar = selectedVariationId ? product.variations?.find((v: any) => v.id === selectedVariationId) : null;
+                      const reqList = (currentVar?.requiredProducts && currentVar.requiredProducts.length > 0)
+                        ? currentVar.requiredProducts
+                        : (product.requiredProducts || []);
 
-                            return (
-                              <label 
-                                key={idx} 
-                                className={`flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer ${
-                                  isChecked 
-                                    ? "bg-white border-blue-200 shadow-sm" 
-                                    : "bg-transparent border-transparent opacity-60 grayscale"
-                                }`}
-                              >
-                                <div className="flex items-center gap-3 min-w-0">
-                                  <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all ${
-                                    isChecked ? "bg-blue-600 border-blue-600" : "bg-white border-gray-300"
-                                  }`}>
+                      if (!reqList || reqList.length === 0) return null;
+
+                      return (
+                        <div className="p-4 bg-blue-50/50 rounded-2xl border border-blue-100/30 space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[10px] font-black uppercase text-blue-700 tracking-wider flex items-center gap-1.5 leading-none">
+                              <Sparkles className="w-3 h-3 text-blue-600" /> Сопутствующие товары:
+                            </span>
+                            <span className="text-[9px] font-bold text-blue-500 bg-blue-100/50 px-2 py-0.5 rounded-full">
+                              Рекомендуем
+                            </span>
+                          </div>
+                          
+                          <div className="space-y-2">
+                            {reqList.map((rp: any, idx: number) => {
+                              const rpId = typeof rp === "object" ? rp.id : rp;
+                              const cp = products.find((item: any) => String(item.id) === String(rpId));
+                              if (!cp) return null;
+                              
+                              const isChecked = selectedCompanionIds.has(String(rpId));
+                              const cpCoeff = getProductCoefficient(cp);
+                              const cpBasePrice = cp.purchasePrice !== undefined ? cp.purchasePrice : (cp.price || 0);
+                              const cpRetailPrice = Math.round(cpBasePrice * cpCoeff);
+
+                              return (
+                                <label 
+                                  key={idx} 
+                                  className={`flex items-center justify-between p-2.5 rounded-xl border transition-all cursor-pointer ${
+                                    isChecked 
+                                      ? "bg-white border-blue-200 shadow-sm" 
+                                      : "bg-transparent border-transparent opacity-60 grayscale"
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3 min-w-0">
                                     <input
                                       type="checkbox"
-                                      className="hidden"
                                       checked={isChecked}
-                                      onChange={() => {
-                                        const next = new Set(selectedCompanionIds);
-                                        if (isChecked) next.delete(String(rp.id));
-                                        else next.add(String(rp.id));
-                                        setSelectedCompanionIds(next);
+                                      onChange={(e) => {
+                                        const newSet = new Set(selectedCompanionIds);
+                                        if (e.target.checked) {
+                                          newSet.add(String(rpId));
+                                        } else {
+                                          newSet.delete(String(rpId));
+                                        }
+                                        setSelectedCompanionIds(newSet);
                                       }}
+                                      className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer shrink-0"
                                     />
-                                    {isChecked && <Check className="w-3 h-3 text-white" strokeWidth={4} />}
+                                    <span className="text-xs font-bold text-gray-800 truncate">{cp.name}</span>
                                   </div>
-                                  <div className="truncate">
-                                    <div className="text-[11px] font-bold text-gray-800 truncate">{cp.name}</div>
-                                    <div className="text-[10px] text-gray-500">{rp.qty} {cp.unit || "шт."}</div>
-                                  </div>
-                                </div>
-                                <div className="text-[11px] font-black text-blue-600 ml-2 whitespace-nowrap">
-                                  +{(cpRetailPrice * rp.qty).toLocaleString()} ₽
-                                </div>
-                              </label>
-                            );
-                          })}
+                                  <span className="text-xs font-extrabold text-blue-900 shrink-0 ml-2">
+                                    +{cpRetailPrice.toLocaleString()} ₽
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    })()}
                   </div>
                 </div>
 

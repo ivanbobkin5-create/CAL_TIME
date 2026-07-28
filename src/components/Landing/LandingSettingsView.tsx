@@ -11,8 +11,11 @@ import {
   Info,
   Layers,
   Sparkles,
-  MousePointerClick
+  MousePointerClick,
+  Server,
+  ArrowRight
 } from "lucide-react";
+import { transliterate } from "../../lib/utils";
 
 interface LandingPageConfig {
   enabled: boolean;
@@ -57,6 +60,7 @@ export function LandingSettingsView({
   showAlert,
 }: LandingSettingsViewProps) {
   const [copied, setCopied] = useState(false);
+  const [cnameCopied, setCnameCopied] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   // Default configuration
@@ -79,6 +83,9 @@ export function LandingSettingsView({
     ...(companyData?.landingPage || {}),
   };
 
+  const autoSlug = companyData?.name ? transliterate(companyData.name) : (companyData?.id || "catalog");
+  const effectiveAlias = landingConfig.alias || autoSlug;
+
   const handleUpdateConfig = (updates: Partial<LandingPageConfig>) => {
     setCompanyData((prev: any) => ({
       ...prev,
@@ -90,7 +97,6 @@ export function LandingSettingsView({
   };
 
   const sanitizeAlias = (val: string) => {
-    // lowercase, remove non-alphanumeric and hyphens
     return val
       .toLowerCase()
       .replace(/[^a-z0-9-]/g, "")
@@ -123,15 +129,25 @@ export function LandingSettingsView({
     }
   };
 
+  const currentHost = typeof window !== "undefined" ? window.location.host : "mebel-plan.ru";
+  const currentOrigin = typeof window !== "undefined" ? window.location.origin : "https://mebel-plan.ru";
+
   const publicUrl = landingConfig.customDomain 
     ? (landingConfig.customDomain.startsWith('http') ? landingConfig.customDomain : `https://${landingConfig.customDomain}`)
-    : `${window.location.origin}/c/${landingConfig.alias || companyData?.id}`;
+    : `${currentOrigin}/${effectiveAlias}`;
 
-  const handleCopyLink = () => {
-    navigator.clipboard.writeText(publicUrl);
+  const handleCopyLink = (urlToCopy: string, msg: string) => {
+    navigator.clipboard.writeText(urlToCopy);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
-    showAlert("Ссылка скопирована", "Ссылка на внешний каталог скопирована в буфер обмена");
+    showAlert("Ссылка скопирована", msg);
+  };
+
+  const handleCopyCnameValue = () => {
+    navigator.clipboard.writeText(currentHost);
+    setCnameCopied(true);
+    setTimeout(() => setCnameCopied(false), 2000);
+    showAlert("Скопировано", `Значение CNAME-записи (${currentHost}) скопировано в буфер обмена`);
   };
 
   // Pre-fill fields with company general details if landing details are empty
@@ -190,41 +206,43 @@ export function LandingSettingsView({
       </div>
 
       {landingConfig.enabled && (
-        <div className="bg-emerald-50 border border-emerald-100 p-5 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-          <div className="flex gap-3">
-            <div className="p-2 bg-emerald-500 text-white rounded-xl">
-              <Sparkles className="w-5 h-5" />
+        <div className="bg-emerald-50 border border-emerald-100 p-5 rounded-2xl space-y-4">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex gap-3">
+              <div className="p-2 bg-emerald-500 text-white rounded-xl shrink-0">
+                <Sparkles className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="font-bold text-emerald-900 text-sm">Витрина активна и доступна покупателям:</div>
+                <a 
+                  href={publicUrl} 
+                  target="_blank" 
+                  rel="noreferrer" 
+                  className="text-base text-emerald-700 hover:text-emerald-900 font-extrabold break-all flex items-center gap-1.5 mt-0.5"
+                >
+                  {publicUrl}
+                  <ExternalLink className="w-4 h-4 shrink-0" />
+                </a>
+              </div>
             </div>
-            <div>
-              <div className="font-bold text-emerald-900">Страница активна и доступна по ссылке:</div>
-              <a 
-                href={publicUrl} 
-                target="_blank" 
-                rel="noreferrer" 
-                className="text-sm text-emerald-700 hover:text-emerald-900 underline font-medium break-all flex items-center gap-1.5 mt-1"
+            <div className="flex items-center gap-2 w-full md:w-auto shrink-0">
+              <button
+                onClick={() => handleCopyLink(publicUrl, "Ссылка на онлайн-витрину скопирована")}
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-white hover:bg-emerald-100 text-emerald-800 font-bold rounded-xl border border-emerald-200 shadow-sm transition-all text-xs active:scale-95"
               >
-                {publicUrl}
-                <ExternalLink className="w-3.5 h-3.5 flex-shrink-0" />
+                {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
+                {copied ? "Скопировано!" : "Копировать ссылку"}
+              </button>
+              <a
+                href={publicUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm transition-all text-xs active:scale-95"
+              >
+                <MousePointerClick className="w-4 h-4" />
+                Открыть витрину
               </a>
             </div>
-          </div>
-          <div className="flex items-center gap-2 w-full md:w-auto">
-            <button
-              onClick={handleCopyLink}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-white hover:bg-emerald-100 text-emerald-800 font-bold rounded-xl border border-emerald-200 shadow-sm transition-all text-sm active:scale-95"
-            >
-              {copied ? <Check className="w-4 h-4 text-green-600" /> : <Copy className="w-4 h-4" />}
-              {copied ? "Скопировано!" : "Копировать ссылку"}
-            </button>
-            <a
-              href={publicUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl shadow-sm transition-all text-sm active:scale-95"
-            >
-              <MousePointerClick className="w-4 h-4" />
-              Открыть витрину
-            </a>
           </div>
         </div>
       )}
@@ -239,69 +257,154 @@ export function LandingSettingsView({
               Основная информация и брендинг
             </h4>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-6">
+              {/* Alias input */}
               <div>
-                <label className="block text-xs font-black uppercase text-gray-500 tracking-wider mb-2">
-                  Адрес страницы (Alias)
+                <label className="block text-xs font-black uppercase text-gray-500 tracking-wider mb-1.5">
+                  Адрес витрины (Alias / Псевдоним)
                 </label>
                 <div className="flex rounded-xl shadow-sm">
-                  <span className="inline-flex items-center px-3 rounded-l-xl border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-xs font-medium">
-                    /c/
+                  <span className="inline-flex items-center px-3.5 rounded-l-xl border border-r-0 border-gray-300 bg-gray-100 text-gray-600 text-xs font-mono font-bold shrink-0">
+                    {currentHost}/
                   </span>
                   <input
                     type="text"
                     value={landingConfig.alias}
                     onChange={handleAliasChange}
-                    placeholder={companyData?.id || "kuhni-vsem"}
-                    className="block w-full min-w-0 flex-1 rounded-none rounded-r-xl border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500 font-mono"
+                    placeholder={autoSlug}
+                    className="block w-full min-w-0 flex-1 rounded-none rounded-r-xl border border-gray-300 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:ring-blue-500 font-mono font-bold text-gray-900 bg-white"
                   />
                 </div>
-                <p className="mt-1.5 text-[11px] text-gray-400">
-                  Только латинские буквы, цифры и дефис. По умолчанию используется ID вашей компании.
-                </p>
+                <div className="mt-2 p-3 bg-blue-50/80 rounded-xl border border-blue-100 text-xs text-blue-900 space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-blue-950">
+                    <Info className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                    <span>Автоматически предложенный адрес:</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed">
+                    Система транслитерировала название вашей компании «<b>{companyData?.name || "Ваша компания"}</b>» на латиницу: <code className="bg-white px-1.5 py-0.5 rounded border border-blue-200 font-mono font-bold text-blue-700">/{autoSlug}</code>. Вы можете оставить его или указать свой адрес латинскими буквами.
+                  </p>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-black uppercase text-gray-500 tracking-wider mb-2">
-                  Собственный домен
-                </label>
-                <div className="flex rounded-xl shadow-sm">
-                  <span className="inline-flex items-center px-3 rounded-l-xl border border-r-0 border-gray-300 bg-gray-50 text-gray-500 text-xs font-medium">
-                    https://
-                  </span>
-                  <input
-                    type="text"
-                    value={landingConfig.customDomain || ""}
-                    onChange={handleDomainChange}
-                    placeholder="shop.kuhni-vsem.ru"
-                    className="block w-full min-w-0 flex-1 rounded-none rounded-r-xl border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500 font-mono"
-                  />
+              {/* Custom Domain Parking */}
+              <div className="pt-4 border-t border-gray-200/80 space-y-4">
+                <div>
+                  <label className="block text-xs font-black uppercase text-gray-500 tracking-wider mb-1.5">
+                    Собственное доменное имя (Парковка домена)
+                  </label>
+                  <div className="flex rounded-xl shadow-sm">
+                    <span className="inline-flex items-center px-3.5 rounded-l-xl border border-r-0 border-gray-300 bg-gray-100 text-gray-600 text-xs font-mono font-bold shrink-0">
+                      https://
+                    </span>
+                    <input
+                      type="text"
+                      value={landingConfig.customDomain || ""}
+                      onChange={handleDomainChange}
+                      placeholder="shop.mebel-faktura.ru"
+                      className="block w-full min-w-0 flex-1 rounded-none rounded-r-xl border border-gray-300 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:ring-blue-500 font-mono font-bold text-gray-900 bg-white"
+                    />
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-gray-500">
+                    Укажите ваш персональный домен или поддомен, чтобы витрина открывалась прямо по вашему адресу.
+                  </p>
                 </div>
-                <p className="mt-1.5 text-[11px] text-gray-400">
-                  Укажите ваш домен, чтобы витрина была доступна по вашему адресу.
-                </p>
 
-                <div className="mt-3 p-3.5 bg-blue-50/90 border border-blue-200/70 rounded-xl text-xs text-blue-950 space-y-2 font-sans">
-                  <div className="font-bold flex items-center gap-1.5 text-blue-900">
-                    <Info className="w-4 h-4 text-blue-600 shrink-0" />
-                    <span>Настройка DNS для привязки домена:</span>
-                  </div>
-                  <p className="text-blue-800 text-[11px] leading-relaxed">
-                    В панели вашего регистратора доменов (Reg.ru, Timeweb, Cloudflare и др.) перейдите в раздел управления DNS и пропишите записи:
-                  </p>
-                  <div className="bg-white/90 p-2.5 rounded-lg border border-blue-200/80 font-mono text-[11px] space-y-1.5 text-gray-800 shadow-2xs">
-                    <div>
-                      <span className="font-bold text-gray-500">Поддомен (напр. catalog.site.ru):</span>
-                      <div className="text-blue-700 mt-0.5">Тип: <b>CNAME</b> | Имя: <b>catalog</b> | Значение: <b>имя хоста приложения</b></div>
+                {/* Detailed step-by-step DNS Instruction Card */}
+                <div className="p-4 bg-slate-900 text-white rounded-2xl border border-slate-800 space-y-4 shadow-md font-sans">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <div className="flex items-center gap-2">
+                      <Server className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span className="font-extrabold text-xs uppercase tracking-wider text-slate-200">
+                        Инструкция по парковке домена (настройка DNS)
+                      </span>
                     </div>
-                    <div className="pt-1.5 border-t border-blue-100">
-                      <span className="font-bold text-gray-500">Основной домен (напр. site.ru):</span>
-                      <div className="text-blue-700 mt-0.5">Тип: <b>A</b> | Имя: <b>@</b> | Значение: <b>IP-адрес сервера / прокси</b></div>
+                    <span className="text-[10px] bg-slate-800 text-emerald-400 font-bold px-2 py-0.5 rounded-full border border-slate-700">
+                      4 простых шага
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Чтобы ваш каталог открывался по вашему собственному адресу (например, <code className="text-emerald-300 font-mono">shop.mebel-faktura.ru</code>), внесите записи в личной панели регистратора вашего домена (<b>Reg.ru</b>, <b>Beget</b>, <b>Timeweb</b>, <b>Cloudflare</b>, <b>Яндекс.360</b> и др.):
+                  </p>
+
+                  <div className="space-y-3">
+                    {/* Step 1 & 2 */}
+                    <div className="text-xs space-y-1 text-slate-300">
+                      <div><b>1.</b> Войдите на сайт вашей доменной компании и откройте <b>«Управление DNS-зоной»</b>.</div>
+                      <div><b>2.</b> Добавьте указанную запись в зависимости от типа вашего адреса:</div>
+                    </div>
+
+                    {/* Variant A: Subdomain */}
+                    <div className="bg-slate-800/90 p-3.5 rounded-xl border border-slate-700 space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-emerald-400 uppercase tracking-wider text-[11px]">Вариант А. Для поддомена (напр. shop.mebel-faktura.ru):</span>
+                        <span className="text-[10px] text-slate-400 font-mono">Рекомендуется</span>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-slate-950 p-2.5 rounded-lg font-mono text-[11px] border border-slate-800">
+                        <div>
+                          <span className="text-slate-500 block text-[9px] uppercase font-sans">Тип записи</span>
+                          <span className="font-bold text-amber-400">CNAME</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block text-[9px] uppercase font-sans">Имя / Subdomain</span>
+                          <span className="font-bold text-slate-200">shop <span className="font-sans text-slate-500 font-normal text-[10px]">(или catalog)</span></span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500 block text-[9px] uppercase font-sans">Значение / Target</span>
+                          <span className="font-bold text-emerald-300 break-all">{currentHost}</span>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end pt-1">
+                        <button
+                          type="button"
+                          onClick={handleCopyCnameValue}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-100 rounded-lg text-[11px] font-bold transition-all active:scale-95 border border-slate-600"
+                        >
+                          {cnameCopied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5 text-slate-300" />}
+                          {cnameCopied ? "Скопировано!" : `Скопировать CNAME (${currentHost})`}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Variant B: Main Domain */}
+                    <div className="bg-slate-800/90 p-3.5 rounded-xl border border-slate-700 space-y-2">
+                      <div className="text-xs">
+                        <span className="font-bold text-blue-400 uppercase tracking-wider text-[11px]">Вариант Б. Для основного домена (напр. mebel-faktura.ru):</span>
+                      </div>
+                      
+                      <div className="space-y-1.5 font-mono text-[11px]">
+                        <div className="bg-slate-950 p-2 rounded-lg border border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <span className="text-amber-400 font-bold mr-2">Тип A:</span>
+                            <span className="text-slate-400 mr-1">Имя:</span> <code className="text-slate-200 font-bold">@</code>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 mr-1">Значение:</span> <code className="text-emerald-300 font-bold">216.239.32.21</code> <span className="font-sans text-slate-500 text-[10px]">(IP шлюза)</span>
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-950 p-2 rounded-lg border border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <span className="text-amber-400 font-bold mr-2">Тип CNAME:</span>
+                            <span className="text-slate-400 mr-1">Имя:</span> <code className="text-slate-200 font-bold">www</code>
+                          </div>
+                          <div>
+                            <span className="text-slate-400 mr-1">Значение:</span> <code className="text-emerald-300 font-bold">{currentHost}</code>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Step 3 & 4 */}
+                    <div className="text-xs space-y-1 text-slate-300 pt-1">
+                      <div><b>3.</b> Введите ваш домен в поле ввода выше и нажмите кнопку <b>«Сохранить параметры витрины»</b> ниже.</div>
+                      <div className="text-[11px] text-slate-400 italic">
+                        * Обработка новых DNS-записей регистраторами обычно занимает от 15 минут до нескольки часов.
+                      </div>
                     </div>
                   </div>
-                  <p className="text-[10px] text-blue-600/80 italic">
-                    * Применение DNS-записей обычно занимает от 15 минут до 24 часов.
-                  </p>
                 </div>
               </div>
 
@@ -553,7 +656,7 @@ export function LandingSettingsView({
         <button
           onClick={handleSave}
           disabled={isSaving}
-          className="px-8 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+          className="px-8 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 shadow-xl shadow-blue-100 transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
         >
           {isSaving ? (
             <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
