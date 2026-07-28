@@ -28004,19 +28004,6 @@ export default function App() {
     return <PublicLandingView aliasOrId={hostMappedAlias} initialSubPath="" />;
   }
 
-  // If we are on a custom domain but its alias hasn't loaded yet, show a clean, native loading state instead of the admin dashboard loader
-  const hostname = window.location.hostname;
-  const isCustomDomain = hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.includes('.run.app');
-  if (isCustomDomain && !hostMappedAlias && (currentPath === "/" || currentPath === "")) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 p-6 select-none">
-        <Loader2 className="w-12 h-12 text-blue-600 animate-spin mb-4" />
-        <div className="font-extrabold text-gray-800 text-lg">Загрузка онлайн-витрины...</div>
-        <p className="text-sm text-gray-400 mt-2">Пожалуйста, подождите, мы собираем актуальные товары</p>
-      </div>
-    );
-  }
-
   if (isLoading) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-white overflow-hidden">
