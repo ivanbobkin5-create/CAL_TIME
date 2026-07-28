@@ -10968,13 +10968,13 @@ const SummaryView = ({
                       </td>
                     </tr>
                     {(rows as any[]).map((row, idx) => (
-                      <tr
-                        key={`${category}-${idx}`}
-                        className={cn(
-                          "hover:bg-gray-50 transition-colors",
-                          row.type === "product_edge" && "bg-gray-50/50",
-                        )}
-                      >
+                      <React.Fragment key={`${category}-${idx}`}>
+                        <tr
+                          className={cn(
+                            "hover:bg-gray-50 transition-colors",
+                            row.type === "product_edge" && "bg-gray-50/50",
+                          )}
+                        >
                         <td className="px-6 py-2">
                           <div className="flex items-center gap-3">
                             {row.image && (
@@ -11019,6 +11019,27 @@ const SummaryView = ({
                                   <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-amber-50 text-amber-800 border border-amber-200 tracking-wider">
                                     <Replace className="w-2.5 h-2.5" /> Есть аналоги
                                   </span>
+                                )}
+                                {row.rawProduct?.category === "Кухонные гарнитуры" && (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const pKey = row.key || String(row.id);
+                                      setExpandedKitchens((prev) => ({ ...prev, [pKey]: !prev[pKey] }));
+                                    }}
+                                    className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-all cursor-pointer"
+                                  >
+                                    {expandedKitchens[row.key || String(row.id)] ? (
+                                      <>
+                                        <ChevronUp className="w-3.5 h-3.5" /> Свернуть состав
+                                      </>
+                                    ) : (
+                                      <>
+                                        <ChevronDown className="w-3.5 h-3.5" /> Состав гарнитура
+                                      </>
+                                    )}
+                                  </button>
                                 )}
                                 {(row.name
                                   .toLowerCase()
@@ -11142,6 +11163,179 @@ const SummaryView = ({
                           )}
                         </td>
                       </tr>
+                      {row.rawProduct?.category === "Кухонные гарнитуры" && expandedKitchens[row.key || String(row.id)] && (
+                        <tr className="bg-indigo-50/30 border-b border-indigo-100/60">
+                          <td colSpan={5} className="px-6 py-4">
+                            <div className="bg-white p-4 rounded-2xl border border-indigo-100 shadow-sm space-y-4">
+                              <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                                <span className="font-extrabold text-indigo-950 text-xs flex items-center gap-2">
+                                  <Sparkles className="w-4 h-4 text-indigo-600" />
+                                  Содержимое гарнитура «{row.name}»
+                                </span>
+                                <span className="text-[11px] text-gray-500 font-medium">
+                                  Изменение состава автоматически пересчитывает стоимость
+                                </span>
+                              </div>
+
+                              {/* Модули кухни */}
+                              <div className="space-y-2">
+                                <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider block">Модули гарнитура:</span>
+                                {((row.rawProduct.kitchenModules || []) as any[]).map((km, kmIdx) => {
+                                  const m = catalogProducts.find(cp => String(cp.id) === String(km.id));
+                                  const mPrice = m ? (m.price || Math.round((m.purchasePrice || 0) * getProductCoefficient(m, customerType, resolveBrandCoefficient))) : 0;
+                                  return (
+                                    <div key={kmIdx} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-xl text-xs gap-3">
+                                      <div className="min-w-0 flex-1">
+                                        <span className="font-bold text-gray-900 block truncate">{km.name || m?.name || "Модуль"}</span>
+                                        <span className="text-[10px] text-gray-500 block truncate">
+                                          {m?.width ? `${m.width}x${m.moduleHeight || m.height || 720}x${m.depth || 560} мм` : ''} • {m?.category || 'Модуль'}
+                                        </span>
+                                      </div>
+                                      <div className="flex items-center gap-3">
+                                        <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-0.5">
+                                          <button
+                                            type="button"
+                                            onClick={() => updateKitchenItemQty(row.key || String(row.id), 'module', kmIdx, km.qty - 1)}
+                                            className="w-5 h-5 flex items-center justify-center text-gray-500 hover:bg-gray-100 rounded"
+                                          >
+                                            <Minus className="w-3 h-3" />
+                                          </button>
+                                          <span className="w-7 text-center font-bold text-gray-900">{km.qty}</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => updateKitchenItemQty(row.key || String(row.id), 'module', kmIdx, km.qty + 1)}
+                                            className="w-5 h-5 flex items-center justify-center text-gray-500 hover:bg-gray-100 rounded"
+                                          >
+                                            <Plus className="w-3 h-3" />
+                                          </button>
+                                        </div>
+                                        <span className="font-bold text-gray-900 w-20 text-right">{(mPrice * km.qty).toLocaleString()} ₽</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => setReplaceKitchenItemModal({ kitchenKey: row.key || String(row.id), itemType: 'module', itemIndex: kmIdx })}
+                                          className="px-2 py-1 bg-amber-50 text-amber-700 hover:bg-amber-100 rounded-lg font-bold text-[10px] transition-colors"
+                                        >
+                                          Заменить
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => removeKitchenItem(row.key || String(row.id), 'module', kmIdx)}
+                                          className="p-1 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                          title="Удалить из гарнитура"
+                                        >
+                                          <Trash2 className="w-3.5 h-3.5" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Фурнитура */}
+                              {((row.rawProduct.kitchenHardware || []) as any[]).length > 0 && (
+                                <div className="space-y-2 pt-2 border-t border-gray-100">
+                                  <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider block">Фурнитура и комплектующие:</span>
+                                  {((row.rawProduct.kitchenHardware || []) as any[]).map((hw, hwIdx) => {
+                                    const hwProd = catalogProducts.find(cp => String(cp.id) === String(hw.productId));
+                                    const defaultCoeff = hwProd ? getProductCoefficient(hwProd, customerType, resolveBrandCoefficient) : 1.8;
+                                    const appliedCoeff = hw.isCustomCoeff && hw.customCoeff ? Number(hw.customCoeff) : defaultCoeff;
+                                    const unitPrice = Math.round((hwProd?.purchasePrice || hwProd?.price || hw.purchasePrice || 0) * appliedCoeff);
+                                    return (
+                                      <div key={hwIdx} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-xl text-xs gap-3">
+                                        <div className="min-w-0 flex-1">
+                                          <span className="font-bold text-gray-900 block truncate">{hw.groupName}: {hw.productName || hwProd?.name || 'По умолчанию'}</span>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                          <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-0.5">
+                                            <button
+                                              type="button"
+                                              onClick={() => updateKitchenItemQty(row.key || String(row.id), 'hardware', hwIdx, (hw.userQty || hw.calculatedQty) - 1)}
+                                              className="w-5 h-5 flex items-center justify-center text-gray-500 hover:bg-gray-100 rounded"
+                                            >
+                                              <Minus className="w-3 h-3" />
+                                            </button>
+                                            <span className="w-7 text-center font-bold text-gray-900">{hw.userQty ?? hw.calculatedQty}</span>
+                                            <button
+                                              type="button"
+                                              onClick={() => updateKitchenItemQty(row.key || String(row.id), 'hardware', hwIdx, (hw.userQty || hw.calculatedQty) + 1)}
+                                              className="w-5 h-5 flex items-center justify-center text-gray-500 hover:bg-gray-100 rounded"
+                                            >
+                                              <Plus className="w-3 h-3" />
+                                            </button>
+                                          </div>
+                                          <span className="font-bold text-gray-900 w-20 text-right">{(unitPrice * (hw.userQty ?? hw.calculatedQty)).toLocaleString()} ₽</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => removeKitchenItem(row.key || String(row.id), 'hardware', hwIdx)}
+                                            className="p-1 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                            title="Удалить из гарнитура"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+
+                              {/* Столешницы */}
+                              {((row.rawProduct.kitchenCountertops || []) as any[]).length > 0 && (
+                                <div className="space-y-2 pt-2 border-t border-gray-100">
+                                  <span className="text-[11px] font-bold text-gray-700 uppercase tracking-wider block">Столешницы / Стеновые:</span>
+                                  {((row.rawProduct.kitchenCountertops || []) as any[]).map((ct, ctIdx) => {
+                                    const ctProd = catalogProducts.find(cp => String(cp.id) === String(ct.productId));
+                                    const defaultCoeff = ctProd ? getProductCoefficient(ctProd, customerType, resolveBrandCoefficient) : 1.5;
+                                    const appliedCoeff = ct.isCustomCoeff && ct.customCoeff ? Number(ct.customCoeff) : defaultCoeff;
+                                    const sheetWidth = ctProd ? (Number(ctProd.width || ctProd.length || 3000)) : 3000;
+                                    const basePurchase = ctProd?.purchasePrice || ctProd?.price || 0;
+                                    const isPerMeter = ct.isPerMeter !== false;
+                                    const pricePerMeterPurchase = isPerMeter && sheetWidth > 0 ? (basePurchase / (sheetWidth / 1000)) : basePurchase;
+                                    const unitSelling = Math.round(pricePerMeterPurchase * appliedCoeff);
+
+                                    return (
+                                      <div key={ctIdx} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-xl text-xs gap-3">
+                                        <div className="min-w-0 flex-1">
+                                          <span className="font-bold text-gray-900 block truncate">{ct.productName || ctProd?.name || 'Столешница'}</span>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                          <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-lg p-0.5">
+                                            <button
+                                              type="button"
+                                              onClick={() => updateKitchenItemQty(row.key || String(row.id), 'countertop', ctIdx, (ct.metersOrQty || 1) - 0.5)}
+                                              className="w-5 h-5 flex items-center justify-center text-gray-500 hover:bg-gray-100 rounded"
+                                            >
+                                              <Minus className="w-3 h-3" />
+                                            </button>
+                                            <span className="w-12 text-center font-bold text-gray-900">{ct.metersOrQty} {isPerMeter ? "м.п." : "шт"}</span>
+                                            <button
+                                              type="button"
+                                              onClick={() => updateKitchenItemQty(row.key || String(row.id), 'countertop', ctIdx, (ct.metersOrQty || 1) + 0.5)}
+                                              className="w-5 h-5 flex items-center justify-center text-gray-500 hover:bg-gray-100 rounded"
+                                            >
+                                              <Plus className="w-3 h-3" />
+                                            </button>
+                                          </div>
+                                          <span className="font-bold text-gray-900 w-20 text-right">{Math.round(unitSelling * (ct.metersOrQty || 1)).toLocaleString()} ₽</span>
+                                          <button
+                                            type="button"
+                                            onClick={() => removeKitchenItem(row.key || String(row.id), 'countertop', ctIdx)}
+                                            className="p-1 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                                            title="Удалить из гарнитура"
+                                          >
+                                            <Trash2 className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                      </React.Fragment>
                     ))}
                   </React.Fragment>
                 ))}
@@ -18991,49 +19185,51 @@ const ProductsView = ({
                         <option value="упак">Упаковка</option>
                       </select>
                     </div>
-                    <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-2">
-                        Сегменты товара (можно выбрать несколько)
-                      </label>
-                      <div className="flex flex-wrap gap-3 p-3 bg-gray-50/50 border border-gray-200 rounded-xl">
-                        {["Эконом", "Средний", "Премиум"].map((seg) => {
-                          const currentSegments = newProduct.segment
-                            ? String(newProduct.segment).split(",").map((s) => s.trim()).filter(Boolean)
-                            : [];
-                          const isSelected = currentSegments.includes(seg);
-                          return (
-                            <label
-                              key={seg}
-                              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border cursor-pointer select-none transition-all text-sm font-semibold ${
-                                isSelected
-                                  ? "bg-emerald-50 border-emerald-200 text-emerald-950 shadow-sm"
-                                  : "bg-white border-gray-200 text-gray-700 hover:bg-gray-100"
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => {
-                                  let nextSegments;
-                                  if (isSelected) {
-                                    nextSegments = currentSegments.filter((s) => s !== seg);
-                                  } else {
-                                    nextSegments = [...currentSegments, seg];
-                                  }
-                                  const segVal = nextSegments.length > 0 ? nextSegments.join(", ") : "Средний";
-                                  setNewProduct((prev) => ({
-                                    ...prev,
-                                    segment: segVal,
-                                  }));
-                                }}
-                                className="w-4 h-4 text-emerald-600 focus:ring-emerald-500 border-gray-300 rounded"
-                              />
-                              <span>{seg}</span>
-                            </label>
-                          );
-                        })}
+                    {newProduct.category !== "Кухонные гарнитуры" && (
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-2">
+                          Сегменты товара (можно выбрать несколько)
+                        </label>
+                        <div className="flex flex-wrap gap-3 p-3 bg-gray-50/50 border border-gray-200 rounded-xl">
+                          {["Эконом", "Средний", "Премиум"].map((seg) => {
+                            const currentSegments = newProduct.segment
+                              ? String(newProduct.segment).split(",").map((s) => s.trim()).filter(Boolean)
+                              : [];
+                            const isSelected = currentSegments.includes(seg);
+                            return (
+                              <label
+                                key={seg}
+                                className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border cursor-pointer select-none transition-all text-sm font-semibold ${
+                                  isSelected
+                                    ? "bg-emerald-50 border-emerald-200 text-emerald-950 shadow-sm"
+                                    : "bg-white border-gray-200 text-gray-700 hover:bg-gray-100"
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => {
+                                    let nextSegments;
+                                    if (isSelected) {
+                                      nextSegments = currentSegments.filter((s) => s !== seg);
+                                    } else {
+                                      nextSegments = [...currentSegments, seg];
+                                    }
+                                    const segVal = nextSegments.length > 0 ? nextSegments.join(", ") : "Средний";
+                                    setNewProduct((prev) => ({
+                                      ...prev,
+                                      segment: segVal,
+                                    }));
+                                  }}
+                                  className="w-4 h-4 text-emerald-600 focus:ring-emerald-500 border-gray-300 rounded"
+                                />
+                                <span>{seg}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
+                    )}
                   </div>
 
                   {/* Variations Section */}
@@ -20204,23 +20400,345 @@ const ProductsView = ({
                           </div>
                         </div>
 
-                        {/* Расчет суммарной площади фасадов */}
-                        <div className="flex items-center justify-between pt-2 border-t border-gray-100">
-                          <span className="text-gray-500 font-medium">Расчетная площадь всех фасадов (по выбранным модулям):</span>
-                          <span className="font-black text-indigo-700 text-sm">
-                            {(() => {
-                              let totalM2 = 0;
-                              ((newProduct as any).kitchenModules || []).forEach((km: any) => {
-                                const m = catalogProducts.find((cp: any) => String(cp.id) === String(km.id));
-                                if (m && m.width && (m.moduleHeight || m.height)) {
-                                  const wM = Number(m.width) / 1000;
-                                  const hM = Number(m.moduleHeight || m.height) / 1000;
-                                  totalM2 += wM * hM * km.qty;
+                        {/* Фурнитура и комплектующие кухни */}
+                        <div className="space-y-4 bg-white p-4 rounded-2xl border border-indigo-100 shadow-2xs">
+                          <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                            <div>
+                              <span className="font-bold text-indigo-950 text-sm">Фурнитура и комплектующие гарнитура</span>
+                              <p className="text-[10px] text-gray-500">Система автоматически рассчитала требуемое кол-во фурнитуры по модулям. Вы можете изменить данные, выбрать конкретные петли из каталога и задать индивидуальный коэффициент.</p>
+                            </div>
+                          </div>
+
+                          {(() => {
+                            const modulesList = (newProduct as any).kitchenModules || [];
+                            let calculatedHinges = 0;
+                            let calculatedDrawers = 0;
+                            let calculatedLifters = 0;
+                            let calculatedLegs = 0;
+                            let calculatedHandles = 0;
+
+                            modulesList.forEach((km: any) => {
+                              const m = catalogProducts.find((cp: any) => String(cp.id) === String(km.id));
+                              if (m) {
+                                const h = Number(m.moduleHeight || m.height || 720);
+                                const w = Number(m.width || 600);
+                                const grp = m.moduleGroup || "Нижние";
+
+                                if (grp === "Нижние" || grp === "Верхние") {
+                                  const doors = w >= 600 ? 2 : 1;
+                                  const hingesPerDoor = h >= 2000 ? 4 : (h >= 900 ? 3 : 2);
+                                  calculatedHinges += doors * hingesPerDoor * km.qty;
+                                  calculatedLegs += (grp === "Нижние" ? 4 : 0) * km.qty;
+                                  calculatedHandles += doors * km.qty;
+                                } else if (grp === "Пеналы") {
+                                  calculatedHinges += 4 * km.qty;
+                                  calculatedLegs += 4 * km.qty;
+                                  calculatedHandles += 2 * km.qty;
+                                } else if (grp === "Антресоли") {
+                                  calculatedLifters += 2 * km.qty;
+                                  calculatedHandles += 1 * km.qty;
                                 }
-                              });
-                              return totalM2.toFixed(2);
-                            })()} м²
-                          </span>
+                              }
+                            });
+
+                            const existingHardware = (newProduct as any).kitchenHardware || [
+                              { groupName: "Накладные петли", calculatedQty: calculatedHinges, userQty: calculatedHinges, productId: "", customCoeff: "", isCustomCoeff: false },
+                              { groupName: "Направляющие ящиков", calculatedQty: calculatedDrawers, userQty: calculatedDrawers, productId: "", customCoeff: "", isCustomCoeff: false },
+                              { groupName: "Подъёмные механизмы", calculatedQty: calculatedLifters, userQty: calculatedLifters, productId: "", customCoeff: "", isCustomCoeff: false },
+                              { groupName: "Опоры кухонные (100мм)", calculatedQty: calculatedLegs, userQty: calculatedLegs, productId: "", customCoeff: "", isCustomCoeff: false },
+                              { groupName: "Ручки кухонные", calculatedQty: calculatedHandles, userQty: calculatedHandles, productId: "", customCoeff: "", isCustomCoeff: false },
+                            ];
+
+                            return (
+                              <div className="space-y-3">
+                                {existingHardware.map((hw: any, hIdx: number) => {
+                                  const selectedHardwareProd = catalogProducts.find(p => String(p.id) === String(hw.productId));
+                                  const defaultCoeff = selectedHardwareProd ? getProductCoefficient(selectedHardwareProd, customerType, resolveBrandCoefficient) : 1.8;
+                                  const appliedCoeff = hw.isCustomCoeff && hw.customCoeff ? Number(hw.customCoeff) : defaultCoeff;
+                                  const basePurchase = selectedHardwareProd?.purchasePrice || selectedHardwareProd?.price || hw.purchasePrice || 0;
+                                  const totalPurchase = basePurchase * (hw.userQty || 0);
+                                  const unitSelling = Math.round(basePurchase * appliedCoeff);
+                                  const totalSelling = unitSelling * (hw.userQty || 0);
+
+                                  return (
+                                    <div key={hIdx} className="p-3 bg-gray-50 rounded-xl border border-gray-200/80 space-y-2">
+                                      <div className="flex items-center justify-between flex-wrap gap-2">
+                                        <span className="font-bold text-gray-900 text-xs">{hw.groupName}</span>
+                                        <div className="flex items-center gap-2 text-[11px]">
+                                          <span className="text-gray-500">Системой: <strong className="text-indigo-600 font-bold">{hw.calculatedQty} шт</strong></span>
+                                          <span className="text-gray-300">|</span>
+                                          <label className="text-gray-700 font-bold flex items-center gap-1">
+                                            Указать свое кол-во:
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              value={hw.userQty}
+                                              onChange={(e) => {
+                                                const val = parseInt(e.target.value) || 0;
+                                                const updatedHW = [...existingHardware];
+                                                updatedHW[hIdx].userQty = val;
+                                                setNewProduct(prev => ({ ...prev, kitchenHardware: updatedHW }));
+                                              }}
+                                              className="w-14 px-2 py-0.5 border border-gray-300 rounded text-center font-bold bg-white outline-none focus:ring-1 focus:ring-indigo-500"
+                                            />
+                                            шт
+                                          </label>
+                                        </div>
+                                      </div>
+
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 pt-1">
+                                        <div>
+                                          <label className="block text-[10px] text-gray-500 font-semibold mb-0.5">Выбор из каталога фурнитуры:</label>
+                                          <select
+                                            value={hw.productId || ""}
+                                            onChange={(e) => {
+                                              const pId = e.target.value;
+                                              const pProd = catalogProducts.find(p => String(p.id) === String(pId));
+                                              const updatedHW = [...existingHardware];
+                                              updatedHW[hIdx].productId = pId;
+                                              updatedHW[hIdx].productName = pProd?.name || "";
+                                              updatedHW[hIdx].purchasePrice = pProd?.purchasePrice || pProd?.price || 0;
+                                              setNewProduct(prev => ({ ...prev, kitchenHardware: updatedHW }));
+                                            }}
+                                            className="w-full px-2 py-1 border border-gray-300 rounded-lg text-xs bg-white font-medium"
+                                          >
+                                            <option value="">-- Выбрать из каталога --</option>
+                                            {catalogProducts
+                                              .filter(p => p.category === "Фурнитура" || p.category === "Петли" || p.category === "Направляющие" || p.category === "Опоры и метизы" || p.category === "Ручки" || p.category === "Подъемные механизмы" || p.category === "Прочее")
+                                              .map(p => (
+                                                <option key={p.id} value={p.id}>{p.name} {p.purchasePrice ? `(${p.purchasePrice} ₽ закуп)` : ''}</option>
+                                              ))}
+                                          </select>
+                                        </div>
+
+                                        <div className="flex items-center gap-3 bg-white p-2 rounded-lg border border-gray-200">
+                                          <label className="flex items-center gap-1.5 cursor-pointer text-[11px] font-bold text-gray-700 select-none">
+                                            <input
+                                              type="checkbox"
+                                              checked={hw.isCustomCoeff || false}
+                                              onChange={(e) => {
+                                                const updatedHW = [...existingHardware];
+                                                updatedHW[hIdx].isCustomCoeff = e.target.checked;
+                                                if (e.target.checked && !updatedHW[hIdx].customCoeff) {
+                                                  updatedHW[hIdx].customCoeff = defaultCoeff;
+                                                }
+                                                setNewProduct(prev => ({ ...prev, kitchenHardware: updatedHW }));
+                                              }}
+                                              className="w-3.5 h-3.5 text-indigo-600 rounded"
+                                            />
+                                            Индивид. коэф:
+                                          </label>
+                                          {hw.isCustomCoeff ? (
+                                            <input
+                                              type="number"
+                                              step="0.05"
+                                              value={hw.customCoeff || appliedCoeff}
+                                              onChange={(e) => {
+                                                const updatedHW = [...existingHardware];
+                                                updatedHW[hIdx].customCoeff = e.target.value;
+                                                setNewProduct(prev => ({ ...prev, kitchenHardware: updatedHW }));
+                                              }}
+                                              className="w-16 px-1.5 py-0.5 border border-indigo-300 rounded text-xs font-bold text-indigo-700 text-center outline-none bg-indigo-50/50"
+                                            />
+                                          ) : (
+                                            <span className="text-xs font-semibold text-gray-500">({defaultCoeff} из настроек)</span>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      <div className="flex items-center justify-between text-[11px] pt-1 text-gray-600 border-t border-gray-200/50">
+                                        <span>Закупка: <strong>{basePurchase.toLocaleString()} ₽/шт</strong> (всего закуп: <strong>{totalPurchase.toLocaleString()} ₽</strong>)</span>
+                                        <span className="font-bold text-indigo-900">Итого продажа: <strong>{totalSelling.toLocaleString()} ₽</strong> ({unitSelling.toLocaleString()} ₽/шт)</span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
+                        </div>
+
+                        {/* Столешницы и стеновые панели */}
+                        <div className="space-y-4 bg-white p-4 rounded-2xl border border-indigo-100 shadow-2xs">
+                          <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                            <div>
+                              <span className="font-bold text-indigo-950 text-sm">Столешницы и стеновые панели</span>
+                              <p className="text-[10px] text-gray-500">Автоматически вычислена ширина нижних модулей для перевода в погонные метры.</p>
+                            </div>
+                          </div>
+
+                          {(() => {
+                            const modulesList = (newProduct as any).kitchenModules || [];
+                            let lowerModulesWidthMm = 0;
+                            modulesList.forEach((km: any) => {
+                              const m = catalogProducts.find((cp: any) => String(cp.id) === String(km.id));
+                              if (m) {
+                                const grp = m.moduleGroup || "Нижние";
+                                if (grp === "Нижние") {
+                                  lowerModulesWidthMm += Number(m.width || 600) * km.qty;
+                                }
+                              }
+                            });
+                            const calculatedMeters = parseFloat((lowerModulesWidthMm / 1000).toFixed(2)) || 1.0;
+
+                            const existingCountertops = (newProduct as any).kitchenCountertops || [
+                              { productId: "", productName: "", isPerMeter: true, sheetWidth: 3000, metersOrQty: calculatedMeters, customCoeff: "", isCustomCoeff: false }
+                            ];
+
+                            return (
+                              <div className="space-y-3">
+                                {existingCountertops.map((ct: any, ctIdx: number) => {
+                                  const selectedCtProd = catalogProducts.find(p => String(p.id) === String(ct.productId));
+                                  const defaultCoeff = selectedCtProd ? getProductCoefficient(selectedCtProd, customerType, resolveBrandCoefficient) : 1.5;
+                                  const appliedCoeff = ct.isCustomCoeff && ct.customCoeff ? Number(ct.customCoeff) : defaultCoeff;
+                                  const sheetWidth = selectedCtProd ? (Number(selectedCtProd.width || selectedCtProd.length || 3000)) : 3000;
+                                  const basePurchase = selectedCtProd?.purchasePrice || selectedCtProd?.price || 0;
+                                  
+                                  const isPerMeter = ct.isPerMeter !== false;
+                                  const pricePerMeterPurchase = isPerMeter && sheetWidth > 0 ? (basePurchase / (sheetWidth / 1000)) : basePurchase;
+                                  const totalPurchase = Math.round(pricePerMeterPurchase * (ct.metersOrQty || 0));
+                                  const unitSelling = Math.round(pricePerMeterPurchase * appliedCoeff);
+                                  const totalSelling = unitSelling * (ct.metersOrQty || 0);
+
+                                  return (
+                                    <div key={ctIdx} className="p-3 bg-gray-50 rounded-xl border border-gray-200/80 space-y-3">
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                        <div>
+                                          <label className="block text-[11px] font-bold text-gray-800 mb-1">Выбор столешницы / стеновой панели из каталога:</label>
+                                          <select
+                                            value={ct.productId || ""}
+                                            onChange={(e) => {
+                                              const pId = e.target.value;
+                                              const pProd = catalogProducts.find(p => String(p.id) === String(pId));
+                                              const updatedCt = [...existingCountertops];
+                                              updatedCt[ctIdx].productId = pId;
+                                              updatedCt[ctIdx].productName = pProd?.name || "";
+                                              updatedCt[ctIdx].purchasePrice = pProd?.purchasePrice || pProd?.price || 0;
+                                              updatedCt[ctIdx].sheetWidth = pProd ? (Number(pProd.width || pProd.length || 3000)) : 3000;
+                                              setNewProduct(prev => ({ ...prev, kitchenCountertops: updatedCt }));
+                                            }}
+                                            className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
+                                          >
+                                            <option value="">-- Выбрать столешницу из каталога --</option>
+                                            {catalogProducts
+                                              .filter(p => p.category === "Столешницы и стеновые" || p.category?.toLowerCase().includes("столешниц"))
+                                              .map(p => (
+                                                <option key={p.id} value={p.id}>{p.name} {p.article ? `(Арт: ${p.article})` : ''}</option>
+                                              ))}
+                                          </select>
+                                        </div>
+
+                                        <div className="flex items-center gap-3 pt-4">
+                                          <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-indigo-950 select-none">
+                                            <input
+                                              type="checkbox"
+                                              checked={isPerMeter}
+                                              onChange={(e) => {
+                                                const updatedCt = [...existingCountertops];
+                                                updatedCt[ctIdx].isPerMeter = e.target.checked;
+                                                setNewProduct(prev => ({ ...prev, kitchenCountertops: updatedCt }));
+                                              }}
+                                              className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                                            />
+                                            В составе гарнитура учитывать как погонный метр
+                                          </label>
+                                        </div>
+                                      </div>
+
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 items-center">
+                                        <div className="flex items-center gap-2 text-xs">
+                                          <span className="font-bold text-gray-700">Количество ({isPerMeter ? "м.п." : "шт"}):</span>
+                                          <input
+                                            type="number"
+                                            step="0.1"
+                                            value={ct.metersOrQty}
+                                            onChange={(e) => {
+                                              const val = parseFloat(e.target.value) || 0;
+                                              const updatedCt = [...existingCountertops];
+                                              updatedCt[ctIdx].metersOrQty = val;
+                                              setNewProduct(prev => ({ ...prev, kitchenCountertops: updatedCt }));
+                                            }}
+                                            className="w-20 px-2 py-1 border border-gray-300 rounded-lg font-bold text-center bg-white"
+                                          />
+                                        </div>
+
+                                        <div className="flex items-center gap-3 bg-white p-2 rounded-lg border border-gray-200">
+                                          <label className="flex items-center gap-1.5 cursor-pointer text-[11px] font-bold text-gray-700 select-none">
+                                            <input
+                                              type="checkbox"
+                                              checked={ct.isCustomCoeff || false}
+                                              onChange={(e) => {
+                                                const updatedCt = [...existingCountertops];
+                                                updatedCt[ctIdx].isCustomCoeff = e.target.checked;
+                                                if (e.target.checked && !updatedCt[ctIdx].customCoeff) {
+                                                  updatedCt[ctIdx].customCoeff = defaultCoeff;
+                                                }
+                                                setNewProduct(prev => ({ ...prev, kitchenCountertops: updatedCt }));
+                                              }}
+                                              className="w-3.5 h-3.5 text-indigo-600 rounded"
+                                            />
+                                            Индивид. коэф:
+                                          </label>
+                                          {ct.isCustomCoeff ? (
+                                            <input
+                                              type="number"
+                                              step="0.05"
+                                              value={ct.customCoeff || appliedCoeff}
+                                              onChange={(e) => {
+                                                const updatedCt = [...existingCountertops];
+                                                updatedCt[ctIdx].customCoeff = e.target.value;
+                                                setNewProduct(prev => ({ ...prev, kitchenCountertops: updatedCt }));
+                                              }}
+                                              className="w-16 px-1.5 py-0.5 border border-indigo-300 rounded text-xs font-bold text-indigo-700 text-center outline-none bg-indigo-50/50"
+                                            />
+                                          ) : (
+                                            <span className="text-xs font-semibold text-gray-500">({defaultCoeff} из настроек)</span>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      <p className="text-[10px] text-gray-500 italic">
+                                        * Посчитано автоматически по суммарной ширине нижних модулей ({lowerModulesWidthMm} мм), но рекомендуется это дело проверять.
+                                      </p>
+
+                                      <div className="flex items-center justify-between text-[11px] pt-1 text-gray-600 border-t border-gray-200/50">
+                                        <span>
+                                          Закупка: <strong>{Math.round(pricePerMeterPurchase).toLocaleString()} ₽/{isPerMeter ? "м.п." : "шт"}</strong> (всего закуп: <strong>{totalPurchase.toLocaleString()} ₽</strong>)
+                                        </span>
+                                        <span className="font-bold text-indigo-900">
+                                          Итого продажа: <strong>{totalSelling.toLocaleString()} ₽</strong> ({unitSelling.toLocaleString()} ₽/{isPerMeter ? "м.п." : "шт"})
+                                        </span>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            );
+                          })()}
+                        </div>
+
+                        {/* Calculated kitchen total banner */}
+                        <div className="p-4 bg-indigo-600 rounded-2xl text-white flex items-center justify-between flex-wrap gap-3 shadow-md">
+                          <div>
+                            <span className="text-[11px] uppercase tracking-wider text-indigo-200 font-bold block">Расчитанная стоимость гарнитура по составу:</span>
+                            <span className="text-xl font-black">
+                              {(() => {
+                                const calculatedPrice = calculateKitchenTotalPrice(newProduct, catalogProducts, customerType, resolveBrandCoefficient);
+                                return calculatedPrice.toLocaleString();
+                              })()} ₽
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const calcPrice = calculateKitchenTotalPrice(newProduct, catalogProducts, customerType, resolveBrandCoefficient);
+                              setNewProduct(prev => ({ ...prev, price: calcPrice }));
+                              showAlert("Цена синхронизирована", `Стоимость гарнитура (${calcPrice.toLocaleString()} ₽) установлена в карточку товара.`);
+                            }}
+                            className="px-4 py-2 bg-white text-indigo-900 rounded-xl font-black text-xs hover:bg-indigo-50 transition-all cursor-pointer shadow-sm"
+                          >
+                            Применить расчитанную цену
+                          </button>
                         </div>
                       </div>
                     </div>
@@ -22399,7 +22917,7 @@ const ProductsView = ({
                   {!(newProduct.category === "Столешницы и стеновые" && newProduct.wtManufacturer === "Скиф") ? (
                     <div>
                       <label className="block text-sm font-bold text-gray-700 mb-2">
-                        Цвет / Декор
+                        {newProduct.category === "Кухонные гарнитуры" ? "Цвет корпуса" : "Цвет / Декор"}
                       </label>
                       <div className="relative">
                         <Palette className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 w-4 h-4" />
@@ -22413,7 +22931,7 @@ const ProductsView = ({
                             }))
                           }
                           className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
-                          placeholder="Например: Хром матовый"
+                          placeholder={newProduct.category === "Кухонные гарнитуры" ? "Цвет корпуса (например: Белый, Дуб Сонома)" : "Например: Хром матовый"}
                         />
                       </div>
                     </div>
@@ -22446,138 +22964,144 @@ const ProductsView = ({
                   </div>
 
                   {/* Analogs UI Selector */}
-                  <div className="bg-amber-50/50 p-5 rounded-2xl border border-amber-100 space-y-4">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-bold text-amber-955 flex items-center gap-2">
-                        <Replace className="w-4 h-4 text-amber-600" />
-                        Аналоги товара
-                      </h4>
-                      <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-black uppercase">
-                        {(newProduct.analogs || []).length}
-                      </span>
-                    </div>
-                    <p className="text-xs text-gray-500 leading-normal">
-                      Укажите аналогичные товары из каталога. Показываются только товары из той же категории «<strong>{newProduct.category || "не указана"}</strong>». При детальном просмотре этого товара пользователь сможет мгновенно заменить его на один из аналогов.
-                    </p>
-
-                    <div className="space-y-2">
-                      <div className="relative">
-                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 w-3.5 h-3.5" />
-                        <input
-                          type="text"
-                          placeholder="Поиск по аналогам (по названию или артикулу)..."
-                          value={analogSearchQuery}
-                          onChange={(e) => setAnalogSearchQuery(e.target.value)}
-                          className="w-full h-8 pl-8 pr-3 text-xs border border-gray-200 rounded-xl outline-none bg-white font-medium focus:ring-2 focus:ring-amber-500"
-                        />
+                  {newProduct.category !== "Кухонные гарнитуры" ? (
+                    <div className="bg-amber-50/50 p-5 rounded-2xl border border-amber-100 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-sm font-bold text-amber-955 flex items-center gap-2">
+                          <Replace className="w-4 h-4 text-amber-600" />
+                          Аналоги товара
+                        </h4>
+                        <span className="text-[10px] bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full font-black uppercase">
+                          {(newProduct.analogs || []).length}
+                        </span>
                       </div>
-                      <div className="flex flex-col sm:flex-row gap-2 w-full min-w-0">
-                        <select
-                          id="analog-product-select"
-                          className="w-full sm:flex-1 min-w-0 px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-amber-500 text-gray-700 font-medium truncate"
-                          defaultValue=""
-                        >
-                          <option value="">-- Выберите аналог --</option>
-                          {catalogProducts
-                            .filter((p) => {
-                              const isNotSelf = p.id !== (editingProduct?.id || null);
-                              const isSameCat = p.category === newProduct.category;
-                              
-                              const searchLower = analogSearchQuery.toLowerCase().trim();
-                              const matchesSearch = !searchLower || 
-                                (p.name || "").toLowerCase().includes(searchLower) ||
-                                (p.article || "").toLowerCase().includes(searchLower);
-                              
-                              return isNotSelf && isSameCat && matchesSearch;
-                            })
-                            .map((p) => {
-                              const displayName = p.name ? (p.name.length > 50 ? p.name.substring(0, 48) + "..." : p.name) : "";
-                              const displayPrice = p.purchasePrice
-                                ? Math.round(p.purchasePrice * getProductCoefficient(p, customerType, resolveBrandCoefficient))
-                                : p.price;
-                              return (
-                                <option key={p.id} value={p.id} title={p.name}>
-                                  {displayName} ({(displayPrice || 0).toLocaleString()} ₽) {p.article ? `| Арт: ${p.article}` : ""}
-                                </option>
-                              );
-                            })}
-                        </select>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const selectEl = document.getElementById("analog-product-select") as HTMLSelectElement;
-                            if (selectEl && selectEl.value) {
-                              const prodId = selectEl.value;
-                              
-                              const exists = (newProduct.analogs || []).some((id: any) => String(id) === String(prodId));
-                              if (exists) {
-                                alert("Этот товар уже добавлен в список аналогов!");
-                                return;
+                      <p className="text-xs text-gray-500 leading-normal">
+                        Укажите аналогичные товары из каталога. Показываются только товары из той же категории «<strong>{newProduct.category || "не указана"}</strong>». При детальном просмотре этого товара пользователь сможет мгновенно заменить его на один из аналогов.
+                      </p>
+
+                      <div className="space-y-2">
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 w-3.5 h-3.5" />
+                          <input
+                            type="text"
+                            placeholder="Поиск по аналогам (по названию или артикулу)..."
+                            value={analogSearchQuery}
+                            onChange={(e) => setAnalogSearchQuery(e.target.value)}
+                            className="w-full h-8 pl-8 pr-3 text-xs border border-gray-200 rounded-xl outline-none bg-white font-medium focus:ring-2 focus:ring-amber-500"
+                          />
+                        </div>
+                        <div className="flex flex-col sm:flex-row gap-2 w-full min-w-0">
+                          <select
+                            id="analog-product-select"
+                            className="w-full sm:flex-1 min-w-0 px-3 py-2 text-sm border border-gray-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-amber-500 text-gray-700 font-medium truncate"
+                            defaultValue=""
+                          >
+                            <option value="">-- Выберите аналог --</option>
+                            {catalogProducts
+                              .filter((p) => {
+                                const isNotSelf = p.id !== (editingProduct?.id || null);
+                                const isSameCat = p.category === newProduct.category;
+                                
+                                const searchLower = analogSearchQuery.toLowerCase().trim();
+                                const matchesSearch = !searchLower || 
+                                  (p.name || "").toLowerCase().includes(searchLower) ||
+                                  (p.article || "").toLowerCase().includes(searchLower);
+                                
+                                return isNotSelf && isSameCat && matchesSearch;
+                              })
+                              .map((p) => {
+                                const displayName = p.name ? (p.name.length > 50 ? p.name.substring(0, 48) + "..." : p.name) : "";
+                                const displayPrice = p.purchasePrice
+                                  ? Math.round(p.purchasePrice * getProductCoefficient(p, customerType, resolveBrandCoefficient))
+                                  : p.price;
+                                return (
+                                  <option key={p.id} value={p.id} title={p.name}>
+                                    {displayName} ({(displayPrice || 0).toLocaleString()} ₽) {p.article ? `| Арт: ${p.article}` : ""}
+                                  </option>
+                                );
+                              })}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const selectEl = document.getElementById("analog-product-select") as HTMLSelectElement;
+                              if (selectEl && selectEl.value) {
+                                const prodId = selectEl.value;
+                                
+                                const exists = (newProduct.analogs || []).some((id: any) => String(id) === String(prodId));
+                                if (exists) {
+                                  alert("Этот товар уже добавлен в список аналогов!");
+                                  return;
+                                }
+
+                                setNewProduct((prev: any) => ({
+                                  ...prev,
+                                  analogs: [
+                                    ...(prev.analogs || []),
+                                    prodId
+                                  ]
+                                }));
+
+                                selectEl.value = "";
+                                setAnalogSearchQuery("");
+                              } else {
+                                alert("Пожалуйста, выберите товар из списка.");
                               }
-
-                              setNewProduct((prev: any) => ({
-                                ...prev,
-                                analogs: [
-                                  ...(prev.analogs || []),
-                                  prodId
-                                ]
-                              }));
-
-                              selectEl.value = "";
-                              setAnalogSearchQuery("");
-                            } else {
-                              alert("Пожалуйста, выберите товар из списка.");
-                            }
-                          }}
-                          className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs transition-colors shrink-0 cursor-pointer"
-                        >
-                          Добавить
-                        </button>
+                            }}
+                            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs transition-colors shrink-0 cursor-pointer"
+                          >
+                            Добавить
+                          </button>
+                        </div>
                       </div>
-                    </div>
 
-                    {(newProduct.analogs || []).length > 0 ? (
-                      <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                        {(newProduct.analogs || []).map((analogId: string, idx: number) => {
-                          const analogProduct = catalogProducts.find((cp) => String(cp.id) === String(analogId));
-                          const displayPrice = analogProduct?.purchasePrice
-                            ? Math.round(analogProduct.purchasePrice * getProductCoefficient(analogProduct, customerType, resolveBrandCoefficient))
-                            : analogProduct?.price;
-                          return (
-                            <div key={idx} className="flex items-center justify-between p-2 bg-white rounded-xl border border-gray-100 text-xs">
-                              <span className="font-semibold text-gray-700 truncate max-w-[200px] sm:max-w-[320px]" title={analogProduct?.name || analogId}>
-                                {analogProduct?.name || `Товар (Удален) [ID: ${analogId}]`}
-                              </span>
-                              <div className="flex items-center gap-3">
-                                {analogProduct && (
-                                  <span className="font-bold text-gray-500">
-                                    {(displayPrice || 0).toLocaleString()} ₽
-                                  </span>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setNewProduct((prev: any) => ({
-                                      ...prev,
-                                      analogs: (prev.analogs || []).filter((id: any) => String(id) !== String(analogId))
-                                    }));
-                                  }}
-                                  className="text-red-500 hover:bg-red-50 p-1 rounded-lg transition-colors cursor-pointer"
-                                  title="Удалить аналог"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                      {(newProduct.analogs || []).length > 0 ? (
+                        <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                          {(newProduct.analogs || []).map((analogId: string, idx: number) => {
+                            const analogProduct = catalogProducts.find((cp) => String(cp.id) === String(analogId));
+                            const displayPrice = analogProduct?.purchasePrice
+                              ? Math.round(analogProduct.purchasePrice * getProductCoefficient(analogProduct, customerType, resolveBrandCoefficient))
+                              : analogProduct?.price;
+                            return (
+                              <div key={idx} className="flex items-center justify-between p-2 bg-white rounded-xl border border-gray-100 text-xs">
+                                <span className="font-semibold text-gray-700 truncate max-w-[200px] sm:max-w-[320px]" title={analogProduct?.name || analogId}>
+                                  {analogProduct?.name || `Товар (Удален) [ID: ${analogId}]`}
+                                </span>
+                                <div className="flex items-center gap-3">
+                                  {analogProduct && (
+                                    <span className="font-bold text-gray-500">
+                                      {(displayPrice || 0).toLocaleString()} ₽
+                                    </span>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setNewProduct((prev: any) => ({
+                                        ...prev,
+                                        analogs: (prev.analogs || []).filter((id: any) => String(id) !== String(analogId))
+                                      }));
+                                    }}
+                                    className="text-red-500 hover:bg-red-50 p-1 rounded-lg transition-colors cursor-pointer"
+                                    title="Удалить аналог"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="text-center py-4 border border-dashed border-gray-200 rounded-xl text-gray-400 text-xs font-medium">
-                        Аналоги не добавлены
-                      </div>
-                    )}
-                  </div>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="text-center py-4 border border-dashed border-gray-200 rounded-xl text-gray-400 text-xs font-medium">
+                          Аналоги не добавлены
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="bg-amber-50/40 p-4 rounded-2xl border border-amber-100 text-xs text-amber-900 font-medium">
+                      У кухонных гарнитуров аналоги отсутствуют. Вся входящая фурнитура и комплектующие гибко подбираются и рассчитываются непосредственно в конструкторе гарнитура.
+                    </div>
+                  )}
 
                   {/* Required / Companion Products UI Selector */}
                   <div className="bg-indigo-50/50 p-5 rounded-2xl border border-indigo-100 space-y-4">
@@ -25442,6 +25966,140 @@ export default function App() {
   }, [defaultCuttingType]);
   const [kerf, setKerf] = useState(defaultCuttingType === "nesting" ? 12 : 4);
   const [addedProducts, setAddedProducts] = useState<any[]>([]);
+  const [expandedKitchens, setExpandedKitchens] = useState<Record<string, boolean>>({});
+  const [replaceKitchenItemModal, setReplaceKitchenItemModal] = useState<{ kitchenId: string | number; itemType: 'module' | 'hardware' | 'countertop'; itemIdx: number; currentItemName: string } | null>(null);
+
+  const calculateKitchenTotalPrice = (kitchenProduct: any, catalogProductsList: any[], custType: string, brandCoeffResolver: any) => {
+    let total = 0;
+    if (kitchenProduct.kitchenModules && kitchenProduct.kitchenModules.length > 0) {
+      kitchenProduct.kitchenModules.forEach((km: any) => {
+        const mod = catalogProductsList.find((cp: any) => String(cp.id) === String(km.id));
+        if (mod) {
+          const coeff = getProductCoefficient(mod, custType, brandCoeffResolver);
+          const price = mod.purchasePrice ? Math.round(mod.purchasePrice * coeff) : (mod.price || 0);
+          total += price * (km.qty || 1);
+        } else if (km.price) {
+          total += km.price * (km.qty || 1);
+        }
+      });
+    }
+
+    if (kitchenProduct.kitchenHardware && kitchenProduct.kitchenHardware.length > 0) {
+      kitchenProduct.kitchenHardware.forEach((hw: any) => {
+        const p = hw.productId ? catalogProductsList.find((cp: any) => String(cp.id) === String(hw.productId)) : null;
+        const basePurchase = hw.purchasePrice || (p ? (p.purchasePrice || p.price || 0) : 0);
+        let coeff = 1.8;
+        if (hw.isCustomCoeff && hw.customCoeff) {
+          coeff = Number(hw.customCoeff);
+        } else if (p) {
+          coeff = getProductCoefficient(p, custType, brandCoeffResolver);
+        }
+        const unitPrice = Math.round(basePurchase * coeff);
+        total += unitPrice * (hw.userQty || hw.calculatedQty || 1);
+      });
+    }
+
+    if (kitchenProduct.kitchenCountertops && kitchenProduct.kitchenCountertops.length > 0) {
+      kitchenProduct.kitchenCountertops.forEach((ct: any) => {
+        const p = ct.productId ? catalogProductsList.find((cp: any) => String(cp.id) === String(ct.productId)) : null;
+        const basePurchase = ct.purchasePrice || (p ? (p.purchasePrice || p.price || 0) : 0);
+        let coeff = 1.5;
+        if (ct.isCustomCoeff && ct.customCoeff) {
+          coeff = Number(ct.customCoeff);
+        } else if (p) {
+          coeff = getProductCoefficient(p, custType, brandCoeffResolver);
+        }
+        const sheetWidth = ct.sheetWidth || (p ? Number(p.width || p.length || 3000) : 3000);
+        const isPerMeter = ct.isPerMeter !== false;
+        
+        if (isPerMeter && sheetWidth > 0) {
+          const pricePerMeter = (basePurchase / (sheetWidth / 1000)) * coeff;
+          total += Math.round(pricePerMeter * (ct.metersOrQty || 1));
+        } else {
+          total += Math.round(basePurchase * coeff * (ct.metersOrQty || 1));
+        }
+      });
+    }
+
+    ['facadeBottomProduct', 'facadeTopProduct', 'facadeMezzanineProduct', 'facadeCaseProduct'].forEach((facKey) => {
+      const facId = kitchenProduct[facKey];
+      if (facId) {
+        const fac = catalogProductsList.find((cp: any) => String(cp.id) === String(facId));
+        if (fac) {
+          const coeff = getProductCoefficient(fac, custType, brandCoeffResolver);
+          const price = fac.purchasePrice ? Math.round(fac.purchasePrice * coeff) : (fac.price || 0);
+          total += price;
+        }
+      }
+    });
+
+    return Math.max(total, kitchenProduct.price || 0);
+  };
+
+  const updateKitchenItemQty = (kitchenId: string | number, itemType: 'module' | 'hardware' | 'countertop', itemIdx: number, newQty: number) => {
+    setAddedProducts(prev => prev.map(p => {
+      if (String(p.id) === String(kitchenId)) {
+        const updatedP = { ...p };
+        if (itemType === 'module' && updatedP.kitchenModules) {
+          const modules = [...updatedP.kitchenModules];
+          if (newQty <= 0) modules.splice(itemIdx, 1);
+          else modules[itemIdx] = { ...modules[itemIdx], qty: newQty };
+          updatedP.kitchenModules = modules;
+        } else if (itemType === 'hardware' && updatedP.kitchenHardware) {
+          const hw = [...updatedP.kitchenHardware];
+          if (newQty <= 0) hw.splice(itemIdx, 1);
+          else hw[itemIdx] = { ...hw[itemIdx], userQty: newQty };
+          updatedP.kitchenHardware = hw;
+        } else if (itemType === 'countertop' && updatedP.kitchenCountertops) {
+          const ct = [...updatedP.kitchenCountertops];
+          if (newQty <= 0) ct.splice(itemIdx, 1);
+          else ct[itemIdx] = { ...ct[itemIdx], metersOrQty: newQty };
+          updatedP.kitchenCountertops = ct;
+        }
+        updatedP.price = calculateKitchenTotalPrice(updatedP, catalogProducts, customerType, resolveBrandCoefficient);
+        return updatedP;
+      }
+      return p;
+    }));
+  };
+
+  const replaceKitchenItem = (kitchenId: string | number, itemType: 'module' | 'hardware' | 'countertop', itemIdx: number, newProductFromCatalog: any) => {
+    setAddedProducts(prev => prev.map(p => {
+      if (String(p.id) === String(kitchenId)) {
+        const updatedP = { ...p };
+        if (itemType === 'module' && updatedP.kitchenModules) {
+          const modules = [...updatedP.kitchenModules];
+          modules[itemIdx] = { ...modules[itemIdx], id: newProductFromCatalog.id, name: newProductFromCatalog.name };
+          updatedP.kitchenModules = modules;
+        } else if (itemType === 'hardware' && updatedP.kitchenHardware) {
+          const hw = [...updatedP.kitchenHardware];
+          hw[itemIdx] = {
+            ...hw[itemIdx],
+            productId: newProductFromCatalog.id,
+            productName: newProductFromCatalog.name,
+            purchasePrice: newProductFromCatalog.purchasePrice || newProductFromCatalog.price || 0
+          };
+          updatedP.kitchenHardware = hw;
+        } else if (itemType === 'countertop' && updatedP.kitchenCountertops) {
+          const ct = [...updatedP.kitchenCountertops];
+          ct[itemIdx] = {
+            ...ct[itemIdx],
+            productId: newProductFromCatalog.id,
+            productName: newProductFromCatalog.name,
+            purchasePrice: newProductFromCatalog.purchasePrice || newProductFromCatalog.price || 0
+          };
+          updatedP.kitchenCountertops = ct;
+        }
+        updatedP.price = calculateKitchenTotalPrice(updatedP, catalogProducts, customerType, resolveBrandCoefficient);
+        return updatedP;
+      }
+      return p;
+    }));
+  };
+
+  const removeKitchenItem = (kitchenId: string | number, itemType: 'module' | 'hardware' | 'countertop', itemIdx: number) => {
+    updateKitchenItemQty(kitchenId, itemType, itemIdx, 0);
+  };
   const [addedServices, setAddedServices] = useState<any[]>([]);
   const [assemblyPercentage, setAssemblyPercentage] = useState(12);
   const [assemblyPercentages, setAssemblyPercentages] = useState<Record<string, number>>({});
@@ -30230,6 +30888,56 @@ export default function App() {
                 >
                   Добавить с сопутствующими
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {replaceKitchenItemModal && (
+          <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="p-6 space-y-4">
+                <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                  <h3 className="text-base font-bold text-gray-900">Заменить компонент гарнитура</h3>
+                  <button
+                    onClick={() => setReplaceKitchenItemModal(null)}
+                    className="p-1 text-gray-400 hover:text-gray-600 rounded-lg"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Выберите товар из каталога, на который хотите заменить выбранную позицию в составе кухонного гарнитура:
+                </p>
+                <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                  {catalogProducts
+                    .filter(p => replaceKitchenItemModal.itemType === 'module' ? p.category === "Кухонные модули" : true)
+                    .map((prod) => (
+                      <div
+                        key={prod.id}
+                        onClick={() => replaceKitchenItem(replaceKitchenItemModal.kitchenKey, replaceKitchenItemModal.itemType, replaceKitchenItemModal.itemIndex, prod)}
+                        className="flex items-center justify-between p-3 bg-gray-50 hover:bg-indigo-50/60 rounded-xl border border-gray-200/80 cursor-pointer transition-all"
+                      >
+                        <div className="min-w-0 flex-1 pr-2">
+                          <span className="font-bold text-gray-900 text-xs block truncate">{prod.name}</span>
+                          <span className="text-[10px] text-gray-500 block">
+                            Арт: {prod.article || "—"} • {prod.category}
+                          </span>
+                        </div>
+                        <span className="font-extrabold text-xs text-indigo-700 whitespace-nowrap">
+                          {(prod.price || Math.round((prod.purchasePrice || 0) * getProductCoefficient(prod, customerType, resolveBrandCoefficient))).toLocaleString()} ₽
+                        </span>
+                      </div>
+                    ))}
+                </div>
+                <div className="flex justify-end pt-2">
+                  <button
+                    onClick={() => setReplaceKitchenItemModal(null)}
+                    className="px-5 py-2 text-xs font-bold text-gray-500 hover:bg-gray-100 rounded-xl transition-all"
+                  >
+                    Отмена
+                  </button>
+                </div>
               </div>
             </div>
           </div>

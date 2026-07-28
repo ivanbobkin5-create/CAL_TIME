@@ -72,6 +72,28 @@ function resolveCategoryFromSubpath(cats: string[], subPath?: string): string {
   return cats[0] || "";
 }
 
+function categoryToSubpath(category: string): string {
+  if (!category) return "catalog";
+  const norm = category.toLowerCase();
+  if (norm.includes("модули") || norm.includes("модуль")) return "moduli";
+  if (norm.includes("гарнитур") || norm.includes("кухни")) return "kuhni";
+  if (norm.includes("фасад")) return "fasady";
+  if (norm.includes("столешн")) return "stoleshnicy";
+  if (norm.includes("петл")) return "petli";
+  if (norm.includes("сушител") || norm.includes("посуд")) return "posudosushiteli";
+  return transliterate(category) || "catalog";
+}
+
+function updateUrlSubpath(category: string, aliasOrId: string) {
+  if (!aliasOrId) return;
+  const sub = categoryToSubpath(category);
+  const isCPath = window.location.pathname.startsWith("/c/");
+  const newPath = isCPath ? `/c/${aliasOrId}/${sub}` : `/${aliasOrId}/${sub}`;
+  if (window.location.pathname !== newPath) {
+    window.history.pushState({ category }, "", newPath);
+  }
+}
+
 function getCategoryIcon(cat: string, className = "w-4 h-4") {
   const norm = cat.toLowerCase();
   if (norm.includes("модул")) return <Layers className={className} />;
@@ -612,7 +634,7 @@ export function PublicLandingView({ aliasOrId, initialSubPath }: PublicLandingVi
       </header>
 
       {/* Hero Banner Area */}
-      <section className={`bg-gradient-to-r ${heroGradClass} text-white py-20 px-4 select-none relative overflow-hidden rounded-b-[2rem] md:rounded-b-[3rem] shadow-xl`}>
+      <section className={`bg-gradient-to-r ${heroGradClass} text-white py-8 md:py-10 px-4 select-none relative overflow-hidden rounded-b-[2rem] md:rounded-b-[2.5rem] shadow-lg`}>
         {/* Architectural Tech Blueprint Grid Pattern */}
         <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.06)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.06)_1px,transparent_1px)] bg-[size:3.5rem_3.5rem] pointer-events-none" />
         
@@ -620,61 +642,22 @@ export function PublicLandingView({ aliasOrId, initialSubPath }: PublicLandingVi
         <div className="absolute inset-0 bg-[radial-gradient(rgba(255,255,255,0.12)_1px,transparent_1px)] [background-size:16px_16px] pointer-events-none" />
 
         {/* Ambient glows */}
-        <div className="absolute top-1/2 left-1/4 -translate-y-1/2 w-80 h-80 bg-blue-500/20 rounded-full blur-[100px] pointer-events-none animate-pulse" />
+        <div className="absolute top-1/2 left-1/4 -translate-y-1/2 w-80 h-80 bg-blue-500/20 rounded-full blur-[100px] pointer-events-none" />
         <div className="absolute top-1/3 right-1/4 -translate-y-1/2 w-96 h-96 bg-indigo-500/25 rounded-full blur-[120px] pointer-events-none" />
 
         <div className="absolute inset-0 bg-black/15 mix-blend-multiply pointer-events-none" />
         
-        <div className="max-w-7xl mx-auto text-center relative z-10 space-y-6">
-          <div className="inline-flex items-center gap-2 px-3.5 py-1.5 bg-white/10 backdrop-blur rounded-full text-[10px] font-black uppercase tracking-wider text-blue-50 border border-white/10">
-            <Sparkles className="w-3.5 h-3.5 text-amber-300 fill-amber-300 animate-pulse" />
+        <div className="max-w-7xl mx-auto text-center relative z-10 space-y-3">
+          <div className="inline-flex items-center gap-2 px-3 py-1 bg-white/10 backdrop-blur rounded-full text-[10px] font-black uppercase tracking-wider text-blue-50 border border-white/10">
+            <Sparkles className="w-3.5 h-3.5 text-amber-300 fill-amber-300" />
             Официальная онлайн-витрина
           </div>
-          <h2 className="text-3xl md:text-5xl font-black tracking-tight leading-tight max-w-4xl mx-auto drop-shadow-sm">
+          <h2 className="text-2xl md:text-4xl font-black tracking-tight leading-tight max-w-4xl mx-auto drop-shadow-sm">
             {displayTitle}
           </h2>
-          <p className="text-sm md:text-base text-blue-100/90 max-w-2xl mx-auto leading-relaxed font-medium drop-shadow-sm">
+          <p className="text-xs md:text-sm text-blue-100/90 max-w-2xl mx-auto leading-relaxed font-medium drop-shadow-sm">
             {displayDesc}
           </p>
-
-          {/* Premium Floating Quick Specs / Feature Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl mx-auto pt-6 text-left">
-            <div className="bg-white/5 backdrop-blur-md rounded-2xl p-4 border border-white/10 hover:bg-white/10 transition-all group shadow-inner">
-              <div className="flex items-start gap-3">
-                <div className="p-2 bg-white/10 rounded-xl text-blue-200 group-hover:scale-110 transition-transform">
-                  <Layers className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="font-bold text-sm text-white leading-tight">Интерактивный подбор</h4>
-                  <p className="text-xs text-blue-100/70 mt-1 leading-normal">Каталог содержит только доступные к сборке модули и актуальную фурнитуру.</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white/5 backdrop-blur-md rounded-2xl p-4 border border-white/10 hover:bg-white/10 transition-all group shadow-inner">
-              <div className="flex items-start gap-3">
-                <div className="p-2 bg-white/10 rounded-xl text-emerald-200 group-hover:scale-110 transition-transform">
-                  <CheckCircle2 className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="font-bold text-sm text-white leading-tight">Прямой расчет цен</h4>
-                  <p className="text-xs text-blue-100/70 mt-1 leading-normal">Цены генерируются по спецификации напрямую из материалов производства.</p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white/5 backdrop-blur-md rounded-2xl p-4 border border-white/10 hover:bg-white/10 transition-all group shadow-inner">
-              <div className="flex items-start gap-3">
-                <div className="p-2 bg-white/10 rounded-xl text-amber-200 group-hover:scale-110 transition-transform">
-                  <MessageSquare className="w-5 h-5" />
-                </div>
-                <div>
-                  <h4 className="font-bold text-sm text-white leading-tight">Быстрый запуск заказа</h4>
-                  <p className="text-xs text-blue-100/70 mt-1 leading-normal">Отправка заказа на мгновенную проверку дизайнеру и расчет доставки.</p>
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -780,6 +763,7 @@ export function PublicLandingView({ aliasOrId, initialSubPath }: PublicLandingVi
                     onClick={() => {
                       setSelectedCategory(cat);
                       setSelectedBrands([]); // Сброс брендов при смене категории
+                      updateUrlSubpath(cat, aliasOrId);
                     }}
                     className={`px-3 py-2.5 rounded-xl text-left font-bold text-xs transition-all flex items-center justify-between gap-2 whitespace-nowrap md:whitespace-normal w-full border ${
                       selectedCategory === cat
@@ -888,6 +872,7 @@ export function PublicLandingView({ aliasOrId, initialSubPath }: PublicLandingVi
                   onClick={() => {
                     setSelectedCategory("");
                     setSelectedBrands([]);
+                    updateUrlSubpath("", aliasOrId);
                   }}
                   className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap border ${
                     selectedCategory === ""
@@ -908,6 +893,7 @@ export function PublicLandingView({ aliasOrId, initialSubPath }: PublicLandingVi
                     onClick={() => {
                       setSelectedCategory(cat);
                       setSelectedBrands([]);
+                      updateUrlSubpath(cat, aliasOrId);
                     }}
                     className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap border ${
                       selectedCategory === cat
@@ -1252,7 +1238,8 @@ export function PublicLandingView({ aliasOrId, initialSubPath }: PublicLandingVi
                         {(() => {
                           const stdEquip = (product.moduleStandardEquipment || []).map((se: any) => {
                             const found = products.find((p: any) => String(p.id) === String(se.id));
-                            return found ? { ...found, qty: se.qty } : { id: se.id, name: "Компонент", qty: se.qty, unit: "шт." };
+                            const fallbackName = se.name || se.title || se.productName || "Комплектующее";
+                            return found ? { ...found, name: found.name || fallbackName, qty: se.qty } : { id: se.id, name: fallbackName, qty: se.qty, unit: se.unit || "шт." };
                           });
 
                           if (stdEquip.length === 0) return null;
@@ -1619,6 +1606,13 @@ export function PublicLandingView({ aliasOrId, initialSubPath }: PublicLandingVi
                               const rpId = typeof rp === "object" ? rp.id : rp;
                               const cp = products.find((item: any) => String(item.id) === String(rpId));
                               if (!cp) return null;
+
+                              // Exclude edge banding / кромочные материалы from companion products display
+                              const catLower = (cp.category || "").toLowerCase();
+                              const nameLower = (cp.name || "").toLowerCase();
+                              if (catLower.includes("кромк") || catLower.includes("кромочн") || nameLower.includes("кромк") || nameLower.includes("кромочн")) {
+                                return null;
+                              }
                               
                               const isChecked = selectedCompanionIds.has(String(rpId));
                               const cpCoeff = getProductCoefficient(cp);
