@@ -8245,6 +8245,73 @@ const getProductCoefficient = (
   return resolveBrandCoefficient(`cat_${product?.category}`, prodBrand);
 };
 
+const calculateKitchenTotalPrice = (kitchenProduct: any, catalogProductsList: any[], custType: string, brandCoeffResolver: any) => {
+  let total = 0;
+  if (kitchenProduct.kitchenModules && kitchenProduct.kitchenModules.length > 0) {
+    kitchenProduct.kitchenModules.forEach((km: any) => {
+      const mod = catalogProductsList.find((cp: any) => String(cp.id) === String(km.id));
+      if (mod) {
+        const coeff = getProductCoefficient(mod, custType, brandCoeffResolver);
+        const price = mod.purchasePrice ? Math.round(mod.purchasePrice * coeff) : (mod.price || 0);
+        total += price * (km.qty || 1);
+      } else if (km.price) {
+        total += km.price * (km.qty || 1);
+      }
+    });
+  }
+
+  if (kitchenProduct.kitchenHardware && kitchenProduct.kitchenHardware.length > 0) {
+    kitchenProduct.kitchenHardware.forEach((hw: any) => {
+      const p = hw.productId ? catalogProductsList.find((cp: any) => String(cp.id) === String(hw.productId)) : null;
+      const basePurchase = hw.purchasePrice || (p ? (p.purchasePrice || p.price || 0) : 0);
+      let coeff = 1.8;
+      if (hw.isCustomCoeff && hw.customCoeff) {
+        coeff = Number(hw.customCoeff);
+      } else if (p) {
+        coeff = getProductCoefficient(p, custType, brandCoeffResolver);
+      }
+      const unitPrice = Math.round(basePurchase * coeff);
+      total += unitPrice * (hw.userQty || hw.calculatedQty || 1);
+    });
+  }
+
+  if (kitchenProduct.kitchenCountertops && kitchenProduct.kitchenCountertops.length > 0) {
+    kitchenProduct.kitchenCountertops.forEach((ct: any) => {
+      const p = ct.productId ? catalogProductsList.find((cp: any) => String(cp.id) === String(ct.productId)) : null;
+      const basePurchase = ct.purchasePrice || (p ? (p.purchasePrice || p.price || 0) : 0);
+      let coeff = 1.5;
+      if (ct.isCustomCoeff && ct.customCoeff) {
+        coeff = Number(ct.customCoeff);
+      } else if (p) {
+        coeff = getProductCoefficient(p, custType, brandCoeffResolver);
+      }
+      const sheetWidth = ct.sheetWidth || (p ? Number(p.width || p.length || 3000) : 3000);
+      const isPerMeter = ct.isPerMeter !== false;
+      
+      if (isPerMeter && sheetWidth > 0) {
+        const pricePerMeter = (basePurchase / (sheetWidth / 1000)) * coeff;
+        total += Math.round(pricePerMeter * (ct.metersOrQty || 1));
+      } else {
+        total += Math.round(basePurchase * coeff * (ct.metersOrQty || 1));
+      }
+    });
+  }
+
+  ['facadeBottomProduct', 'facadeTopProduct', 'facadeMezzanineProduct', 'facadeCaseProduct'].forEach((facKey) => {
+    const facId = kitchenProduct[facKey];
+    if (facId) {
+      const fac = catalogProductsList.find((cp: any) => String(cp.id) === String(facId));
+      if (fac) {
+        const coeff = getProductCoefficient(fac, custType, brandCoeffResolver);
+        const price = fac.purchasePrice ? Math.round(fac.purchasePrice * coeff) : (fac.price || 0);
+        total += price;
+      }
+    }
+  });
+
+  return Math.max(total, kitchenProduct.price || 0);
+};
+
 const makeFittingDemandKey = (fit: {
   category: string;
   hingeType?: string;
@@ -25968,73 +26035,6 @@ export default function App() {
   const [addedProducts, setAddedProducts] = useState<any[]>([]);
   const [expandedKitchens, setExpandedKitchens] = useState<Record<string, boolean>>({});
   const [replaceKitchenItemModal, setReplaceKitchenItemModal] = useState<{ kitchenId: string | number; itemType: 'module' | 'hardware' | 'countertop'; itemIdx: number; currentItemName: string } | null>(null);
-
-  const calculateKitchenTotalPrice = (kitchenProduct: any, catalogProductsList: any[], custType: string, brandCoeffResolver: any) => {
-    let total = 0;
-    if (kitchenProduct.kitchenModules && kitchenProduct.kitchenModules.length > 0) {
-      kitchenProduct.kitchenModules.forEach((km: any) => {
-        const mod = catalogProductsList.find((cp: any) => String(cp.id) === String(km.id));
-        if (mod) {
-          const coeff = getProductCoefficient(mod, custType, brandCoeffResolver);
-          const price = mod.purchasePrice ? Math.round(mod.purchasePrice * coeff) : (mod.price || 0);
-          total += price * (km.qty || 1);
-        } else if (km.price) {
-          total += km.price * (km.qty || 1);
-        }
-      });
-    }
-
-    if (kitchenProduct.kitchenHardware && kitchenProduct.kitchenHardware.length > 0) {
-      kitchenProduct.kitchenHardware.forEach((hw: any) => {
-        const p = hw.productId ? catalogProductsList.find((cp: any) => String(cp.id) === String(hw.productId)) : null;
-        const basePurchase = hw.purchasePrice || (p ? (p.purchasePrice || p.price || 0) : 0);
-        let coeff = 1.8;
-        if (hw.isCustomCoeff && hw.customCoeff) {
-          coeff = Number(hw.customCoeff);
-        } else if (p) {
-          coeff = getProductCoefficient(p, custType, brandCoeffResolver);
-        }
-        const unitPrice = Math.round(basePurchase * coeff);
-        total += unitPrice * (hw.userQty || hw.calculatedQty || 1);
-      });
-    }
-
-    if (kitchenProduct.kitchenCountertops && kitchenProduct.kitchenCountertops.length > 0) {
-      kitchenProduct.kitchenCountertops.forEach((ct: any) => {
-        const p = ct.productId ? catalogProductsList.find((cp: any) => String(cp.id) === String(ct.productId)) : null;
-        const basePurchase = ct.purchasePrice || (p ? (p.purchasePrice || p.price || 0) : 0);
-        let coeff = 1.5;
-        if (ct.isCustomCoeff && ct.customCoeff) {
-          coeff = Number(ct.customCoeff);
-        } else if (p) {
-          coeff = getProductCoefficient(p, custType, brandCoeffResolver);
-        }
-        const sheetWidth = ct.sheetWidth || (p ? Number(p.width || p.length || 3000) : 3000);
-        const isPerMeter = ct.isPerMeter !== false;
-        
-        if (isPerMeter && sheetWidth > 0) {
-          const pricePerMeter = (basePurchase / (sheetWidth / 1000)) * coeff;
-          total += Math.round(pricePerMeter * (ct.metersOrQty || 1));
-        } else {
-          total += Math.round(basePurchase * coeff * (ct.metersOrQty || 1));
-        }
-      });
-    }
-
-    ['facadeBottomProduct', 'facadeTopProduct', 'facadeMezzanineProduct', 'facadeCaseProduct'].forEach((facKey) => {
-      const facId = kitchenProduct[facKey];
-      if (facId) {
-        const fac = catalogProductsList.find((cp: any) => String(cp.id) === String(facId));
-        if (fac) {
-          const coeff = getProductCoefficient(fac, custType, brandCoeffResolver);
-          const price = fac.purchasePrice ? Math.round(fac.purchasePrice * coeff) : (fac.price || 0);
-          total += price;
-        }
-      }
-    });
-
-    return Math.max(total, kitchenProduct.price || 0);
-  };
 
   const updateKitchenItemQty = (kitchenId: string | number, itemType: 'module' | 'hardware' | 'countertop', itemIdx: number, newQty: number) => {
     setAddedProducts(prev => prev.map(p => {
