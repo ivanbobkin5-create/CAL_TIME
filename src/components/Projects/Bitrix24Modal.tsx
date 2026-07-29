@@ -454,6 +454,13 @@ export const Bitrix24Modal = ({
       };
 
       const getRowPurchaseSum = (row: any) => {
+        const isKitchen = row.rawProduct?.category === "Кухонные гарнитуры" || row.rawProduct?.category === "Кухонный гарнитур" || row.sub === "Кухонные гарнитуры" || row.sub === "Кухонный гарнитур";
+        if (isKitchen) {
+          const qty = parseQty(row.qty);
+          const pr = row.rawProduct?.purchasePrice || row.purchasePrice || 0;
+          if (pr > 0) return qty * pr;
+        }
+
         if (row.total !== undefined) {
           if (row.coef && row.coef > 0) {
             return row.total / row.coef;

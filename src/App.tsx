@@ -77,6 +77,7 @@ import {
   Percent,
   Search,
   Filter,
+  ChevronLeft,
   ChevronRight,
   ChevronDown,
   ChevronUp,
@@ -8246,6 +8247,79 @@ const getProductCoefficient = (
   return resolveBrandCoefficient(`cat_${product?.category}`, prodBrand);
 };
 
+const calculateKitchenPurchasePrice = (kitchenProduct: any, catalogProductsList: any[]) => {
+  let totalPurchase = 0;
+
+  if (kitchenProduct.kitchenModules && kitchenProduct.kitchenModules.length > 0) {
+    kitchenProduct.kitchenModules.forEach((km: any) => {
+      const mod = catalogProductsList.find((cp: any) => String(cp.id) === String(km.id));
+      if (mod) {
+        const p = mod.purchasePrice || mod.price || 0;
+        totalPurchase += p * (km.qty || 1);
+      } else if (km.purchasePrice) {
+        totalPurchase += km.purchasePrice * (km.qty || 1);
+      }
+    });
+  }
+
+  if (kitchenProduct.kitchenHardware && kitchenProduct.kitchenHardware.length > 0) {
+    kitchenProduct.kitchenHardware.forEach((hw: any) => {
+      const p = hw.productId ? catalogProductsList.find((cp: any) => String(cp.id) === String(hw.productId)) : null;
+      const basePurchase = hw.purchasePrice || (p ? (p.purchasePrice || p.price || 0) : 0);
+      const qty = hw.userQty !== undefined ? hw.userQty : (hw.calculatedQty || 0);
+      totalPurchase += basePurchase * qty;
+    });
+  }
+
+  if (kitchenProduct.kitchenCountertops && kitchenProduct.kitchenCountertops.length > 0) {
+    kitchenProduct.kitchenCountertops.forEach((ct: any) => {
+      const p = ct.productId ? catalogProductsList.find((cp: any) => String(cp.id) === String(ct.productId)) : null;
+      const basePurchase = ct.purchasePrice || (p ? (p.purchasePrice || p.price || 0) : 0);
+      const sheetWidth = ct.sheetWidth || (p ? Number(p.width || p.length || 3000) : 3000);
+      const isPerMeter = ct.isPerMeter !== false;
+
+      if (isPerMeter && sheetWidth > 0) {
+        const pricePerMeter = basePurchase / (sheetWidth / 1000);
+        totalPurchase += pricePerMeter * (ct.metersOrQty || 1);
+      } else {
+        totalPurchase += basePurchase * (ct.metersOrQty || 1);
+      }
+    });
+  }
+
+  if (kitchenProduct.kitchenExtraProducts && kitchenProduct.kitchenExtraProducts.length > 0) {
+    kitchenProduct.kitchenExtraProducts.forEach((extra: any) => {
+      const p = extra.productId ? catalogProductsList.find((cp: any) => String(cp.id) === String(extra.productId)) : null;
+      const basePurchase = extra.purchasePrice || (p ? (p.purchasePrice || p.price || 0) : 0);
+      totalPurchase += basePurchase * (extra.qty || 1);
+    });
+  }
+
+  ['facadeBottomProduct', 'facadeTopProduct', 'facadeMezzanineProduct', 'facadeCaseProduct'].forEach((facKey) => {
+    const facId = kitchenProduct[facKey];
+    if (facId) {
+      const fac = catalogProductsList.find((cp: any) => String(cp.id) === String(facId));
+      if (fac) {
+        totalPurchase += fac.purchasePrice || fac.price || 0;
+      }
+    }
+  });
+
+  if (kitchenProduct.requiredProducts && kitchenProduct.requiredProducts.length > 0) {
+    kitchenProduct.requiredProducts.forEach((rp: any) => {
+      const reqId = typeof rp === "object" ? rp.id : rp;
+      const reqQty = typeof rp === "object" ? (rp.qty || 1) : 1;
+      const p = catalogProductsList.find((cp: any) => String(cp.id) === String(reqId));
+      if (p) {
+        const basePurchase = p.purchasePrice !== undefined ? p.purchasePrice : (p.price || 0);
+        totalPurchase += basePurchase * reqQty;
+      }
+    });
+  }
+
+  return Math.round(totalPurchase);
+};
+
 const calculateKitchenTotalPrice = (kitchenProduct: any, catalogProductsList: any[], custType: string, brandCoeffResolver: any) => {
   let total = 0;
   if (kitchenProduct.kitchenModules && kitchenProduct.kitchenModules.length > 0) {
@@ -8320,7 +8394,21 @@ const calculateKitchenTotalPrice = (kitchenProduct: any, catalogProductsList: an
     }
   });
 
-  return Math.max(total, kitchenProduct.price || 0);
+  if (kitchenProduct.requiredProducts && kitchenProduct.requiredProducts.length > 0) {
+    kitchenProduct.requiredProducts.forEach((rp: any) => {
+      const reqId = typeof rp === "object" ? rp.id : rp;
+      const reqQty = typeof rp === "object" ? (rp.qty || 1) : 1;
+      const p = catalogProductsList.find((cp: any) => String(cp.id) === String(reqId));
+      if (p) {
+        const coeff = getProductCoefficient(p, custType, brandCoeffResolver);
+        const basePurchase = p.purchasePrice !== undefined ? p.purchasePrice : (p.price || 0);
+        const unitPrice = Math.round(basePurchase * coeff);
+        total += unitPrice * reqQty;
+      }
+    });
+  }
+
+  return total > 0 ? total : (kitchenProduct.price || 0);
 };
 
 const makeFittingDemandKey = (fit: {
@@ -9444,9 +9532,12 @@ const SummaryView = ({
   // Add Added Products
   finalProductsList.forEach((product) => {
     const coeff = getProductCoefficient(product, customerType, resolveBrandCoefficient);
-    const displayPrice = product.purchasePrice
-      ? Math.round(product.purchasePrice * coeff)
-      : product.price;
+    const isKitchen = product.category === "Кухонные гарнитуры" || product.category === "Кухонный гарнитур";
+    const displayPrice = isKitchen
+      ? (product.price || 0)
+      : (product.purchasePrice
+        ? Math.round(product.purchasePrice * coeff)
+        : product.price);
 
     const isKitchenModule = product.category === "Кухонные модули";
 
@@ -9464,6 +9555,8 @@ const SummaryView = ({
         key: String(product.id),
         image: product.image || (product.images && product.images[0]) || "",
         rawProduct: product,
+        purchasePrice: product.purchasePrice || 0,
+        rawPrice: product.purchasePrice || 0,
       });
     } else {
       const isSkifWorktopOrPanel = (product.category === "Столешницы и стеновые") && (
@@ -9493,6 +9586,8 @@ const SummaryView = ({
         isCompanion: product.isCompanion,
         rawProduct: product,
         image: product.image || (product.images && product.images[0]) || "",
+        purchasePrice: product.purchasePrice || 0,
+        rawPrice: product.purchasePrice || 0,
       });
     }
 
@@ -16184,6 +16279,7 @@ const ProductsView = ({
   }, [companyData?.id]);
 
   const [quantities, setQuantities] = useState<Record<string, any>>({});
+  const [activeHoverImage, setActiveHoverImage] = useState<{ productId: string; index: number } | null>(null);
   const [variationsAddModal, setVariationsAddModal] = useState<{
     isOpen: boolean;
     product: any;
@@ -16437,6 +16533,8 @@ const ProductsView = ({
     brand: "",
   });
 
+  const isKitchenProduct = newProduct.category === "Кухонные гарнитуры" || newProduct.category === "Кухонный гарнитур";
+
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -16649,12 +16747,19 @@ const ProductsView = ({
       console.log("Validation failed: name:", newProduct.name, "purchasePrice:", newProduct.purchasePrice);
       return;
     }
+    const isKitchen = newProduct.category === "Кухонные гарнитуры" || newProduct.category === "Кухонный гарнитур";
+    const actualPurchasePrice = isKitchen
+      ? calculateKitchenPurchasePrice(newProduct, catalogProducts)
+      : newProduct.purchasePrice;
     const coeff = getProductCoefficient(newProduct, customerType, resolveBrandCoefficient);
-    const finalPrice = Math.round(newProduct.purchasePrice * coeff);
+    const finalPrice = isKitchen
+      ? calculateKitchenTotalPrice(newProduct, catalogProducts, customerType, resolveBrandCoefficient)
+      : Math.round(actualPurchasePrice * coeff);
 
     const product = {
       ...newProduct,
       id: editingProduct?.id || Date.now().toString(),
+      purchasePrice: actualPurchasePrice,
       price: finalPrice,
       image: newProduct.images[0] || "", // Keep for legacy compatibility
       status: userRole === 'admin' ? 'approved' : (editingProduct?.status || 'pending'),
@@ -20022,7 +20127,7 @@ const ProductsView = ({
                     </div>
                   )}
 
-                  {newProduct.category === "Кухонные гарнитуры" && (
+                  {(newProduct.category === "Кухонные гарнитуры" || newProduct.category === "Кухонный гарнитур") && (
                     <div className="space-y-6 p-6 bg-indigo-50/60 border border-indigo-100 rounded-2xl animate-in slide-in-from-top-2 text-xs">
                       <div className="flex items-center justify-between">
                         <h4 className="text-sm font-black text-indigo-950 uppercase tracking-wider flex items-center gap-2">
@@ -20395,167 +20500,311 @@ const ProductsView = ({
                       </div>
 
                       {/* Разграничение фасадов по зонам */}
-                      <div className="space-y-4 bg-white p-4 rounded-2xl border border-indigo-100 shadow-2xs">
-                        <div className="flex items-center justify-between border-b border-gray-100 pb-2">
-                          <div>
-                            <span className="font-bold text-indigo-950 text-sm">Фасады кухонного гарнитура</span>
-                            <p className="text-[10px] text-gray-500">Укажите материалы и фасады компании отдельно для каждой зоны кухни</p>
-                          </div>
-                        </div>
+                      {(() => {
+                        const modulesList = (newProduct as any).kitchenModules || [];
+                        const hasBottomModules = modulesList.length === 0 || modulesList.some((km: any) => {
+                          const m = catalogProducts.find((cp: any) => String(cp.id) === String(km.id));
+                          const grp = m?.moduleGroup || "Нижние";
+                          return grp === "Нижние";
+                        });
+                        const hasTopModules = modulesList.length === 0 || modulesList.some((km: any) => {
+                          const m = catalogProducts.find((cp: any) => String(cp.id) === String(km.id));
+                          return m?.moduleGroup === "Верхние";
+                        });
+                        const hasMezzanineModules = modulesList.length === 0 || modulesList.some((km: any) => {
+                          const m = catalogProducts.find((cp: any) => String(cp.id) === String(km.id));
+                          return m?.moduleGroup === "Антресоли";
+                        });
+                        const hasCaseModules = modulesList.length === 0 || modulesList.some((km: any) => {
+                          const m = catalogProducts.find((cp: any) => String(cp.id) === String(km.id));
+                          return m?.moduleGroup === "Пеналы";
+                        });
 
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          {/* Нижние фасады */}
-                          <div className="p-3 bg-gray-50/80 rounded-xl border border-gray-200/60 space-y-2">
-                            <span className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-blue-500"></span> Нижние фасады
-                            </span>
-                            <div>
-                              <label className="block text-[11px] text-gray-500 mb-1">Фасад из товаров компании:</label>
-                              <select
-                                value={(newProduct as any).facadeBottomProduct || ""}
-                                onChange={(e) => {
-                                  const prodId = e.target.value;
-                                  const foundProd = catalogProducts.find(p => String(p.id) === String(prodId));
-                                  setNewProduct(prev => ({
-                                    ...prev,
-                                    facadeBottomProduct: prodId,
-                                    facadeBottomMaterial: foundProd ? foundProd.name : (prev as any).facadeBottomMaterial
-                                  }));
-                                }}
-                                className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
-                              >
-                                <option value="">-- Выбрать из каталога фасадов --</option>
-                                {catalogProducts.filter(p => p.category === "Фасады" || p.category === "Пильные фасады" || p.category?.toLowerCase().includes("фасад")).map(f => (
-                                  <option key={f.id} value={f.id}>{f.name} {f.article ? `(Арт: ${f.article})` : ''}</option>
-                                ))}
-                              </select>
-                            </div>
-                            <div>
-                              <label className="block text-[11px] text-gray-500 mb-1">Название / Материал / Цвет:</label>
-                              <input
-                                type="text"
-                                value={(newProduct as any).facadeBottomMaterial || ""}
-                                onChange={(e) => setNewProduct(prev => ({ ...prev, facadeBottomMaterial: e.target.value }))}
-                                placeholder="Напр: Пластик HPL Дуб, Эмаль RAL 7016"
-                                className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
-                              />
-                            </div>
-                          </div>
+                        const facadeProductsList: { id: string; name: string; article?: string }[] = [];
+                        const seenFacadeIds = new Set<string>();
 
-                          {/* Верхние фасады */}
-                          <div className="p-3 bg-gray-50/80 rounded-xl border border-gray-200/60 space-y-2">
-                            <span className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-indigo-500"></span> Верхние фасады
-                            </span>
-                            <div>
-                              <label className="block text-[11px] text-gray-500 mb-1">Фасад из товаров компании:</label>
-                              <select
-                                value={(newProduct as any).facadeTopProduct || ""}
-                                onChange={(e) => {
-                                  const prodId = e.target.value;
-                                  const foundProd = catalogProducts.find(p => String(p.id) === String(prodId));
-                                  setNewProduct(prev => ({
-                                    ...prev,
-                                    facadeTopProduct: prodId,
-                                    facadeTopMaterial: foundProd ? foundProd.name : (prev as any).facadeTopMaterial
-                                  }));
-                                }}
-                                className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
-                              >
-                                <option value="">-- Выбрать из каталога фасадов --</option>
-                                {catalogProducts.filter(p => p.category === "Фасады" || p.category === "Пильные фасады" || p.category?.toLowerCase().includes("фасад")).map(f => (
-                                  <option key={f.id} value={f.id}>{f.name} {f.article ? `(Арт: ${f.article})` : ''}</option>
-                                ))}
-                              </select>
-                            </div>
-                            <div>
-                              <label className="block text-[11px] text-gray-500 mb-1">Название / Материал / Цвет:</label>
-                              <input
-                                type="text"
-                                value={(newProduct as any).facadeTopMaterial || ""}
-                                onChange={(e) => setNewProduct(prev => ({ ...prev, facadeTopMaterial: e.target.value }))}
-                                placeholder="Напр: Эмаль матовая Белая"
-                                className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
-                              />
-                            </div>
-                          </div>
+                        (catalogProducts || []).forEach((p: any) => {
+                          const cat = (p.category || "").toLowerCase();
+                          const customCat = (p.customCategory || "").toLowerCase();
+                          const name = (p.name || "").toLowerCase();
 
-                          {/* Фасады антресолей */}
-                          <div className="p-3 bg-gray-50/80 rounded-xl border border-gray-200/60 space-y-2">
-                            <span className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-purple-500"></span> Фасады антресолей
-                            </span>
-                            <div>
-                              <label className="block text-[11px] text-gray-500 mb-1">Фасад из товаров компании:</label>
-                              <select
-                                value={(newProduct as any).facadeMezzanineProduct || ""}
-                                onChange={(e) => {
-                                  const prodId = e.target.value;
-                                  const foundProd = catalogProducts.find(p => String(p.id) === String(prodId));
-                                  setNewProduct(prev => ({
-                                    ...prev,
-                                    facadeMezzanineProduct: prodId,
-                                    facadeMezzanineMaterial: foundProd ? foundProd.name : (prev as any).facadeMezzanineMaterial
-                                  }));
-                                }}
-                                className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
-                              >
-                                <option value="">-- Выбрать из каталога фасадов --</option>
-                                {catalogProducts.filter(p => p.category === "Фасады" || p.category === "Пильные фасады" || p.category?.toLowerCase().includes("фасад")).map(f => (
-                                  <option key={f.id} value={f.id}>{f.name} {f.article ? `(Арт: ${f.article})` : ''}</option>
-                                ))}
-                              </select>
-                            </div>
-                            <div>
-                              <label className="block text-[11px] text-gray-500 mb-1">Название / Материал / Цвет:</label>
-                              <input
-                                type="text"
-                                value={(newProduct as any).facadeMezzanineMaterial || ""}
-                                onChange={(e) => setNewProduct(prev => ({ ...prev, facadeMezzanineMaterial: e.target.value }))}
-                                placeholder="Напр: Эмаль матовая, Шпон"
-                                className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
-                              />
-                            </div>
-                          </div>
+                          // EXCLUDE hardware / accessories (e.g. push-to-open "толкатель", hinges, handles, etc.)
+                          const isHardwareOrAccessory =
+                            cat.includes("фурнитур") ||
+                            cat.includes("петл") ||
+                            cat.includes("ручк") ||
+                            cat.includes("крепеж") ||
+                            cat.includes("выдвиж") ||
+                            cat.includes("направл") ||
+                            cat.includes("подъем") ||
+                            cat.includes("подъём") ||
+                            cat.includes("опор") ||
+                            cat.includes("метиз") ||
+                            name.includes("толкатель") ||
+                            name.includes("петля") ||
+                            name.includes("петли") ||
+                            name.includes("планка") ||
+                            name.includes("амортизатор") ||
+                            name.includes("доводчик") ||
+                            name.includes("демпфер") ||
+                            name.includes("ручка") ||
+                            name.includes("ручки") ||
+                            name.includes("крепеж") ||
+                            name.includes("заглушка") ||
+                            name.includes("навес") ||
+                            name.includes("механизм") ||
+                            name.includes("уголок") ||
+                            name.includes("профиль");
 
-                          {/* Фасады пенала */}
-                          <div className="p-3 bg-gray-50/80 rounded-xl border border-gray-200/60 space-y-2">
-                            <span className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
-                              <span className="w-2 h-2 rounded-full bg-amber-500"></span> Фасады пеналов
-                            </span>
-                            <div>
-                              <label className="block text-[11px] text-gray-500 mb-1">Фасад из товаров компании:</label>
-                              <select
-                                value={(newProduct as any).facadeCaseProduct || ""}
-                                onChange={(e) => {
-                                  const prodId = e.target.value;
-                                  const foundProd = catalogProducts.find(p => String(p.id) === String(prodId));
-                                  setNewProduct(prev => ({
-                                    ...prev,
-                                    facadeCaseProduct: prodId,
-                                    facadeCaseMaterial: foundProd ? foundProd.name : (prev as any).facadeCaseMaterial
-                                  }));
-                                }}
-                                className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
-                              >
-                                <option value="">-- Выбрать из каталога фасадов --</option>
-                                {catalogProducts.filter(p => p.category === "Фасады" || p.category === "Пильные фасады" || p.category?.toLowerCase().includes("фасад")).map(f => (
-                                  <option key={f.id} value={f.id}>{f.name} {f.article ? `(Арт: ${f.article})` : ''}</option>
-                                ))}
-                              </select>
+                          if (isHardwareOrAccessory) return;
+
+                          // INCLUDE strict facade products
+                          const isFacade =
+                            cat === "фасады заказные" ||
+                            cat === "фасад (заказной)" ||
+                            cat === "фасады плитные" ||
+                            cat === "фасады" ||
+                            cat === "фасад" ||
+                            cat.includes("фасад") ||
+                            customCat.includes("фасад") ||
+                            p.isFacade === true ||
+                            p.type === "facade";
+
+                          if (isFacade && !seenFacadeIds.has(String(p.id))) {
+                            seenFacadeIds.add(String(p.id));
+                            facadeProductsList.push({
+                              id: String(p.id),
+                              name: `${p.name}${p.brand ? ` (${p.brand})` : ''}`,
+                              article: p.article,
+                            });
+                          }
+                        });
+
+                        const getGroupFacadeArea = (groupName: string) => {
+                          let totalM2 = 0;
+                          (modulesList || []).forEach((km: any) => {
+                            const m = catalogProducts.find((cp: any) => String(cp.id) === String(km.id));
+                            const grp = m?.moduleGroup || (groupName === "Нижние" ? "Нижние" : "");
+                            if (grp === groupName) {
+                              const qty = Number(km.qty || km.quantity || 1);
+                              const w = Number(km.width || m?.width || 0) / 1000;
+                              const h = Number(km.height || m?.height || m?.moduleHeight || 0) / 1000;
+                              if (w > 0 && h > 0) {
+                                totalM2 += w * h * qty;
+                              }
+                            }
+                          });
+                          return totalM2;
+                        };
+
+                        const bottomFacadeArea = getGroupFacadeArea("Нижние");
+                        const topFacadeArea = getGroupFacadeArea("Верхние");
+                        const mezzanineFacadeArea = getGroupFacadeArea("Антресоли");
+                        const caseFacadeArea = getGroupFacadeArea("Пеналы");
+
+                        return (
+                          <div className="space-y-4 bg-white p-4 rounded-2xl border border-indigo-100 shadow-2xs">
+                            <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+                              <div>
+                                <span className="font-bold text-indigo-950 text-sm">Фасады кухонного гарнитура</span>
+                                <p className="text-[10px] text-gray-500">
+                                  Укажите материалы и фасады компании отдельно для присутствующих зон гарнитура
+                                </p>
+                              </div>
                             </div>
-                            <div>
-                              <label className="block text-[11px] text-gray-500 mb-1">Название / Материал / Цвет:</label>
-                              <input
-                                type="text"
-                                value={(newProduct as any).facadeCaseMaterial || ""}
-                                onChange={(e) => setNewProduct(prev => ({ ...prev, facadeCaseMaterial: e.target.value }))}
-                                placeholder="Напр: Пленка ПВХ Текстурированная"
-                                className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
-                              />
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {/* Нижние фасады */}
+                              {hasBottomModules && (
+                                <div className="p-3 bg-gray-50/80 rounded-xl border border-gray-200/60 space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
+                                      <span className="w-2 h-2 rounded-full bg-blue-500"></span> Нижние фасады
+                                    </span>
+                                    {bottomFacadeArea > 0 && (
+                                      <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
+                                        Объём: {bottomFacadeArea.toFixed(2)} м²
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] text-gray-500 mb-1">Фасад из товаров компании:</label>
+                                    <select
+                                      value={(newProduct as any).facadeBottomProduct || ""}
+                                      onChange={(e) => {
+                                        const prodId = e.target.value;
+                                        const foundProd = facadeProductsList.find(p => String(p.id) === String(prodId));
+                                        setNewProduct(prev => ({
+                                          ...prev,
+                                          facadeBottomProduct: prodId,
+                                          facadeBottomMaterial: foundProd ? foundProd.name : (prev as any).facadeBottomMaterial
+                                        }));
+                                      }}
+                                      className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
+                                    >
+                                      <option value="">-- Выбрать из каталога фасадов --</option>
+                                      {facadeProductsList.map(f => (
+                                        <option key={f.id} value={f.id}>{f.name} {f.article ? `(Арт: ${f.article})` : ''}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] text-gray-500 mb-1">Название / Материал / Цвет:</label>
+                                    <input
+                                      type="text"
+                                      value={(newProduct as any).facadeBottomMaterial || ""}
+                                      onChange={(e) => setNewProduct(prev => ({ ...prev, facadeBottomMaterial: e.target.value }))}
+                                      placeholder="Напр: Пластик HPL Дуб, Эмаль RAL 7016"
+                                      className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Верхние фасады */}
+                              {hasTopModules && (
+                                <div className="p-3 bg-gray-50/80 rounded-xl border border-gray-200/60 space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
+                                      <span className="w-2 h-2 rounded-full bg-indigo-500"></span> Верхние фасады
+                                    </span>
+                                    {topFacadeArea > 0 && (
+                                      <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
+                                        Объём: {topFacadeArea.toFixed(2)} м²
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] text-gray-500 mb-1">Фасад из товаров компании:</label>
+                                    <select
+                                      value={(newProduct as any).facadeTopProduct || ""}
+                                      onChange={(e) => {
+                                        const prodId = e.target.value;
+                                        const foundProd = facadeProductsList.find(p => String(p.id) === String(prodId));
+                                        setNewProduct(prev => ({
+                                          ...prev,
+                                          facadeTopProduct: prodId,
+                                          facadeTopMaterial: foundProd ? foundProd.name : (prev as any).facadeTopMaterial
+                                        }));
+                                      }}
+                                      className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
+                                    >
+                                      <option value="">-- Выбрать из каталога фасадов --</option>
+                                      {facadeProductsList.map(f => (
+                                        <option key={f.id} value={f.id}>{f.name} {f.article ? `(Арт: ${f.article})` : ''}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] text-gray-500 mb-1">Название / Материал / Цвет:</label>
+                                    <input
+                                      type="text"
+                                      value={(newProduct as any).facadeTopMaterial || ""}
+                                      onChange={(e) => setNewProduct(prev => ({ ...prev, facadeTopMaterial: e.target.value }))}
+                                      placeholder="Напр: Эмаль матовая Белая"
+                                      className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Фасады антресолей */}
+                              {hasMezzanineModules && (
+                                <div className="p-3 bg-gray-50/80 rounded-xl border border-gray-200/60 space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
+                                      <span className="w-2 h-2 rounded-full bg-purple-500"></span> Фасады антресолей
+                                    </span>
+                                    {mezzanineFacadeArea > 0 && (
+                                      <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
+                                        Объём: {mezzanineFacadeArea.toFixed(2)} м²
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] text-gray-500 mb-1">Фасад из товаров компании:</label>
+                                    <select
+                                      value={(newProduct as any).facadeMezzanineProduct || ""}
+                                      onChange={(e) => {
+                                        const prodId = e.target.value;
+                                        const foundProd = facadeProductsList.find(p => String(p.id) === String(prodId));
+                                        setNewProduct(prev => ({
+                                          ...prev,
+                                          facadeMezzanineProduct: prodId,
+                                          facadeMezzanineMaterial: foundProd ? foundProd.name : (prev as any).facadeMezzanineMaterial
+                                        }));
+                                      }}
+                                      className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
+                                    >
+                                      <option value="">-- Выбрать из каталога фасадов --</option>
+                                      {facadeProductsList.map(f => (
+                                        <option key={f.id} value={f.id}>{f.name} {f.article ? `(Арт: ${f.article})` : ''}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] text-gray-500 mb-1">Название / Материал / Цвет:</label>
+                                    <input
+                                      type="text"
+                                      value={(newProduct as any).facadeMezzanineMaterial || ""}
+                                      onChange={(e) => setNewProduct(prev => ({ ...prev, facadeMezzanineMaterial: e.target.value }))}
+                                      placeholder="Напр: Эмаль матовая, Шпон"
+                                      className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
+                                    />
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Фасады пенала */}
+                              {hasCaseModules && (
+                                <div className="p-3 bg-gray-50/80 rounded-xl border border-gray-200/60 space-y-2">
+                                  <div className="flex items-center justify-between">
+                                    <span className="font-bold text-gray-800 text-xs flex items-center gap-1.5">
+                                      <span className="w-2 h-2 rounded-full bg-amber-500"></span> Фасады пеналов
+                                    </span>
+                                    {caseFacadeArea > 0 && (
+                                      <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
+                                        Объём: {caseFacadeArea.toFixed(2)} м²
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] text-gray-500 mb-1">Фасад из товаров компании:</label>
+                                    <select
+                                      value={(newProduct as any).facadeCaseProduct || ""}
+                                      onChange={(e) => {
+                                        const prodId = e.target.value;
+                                        const foundProd = facadeProductsList.find(p => String(p.id) === String(prodId));
+                                        setNewProduct(prev => ({
+                                          ...prev,
+                                          facadeCaseProduct: prodId,
+                                          facadeCaseMaterial: foundProd ? foundProd.name : (prev as any).facadeCaseMaterial
+                                        }));
+                                      }}
+                                      className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
+                                    >
+                                      <option value="">-- Выбрать из каталога фасадов --</option>
+                                      {facadeProductsList.map(f => (
+                                        <option key={f.id} value={f.id}>{f.name} {f.article ? `(Арт: ${f.article})` : ''}</option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                  <div>
+                                    <label className="block text-[11px] text-gray-500 mb-1">Название / Материал / Цвет:</label>
+                                    <input
+                                      type="text"
+                                      value={(newProduct as any).facadeCaseMaterial || ""}
+                                      onChange={(e) => setNewProduct(prev => ({ ...prev, facadeCaseMaterial: e.target.value }))}
+                                      placeholder="Напр: Пленка ПВХ Текстурированная"
+                                      className="w-full px-2.5 py-1.5 border border-gray-300 rounded-lg text-xs bg-white font-medium"
+                                    />
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </div>
-                        </div>
+                        );
+                      })()}
 
                         {/* Фурнитура и комплектующие кухни */}
                         <div className="space-y-4 bg-white p-4 rounded-2xl border border-indigo-100 shadow-2xs">
@@ -20579,96 +20828,131 @@ const ProductsView = ({
 
                           {(() => {
                             const modulesList = (newProduct as any).kitchenModules || [];
-                            let calculatedHinges = 0;
+                            let totalOverlaidHinges = 0;     // Накладные
+                            let totalHalfOverlaidHinges = 0; // Полунакладные
+                            let totalInsetHinges = 0;        // Вкладные
+                            let totalSpecialHinges = 0;      // Угловые / специальные
                             let calculatedDrawers = 0;
                             let calculatedLifters = 0;
                             let calculatedLegs = 0;
                             let calculatedHandles = 0;
+                            const detectedGuideDepths = new Set<string | number>();
 
                             modulesList.forEach((km: any) => {
                               const m = catalogProducts.find((cp: any) => String(cp.id) === String(km.id));
-                              if (m) {
-                                const qty = km.qty || 1;
+                              if (!m) return;
 
-                                // 1. Приоритет: Комплектуемая фурнитура непосредственно из карточки модуля
-                                if (m.moduleFittings && Array.isArray(m.moduleFittings) && m.moduleFittings.length > 0) {
-                                  m.moduleFittings.forEach((fit: any) => {
-                                    const cat = (fit.category || "").toLowerCase();
-                                    const fQty = (Number(fit.qty) || 1) * qty;
-                                    if (cat.includes("выдвиж") || cat.includes("направл")) {
-                                      calculatedDrawers += fQty;
-                                    } else if (cat.includes("петл")) {
-                                      calculatedHinges += fQty;
-                                    } else if (cat.includes("подъем") || cat.includes("подъём")) {
-                                      calculatedLifters += fQty;
-                                    } else if (cat.includes("ручк")) {
-                                      calculatedHandles += fQty;
-                                    } else if (cat.includes("опор") || cat.includes("цокол") || cat.includes("крепеж") || cat.includes("крепёж")) {
-                                      calculatedLegs += fQty;
-                                    }
-                                  });
+                              const qty = Number(km.qty) || 1;
+                              const modDepth = Number(m.moduleDepth || m.depth || 0);
+
+                              // 1. Приоритет: Комплектуемая фурнитура непосредственно из карточки модуля
+                              if (m.moduleFittings && Array.isArray(m.moduleFittings) && m.moduleFittings.length > 0) {
+                                m.moduleFittings.forEach((fit: any) => {
+                                  const cat = (fit.category || "").toLowerCase();
+                                  const fQty = (Number(fit.qty) || 1) * qty;
+                                  const hType = (fit.hingeType || fit.type || "").toLowerCase();
+                                  const fitDepth = fit.depth || modDepth;
+
+                                  if (cat.includes("выдвиж") || cat.includes("направл")) {
+                                    calculatedDrawers += fQty;
+                                    if (fitDepth) detectedGuideDepths.add(fitDepth);
+                                  } else if (cat.includes("петл")) {
+                                    if (hType.includes("полунакладн")) totalHalfOverlaidHinges += fQty;
+                                    else if (hType.includes("вкладн")) totalInsetHinges += fQty;
+                                    else if (hType.includes("углов") || hType.includes("спец")) totalSpecialHinges += fQty;
+                                    else totalOverlaidHinges += fQty;
+                                  } else if (cat.includes("подъем") || cat.includes("подъём")) {
+                                    calculatedLifters += fQty;
+                                  } else if (cat.includes("ручк")) {
+                                    calculatedHandles += fQty;
+                                  } else if (cat.includes("опор") || cat.includes("цокол") || cat.includes("крепеж") || cat.includes("крепёж")) {
+                                    calculatedLegs += fQty;
+                                  }
+                                });
+                              } else {
+                                // 2. Если у модуля заданы прямые численные параметры по направляющим/петлям
+                                const explicitDrawers = m.guidesCount ?? m.drawersCount ?? m.drawers ?? m.guidesQty;
+                                const explicitHinges = m.hingesCount ?? m.hinges;
+                                const explicitLifters = m.liftersCount ?? m.lifters;
+                                const explicitLegs = m.legsCount ?? m.legs;
+                                const explicitHandles = m.handlesCount ?? m.handles;
+                                const moduleHType = (m.hingeType || "").toLowerCase();
+
+                                if (modDepth > 0 && explicitDrawers > 0) {
+                                  detectedGuideDepths.add(modDepth >= 500 ? 450 : modDepth >= 450 ? 400 : modDepth >= 400 ? 350 : modDepth);
+                                }
+
+                                if (explicitDrawers !== undefined || explicitHinges !== undefined || explicitLifters !== undefined || explicitLegs !== undefined || explicitHandles !== undefined) {
+                                  if (explicitDrawers !== undefined) calculatedDrawers += Number(explicitDrawers) * qty;
+                                  if (explicitHinges !== undefined) {
+                                    const hQty = Number(explicitHinges) * qty;
+                                    if (moduleHType.includes("полунакладн")) totalHalfOverlaidHinges += hQty;
+                                    else if (moduleHType.includes("вкладн")) totalInsetHinges += hQty;
+                                    else if (moduleHType.includes("углов") || moduleHType.includes("спец")) totalSpecialHinges += hQty;
+                                    else totalOverlaidHinges += hQty;
+                                  }
+                                  if (explicitLifters !== undefined) calculatedLifters += Number(explicitLifters) * qty;
+                                  if (explicitLegs !== undefined) calculatedLegs += Number(explicitLegs) * qty;
+                                  if (explicitHandles !== undefined) calculatedHandles += Number(explicitHandles) * qty;
                                 } else {
-                                  // 2. Если у модуля заданы прямые численные параметры по направляющим/петлям
-                                  const explicitDrawers = m.guidesCount ?? m.drawersCount ?? m.drawers ?? m.guidesQty;
-                                  const explicitHinges = m.hingesCount ?? m.hinges;
-                                  const explicitLifters = m.liftersCount ?? m.lifters;
-                                  const explicitLegs = m.legsCount ?? m.legs;
-                                  const explicitHandles = m.handlesCount ?? m.handles;
+                                  // 3. Резервный паттерн-анализ названий, если в модуле не была указана составная фурнитура
+                                  const name = (m.name || "").toLowerCase();
+                                  const grp = m.moduleGroup || "Нижние";
+                                  const h = Number(m.moduleHeight || m.height || 720);
+                                  const w = Number(m.width || 600);
 
-                                  if (explicitDrawers !== undefined || explicitHinges !== undefined || explicitLifters !== undefined || explicitLegs !== undefined || explicitHandles !== undefined) {
-                                    if (explicitDrawers !== undefined) calculatedDrawers += Number(explicitDrawers) * qty;
-                                    if (explicitHinges !== undefined) calculatedHinges += Number(explicitHinges) * qty;
-                                    if (explicitLifters !== undefined) calculatedLifters += Number(explicitLifters) * qty;
-                                    if (explicitLegs !== undefined) calculatedLegs += Number(explicitLegs) * qty;
-                                    if (explicitHandles !== undefined) calculatedHandles += Number(explicitHandles) * qty;
-                                  } else {
-                                    // 3. Резервный паттерн-анализ названий, если в модуле не была указана составная фурнитура
-                                    const name = (m.name || "").toLowerCase();
-                                    const grp = m.moduleGroup || "Нижние";
-                                    const h = Number(m.moduleHeight || m.height || 720);
-                                    const w = Number(m.width || 600);
+                                  let numDrawers = 0;
+                                  const match = name.match(new RegExp("(\\d+)\\s*[яЯ]", "i"));
+                                  if (match) {
+                                    numDrawers = parseInt(match[1]);
+                                  } else if (name.includes("3я") || name.includes("3 ящик")) {
+                                    numDrawers = 3;
+                                  } else if (name.includes("2я") || name.includes("2 ящик")) {
+                                    numDrawers = 2;
+                                  } else if (name.includes("1я") || name.includes("1 ящик")) {
+                                    numDrawers = 1;
+                                  } else if (name.includes("ящик") || name.includes("дравер") || name.includes("метабокс") || name.includes("тандем")) {
+                                    numDrawers = name.includes("ящиками") ? 2 : 1;
+                                  }
 
-                                    let numDrawers = 0;
-                                    const match = name.match(/(\d+)\s*[яЯ]/i);
-                                    if (match) {
-                                      numDrawers = parseInt(match[1]);
-                                    } else if (name.includes("3я") || name.includes("3 ящик")) {
-                                      numDrawers = 3;
-                                    } else if (name.includes("2я") || name.includes("2 ящик")) {
-                                      numDrawers = 2;
-                                    } else if (name.includes("1я") || name.includes("1 ящик")) {
-                                      numDrawers = 1;
-                                    } else if (name.includes("ящик") || name.includes("дравер") || name.includes("метабокс") || name.includes("тандем")) {
-                                      numDrawers = name.includes("ящиками") ? 2 : 1;
+                                  if (numDrawers > 0) {
+                                    calculatedDrawers += numDrawers * qty;
+                                    calculatedHandles += numDrawers * qty;
+                                    if (modDepth > 0) {
+                                      detectedGuideDepths.add(modDepth >= 500 ? 450 : modDepth >= 450 ? 400 : modDepth >= 400 ? 350 : modDepth);
                                     }
-
-                                    if (numDrawers > 0) {
-                                      calculatedDrawers += numDrawers * qty;
-                                      calculatedHandles += numDrawers * qty;
+                                    if (grp === "Нижние") {
+                                      calculatedLegs += 4 * qty;
+                                    }
+                                    if (name.includes("1д") || name.includes("2д") || name.includes("двер") || name.includes("фасад")) {
+                                      const doors = name.includes("2д") ? 2 : 1;
+                                      const hQty = doors * (h >= 900 ? 3 : 2) * qty;
+                                      if (moduleHType.includes("полунакладн") || name.includes("полунакладн")) totalHalfOverlaidHinges += hQty;
+                                      else if (moduleHType.includes("вкладн") || name.includes("вкладн")) totalInsetHinges += hQty;
+                                      else totalOverlaidHinges += hQty;
+                                    }
+                                  } else {
+                                    if (grp === "Антресоли" || name.includes("антресоль") || name.includes("газлифт") || name.includes("подъемн") || name.includes("подъёмн")) {
+                                      calculatedLifters += 2 * qty;
+                                      calculatedHandles += 1 * qty;
+                                    } else if (grp === "Пеналы") {
+                                      const hQty = (h >= 2000 ? 4 : 3) * qty;
+                                      if (moduleHType.includes("полунакладн") || name.includes("полунакладн")) totalHalfOverlaidHinges += hQty;
+                                      else if (moduleHType.includes("вкладн") || name.includes("вкладн")) totalInsetHinges += hQty;
+                                      else totalOverlaidHinges += hQty;
+                                      calculatedLegs += 4 * qty;
+                                      calculatedHandles += 2 * qty;
+                                    } else if (grp === "Нижние" || grp === "Верхние") {
+                                      const doors = w >= 600 ? 2 : 1;
+                                      const hingesPerDoor = h >= 2000 ? 4 : (h >= 900 ? 3 : 2);
+                                      const hQty = doors * hingesPerDoor * qty;
+                                      if (moduleHType.includes("полунакладн") || name.includes("полунакладн")) totalHalfOverlaidHinges += hQty;
+                                      else if (moduleHType.includes("вкладн") || name.includes("вкладн")) totalInsetHinges += hQty;
+                                      else totalOverlaidHinges += hQty;
                                       if (grp === "Нижние") {
                                         calculatedLegs += 4 * qty;
                                       }
-                                      if (name.includes("1д") || name.includes("2д") || name.includes("двер") || name.includes("фасад")) {
-                                        const doors = name.includes("2д") ? 2 : 1;
-                                        calculatedHinges += doors * (h >= 900 ? 3 : 2) * qty;
-                                      }
-                                    } else {
-                                      if (grp === "Антресоли" || name.includes("антресоль") || name.includes("газлифт") || name.includes("подъемн") || name.includes("подъёмн")) {
-                                        calculatedLifters += 2 * qty;
-                                        calculatedHandles += 1 * qty;
-                                      } else if (grp === "Пеналы") {
-                                        calculatedHinges += (h >= 2000 ? 4 : 3) * qty;
-                                        calculatedLegs += 4 * qty;
-                                        calculatedHandles += 2 * qty;
-                                      } else if (grp === "Нижние" || grp === "Верхние") {
-                                        const doors = w >= 600 ? 2 : 1;
-                                        const hingesPerDoor = h >= 2000 ? 4 : (h >= 900 ? 3 : 2);
-                                        calculatedHinges += doors * hingesPerDoor * qty;
-                                        if (grp === "Нижние") {
-                                          calculatedLegs += 4 * qty;
-                                        }
-                                        calculatedHandles += doors * qty;
-                                      }
+                                      calculatedHandles += doors * qty;
                                     }
                                   }
                                 }
@@ -20676,7 +20960,10 @@ const ProductsView = ({
                             });
 
                             const standardGroups = [
-                              { groupName: "Накладные петли", calculatedQty: calculatedHinges, defaultQty: calculatedHinges },
+                              { groupName: "Петли накладные", calculatedQty: totalOverlaidHinges, defaultQty: totalOverlaidHinges },
+                              { groupName: "Петли полунакладные", calculatedQty: totalHalfOverlaidHinges, defaultQty: totalHalfOverlaidHinges },
+                              { groupName: "Петли вкладные", calculatedQty: totalInsetHinges, defaultQty: totalInsetHinges },
+                              { groupName: "Петли угловые / специальные", calculatedQty: totalSpecialHinges, defaultQty: totalSpecialHinges },
                               { groupName: "Направляющие ящиков", calculatedQty: calculatedDrawers, defaultQty: calculatedDrawers },
                               { groupName: "Подъёмные механизмы", calculatedQty: calculatedLifters, defaultQty: calculatedLifters },
                               { groupName: "Опоры кухонные (100мм)", calculatedQty: calculatedLegs, defaultQty: calculatedLegs },
@@ -20720,74 +21007,153 @@ const ProductsView = ({
 
                             const getFilteredHardware = (groupName: string) => {
                               const gLower = (groupName || "").toLowerCase();
-                              return catalogProducts.filter((p) => {
-                                const cat = p.category || "";
-                                const name = (p.name || "").toLowerCase();
-                                const hType = (p.hingeType || "").toLowerCase();
 
-                                if (gLower.includes("петл")) {
-                                  if (cat !== "Петли" && cat !== "Фурнитура") return false;
-                                  if (gLower.includes("накладн") && !gLower.includes("полунакладн")) {
-                                    return hType.includes("накладн") || name.includes("накладн");
+                              if (gLower.includes("петл")) {
+                                const allHinges = catalogProducts.filter((p) => {
+                                  const cat = (p.category || "").toLowerCase();
+                                  const name = (p.name || "").toLowerCase();
+
+                                  // Must strictly be in "Петли" category
+                                  const isStrictHingeCat = cat === "петли" || cat === "петля";
+
+                                  // Exclude accessories / plates / covers / dampers from the hinges dropdown
+                                  const isAccessory =
+                                    name.includes("планка") ||
+                                    name.includes("заглушка") ||
+                                    name.includes("демпфер") ||
+                                    name.includes("амортизатор") ||
+                                    name.includes("толкатель") ||
+                                    name.includes("ответная") ||
+                                    name.includes("комплект заглушек") ||
+                                    name.includes("адаптер") ||
+                                    cat.includes("ответн") ||
+                                    cat.includes("заглуш");
+
+                                  return isStrictHingeCat && !isAccessory;
+                                });
+
+                                let specificHinges: any[] = [];
+                                if (gLower.includes("полунакладн")) {
+                                  specificHinges = allHinges.filter(p => {
+                                    const ht = (p.hingeType || "").toLowerCase();
+                                    const nm = (p.name || "").toLowerCase();
+                                    return ht.includes("полунакладн") || nm.includes("полунакладн");
+                                  });
+                                } else if (gLower.includes("вкладн")) {
+                                  specificHinges = allHinges.filter(p => {
+                                    const ht = (p.hingeType || "").toLowerCase();
+                                    const nm = (p.name || "").toLowerCase();
+                                    return ht.includes("вкладн") || nm.includes("вкладн");
+                                  });
+                                } else if (gLower.includes("углов") || gLower.includes("специальн")) {
+                                  specificHinges = allHinges.filter(p => {
+                                    const ht = (p.hingeType || "").toLowerCase();
+                                    const nm = (p.name || "").toLowerCase();
+                                    return ht.includes("углов") || ht.includes("трансформ") || ht.includes("спец") || nm.includes("углов") || nm.includes("трансформ") || nm.includes("45") || nm.includes("90") || nm.includes("135") || nm.includes("180");
+                                  });
+                                } else if (gLower.includes("накладн")) {
+                                  specificHinges = allHinges.filter(p => {
+                                    const ht = (p.hingeType || "").toLowerCase();
+                                    const nm = (p.name || "").toLowerCase();
+                                    const isHalf = ht.includes("полунакладн") || nm.includes("полунакладн");
+                                    const isInset = ht.includes("вкладн") || nm.includes("вкладн");
+                                    const isAngle = ht.includes("углов") || ht.includes("трансформ") || nm.includes("углов") || nm.includes("135") || nm.includes("180") || nm.includes("45");
+                                    if (isHalf || isInset || isAngle) return false;
+                                    return ht.includes("накладн") || ht === "накладная" || nm.includes("накладн") || (!ht && !isHalf && !isInset);
+                                  });
+                                }
+
+                                return specificHinges.length > 0 ? specificHinges : allHinges;
+                              }
+
+                              if (gLower.includes("направляющ") || gLower.includes("ящик")) {
+                                const allGuides = catalogProducts.filter((p) => {
+                                  const cat = (p.category || "").toLowerCase();
+                                  const customCat = (p.customCategory || "").toLowerCase();
+                                  const name = (p.name || "").toLowerCase();
+
+                                  // EXCLUDE handles, hinges, legs
+                                  if (
+                                    cat.includes("ручк") ||
+                                    name.includes("ручка") ||
+                                    name.includes("ручки") ||
+                                    cat.includes("петл") ||
+                                    cat.includes("опор") ||
+                                    cat.includes("суш")
+                                  ) {
+                                    return false;
                                   }
-                                  if (gLower.includes("полунакладн")) {
-                                    return hType.includes("полунакладн") || name.includes("полунакладн");
+
+                                  return (
+                                    cat === "системы выдвижения" ||
+                                    cat.includes("выдвижен") ||
+                                    cat.includes("направл") ||
+                                    cat.includes("система ящиков") ||
+                                    cat.includes("системы ящиков") ||
+                                    customCat.includes("выдвиж") ||
+                                    customCat.includes("направл") ||
+                                    cat.includes("тандем") ||
+                                    cat.includes("метабокс")
+                                  );
+                                });
+
+                                // Filter strictly by depth 500 mm (or detected guide depths from modules)
+                                const targetDepths = detectedGuideDepths.size > 0
+                                  ? Array.from(detectedGuideDepths).map(d => Number(d))
+                                  : [500];
+
+                                const depthMatchedGuides = allGuides.filter(p => {
+                                  const pDepth = Number(p.depth || p.length || p.runnerDepth || p.guideDepth || 0);
+                                  const pName = (p.name || "").toLowerCase();
+
+                                  if (pDepth > 0 && targetDepths.includes(pDepth)) {
+                                    return true;
                                   }
-                                  if (gLower.includes("вкладн")) {
-                                    return hType.includes("вкладн") || name.includes("вкладн");
-                                  }
-                                  return true;
-                                }
 
-                                if (gLower.includes("направляющ") || gLower.includes("ящик")) {
-                                  return (
-                                    cat === "Направляющие" ||
-                                    (cat === "Фурнитура" &&
-                                      (name.includes("направл") ||
-                                        name.includes("шарик") ||
-                                        name.includes("ролик") ||
-                                        name.includes("тандем") ||
-                                        name.includes("боярд") ||
-                                        name.includes("метабокс") ||
-                                        name.includes("скрыт")))
+                                  return targetDepths.some(d =>
+                                    pName.includes(`${d}мм`) ||
+                                    pName.includes(`${d} мм`) ||
+                                    pName.includes(`l-${d}`) ||
+                                    pName.includes(`l=${d}`) ||
+                                    pName.includes(`l ${d}`) ||
+                                    pName.includes(`l${d}`)
                                   );
-                                }
+                                });
 
-                                if (gLower.includes("подъёмн") || gLower.includes("подъемн") || gLower.includes("газлифт")) {
+                                return depthMatchedGuides.length > 0 ? depthMatchedGuides : allGuides;
+                              }
+
+                              if (gLower.includes("подъёмн") || gLower.includes("подъемн") || gLower.includes("газлифт")) {
+                                return catalogProducts.filter((p) => {
+                                  const cat = (p.category || "").toLowerCase();
+                                  const name = (p.name || "").toLowerCase();
                                   return (
-                                    cat === "Подъемные механизмы" ||
-                                    name.includes("подъем") ||
-                                    name.includes("подъём") ||
-                                    name.includes("газлифт") ||
-                                    name.includes("кронштейн")
+                                    cat.includes("подъем") || cat.includes("подъём") || cat === "фурнитура" ||
+                                    name.includes("подъем") || name.includes("подъём") || name.includes("газлифт") || name.includes("кронштейн")
                                   );
-                                }
+                                });
+                              }
 
-                                if (gLower.includes("опор") || gLower.includes("ножк")) {
+                              if (gLower.includes("опор") || gLower.includes("ножк") || gLower.includes("цокол")) {
+                                return catalogProducts.filter((p) => {
+                                  const cat = (p.category || "").toLowerCase();
+                                  const name = (p.name || "").toLowerCase();
                                   return (
-                                    cat === "Опоры и метизы" ||
-                                    (cat === "Фурнитура" && (name.includes("опор") || name.includes("ножк") || name.includes("цокол")))
+                                    cat.includes("опор") || cat.includes("метиз") || cat === "фурнитура" ||
+                                    name.includes("опор") || name.includes("ножк") || name.includes("цокол")
                                   );
-                                }
+                                });
+                              }
 
-                                if (gLower.includes("ручк")) {
-                                  return (
-                                    cat === "Ручки" ||
-                                    name.includes("ручк") ||
-                                    name.includes("кнопк") ||
-                                    name.includes("профиль")
-                                  );
-                                }
+                              if (gLower.includes("ручк")) {
+                                return catalogProducts.filter((p) => {
+                                  const cat = (p.category || "").toLowerCase();
+                                  const name = (p.name || "").toLowerCase();
+                                  return cat.includes("ручк") || cat === "фурнитура" || name.includes("ручк") || name.includes("профиль");
+                                });
+                              }
 
-                                return (
-                                  cat === "Фурнитура" ||
-                                  cat === "Петли" ||
-                                  cat === "Направляющие" ||
-                                  cat === "Ручки" ||
-                                  cat === "Опоры и метизы" ||
-                                  cat === "Подъемные механизмы"
-                                );
-                              });
+                              return catalogProducts.filter((p) => (p.category || "").toLowerCase().includes("фурнитур") || p.category === "Петли" || p.category === "Направляющие");
                             };
 
                             return (
@@ -20857,7 +21223,61 @@ const ProductsView = ({
                                               updatedHW[realIdx].productId = pId;
                                               updatedHW[realIdx].productName = pProd?.name || "";
                                               updatedHW[realIdx].purchasePrice = pProd?.purchasePrice || pProd?.price || 0;
-                                              setNewProduct(prev => ({ ...prev, kitchenHardware: updatedHW }));
+
+                                              let updatedReq = [...((newProduct as any).requiredProducts || [])];
+                                              if (pProd && hw.groupName.toLowerCase().includes("петл")) {
+                                                const effectiveQty = hw.userQty !== undefined ? hw.userQty : (hw.calculatedQty || 0);
+
+                                                if (pProd.requiredProducts && pProd.requiredProducts.length > 0) {
+                                                  pProd.requiredProducts.forEach((rp: any) => {
+                                                    const rpId = typeof rp === "object" ? rp.id : rp;
+                                                    const perItemQty = typeof rp === "object" ? (rp.qty || 1) : 1;
+                                                    const targetQty = perItemQty * (effectiveQty || 1);
+                                                    const existingIdx = updatedReq.findIndex((item: any) => String(typeof item === "object" ? item.id : item) === String(rpId));
+                                                    if (existingIdx >= 0) {
+                                                      updatedReq[existingIdx] = { id: rpId, qty: targetQty };
+                                                    } else {
+                                                      updatedReq.push({ id: rpId, qty: targetQty });
+                                                    }
+                                                  });
+                                                } else {
+                                                  const hingeBrand = (pProd.brand || pProd.manufacturer || "").toLowerCase();
+                                                  const hingeName = (pProd.name || "").toLowerCase();
+
+                                                  const matchingPlate = catalogProducts.find((cp) => {
+                                                    const cpCat = (cp.category || "").toLowerCase();
+                                                    const cpName = (cp.name || "").toLowerCase();
+                                                    const cpBrand = (cp.brand || cp.manufacturer || "").toLowerCase();
+
+                                                    const isPlate = cpCat.includes("ответн") || cpCat.includes("планк") || cpName.includes("ответная планка") || cpName.includes("планка ответная");
+                                                    if (!isPlate) return false;
+
+                                                    if (hingeBrand && cpBrand && (cpBrand === hingeBrand || cpName.includes(hingeBrand))) {
+                                                      return true;
+                                                    }
+                                                    if (hingeName.includes("blum") && cpName.includes("blum")) return true;
+                                                    if (hingeName.includes("hettich") && cpName.includes("hettich")) return true;
+                                                    if (hingeName.includes("boyard") && cpName.includes("boyard")) return true;
+                                                    return false;
+                                                  }) || catalogProducts.find((cp) => {
+                                                    const cpCat = (cp.category || "").toLowerCase();
+                                                    const cpName = (cp.name || "").toLowerCase();
+                                                    return cpCat.includes("ответн") || cpName.includes("ответная планка");
+                                                  });
+
+                                                  if (matchingPlate) {
+                                                    const plateId = String(matchingPlate.id);
+                                                    const existingIdx = updatedReq.findIndex((item: any) => String(typeof item === "object" ? item.id : item) === String(plateId));
+                                                    if (existingIdx >= 0) {
+                                                      updatedReq[existingIdx] = { id: plateId, qty: effectiveQty };
+                                                    } else {
+                                                      updatedReq.push({ id: plateId, qty: effectiveQty });
+                                                    }
+                                                  }
+                                                }
+                                              }
+
+                                              setNewProduct(prev => ({ ...prev, kitchenHardware: updatedHW, requiredProducts: updatedReq }));
                                             }}
                                             className="w-full px-2 py-1 border border-gray-300 rounded-lg text-xs bg-white font-medium"
                                           >
@@ -20904,8 +21324,8 @@ const ProductsView = ({
                                       </div>
 
                                       <div className="flex items-center justify-between text-[11px] pt-1 text-gray-600 border-t border-gray-200/50">
-                                        <span>Закупка: <strong>{basePurchase.toLocaleString()} ₽/шт</strong> (всего закуп: <strong>{totalPurchase.toLocaleString()} ₽</strong>)</span>
-                                        <span className="font-bold text-indigo-900">Итого продажа: <strong>{totalSelling.toLocaleString()} ₽</strong> ({unitSelling.toLocaleString()} ₽/шт)</span>
+                                        <span>Закупка: <strong>{basePurchase.toLocaleString()} ₽ за шт.</strong> (всего закуп: <strong>{totalPurchase.toLocaleString()} ₽</strong>)</span>
+                                        <span className="font-bold text-indigo-900">Итого продажа: <strong>{totalSelling.toLocaleString()} ₽</strong> ({unitSelling.toLocaleString()} ₽ за шт.)</span>
                                       </div>
                                     </div>
                                   );
@@ -21171,10 +21591,10 @@ const ProductsView = ({
 
                                       <div className="flex items-center justify-between text-[11px] pt-1 text-gray-600 border-t border-gray-200/50">
                                         <span>
-                                          Закупка: <strong>{Math.round(pricePerMeterPurchase).toLocaleString()} ₽/{isPerMeter ? "м.п." : "шт"}</strong> (всего закуп: <strong>{totalPurchase.toLocaleString()} ₽</strong>)
+                                          Закупка: <strong>{Math.round(pricePerMeterPurchase).toLocaleString()} ₽ за {isPerMeter ? "м.п." : "шт."}</strong> (всего закуп: <strong>{totalPurchase.toLocaleString()} ₽</strong>)
                                         </span>
                                         <span className="font-bold text-indigo-900">
-                                          Итого продажа: <strong>{totalSelling.toLocaleString()} ₽</strong> ({unitSelling.toLocaleString()} ₽/{isPerMeter ? "м.п." : "шт"})
+                                          Итого продажа: <strong>{totalSelling.toLocaleString()} ₽</strong> ({unitSelling.toLocaleString()} ₽ за {isPerMeter ? "м.п." : "шт."})
                                         </span>
                                       </div>
                                     </div>
@@ -21327,8 +21747,8 @@ const ProductsView = ({
                                       </div>
 
                                       <div className="flex items-center justify-between text-[11px] pt-1 text-gray-600 border-t border-gray-200/50">
-                                        <span>Закупка: <strong>{basePurchase.toLocaleString()} ₽/шт</strong> (всего: <strong>{totalPurchase.toLocaleString()} ₽</strong>)</span>
-                                        <span className="font-bold text-indigo-900">Продажа: <strong>{totalSelling.toLocaleString()} ₽</strong> ({unitSelling.toLocaleString()} ₽/шт)</span>
+                                        <span>Закупка: <strong>{basePurchase.toLocaleString()} ₽ за шт.</strong> (всего: <strong>{totalPurchase.toLocaleString()} ₽</strong>)</span>
+                                        <span className="font-bold text-indigo-900">Продажа: <strong>{totalSelling.toLocaleString()} ₽</strong> ({unitSelling.toLocaleString()} ₽ за шт.)</span>
                                       </div>
                                     </div>
                                   );
@@ -21352,7 +21772,7 @@ const ProductsView = ({
                             onClick={() => {
                               const calcPrice = calculateKitchenTotalPrice(newProduct, catalogProducts, customerType, resolveBrandCoefficient);
                               setNewProduct(prev => ({ ...prev, price: calcPrice }));
-                              showAlert("Цена синхронизирована", `Стоимость гарнитура (${calcPrice.toLocaleString()} ₽) установлена в карточку товара.`);
+                              showAlert("Цена синхронизирована", "Стоимость гарнитура (" + calcPrice.toLocaleString() + " ₽) установлена в карточку товара.");
                             }}
                             className="px-4 py-2 bg-white text-indigo-900 rounded-xl font-black text-xs hover:bg-indigo-50 transition-all cursor-pointer shadow-sm"
                           >
@@ -21360,7 +21780,6 @@ const ProductsView = ({
                           </button>
                         </div>
                       </div>
-                    </div>
                   )}
 
                   {newProduct.category === "Кухонные модули" && (
@@ -23298,11 +23717,20 @@ const ProductsView = ({
                           <label className="text-sm font-bold text-blue-900">
                             Закупочная цена (без НДС)
                           </label>
-                          <div className="relative w-32">
+                          <div className="relative w-36">
                             <input
                               type="number"
-                              disabled={(newProduct as any).source === "manufacturer" || (newProduct as any).isManufacturer || (newProduct as any).fromProduction}
-                              value={newProduct.purchasePrice || ""}
+                              disabled={
+                                newProduct.category === "Кухонные гарнитуры" ||
+                                (newProduct as any).source === "manufacturer" ||
+                                (newProduct as any).isManufacturer ||
+                                (newProduct as any).fromProduction
+                              }
+                              value={
+                                newProduct.category === "Кухонные гарнитуры"
+                                  ? calculateKitchenPurchasePrice(newProduct, catalogProducts)
+                                  : newProduct.purchasePrice || ""
+                              }
                               onFocus={(e) => e.target.select()}
                               onChange={(e) =>
                                 setNewProduct((prev) => ({
@@ -23317,7 +23745,13 @@ const ProductsView = ({
                             </span>
                           </div>
                         </div>
-                        {((newProduct as any).source === "manufacturer" || (newProduct as any).isManufacturer || (newProduct as any).fromProduction) && (
+                        {newProduct.category === "Кухонные гарнитуры" && (
+                          <div className="flex items-center gap-1.5 text-xs font-semibold text-indigo-800 bg-indigo-50 border border-indigo-200 px-3 py-2 rounded-xl">
+                            <Lock className="w-3.5 h-3.5 flex-shrink-0 text-indigo-600" />
+                            <span>Закупочная цена рассчитывается автоматически по составу гарнитура</span>
+                          </div>
+                        )}
+                        {newProduct.category !== "Кухонные гарнитуры" && ((newProduct as any).source === "manufacturer" || (newProduct as any).isManufacturer || (newProduct as any).fromProduction) && (
                           <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-3 py-2 rounded-xl">
                             <Lock className="w-3.5 h-3.5 flex-shrink-0 text-amber-600" />
                             <span>Закупочная цена товара производства зафиксирована</span>
@@ -23366,8 +23800,9 @@ const ProductsView = ({
                       </div>
                     )}
 
-                    <div className="border-t border-blue-100 pt-4 space-y-3">
-                      <label className="flex items-center gap-2 cursor-pointer">
+                    {newProduct.category !== "Кухонные гарнитуры" && newProduct.category !== "Кухонный гарнитур" && (
+                      <div className="border-t border-blue-100 pt-4 space-y-3">
+                        <label className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"
                           checked={newProduct.useCustomCoeffs || false}
@@ -23451,6 +23886,7 @@ const ProductsView = ({
                         </div>
                       )}
                     </div>
+                  )}
 
                     <div className="pt-2 border-t border-blue-100/50 mt-1">
                       {newProduct.variations && newProduct.variations.length > 0 ? (
@@ -23742,14 +24178,74 @@ const ProductsView = ({
                     <div className="flex items-center justify-between">
                       <h4 className="text-sm font-bold text-indigo-950 flex items-center gap-2">
                         <Sparkles className="w-4 h-4 text-indigo-600" />
-                        Сопутствующие товары карточки
+                        {isKitchenProduct ? "Сопутствующие товары к фурнитуре гарнитура" : "Сопутствующие товары карточки"}
                       </h4>
-                      <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-black uppercase">
-                        {(newProduct.requiredProducts || []).length}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {isKitchenProduct && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              let updatedReq = [...(newProduct.requiredProducts || [])];
+                              ((newProduct as any).kitchenHardware || []).forEach((hw: any) => {
+                                if (hw.productId && (hw.groupName || "").toLowerCase().includes("петл")) {
+                                  const pProd = catalogProducts.find(p => String(p.id) === String(hw.productId));
+                                  const effectiveQty = hw.userQty !== undefined ? hw.userQty : (hw.calculatedQty || 0);
+
+                                  if (pProd) {
+                                    const hingeBrand = (pProd.brand || pProd.manufacturer || "").toLowerCase();
+                                    const hingeName = (pProd.name || "").toLowerCase();
+
+                                    const matchingPlate = catalogProducts.find((cp) => {
+                                      const cpCat = (cp.category || "").toLowerCase();
+                                      const cpName = (cp.name || "").toLowerCase();
+                                      const cpBrand = (cp.brand || cp.manufacturer || "").toLowerCase();
+
+                                      const isPlate = cpCat.includes("ответн") || cpCat.includes("планк") || cpName.includes("ответная планка") || cpName.includes("планка ответная");
+                                      if (!isPlate) return false;
+
+                                      if (hingeBrand && cpBrand && (cpBrand === hingeBrand || cpName.includes(hingeBrand))) {
+                                        return true;
+                                      }
+                                      if (hingeName.includes("blum") && cpName.includes("blum")) return true;
+                                      if (hingeName.includes("hettich") && cpName.includes("hettich")) return true;
+                                      if (hingeName.includes("boyard") && cpName.includes("boyard")) return true;
+                                      return false;
+                                    }) || catalogProducts.find((cp) => {
+                                      const cpCat = (cp.category || "").toLowerCase();
+                                      const cpName = (cp.name || "").toLowerCase();
+                                      return cpCat.includes("ответн") || cpName.includes("ответная планка");
+                                    });
+
+                                    if (matchingPlate) {
+                                      const plateId = String(matchingPlate.id);
+                                      const existingIdx = updatedReq.findIndex((item: any) => String(typeof item === "object" ? item.id : item) === String(plateId));
+                                      if (existingIdx >= 0) {
+                                        updatedReq[existingIdx] = { id: plateId, qty: effectiveQty };
+                                      } else {
+                                        updatedReq.push({ id: plateId, qty: effectiveQty });
+                                      }
+                                    }
+                                  }
+                                }
+                              });
+                              setNewProduct((prev: any) => ({ ...prev, requiredProducts: updatedReq }));
+                            }}
+                            className="text-[11px] text-indigo-700 bg-indigo-100 hover:bg-indigo-200 px-2.5 py-1 rounded-lg font-bold transition-colors cursor-pointer"
+                            title="Автоматически подобрать ответные планки и сопутствующие к выбранным петлям"
+                          >
+                            + Автоподбор к петлям
+                          </button>
+                        )}
+                        <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-black uppercase">
+                          {(newProduct.requiredProducts || []).length}
+                        </span>
+                      </div>
                     </div>
                     <p className="text-xs text-gray-500 leading-normal">
-                      Выберите товары, предлагаемые как сопутствующие при добавлении этого товара в проект (например, поддон, крепеж, демпферы).
+                      {isKitchenProduct
+                        ? "При выборе петель сопутствующие товары (ответные планки, заглушки) подбираются автоматически. Вы можете изменить их количество, добавить новые товары из каталога ниже или легко отказаться от любых позиций."
+                        : "Выберите товары, предлагаемые как сопутствующие при добавлении этого товара в проект (например, поддон, крепеж, демпферы)."
+                      }
                     </p>
 
                     <div className="flex flex-col sm:flex-row gap-2 w-full min-w-0">
@@ -24389,22 +24885,31 @@ const ProductsView = ({
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
           {filteredProducts.map((product) => {
-            const displayImage = product.images?.[0] || product.image;
+            const isKitchen = product.category === "Кухонные гарнитуры" || product.category === "Кухонный гарнитур";
+            const imagesList = (product.images || []).filter(Boolean);
+            if (imagesList.length === 0 && product.image) {
+              imagesList.push(product.image);
+            }
+            const activeIdx = (activeHoverImage && activeHoverImage.productId === product.id && activeHoverImage.index < imagesList.length) 
+              ? activeHoverImage.index 
+              : 0;
+            const displayImage = imagesList[activeIdx] || product.image;
             return (
               <div
                 key={product.id}
-                className="bg-white rounded-[20px] border border-gray-100 shadow-sm overflow-hidden group hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col relative"
+                onMouseLeave={() => setActiveHoverImage(null)}
+                className={`bg-white rounded-[20px] border border-gray-100 shadow-sm overflow-hidden group hover:shadow-xl hover:-translate-y-1 transition-all duration-300 flex flex-col relative ${isKitchen ? "col-span-2" : ""}`}
               >
                 <div
                   onClick={() => setSelectedProductForDetail(product)}
-                  className="relative h-40 sm:h-48 overflow-hidden bg-gray-100 flex items-center justify-center cursor-pointer group"
+                  className={`relative ${isKitchen ? "h-80 sm:h-96" : "h-40 sm:h-48"} overflow-hidden bg-gray-100 flex items-center justify-center cursor-pointer group`}
                 >
                   {displayImage ? (
                     <img
                       src={displayImage}
                       alt={product.name}
                       referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
                     />
                   ) : (
                     <div className="flex flex-col items-center justify-center text-gray-400 w-full h-full">
@@ -24415,6 +24920,64 @@ const ProductsView = ({
                       <span className="text-[10px] uppercase font-bold tracking-widest text-gray-300">
                         Нет фото
                       </span>
+                    </div>
+                  )}
+
+                  {/* Horizontal hover sliding strips */}
+                  {imagesList.length > 1 && (
+                    <div className="absolute inset-0 flex z-20">
+                      {imagesList.map((_, idx) => (
+                        <div
+                          key={idx}
+                          className="flex-1 h-full cursor-pointer"
+                          onMouseEnter={() => setActiveHoverImage({ productId: product.id, index: idx })}
+                        />
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Manual Navigation Arrows for Kitchens (and other multi-image items) */}
+                  {imagesList.length > 1 && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const prevIdx = (activeIdx - 1 + imagesList.length) % imagesList.length;
+                          setActiveHoverImage({ productId: product.id, index: prevIdx });
+                        }}
+                        className="absolute left-3 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center bg-white/90 hover:bg-white rounded-full shadow-lg text-gray-700 hover:text-indigo-600 transition-all z-40 opacity-0 group-hover:opacity-100"
+                      >
+                        <ChevronLeft className="w-5 h-5" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const nextIdx = (activeIdx + 1) % imagesList.length;
+                          setActiveHoverImage({ productId: product.id, index: nextIdx });
+                        }}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 w-8 h-8 flex items-center justify-center bg-white/90 hover:bg-white rounded-full shadow-lg text-gray-700 hover:text-indigo-600 transition-all z-40 opacity-0 group-hover:opacity-100"
+                      >
+                        <ChevronRight className="w-5 h-5" />
+                      </button>
+                    </>
+                  )}
+
+                  {/* Photo pagination dots */}
+                  {imagesList.length > 1 && (
+                    <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1 z-30 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                      {imagesList.map((_, idx) => {
+                        const isCurrent = activeIdx === idx;
+                        return (
+                          <div
+                            key={idx}
+                            className={`h-1.5 rounded-full transition-all duration-300 ${
+                              isCurrent ? "w-4 bg-white shadow-md" : "w-1.5 bg-white/60"
+                            }`}
+                          />
+                        );
+                      })}
                     </div>
                   )}
 
@@ -24654,14 +25217,88 @@ const ProductsView = ({
                         )}
                       </div>
                     )}
+                    {isKitchen && (
+                      <div className="flex flex-col gap-1.5 text-xs text-gray-600 bg-gray-50/50 p-3 rounded-xl border border-gray-100/80 mb-3">
+                        <div className="flex justify-between items-center pb-1 border-b border-gray-100/50">
+                          <span className="text-gray-400">Форма:</span>
+                          <span className="font-semibold text-gray-800">{product.kitchenType || "Прямая"}</span>
+                        </div>
+                        {product.kitchenStyle && (
+                          <div className="flex justify-between items-center pb-1 border-b border-gray-100/50">
+                            <span className="text-gray-400">Стиль:</span>
+                            <span className="font-semibold text-gray-800">{product.kitchenStyle}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between items-start pt-0.5">
+                          <span className="text-gray-400 mt-0.5">Размеры:</span>
+                          <div className="text-right font-semibold text-gray-800 flex flex-col items-end">
+                            {(() => {
+                              const type = product.kitchenType || "Прямая";
+                              if (type === "Угловая") {
+                                return (
+                                  <>
+                                    <span>Стены: {product.kitchenWidthLeft || "0"} x {product.kitchenWidthRight || "0"} мм</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Высота: {product.kitchenHeight || "0"} мм, Глубина: {product.kitchenDepth || "0"} мм</span>
+                                  </>
+                                );
+                              } else if (type === "П-образная") {
+                                return (
+                                  <>
+                                    <span>Стены: {product.kitchenWidthWall1 || "0"} x {product.kitchenWidthWall2 || "0"} x {product.kitchenWidthWall3 || "0"} мм</span>
+                                    <span className="text-[10px] text-gray-400 font-normal">Высота: {product.kitchenHeight || "0"} мм, Глубина: {product.kitchenDepth || "0"} мм</span>
+                                  </>
+                                );
+                              } else {
+                                return (
+                                  <>
+                                    <span>Ш х В х Г:</span>
+                                    <span>{product.kitchenWidth || "0"} x {product.kitchenHeight || "0"} x {product.kitchenDepth || "0"} мм</span>
+                                    {(type === "с Островом" || type === "Островная") && (product.islandWidth || product.islandDepth || product.islandHeight) && (
+                                      <span className="text-[10px] text-indigo-600 font-normal mt-0.5">
+                                        Остров: {product.islandWidth || "0"}x{product.islandDepth || "0"}x{product.islandHeight || "0"} мм
+                                      </span>
+                                    )}
+                                  </>
+                                );
+                              }
+                            })()}
+                          </div>
+                        </div>
+                        {(() => {
+                          let totalVolume = 0;
+                          if (product.kitchenModules && product.kitchenModules.length > 0) {
+                            product.kitchenModules.forEach((km: any) => {
+                              const mod = catalogProducts.find((cp: any) => String(cp.id) === String(km.id));
+                              if (mod) {
+                                const w = parseFloat(mod.moduleWidth) || 0;
+                                const h = parseFloat(mod.moduleHeight) || 0;
+                                const d = parseFloat(mod.moduleDepth) || 0;
+                                totalVolume += (w / 1000) * (h / 1000) * (d / 1000) * (km.qty || 1);
+                              }
+                            });
+                          }
+                          if (totalVolume > 0) {
+                            return (
+                              <div className="flex justify-between items-center pt-1 border-t border-gray-100/50 mt-1">
+                                <span className="text-gray-400">Объем модулей:</span>
+                                <span className="font-bold text-indigo-600">{totalVolume.toFixed(3)} м³</span>
+                              </div>
+                            );
+                          }
+                          return null;
+                        })()}
+                      </div>
+                    )}
                   </div>
-                  <ProductRequiredProductsList 
-                    requiredProducts={product.requiredProducts} 
-                    catalogProducts={catalogProducts} 
-                    customerType={customerType}
-                    getProductCoefficient={getProductCoefficient}
-                    resolveBrandCoefficient={resolveBrandCoefficient}
-                  />
+                  {!isKitchen && (
+                    <ProductRequiredProductsList 
+                      requiredProducts={product.requiredProducts} 
+                      catalogProducts={catalogProducts} 
+                      customerType={customerType}
+                      getProductCoefficient={getProductCoefficient}
+                      resolveBrandCoefficient={resolveBrandCoefficient}
+                    />
+                  )}
 
                   <div className="mt-4 pt-4 border-t border-gray-50 space-y-4">
                     <div className="flex items-center justify-between gap-2">
@@ -26623,6 +27260,7 @@ export default function App() {
           else ct[itemIdx] = { ...ct[itemIdx], metersOrQty: newQty };
           updatedP.kitchenCountertops = ct;
         }
+        updatedP.purchasePrice = calculateKitchenPurchasePrice(updatedP, catalogProducts);
         updatedP.price = calculateKitchenTotalPrice(updatedP, catalogProducts, customerType, resolveBrandCoefficient);
         return updatedP;
       }
@@ -26657,6 +27295,7 @@ export default function App() {
           };
           updatedP.kitchenCountertops = ct;
         }
+        updatedP.purchasePrice = calculateKitchenPurchasePrice(updatedP, catalogProducts);
         updatedP.price = calculateKitchenTotalPrice(updatedP, catalogProducts, customerType, resolveBrandCoefficient);
         return updatedP;
       }
@@ -26681,6 +27320,51 @@ export default function App() {
   const catalogProducts = useMemo(() => {
     return [...ownProducts, ...manufacturerProducts];
   }, [ownProducts, manufacturerProducts]);
+
+  const facadeProductsList = useMemo(() => {
+    const result: { id: string; name: string; article?: string }[] = [];
+
+    (catalogProducts || []).forEach((p) => {
+      const cat = (p.category || "").toLowerCase();
+      const customCat = (p.customCategory || "").toLowerCase();
+      if (
+        cat.includes("фасад") ||
+        cat.includes("плитн") ||
+        cat.includes("пильн") ||
+        cat.includes("заказн") ||
+        customCat.includes("фасад")
+      ) {
+        result.push({
+          id: String(p.id),
+          name: `${p.name}${p.brand ? ` (${p.brand})` : ''}`,
+          article: p.article,
+        });
+      }
+    });
+
+    if (ownProductionConfig?.facadeSettings?.displayName) {
+      const name = ownProductionConfig.facadeSettings.displayName;
+      if (!result.some((r) => r.name.includes(name))) {
+        result.push({ id: `custom_cfg_facadeSettings`, name: `[Заказной фасад] ${name}` });
+      }
+    }
+    if (ownProductionConfig?.enamelSettings?.displayName) {
+      const name = ownProductionConfig.enamelSettings.displayName;
+      if (!result.some((r) => r.name.includes(name))) {
+        result.push({ id: `custom_cfg_enamelSettings`, name: `[Эмаль] ${name}` });
+      }
+    }
+    ownProductionConfig?.extraFacadeTypes?.forEach((t: any, idx: number) => {
+      if (t.displayName) {
+        const name = t.displayName;
+        if (!result.some((r) => r.name.includes(name))) {
+          result.push({ id: `custom_cfg_extra_${idx}`, name: `[Заказной фасад] ${name}` });
+        }
+      }
+    });
+
+    return result;
+  }, [catalogProducts, ownProductionConfig]);
 
   const [catalogServices, setCatalogServices] = useState<any[]>(SERVICES_LIST);
   const [customEdgeMapping, setCustomEdgeMapping] = useState<Record<string, { edgeBrand?: string; edgeDecor?: string }>>({});
@@ -29162,9 +29846,12 @@ export default function App() {
 
     addedProducts.forEach((p) => {
       const coeff = getProductCoefficient(p, customerType, resolveBrandCoefficient);
-      const displayPrice = p.purchasePrice
-        ? Math.round(p.purchasePrice * coeff)
-        : p.price;
+      const isKitchen = p.category === "Кухонные гарнитуры" || p.category === "Кухонный гарнитур";
+      const displayPrice = isKitchen
+        ? (p.price || 0)
+        : (p.purchasePrice
+          ? Math.round(p.purchasePrice * coeff)
+          : p.price);
       const itemCost = displayPrice * p.quantity;
       total += itemCost;
       productsOnlyTotal += itemCost;
@@ -30977,9 +31664,12 @@ export default function App() {
                           <div className="text-2xl font-black text-gray-900">
                             {(() => {
                               const coeff = getProductCoefficient(selectedProductForDetail, customerType, resolveBrandCoefficient);
-                              const displayPrice = selectedProductForDetail.purchasePrice
-                                ? Math.round(selectedProductForDetail.purchasePrice * coeff)
-                                : selectedProductForDetail.price;
+                              const isKitchen = selectedProductForDetail.category === "Кухонные гарнитуры" || selectedProductForDetail.category === "Кухонный гарнитур";
+                              const displayPrice = isKitchen
+                                ? (selectedProductForDetail.price || 0)
+                                : (selectedProductForDetail.purchasePrice
+                                  ? Math.round(selectedProductForDetail.purchasePrice * coeff)
+                                  : selectedProductForDetail.price);
                               return (displayPrice || 0).toLocaleString();
                             })()}{" "}
                             ₽
@@ -31138,8 +31828,216 @@ export default function App() {
                             </div>
                           </>
                         )}
+                        {(selectedProductForDetail.category === "Кухонные гарнитуры" || selectedProductForDetail.category === "Кухонный гарнитур") && (
+                          <>
+                            <div className="space-y-1">
+                              <span className="text-[10px] text-gray-400 uppercase font-black">
+                                Форма
+                              </span>
+                              <div className="text-sm font-bold text-gray-800">
+                                {selectedProductForDetail.kitchenType || "Прямая"}
+                              </div>
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] text-gray-400 uppercase font-black">
+                                Стиль
+                              </span>
+                              <div className="text-sm font-bold text-gray-800">
+                                {selectedProductForDetail.kitchenStyle || "Современный"}
+                              </div>
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] text-gray-400 uppercase font-black">
+                                Размеры
+                              </span>
+                              <div className="text-sm font-bold text-gray-800">
+                                {(() => {
+                                  const type = selectedProductForDetail.kitchenType || "Прямая";
+                                  if (type === "Угловая") {
+                                    return `Стены: ${selectedProductForDetail.kitchenWidthLeft || "0"} x ${selectedProductForDetail.kitchenWidthRight || "0"} мм`;
+                                  } else if (type === "П-образная") {
+                                    return `Стены: ${selectedProductForDetail.kitchenWidthWall1 || "0"} x ${selectedProductForDetail.kitchenWidthWall2 || "0"} x ${selectedProductForDetail.kitchenWidthWall3 || "0"} мм`;
+                                  } else {
+                                    return `${selectedProductForDetail.kitchenWidth || "0"} x ${selectedProductForDetail.kitchenHeight || "0"} x ${selectedProductForDetail.kitchenDepth || "0"} мм`;
+                                  }
+                                })()}
+                              </div>
+                            </div>
+                            <div className="space-y-1">
+                              <span className="text-[10px] text-gray-400 uppercase font-black">
+                                Рассчитанный объем
+                              </span>
+                              <div className="text-sm font-black text-indigo-600 bg-indigo-50 px-2.5 py-1 rounded-lg inline-block">
+                                {(() => {
+                                  let totalVolume = 0;
+                                  if (selectedProductForDetail.kitchenModules && selectedProductForDetail.kitchenModules.length > 0) {
+                                    selectedProductForDetail.kitchenModules.forEach((km: any) => {
+                                      const mod = catalogProducts.find((cp: any) => String(cp.id) === String(km.id));
+                                      if (mod) {
+                                        const w = parseFloat(mod.moduleWidth) || 0;
+                                        const h = parseFloat(mod.moduleHeight) || 0;
+                                        const d = parseFloat(mod.moduleDepth) || 0;
+                                        totalVolume += (w / 1000) * (h / 1000) * (d / 1000) * (km.qty || 1);
+                                      }
+                                    });
+                                  }
+                                  return `${totalVolume.toFixed(3)} м³`;
+                                })()}
+                              </div>
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
+
+                    {(selectedProductForDetail.category === "Кухонные гарнитуры" || selectedProductForDetail.category === "Кухонный гарнитур") && (
+                      <div className="bg-amber-50/50 p-6 rounded-3xl border border-amber-100/70 space-y-4">
+                        <h4 className="text-[10px] font-black text-amber-800 uppercase tracking-widest flex items-center gap-2 border-b border-amber-200/50 pb-3">
+                          <Layers className="w-4 h-4 text-amber-600" />
+                          Выбор и настройка фасадов
+                        </h4>
+                        
+                        <div className="grid grid-cols-1 gap-4">
+                          {/* Нижние фасады */}
+                          <div className="space-y-2">
+                            <label className="block text-xs font-bold text-gray-700">Нижние фасады</label>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <select
+                                value={selectedProductForDetail.facadeBottomProduct || ""}
+                                onChange={(e) => {
+                                  const prodId = e.target.value;
+                                  const foundProd = facadeProductsList.find(p => String(p.id) === String(prodId));
+                                  setSelectedProductForDetail(prev => {
+                                    const next = {
+                                      ...prev,
+                                      facadeBottomProduct: prodId,
+                                      facadeBottomMaterial: foundProd ? foundProd.name : prev.facadeBottomMaterial
+                                    };
+                                    next.purchasePrice = calculateKitchenPurchasePrice(next, catalogProducts);
+                                    next.price = calculateKitchenTotalPrice(next, catalogProducts, customerType, resolveBrandCoefficient);
+                                    return next;
+                                  });
+                                  
+                                  setAddedProducts(prev => prev.map(p => {
+                                    if (String(p.id) === String(selectedProductForDetail.id)) {
+                                      const next = {
+                                        ...p,
+                                        facadeBottomProduct: prodId,
+                                        facadeBottomMaterial: foundProd ? foundProd.name : p.facadeBottomMaterial
+                                      };
+                                      next.purchasePrice = calculateKitchenPurchasePrice(next, catalogProducts);
+                                      next.price = calculateKitchenTotalPrice(next, catalogProducts, customerType, resolveBrandCoefficient);
+                                      return next;
+                                    }
+                                    return p;
+                                  }));
+                                }}
+                                className="w-full px-2.5 py-1.5 border border-gray-300 rounded-xl text-xs bg-white font-semibold outline-none focus:ring-2 focus:ring-amber-500"
+                              >
+                                <option value="">-- Из каталога фасадов --</option>
+                                {facadeProductsList.map(f => (
+                                  <option key={f.id} value={f.id}>{f.name} {f.article ? `(Арт: ${f.article})` : ''}</option>
+                                ))}
+                              </select>
+                              <input
+                                type="text"
+                                value={selectedProductForDetail.facadeBottomMaterial || ""}
+                                onChange={(e) => {
+                                  const text = e.target.value;
+                                  setSelectedProductForDetail(prev => {
+                                    const next = { ...prev, facadeBottomMaterial: text };
+                                    next.purchasePrice = calculateKitchenPurchasePrice(next, catalogProducts);
+                                    next.price = calculateKitchenTotalPrice(next, catalogProducts, customerType, resolveBrandCoefficient);
+                                    return next;
+                                  });
+                                  
+                                  setAddedProducts(prev => prev.map(p => {
+                                    if (String(p.id) === String(selectedProductForDetail.id)) {
+                                      const next = { ...p, facadeBottomMaterial: text };
+                                      next.purchasePrice = calculateKitchenPurchasePrice(next, catalogProducts);
+                                      next.price = calculateKitchenTotalPrice(next, catalogProducts, customerType, resolveBrandCoefficient);
+                                      return next;
+                                    }
+                                    return p;
+                                  }));
+                                }}
+                                placeholder="Свой материал / цвет"
+                                className="w-full px-2.5 py-1.5 border border-gray-300 rounded-xl text-xs bg-white font-semibold outline-none focus:ring-2 focus:ring-amber-500"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Верхние фасады */}
+                          <div className="space-y-2">
+                            <label className="block text-xs font-bold text-gray-700">Верхние фасады</label>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              <select
+                                value={selectedProductForDetail.facadeTopProduct || ""}
+                                onChange={(e) => {
+                                  const prodId = e.target.value;
+                                  const foundProd = facadeProductsList.find(p => String(p.id) === String(prodId));
+                                  setSelectedProductForDetail(prev => {
+                                    const next = {
+                                      ...prev,
+                                      facadeTopProduct: prodId,
+                                      facadeTopMaterial: foundProd ? foundProd.name : prev.facadeTopMaterial
+                                    };
+                                    next.purchasePrice = calculateKitchenPurchasePrice(next, catalogProducts);
+                                    next.price = calculateKitchenTotalPrice(next, catalogProducts, customerType, resolveBrandCoefficient);
+                                    return next;
+                                  });
+                                  
+                                  setAddedProducts(prev => prev.map(p => {
+                                    if (String(p.id) === String(selectedProductForDetail.id)) {
+                                      const next = {
+                                        ...p,
+                                        facadeTopProduct: prodId,
+                                        facadeTopMaterial: foundProd ? foundProd.name : p.facadeTopMaterial
+                                      };
+                                      next.purchasePrice = calculateKitchenPurchasePrice(next, catalogProducts);
+                                      next.price = calculateKitchenTotalPrice(next, catalogProducts, customerType, resolveBrandCoefficient);
+                                      return next;
+                                    }
+                                    return p;
+                                  }));
+                                }}
+                                className="w-full px-2.5 py-1.5 border border-gray-300 rounded-xl text-xs bg-white font-semibold outline-none focus:ring-2 focus:ring-amber-500"
+                              >
+                                <option value="">-- Из каталога фасадов --</option>
+                                {facadeProductsList.map(f => (
+                                  <option key={f.id} value={f.id}>{f.name} {f.article ? `(Арт: ${f.article})` : ''}</option>
+                                ))}
+                              </select>
+                              <input
+                                type="text"
+                                value={selectedProductForDetail.facadeTopMaterial || ""}
+                                onChange={(e) => {
+                                  const text = e.target.value;
+                                  setSelectedProductForDetail(prev => {
+                                    const next = { ...prev, facadeTopMaterial: text };
+                                    next.purchasePrice = calculateKitchenPurchasePrice(next, catalogProducts);
+                                    next.price = calculateKitchenTotalPrice(next, catalogProducts, customerType, resolveBrandCoefficient);
+                                    return next;
+                                  });
+                                  
+                                  setAddedProducts(prev => prev.map(p => {
+                                    if (String(p.id) === String(selectedProductForDetail.id)) {
+                                      const next = { ...p, facadeTopMaterial: text };
+                                      next.purchasePrice = calculateKitchenPurchasePrice(next, catalogProducts);
+                                      next.price = calculateKitchenTotalPrice(next, catalogProducts, customerType, resolveBrandCoefficient);
+                                      return next;
+                                    }
+                                    return p;
+                                  }));
+                                }}
+                                placeholder="Свой материал / цвет"
+                                className="w-full px-2.5 py-1.5 border border-gray-300 rounded-xl text-xs bg-white font-semibold outline-none focus:ring-2 focus:ring-amber-500"
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     {selectedProductForDetail.requiredProducts && selectedProductForDetail.requiredProducts.length > 0 && (
                       <div className="bg-blue-50/50 p-6 rounded-3xl border border-blue-100/70 space-y-4">
