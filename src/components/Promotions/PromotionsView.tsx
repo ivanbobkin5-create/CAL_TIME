@@ -13,12 +13,13 @@ export interface Promotion {
   startDate: string;
   endDate: string;
   buyerTypes: ("retail" | "wholesale" | "designer")[];
-  promoType: "discount" | "cashback" | "gift_product" | "gift_service" | "installment";
+  promoType: "discount" | "cashback" | "gift_product" | "gift_service" | "installment" | "bundle_discount";
   allowOverlap: boolean;
   isActive?: boolean;
 
   // Discount
   discountPercent?: number;
+  bundleDiscountPercent?: number;
   discountScopes?: string[]; // "all_project" | "corp" | "facades_plt" | "facades_cust" | "hardware" | "stone" | "delivery" | "assembly" | "services" | "specific_products"
   discountNeedMarkup?: boolean;
 
@@ -237,6 +238,10 @@ export const PromotionsView = ({
       setP12(progs["0-0-12"] || { enabled: false, bankPercent: 0, maxAmount: 450000 });
       setP24(progs["0-0-24"] || { enabled: false, bankPercent: 0, maxAmount: 600000 });
       setInstallmentNeedMarkup(promo.installmentNeedMarkup || false);
+    } else if (promo.promoType === "bundle_discount") {
+      setDiscountPercent(promo.bundleDiscountPercent || promo.discountPercent || 0);
+      setDiscountNeedMarkup(promo.discountNeedMarkup || false);
+      setTargetProductIds(promo.targetProductIds || []);
     }
 
     setIsCreating(true);
@@ -325,6 +330,10 @@ export const PromotionsView = ({
         "0-0-24": p24,
       };
       payload.installmentNeedMarkup = installmentNeedMarkup;
+    } else if (promoType === "bundle_discount") {
+      payload.bundleDiscountPercent = discountPercent;
+      payload.discountNeedMarkup = discountNeedMarkup;
+      payload.targetProductIds = targetProductIds;
     }
 
     let updatedList: Promotion[] = [];
@@ -691,10 +700,221 @@ export const PromotionsView = ({
                   <option value="gift_product">Товар в подарок</option>
                   <option value="gift_service">Услуга в подарок</option>
                   <option value="installment">Рассрочка</option>
+                  <option value="bundle_discount">Комплект со скидкой</option>
                 </select>
               </div>
 
               {/* Promo Context specific UI */}
+              {promoType === "bundle_discount" && (
+                <div className="p-4 bg-gray-50/80 border border-gray-100 rounded-2xl space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-500 mb-1.5">Размер скидки на комплект (%)</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={discountPercent || ''}
+                      onChange={(e) => setDiscountPercent(parseInt(e.target.value) || 0)}
+                      className="w-full px-4 py-2 border border-gray-200 focus:border-indigo-500 rounded-xl text-sm"
+                      placeholder="Например: 15"
+                      required
+                    />
+                  </div>
+
+                  {isAdminOrSupervisor && (
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="checkbox"
+                        id="bundle-need-markup"
+                        checked={discountNeedMarkup}
+                        onChange={(e) => setDiscountNeedMarkup(e.target.checked)}
+                        className="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                      />
+                      <label htmlFor="bundle-need-markup" className="text-xs font-bold text-gray-700 cursor-pointer">
+                        Делать наценку на указанные товары (наценка перед применением скидки)
+                      </label>
+                    </div>
+                  )}
+
+                  {/* Target products selector for bundle */}
+                  <div className="bg-indigo-50/45 p-4 border border-indigo-100 rounded-2xl space-y-4">
+                    <div className="flex items-center justify-between border-b border-indigo-100/60 pb-2">
+                      <span className="text-xs font-bold text-indigo-900 uppercase">Товары, входящие в комплект:</span>
+                      <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">
+                        {targetProductIds.length} выбрано
+                      </span>
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-bold text-indigo-800 uppercase tracking-widest mb-1">Шаг 1: Категория</label>
+                          <select
+                            value={selectedTargetCategory}
+                            onChange={(e) => {
+                              setSelectedTargetCategory(e.target.value);
+                              setSelectedTargetSubCategory('');
+                            }}
+                            className="w-full px-3 py-2 text-xs border border-gray-205 rounded-xl bg-white outline-none focus:ring-2 focus:ring-indigo-500 text-gray-700 font-bold"
+                          >
+                            <option value="">-- Все категории --</option>
+                            {productCategories.map((c, index) => {
+                              const name = typeof c === 'object' && c !== null ? (c as any).name : String(c);
+                              return (
+                                <option key={`${name}-${index}`} value={name}>
+                                  {name}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] font-bold text-indigo-800 uppercase tracking-widest mb-1">Шаг 2: Подкатегория</label>
+                          <select
+                            value={selectedTargetSubCategory}
+                            onChange={(e) => setSelectedTargetSubCategory(e.target.value)}
+                            disabled={!selectedTargetCategory || subCategoriesForSelectedTarget.length === 0}
+                            className="w-full px-3 py-2 text-xs border border-gray-205 rounded-xl bg-white outline-none focus:ring-2 focus:ring-indigo-500 text-gray-700 font-bold disabled:bg-gray-50 disabled:text-gray-400"
+                          >
+                            <option value="">-- Все подразделы --</option>
+                            {subCategoriesForSelectedTarget.map((sub) => (
+                              <option key={sub} value={sub}>
+                                {sub}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-indigo-800 uppercase tracking-widest mb-1">Шаг 3: Поиск товара (название/арт.)</label>
+                        <div className="relative">
+                          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 w-3.5 h-3.5" />
+                          <input
+                            type="text"
+                            value={targetSearchQuery}
+                            onChange={(e) => setTargetSearchQuery(e.target.value)}
+                            className="w-full h-8 pl-8 pr-3 text-xs border border-gray-205 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 bg-white font-medium text-gray-800"
+                            placeholder="Артикул или название..."
+                          />
+                        </div>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row gap-2 w-full min-w-0">
+                        <div className="flex-1 min-w-0">
+                          <label className="block text-[10px] font-bold text-indigo-800 uppercase tracking-widest mb-1">Шаг 4: Выберите товар для комплекта</label>
+                          <select
+                            id="bundle-target-product-select"
+                            className="w-full h-8 px-3 text-xs border border-gray-205 rounded-xl bg-white outline-none focus:ring-2 focus:ring-indigo-500 text-gray-700 font-medium truncate"
+                            defaultValue=""
+                          >
+                            <option value="">-- Выберите товар из списка ({
+                              catalogProducts.filter((p) => {
+                                if (p.category === "Кухонные модули") return false;
+                                if (selectedTargetCategory && p.category !== selectedTargetCategory) return false;
+                                let matchSub = true;
+                                if (selectedTargetCategory === "Петли" && selectedTargetSubCategory) {
+                                  matchSub = p.hingeType === selectedTargetSubCategory;
+                                } else if (selectedTargetCategory === "Системы выдвижения" && selectedTargetSubCategory) {
+                                  matchSub = p.drawerSubCategory === selectedTargetSubCategory;
+                                }
+                                if (!matchSub) return false;
+                                if (targetSearchQuery) {
+                                  const sLower = targetSearchQuery.toLowerCase().trim();
+                                  const text = `${p.name || ''} ${p.article || ''}`.toLowerCase();
+                                  if (!text.includes(sLower)) return false;
+                                }
+                                return true;
+                              }).length
+                            } товаров) --</option>
+                            {catalogProducts
+                              .filter((p) => {
+                                if (p.category === "Кухонные модули") return false;
+                                if (selectedTargetCategory && p.category !== selectedTargetCategory) return false;
+                                let matchSub = true;
+                                if (selectedTargetCategory === "Петли" && selectedTargetSubCategory) {
+                                  matchSub = p.hingeType === selectedTargetSubCategory;
+                                } else if (selectedTargetCategory === "Системы выдвижения" && selectedTargetSubCategory) {
+                                  matchSub = p.drawerSubCategory === selectedTargetSubCategory;
+                                }
+                                if (!matchSub) return false;
+                                if (targetSearchQuery) {
+                                  const sLower = targetSearchQuery.toLowerCase().trim();
+                                  const text = `${p.name || ''} ${p.article || ''}`.toLowerCase();
+                                  if (!text.includes(sLower)) return false;
+                                }
+                                return true;
+                              })
+                              .map((p) => {
+                                const displayPrice = p.price || p.purchasePrice || 0;
+                                return (
+                                  <option key={p.id} value={p.id}>
+                                    [{p.category}] {p.name} ({(displayPrice || 0).toLocaleString()} ₽) {p.article ? `| Арт: ${p.article}` : ""}
+                                  </option>
+                                );
+                              })}
+                          </select>
+                        </div>
+
+                        <div className="w-full sm:w-auto flex items-end">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const selectEl = document.getElementById("bundle-target-product-select") as HTMLSelectElement;
+                              if (selectEl && selectEl.value) {
+                                const prodId = selectEl.value;
+                                if (targetProductIds.includes(String(prodId))) {
+                                  showAlert("Внимание", "Этот товар уже добавлен в комплект!");
+                                  return;
+                                }
+                                setTargetProductIds(prev => [...prev, String(prodId)]);
+                                selectEl.value = "";
+                              } else {
+                                showAlert("Внимание", "Пожалуйста, сначала выберите конкретный товар.");
+                              }
+                            }}
+                            className="h-8 px-4 bg-indigo-650 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition-colors shrink-0 flex items-center justify-center gap-1 cursor-pointer"
+                          >
+                            Добавить
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {targetProductIds.length > 0 ? (
+                      <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                        {targetProductIds.map((tid) => {
+                          const tProduct = catalogProducts.find((cp) => String(cp.id) === String(tid));
+                          return (
+                            <div key={tid} className="flex items-center justify-between p-2 bg-white rounded-xl border border-indigo-100/50 text-xs shadow-sm">
+                              <span className="font-semibold text-gray-700 truncate max-w-[200px] sm:max-w-[320px]" title={tProduct?.name || tid}>
+                                [{tProduct?.category || "Каталог"}] {tProduct?.name || `Товар [ID: ${tid}]`}
+                                {tProduct?.article ? ` (Арт: ${tProduct.article})` : ""}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setTargetProductIds(prev => prev.filter(id => String(id) !== String(tid)));
+                                }}
+                                className="text-red-500 hover:bg-red-50 p-1 rounded-lg transition-colors cursor-pointer"
+                                title="Удалить товар"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="text-center py-4 border border-dashed border-indigo-100 rounded-xl text-gray-400 text-[11px]">
+                        Добавьте товары, которые должны участвовать в комплекте.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {promoType === "discount" && (
                 <div className="p-4 bg-gray-55/40 border border-gray-100 rounded-2xl space-y-4">
                   <div>
@@ -1750,6 +1970,34 @@ export const PromotionsView = ({
                                 <span className="font-bold">{promo.installmentNeedMarkup ? 'Да' : 'Нет'}</span>
                               </div>
                             )}
+                          </>
+                        )}
+
+                        {promo.promoType === "bundle_discount" && (
+                          <>
+                            <div className="flex justify-between">
+                              <span className="text-gray-400 font-medium">Скидка на комплект:</span>
+                              <span className="font-extrabold text-indigo-600">{promo.bundleDiscountPercent || promo.discountPercent}%</span>
+                            </div>
+                            {isAdminOrSupervisor && (
+                              <div className="flex justify-between">
+                                <span className="text-gray-400 font-medium">С наценкой:</span>
+                                <span className="font-semibold text-gray-700">{promo.discountNeedMarkup ? 'Да' : 'Нет'}</span>
+                              </div>
+                            )}
+                            <div className="flex flex-col mt-1 gap-1 border-t border-gray-100 pt-1.5">
+                              <span className="text-[10px] text-gray-400 font-extrabold uppercase">Товары в комплекте ({promo.targetProductIds?.length || 0}):</span>
+                              <div className="max-h-24 overflow-y-auto space-y-1">
+                                {(promo.targetProductIds || []).map((tid) => {
+                                  const tp = catalogProducts.find(cp => String(cp.id) === String(tid));
+                                  return (
+                                    <div key={tid} className="text-[11px] text-gray-700 font-medium truncate" title={tp?.name || tid}>
+                                      • {tp?.name || tid}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
                           </>
                         )}
                       </div>

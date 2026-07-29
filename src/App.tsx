@@ -4858,31 +4858,58 @@ const PriceView = ({
                         <span className="w-2.5 h-2.5 bg-blue-600 rounded-full"></span>
                         <h5 className="font-bold text-gray-800 text-sm">Кромочные материалы</h5>
                       </div>
-                      <div className="flex items-center gap-1.5 bg-gray-100/80 p-1 rounded-xl">
-                        <button
-                          onClick={() => setEdgeSubtab("mapping")}
-                          className={cn(
-                            "px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5",
-                            edgeSubtab === "mapping"
-                              ? "bg-white text-blue-600 shadow-sm"
-                              : "text-gray-500 hover:text-gray-800"
-                          )}
-                        >
-                          <Layers className="w-3.5 h-3.5" />
-                          Таблица соответствия (Маппинг к ЛДСП)
-                        </button>
-                        <button
-                          onClick={() => setEdgeSubtab("brands")}
-                          className={cn(
-                            "px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5",
-                            edgeSubtab === "brands"
-                              ? "bg-white text-blue-600 shadow-sm"
-                              : "text-gray-500 hover:text-gray-800"
-                          )}
-                        >
-                          <Tag className="w-3.5 h-3.5" />
-                          Прайс-лист по брендам кромок
-                        </button>
+                      <div className="flex flex-wrap items-center gap-2">
+                        {canEdit && (
+                          <button
+                            onClick={() => {
+                              showPrompt(
+                                "Создать раздел кромок",
+                                "Введите название нового раздела (бренда) кромок:",
+                                "",
+                                (val) => {
+                                  if (val) {
+                                    const bName = val.trim();
+                                    updateAndSaveCatalogMaterials((prev) => ({
+                                      ...prev,
+                                      [bName]: prev[bName] || [],
+                                    }));
+                                    showAlert("Раздел создан", `Раздел кромок "${bName}" успешно создан`);
+                                  }
+                                }
+                              );
+                            }}
+                            className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition-colors flex items-center gap-1.5 shadow-sm"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            Создать раздел кромок
+                          </button>
+                        )}
+                        <div className="flex items-center gap-1.5 bg-gray-100/80 p-1 rounded-xl">
+                          <button
+                            onClick={() => setEdgeSubtab("mapping")}
+                            className={cn(
+                              "px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5",
+                              edgeSubtab === "mapping"
+                                ? "bg-white text-blue-600 shadow-sm"
+                                : "text-gray-500 hover:text-gray-800"
+                            )}
+                          >
+                            <Layers className="w-3.5 h-3.5" />
+                            Таблица соответствия (Маппинг к ЛДСП)
+                          </button>
+                          <button
+                            onClick={() => setEdgeSubtab("brands")}
+                            className={cn(
+                              "px-3 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5",
+                              edgeSubtab === "brands"
+                                ? "bg-white text-blue-600 shadow-sm"
+                                : "text-gray-500 hover:text-gray-800"
+                            )}
+                          >
+                            <Tag className="w-3.5 h-3.5" />
+                            Прайс-лист по брендам кромок
+                          </button>
+                        </div>
                       </div>
                     </div>
 
@@ -8217,6 +8244,14 @@ const matchProductSegment = (p: { segment?: string }, activeSegment: string): bo
   return p.segment.split(",").map((s: string) => s.trim()).includes(activeSegment);
 };
 
+const isEdgeBandingProduct = (item: any, catalogProductsList: any[]) => {
+  const pId = typeof item === 'object' ? (item.id || item.productId || item.product?.id) : item;
+  const cp = catalogProductsList.find((c: any) => String(c.id) === String(pId)) || (typeof item === 'object' ? item : null);
+  const name = (cp?.name || cp?.productName || "").toLowerCase();
+  const cat = (cp?.category || "").toLowerCase();
+  return name.includes("кромк") || name.includes("кромочн") || cat.includes("кромк") || cat.includes("кромочн");
+};
+
 const getProductCoefficient = (
   product: { 
     useCustomCoeffs?: boolean; 
@@ -8675,31 +8710,66 @@ const SummaryView = ({
   };
 
   const replaceKitchenItem = (kitchenKey: string | number, itemType: "module" | "hardware" | "countertop", itemIdx: number, newProdItem: any) => {
-    const targetProduct = addedProducts.find(p => String(p.id) === String(kitchenKey) || String(p.productId) === String(kitchenKey));
+    const targetProduct = addedProducts.find(p => String(p.id) === String(kitchenKey) || String(p.key) === String(kitchenKey) || String(p.productId) === String(kitchenKey));
     if (!targetProduct) return;
 
-    if (itemType === "module" && targetProduct.kitchenModules && targetProduct.kitchenModules[itemIdx]) {
-      targetProduct.kitchenModules[itemIdx] = {
-        ...targetProduct.kitchenModules[itemIdx],
-        id: newProdItem.id,
-        name: newProdItem.name,
+    if (itemType === "module" && targetProduct.kitchenModules) {
+      const modules = [...targetProduct.kitchenModules];
+      const oldModuleId = modules[itemIdx]?.id;
+      const oldMod = (catalogProducts || []).find((cp: any) => String(cp.id) === String(oldModuleId));
+      const newMod = newProdItem;
+
+      modules[itemIdx] = {
+        ...modules[itemIdx],
+        id: newMod.id,
+        name: newMod.name,
       };
+      targetProduct.kitchenModules = modules;
+
+      const oldDoors = Number(oldMod?.doorsCount || oldMod?.doors || 1);
+      const newDoors = Number(newMod?.doorsCount || newMod?.doors || 1);
+      const oldHeight = Number(oldMod?.moduleHeight || oldMod?.height || 720);
+      const newHeight = Number(newMod?.moduleHeight || newMod?.height || 720);
+      const oldHingesPerDoor = oldHeight >= 2000 ? 4 : (oldHeight >= 900 ? 3 : 2);
+      const newHingesPerDoor = newHeight >= 2000 ? 4 : (newHeight >= 900 ? 3 : 2);
+      const oldHingesTotal = oldDoors * oldHingesPerDoor * (modules[itemIdx].qty || 1);
+      const newHingesTotal = newDoors * newHingesPerDoor * (modules[itemIdx].qty || 1);
+
+      const oldHasDrawers = (oldMod?.category === "Системы выдвижения" || (oldMod?.name || "").toLowerCase().includes("ящик") || (oldMod?.name || "").toLowerCase().includes("выдвиж"));
+      const newHasDrawers = (newMod?.category === "Системы выдвижения" || (newMod?.name || "").toLowerCase().includes("ящик") || (newMod?.name || "").toLowerCase().includes("выдвиж"));
+
+      if (newHingesTotal > oldHingesTotal || (newHasDrawers && !oldHasDrawers)) {
+        showAlert("Корректировка комплектующих гарнитура", `Заменен модуль на «${newMod.name}». Обнаружено большее количество петель или направляющие. Фурнитура гарнитура была автоматически откорректирована.`);
+        if (targetProduct.kitchenHardware) {
+          targetProduct.kitchenHardware = targetProduct.kitchenHardware.map((hw: any) => {
+            if ((hw.groupName || "").toLowerCase().includes("петл") || (hw.productName || "").toLowerCase().includes("петл")) {
+              return { ...hw, calculatedQty: (hw.calculatedQty || 2) + Math.max(0, newHingesTotal - oldHingesTotal) };
+            }
+            return hw;
+          });
+        }
+      }
     } else if (itemType === "hardware" && targetProduct.kitchenHardware && targetProduct.kitchenHardware[itemIdx]) {
-      targetProduct.kitchenHardware[itemIdx] = {
-        ...targetProduct.kitchenHardware[itemIdx],
+      const hw = [...targetProduct.kitchenHardware];
+      hw[itemIdx] = {
+        ...hw[itemIdx],
         productId: newProdItem.id,
         productName: newProdItem.name,
         purchasePrice: newProdItem.purchasePrice || newProdItem.price || 0,
       };
+      targetProduct.kitchenHardware = hw;
     } else if (itemType === "countertop" && targetProduct.kitchenCountertops && targetProduct.kitchenCountertops[itemIdx]) {
-      targetProduct.kitchenCountertops[itemIdx] = {
-        ...targetProduct.kitchenCountertops[itemIdx],
+      const ct = [...targetProduct.kitchenCountertops];
+      ct[itemIdx] = {
+        ...ct[itemIdx],
         productId: newProdItem.id,
         productName: newProdItem.name,
         purchasePrice: newProdItem.purchasePrice || newProdItem.price || 0,
         sheetWidth: Number(newProdItem.width || newProdItem.length || 3000),
       };
+      targetProduct.kitchenCountertops = ct;
     }
+
     updateAddedProductQty(targetProduct.id || targetProduct.productId, 0);
     setReplaceKitchenItemModal(null);
   };
@@ -10059,6 +10129,26 @@ const SummaryView = ({
           row.displayTotal = (row.displayTotal || row.total) * (1 + P_bank / 100);
           row.netPaid = (row.netPaid || row.total) * (1 + P_bank / 100);
           row.promoApplied = `${promo.name} (${selectedInstallmentProg})`;
+        });
+      }
+    } else if (promo.promoType === "bundle_discount") {
+      const targetIds = promo.targetProductIds || [];
+      const allPresent = targetIds.length > 0 && targetIds.every(id => 
+        summaryRows.some(row => row.type === 'product' && String(row.productId) === String(id))
+      );
+      if (allPresent || targetIds.length === 0) {
+        const P = promo.bundleDiscountPercent || promo.discountPercent || 0;
+        summaryRows.forEach(row => {
+          if (promo.discountNeedMarkup) {
+            row.displayTotal = (row.displayTotal || row.total) * (1 + P / 100);
+            row.discountSum = (row.discountSum || 0) + (row.total * P / 100);
+            row.netPaid = row.total;
+          } else {
+            row.displayTotal = row.displayTotal || row.total;
+            row.discountSum = (row.discountSum || 0) + (row.total * P / 100);
+            row.netPaid = (row.netPaid || row.total) - (row.total * P / 100);
+          }
+          row.promoApplied = promo.name;
         });
       }
     }
@@ -12094,7 +12184,7 @@ const SettingsView = ({
   const isProcurementAllowed = companyData?.procurementAllowed !== undefined ? !!companyData.procurementAllowed : !!companyData?.procurementEnabled;
   const [newCategory, setNewCategory] = useState("");
   const [activeSubTab, setActiveSubTab] = useState<
-    "general" | "services" | "production" | "account" | "facades" | "bitrix24" | "promotions" | "suppliers" | "specification" | "landing"
+    "general" | "services" | "production" | "account" | "facades" | "bitrix24" | "promotions" | "suppliers" | "specification" | "landing" | "catalog"
   >("general");
   const [showBrandCoeffModal, setShowBrandCoeffModal] = useState(false);
   const isSalonOrDesigner = companyType === "Салон" || companyType === "Дизайнер";
@@ -12446,6 +12536,7 @@ const SettingsView = ({
             : []),
           { id: "promotions", label: "Акции", icon: Percent },
           { id: "landing", label: "Внешний сайт (Каталог)", icon: Globe },
+          { id: "catalog", label: "Готовая мебель (Меню)", icon: Layers },
           { id: "bitrix24", label: "Bitrix24", icon: Link },
           { id: "suppliers", label: "Поставщики", icon: Database },
           { id: "specification", label: "Настройки спецификаций и КП", icon: ClipboardList },
@@ -12493,6 +12584,116 @@ const SettingsView = ({
             />
           </div>
         )}
+        {activeSubTab === "catalog" && (
+          <div className="space-y-6 animate-in fade-in duration-300">
+            <div className="border-b border-gray-100 pb-4">
+              <h3 className="text-lg font-bold text-gray-900 tracking-tight">Настройки каталога и готовой мебели</h3>
+              <p className="text-sm text-gray-500">Управление отображением раздела «Готовая мебель» и подкатегорий в левом меню.</p>
+            </div>
+            
+            <div className="space-y-4">
+              <label className="flex items-center gap-3 p-4 bg-gray-50 rounded-2xl border border-gray-200 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={companyData?.readyMadeConfig?.enabled !== false}
+                  onChange={(e) => {
+                    const updated = {
+                      ...(companyData?.readyMadeConfig || {}),
+                      enabled: e.target.checked,
+                      categories: companyData?.readyMadeConfig?.categories || ["Кухни", "Шкафы", "Прихожие", "Столы", "Комоды"]
+                    };
+                    setCompanyData((prev: any) => ({ ...prev, readyMadeConfig: updated }));
+                  }}
+                  className="w-5 h-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <div>
+                  <span className="font-bold text-gray-900 block">Отображать раздел «Готовая мебель» в левом меню</span>
+                  <span className="text-xs text-gray-500">Когда включено, готовая мебель (кухни, шкафы, прихожие, столы, комоды) выносится из общего каталога товаров в отдельный раздел.</span>
+                </div>
+              </label>
+
+              <div className="space-y-2 pt-2">
+                <label className="block text-sm font-bold text-gray-700">Подкатегории готовой мебели в меню:</label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  {(companyData?.readyMadeConfig?.categories || ["Кухни", "Шкафы", "Прихожие", "Столы", "Комоды"]).map((cat: string) => (
+                    <div key={cat} className="flex items-center gap-2 p-3 bg-white rounded-xl border border-gray-200 shadow-sm">
+                      <span className="flex-1 text-sm font-medium text-gray-800">{cat}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const currentCats = companyData?.readyMadeConfig?.categories || ["Кухни", "Шкафы", "Прихожие", "Столы", "Комоды"];
+                          const updatedCats = currentCats.filter((c: string) => c !== cat);
+                          setCompanyData((prev: any) => ({
+                            ...prev,
+                            readyMadeConfig: {
+                              ...(prev.readyMadeConfig || { enabled: true }),
+                              categories: updatedCats
+                            }
+                          }));
+                        }}
+                        className="text-red-500 hover:text-red-700 p-1"
+                        title="Удалить подкатегорию"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex gap-2 pt-3">
+                  <input
+                    type="text"
+                    id="newReadyMadeCategoryInput"
+                    placeholder="Новая подкатегория (например: Диваны)"
+                    className="px-4 py-2 border border-gray-300 rounded-xl text-sm flex-1 focus:ring-2 focus:ring-blue-500 outline-none"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        const val = (document.getElementById('newReadyMadeCategoryInput') as HTMLInputElement)?.value?.trim();
+                        if (val) {
+                          const currentCats = companyData?.readyMadeConfig?.categories || ["Кухни", "Шкафы", "Прихожие", "Столы", "Комоды"];
+                          if (!currentCats.includes(val)) {
+                            setCompanyData((prev: any) => ({
+                              ...prev,
+                              readyMadeConfig: {
+                                ...(prev.readyMadeConfig || { enabled: true }),
+                                categories: [...currentCats, val]
+                              }
+                            }));
+                            (document.getElementById('newReadyMadeCategoryInput') as HTMLInputElement).value = '';
+                          }
+                        }
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const val = (document.getElementById('newReadyMadeCategoryInput') as HTMLInputElement)?.value?.trim();
+                      if (val) {
+                        const currentCats = companyData?.readyMadeConfig?.categories || ["Кухни", "Шкафы", "Прихожие", "Столы", "Комоды"];
+                        if (!currentCats.includes(val)) {
+                          setCompanyData((prev: any) => ({
+                            ...prev,
+                            readyMadeConfig: {
+                              ...(prev.readyMadeConfig || { enabled: true }),
+                              categories: [...currentCats, val]
+                            }
+                          }));
+                          (document.getElementById('newReadyMadeCategoryInput') as HTMLInputElement).value = '';
+                        }
+                      }
+                    }}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 transition-all flex items-center gap-1.5"
+                  >
+                    <Plus className="w-4 h-4" /> Добавить
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         {activeSubTab === "specification" && (
           <div className="space-y-8 animate-in fade-in duration-300">
             <section className="space-y-6">
@@ -14443,15 +14644,15 @@ const SettingsView = ({
                           <td className="py-1.5 px-4 border-l border-blue-50 bg-blue-50/5">
                             <div className="relative">
                               <input
-                                type="number"
-                                step="0.01"
+                                type="text"
+                                inputMode="decimal"
                                 value={
                                   ownProductionConfig.standardCoefficients?.[
                                     row.id
-                                  ] ?? 1.5
+                                  ] ?? ""
                                 }
                                 onChange={(e) => {
-                                  const v = e.target.value;
+                                  const v = e.target.value.replace(",", ".").replace(/[^0-9.]/g, "");
                                   updateStandardCoefficient(row.id, v);
                                 }}
                                 className="w-full px-2 py-1 border border-blue-100 rounded-lg text-xs font-bold bg-white focus:ring-1 focus:ring-blue-500 outline-none text-right"
@@ -14465,8 +14666,8 @@ const SettingsView = ({
                               className="py-1.5 px-4 border-l border-gray-50"
                             >
                               <input
-                                type="number"
-                                step="0.01"
+                                type="text"
+                                inputMode="decimal"
                                 value={
                                   ownProductionConfig.salonCoefficients?.[
                                     salon.id
@@ -14474,10 +14675,10 @@ const SettingsView = ({
                                   ownProductionConfig.standardCoefficients?.[
                                     row.id
                                   ] ??
-                                  1.5
+                                  ""
                                 }
                                 onChange={(e) => {
-                                  const v = e.target.value;
+                                  const v = e.target.value.replace(",", ".").replace(/[^0-9.]/g, "");
                                   updateSalonCoefficient(salon.id, row.id, v);
                                 }}
                                 className="w-full px-2 py-1 border border-gray-200 rounded-lg text-xs font-bold focus:ring-1 focus:ring-blue-500 outline-none text-right"
@@ -15988,6 +16189,270 @@ const ServiceSectionView = ({
     </div>
   );
 };
+
+const ReadyMadeProductsView = ({
+  catalogProducts,
+  onAddProduct,
+  selectedCategory,
+  setSelectedCategory,
+  companyData,
+  customerType,
+  resolveBrandCoefficient,
+  setSelectedProductForDetail,
+  showAlert,
+  showPrompt,
+  showConfirm,
+}: {
+  catalogProducts: any[];
+  onAddProduct: (product: any, qty: number) => void;
+  selectedCategory: string | null;
+  setSelectedCategory: (cat: string | null) => void;
+  companyData: any;
+  customerType: string;
+  resolveBrandCoefficient: (cat: string, brand: string) => number;
+  setSelectedProductForDetail: (p: any) => void;
+  showAlert: (title: string, message: string) => void;
+  showPrompt: any;
+  showConfirm: any;
+}) => {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
+
+  const readyMadeCats = companyData?.readyMadeConfig?.categories || [
+    "Кухни",
+    "Шкафы",
+    "Прихожие",
+    "Столы",
+    "Комоды",
+    "Кухонные гарнитуры",
+    "Кухонный гарнитур",
+  ];
+
+  const readyMadeProducts = useMemo(() => {
+    return catalogProducts.filter((p) => {
+      if (!p) return false;
+      const cat = p.category || "";
+      const matchesCategory = readyMadeCats.some((c: string) => cat.toLowerCase().includes(c.toLowerCase()) || c.toLowerCase().includes(cat.toLowerCase()));
+      if (!matchesCategory) return false;
+
+      if (selectedCategory && selectedCategory.trim() !== "") {
+        if (!cat.toLowerCase().includes(selectedCategory.toLowerCase()) && !selectedCategory.toLowerCase().includes(cat.toLowerCase())) {
+          return false;
+        }
+      }
+
+      if (searchQuery.trim() !== "") {
+        const q = searchQuery.toLowerCase();
+        const name = (p.name || "").toLowerCase();
+        const article = (p.article || "").toLowerCase();
+        const desc = (p.description || "").toLowerCase();
+        if (!name.includes(q) && !article.includes(q) && !desc.includes(q)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [catalogProducts, readyMadeCats, selectedCategory, searchQuery]);
+
+  return (
+    <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-300">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-black text-gray-900 tracking-tight">Готовая мебель</h2>
+          <p className="text-sm text-gray-500">
+            Каталог готовой мебели (кухни, шкафы, прихожие, столы, комоды) с подробными характеристиками и параметрами.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          <input
+            type="text"
+            placeholder="Поиск по названию или артикулу..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="px-4 py-2 border border-gray-200 rounded-xl text-sm w-72 focus:ring-2 focus:ring-blue-500 outline-none bg-white shadow-sm"
+          />
+        </div>
+      </div>
+
+      {/* Category Filter Pills */}
+      <div className="flex flex-wrap items-center gap-2 pb-2">
+        <button
+          onClick={() => setSelectedCategory(null)}
+          className={cn(
+            "px-4 py-2 rounded-xl text-xs font-bold transition-all border shadow-sm",
+            !selectedCategory
+              ? "bg-blue-600 text-white border-blue-600 shadow-blue-200"
+              : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+          )}
+        >
+          Все категории ({catalogProducts.filter((p) => readyMadeCats.some((c: string) => (p.category || "").toLowerCase().includes(c.toLowerCase()))).length})
+        </button>
+        {readyMadeCats.map((cat: string) => {
+          const count = catalogProducts.filter((p) => (p.category || "").toLowerCase().includes(cat.toLowerCase())).length;
+          return (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              className={cn(
+                "px-4 py-2 rounded-xl text-xs font-bold transition-all border shadow-sm",
+                selectedCategory === cat
+                  ? "bg-blue-600 text-white border-blue-600 shadow-blue-200"
+                  : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
+              )}
+            >
+              {cat} ({count})
+            </button>
+          );
+        })}
+      </div>
+
+      {readyMadeProducts.length === 0 ? (
+        <div className="bg-white rounded-3xl border border-gray-200 p-16 text-center space-y-4 shadow-sm">
+          <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto text-2xl">
+            🛋️
+          </div>
+          <h3 className="text-lg font-bold text-gray-900">Готовая мебель не найдена</h3>
+          <p className="text-sm text-gray-500 max-w-md mx-auto">
+            В данной категории пока нет добавленных товаров готовой мебели или они не соответствуют поисковому запросу.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {readyMadeProducts.map((product) => {
+            const coeff = resolveBrandCoefficient(product.category, product.brand || product.manufacturer);
+            const basePrice = product.purchasePrice || product.price || 0;
+            const finalPrice = Math.round(basePrice * coeff);
+            const qty = quantities[product.id] || 1;
+
+            return (
+              <div
+                key={product.id}
+                className="bg-white rounded-2xl border border-gray-200/90 shadow-sm hover:shadow-xl transition-all duration-300 flex flex-col overflow-hidden group"
+              >
+                {/* Image & Badges Container */}
+                <div 
+                  className="aspect-square bg-gray-50 relative overflow-hidden flex items-center justify-center cursor-pointer"
+                  onClick={() => setSelectedProductForDetail(product)}
+                >
+                  {product.imageUrl || product.image ? (
+                    <img
+                      src={product.imageUrl || product.image}
+                      alt={product.name}
+                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="text-gray-300 flex flex-col items-center justify-center space-y-2">
+                      <Package className="w-12 h-12 stroke-[1.5]" />
+                      <span className="text-xs font-medium text-gray-400">Нет фото</span>
+                    </div>
+                  )}
+                  <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+                    <span className="px-2.5 py-1 bg-white/90 backdrop-blur-md text-blue-700 text-[10px] font-bold rounded-lg shadow-sm border border-blue-100">
+                      {product.category || "Готовая мебель"}
+                    </span>
+                  </div>
+                  {product.article && (
+                    <div className="absolute top-3 right-3">
+                      <span className="px-2.5 py-1 bg-gray-900/80 backdrop-blur-md text-white text-[10px] font-mono font-semibold rounded-lg shadow-sm">
+                        Арт: {product.article}
+                      </span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Content Container */}
+                <div className="p-5 flex-1 flex flex-col justify-between space-y-4">
+                  <div className="space-y-2">
+                    <h3 
+                      className="font-bold text-gray-900 text-base leading-snug line-clamp-2 hover:text-blue-600 cursor-pointer transition-colors"
+                      onClick={() => setSelectedProductForDetail(product)}
+                    >
+                      {product.name}
+                    </h3>
+                    {product.description && (
+                      <p className="text-xs text-gray-500 line-clamp-2 leading-relaxed">
+                        {product.description}
+                      </p>
+                    )}
+
+                    {/* Important Parameters & Metrics */}
+                    <div className="pt-2 border-t border-gray-100 space-y-1.5 text-xs text-gray-600 font-medium">
+                      {(product.width || product.height || product.depth) && (
+                        <div className="flex justify-between items-center bg-gray-50 px-2.5 py-1 rounded-lg">
+                          <span className="text-gray-400">Размеры (ШхВхГ):</span>
+                          <span className="font-mono text-gray-800">
+                            {product.width || "-"} × {product.height || "-"} × {product.depth || "-"} мм
+                          </span>
+                        </div>
+                      )}
+                      {(product.material || product.bodyColor || product.facadeMaterial) && (
+                        <div className="flex justify-between items-center bg-gray-50 px-2.5 py-1 rounded-lg">
+                          <span className="text-gray-400">Материал / Декор:</span>
+                          <span className="text-gray-800 truncate max-w-[140px]" title={product.material || product.bodyColor || product.facadeMaterial}>
+                            {product.material || product.bodyColor || product.facadeMaterial}
+                          </span>
+                        </div>
+                      )}
+                      {(product.brand || product.manufacturer) && (
+                        <div className="flex justify-between items-center bg-gray-50 px-2.5 py-1 rounded-lg">
+                          <span className="text-gray-400">Производитель:</span>
+                          <span className="text-gray-800">{product.brand || product.manufacturer}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Price & Action */}
+                  <div className="pt-3 border-t border-gray-100 space-y-3">
+                    <div className="flex items-baseline justify-between">
+                      <span className="text-xs text-gray-400 font-semibold uppercase tracking-wider">Цена</span>
+                      <div className="text-right">
+                        <span className="text-xl font-black text-gray-900 font-mono">
+                          {finalPrice.toLocaleString()} ₽
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <div className="flex items-center border border-gray-200 rounded-xl bg-gray-50 overflow-hidden">
+                        <button
+                          onClick={() => setQuantities({ ...quantities, [product.id]: Math.max(1, qty - 1) })}
+                          className="px-2.5 py-2 text-gray-600 hover:bg-gray-200 font-bold text-xs"
+                        >
+                          -
+                        </button>
+                        <span className="px-3 text-xs font-bold font-mono text-gray-800">{qty}</span>
+                        <button
+                          onClick={() => setQuantities({ ...quantities, [product.id]: qty + 1 })}
+                          className="px-2.5 py-2 text-gray-600 hover:bg-gray-200 font-bold text-xs"
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          onAddProduct(product, qty);
+                          showAlert("Добавлено в проект", `Товар "${product.name}" (${qty} шт.) успешно добавлен в спецификацию проекта.`);
+                        }}
+                        className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-200 transition-all flex items-center justify-center gap-1.5 active:scale-95"
+                      >
+                        <ShoppingBag className="w-4 h-4" /> В проект
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const ProductsView = ({
   onAddProduct,
   catalogProducts,
@@ -16024,6 +16489,7 @@ const ProductsView = ({
   resolveBrandCoefficient,
   selectedProductForDetail,
   setSelectedProductForDetail,
+  promotions = [],
 }: {
   onAddProduct: (product: any, qty: number) => void;
   catalogProducts: any[];
@@ -16071,6 +16537,7 @@ const ProductsView = ({
   updateDoc: any;
   selectedProductForDetail: any;
   setSelectedProductForDetail: React.Dispatch<React.SetStateAction<any>>;
+  promotions?: any[];
 }) => {
   const [showChecklistWindow, setShowChecklistWindow] = useState(false);
 
@@ -17181,6 +17648,13 @@ const ProductsView = ({
     const initialFiltered = catalogProducts.filter((p) => {
       // Исключаем кромочные материалы из товарного каталога
       if (p.category === "Кромочные материалы" || p.category === "Кромка") {
+        return false;
+      }
+
+      // Исключаем готовую мебель из основного товарного каталога, если она вынесена в отдельный раздел
+      const readyMadeCats = companyData?.readyMadeConfig?.categories || ["Кухни", "Шкафы", "Прихожие", "Столы", "Комоды", "Кухонные гарнитуры", "Кухонный гарнитур"];
+      const isReadyMadeEnabled = companyData?.readyMadeConfig?.enabled !== false;
+      if (isReadyMadeEnabled && readyMadeCats.some((c: string) => (p.category || "").toLowerCase().includes(c.toLowerCase())) && activeProductsView !== 'moderation') {
         return false;
       }
 
@@ -26602,7 +27076,10 @@ export default function App() {
     | "procurement"
     | "procurement_plan"
     | "arrivals"
+    | "ready_made"
   >("calculator");
+  const [isReadyMadeExpanded, setIsReadyMadeExpanded] = useState(false);
+  const [selectedReadyMadeCategory, setSelectedReadyMadeCategory] = useState<string | null>(null);
   useEffect(() => {
     if (userData?.isProcurementManager && activeTab !== "procurement_plan" && activeTab !== "procurement" && activeTab !== "profile" && activeTab !== "arrivals") {
       setActiveTab("procurement_plan");
@@ -27002,12 +27479,13 @@ export default function App() {
   };
 
   const onAddProduct = (product: any, quantity: number = 1) => {
-    if (product.requiredProducts && product.requiredProducts.length > 0) {
+    const validRequired = (product.requiredProducts || []).filter((rp: any) => !isEdgeBandingProduct(rp, catalogProducts));
+    if (validRequired && validRequired.length > 0) {
       setRequiredProductsModal({
         isOpen: true,
         mainProduct: product,
         mainQty: quantity,
-        requiredItems: product.requiredProducts.map((rp: any) => ({
+        requiredItems: validRequired.map((rp: any) => ({
           product: rp,
           defaultQtyPerItem: rp.qty || 1,
           selectedQty: (rp.qty || 1) * quantity,
@@ -27138,7 +27616,8 @@ export default function App() {
     category: string,
     value: string,
   ) => {
-    const numValue = parseFloat(value) || 1;
+    const clean = value.replace(",", ".");
+    const numValue = clean === "" ? 0 : (isNaN(parseFloat(clean)) ? 0 : parseFloat(clean));
     setOwnProductionConfig((prev) => ({
       ...prev,
       salonCoefficients: {
@@ -27152,7 +27631,8 @@ export default function App() {
   };
 
   const updateStandardCoefficient = (category: string, value: string) => {
-    const numValue = parseFloat(value) || 1;
+    const clean = value.replace(",", ".");
+    const numValue = clean === "" ? 0 : (isNaN(parseFloat(clean)) ? 0 : parseFloat(clean));
     setOwnProductionConfig((prev) => ({
       ...prev,
       standardCoefficients: {
@@ -28352,8 +28832,8 @@ export default function App() {
             sketches: setData.sketches || [],
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-            createdBy: userData.uid,
-            createdByName: userData.displayName || userData.email || "Пользователь",
+            createdBy: activeProjects[0]?.createdBy || userData.uid,
+            createdByName: userData.displayName || userData.name || userData.email || activeProjects[0]?.createdByName || "Пользователь",
             summary: setData.summary,
             paymentMethod: setData.paymentMethod || null,
             paymentPartsCount: setData.paymentPartsCount || null,
@@ -28944,14 +29424,6 @@ export default function App() {
           { merge: true },
         ),
         setDoc(
-          doc(db, "companies", companyData.id, "settings", "prices"),
-          {
-            prices,
-            updatedAt: new Date().toISOString(),
-          },
-          { merge: true },
-        ),
-        setDoc(
           doc(db, "companies", companyData.id, "settings", "production"),
           isOwn ? ownProductionConfig : contractConfig,
           { merge: true },
@@ -28969,16 +29441,13 @@ export default function App() {
         ),
       ];
 
-      if (!silent) {
-        showAlert("Успех", "Настройки сохранены");
-      }
+      await Promise.all(savePromises);
+      touchSettingsLocal();
+      lastTypedSpecificationConfigRef.current = Date.now();
 
-      Promise.all(savePromises).then(() => {
-        touchSettingsLocal();
-        lastTypedSpecificationConfigRef.current = Date.now();
-      }).catch((error) => {
-        console.error("Error saving settings in background:", error);
-      });
+      if (!silent) {
+        showAlert("Успех", "Настройки успешно сохранены");
+      }
     } catch (error) {
       console.error("Error saving settings:", error);
       handleDbError(
@@ -30490,6 +30959,56 @@ export default function App() {
                 {/* Buttons container */}
                 {(!userData?.isProcurementManager || userRole === 'admin' || userRole === 'supervisor') && (
                   <div className="flex-1 space-y-1 min-w-0">
+                  {companyData?.readyMadeConfig?.enabled !== false && (
+                    <div className="space-y-1">
+                      <button
+                        onClick={() => {
+                          setIsReadyMadeExpanded(!isReadyMadeExpanded);
+                          setActiveTab("ready_made");
+                          setSelectedReadyMadeCategory(null);
+                        }}
+                        className={cn(
+                          "w-full flex items-center justify-between rounded-lg transition-all",
+                          isSidebarOpen ? "gap-2.5 px-2.5 py-1.5" : "justify-center py-1.5",
+                          activeTab === "ready_made"
+                            ? "bg-blue-600 text-white shadow-md shadow-blue-200"
+                            : "text-gray-600 hover:bg-gray-100",
+                        )}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <Package className="w-4 h-4 flex-shrink-0" />
+                          {isSidebarOpen && (
+                            <span className="text-[13px] font-medium truncate">Готовая мебель</span>
+                          )}
+                        </div>
+                        {isSidebarOpen && (
+                          <ChevronRight className={cn("w-4 h-4 transition-transform", isReadyMadeExpanded && "rotate-90")} />
+                        )}
+                      </button>
+
+                      {isSidebarOpen && isReadyMadeExpanded && (
+                        <div className="pl-6 space-y-1 border-l-2 border-blue-100 ml-3 my-1">
+                          {(companyData?.readyMadeConfig?.categories || ["Кухни", "Шкафы", "Прихожие", "Столы", "Комоды"]).map((cat: string) => (
+                            <button
+                              key={cat}
+                              onClick={() => {
+                                setActiveTab("ready_made");
+                                setSelectedReadyMadeCategory(cat);
+                              }}
+                              className={cn(
+                                "w-full text-left px-2 py-1 rounded-md text-xs font-medium transition-all truncate",
+                                activeTab === "ready_made" && selectedReadyMadeCategory === cat
+                                  ? "bg-blue-50 text-blue-700 font-bold"
+                                  : "text-gray-500 hover:text-gray-900 hover:bg-gray-50"
+                              )}
+                            >
+                              {cat}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <button
                     onClick={() => setActiveTab("calculator")}
                     className={cn(
@@ -31023,7 +31542,21 @@ export default function App() {
             })()}
           </div>
 
-          {activeTab === "projects" ? (
+          {activeTab === "ready_made" ? (
+            <ReadyMadeProductsView
+              catalogProducts={catalogProducts}
+              onAddProduct={onAddProduct}
+              selectedCategory={selectedReadyMadeCategory}
+              setSelectedCategory={setSelectedReadyMadeCategory}
+              companyData={companyData}
+              customerType={customerType}
+              resolveBrandCoefficient={resolveBrandCoefficient}
+              setSelectedProductForDetail={setSelectedProductForDetail}
+              showAlert={showAlert}
+              showPrompt={showPrompt}
+              showConfirm={showConfirm}
+            />
+          ) : activeTab === "projects" ? (
             <ProjectsView
               companyId={companyData?.id}
               companyData={companyData}
@@ -32039,10 +32572,11 @@ export default function App() {
                       </div>
                     )}
 
-                    {selectedProductForDetail.requiredProducts && selectedProductForDetail.requiredProducts.length > 0 && (
+                    {selectedProductForDetail.requiredProducts && (selectedProductForDetail.requiredProducts.filter((rp: any) => !isEdgeBandingProduct(rp, catalogProducts))).length > 0 && (
                       <div className="bg-blue-50/50 p-6 rounded-3xl border border-blue-100/70 space-y-4">
                         {(() => {
-                          const reqProductsWithPrices = selectedProductForDetail.requiredProducts.map((rp: any) => {
+                          const filteredReqs = selectedProductForDetail.requiredProducts.filter((rp: any) => !isEdgeBandingProduct(rp, catalogProducts));
+                          const reqProductsWithPrices = filteredReqs.map((rp: any) => {
                             const cp = catalogProducts.find((item: any) => String(item.id) === String(rp.id));
                             if (!cp) return null;
                             const cpCoeff = getProductCoefficient(cp, customerType, resolveBrandCoefficient);
