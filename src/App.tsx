@@ -9604,7 +9604,7 @@ const SummaryView = ({
     const coeff = getProductCoefficient(product, customerType, resolveBrandCoefficient);
     const isKitchen = product.category === "Кухонные гарнитуры" || product.category === "Кухонный гарнитур";
     const displayPrice = isKitchen
-      ? (product.price || 0)
+      ? calculateKitchenTotalPrice(product, catalogProducts, customerType, resolveBrandCoefficient)
       : (product.purchasePrice
         ? Math.round(product.purchasePrice * coeff)
         : product.price);
@@ -10049,7 +10049,13 @@ const SummaryView = ({
       const P = promo.discountPercent || 0;
       summaryRows.forEach(row => {
         const cat = getRowCategory(row);
-        if (promo.discountScopes?.includes("all_project") || promo.discountScopes?.includes(cat)) {
+        let applies = promo.discountScopes?.includes("all_project") || promo.discountScopes?.includes(cat);
+        if (promo.discountScopes?.includes("specific_products") && row.type === 'product' && row.productId) {
+           if (promo.targetProductIds?.includes(String(row.productId))) {
+              applies = true;
+           }
+        }
+        if (applies) {
           if (promo.discountNeedMarkup) {
             row.displayTotal = (row.displayTotal || row.total) * (1 + P / 100);
             row.discountSum = (row.discountSum || 0) + (row.total * P / 100);
@@ -10066,7 +10072,13 @@ const SummaryView = ({
       const P = promo.cashbackPercent || 0;
       summaryRows.forEach(row => {
         const cat = getRowCategory(row);
-        if (promo.cashbackScopes?.includes("all_project") || promo.cashbackScopes?.includes(cat)) {
+        let applies = promo.cashbackScopes?.includes("all_project") || promo.cashbackScopes?.includes(cat);
+        if (promo.cashbackScopes?.includes("specific_products") && row.type === 'product' && row.productId) {
+           if (promo.targetProductIds?.includes(String(row.productId))) {
+              applies = true;
+           }
+        }
+        if (applies) {
           if (promo.cashbackNeedMarkup) {
             row.displayTotal = (row.displayTotal || row.total) * (1 + P / 100);
             row.cashbackSum = (row.cashbackSum || 0) + (row.total * P / 100);
@@ -12615,29 +12627,36 @@ const SettingsView = ({
               <div className="space-y-2 pt-2">
                 <label className="block text-sm font-bold text-gray-700">Подкатегории готовой мебели в меню:</label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                  {(companyData?.readyMadeConfig?.categories || ["Кухни", "Шкафы", "Прихожие", "Столы", "Комоды"]).map((cat: string) => (
-                    <div key={cat} className="flex items-center gap-2 p-3 bg-white rounded-xl border border-gray-200 shadow-sm">
-                      <span className="flex-1 text-sm font-medium text-gray-800">{cat}</span>
+                  {(companyData?.readyMadeConfig?.categories || ["Кухни", "Шкафы", "Прихожие", "Столы", "Комоды"]).map((cat: string) => {
+                     const disabledCats = companyData?.readyMadeConfig?.disabledCategories || [];
+                     const isDisabled = disabledCats.includes(cat);
+                     return (
+                    <div key={cat} className={cn("flex items-center gap-2 p-3 bg-white rounded-xl border shadow-sm transition-all", isDisabled ? "border-gray-200 opacity-60 bg-gray-50" : "border-gray-200")}>
+                      <span className={cn("flex-1 text-sm font-medium", isDisabled ? "text-gray-400 line-through" : "text-gray-800")}>{cat}</span>
                       <button
-                        type="button"
-                        onClick={() => {
-                          const currentCats = companyData?.readyMadeConfig?.categories || ["Кухни", "Шкафы", "Прихожие", "Столы", "Комоды"];
-                          const updatedCats = currentCats.filter((c: string) => c !== cat);
-                          setCompanyData((prev: any) => ({
-                            ...prev,
-                            readyMadeConfig: {
-                              ...(prev.readyMadeConfig || { enabled: true }),
-                              categories: updatedCats
-                            }
-                          }));
-                        }}
-                        className="text-red-500 hover:text-red-700 p-1"
-                        title="Удалить подкатегорию"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                         type="button"
+                         title={isDisabled ? "Активировать подкатегорию" : "Деактивировать подкатегорию"}
+                         className={cn("px-2.5 py-1 rounded-lg text-xs font-bold transition-all", isDisabled ? "bg-gray-200 text-gray-700 hover:bg-gray-300" : "bg-emerald-100 text-emerald-700 hover:bg-emerald-200")}
+                         onClick={() => {
+                           const currentDisabled = companyData?.readyMadeConfig?.disabledCategories || [];
+                           const newDisabled = isDisabled
+                             ? currentDisabled.filter((c: string) => c !== cat)
+                             : [...currentDisabled, cat];
+                           setCompanyData((prev: any) => ({
+                             ...prev,
+                             readyMadeConfig: {
+                               ...(prev.readyMadeConfig || { enabled: true }),
+                               categories: prev.readyMadeConfig?.categories || ["Кухни", "Шкафы", "Прихожие", "Столы", "Комоды"],
+                               disabledCategories: newDisabled
+                             }
+                           }));
+                         }}
+                       >
+                         {isDisabled ? "Неактивна" : "Активна"}
+                       </button>
                     </div>
-                  ))}
+                     );
+                   })}
                 </div>
 
                 <div className="flex gap-2 pt-3">
@@ -15167,8 +15186,8 @@ const SettingsView = ({
                           onClick={() => setCompanyData((prev: any) => ({
                             ...prev,
                             procurementEnabled: !prev.procurementEnabled
-                          }))}
-                          className={cn(
+                           }))}
+                           className={cn(
                             "relative inline-flex h-6 w-11 items-center rounded-full transition-all duration-200 focus:outline-none",
                             companyData?.procurementEnabled ? "bg-blue-600" : "bg-gray-200"
                           )}
@@ -16203,6 +16222,7 @@ const ReadyMadeProductsView = ({
   showPrompt,
   showConfirm,
   setActiveTab,
+  promotions,
 }: {
   catalogProducts: any[];
   onAddProduct: (product: any, qty: number) => void;
@@ -16216,6 +16236,7 @@ const ReadyMadeProductsView = ({
   showPrompt: any;
   showConfirm: any;
   setActiveTab?: (tab: string) => void;
+  promotions?: any[];
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [quantities, setQuantities] = useState<Record<string, number>>({});
@@ -16224,7 +16245,8 @@ const ReadyMadeProductsView = ({
   const [kitchenMinPriceFilter, setKitchenMinPriceFilter] = useState<string>("");
   const [kitchenMaxPriceFilter, setKitchenMaxPriceFilter] = useState<string>("");
 
-  const readyMadeCats = companyData?.readyMadeConfig?.categories || [
+  const disabledReadyMadeCats = companyData?.readyMadeConfig?.disabledCategories || [];
+  const readyMadeCats = (companyData?.readyMadeConfig?.categories || [
     "Кухни",
     "Шкафы",
     "Прихожие",
@@ -16232,16 +16254,32 @@ const ReadyMadeProductsView = ({
     "Комоды",
     "Кухонные гарнитуры",
     "Кухонный гарнитур",
-  ];
+  ]).filter((c: string) => !c.toLowerCase().includes("гарнитур") && !disabledReadyMadeCats.includes(c));
 
   const readyMadeProducts = useMemo(() => {
     return catalogProducts.filter((p) => {
       if (!p) return false;
       const cat = p.category || "";
-      const matchesCategory = readyMadeCats.some((c: string) => cat.toLowerCase().includes(c.toLowerCase()) || c.toLowerCase().includes(cat.toLowerCase()));
+      const catLower = cat.toLowerCase();
+      if (catLower.includes("модул") || catLower.includes("фурнитур") || catLower.includes("столешниц") || catLower.includes("освещен") || catLower.includes("кромоч")) {
+        return false;
+      }
+      let isPromoProduct = false;
+      if (promotions && Array.isArray(promotions)) {
+        for (const promo of promotions) {
+          if (promo.isActive === false) continue;
+          if (promo.promoType === 'discount' && promo.discountScopes?.includes('specific_products') && promo.targetProductIds?.includes(String(p.id))) isPromoProduct = true;
+          if (promo.promoType === 'cashback' && promo.cashbackScopes?.includes('specific_products') && promo.targetProductIds?.includes(String(p.id))) isPromoProduct = true;
+        }
+      }
+
+      const matchesCategory = readyMadeCats.some((c: string) => catLower.includes(c.toLowerCase()) || c.toLowerCase().includes(catLower)) || (catLower.includes("кух") && !catLower.includes("модул")) || catLower.includes("кухон");
       if (!matchesCategory) return false;
 
-      if (selectedCategory && selectedCategory.trim() !== "") {
+      if (selectedCategory === "Акционные товары") {
+        if (!isPromoProduct) return false;
+      } else {
+        if (selectedCategory && selectedCategory.trim() !== "") {
         const selLower = selectedCategory.toLowerCase();
         const catLower = cat.toLowerCase();
         let matchesSel = catLower.includes(selLower) || selLower.includes(catLower);
@@ -16252,8 +16290,9 @@ const ReadyMadeProductsView = ({
           return false;
         }
       }
+      }
 
-      if (selectedCategory === "Кухонные гарнитуры" || selectedCategory === "Кухни" || cat.toLowerCase().includes("кухон") || cat.toLowerCase().includes("кухн")) {
+      if (selectedCategory === "Кухни" || (selectedCategory && selectedCategory.toLowerCase().includes("кух")) || cat.toLowerCase().includes("кухон") || cat.toLowerCase().includes("кухн")) {
         if (kitchenTypeFilter && p.kitchenType && p.kitchenType !== kitchenTypeFilter) {
           return false;
         }
@@ -16299,7 +16338,7 @@ const ReadyMadeProductsView = ({
           <button
             onClick={() => {
               if (setActiveTab) {
-                setSelectedCategory(selectedCategory || "Кухонные гарнитуры");
+                setSelectedCategory(selectedCategory || "Кухни");
                 setActiveTab("products");
               }
             }}
@@ -16311,39 +16350,7 @@ const ReadyMadeProductsView = ({
         </div>
       </div>
 
-      {/* Category Filter Pills */}
-      <div className="flex flex-wrap items-center gap-2 pb-2">
-        <button
-          onClick={() => setSelectedCategory(null)}
-          className={cn(
-            "px-4 py-2 rounded-xl text-xs font-bold transition-all border shadow-sm",
-            !selectedCategory
-              ? "bg-blue-600 text-white border-blue-600 shadow-blue-200"
-              : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
-          )}
-        >
-          Все категории ({catalogProducts.filter((p) => readyMadeCats.some((c: string) => (p.category || "").toLowerCase().includes(c.toLowerCase()))).length})
-        </button>
-        {readyMadeCats.map((cat: string) => {
-          const count = catalogProducts.filter((p) => (p.category || "").toLowerCase().includes(cat.toLowerCase())).length;
-          return (
-            <button
-              key={cat}
-              onClick={() => setSelectedCategory(cat)}
-              className={cn(
-                "px-4 py-2 rounded-xl text-xs font-bold transition-all border shadow-sm",
-                selectedCategory === cat
-                  ? "bg-blue-600 text-white border-blue-600 shadow-blue-200"
-                  : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
-              )}
-            >
-              {cat} ({count})
-            </button>
-          );
-        })}
-      </div>
-
-      {(selectedCategory === "Кухонные гарнитуры" || selectedCategory === "Кухни") && (
+      {(selectedCategory === "Кухни" || (selectedCategory && selectedCategory.toLowerCase().includes("кух"))) && (
         <div className="flex flex-wrap items-center gap-4 mb-6 p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100 animate-in fade-in slide-in-from-top-2 text-xs">
           <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">
             Кухонные гарнитуры:
@@ -16420,7 +16427,24 @@ const ReadyMadeProductsView = ({
           {readyMadeProducts.map((product) => {
             const coeff = resolveBrandCoefficient(product.category, product.brand || product.manufacturer);
             const basePrice = product.purchasePrice || product.price || 0;
-            const finalPrice = Math.round(basePrice * coeff);
+            const originalFinalPrice = Math.round(basePrice * coeff);
+
+            let activePromos: any[] = [];
+            let maxDiscount = 0;
+            if (promotions && Array.isArray(promotions)) {
+              for (const promo of promotions) {
+                if (promo.isActive === false) continue;
+                if (promo.promoType === 'discount' && promo.discountScopes?.includes('specific_products') && promo.targetProductIds?.includes(String(product.id || product.parentProductId))) {
+                  activePromos.push(promo);
+                  maxDiscount = Math.max(maxDiscount, promo.discountPercent || 0);
+                }
+                if (promo.promoType === 'cashback' && promo.cashbackScopes?.includes('specific_products') && promo.targetProductIds?.includes(String(product.id || product.parentProductId))) {
+                  activePromos.push(promo);
+                }
+              }
+            }
+
+            const finalPrice = maxDiscount > 0 ? Math.round(originalFinalPrice * (1 - maxDiscount / 100)) : originalFinalPrice;
             const qty = quantities[product.id] || 1;
 
             return (
@@ -16447,6 +16471,11 @@ const ReadyMadeProductsView = ({
                     </div>
                   )}
                   <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+                    {activePromos.length > 0 && (
+                      <span className="px-2.5 py-1 bg-gradient-to-r from-rose-500 to-pink-500 text-white text-[10px] font-bold rounded-lg shadow-sm flex items-center gap-1 shadow-rose-200">
+                        <Percent className="w-3 h-3" /> АКЦИЯ
+                      </span>
+                    )}
                     <span className="px-2.5 py-1 bg-white/90 backdrop-blur-md text-blue-700 text-[10px] font-bold rounded-lg shadow-sm border border-blue-100">
                       {product.category || "Готовая мебель"}
                     </span>
@@ -16506,8 +16535,14 @@ const ReadyMadeProductsView = ({
                   <div className="pt-3 border-t border-gray-100 space-y-3">
                     <div className="flex items-baseline justify-between">
                       <span className="text-xs text-gray-400 font-semibold uppercase tracking-wider">Цена</span>
-                      <div className="text-right">
-                        <span className="text-xl font-black text-gray-900 font-mono">
+                      <div className="text-right flex flex-col items-end">
+                        {maxDiscount > 0 && (
+                          <span className="text-[10px] text-gray-400 line-through">
+                            {originalFinalPrice.toLocaleString()} ₽
+                          </span>
+                        )}
+                        <span className="text-xl font-black text-gray-900 font-mono flex items-center gap-2">
+                          {maxDiscount > 0 && <span className="text-xs text-rose-500 font-bold">-{maxDiscount}%</span>}
                           {finalPrice.toLocaleString()} ₽
                         </span>
                       </div>
@@ -16567,7 +16602,6 @@ const ProductsView = ({
   setFurnitureType,
   checklistRefused,
   setChecklistRefused,
-  worktopCuts,
   setWorktopCuts,
   gluedEdgeDecor,
   setGluedEdgeDecor,
@@ -17860,8 +17894,18 @@ const ProductsView = ({
         checkMatch(p.article) ||
         (p.variations && Array.isArray(p.variations) && p.variations.some((v: any) => checkMatch(v.name) || checkMatch(v.article)));
       
+      let isPromo = false;
+      if (promotions && Array.isArray(promotions)) {
+        for (const promo of promotions) {
+          if (promo.isActive === false) continue;
+          if (promo.promoType === 'discount' && promo.discountScopes?.includes('specific_products') && promo.targetProductIds?.includes(String(p.id || p.parentProductId))) isPromo = true;
+          if (promo.promoType === 'cashback' && promo.cashbackScopes?.includes('specific_products') && promo.targetProductIds?.includes(String(p.id || p.parentProductId))) isPromo = true;
+        }
+      }
+
       const matchesCategory =
-        !selectedCategory || p.category === selectedCategory;
+        !selectedCategory || 
+        (selectedCategory === "Акционные товары" ? isPromo : p.category === selectedCategory);
 
       let matchesHingeType = true;
       if (selectedCategory === "Петли" && hingeTypeFilter) {
@@ -18643,6 +18687,30 @@ const ProductsView = ({
         >
           Все категории
         </button>
+        {(() => {
+          let hasPromos = false;
+          if (promotions && Array.isArray(promotions)) {
+            for (const promo of promotions) {
+              if (promo.isActive === false) continue;
+              if (promo.promoType === 'discount' && promo.discountScopes?.includes('specific_products') && promo.targetProductIds?.length > 0) hasPromos = true;
+              if (promo.promoType === 'cashback' && promo.cashbackScopes?.includes('specific_products') && promo.targetProductIds?.length > 0) hasPromos = true;
+            }
+          }
+          if (!hasPromos) return null;
+          return (
+            <button
+              onClick={() => setSelectedCategory("Акционные товары")}
+              className={cn(
+                "px-4 py-2 rounded-full text-sm font-medium whitespace-nowrap transition-all flex items-center gap-1.5",
+                selectedCategory === "Акционные товары"
+                  ? "bg-rose-600 text-white shadow-md shadow-rose-200"
+                  : "bg-rose-50 text-rose-600 border border-rose-200 hover:border-rose-300 hover:bg-rose-100",
+              )}
+            >
+              <Percent className="w-3.5 h-3.5" /> Акционные товары
+            </button>
+          );
+        })()}
         {productCategories.map((cat) => (
           <button
             key={cat}
@@ -25462,10 +25530,27 @@ const ProductsView = ({
             if (imagesList.length === 0 && product.image) {
               imagesList.push(product.image);
             }
+            
+            let activePromos: any[] = [];
+            let maxDiscount = 0;
+            if (promotions && Array.isArray(promotions)) {
+              for (const promo of promotions) {
+                if (promo.isActive === false) continue;
+                if (promo.promoType === 'discount' && promo.discountScopes?.includes('specific_products') && promo.targetProductIds?.includes(String(product.id || product.parentProductId))) {
+                  activePromos.push(promo);
+                  maxDiscount = Math.max(maxDiscount, promo.discountPercent || 0);
+                }
+                if (promo.promoType === 'cashback' && promo.cashbackScopes?.includes('specific_products') && promo.targetProductIds?.includes(String(product.id || product.parentProductId))) {
+                  activePromos.push(promo);
+                }
+              }
+            }
+
             const activeIdx = (activeHoverImage && activeHoverImage.productId === product.id && activeHoverImage.index < imagesList.length) 
               ? activeHoverImage.index 
               : 0;
             const displayImage = imagesList[activeIdx] || product.image;
+
             return (
               <div
                 key={product.id}
@@ -25562,6 +25647,11 @@ const ProductsView = ({
 
                   {/* Overlay Badges */}
                   <div className="absolute top-4 left-4 flex flex-col gap-2">
+                    {activePromos.length > 0 && (
+                      <span className="flex items-center gap-1.5 px-2 py-1 bg-gradient-to-r from-rose-500 to-pink-500 text-white text-[9px] font-black uppercase tracking-widest rounded-lg shadow-lg z-10">
+                        <Percent className="w-2.5 h-2.5" /> Акция
+                      </span>
+                    )}
                     {product.status === 'pending' && (
                       <div className="flex items-center gap-1.5 px-2 py-1 bg-orange-500 text-white text-[9px] font-black uppercase tracking-widest rounded-lg shadow-lg animate-pulse z-10">
                         <Clock className="w-2.5 h-2.5" />
@@ -25874,29 +25964,41 @@ const ProductsView = ({
 
                   <div className="mt-4 pt-4 border-t border-gray-50 space-y-4">
                     <div className="flex items-center justify-between gap-2">
-                      <div className="flex flex-col min-w-0">
+                                            <div className="flex flex-col min-w-0">
                         {(companyType === "Салон" || companyType === "Дизайнер") && (
                           <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">
                             Розница клиенту
                           </span>
                         )}
-                        <span className="text-xl font-black text-gray-900 whitespace-nowrap">
-                          {product.variations && product.variations.length > 0 ? "от " : ""}
-                          {(() => {
-                            const coeff = getProductCoefficient(product, customerType, resolveBrandCoefficient);
-                            let minPurchasePrice = product.purchasePrice || product.price || 0;
-                            
-                            if (product.variations && product.variations.length > 0) {
-                              const variationPrices = product.variations.map((v: any) => v.purchasePrice).filter((p: any) => p !== undefined);
-                              if (variationPrices.length > 0) {
-                                minPurchasePrice = Math.min(minPurchasePrice, ...variationPrices);
-                              }
+                        {(() => {
+                          const coeff = getProductCoefficient(product, customerType, resolveBrandCoefficient);
+                          let minPurchasePrice = product.purchasePrice || product.price || 0;
+                          
+                          if (product.variations && product.variations.length > 0) {
+                            const variationPrices = product.variations.map((v: any) => v.purchasePrice).filter((p: any) => p !== undefined);
+                            if (variationPrices.length > 0) {
+                              minPurchasePrice = Math.min(minPurchasePrice, ...variationPrices);
                             }
+                          }
+                          const originalDisplayPrice = Math.round(minPurchasePrice * coeff);
+                          const finalDisplayPrice = maxDiscount > 0 ? Math.round(originalDisplayPrice * (1 - maxDiscount / 100)) : originalDisplayPrice;
 
-                            const displayPrice = Math.round(minPurchasePrice * coeff);
-                            return (displayPrice ?? 0).toLocaleString();
-                          })()} ₽
-                        </span>
+                          return (
+                            <div className="flex flex-col items-start">
+                              {maxDiscount > 0 && (
+                                <span className="text-[10px] text-gray-400 line-through">
+                                  {product.variations && product.variations.length > 0 ? "от " : ""}
+                                  {(originalDisplayPrice ?? 0).toLocaleString()} ₽
+                                </span>
+                              )}
+                              <span className="text-xl font-black text-gray-900 whitespace-nowrap flex items-center gap-2">
+                                {maxDiscount > 0 && <span className="text-xs text-rose-500 font-bold">-{maxDiscount}%</span>}
+                                {product.variations && product.variations.length > 0 ? "от " : ""}
+                                {(finalDisplayPrice ?? 0).toLocaleString()} ₽
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </div>
                       <div className="flex items-center gap-1 bg-gray-100 p-1 rounded-xl flex-shrink-0 select-none">
                         <button
@@ -30415,7 +30517,7 @@ export default function App() {
       const coeff = getProductCoefficient(p, customerType, resolveBrandCoefficient);
       const isKitchen = p.category === "Кухонные гарнитуры" || p.category === "Кухонный гарнитур";
       const displayPrice = isKitchen
-        ? (p.price || 0)
+        ? calculateKitchenTotalPrice(p, catalogProducts, customerType, resolveBrandCoefficient)
         : (p.purchasePrice
           ? Math.round(p.purchasePrice * coeff)
           : p.price);
@@ -31086,6 +31188,35 @@ export default function App() {
 
                       {isSidebarOpen && isReadyMadeExpanded && (
                         <div className="pl-6 space-y-1 border-l-2 border-blue-100 ml-3 my-1">
+                          
+                          {(() => {
+                            let hasPromos = false;
+                            if (promotions && Array.isArray(promotions)) {
+                              for (const promo of promotions) {
+                                if (promo.isActive === false) continue;
+                                if (promo.promoType === 'discount' && promo.discountScopes?.includes('specific_products') && promo.targetProductIds?.length > 0) hasPromos = true;
+                                if (promo.promoType === 'cashback' && promo.cashbackScopes?.includes('specific_products') && promo.targetProductIds?.length > 0) hasPromos = true;
+                              }
+                            }
+                            if (!hasPromos) return null;
+                            return (
+                              <button
+                                onClick={() => {
+                                  setActiveTab("ready_made");
+                                  setSelectedReadyMadeCategory("Акционные товары");
+                                }}
+                                className={cn(
+                                  "w-full text-left px-2 py-1 rounded-md text-xs font-medium transition-all truncate flex items-center justify-between",
+                                  activeTab === "ready_made" && selectedReadyMadeCategory === "Акционные товары"
+                                    ? "bg-rose-50 text-rose-700 font-bold"
+                                    : "text-rose-500 hover:text-rose-700 hover:bg-rose-50"
+                                )}
+                              >
+                                <span>Акционные товары</span>
+                                <Percent className="w-3 h-3" />
+                              </button>
+                            );
+                          })()}
                           {(companyData?.readyMadeConfig?.categories || ["Кухни", "Шкафы", "Прихожие", "Столы", "Комоды"]).map((cat: string) => (
                             <button
                               key={cat}
@@ -31654,6 +31785,7 @@ export default function App() {
               showPrompt={showPrompt}
               showConfirm={showConfirm}
               setActiveTab={(tab: string) => setActiveTab(tab as any)}
+              promotions={promotions}
             />
           ) : activeTab === "projects" ? (
             <ProjectsView

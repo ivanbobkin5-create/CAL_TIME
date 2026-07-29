@@ -454,20 +454,32 @@ export const PromotionsView = ({
   // Dynamic list of active promos products (category: "Акционные товары") plus any active gift products
   const activePromoProducts = React.useMemo(() => {
     const fromPromoCategory = catalogProducts.filter((p) => p.category === "Акционные товары");
-    const giftProductIds = new Set(
-      promotions
-        .filter((promo) => promo.promoType === "gift_product" && promo.giftProductId)
-        .map((p) => String(p.giftProductId))
-    );
+    const promoProductIds = new Set<string>();
+    
+    promotions.forEach((promo) => {
+      if (!promo.isActive) return;
+      if (promo.promoType === "gift_product" && promo.giftProductId) {
+        promoProductIds.add(String(promo.giftProductId));
+      }
+      if (promo.promoType === "discount" && promo.discountScopes?.includes("specific_products") && promo.targetProductIds) {
+        promo.targetProductIds.forEach(id => promoProductIds.add(String(id)));
+      }
+      if (promo.promoType === "cashback" && promo.cashbackScopes?.includes("specific_products") && promo.targetProductIds) {
+        promo.targetProductIds.forEach(id => promoProductIds.add(String(id)));
+      }
+    });
 
     const merged = [...fromPromoCategory];
+    const seenIds = new Set(fromPromoCategory.map(p => String(p.id)));
+
     catalogProducts.forEach((p) => {
-      if (giftProductIds.has(String(p.id)) && p.category !== "Акционные товары") {
+      if (promoProductIds.has(String(p.id)) && !seenIds.has(String(p.id))) {
         merged.push({
           ...p,
           originalCategory: p.category,
           category: "Акционные товары"
         });
+        seenIds.add(String(p.id));
       }
     });
     return merged;
@@ -644,7 +656,7 @@ export const PromotionsView = ({
                           "px-4 py-2 rounded-xl border text-xs font-bold transition-all",
                           buyerTypes.includes("retail")
                             ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
-                            : "bg-gray-50 text-gray-650 border-gray-200 hover:bg-gray-100"
+                            : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
                         )}
                       >
                         Розница
@@ -656,7 +668,7 @@ export const PromotionsView = ({
                           "px-4 py-2 rounded-xl border text-xs font-bold transition-all",
                           buyerTypes.includes("wholesale")
                             ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
-                            : "bg-gray-50 text-gray-650 border-gray-200 hover:bg-gray-100"
+                            : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
                         )}
                       >
                         Салон
@@ -668,7 +680,7 @@ export const PromotionsView = ({
                           "px-4 py-2 rounded-xl border text-xs font-bold transition-all",
                           buyerTypes.includes("designer")
                             ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
-                            : "bg-gray-50 text-gray-650 border-gray-200 hover:bg-gray-100"
+                            : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100"
                         )}
                       >
                         Дизайнеры
@@ -874,7 +886,7 @@ export const PromotionsView = ({
                                 showAlert("Внимание", "Пожалуйста, сначала выберите конкретный товар.");
                               }
                             }}
-                            className="h-8 px-4 bg-indigo-650 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition-colors shrink-0 flex items-center justify-center gap-1 cursor-pointer"
+                            className="h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs transition-colors shrink-0 flex items-center justify-center gap-1 cursor-pointer shadow-md border border-blue-700"
                           >
                             Добавить
                           </button>
@@ -1091,7 +1103,7 @@ export const PromotionsView = ({
                                   showAlert("Внимание", "Пожалуйста, сначала выберите конкретный товар.");
                                 }
                               }}
-                              className="h-8 px-4 bg-indigo-650 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition-colors shrink-0 flex items-center justify-center gap-1 cursor-pointer"
+                              className="h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs transition-colors shrink-0 flex items-center justify-center gap-1 cursor-pointer shadow-md border border-blue-700"
                             >
                               Добавить
                             </button>
@@ -1141,7 +1153,7 @@ export const PromotionsView = ({
                           name="discount_markup"
                           checked={discountNeedMarkup === true}
                           onChange={() => setDiscountNeedMarkup(true)}
-                          className="text-indigo-650 focus:ring-indigo-500"
+                          className="text-indigo-600 focus:ring-indigo-500"
                         />
                         Да (наценка на сумму скидки)
                       </label>
@@ -1151,7 +1163,7 @@ export const PromotionsView = ({
                           name="discount_markup"
                           checked={discountNeedMarkup === false}
                           onChange={() => setDiscountNeedMarkup(false)}
-                          className="text-indigo-650 focus:ring-indigo-500"
+                          className="text-indigo-600 focus:ring-indigo-500"
                         />
                         Нет (прямая скидка)
                       </label>
@@ -1377,7 +1389,7 @@ export const PromotionsView = ({
                                   showAlert("Внимание", "Пожалуйста, сначала выберите конкретный товар.");
                                 }
                               }}
-                              className="h-8 px-4 bg-indigo-650 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs transition-colors shrink-0 flex items-center justify-center gap-1 cursor-pointer"
+                              className="h-8 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs transition-colors shrink-0 flex items-center justify-center gap-1 cursor-pointer shadow-md border border-blue-700"
                             >
                               Добавить
                             </button>
@@ -1427,7 +1439,7 @@ export const PromotionsView = ({
                           name="cashback_markup"
                           checked={cashbackNeedMarkup === true}
                           onChange={() => setCashbackNeedMarkup(true)}
-                          className="text-indigo-650 focus:ring-indigo-500"
+                          className="text-indigo-600 focus:ring-indigo-500"
                         />
                         Да (наценка на сумму кэшбека)
                       </label>
@@ -1437,7 +1449,7 @@ export const PromotionsView = ({
                           name="cashback_markup"
                           checked={cashbackNeedMarkup === false}
                           onChange={() => setCashbackNeedMarkup(false)}
-                          className="text-indigo-650 focus:ring-indigo-500"
+                          className="text-indigo-600 focus:ring-indigo-500"
                         />
                         Нет (оригинальная цена)
                       </label>
@@ -1576,7 +1588,7 @@ export const PromotionsView = ({
                           name="gift_product_markup"
                           checked={giftProductNeedMarkup === true}
                           onChange={() => setGiftProductNeedMarkup(true)}
-                          className="text-indigo-650 focus:ring-indigo-500"
+                          className="text-indigo-600 focus:ring-indigo-500"
                         />
                         Да (задать наценку)
                       </label>
@@ -1586,7 +1598,7 @@ export const PromotionsView = ({
                           name="gift_product_markup"
                           checked={giftProductNeedMarkup === false}
                           onChange={() => setGiftProductNeedMarkup(false)}
-                          className="text-indigo-650 focus:ring-indigo-500"
+                          className="text-indigo-600 focus:ring-indigo-500"
                         />
                         Нет (особая цена товара)
                       </label>
@@ -1648,7 +1660,7 @@ export const PromotionsView = ({
                           name="gift_service_markup"
                           checked={giftServiceNeedMarkup === true}
                           onChange={() => setGiftServiceNeedMarkup(true)}
-                          className="text-indigo-650 focus:ring-indigo-500"
+                          className="text-indigo-600 focus:ring-indigo-500"
                         />
                         Да (наценить весь проект)
                       </label>
@@ -1658,7 +1670,7 @@ export const PromotionsView = ({
                           name="gift_service_markup"
                           checked={giftServiceNeedMarkup === false}
                           onChange={() => setGiftServiceNeedMarkup(false)}
-                          className="text-indigo-650 focus:ring-indigo-500"
+                          className="text-indigo-600 focus:ring-indigo-500"
                         />
                         Нет (особая цена услуги)
                       </label>
@@ -1753,7 +1765,7 @@ export const PromotionsView = ({
                           name="installment_markup"
                           checked={installmentNeedMarkup === true}
                           onChange={() => setInstallmentNeedMarkup(true)}
-                          className="text-indigo-650 focus:ring-indigo-500"
+                          className="text-indigo-600 focus:ring-indigo-500"
                         />
                         Да (наценить на процент банка)
                       </label>
@@ -1763,7 +1775,7 @@ export const PromotionsView = ({
                           name="installment_markup"
                           checked={installmentNeedMarkup === false}
                           onChange={() => setInstallmentNeedMarkup(false)}
-                          className="text-indigo-650 focus:ring-indigo-500"
+                          className="text-indigo-600 focus:ring-indigo-500"
                         />
                         Нет (без изменений суммы проекта)
                       </label>
@@ -1889,12 +1901,27 @@ export const PromotionsView = ({
                             )}
                             <div className="flex flex-col mt-1 gap-1 border-t border-gray-100 pt-1.5">
                               <span className="text-[10px] text-gray-400 font-extrabold uppercase">Распространение:</span>
-                              <span className="font-medium text-gray-650">
+                              <span className="font-medium text-gray-600">
                                 {promo.discountScopes?.includes("all_project") 
                                   ? "Весь проект" 
                                   : promo.discountScopes?.map(s => SCOPES_TRANSLATIONS[s] || s).join(', ')}
                               </span>
                             </div>
+                            {promo.discountScopes?.includes("specific_products") && promo.targetProductIds && promo.targetProductIds.length > 0 && (
+                              <div className="flex flex-col mt-1 gap-1 border-t border-gray-100 pt-1.5">
+                                <span className="text-[10px] text-gray-400 font-extrabold uppercase">Товары по акции ({promo.targetProductIds.length}):</span>
+                                <div className="max-h-24 overflow-y-auto space-y-1">
+                                  {promo.targetProductIds.map((tid) => {
+                                    const tp = catalogProducts.find(cp => String(cp.id) === String(tid));
+                                    return (
+                                      <div key={tid} className="text-[11px] text-gray-700 font-medium truncate" title={tp?.name || tid}>
+                                        • {tp?.name || tid}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
                           </>
                         )}
 
@@ -1910,10 +1937,25 @@ export const PromotionsView = ({
                                 <span className="font-semibold text-gray-700">{promo.cashbackNeedMarkup ? 'Да' : 'Нет'}</span>
                               </div>
                             )}
-                            <div className="flex flex-col font-medium text-gray-650 border-t border-gray-100 pt-1">
+                            <div className="flex flex-col font-medium text-gray-600 border-t border-gray-100 pt-1">
                               <span>Выплата: {promo.cashbackPaymentDays} дн. {promo.cashbackPaymentTiming === 'after' ? 'после' : 'до'}{" "}
                               {promo.cashbackPaymentTrigger === 'full_payment' ? 'полной оплаты' : promo.cashbackPaymentTrigger === 'advance' ? 'аванса' : promo.cashbackPaymentTrigger === 'assembly' ? 'сборки' : 'доставки'}</span>
                             </div>
+                            {promo.cashbackScopes?.includes("specific_products") && promo.targetProductIds && promo.targetProductIds.length > 0 && (
+                              <div className="flex flex-col mt-1 gap-1 border-t border-gray-100 pt-1.5">
+                                <span className="text-[10px] text-gray-400 font-extrabold uppercase">Товары по акции ({promo.targetProductIds.length}):</span>
+                                <div className="max-h-24 overflow-y-auto space-y-1">
+                                  {promo.targetProductIds.map((tid) => {
+                                    const tp = catalogProducts.find(cp => String(cp.id) === String(tid));
+                                    return (
+                                      <div key={tid} className="text-[11px] text-gray-700 font-medium truncate" title={tp?.name || tid}>
+                                        • {tp?.name || tid}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
                           </>
                         )}
 
@@ -2146,7 +2188,7 @@ export const PromotionsView = ({
             {activePromoProducts.length === 0 ? (
               <div className="text-center py-10 border border-dashed border-gray-200 rounded-2xl flex flex-col items-center justify-center text-gray-400">
                 <ShoppingBag className="w-8 h-8 text-gray-300 mb-2" />
-                <p className="text-xs font-bold text-gray-650">Список акционных товаров пока пуст</p>
+                <p className="text-xs font-bold text-gray-600">Список акционных товаров пока пуст</p>
                 <p className="text-[10px] text-gray-400 max-w-sm mt-1">Добавьте нужные товары в акции с помощью панели управления выше, либо создайте промо-акцию «Товар в подарок»</p>
               </div>
             ) : (
@@ -2157,7 +2199,7 @@ export const PromotionsView = ({
                     <div key={p.id} className="bg-slate-50/50 border border-gray-150 rounded-2xl p-3 hover:shadow-sm transition-all relative flex flex-col justify-between group">
                       <div>
                         <div className="flex items-center justify-between gap-1">
-                          <span className="text-[9px] font-bold uppercase text-indigo-650 bg-indigo-50 px-2 py-0.5 rounded-full">
+                          <span className="text-[9px] font-bold uppercase text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
                             {p.originalCategory || "Промо-акция"}
                           </span>
                           {isAdminOrSupervisor && onSaveProduct && (
