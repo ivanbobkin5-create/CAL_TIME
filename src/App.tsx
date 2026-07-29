@@ -16202,6 +16202,7 @@ const ReadyMadeProductsView = ({
   showAlert,
   showPrompt,
   showConfirm,
+  setActiveTab,
 }: {
   catalogProducts: any[];
   onAddProduct: (product: any, qty: number) => void;
@@ -16214,9 +16215,14 @@ const ReadyMadeProductsView = ({
   showAlert: (title: string, message: string) => void;
   showPrompt: any;
   showConfirm: any;
+  setActiveTab?: (tab: string) => void;
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const [kitchenTypeFilter, setKitchenTypeFilter] = useState<string | null>(null);
+  const [kitchenStyleFilter, setKitchenStyleFilter] = useState<string | null>(null);
+  const [kitchenMinPriceFilter, setKitchenMinPriceFilter] = useState<string>("");
+  const [kitchenMaxPriceFilter, setKitchenMaxPriceFilter] = useState<string>("");
 
   const readyMadeCats = companyData?.readyMadeConfig?.categories || [
     "Кухни",
@@ -16236,9 +16242,27 @@ const ReadyMadeProductsView = ({
       if (!matchesCategory) return false;
 
       if (selectedCategory && selectedCategory.trim() !== "") {
-        if (!cat.toLowerCase().includes(selectedCategory.toLowerCase()) && !selectedCategory.toLowerCase().includes(cat.toLowerCase())) {
+        const selLower = selectedCategory.toLowerCase();
+        const catLower = cat.toLowerCase();
+        let matchesSel = catLower.includes(selLower) || selLower.includes(catLower);
+        if (selLower.includes("кух") && catLower.includes("кух")) {
+          matchesSel = true;
+        }
+        if (!matchesSel) {
           return false;
         }
+      }
+
+      if (selectedCategory === "Кухонные гарнитуры" || selectedCategory === "Кухни" || cat.toLowerCase().includes("кухон") || cat.toLowerCase().includes("кухн")) {
+        if (kitchenTypeFilter && p.kitchenType && p.kitchenType !== kitchenTypeFilter) {
+          return false;
+        }
+        if (kitchenStyleFilter && p.kitchenStyle && p.kitchenStyle !== kitchenStyleFilter) {
+          return false;
+        }
+        const pPrice = p.economyPrice || p.price || 0;
+        if (kitchenMinPriceFilter && pPrice < Number(kitchenMinPriceFilter)) return false;
+        if (kitchenMaxPriceFilter && pPrice > Number(kitchenMaxPriceFilter)) return false;
       }
 
       if (searchQuery.trim() !== "") {
@@ -16253,7 +16277,7 @@ const ReadyMadeProductsView = ({
 
       return true;
     });
-  }, [catalogProducts, readyMadeCats, selectedCategory, searchQuery]);
+  }, [catalogProducts, readyMadeCats, selectedCategory, searchQuery, kitchenTypeFilter, kitchenStyleFilter, kitchenMinPriceFilter, kitchenMaxPriceFilter]);
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-300">
@@ -16272,6 +16296,18 @@ const ReadyMadeProductsView = ({
             onChange={(e) => setSearchQuery(e.target.value)}
             className="px-4 py-2 border border-gray-200 rounded-xl text-sm w-72 focus:ring-2 focus:ring-blue-500 outline-none bg-white shadow-sm"
           />
+          <button
+            onClick={() => {
+              if (setActiveTab) {
+                setSelectedCategory(selectedCategory || "Кухонные гарнитуры");
+                setActiveTab("products");
+              }
+            }}
+            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-md shadow-blue-100 text-xs flex-shrink-0"
+          >
+            <Plus className="w-4 h-4" />
+            Добавить товар / гарнитур
+          </button>
         </div>
       </div>
 
@@ -16306,6 +16342,68 @@ const ReadyMadeProductsView = ({
           );
         })}
       </div>
+
+      {(selectedCategory === "Кухонные гарнитуры" || selectedCategory === "Кухни") && (
+        <div className="flex flex-wrap items-center gap-4 mb-6 p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100 animate-in fade-in slide-in-from-top-2 text-xs">
+          <span className="text-[10px] font-black text-indigo-600 uppercase tracking-widest">
+            Кухонные гарнитуры:
+          </span>
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-gray-600">Вид:</span>
+            {["Все", "Прямая", "Угловая", "П-образная", "с Островом"].map((type) => (
+              <button
+                key={type}
+                onClick={() => setKitchenTypeFilter(type === "Все" ? null : type)}
+                className={cn(
+                  "px-3 py-1 rounded-lg text-xs font-bold transition-all",
+                  kitchenTypeFilter === type || (type === "Все" && !kitchenTypeFilter)
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "bg-white text-gray-400 border border-gray-100 hover:border-indigo-200 hover:text-indigo-600"
+                )}
+              >
+                {type}
+              </button>
+            ))}
+          </div>
+          <div className="w-px h-4 bg-indigo-200 mx-2" />
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-gray-600">Стиль:</span>
+            {["Все", "Классический", "Современный", "Неоклассика"].map((style) => (
+              <button
+                key={style}
+                onClick={() => setKitchenStyleFilter(style === "Все" ? null : style)}
+                className={cn(
+                  "px-3 py-1 rounded-lg text-xs font-bold transition-all",
+                  kitchenStyleFilter === style || (style === "Все" && !kitchenStyleFilter)
+                    ? "bg-indigo-600 text-white shadow-sm"
+                    : "bg-white text-gray-400 border border-gray-100 hover:border-indigo-200 hover:text-indigo-600"
+                )}
+              >
+                {style}
+              </button>
+            ))}
+          </div>
+          <div className="w-px h-4 bg-indigo-200 mx-2" />
+          <div className="flex items-center gap-2">
+            <span className="font-bold text-gray-600">Цена от:</span>
+            <input
+              type="number"
+              placeholder="Мин ₽"
+              value={kitchenMinPriceFilter}
+              onChange={(e) => setKitchenMinPriceFilter(e.target.value)}
+              className="w-24 px-2 py-1 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+            <span className="font-bold text-gray-600">до:</span>
+            <input
+              type="number"
+              placeholder="Макс ₽"
+              value={kitchenMaxPriceFilter}
+              onChange={(e) => setKitchenMaxPriceFilter(e.target.value)}
+              className="w-24 px-2 py-1 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-700 outline-none focus:ring-2 focus:ring-indigo-500"
+            />
+          </div>
+        </div>
+      )}
 
       {readyMadeProducts.length === 0 ? (
         <div className="bg-white rounded-3xl border border-gray-200 p-16 text-center space-y-4 shadow-sm">
@@ -31555,6 +31653,7 @@ export default function App() {
               showAlert={showAlert}
               showPrompt={showPrompt}
               showConfirm={showConfirm}
+              setActiveTab={(tab: string) => setActiveTab(tab as any)}
             />
           ) : activeTab === "projects" ? (
             <ProjectsView
