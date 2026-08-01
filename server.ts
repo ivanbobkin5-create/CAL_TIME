@@ -34,8 +34,8 @@ function invalidateCache(docPath: string) {
   // In-memory caching fully disabled
 }
 
-// Robust database query wrapper with exponential backoff retry to handle transient connection drops/timeouts
-async function dbQueryWithRetry<T>(fn: () => Promise<T>, retries = 5, delayMs = 300): Promise<T> {
+// Robust database query wrapper with exponential backoff retry to handle transient connection drops/timeouts/shutdowns
+async function dbQueryWithRetry<T>(fn: () => Promise<T>, retries = 15, delayMs = 600): Promise<T> {
   let lastErr: any;
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
@@ -53,9 +53,17 @@ async function dbQueryWithRetry<T>(fn: () => Promise<T>, retries = 5, delayMs = 
           errorDetails = String(err);
         }
         const errMsg = errorDetails.replace(/\r?\n/g, " -- ");
-        console.warn(`[DB RETRY] Database query failed (attempt ${attempt}/${retries}). Retrying in ${delayMs}ms... Error: ${errMsg}`);
+        console.warn(`[DB RETRY] Database query failed (attempt ${attempt}/${retries}). Retrying in ${Math.round(delayMs)}ms... Error: ${errMsg}`);
+        
+        // Disconnect & reconnect Prisma client if error is connection/shutdown related so it re-establishes pool on next attempt
+        const errStr = (errMsg + " " + String(err?.code || "")).toLowerCase();
+        if (errStr.includes('shutting down') || errStr.includes('closed') || errStr.includes('connection') || errStr.includes('fatal') || errStr.includes('econnreset') || errStr.startsWith('p1') || errStr.startsWith('p100')) {
+          await prisma.$disconnect().catch(() => {});
+          await prisma.$connect().catch(() => {});
+        }
+
         await new Promise(resolve => setTimeout(resolve, delayMs));
-        delayMs = Math.min(delayMs * 2, 2000); // exponential backoff with max 2s cap
+        delayMs = Math.min(delayMs * 1.5, 3000);
       } else {
         throw err;
       }
@@ -299,17 +307,17 @@ function transliterate(str: string): string {
       const newPassword = "Joe240193";
       const hashedPassword = await bcrypt.hash(newPassword, 10);
       
-      const authUser = await prisma.authUser.upsert({
+      const authUser = await dbQueryWithRetry(() => prisma.authUser.upsert({
         where: { email },
         update: { password: hashedPassword },
         create: { email, password: hashedPassword }
-      });
+      }));
 
       console.log(`--- [ADMIN SETUP] Upserted user: ${authUser.uid} ---`);
 
       // Update or Create the DB document for role sync
       const userDocPath = `users/${authUser.uid}`;
-      const existingDoc = await prisma.dbDocument.findUnique({ where: { path: userDocPath } });
+      const existingDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: userDocPath } }));
       
       const userData = existingDoc ? JSON.parse(existingDoc.data) : { 
         uid: authUser.uid, 
@@ -321,20 +329,20 @@ function transliterate(str: string): string {
       userData.isRoot = true; // Flag for global admin panel
       
       if (existingDoc) {
-        await prisma.dbDocument.update({
+        await dbQueryWithRetry(() => prisma.dbDocument.update({
           where: { path: userDocPath },
           data: { data: JSON.stringify(userData) }
-        });
+        }));
         console.log(`--- [ADMIN SETUP] Updated existing user document: ${userDocPath} ---`);
       } else {
-        await prisma.dbDocument.create({
+        await dbQueryWithRetry(() => prisma.dbDocument.create({
           data: {
             path: userDocPath,
             collection: "users",
             docId: authUser.uid,
             data: JSON.stringify(userData)
           }
-        });
+        }));
         console.log(`--- [ADMIN SETUP] Created new user document: ${userDocPath} ---`);
       }
 
@@ -429,20 +437,20 @@ function transliterate(str: string): string {
   app.post("/api/auth/forgot-password", async (req, res) => {
     const { email } = req.body;
     try {
-      const user = await prisma.authUser.findUnique({ where: { email: email.toLowerCase() } });
+      const user = await dbQueryWithRetry(() => prisma.authUser.findUnique({ where: { email: email.toLowerCase() } }));
       if (!user) {
         return res.json({ status: "ok", message: "Instructions sent if email exists" });
       }
 
       const token = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
-      await prisma.verificationToken.create({
+      await dbQueryWithRetry(() => prisma.verificationToken.create({
         data: {
           email: user.email,
           token,
           type: "RESET",
           expiresAt: new Date(Date.now() + 3600000) // 1 hour
         }
-      });
+      }));
 
       const protocol = req.headers['x-forwarded-proto'] || 'http';
       const host = req.headers['host'];
@@ -467,19 +475,19 @@ function transliterate(str: string): string {
   app.post("/api/auth/reset-password", async (req, res) => {
     const { token, newPassword } = req.body;
     try {
-      const vToken = await prisma.verificationToken.findFirst({
+      const vToken = await dbQueryWithRetry(() => prisma.verificationToken.findFirst({
         where: { token, type: "RESET", expiresAt: { gt: new Date() } }
-      });
+      }));
 
       if (!vToken) return res.status(400).json({ error: "Invalid or expired token" });
 
       const hashedPassword = await bcrypt.hash(newPassword, 10);
-      await prisma.authUser.update({
+      await dbQueryWithRetry(() => prisma.authUser.update({
         where: { email: vToken.email },
         data: { password: hashedPassword }
-      });
+      }));
 
-      await prisma.verificationToken.delete({ where: { id: vToken.id } });
+      await dbQueryWithRetry(() => prisma.verificationToken.delete({ where: { id: vToken.id } }));
 
       res.json({ status: "ok" });
     } catch (e) {
@@ -490,19 +498,19 @@ function transliterate(str: string): string {
   app.post("/api/auth/verify-email", async (req, res) => {
     const { token } = req.body;
     try {
-      const vToken = await prisma.verificationToken.findFirst({
+      const vToken = await dbQueryWithRetry(() => prisma.verificationToken.findFirst({
         where: { token, type: "VERIFY", expiresAt: { gt: new Date() } }
-      });
+      }));
 
       if (!vToken) return res.status(400).json({ error: "Invalid or expired code" });
 
-      await prisma.authUser.update({
+      await dbQueryWithRetry(() => prisma.authUser.update({
         where: { email: vToken.email },
         data: { verified: true }
-      });
+      }));
 
-      const user = await prisma.authUser.findUnique({ where: { email: vToken.email } });
-      await prisma.verificationToken.delete({ where: { id: vToken.id } });
+      const user = await dbQueryWithRetry(() => prisma.authUser.findUnique({ where: { email: vToken.email } }));
+      await dbQueryWithRetry(() => prisma.verificationToken.delete({ where: { id: vToken.id } }));
 
       const jwtToken = jwt.sign({ uid: user?.uid, email: user?.email }, JWT_SECRET, { expiresIn: '30d' });
       res.json({ status: "ok", token: jwtToken, uid: user?.uid, email: user?.email });
@@ -517,30 +525,30 @@ function transliterate(str: string): string {
     try {
       const lowerEmail = email.toLowerCase();
       // Check if user already exists
-      const existingUser = await prisma.authUser.findUnique({ where: { email: lowerEmail } });
+      const existingUser = await dbQueryWithRetry(() => prisma.authUser.findUnique({ where: { email: lowerEmail } }));
       if (existingUser) {
         return res.status(400).json({ code: 'auth/email-already-in-use', error: 'Email already in use' });
       }
 
       const hashedPassword = await bcrypt.hash(password, 10);
-      user = await prisma.authUser.create({
+      user = await dbQueryWithRetry(() => prisma.authUser.create({
         data: { 
           email: lowerEmail, 
           password: hashedPassword,
           verified: verified ?? false // Allow pre-verified users (e.g. added by admin)
         }
-      });
+      }));
 
       if (!verified) {
         const token = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit code
-        await prisma.verificationToken.create({
+        await dbQueryWithRetry(() => prisma.verificationToken.create({
           data: {
             email: user.email,
             token,
             type: "VERIFY",
             expiresAt: new Date(Date.now() + 86400000) // 24 hours
           }
-        });
+        }));
 
         const emailResult = await sendEmail(
           user.email,
@@ -550,7 +558,7 @@ function transliterate(str: string): string {
 
         if (typeof emailResult === 'object' && !emailResult.success && process.env.SMTP_HOST) {
           // If SMTP is configured but failed, we cleanup the user so they can try again
-          await prisma.authUser.delete({ where: { uid: user.uid } });
+          await dbQueryWithRetry(() => prisma.authUser.delete({ where: { uid: user.uid } }));
           return res.status(500).json({ error: `Не удалось отправить письмо с кодом подтверждения: ${emailResult.error}` });
         }
       }
@@ -566,21 +574,21 @@ function transliterate(str: string): string {
   app.post("/api/auth/resend-verification", async (req, res) => {
     const { email } = req.body;
     try {
-      const user = await prisma.authUser.findUnique({ where: { email: email.toLowerCase() } });
+      const user = await dbQueryWithRetry(() => prisma.authUser.findUnique({ where: { email: email.toLowerCase() } }));
       if (!user) return res.status(404).json({ error: "Пользователь не найден" });
       if (user.verified) return res.status(400).json({ error: "Email уже подтвержден" });
 
       const token = Math.floor(100000 + Math.random() * 900000).toString();
       
       // Delete any existing verification tokens of this type for this email
-      await prisma.verificationToken.deleteMany({
+      await dbQueryWithRetry(() => prisma.verificationToken.deleteMany({
         where: { email: user.email, type: "VERIFY" }
-      });
+      }));
 
       // Create new token
-      await prisma.verificationToken.create({
+      await dbQueryWithRetry(() => prisma.verificationToken.create({
         data: { email: user.email, token, type: "VERIFY", expiresAt: new Date(Date.now() + 86400000) }
-      });
+      }));
 
       const emailResult = await sendEmail(
         user.email,
@@ -602,7 +610,7 @@ function transliterate(str: string): string {
     const { email } = req.query;
     try {
       if (typeof email !== "string") return res.status(400).json({ error: "Invalid email" });
-      const user = await prisma.authUser.findUnique({ where: { email: email.toLowerCase() }});
+      const user = await dbQueryWithRetry(() => prisma.authUser.findUnique({ where: { email: email.toLowerCase() }}));
       if (user) {
         res.json({ uid: user.uid, email: user.email });
       } else {
@@ -629,10 +637,10 @@ function transliterate(str: string): string {
       }
       
       if (Object.keys(data).length > 0) {
-        await prisma.authUser.update({
+        await dbQueryWithRetry(() => prisma.authUser.update({
           where: { uid },
           data
-        });
+        }));
       }
       res.json({ status: "ok" });
     } catch (e) {
@@ -644,7 +652,7 @@ function transliterate(str: string): string {
   app.delete("/api/auth/user/:uid", async (req, res) => {
     const { uid } = req.params;
     try {
-      await prisma.authUser.delete({ where: { uid } });
+      await dbQueryWithRetry(() => prisma.authUser.delete({ where: { uid } }));
       res.json({ status: "ok" });
     } catch (e) {
       res.status(500).json({ error: "Failed to delete auth user" });
@@ -658,7 +666,7 @@ function transliterate(str: string): string {
       const lowerEmail = email ? email.trim().toLowerCase() : "";
       const cleanPassword = password ? password.trim() : "";
       
-      const user = await prisma.authUser.findUnique({ where: { email: lowerEmail }});
+      const user = await dbQueryWithRetry(() => prisma.authUser.findUnique({ where: { email: lowerEmail }}));
       if (!user) {
         console.log("User not found:", lowerEmail);
         return res.status(401).json({ error: "Invalid credentials" });
@@ -700,7 +708,7 @@ function transliterate(str: string): string {
       const cleanArticle = typeof article === 'string' ? article.trim().toLowerCase() : "";
       const cleanName = typeof name === 'string' ? name.trim().toLowerCase() : "";
       
-      const docs = await prisma.$queryRaw<any[]>`
+      const docs = await dbQueryWithRetry(() => prisma.$queryRaw<any[]>`
         SELECT id, "docId", collection, path,
           CASE 
             WHEN (data::jsonb ? 'images') OR (data::jsonb ? 'image')
@@ -709,7 +717,7 @@ function transliterate(str: string): string {
           END as data
         FROM "DbDocument"
         WHERE collection LIKE 'companies/%/products'
-      `;
+      `);
       
       const normalizedDocs = docs.map(d => ({
         id: d.id,
@@ -900,7 +908,7 @@ function transliterate(str: string): string {
   // --- Продукты (DbProduct) ---
   app.get("/api/products", async (req, res) => {
     try {
-      const products = await prisma.dbProduct.findMany();
+      const products = await dbQueryWithRetry(() => prisma.dbProduct.findMany());
       res.json(products);
     } catch (e) {
       res.status(500).json({ error: "Failed to fetch products" });
@@ -909,10 +917,10 @@ function transliterate(str: string): string {
 
   app.get("/api/products/:id/history", async (req, res) => {
     try {
-      const history = await prisma.priceHistory.findMany({
+      const history = await dbQueryWithRetry(() => prisma.priceHistory.findMany({
         where: { productId: req.params.id },
         orderBy: { createdAt: 'desc' }
-      });
+      }));
       res.json(history);
     } catch (e) {
       res.status(500).json({ error: "Failed to fetch price history" });
@@ -922,9 +930,9 @@ function transliterate(str: string): string {
   app.post("/api/products", async (req, res) => {
     try {
       const { name, description, price, ownerCompanyId, photos } = req.body;
-      const product = await prisma.dbProduct.create({
+      const product = await dbQueryWithRetry(() => prisma.dbProduct.create({
         data: { name, description, price, ownerCompanyId, photos, status: "PENDING" }
-      });
+      }));
       res.json(product);
     } catch (e) {
       res.status(500).json({ error: "Failed to create product" });
@@ -936,22 +944,22 @@ function transliterate(str: string): string {
       const { id } = req.params;
       const { status, name, description, price, photos, changedBy } = req.body;
       
-      const oldProduct = await prisma.dbProduct.findUnique({ where: { id } });
+      const oldProduct = await dbQueryWithRetry(() => prisma.dbProduct.findUnique({ where: { id } }));
       
-      const product = await prisma.dbProduct.update({
+      const product = await dbQueryWithRetry(() => prisma.dbProduct.update({
         where: { id },
         data: { status, name, description, price, photos }
-      });
+      }));
 
       if (price !== undefined && oldProduct?.price !== price) {
-        await prisma.priceHistory.create({
+        await dbQueryWithRetry(() => prisma.priceHistory.create({
           data: {
             productId: id,
             oldPrice: oldProduct?.price,
             newPrice: price,
             changedBy: changedBy || "admin"
           }
-        });
+        }));
       }
       
       res.json(product);
@@ -1019,7 +1027,7 @@ function transliterate(str: string): string {
   app.post("/api/bitrix24/execute", async (req, res) => {
     try {
       const { companyId, method, fields, params } = req.body;
-      const companyDoc = await prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } });
+      const companyDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } }));
       if (!companyDoc) return res.status(404).json({ error: "Company not found" });
       const companyData = JSON.parse(companyDoc.data);
       const webhookUrl = companyData.bitrix24?.webhookUrl;

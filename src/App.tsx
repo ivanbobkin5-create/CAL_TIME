@@ -16223,6 +16223,12 @@ const ReadyMadeProductsView = ({
   showConfirm,
   setActiveTab,
   promotions,
+  onEditProduct = (product: any) => window.dispatchEvent(new CustomEvent("products_view_edit", { detail: product })),
+  onCreateBasedOn = (product: any) => window.dispatchEvent(new CustomEvent("products_view_create_copy", { detail: product })),
+  onDeleteProduct = (product: any) => window.dispatchEvent(new CustomEvent("products_view_delete", { detail: product })),
+  onUpdateProduct = (id: string, updates: any) => window.dispatchEvent(new CustomEvent("products_view_update", { detail: { id, updates } })),
+  onAddNewProduct = () => window.dispatchEvent(new CustomEvent("products_view_add_new", { detail: { category: selectedCategory || "Кухни" } })),
+  userRole,
 }: {
   catalogProducts: any[];
   onAddProduct: (product: any, qty: number) => void;
@@ -16237,6 +16243,12 @@ const ReadyMadeProductsView = ({
   showConfirm: any;
   setActiveTab?: (tab: string) => void;
   promotions?: any[];
+  onEditProduct?: (product: any) => void;
+  onCreateBasedOn?: (product: any) => void;
+  onDeleteProduct?: (product: any) => void;
+  onUpdateProduct?: (productId: string, updates: any) => void;
+  onAddNewProduct?: () => void;
+  userRole?: string;
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [quantities, setQuantities] = useState<Record<string, number>>({});
@@ -16337,12 +16349,14 @@ const ReadyMadeProductsView = ({
           />
           <button
             onClick={() => {
-              if (setActiveTab) {
+              if (onAddNewProduct) {
+                onAddNewProduct();
+              } else if (setActiveTab) {
                 setSelectedCategory(selectedCategory || "Кухни");
                 setActiveTab("products");
               }
             }}
-            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-md shadow-blue-100 text-xs flex-shrink-0"
+            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-md shadow-blue-100 text-xs flex-shrink-0 cursor-pointer"
           >
             <Plus className="w-4 h-4" />
             Добавить товар / гарнитур
@@ -16470,6 +16484,61 @@ const ReadyMadeProductsView = ({
                       <span className="text-xs font-medium text-gray-400">Нет фото</span>
                     </div>
                   )}
+
+                  {/* Quick Actions overlay for editing/deleting */}
+                  {product.source !== "manufacturer" && (
+                    <div className="absolute top-3 right-3 z-20 flex flex-col gap-1.5 translate-x-12 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 transition-all duration-300">
+                      {onEditProduct && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onEditProduct(product);
+                          }}
+                          className="p-1.5 bg-white text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg shadow-md transition-all cursor-pointer"
+                          title="Редактировать"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {onCreateBasedOn && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onCreateBasedOn(product);
+                          }}
+                          className="p-1.5 bg-white text-teal-600 hover:bg-teal-600 hover:text-white rounded-lg shadow-md transition-all cursor-pointer"
+                          title="Создать на основании"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {(userRole === 'admin' || userRole === 'supervisor') && onUpdateProduct && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onUpdateProduct(product.id, { saleBlocked: !product.saleBlocked });
+                          }}
+                          className={`p-1.5 bg-white ${product.saleBlocked ? 'text-amber-600' : 'text-gray-500'} hover:bg-amber-600 hover:text-white rounded-lg shadow-md transition-all cursor-pointer`}
+                          title={product.saleBlocked ? "Разблокировать продажу" : "Заблокировать продажу"}
+                        >
+                          <Lock className={`w-3.5 h-3.5 ${product.saleBlocked ? 'fill-current' : ''}`} />
+                        </button>
+                      )}
+                      {onDeleteProduct && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDeleteProduct(product);
+                          }}
+                          className="p-1.5 bg-white text-red-500 hover:bg-red-500 hover:text-white rounded-lg shadow-md transition-all cursor-pointer"
+                          title="Удалить"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
                     {activePromos.length > 0 && (
                       <span className="px-2.5 py-1 bg-gradient-to-r from-rose-500 to-pink-500 text-white text-[10px] font-bold rounded-lg shadow-sm flex items-center gap-1 shadow-rose-200">
@@ -16481,7 +16550,7 @@ const ReadyMadeProductsView = ({
                     </span>
                   </div>
                   {product.article && (
-                    <div className="absolute top-3 right-3">
+                    <div className="absolute top-3 right-3 group-hover:opacity-0 transition-opacity">
                       <span className="px-2.5 py-1 bg-gray-900/80 backdrop-blur-md text-white text-[10px] font-mono font-semibold rounded-lg shadow-sm">
                         Арт: {product.article}
                       </span>
@@ -17716,25 +17785,6 @@ const ProductsView = ({
     setIsAddingProduct(true);
   };
 
-  useEffect(() => {
-    const handleEditEvent = (e: any) => {
-      if (e.detail) {
-        handleEditProduct(e.detail);
-      }
-    };
-    const handleCreateCopyEvent = (e: any) => {
-      if (e.detail) {
-        handleCreateBasedOn(e.detail);
-      }
-    };
-    window.addEventListener("products_view_edit", handleEditEvent);
-    window.addEventListener("products_view_create_copy", handleCreateCopyEvent);
-    return () => {
-      window.removeEventListener("products_view_edit", handleEditEvent);
-      window.removeEventListener("products_view_create_copy", handleCreateCopyEvent);
-    };
-  }, [handleEditProduct, handleCreateBasedOn]);
-
   const handleDeleteProduct = (product: any) => {
     if (userRole === 'admin' || userRole === 'supervisor') {
         showConfirm(
@@ -17765,6 +17815,49 @@ const ProductsView = ({
     }
   };
 
+  useEffect(() => {
+    const handleEditEvent = (e: any) => {
+      if (e.detail) {
+        handleEditProduct(e.detail);
+      }
+    };
+    const handleCreateCopyEvent = (e: any) => {
+      if (e.detail) {
+        handleCreateBasedOn(e.detail);
+      }
+    };
+    const handleDeleteEvent = (e: any) => {
+      if (e.detail) {
+        handleDeleteProduct(e.detail);
+      }
+    };
+    const handleAddNewEvent = (e: any) => {
+      resetForm();
+      if (e.detail?.category) {
+        setNewProduct((prev: any) => ({ ...prev, category: e.detail.category }));
+      }
+      setIsAddingProduct(true);
+    };
+    const handleUpdateEvent = (e: any) => {
+      if (e.detail?.id && e.detail?.updates) {
+        updateProduct(e.detail.id, e.detail.updates);
+      }
+    };
+
+    window.addEventListener("products_view_edit", handleEditEvent);
+    window.addEventListener("products_view_create_copy", handleCreateCopyEvent);
+    window.addEventListener("products_view_delete", handleDeleteEvent);
+    window.addEventListener("products_view_add_new", handleAddNewEvent);
+    window.addEventListener("products_view_update", handleUpdateEvent);
+    return () => {
+      window.removeEventListener("products_view_edit", handleEditEvent);
+      window.removeEventListener("products_view_create_copy", handleCreateCopyEvent);
+      window.removeEventListener("products_view_delete", handleDeleteEvent);
+      window.removeEventListener("products_view_add_new", handleAddNewEvent);
+      window.removeEventListener("products_view_update", handleUpdateEvent);
+    };
+  }, [handleEditProduct, handleCreateBasedOn, handleDeleteProduct, updateProduct, resetForm]);
+
   const isProductHook = (p: any) => {
     if (!p) return false;
     if (p.handleOrHook === "hook") return true;
@@ -17784,10 +17877,22 @@ const ProductsView = ({
       }
 
       // Исключаем готовую мебель из основного товарного каталога, если она вынесена в отдельный раздел
-      const readyMadeCats = companyData?.readyMadeConfig?.categories || ["Кухни", "Шкафы", "Прихожие", "Столы", "Комоды", "Кухонные гарнитуры", "Кухонный гарнитур"];
+      const disabledReadyMadeCats = companyData?.readyMadeConfig?.disabledCategories || [];
+      const defaultReadyCats = ["Кухни", "Шкафы", "Прихожие", "Столы", "Комоды", "Кухонные гарнитуры", "Кухонный гарнитур"];
+      const configuredReadyCats = companyData?.readyMadeConfig?.categories || defaultReadyCats;
+      const activeReadyMadeCats = configuredReadyCats.filter((c: string) => !disabledReadyMadeCats.includes(c));
       const isReadyMadeEnabled = companyData?.readyMadeConfig?.enabled !== false;
-      if (isReadyMadeEnabled && readyMadeCats.some((c: string) => (p.category || "").toLowerCase().includes(c.toLowerCase())) && activeProductsView !== 'moderation') {
-        return false;
+
+      if (isReadyMadeEnabled && activeProductsView !== 'moderation') {
+        const pCatLower = (p.category || "").toLowerCase();
+        const isReadyMadeItem = activeReadyMadeCats.some((c: string) => {
+          const cLower = c.toLowerCase();
+          if (cLower.includes("кух") && pCatLower.includes("кух")) return true;
+          return pCatLower.includes(cLower) || cLower.includes(pCatLower);
+        });
+        if (isReadyMadeItem) {
+          return false;
+        }
       }
 
       // Stage 1: Moderation / Status filtering
@@ -26742,6 +26847,9 @@ export default function App() {
               if (data.hardwareKitPrice !== undefined) setHardwareKitPrice(data.hardwareKitPrice);
               if (data.catalogMaterials) setCatalogMaterials(data.catalogMaterials);
               if (data.mapLink) setMapLink(data.mapLink);
+              if (data.readyMadeConfig) {
+                setCompanyData((prev: any) => ({ ...prev, readyMadeConfig: data.readyMadeConfig }));
+              }
             }
             if (key.includes('prices') && data.prices) setPrices((curr: any) => ({ ...curr, ...data.prices }));
             if (key.includes('promotions') && Array.isArray(data.promotions)) setPromotions(data.promotions);
@@ -26845,6 +26953,9 @@ export default function App() {
         if (genData.hardwareKitPrice !== undefined) setHardwareKitPrice(genData.hardwareKitPrice);
         if (genData.catalogMaterials) setCatalogMaterials(genData.catalogMaterials);
         if (genData.mapLink) setMapLink(genData.mapLink);
+        if (genData.readyMadeConfig) {
+          setCompanyData((prev: any) => ({ ...prev, readyMadeConfig: genData.readyMadeConfig }));
+        }
       }
 
       if (priceData) {
@@ -29620,6 +29731,7 @@ export default function App() {
             customEdgeMapping,
             specificationConfig,
             landingPage: companyData.landingPage || null,
+            readyMadeConfig: companyData?.readyMadeConfig || null,
           },
           { merge: true },
         ),
@@ -30572,7 +30684,13 @@ export default function App() {
 
   // Handle direct custom slug routes (e.g. /mebelfaktura, /mebelfaktura/moduli, /mebelfaktura/catalog)
   const pathSegments = currentPath.split("/").filter(Boolean);
-  const reservedSystemRoutes = ["", "login", "register", "admin", "dashboard", "api", "assets", "static", "favicon.ico"];
+  const reservedSystemRoutes = [
+    "", "login", "register", "admin", "dashboard", "api", "assets", "static", "favicon.ico", "c",
+    "calculator", "projects", "products", "services", "service-section", "price", "production", 
+    "employees", "settings", "promotions", "specification", "profile", "procurement", 
+    "procurement_plan", "arrivals", "summary", "checkout_current", "ready_made",
+    "moduli", "kuhni", "fasady", "stoleshnicy", "petli", "posudosushiteli", "catalog", "all", "vse"
+  ];
 
   if (pathSegments.length > 0 && !reservedSystemRoutes.includes(pathSegments[0].toLowerCase())) {
     const aliasOrId = pathSegments[0];
@@ -31217,7 +31335,9 @@ export default function App() {
                               </button>
                             );
                           })()}
-                          {(companyData?.readyMadeConfig?.categories || ["Кухни", "Шкафы", "Прихожие", "Столы", "Комоды"]).map((cat: string) => (
+                          {(companyData?.readyMadeConfig?.categories || ["Кухни", "Шкафы", "Прихожие", "Столы", "Комоды"])
+                            .filter((cat: string) => !(companyData?.readyMadeConfig?.disabledCategories || []).includes(cat))
+                            .map((cat: string) => (
                             <button
                               key={cat}
                               onClick={() => {
@@ -31786,6 +31906,7 @@ export default function App() {
               showConfirm={showConfirm}
               setActiveTab={(tab: string) => setActiveTab(tab as any)}
               promotions={promotions}
+              userRole={userRole}
             />
           ) : activeTab === "projects" ? (
             <ProjectsView
@@ -32329,7 +32450,7 @@ export default function App() {
                   </div>
                 </div>
                 <div className="flex items-center gap-3">
-                  {selectedProductForDetail.source !== "manufacturer" && activeTab === "products" && (
+                  {selectedProductForDetail.source !== "manufacturer" && (activeTab === "products" || activeTab === "ready_made") && (
                     <>
                       <button
                         type="button"
