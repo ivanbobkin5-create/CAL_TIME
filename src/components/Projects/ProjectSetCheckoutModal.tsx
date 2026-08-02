@@ -430,6 +430,17 @@ export const ProjectSetCheckoutModal = ({
     return Math.max(0, totalAll - contractSum);
   }, [summary, contractSum]);
 
+  const totalVatSum = useMemo(() => {
+    let vatSum = 0;
+    projects.forEach((p) => {
+      const rows = p.data?.summaryRows || [];
+      rows.forEach((row: any) => {
+        vatSum += row.vatAmount || 0;
+      });
+    });
+    return vatSum;
+  }, [projects]);
+
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
       <div className="bg-gray-50 w-full max-w-5xl max-h-[90vh] rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden border border-white/20">
@@ -645,6 +656,9 @@ export const ProjectSetCheckoutModal = ({
                     </p>
                     <p className="text-3xl font-black text-indigo-900 mt-1">
                       {contractSum.toLocaleString()} ₽
+                    </p>
+                    <p className="text-[11px] font-medium text-gray-500 mt-1">
+                      {totalVatSum > 0 ? `в том числе НДС - ${totalVatSum.toLocaleString("ru-RU")} руб.` : "без НДС"}
                     </p>
                   </div>
                   {separateSum > 0 && (

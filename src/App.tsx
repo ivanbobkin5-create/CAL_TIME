@@ -1248,6 +1248,32 @@ const reportPriceChange = async (companyId: string, userId: string, userName: st
   }
 };
 
+export const calculateVatDetails = (baseSellingPrice: number, vatRateInput: any, includeVatInput: any) => {
+  const vatRate = typeof vatRateInput === "number" ? vatRateInput : (parseFloat(vatRateInput) || 0);
+  const includeVat = includeVatInput ?? true;
+
+  if (includeVat && vatRate > 0) {
+    const finalPrice = Math.round((baseSellingPrice || 0) * (1 + vatRate / 100));
+    const vatAmount = Math.round(finalPrice - (finalPrice / (1 + vatRate / 100)));
+    return {
+      finalPrice,
+      vatText: `в том числе НДС - ${vatAmount.toLocaleString("ru-RU")} руб.`,
+      vatAmount,
+      includeVat: true,
+      vatRate,
+    };
+  } else {
+    const finalPrice = Math.round(baseSellingPrice || 0);
+    return {
+      finalPrice,
+      vatText: "без НДС",
+      vatAmount: 0,
+      includeVat: false,
+      vatRate: 0,
+    };
+  }
+};
+
 async function addDoc(colRef: any, data: any) {
   const id = Math.random().toString(36).substr(2, 9);
   const path = `${colRef.path}/${id}`;
@@ -1614,10 +1640,18 @@ const ProductionView = ({
 
   const productionsInCity = useMemo(() => {
     if (!contractConfig.city) return [];
-    return allCompanies.filter(
+    const fromDb = allCompanies.filter(
       (c) =>
         c.city === contractConfig.city && c.type === "Мебельное производство",
     );
+    const staticProds = PRODUCTIONS[contractConfig.city] || [];
+    const combined = [...fromDb];
+    for (const p of staticProds) {
+      if (!combined.some((c) => c.id === p.id)) {
+        combined.push(p);
+      }
+    }
+    return combined;
   }, [allCompanies, contractConfig.city]);
 
   const [activePhoto, setActivePhoto] = useState<string | null>(null);
@@ -2309,7 +2343,7 @@ const ProductionView = ({
               </div>
             </div>
           </div>
-        )}
+      )}
 
         {productionFormat === "contract" && (
           <div className="space-y-8">
@@ -2494,7 +2528,7 @@ const ProductionView = ({
               </div>
             </div>
           </div>
-        )}
+      )}
 
         <div className="pt-8 border-t border-gray-100 flex justify-end">
           <button
@@ -9618,6 +9652,11 @@ const SummaryView = ({
         ? Math.round(product.purchasePrice * coeff)
         : product.price);
 
+    const vatRate = product.vatRate ?? product.vat ?? 0;
+    const includeVat = product.includeVat ?? true;
+    const vatDetails = calculateVatDetails(displayPrice, vatRate, includeVat);
+    const finalDisplayPrice = vatDetails.finalPrice;
+
     const isKitchenModule = product.category === "Кухонные модули";
 
     if (isKitchenModule && isModularProgram) {
@@ -9627,8 +9666,8 @@ const SummaryView = ({
         sub: `${product.moduleGroup || "Нижние"} (${product.moduleHeight || "720"}х${product.moduleWidth || "600"}х${product.moduleDepth || "512"})`,
         decor: product.moduleMaterial || "-",
         qty: `${product.quantity} шт`,
-        price: displayPrice,
-        total: displayPrice * product.quantity,
+        price: finalDisplayPrice,
+        total: finalDisplayPrice * product.quantity,
         coef: coeff,
         id: product.id,
         key: String(product.id),
@@ -9636,6 +9675,9 @@ const SummaryView = ({
         rawProduct: product,
         purchasePrice: product.purchasePrice || 0,
         rawPrice: product.purchasePrice || 0,
+        vat: vatRate,
+        includeVat: includeVat,
+        vatAmount: vatDetails.vatAmount * product.quantity,
       });
     } else {
       const isSkifWorktopOrPanel = (product.category === "Столешницы и стеновые") && (
@@ -9653,8 +9695,8 @@ const SummaryView = ({
         sub: product.isComputedFitting ? (product.computedSub || product.category) : product.category,
         decor: rowDecor,
         qty: `${product.quantity} шт`,
-        price: displayPrice,
-        total: displayPrice * product.quantity,
+        price: finalDisplayPrice,
+        total: finalDisplayPrice * product.quantity,
         coef: coeff,
         id: product.id,
         key: String(product.id),
@@ -9667,6 +9709,9 @@ const SummaryView = ({
         image: product.image || (product.images && product.images[0]) || "",
         purchasePrice: product.purchasePrice || 0,
         rawPrice: product.purchasePrice || 0,
+        vat: vatRate,
+        includeVat: includeVat,
+        vatAmount: vatDetails.vatAmount * product.quantity,
       });
     }
 
@@ -10067,7 +10112,8 @@ const SummaryView = ({
         const cat = getRowCategory(row);
         let applies = promo.discountScopes?.includes("all_project") || promo.discountScopes?.includes(cat);
         if (promo.discountScopes?.includes("specific_products") && row.type === 'product' && row.productId) {
-           if (promo.targetProductIds?.includes(String(row.productId))) {
+           const cleanRowProdId = String(row.productId).split('_var_')[0];
+           if (promo.targetProductIds?.includes(cleanRowProdId)) {
               applies = true;
            }
         }
@@ -10090,7 +10136,8 @@ const SummaryView = ({
         const cat = getRowCategory(row);
         let applies = promo.cashbackScopes?.includes("all_project") || promo.cashbackScopes?.includes(cat);
         if (promo.cashbackScopes?.includes("specific_products") && row.type === 'product' && row.productId) {
-           if (promo.targetProductIds?.includes(String(row.productId))) {
+           const cleanRowProdId = String(row.productId).split('_var_')[0];
+           if (promo.targetProductIds?.includes(cleanRowProdId)) {
               applies = true;
            }
         }
@@ -10277,6 +10324,10 @@ const SummaryView = ({
       : null;
 
   const finalTotal = allDataEntered ? Math.round(promotionAdjustedTotal) : 0;
+
+  const totalVatAmount = React.useMemo(() => {
+    return summaryRows.reduce((sum, row) => sum + (row.vatAmount || 0), 0);
+  }, [summaryRows]);
 
   const deliverySum = React.useMemo(() => {
     return summaryRows
@@ -11855,6 +11906,11 @@ const SummaryView = ({
                     {finalTotal > 0 ? `${(finalTotal ?? 0).toLocaleString()} ₽` : "0 ₽"}
                   </span>
                 )}
+                {finalTotal > 0 && (
+                  <div className="text-[11px] font-medium text-gray-500 mt-1">
+                    {totalVatAmount > 0 ? `в том числе НДС - ${totalVatAmount.toLocaleString("ru-RU")} руб.` : "без НДС"}
+                  </div>
+                )}
                 {!allDataEntered && (
                   <div className="text-[10px] text-gray-400 font-normal mt-1">
                     Заполните все цены
@@ -12048,6 +12104,530 @@ const SummaryView = ({
           showAlert={showAlert}
           showConfirm={showConfirm}
         />
+      )}
+    </div>
+  );
+};
+
+const CoefficientsTableSection = ({
+  categories,
+  coefficients,
+  setCoefficients,
+  ownProductionConfig,
+  setOwnProductionConfig,
+  salonsInTable,
+  productCategories,
+  newCategory,
+  setNewCategory,
+  handleAddCategory,
+  handleRemoveCategory,
+  setShowBrandCoeffModal,
+  handleRemoveBrandCoefficient,
+  onSaveSettings,
+  showAlert,
+}: {
+  categories: Array<{ id: string; label: string }>;
+  coefficients: any;
+  setCoefficients: React.Dispatch<React.SetStateAction<any>>;
+  ownProductionConfig: OwnProductionConfig;
+  setOwnProductionConfig: React.Dispatch<React.SetStateAction<OwnProductionConfig>>;
+  salonsInTable: any[];
+  productCategories: string[];
+  newCategory: string;
+  setNewCategory: (val: string) => void;
+  handleAddCategory: () => void;
+  handleRemoveCategory: (cat: string) => void;
+  setShowBrandCoeffModal: (val: boolean) => void;
+  handleRemoveBrandCoefficient: (id: string) => void;
+  onSaveSettings: (silent?: boolean) => Promise<void>;
+  showAlert: (title: string, message: string) => void;
+}) => {
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  // Initialize drafts from props
+  const initDraftsFromProps = useCallback(() => {
+    const next: Record<string, string> = {};
+
+    categories.forEach((row) => {
+      const isProduct = row.id.startsWith("cat_");
+      const catName = isProduct ? row.label : null;
+      const baseId = row.id;
+
+      // Retail
+      const retVal = isProduct
+        ? coefficients.retail?.products?.[catName!] ?? 1.5
+        : coefficients.retail?.[baseId] ?? 1.5;
+      next[`cat_retail_${row.id}`] = retVal !== undefined && retVal !== null ? String(retVal).replace(".", ",") : "1,5";
+
+      // Designer
+      const desVal = isProduct
+        ? coefficients.designer?.products?.[catName!] ?? 1.5
+        : coefficients.designer?.[baseId] ?? 1.5;
+      next[`cat_designer_${row.id}`] = desVal !== undefined && desVal !== null ? String(desVal).replace(".", ",") : "1,5";
+
+      // Standard Salon
+      const stdVal = ownProductionConfig.standardCoefficients?.[row.id];
+      next[`cat_stdSalon_${row.id}`] = stdVal !== undefined && stdVal !== null ? String(stdVal).replace(".", ",") : "";
+
+      // Salons in table
+      salonsInTable.forEach((salon) => {
+        const salonVal =
+          ownProductionConfig.salonCoefficients?.[salon.id]?.[row.id] ??
+          ownProductionConfig.standardCoefficients?.[row.id];
+        next[`cat_salon_${salon.id}_${row.id}`] =
+          salonVal !== undefined && salonVal !== null ? String(salonVal).replace(".", ",") : "";
+      });
+    });
+
+    // Brand coefficients
+    (ownProductionConfig.brandCoefficients || []).forEach((bc) => {
+      next[`brand_retail_${bc.id}`] = String(bc.retail ?? 1.5).replace(".", ",");
+      next[`brand_designer_${bc.id}`] = String(bc.designer ?? 1.3).replace(".", ",");
+      next[`brand_stdSalon_${bc.id}`] = String(bc.standardSalon ?? 1.2).replace(".", ",");
+
+      salonsInTable.forEach((s) => {
+        const val = bc.salonCoeffs?.[s.id] ?? bc.standardSalon;
+        next[`brand_salon_${s.id}_${bc.id}`] = val !== undefined && val !== null ? String(val).replace(".", ",") : "";
+      });
+    });
+
+    setDrafts(next);
+    setHasUnsavedChanges(false);
+  }, [categories, coefficients, ownProductionConfig, salonsInTable]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) {
+      initDraftsFromProps();
+    }
+  }, [
+    categories.map((c) => c.id).join(","),
+    salonsInTable.map((s) => s.id).join(","),
+    (ownProductionConfig.brandCoefficients || []).map((b) => b.id).join(","),
+  ]);
+
+  const handleCellChange = (key: string, rawVal: string) => {
+    const cleanVal = rawVal.replace(/[^0-9.,]/g, "");
+    setDrafts((prev) => ({
+      ...prev,
+      [key]: cleanVal,
+    }));
+    setHasUnsavedChanges(true);
+  };
+
+  const parseNum = (str: string | undefined, defaultVal: number): number => {
+    if (str === undefined || str === null || str.trim() === "") return defaultVal;
+    const normalized = str.replace(",", ".");
+    const val = parseFloat(normalized);
+    return isNaN(val) ? defaultVal : val;
+  };
+
+  const parseNumOrNull = (str: string | undefined): number | undefined => {
+    if (str === undefined || str === null || str.trim() === "") return undefined;
+    const normalized = str.replace(",", ".");
+    const val = parseFloat(normalized);
+    return isNaN(val) ? undefined : val;
+  };
+
+  const syncDraftsToParent = useCallback(() => {
+    let updatedRetail = {
+      ...(coefficients.retail || {}),
+      products: { ...(coefficients.retail?.products || {}) },
+    };
+    let updatedDesigner = {
+      ...(coefficients.designer || {}),
+      products: { ...(coefficients.designer?.products || {}) },
+    };
+
+    let newStandardCoeffs: Record<string, number> = {
+      ...(ownProductionConfig.standardCoefficients || {}),
+    };
+    let newSalonCoeffs: Record<string, Record<string, number>> = {
+      ...(ownProductionConfig.salonCoefficients || {}),
+    };
+
+    categories.forEach((row) => {
+      const isProduct = row.id.startsWith("cat_");
+      const catName = isProduct ? row.label : null;
+      const baseId = row.id;
+
+      // Retail
+      const retNum = parseNum(drafts[`cat_retail_${row.id}`], 1.5);
+      if (isProduct && catName) {
+        updatedRetail.products[catName] = retNum;
+      } else {
+        updatedRetail[baseId] = retNum;
+      }
+
+      // Designer
+      const desNum = parseNum(drafts[`cat_designer_${row.id}`], 1.5);
+      if (isProduct && catName) {
+        updatedDesigner.products[catName] = desNum;
+      } else {
+        updatedDesigner[baseId] = desNum;
+      }
+
+      // Standard Salon
+      const stdNum = parseNumOrNull(drafts[`cat_stdSalon_${row.id}`]);
+      if (stdNum !== undefined) {
+        newStandardCoeffs[row.id] = stdNum;
+      }
+
+      // Salons in table
+      salonsInTable.forEach((salon) => {
+        const salonNum = parseNumOrNull(drafts[`cat_salon_${salon.id}_${row.id}`]);
+        if (salonNum !== undefined) {
+          if (!newSalonCoeffs[salon.id]) newSalonCoeffs[salon.id] = {};
+          newSalonCoeffs[salon.id][row.id] = salonNum;
+        }
+      });
+    });
+
+    // Brand coefficients
+    let newBrandCoeffs = (ownProductionConfig.brandCoefficients || []).map((bc) => {
+      const rVal = parseNum(drafts[`brand_retail_${bc.id}`], bc.retail || 1.5);
+      const dVal = parseNum(drafts[`brand_designer_${bc.id}`], bc.designer || 1.3);
+      const stdVal = parseNum(drafts[`brand_stdSalon_${bc.id}`], bc.standardSalon || 1.2);
+
+      let sCoeffs: Record<string, number> = { ...(bc.salonCoeffs || {}) };
+      salonsInTable.forEach((s) => {
+        const val = parseNumOrNull(drafts[`brand_salon_${s.id}_${bc.id}`]);
+        if (val !== undefined) {
+          sCoeffs[s.id] = val;
+        }
+      });
+
+      return {
+        ...bc,
+        retail: rVal,
+        designer: dVal,
+        standardSalon: stdVal,
+        salonCoeffs: sCoeffs,
+      };
+    });
+
+    setCoefficients((prev: any) => ({
+      ...prev,
+      retail: updatedRetail,
+      designer: updatedDesigner,
+    }));
+
+    setOwnProductionConfig((prev) => ({
+      ...prev,
+      standardCoefficients: newStandardCoeffs,
+      salonCoefficients: newSalonCoeffs,
+      brandCoefficients: newBrandCoeffs,
+    }));
+  }, [categories, coefficients, ownProductionConfig, salonsInTable, drafts]);
+
+  const commitAndSave = async () => {
+    setIsSaving(true);
+    try {
+      syncDraftsToParent();
+      await onSaveSettings(false);
+      setHasUnsavedChanges(false);
+      showAlert("Сохранено", "Коэффициенты успешно сохранены.");
+    } catch (e) {
+      console.error("Failed to save coefficients:", e);
+      showAlert("Ошибка", "Произошла ошибка при сохранении коэффициентов.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div>
+      {/* Unsaved Changes Banner */}
+      {hasUnsavedChanges && (
+        <div className="mb-6 p-4 bg-amber-50 border-2 border-amber-300 rounded-2xl flex flex-col sm:flex-row items-center justify-between gap-4 shadow-md animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center text-amber-700 flex-shrink-0">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="text-sm font-bold text-amber-900">
+                Вам необходимо сохранить настройки
+              </div>
+              <div className="text-xs text-amber-700 font-medium">
+                Вы внесли изменения в таблицу коэффициентов. Нажмите «Сохранить изменения», чтобы применить их.
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+            <button
+              onClick={initDraftsFromProps}
+              className="px-4 py-2 text-xs font-bold text-gray-700 bg-white border border-gray-300 rounded-xl hover:bg-gray-50 transition-all"
+            >
+              Сбросить
+            </button>
+            <button
+              onClick={commitAndSave}
+              disabled={isSaving}
+              className="px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-lg shadow-blue-200 transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50"
+            >
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              Сохранить изменения
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Main Coefficients Table */}
+      <div className="overflow-x-auto rounded-2xl border border-gray-200 mb-6 shadow-sm bg-white">
+        <table className="w-full text-left border-collapse bg-white">
+          <thead>
+            <tr className="border-b border-gray-200 bg-gray-50/80">
+              <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider min-w-[140px]">
+                Категория
+              </th>
+
+              <th className="py-3 px-4 text-[10px] font-bold text-gray-600 uppercase tracking-wider border-l border-gray-200 min-w-[100px]">
+                Розница
+              </th>
+
+              <th className="py-3 px-4 text-[10px] font-bold text-gray-600 uppercase tracking-wider border-l border-gray-200 min-w-[100px]">
+                Дизайнеры
+              </th>
+
+              <th className="py-3 px-4 text-[10px] font-bold text-blue-700 uppercase tracking-wider bg-blue-50/60 min-w-[130px] border-l border-blue-200">
+                <div className="flex items-center gap-1.5">
+                  <Star className="w-3.5 h-3.5 fill-blue-600 text-blue-600" />
+                  <span>Салоны (Стандарт)</span>
+                </div>
+              </th>
+
+              {salonsInTable.map((salon) => (
+                <th
+                  key={salon.id}
+                  className="py-3 px-4 text-[10px] font-bold text-gray-800 uppercase tracking-wider bg-gray-100/70 min-w-[130px] border-l border-gray-200"
+                >
+                  <div className="flex items-center gap-1">
+                    <span className="truncate">{salon.name}</span>
+                    <span className="text-[9px] text-blue-600 font-extrabold bg-blue-100 px-1.5 py-0.5 rounded-full">Спец</span>
+                  </div>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {categories.map((row: any, idx) => {
+              const catName = row.id.startsWith("cat_") ? row.label : null;
+              const isProduct = row.id.startsWith("cat_");
+
+              return (
+                <tr
+                  key={row.id}
+                  className={cn(
+                    "border-b border-gray-100 transition-colors hover:bg-blue-50/20",
+                    idx % 2 === 0 ? "bg-white" : "bg-gray-50/30",
+                  )}
+                >
+                  <td className="py-2.5 px-4 text-[11px] font-bold text-gray-800">
+                    <div className="flex items-center gap-2">
+                      {isProduct && (
+                        <button
+                          onClick={() => handleRemoveCategory(catName!)}
+                          className="p-1 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Удалить категорию"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <span>{row.label}</span>
+                    </div>
+                  </td>
+
+                  {/* Retail column */}
+                  <td className="py-1.5 px-3 border-l border-gray-100">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={drafts[`cat_retail_${row.id}`] ?? ""}
+                      onChange={(e) => handleCellChange(`cat_retail_${row.id}`, e.target.value)}
+                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none bg-white hover:border-gray-300 transition-colors"
+                      placeholder="1,5"
+                    />
+                  </td>
+
+                  {/* Designer column */}
+                  <td className="py-1.5 px-3 border-l border-gray-100">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={drafts[`cat_designer_${row.id}`] ?? ""}
+                      onChange={(e) => handleCellChange(`cat_designer_${row.id}`, e.target.value)}
+                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none bg-white hover:border-gray-300 transition-colors"
+                      placeholder="1,5"
+                    />
+                  </td>
+
+                  {/* Standard Salon column */}
+                  <td className="py-1.5 px-3 border-l border-blue-100 bg-blue-50/10">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={drafts[`cat_stdSalon_${row.id}`] ?? ""}
+                      onChange={(e) => handleCellChange(`cat_stdSalon_${row.id}`, e.target.value)}
+                      className="w-full px-2 py-1.5 border border-blue-200 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none bg-white hover:border-blue-300 transition-colors"
+                      placeholder="1,2"
+                    />
+                  </td>
+
+                  {/* Salon specific columns */}
+                  {salonsInTable.map((salon) => (
+                    <td
+                      key={salon.id}
+                      className="py-1.5 px-3 border-l border-gray-100 bg-gray-50/20"
+                    >
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={drafts[`cat_salon_${salon.id}_${row.id}`] ?? ""}
+                        onChange={(e) => handleCellChange(`cat_salon_${salon.id}_${row.id}`, e.target.value)}
+                        className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none bg-white hover:border-blue-400 transition-colors shadow-2xs"
+                        placeholder="По умолч."
+                      />
+                    </td>
+                  ))}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Brand Coefficients Table */}
+      {(ownProductionConfig.brandCoefficients || []).length > 0 && (
+        <div className="overflow-x-auto rounded-2xl border border-gray-200 mb-6 shadow-sm bg-white">
+          <div className="px-4 py-2.5 bg-gray-100 border-b border-gray-200 text-[10px] font-bold text-gray-600 uppercase tracking-widest flex items-center justify-between">
+            <span>Персональные коэффициенты по брендам</span>
+            <span className="text-gray-400 font-normal">Индивидуальная наценка на бренд</span>
+          </div>
+          <table className="w-full text-left border-collapse bg-white">
+            <thead>
+              <tr className="border-b border-gray-200 bg-gray-50">
+                <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 uppercase">
+                  Категория / Бренд
+                </th>
+                <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 uppercase border-l border-gray-200">
+                  Розница
+                </th>
+                <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 uppercase border-l border-gray-200">
+                  Дизайнер
+                </th>
+                <th className="py-2.5 px-4 text-[10px] font-bold text-blue-700 uppercase bg-blue-50/40 border-l border-blue-200 text-center">
+                  Салон
+                </th>
+                {salonsInTable.map((s) => (
+                  <th
+                    key={s.id}
+                    className="py-2.5 px-4 text-[10px] font-bold text-gray-700 uppercase bg-gray-50 border-l border-gray-200"
+                  >
+                    {s.name}
+                  </th>
+                ))}
+                <th className="py-2.5 px-4 bg-gray-50"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {ownProductionConfig.brandCoefficients?.map((bc) => (
+                <tr
+                  key={bc.id}
+                  className="border-b border-gray-100 hover:bg-gray-50/50 transition-colors"
+                >
+                  <td className="py-2.5 px-4 border-r border-gray-100">
+                    <div className="font-bold text-gray-800 text-[11px]">
+                      {bc.brand}
+                    </div>
+                    <div className="text-[9px] text-gray-400 font-bold uppercase">
+                      {categories.find((c) => c.id === bc.categoryId)?.label}
+                    </div>
+                  </td>
+                  <td className="py-1.5 px-3">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={drafts[`brand_retail_${bc.id}`] ?? ""}
+                      onChange={(e) => handleCellChange(`brand_retail_${bc.id}`, e.target.value)}
+                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </td>
+                  <td className="py-1.5 px-3 border-l border-gray-100">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={drafts[`brand_designer_${bc.id}`] ?? ""}
+                      onChange={(e) => handleCellChange(`brand_designer_${bc.id}`, e.target.value)}
+                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </td>
+                  <td className="py-1.5 px-3 border-l border-blue-100 bg-blue-50/10">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={drafts[`brand_stdSalon_${bc.id}`] ?? ""}
+                      onChange={(e) => handleCellChange(`brand_stdSalon_${bc.id}`, e.target.value)}
+                      className="w-full px-2 py-1.5 border border-blue-200 rounded-lg text-xs font-bold text-right bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </td>
+                  {salonsInTable.map((s) => (
+                    <td
+                      key={s.id}
+                      className="py-1.5 px-3 border-l border-gray-100"
+                    >
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={drafts[`brand_salon_${s.id}_${bc.id}`] ?? ""}
+                        onChange={(e) => handleCellChange(`brand_salon_${s.id}_${bc.id}`, e.target.value)}
+                        className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                    </td>
+                  ))}
+                  <td className="py-1.5 px-3 text-center">
+                    <button
+                      onClick={() => handleRemoveBrandCoefficient(bc.id)}
+                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Удалить коэффициент бренда"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Add Brand Coefficient Button */}
+      <button
+        onClick={() => setShowBrandCoeffModal(true)}
+        className="w-full py-4 border-2 border-dashed border-gray-200 rounded-2xl text-gray-600 font-bold hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50/20 transition-all flex items-center justify-center gap-2 group shadow-2xs"
+      >
+        <div className="w-8 h-8 bg-gray-100 rounded-xl flex items-center justify-center group-hover:bg-blue-100 transition-colors">
+          <Target className="w-4 h-4 text-gray-500 group-hover:text-blue-600" />
+        </div>
+        Указать персональный коэффициент для отдельного бренда
+      </button>
+
+      {/* Floating Bottom Save Bar when unsaved changes exist */}
+      {hasUnsavedChanges && (
+        <div className="mt-6 p-4 bg-gray-900 text-white rounded-2xl shadow-xl flex items-center justify-between gap-4 animate-in slide-in-from-bottom-2">
+          <div className="flex items-center gap-3">
+            <div className="w-3 h-3 rounded-full bg-amber-400 animate-ping" />
+            <span className="text-xs font-semibold">Вами внесены изменения в коэффициенты. Не забудьте сохранить!</span>
+          </div>
+          <button
+            onClick={commitAndSave}
+            disabled={isSaving}
+            className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-lg transition-all flex items-center gap-2 active:scale-95 disabled:opacity-50"
+          >
+            {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+            Сохранить настройки
+          </button>
+        </div>
       )}
     </div>
   );
@@ -14610,308 +15190,23 @@ const SettingsView = ({
                 клиентов, дизайнеров и ваших салонов-партнеров.
               </p>
 
-              <div className="overflow-x-auto rounded-xl border border-gray-100 mb-6">
-                <table className="w-full text-left border-collapse bg-white">
-                  <thead>
-                    <tr className="border-b border-gray-100">
-                      <th className="py-3 px-4 text-[10px] font-bold text-gray-400 uppercase tracking-wider bg-gray-50">
-                        Категория
-                      </th>
-
-                      <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider bg-gray-50 border-l border-gray-100 min-w-[100px]">
-                        Розница
-                      </th>
-
-                      <th className="py-3 px-4 text-[10px] font-bold text-gray-500 uppercase tracking-wider bg-gray-50 border-l border-gray-100 min-w-[100px]">
-                        Дизайнеры
-                      </th>
-
-                      <th className="py-3 px-4 text-[10px] font-bold text-blue-600 uppercase tracking-wider bg-blue-50/50 min-w-[120px] border-l border-blue-100">
-                        <div className="flex items-center gap-1">
-                          <Star className="w-3 h-3" />
-                          <span>Салоны (Стандарт)</span>
-                        </div>
-                      </th>
-
-                      {salonsInTable.map((salon) => (
-                        <th
-                          key={salon.id}
-                          className="py-3 px-4 text-[10px] font-bold text-gray-800 uppercase tracking-wider bg-gray-50 min-w-[120px] border-l border-gray-100"
-                        >
-                          {salon.name}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {categories.map((row: any, idx) => {
-                      const baseId = row.id.startsWith("cat_")
-                        ? row.id
-                        : row.id;
-                      const catName = row.id.startsWith("cat_")
-                        ? row.label
-                        : null;
-                      const isProduct = row.id.startsWith("cat_");
-
-                      return (
-                        <tr
-                          key={row.id}
-                          className={cn(
-                            "border-b border-gray-50 transition-colors",
-                            idx % 2 === 0 ? "bg-white" : "bg-gray-50/10",
-                          )}
-                        >
-                          <td className="py-2 px-4 text-[11px] font-semibold text-gray-600">
-                            <div className="flex items-center gap-2">
-                              {isProduct && (
-                                <button
-                                  onClick={() => handleRemoveCategory(catName!)}
-                                  className="p-1 text-red-500 hover:bg-red-50 rounded"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
-                              )}
-                              {row.label}
-                            </div>
-                          </td>
-
-                          {/* Retail column */}
-                          <td className="py-1.5 px-4 border-l border-gray-50">
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={
-                                isProduct
-                                  ? coefficients.retail.products?.[catName!] ||
-                                    1.5
-                                  : coefficients.retail[baseId!] || 1.5
-                              }
-                              onChange={(e) => {
-                                const v = parseFloat(e.target.value) || 0;
-                                if (isProduct)
-                                  updateProductCoeff("retail", catName!, v);
-                                else updateCoeff("retail", baseId!, v);
-                              }}
-                              className="w-full px-2 py-1 border border-gray-200 rounded-lg text-xs font-bold focus:ring-1 focus:ring-blue-500 outline-none text-right"
-                            />
-                          </td>
-
-                          {/* Designer column */}
-                          <td className="py-1.5 px-4 border-l border-gray-50">
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={
-                                isProduct
-                                  ? coefficients.designer.products?.[
-                                      catName!
-                                    ] || 1.5
-                                  : coefficients.designer[baseId!] || 1.5
-                              }
-                              onChange={(e) => {
-                                const v = parseFloat(e.target.value) || 0;
-                                if (isProduct)
-                                  updateProductCoeff("designer", catName!, v);
-                                else updateCoeff("designer", baseId!, v);
-                              }}
-                              className="w-full px-2 py-1 border border-gray-200 rounded-lg text-xs font-bold focus:ring-1 focus:ring-blue-500 outline-none text-right"
-                            />
-                          </td>
-
-                          {/* Standard/Wholesale column */}
-                          <td className="py-1.5 px-4 border-l border-blue-50 bg-blue-50/5">
-                            <div className="relative">
-                              <input
-                                type="text"
-                                inputMode="decimal"
-                                value={
-                                  ownProductionConfig.standardCoefficients?.[
-                                    row.id
-                                  ] ?? ""
-                                }
-                                onChange={(e) => {
-                                  const v = e.target.value.replace(",", ".").replace(/[^0-9.]/g, "");
-                                  updateStandardCoefficient(row.id, v);
-                                }}
-                                className="w-full px-2 py-1 border border-blue-100 rounded-lg text-xs font-bold bg-white focus:ring-1 focus:ring-blue-500 outline-none text-right"
-                              />
-                            </div>
-                          </td>
-
-                          {salonsInTable.map((salon) => (
-                            <td
-                              key={salon.id}
-                              className="py-1.5 px-4 border-l border-gray-50"
-                            >
-                              <input
-                                type="text"
-                                inputMode="decimal"
-                                value={
-                                  ownProductionConfig.salonCoefficients?.[
-                                    salon.id
-                                  ]?.[row.id] ??
-                                  ownProductionConfig.standardCoefficients?.[
-                                    row.id
-                                  ] ??
-                                  ""
-                                }
-                                onChange={(e) => {
-                                  const v = e.target.value.replace(",", ".").replace(/[^0-9.]/g, "");
-                                  updateSalonCoefficient(salon.id, row.id, v);
-                                }}
-                                className="w-full px-2 py-1 border border-gray-200 rounded-lg text-xs font-bold focus:ring-1 focus:ring-blue-500 outline-none text-right"
-                              />
-                            </td>
-                          ))}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Brand Coefficients Table */}
-              {(ownProductionConfig.brandCoefficients || []).length > 0 && (
-                <div className="overflow-x-auto rounded-xl border border-gray-100 mb-8 mt-6">
-                  <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                    Персональные коэффициенты по брендам
-                  </div>
-                  <table className="w-full text-left border-collapse bg-white">
-                    <thead>
-                      <tr className="border-b border-gray-100">
-                        <th className="py-2 px-4 text-[10px] font-bold text-gray-400 uppercase bg-gray-50/50">
-                          Категория / Бренд
-                        </th>
-                        <th className="py-2 px-4 text-[10px] font-bold text-gray-400 uppercase bg-gray-50/50 border-l border-gray-100">
-                          Розница
-                        </th>
-                        <th className="py-2 px-4 text-[10px] font-bold text-gray-400 uppercase bg-gray-50/50 border-l border-gray-100">
-                          Дизайнер
-                        </th>
-                        <th className="py-2 px-4 text-[10px] font-bold text-blue-600 uppercase bg-blue-50/30 border-l border-blue-100 text-center">
-                          Салон
-                        </th>
-                        {salonsInTable.map((s) => (
-                          <th
-                            key={s.id}
-                            className="py-2 px-4 text-[10px] font-bold text-gray-400 uppercase bg-gray-50/50 border-l border-gray-100"
-                          >
-                            {s.name}
-                          </th>
-                        ))}
-                        <th className="py-2 px-4 bg-gray-50/50"></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {ownProductionConfig.brandCoefficients?.map((bc) => (
-                        <tr
-                          key={bc.id}
-                          className="border-b border-gray-50 hover:bg-gray-50/30 transition-colors"
-                        >
-                          <td className="py-2 px-4 border-r border-gray-50">
-                            <div className="font-bold text-gray-700 text-[11px]">
-                              {bc.brand}
-                            </div>
-                            <div className="text-[9px] text-gray-400 font-medium uppercase">
-                              {
-                                categories.find((c) => c.id === bc.categoryId)
-                                  ?.label
-                              }
-                            </div>
-                          </td>
-                          <td className="py-1.5 px-4">
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={bc.retail}
-                              onChange={(e) =>
-                                updateBrandCoeff(
-                                  bc.id,
-                                  "retail",
-                                  parseFloat(e.target.value) || 0,
-                                )
-                              }
-                              className="w-full px-2 py-1 border border-gray-100 rounded-lg text-xs font-bold text-right"
-                            />
-                          </td>
-                          <td className="py-1.5 px-4 border-l border-gray-50">
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={bc.designer}
-                              onChange={(e) =>
-                                updateBrandCoeff(
-                                  bc.id,
-                                  "designer",
-                                  parseFloat(e.target.value) || 0,
-                                )
-                              }
-                              className="w-full px-2 py-1 border border-gray-100 rounded-lg text-xs font-bold text-right"
-                            />
-                          </td>
-                          <td className="py-1.5 px-4 border-l border-blue-50 bg-blue-50/5">
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={bc.standardSalon}
-                              onChange={(e) =>
-                                updateBrandCoeff(
-                                  bc.id,
-                                  "standardSalon",
-                                  parseFloat(e.target.value) || 0,
-                                )
-                              }
-                              className="w-full px-2 py-1 border border-blue-100 rounded-lg text-xs font-bold text-right bg-white"
-                            />
-                          </td>
-                          {salonsInTable.map((s) => (
-                            <td
-                              key={s.id}
-                              className="py-1.5 px-4 border-l border-gray-50"
-                            >
-                              <input
-                                type="number"
-                                step="0.01"
-                                value={
-                                  bc.salonCoeffs?.[s.id] ?? bc.standardSalon
-                                }
-                                onChange={(e) =>
-                                  updateBrandSalonCoeff(
-                                    bc.id,
-                                    s.id,
-                                    parseFloat(e.target.value) || 0,
-                                  )
-                                }
-                                className="w-full px-2 py-1 border border-gray-100 rounded-lg text-xs font-bold text-right"
-                              />
-                            </td>
-                          ))}
-                          <td className="py-1.5 px-4 text-center">
-                            <button
-                              onClick={() =>
-                                handleRemoveBrandCoefficient(bc.id)
-                              }
-                              className="text-gray-300 hover:text-red-500"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              <button
-                onClick={() => setShowBrandCoeffModal(true)}
-                className="w-full py-4 border-2 border-dashed border-gray-200 rounded-2xl text-gray-500 font-bold hover:border-blue-400 hover:text-blue-600 transition-all flex items-center justify-center gap-2 group"
-              >
-                <div className="w-8 h-8 bg-gray-50 rounded-lg flex items-center justify-center group-hover:bg-blue-50 transition-colors">
-                  <Target className="w-4 h-4" />
-                </div>
-                Указать персональный коэффициент для отдельного бренда
-              </button>
+              <CoefficientsTableSection
+                categories={categories}
+                coefficients={coefficients}
+                setCoefficients={setCoefficients}
+                ownProductionConfig={ownProductionConfig}
+                setOwnProductionConfig={setOwnProductionConfig}
+                salonsInTable={salonsInTable}
+                productCategories={productCategories}
+                newCategory={newCategory}
+                setNewCategory={setNewCategory}
+                handleAddCategory={handleAddCategory}
+                handleRemoveCategory={handleRemoveCategory}
+                setShowBrandCoeffModal={setShowBrandCoeffModal}
+                handleRemoveBrandCoefficient={handleRemoveBrandCoefficient}
+                onSaveSettings={onSaveSettings}
+                showAlert={showAlert}
+              />
             </section>
           </div>
         )}
@@ -16405,10 +16700,11 @@ const ReadyMadeProductsView = ({
       }
       let isPromoProduct = false;
       if (promotions && Array.isArray(promotions)) {
+        const cleanPId = String(p.id || p.parentProductId).split('_var_')[0];
         for (const promo of promotions) {
           if (promo.isActive === false) continue;
-          if (promo.promoType === 'discount' && promo.discountScopes?.includes('specific_products') && promo.targetProductIds?.includes(String(p.id))) isPromoProduct = true;
-          if (promo.promoType === 'cashback' && promo.cashbackScopes?.includes('specific_products') && promo.targetProductIds?.includes(String(p.id))) isPromoProduct = true;
+          if (promo.promoType === 'discount' && promo.discountScopes?.includes('specific_products') && promo.targetProductIds?.includes(cleanPId)) isPromoProduct = true;
+          if (promo.promoType === 'cashback' && promo.cashbackScopes?.includes('specific_products') && promo.targetProductIds?.includes(cleanPId)) isPromoProduct = true;
         }
       }
 
@@ -16490,9 +16786,11 @@ const ReadyMadeProductsView = ({
             onClick={() => {
               if (onAddNewProduct) {
                 onAddNewProduct();
-              } else if (setActiveTab) {
-                setSelectedCategory(selectedCategory || "Кухни");
-                setActiveTab("products");
+              } else {
+                // @ts-ignore
+                resetForm?.(selectedCategory || "Кухни");
+                // @ts-ignore
+                setIsAddingProduct?.(true);
               }
             }}
             className="flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-md shadow-blue-100 text-xs flex-shrink-0 cursor-pointer"
@@ -16585,13 +16883,14 @@ const ReadyMadeProductsView = ({
             let activePromos: any[] = [];
             let maxDiscount = 0;
             if (promotions && Array.isArray(promotions)) {
+              const cleanProdId = String(product.id || product.parentProductId).split('_var_')[0];
               for (const promo of promotions) {
                 if (promo.isActive === false) continue;
-                if (promo.promoType === 'discount' && promo.discountScopes?.includes('specific_products') && promo.targetProductIds?.includes(String(product.id || product.parentProductId))) {
+                if (promo.promoType === 'discount' && promo.discountScopes?.includes('specific_products') && promo.targetProductIds?.includes(cleanProdId)) {
                   activePromos.push(promo);
                   maxDiscount = Math.max(maxDiscount, promo.discountPercent || 0);
                 }
-                if (promo.promoType === 'cashback' && promo.cashbackScopes?.includes('specific_products') && promo.targetProductIds?.includes(String(product.id || product.parentProductId))) {
+                if (promo.promoType === 'cashback' && promo.cashbackScopes?.includes('specific_products') && promo.targetProductIds?.includes(cleanProdId)) {
                   activePromos.push(promo);
                 }
               }
@@ -16820,17 +17119,26 @@ const ReadyMadeProductsView = ({
                   <div className="pt-3 border-t border-gray-100 space-y-3">
                     <div className="flex items-baseline justify-between">
                       <span className="text-xs text-gray-400 font-semibold uppercase tracking-wider">Цена</span>
-                      <div className="text-right flex flex-col items-end">
-                        {maxDiscount > 0 && (
-                          <span className="text-[10px] text-gray-400 line-through">
-                            {originalFinalPrice.toLocaleString()} ₽
-                          </span>
-                        )}
-                        <span className="text-xl font-black text-gray-900 font-mono flex items-center gap-2">
-                          {maxDiscount > 0 && <span className="text-xs text-rose-500 font-bold">-{maxDiscount}%</span>}
-                          {finalPrice.toLocaleString()} ₽
-                        </span>
-                      </div>
+                      {(() => {
+                        const vatDetails = calculateVatDetails(finalPrice, product.vatRate ?? product.vat, product.includeVat);
+                        const origVatDetails = calculateVatDetails(originalFinalPrice, product.vatRate ?? product.vat, product.includeVat);
+                        return (
+                          <div className="text-right flex flex-col items-end">
+                            {maxDiscount > 0 && (
+                              <span className="text-[10px] text-gray-400 line-through">
+                                {origVatDetails.finalPrice.toLocaleString("ru-RU")} ₽
+                              </span>
+                            )}
+                            <span className="text-xl font-black text-gray-900 font-mono flex items-center gap-2">
+                              {maxDiscount > 0 && <span className="text-xs text-rose-500 font-bold">-{maxDiscount}%</span>}
+                              {vatDetails.finalPrice.toLocaleString("ru-RU")} ₽
+                            </span>
+                            <span className="text-[10px] text-gray-400 font-medium leading-tight mt-0.5">
+                              {vatDetails.vatText}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -16929,7 +17237,9 @@ const ProductsView = ({
   clearPendingProductAction,
   onHideProduct,
   onRestoreProduct,
+  modalOnly = false,
 }: {
+  modalOnly?: boolean;
   onAddProduct: (product: any, qty: number) => void;
   catalogProducts: any[];
   productCategories: string[];
@@ -17185,24 +17495,29 @@ const ProductsView = ({
     const cleanArt = (article || "").trim().toLowerCase();
     const cleanName = (name || "").trim().toLowerCase();
 
+    const norm = (s: string) => String(s || "").toLowerCase().replace(/[^a-z0-9а-яё]/gi, "");
+    const nMfg = norm(cleanMfg);
+    const nArt = norm(cleanArt);
+    const nName = norm(cleanName);
+
     // 1. Instant local search in catalogProducts
     let localMatches: any[] = [];
     if (catalogProducts && Array.isArray(catalogProducts)) {
       localMatches = catalogProducts.filter((p: any) => {
-        const pMfg = (p.manufacturerArticle || "").trim().toLowerCase();
-        const pArt = (p.article || "").trim().toLowerCase();
-        const pVend = (p.vendorArticle || "").trim().toLowerCase();
-        const pName = (p.name || "").trim().toLowerCase();
+        const pMfg = norm(p.manufacturerArticle);
+        const pArt = norm(p.article);
+        const pVend = norm(p.vendorArticle);
+        const pName = norm(p.name);
 
         const hasMatchingVariation = p.variations && Array.isArray(p.variations) && p.variations.some((v: any) => {
-          const vMfg = (v.manufacturerArticle || "").trim().toLowerCase();
-          const vArt = (v.article || "").trim().toLowerCase();
-          return (cleanMfg && (vMfg === cleanMfg || vMfg.includes(cleanMfg))) || (cleanArt && (vArt === cleanArt || vArt.includes(cleanArt)));
+          const vMfg = norm(v.manufacturerArticle);
+          const vArt = norm(v.article);
+          return (nMfg && (vMfg === nMfg || vMfg.includes(nMfg))) || (nArt && (vArt === nArt || vArt.includes(nArt)));
         });
 
-        const matchMfg = cleanMfg && (pMfg === cleanMfg || pMfg.includes(cleanMfg) || pArt === cleanMfg || pVend === cleanMfg || hasMatchingVariation);
-        const matchArt = cleanArt && (pArt === cleanArt || pVend === cleanArt || pMfg === cleanArt || hasMatchingVariation);
-        const matchName = cleanName && cleanName.length >= 3 && pName.includes(cleanName);
+        const matchMfg = nMfg && (pMfg === nMfg || pMfg.includes(nMfg) || pArt === nMfg || pVend === nMfg || hasMatchingVariation);
+        const matchArt = nArt && (pArt === nArt || pArt.includes(nArt) || pVend === nArt || pMfg === nArt || hasMatchingVariation);
+        const matchName = nName && nName.length >= 3 && pName.includes(nName);
 
         return matchMfg || matchArt || matchName;
       }).map((p: any) => ({
@@ -18392,10 +18707,11 @@ const ProductsView = ({
       
       let isPromo = false;
       if (promotions && Array.isArray(promotions)) {
+        const cleanPId = String(p.id || p.parentProductId).split('_var_')[0];
         for (const promo of promotions) {
           if (promo.isActive === false) continue;
-          if (promo.promoType === 'discount' && promo.discountScopes?.includes('specific_products') && promo.targetProductIds?.includes(String(p.id || p.parentProductId))) isPromo = true;
-          if (promo.promoType === 'cashback' && promo.cashbackScopes?.includes('specific_products') && promo.targetProductIds?.includes(String(p.id || p.parentProductId))) isPromo = true;
+          if (promo.promoType === 'discount' && promo.discountScopes?.includes('specific_products') && promo.targetProductIds?.includes(cleanPId)) isPromo = true;
+          if (promo.promoType === 'cashback' && promo.cashbackScopes?.includes('specific_products') && promo.targetProductIds?.includes(cleanPId)) isPromo = true;
         }
       }
 
@@ -19106,8 +19422,10 @@ const ProductsView = ({
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-8">
+      {!modalOnly && (
+        <>
+          {/* Header */}
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-8">
         <div>
           <h2 className="text-2xl font-bold text-gray-800">Каталог товаров</h2>
           <p className="text-sm text-gray-500">
@@ -20434,6 +20752,8 @@ const ProductsView = ({
           )}
         </div>
       )}
+        </>
+      )}
 
       {/* Product Modal */}
       {isAddingProduct && (
@@ -20456,10 +20776,58 @@ const ProductsView = ({
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-8">
+            <div className="flex-1 overflow-y-auto p-8 space-y-6">
+              {/* Категория товара на самом верхнем уровне */}
+              <div className="bg-blue-50/50 p-4 rounded-2xl border border-blue-100 shadow-sm">
+                <label className="block text-xs font-bold text-blue-900 uppercase tracking-wider mb-2">
+                  Категория товара (основной раздел)
+                </label>
+                <select
+                  value={newProduct.category}
+                  onChange={(e) => {
+                    const newCat = e.target.value;
+                    setNewProduct((prev: any) => ({
+                      ...prev,
+                      category: newCat,
+                      customCoeffRetail: globalCoefficients?.retail?.products?.[newCat] ?? 1.5,
+                      customCoeffWholesale: globalCoefficients?.wholesale?.products?.[newCat] ?? 1.3,
+                      customCoeffDesigner: globalCoefficients?.designer?.products?.[newCat] ?? 1.4,
+                    }));
+                  }}
+                  className="w-full px-4 py-3 bg-white border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-blue-950 text-base shadow-sm"
+                >
+                  {displayProductCategories.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                 {/* Left Side: Basic Info */}
                 <div className="space-y-6">
+                  <div>
+                    <label className="block text-sm font-bold text-gray-700 mb-2">
+                      Ед. измерения
+                    </label>
+                    <select
+                      value={newProduct.unit}
+                      onChange={(e) =>
+                        setNewProduct((prev) => ({
+                          ...prev,
+                          unit: e.target.value,
+                        }))
+                      }
+                      className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50 font-medium"
+                    >
+                      <option value="шт">Шт</option>
+                      <option value="компл">Комплект</option>
+                      <option value="м.п.">М.п.</option>
+                      <option value="упак">Упаковка</option>
+                    </select>
+                  </div>
+
                   <div>
                     <label className="block text-sm font-bold text-gray-700 mb-2">
                       Название товара
@@ -20481,23 +20849,50 @@ const ProductsView = ({
                   {!(newProduct.variations && newProduct.variations.length > 0) && (
                     <div className="grid grid-cols-1 gap-4">
                       <div>
-                        <label className="block text-sm font-bold text-gray-700 mb-2">
-                          Артикул
+                        <label className="block text-sm font-bold text-gray-700 mb-2 flex items-center justify-between">
+                          <span>Арт. производителя</span>
+                          <span className="text-[11px] font-normal text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">Поиск совпадений по каталогам</span>
                         </label>
                         <input
                           type="text"
-                          value={newProduct.article}
+                          value={newProduct.manufacturerArticle}
                           onChange={(e) =>
                             setNewProduct((prev) => ({
                               ...prev,
-                              article: e.target.value,
+                              manufacturerArticle: e.target.value,
                             }))
                           }
-                          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
-                          placeholder="Внутренний артикул"
+                          className="w-full px-4 py-3 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-blue-50/20 font-medium"
+                          placeholder="Введите артикул производителя"
                         />
                       </div>
+
+                      {/* Duplicate verification banner & results directly under Manufacturer Article */}
+                      {isCheckingDuplicates && (
+                        <div className="flex items-center gap-2 p-3 bg-blue-50/80 border border-blue-100 text-blue-800 rounded-xl text-xs font-semibold animate-pulse">
+                          <Search className="w-4 h-4 animate-spin text-blue-600" />
+                          <span>Ищем похожие товары по артикулу в каталогах...</span>
+                        </div>
+                      )}
+
                       <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-2">
+                            Внутренний артикул
+                          </label>
+                          <input
+                            type="text"
+                            value={newProduct.article}
+                            onChange={(e) =>
+                              setNewProduct((prev) => ({
+                                ...prev,
+                                article: e.target.value,
+                              }))
+                            }
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
+                            placeholder="Внутренний артикул"
+                          />
+                        </div>
                         <div>
                           <label className="block text-sm font-bold text-gray-700 mb-2">
                             Арт. поставщика
@@ -20512,33 +20907,10 @@ const ProductsView = ({
                               }))
                             }
                             className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-bold text-gray-700 mb-2">
-                            Арт. производителя
-                          </label>
-                          <input
-                            type="text"
-                            value={newProduct.manufacturerArticle}
-                            onChange={(e) =>
-                              setNewProduct((prev) => ({
-                                ...prev,
-                                manufacturerArticle: e.target.value,
-                              }))
-                            }
-                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
+                            placeholder="Арт. поставщика"
                           />
                         </div>
                       </div>
-                    </div>
-                  )}
-
-                  {/* Duplicate verification banner & results under articles */}
-                  {isCheckingDuplicates && (
-                    <div className="flex items-center gap-2 p-3 bg-blue-50/50 border border-blue-100 text-blue-800 rounded-xl text-xs font-semibold animate-pulse">
-                      <Search className="w-4 h-4 animate-spin" />
-                      <span>Ищем похожие товары по артикулу в каталогах...</span>
                     </div>
                   )}
 
@@ -20624,53 +20996,7 @@ const ProductsView = ({
                     </div>
                   )}
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-2">
-                        Категория
-                      </label>
-                      <select
-                        value={newProduct.category}
-                        onChange={(e) => {
-                          const newCat = e.target.value;
-                          setNewProduct((prev: any) => ({
-                            ...prev,
-                            category: newCat,
-                            customCoeffRetail: globalCoefficients?.retail?.products?.[newCat] ?? 1.5,
-                            customCoeffWholesale: globalCoefficients?.wholesale?.products?.[newCat] ?? 1.3,
-                            customCoeffDesigner: globalCoefficients?.designer?.products?.[newCat] ?? 1.4,
-                          }));
-                        }}
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
-                      >
-                        {displayProductCategories.map((c) => (
-                          <option key={c} value={c}>
-                            {c}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-bold text-gray-700 mb-2">
-                        Ед. измерения
-                      </label>
-                      <select
-                        value={newProduct.unit}
-                        onChange={(e) =>
-                          setNewProduct((prev) => ({
-                            ...prev,
-                            unit: e.target.value,
-                          }))
-                        }
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
-                      >
-                        <option value="шт">Шт</option>
-                        <option value="компл">Комплект</option>
-                        <option value="м.п.">М.п.</option>
-                        <option value="упак">Упаковка</option>
-                      </select>
-                    </div>
-                    {newProduct.category !== "Кухонные гарнитуры" && (
+                  {newProduct.category !== "Кухонные гарнитуры" && (
                       <div>
                         <label className="block text-sm font-bold text-gray-700 mb-2">
                           Сегменты товара (можно выбрать несколько)
@@ -25069,40 +25395,39 @@ const ProductsView = ({
                             <div className="p-1 bg-white rounded-lg border border-emerald-50">
                               <span className="text-[9px] text-gray-500 block">Розница</span>
                               <span className="font-bold text-xs text-emerald-950">
-                                {Math.round(newProduct.purchasePrice * (newProduct.customCoeffRetail || 0)).toLocaleString()} ₽
+                                {calculateVatDetails((newProduct.purchasePrice || 0) * (newProduct.customCoeffRetail || 0), (newProduct as any).vatRate ?? newProduct.vat, newProduct.includeVat).finalPrice.toLocaleString("ru-RU")} ₽
                               </span>
                             </div>
                             <div className="p-1 bg-white rounded-lg border border-emerald-50">
                               <span className="text-[9px] text-gray-500 block">Опт</span>
                               <span className="font-bold text-xs text-emerald-950">
-                                {Math.round(newProduct.purchasePrice * (newProduct.customCoeffWholesale || 0)).toLocaleString()} ₽
+                                {calculateVatDetails((newProduct.purchasePrice || 0) * (newProduct.customCoeffWholesale || 0), (newProduct as any).vatRate ?? newProduct.vat, newProduct.includeVat).finalPrice.toLocaleString("ru-RU")} ₽
                               </span>
                             </div>
                             <div className="p-1 bg-white rounded-lg border border-emerald-50">
                               <span className="text-[9px] text-gray-500 block">Дизайн</span>
                               <span className="font-bold text-xs text-emerald-950">
-                                {Math.round(newProduct.purchasePrice * (newProduct.customCoeffDesigner || 0)).toLocaleString()} ₽
+                                {calculateVatDetails((newProduct.purchasePrice || 0) * (newProduct.customCoeffDesigner || 0), (newProduct as any).vatRate ?? newProduct.vat, newProduct.includeVat).finalPrice.toLocaleString("ru-RU")} ₽
                               </span>
                             </div>
                           </div>
                         </div>
-                      ) : (() => {
-                          const activeCoeff = getProductCoefficient(newProduct, customerType, resolveBrandCoefficient);
-                          return (
-                            <>
-                              <div className="flex justify-between items-center text-sm font-bold text-blue-900 mb-1">
-                                <span>Итоговая цена для клиента:</span>
-                                <span className="text-xl">
-                                  {Math.round(newProduct.purchasePrice * activeCoeff).toLocaleString()} ₽
-                                </span>
-                              </div>
-                              <p className="text-[10px] text-blue-500 italic">
-                                * Рассчитано автоматически на основе коэффициента
-                                категории "{newProduct.category}" ({activeCoeff})
-                              </p>
-                            </>
-                          );
-                        })()}
+                      ) : (
+                        <div>
+                          <div className="flex justify-between items-center text-sm font-bold text-blue-900 mb-1">
+                            <span>Итоговая цена для клиента:</span>
+                            <span className="text-xl">
+                              {calculateVatDetails((newProduct.purchasePrice || 0) * getProductCoefficient(newProduct, customerType, resolveBrandCoefficient), (newProduct as any).vatRate ?? newProduct.vat, newProduct.includeVat).finalPrice.toLocaleString("ru-RU")} ₽
+                            </span>
+                          </div>
+                          <div className="text-[11px] font-medium text-blue-700 text-right mb-1">
+                            {calculateVatDetails((newProduct.purchasePrice || 0) * getProductCoefficient(newProduct, customerType, resolveBrandCoefficient), (newProduct as any).vatRate ?? newProduct.vat, newProduct.includeVat).vatText}
+                          </div>
+                          <p className="text-[10px] text-blue-500 italic">
+                            * Рассчитано автоматически на основе коэффициента категории &quot;{newProduct.category}&quot; ({getProductCoefficient(newProduct, customerType, resolveBrandCoefficient)})
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -25426,7 +25751,7 @@ const ProductsView = ({
                           .filter((p) => p.id !== (editingProduct?.id || null))
                           .map((p) => (
                             <option key={p.id} value={p.id} title={p.name}>
-                              [{p.category || "Без категории"}] {p.name.length > 45 ? p.name.substring(0, 43) + "..." : p.name} {p.article ? `| Арт: ${p.article}` : ""}
+                              [{p.category || "Без категории"}] {p.name.length > 45 ? p.name.substring(0, 43) + "..." : p.name} {p.article ? ("| Арт: " + p.article) : ""}
                             </option>
                           ))}
                       </select>
@@ -25466,7 +25791,7 @@ const ProductsView = ({
                           return (
                             <div key={idx} className="flex items-center justify-between p-2 bg-white rounded-xl border border-gray-100 text-xs">
                               <span className="font-semibold text-gray-700 truncate max-w-[200px] sm:max-w-[300px]" title={reqProduct?.name || reqId}>
-                                {reqProduct?.name || `Товар [ID: ${reqId}]`}
+                                {reqProduct?.name || ("Товар [ID: " + reqId + "]")}
                               </span>
                               <div className="flex items-center gap-2">
                                 <input
@@ -25527,20 +25852,17 @@ const ProductsView = ({
                   className="px-12 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2 justify-center"
                 >
                   {isSavingProduct ? (
-                    <>
+                    <span className="flex items-center gap-2">
                       <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
                       <span>Сохранение...</span>
-                    </>
-                  ) : editingProduct ? (
-                    "Сохранить изменения"
+                    </span>
                   ) : (
-                    "Добавить в каталог"
+                    editingProduct ? "Сохранить изменения" : "Добавить в каталог"
                   )}
                 </button>
               </div>
             </div>
           </div>
-        </div>
       )}
 
 
@@ -26029,8 +26351,10 @@ const ProductsView = ({
 
 
 
-      {/* Product List */}
-      {catalogProducts.length === 0 ? (
+      {!modalOnly && (
+        <>
+          {/* Product List */}
+          {catalogProducts.length === 0 ? (
         <div className="text-center py-20 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200">
           <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
           <h3 className="text-lg font-bold text-gray-800">
@@ -26061,13 +26385,14 @@ const ProductsView = ({
             let activePromos: any[] = [];
             let maxDiscount = 0;
             if (promotions && Array.isArray(promotions)) {
+              const cleanProdId = String(product.id || product.parentProductId).split('_var_')[0];
               for (const promo of promotions) {
                 if (promo.isActive === false) continue;
-                if (promo.promoType === 'discount' && promo.discountScopes?.includes('specific_products') && promo.targetProductIds?.includes(String(product.id || product.parentProductId))) {
+                if (promo.promoType === 'discount' && promo.discountScopes?.includes('specific_products') && promo.targetProductIds?.includes(cleanProdId)) {
                   activePromos.push(promo);
                   maxDiscount = Math.max(maxDiscount, promo.discountPercent || 0);
                 }
-                if (promo.promoType === 'cashback' && promo.cashbackScopes?.includes('specific_products') && promo.targetProductIds?.includes(String(product.id || product.parentProductId))) {
+                if (promo.promoType === 'cashback' && promo.cashbackScopes?.includes('specific_products') && promo.targetProductIds?.includes(cleanProdId)) {
                   activePromos.push(promo);
                 }
               }
@@ -26593,21 +26918,26 @@ const ProductsView = ({
                               minPurchasePrice = Math.min(minPurchasePrice, ...variationPrices);
                             }
                           }
-                          const originalDisplayPrice = Math.round(minPurchasePrice * coeff);
-                          const finalDisplayPrice = maxDiscount > 0 ? Math.round(originalDisplayPrice * (1 - maxDiscount / 100)) : originalDisplayPrice;
+                          const originalDisplayPrice = minPurchasePrice * coeff;
+                          const baseFinalPrice = maxDiscount > 0 ? originalDisplayPrice * (1 - maxDiscount / 100) : originalDisplayPrice;
+                          const vatDetails = calculateVatDetails(baseFinalPrice, product.vatRate ?? product.vat, product.includeVat);
+                          const origVatDetails = calculateVatDetails(originalDisplayPrice, product.vatRate ?? product.vat, product.includeVat);
 
                           return (
                             <div className="flex flex-col items-start">
                               {maxDiscount > 0 && (
                                 <span className="text-[10px] text-gray-400 line-through">
                                   {product.variations && product.variations.length > 0 ? "от " : ""}
-                                  {(originalDisplayPrice ?? 0).toLocaleString()} ₽
+                                  {origVatDetails.finalPrice.toLocaleString("ru-RU")} ₽
                                 </span>
                               )}
                               <span className="text-xl font-black text-gray-900 whitespace-nowrap flex items-center gap-2">
                                 {maxDiscount > 0 && <span className="text-xs text-rose-500 font-bold">-{maxDiscount}%</span>}
                                 {product.variations && product.variations.length > 0 ? "от " : ""}
-                                {(finalDisplayPrice ?? 0).toLocaleString()} ₽
+                                {vatDetails.finalPrice.toLocaleString("ru-RU")} ₽
+                              </span>
+                              <span className="text-[10px] text-gray-400 font-medium leading-tight mt-0.5">
+                                {vatDetails.vatText}
                               </span>
                             </div>
                           );
@@ -26707,6 +27037,8 @@ const ProductsView = ({
             Попробуйте изменить параметры поиска или категорию
           </p>
         </div>
+      )}
+        </>
       )}
 
       <BlockSaleModal
@@ -27343,7 +27675,16 @@ export default function App() {
               setCoefficients((prev: any) => ({ ...prev, products: data.coefficients || {} }));
             }
             if (key.includes('production')) {
-              const isContract = ("productionId" in data && data.productionId) || ("city" in data && data.city);
+              const isContract =
+                companyData?.type !== "Мебельное производство" ||
+                productionFormat === "contract" ||
+                ("cabinet" in data) ||
+                ("facades" in data) ||
+                ("hardware" in data) ||
+                ("assembly" in data) ||
+                ("delivery" in data) ||
+                ("productionId" in data && data.productionId) ||
+                ("city" in data && data.city);
               if (isContract) setContractConfig(data);
               else setOwnProductionConfig((prev: any) => ({ ...prev, ...data }));
             }
@@ -27450,7 +27791,16 @@ export default function App() {
       
       if (prodData) {
         await safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyId}/settings/production`, JSON.stringify(prodData));
-        const isContract = ("productionId" in prodData && prodData.productionId) || ("city" in prodData && prodData.city);
+        const isContract =
+          companyData?.type !== "Мебельное производство" ||
+          productionFormat === "contract" ||
+          ("cabinet" in prodData) ||
+          ("facades" in prodData) ||
+          ("hardware" in prodData) ||
+          ("assembly" in prodData) ||
+          ("delivery" in prodData) ||
+          ("productionId" in prodData && prodData.productionId) ||
+          ("city" in prodData && prodData.city);
         if (isContract) setContractConfig(prodData);
         else setOwnProductionConfig((prev: any) => ({ ...prev, ...prodData }));
       }
@@ -28895,7 +29245,16 @@ export default function App() {
         if (snapshot.exists()) {
           const data = snapshot.data();
           // Improved check: if it has common contract fields, it's a contract config
-          const isContract = ("productionId" in data && data.productionId) || ("city" in data && data.city);
+          const isContract =
+            companyData?.type !== "Мебельное производство" ||
+            productionFormat === "contract" ||
+            ("cabinet" in data) ||
+            ("facades" in data) ||
+            ("hardware" in data) ||
+            ("assembly" in data) ||
+            ("delivery" in data) ||
+            ("productionId" in data && data.productionId) ||
+            ("city" in data && data.city);
           
           if (isContract) {
             setContractConfig(data as ContractConfig);
@@ -29497,23 +29856,40 @@ export default function App() {
   };
 
   // Auto-save logic for production config
-  const lastSavedConfig = useRef<any>(null);
+  const lastSavedOwnConfig = useRef<any>(null);
+  const lastSavedContractConfig = useRef<any>(null);
   useEffect(() => {
-    if (!ownProductionConfig || !companyData?.id) return;
+    if (!companyData?.id) return;
+    const isOwn = companyData?.type === "Мебельное производство" || productionFormat === "own";
     
-    // Only save if config changed
-    if (JSON.stringify(lastSavedConfig.current) === JSON.stringify(ownProductionConfig)) return;
+    if (isOwn) {
+      if (!ownProductionConfig) return;
+      if (JSON.stringify(lastSavedOwnConfig.current) === JSON.stringify(ownProductionConfig)) return;
 
-    const timer = setTimeout(async () => {
-      try {
-        lastSavedConfig.current = ownProductionConfig;
-        await saveProductionConfig(ownProductionConfig, true);
-      } catch (e) {
-        console.error("Auto-save production failed", e);
-      }
-    }, 15000); // 15 sec debounce
-    return () => clearTimeout(timer);
-  }, [ownProductionConfig, companyData?.id]);
+      const timer = setTimeout(async () => {
+        try {
+          lastSavedOwnConfig.current = ownProductionConfig;
+          await saveProductionConfig(ownProductionConfig, true);
+        } catch (e) {
+          console.error("Auto-save own production failed", e);
+        }
+      }, 5000);
+      return () => clearTimeout(timer);
+    } else {
+      if (!contractConfig) return;
+      if (JSON.stringify(lastSavedContractConfig.current) === JSON.stringify(contractConfig)) return;
+
+      const timer = setTimeout(async () => {
+        try {
+          lastSavedContractConfig.current = contractConfig;
+          await saveProductionConfig(contractConfig, true);
+        } catch (e) {
+          console.error("Auto-save contract production failed", e);
+        }
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [ownProductionConfig, contractConfig, companyData?.id, companyData?.type, productionFormat]);
 
   // Auto-save logic for calculator
   useEffect(() => {
@@ -31870,35 +32246,6 @@ export default function App() {
 
                       {isSidebarOpen && isReadyMadeExpanded && (
                         <div className="pl-6 space-y-1 border-l-2 border-blue-100 ml-3 my-1">
-                          
-                          {(() => {
-                            let hasPromos = false;
-                            if (promotions && Array.isArray(promotions)) {
-                              for (const promo of promotions) {
-                                if (promo.isActive === false) continue;
-                                if (promo.promoType === 'discount' && promo.discountScopes?.includes('specific_products') && promo.targetProductIds?.length > 0) hasPromos = true;
-                                if (promo.promoType === 'cashback' && promo.cashbackScopes?.includes('specific_products') && promo.targetProductIds?.length > 0) hasPromos = true;
-                              }
-                            }
-                            if (!hasPromos) return null;
-                            return (
-                              <button
-                                onClick={() => {
-                                  setActiveTab("ready_made");
-                                  setSelectedReadyMadeCategory("Акционные товары");
-                                }}
-                                className={cn(
-                                  "w-full text-left px-2 py-1 rounded-md text-xs font-medium transition-all truncate flex items-center justify-between",
-                                  activeTab === "ready_made" && selectedReadyMadeCategory === "Акционные товары"
-                                    ? "bg-rose-50 text-rose-700 font-bold"
-                                    : "text-rose-500 hover:text-rose-700 hover:bg-rose-50"
-                                )}
-                              >
-                                <span>Акционные товары</span>
-                                <Percent className="w-3 h-3" />
-                              </button>
-                            );
-                          })()}
                           {(companyData?.readyMadeConfig?.categories || ["Кухни", "Шкафы", "Прихожие", "Столы", "Комоды"])
                             .filter((cat: string) => !(companyData?.readyMadeConfig?.disabledCategories || []).includes(cat))
                             .map((cat: string) => (
@@ -32472,22 +32819,13 @@ export default function App() {
               promotions={promotions}
               userRole={userRole}
               onAddNewProduct={() => {
-                setActiveTab("products");
-                setTimeout(() => {
-                  window.dispatchEvent(new CustomEvent("products_view_add_new", { detail: { category: selectedReadyMadeCategory || "Кухни" } }));
-                }, 100);
+                window.dispatchEvent(new CustomEvent("products_view_add_new", { detail: { category: selectedReadyMadeCategory || "Кухни" } }));
               }}
               onEditProduct={(product) => {
-                setActiveTab("products");
-                setTimeout(() => {
-                  window.dispatchEvent(new CustomEvent("products_view_edit", { detail: product }));
-                }, 100);
+                window.dispatchEvent(new CustomEvent("products_view_edit", { detail: product }));
               }}
               onCreateBasedOn={(product) => {
-                setActiveTab("products");
-                setTimeout(() => {
-                  window.dispatchEvent(new CustomEvent("products_view_create_copy", { detail: product }));
-                }, 100);
+                window.dispatchEvent(new CustomEvent("products_view_create_copy", { detail: product }));
               }}
               onDeleteProduct={(product) => {
                 if (userRole === 'admin' || userRole === 'supervisor') {
@@ -33156,19 +33494,26 @@ export default function App() {
                           <span className="text-[10px] text-gray-400 uppercase font-black">
                             Цена продажи
                           </span>
-                          <div className="text-2xl font-black text-gray-900">
-                            {(() => {
-                              const coeff = getProductCoefficient(selectedProductForDetail, customerType, resolveBrandCoefficient);
-                              const isKitchen = selectedProductForDetail.category === "Кухонные гарнитуры" || selectedProductForDetail.category === "Кухонный гарнитур";
-                              const displayPrice = isKitchen
-                                ? (selectedProductForDetail.price || 0)
-                                : (selectedProductForDetail.purchasePrice
-                                  ? Math.round(selectedProductForDetail.purchasePrice * coeff)
-                                  : selectedProductForDetail.price);
-                              return (displayPrice || 0).toLocaleString();
-                            })()}{" "}
-                            ₽
-                          </div>
+                          {(() => {
+                            const coeff = getProductCoefficient(selectedProductForDetail, customerType, resolveBrandCoefficient);
+                            const isKitchen = selectedProductForDetail.category === "Кухонные гарнитуры" || selectedProductForDetail.category === "Кухонный гарнитур";
+                            const baseSellingPrice = isKitchen
+                              ? (selectedProductForDetail.price || 0)
+                              : (selectedProductForDetail.purchasePrice
+                                ? selectedProductForDetail.purchasePrice * coeff
+                                : selectedProductForDetail.price || 0);
+                            const vatDetails = calculateVatDetails(baseSellingPrice, selectedProductForDetail.vatRate ?? selectedProductForDetail.vat, selectedProductForDetail.includeVat);
+                            return (
+                              <div>
+                                <div className="text-2xl font-black text-gray-900">
+                                  {vatDetails.finalPrice.toLocaleString("ru-RU")} ₽
+                                </div>
+                                <div className="text-[11px] font-medium text-gray-500 mt-0.5">
+                                  {vatDetails.vatText}
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
                         <div className="space-y-1">
                           <span className="text-[10px] text-gray-400 uppercase font-black">

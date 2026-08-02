@@ -730,34 +730,39 @@ function transliterate(str: string): string {
       if (!searchMfg && !cleanArticle && (!cleanName || cleanName.length < 3)) {
         return res.json([]);
       }
-      
+
+      const normMfg = searchMfg.replace(/[^a-z0-9а-яё]/gi, "");
+      const normArt = cleanArticle.replace(/[^a-z0-9а-яё]/gi, "");
+      const normName = cleanName.replace(/[^a-z0-9а-яё]/gi, "");
+
       let docs: any[] = [];
       if (searchMfg) {
+        const queryTerm = '%' + searchMfg + '%';
+        const queryNormTerm = normMfg ? '%' + normMfg + '%' : queryTerm;
         docs = await dbQueryWithRetry(() => prisma.$queryRaw<any[]>`
-          SELECT id, "docId", collection, path,
-            REGEXP_REPLACE(data, 'data:image/[^"]+', '', 'g') as data
+          SELECT id, "docId", collection, path, data
           FROM "DbDocument"
           WHERE collection LIKE 'companies/%/products'
-            AND LOWER(data) LIKE ${'%' + searchMfg + '%'}
-          LIMIT 25
+            AND (LOWER(data) LIKE ${queryTerm} OR LOWER(data) LIKE ${queryNormTerm})
+          LIMIT 35
         `);
       } else if (cleanArticle) {
+        const queryTerm = '%' + cleanArticle + '%';
+        const queryNormTerm = normArt ? '%' + normArt + '%' : queryTerm;
         docs = await dbQueryWithRetry(() => prisma.$queryRaw<any[]>`
-          SELECT id, "docId", collection, path,
-            REGEXP_REPLACE(data, 'data:image/[^"]+', '', 'g') as data
+          SELECT id, "docId", collection, path, data
           FROM "DbDocument"
           WHERE collection LIKE 'companies/%/products'
-            AND LOWER(data) LIKE ${'%' + cleanArticle + '%'}
-          LIMIT 25
+            AND (LOWER(data) LIKE ${queryTerm} OR LOWER(data) LIKE ${queryNormTerm})
+          LIMIT 35
         `);
       } else if (cleanName && cleanName.length >= 3) {
         docs = await dbQueryWithRetry(() => prisma.$queryRaw<any[]>`
-          SELECT id, "docId", collection, path,
-            REGEXP_REPLACE(data, 'data:image/[^"]+', '', 'g') as data
+          SELECT id, "docId", collection, path, data
           FROM "DbDocument"
           WHERE collection LIKE 'companies/%/products'
             AND LOWER(data) LIKE ${'%' + cleanName + '%'}
-          LIMIT 25
+          LIMIT 35
         `);
       }
       
@@ -772,6 +777,8 @@ function transliterate(str: string): string {
       const duplicates: any[] = [];
       const seenIds = new Set<string>();
 
+      const normalize = (s: string) => String(s || "").toLowerCase().replace(/[^a-z0-9а-яё]/gi, "");
+
       for (const doc of normalizedDocs) {
         let data: any = {};
         try {
@@ -780,20 +787,25 @@ function transliterate(str: string): string {
           continue;
         }
 
-        const mfgArt = data.manufacturerArticle ? String(data.manufacturerArticle).trim().toLowerCase() : "";
-        const art = data.article ? String(data.article).trim().toLowerCase() : "";
-        const vArt = data.vendorArticle ? String(data.vendorArticle).trim().toLowerCase() : "";
-        const nName = data.name ? String(data.name).trim().toLowerCase() : "";
+        const mfgArt = data.manufacturerArticle ? String(data.manufacturerArticle) : "";
+        const art = data.article ? String(data.article) : "";
+        const vArt = data.vendorArticle ? String(data.vendorArticle) : "";
+        const nName = data.name ? String(data.name) : "";
+
+        const nMfgArt = normalize(mfgArt);
+        const nArt = normalize(art);
+        const nVArt = normalize(vArt);
+        const nNameStr = normalize(nName);
 
         const hasMatchingVariation = data.variations && Array.isArray(data.variations) && data.variations.some((v: any) => {
-          const vMfg = v.manufacturerArticle ? String(v.manufacturerArticle).trim().toLowerCase() : "";
-          const vArt = v.article ? String(v.article).trim().toLowerCase() : "";
-          return (searchMfg && (vMfg === searchMfg || vMfg.includes(searchMfg))) || (cleanArticle && (vArt === cleanArticle || vArt.includes(cleanArticle)));
+          const vMfg = normalize(v.manufacturerArticle);
+          const vArt = normalize(v.article);
+          return (normMfg && (vMfg === normMfg || vMfg.includes(normMfg))) || (normArt && (vArt === normArt || vArt.includes(normArt)));
         });
         
-        const matchMfg = searchMfg && (mfgArt === searchMfg || mfgArt.includes(searchMfg) || art === searchMfg || vArt === searchMfg || hasMatchingVariation);
-        const matchArticle = cleanArticle && (art === cleanArticle || art.includes(cleanArticle) || vArt === cleanArticle || mfgArt === cleanArticle || hasMatchingVariation);
-        const matchName = cleanName && cleanName.length >= 3 && nName.includes(cleanName);
+        const matchMfg = normMfg && (nMfgArt === normMfg || nMfgArt.includes(normMfg) || nArt === normMfg || nVArt === normMfg || hasMatchingVariation);
+        const matchArticle = normArt && (nArt === normArt || nArt.includes(normArt) || nVArt === normArt || nMfgArt === normArt || hasMatchingVariation);
+        const matchName = normName && normName.length >= 3 && nNameStr.includes(normName);
         
         if (matchMfg || matchArticle || matchName) {
           const ukey = `${doc.collection}-${doc.docId}`;
