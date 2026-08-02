@@ -42,6 +42,9 @@ async function setDoc(docRef: any, data: any, options?: any) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ data })
   });
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("meb_sync_completed"));
+  }
 }
 async function updateDoc(docRef: any, data: any, options?: any) {
   await fetch(`/api/db/doc/${docRef.path}`, {
@@ -49,6 +52,9 @@ async function updateDoc(docRef: any, data: any, options?: any) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ data, merge: options?.merge })
   });
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("meb_sync_completed"));
+  }
 }
 function writeBatch(db: any) {
   const operations: any[] = [];
@@ -72,26 +78,50 @@ async function deleteDoc(docRef: any) {
   }
 }
 function onSnapshot(ref: any, callback: (snap: any) => void) {
+  const isCol = ref.path.split('/').length % 2 !== 0;
   const fetchData = async () => {
     try {
-      const res = await fetch(`/api/db/col/${ref.path}`);
+      const url = isCol ? `/api/db/col/${ref.path}` : `/api/db/doc/${ref.path}`;
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
-        callback({
-          docs: data.map((d: any) => ({
-            id: d.id,
-            data: () => d.data,
+        if (isCol) {
+          callback({
+            docs: data.map((d: any) => ({
+              id: d.id,
+              data: () => d.data,
+              exists: () => true
+            })),
+            size: data.length
+          });
+        } else {
+          callback({
+            id: ref.path.split('/').pop(),
+            data: () => data,
             exists: () => true
-          })),
-          size: data.length
-        });
+          });
+        }
       }
     } catch (e) {
       console.error("Snapshot error:", e);
     }
   };
+  
   fetchData();
-  return () => {};
+  
+  const interval = setInterval(fetchData, 45000);
+  
+  const handleSync = () => fetchData();
+  if (typeof window !== "undefined") {
+    window.addEventListener("meb_sync_completed", handleSync);
+  }
+
+  return () => {
+    clearInterval(interval);
+    if (typeof window !== "undefined") {
+      window.removeEventListener("meb_sync_completed", handleSync);
+    }
+  };
 }
 function query(ref: any, ...constraints: any[]) { return ref; }
 function where(field: string, op: string, value: any) { return {}; }
@@ -221,6 +251,7 @@ export const ProjectsView = ({
   const [isStandaloneGroupCollapsed, setIsStandaloneGroupCollapsed] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
   const [sortBy, setSortBy] = useState<"date-desc" | "date-asc" | "price-desc" | "price-asc">("date-desc");
+  const [isCreatingSet, setIsCreatingSet] = useState(false);
 
   const handleTransfer = async (e: React.MouseEvent, project: Project) => {
     e.stopPropagation();
@@ -436,6 +467,7 @@ export const ProjectsView = ({
     if (selectedProjects.length === 0) return;
 
     try {
+      setIsCreatingSet(true);
       const setId = `set-${Date.now()}`;
       const setDocRef = doc(db, "companies", companyId, "sets", setId);
 
@@ -486,6 +518,11 @@ export const ProjectsView = ({
 
       await batch.commit();
 
+      // Trigger immediate sync
+      if (typeof window !== "undefined" && (window as any).triggerSync) {
+        (window as any).triggerSync();
+      }
+
       if (showAlert) {
         showAlert("Успешно", `Комплект "${defaultName}" успешно создан`);
       }
@@ -494,6 +531,8 @@ export const ProjectsView = ({
       if (showAlert) {
         showAlert("Ошибка", "Не удалось создать комплект");
       }
+    } finally {
+      setIsCreatingSet(false);
     }
 
     // Reset selection
@@ -868,10 +907,15 @@ export const ProjectsView = ({
             {isSelectionMode && (
               <button
                 onClick={handleCreateSet}
-                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-100 animate-in zoom-in duration-300"
+                disabled={isCreatingSet}
+                className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-bold shadow-lg shadow-indigo-100 animate-in zoom-in duration-300 disabled:opacity-50"
               >
-                <Combine className="w-4 h-4" />
-                Создать комплект ({selectedProjectIds.size})
+                {isCreatingSet ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Combine className="w-4 h-4" />
+                )}
+                {isCreatingSet ? "Создание..." : `Создать комплект (${selectedProjectIds.size})`}
               </button>
             )}
 

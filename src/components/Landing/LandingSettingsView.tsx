@@ -39,7 +39,7 @@ interface LandingSettingsViewProps {
   companyData: any;
   setCompanyData: React.Dispatch<React.SetStateAction<any>>;
   productCategories: string[];
-  onSaveSettings: (silent?: boolean) => Promise<void>;
+  onSaveSettings: (silent?: boolean, overrides?: any) => Promise<void>;
   showAlert: (title: string, message: string) => void;
 }
 

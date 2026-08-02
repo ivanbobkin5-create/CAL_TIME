@@ -8,7 +8,7 @@ import {
 import {
   arrayMove,
   SortableContext,
-  verticalListSortingSSortingStrategy,
+  verticalListSortingStrategy,
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -639,10 +639,10 @@ async function triggerSync() {
 }
 
 if (typeof window !== "undefined") {
+  (window as any).triggerSync = triggerSync;
   window.addEventListener('online', () => {
     triggerSync();
   });
-  setInterval(triggerSync, 30000);
 }
 
 function applyPendingWrites(url: string, data: any) {
@@ -967,7 +967,7 @@ const activePollingSubscriptions = new Map<string, {
   lastFetchedText: string | null;
 }>();
 
-function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any) => void, intervalMs: number = 15000) { 
+function onSnapshot(ref: any, callback: (snap: any) => void, errorCb?: (err: any) => void, intervalMs: number = 45000) { 
   const isCol = ref.path.split('/').length % 2 !== 0;
   const colUrl = `/api/db/col/${ref.path}`;
   const docUrl = `/api/db/doc/${ref.path}`;
@@ -27522,6 +27522,11 @@ export default function App() {
   });
 
   useEffect(() => {
+    const syncInterval = setInterval(triggerSync, 60000);
+    return () => clearInterval(syncInterval);
+  }, []);
+
+  useEffect(() => {
     const checkCustomDomain = async () => {
       if (!isCheckingDomain) return;
       const hostname = window.location.hostname;
@@ -28976,7 +28981,7 @@ export default function App() {
         : [...currentIds, salonId];
       
       const updated = { ...prev, specialConditionIds: newIds };
-      // Save immediately for better UX on toggles
+      // Сохраняем немедленно
       saveGeneralSettings(true, { ownProductionConfig: updated });
       return updated;
     });
@@ -32959,21 +32964,21 @@ export default function App() {
               userRole={userRole}
               onAddNewProduct={() => {
                 setActiveTab("products");
-                setSelectedCategory(selectedReadyMadeCategory || "Кухни");
+                setSelectedProductCategory(selectedReadyMadeCategory || "Кухни");
                 setTimeout(() => {
                   window.dispatchEvent(new CustomEvent("products_view_add_new", { detail: { category: selectedReadyMadeCategory || "Кухни" } }));
                 }, 400);
               }}
               onEditProduct={(product) => {
                 setActiveTab("products");
-                setSelectedCategory(product.category);
+                setSelectedProductCategory(product.category);
                 setTimeout(() => {
                   window.dispatchEvent(new CustomEvent("products_view_edit", { detail: product }));
                 }, 400);
               }}
               onCreateBasedOn={(product) => {
                 setActiveTab("products");
-                setSelectedCategory(product.category);
+                setSelectedProductCategory(product.category);
                 setTimeout(() => {
                   window.dispatchEvent(new CustomEvent("products_view_create_copy", { detail: product }));
                 }, 400);
