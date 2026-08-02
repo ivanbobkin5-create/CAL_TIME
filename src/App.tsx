@@ -12147,7 +12147,7 @@ const CoefficientsTableSection = ({
   handleRemoveCategory: (cat: string) => void;
   setShowBrandCoeffModal: (val: boolean) => void;
   handleRemoveBrandCoefficient: (id: string) => void;
-  onSaveSettings: (silent?: boolean) => Promise<void>;
+  onSaveSettings: (silent?: boolean, overrides?: any) => Promise<void>;
   showAlert: (title: string, message: string) => void;
 }) => {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -12315,25 +12315,29 @@ const CoefficientsTableSection = ({
       };
     });
 
-    setCoefficients((prev: any) => ({
-      ...prev,
+    const newCoeffs = {
+      ...coefficients,
       retail: updatedRetail,
       designer: updatedDesigner,
-    }));
-
-    setOwnProductionConfig((prev) => ({
-      ...prev,
+    };
+    const newOwnConfig = {
+      ...ownProductionConfig,
       standardCoefficients: newStandardCoeffs,
       salonCoefficients: newSalonCoeffs,
       brandCoefficients: newBrandCoeffs,
-    }));
+    };
+
+    setCoefficients(newCoeffs);
+    setOwnProductionConfig(newOwnConfig);
+    
+    return { newCoeffs, newOwnConfig };
   }, [categories, coefficients, ownProductionConfig, salonsInTable, drafts]);
 
   const commitAndSave = async () => {
     setIsSaving(true);
     try {
-      syncDraftsToParent();
-      await onSaveSettings(false);
+      const overrides = syncDraftsToParent();
+      await onSaveSettings(false, overrides ? { coefficients: overrides.newCoeffs, ownProductionConfig: overrides.newOwnConfig } : undefined);
       setHasUnsavedChanges(false);
       showAlert("Сохранено", "Коэффициенты успешно сохранены.");
     } catch (e) {
@@ -12758,7 +12762,7 @@ const SettingsView = ({
   productionFormat: string;
   productionSettings: any;
   companyType?: string;
-  onSaveSettings: (silent?: boolean) => Promise<void>;
+  onSaveSettings: (silent?: boolean, overrides?: any) => Promise<void>;
   salonsUsingMe: any[];
   salonsInTable: any[];
   toggleSpecialCondition: (id: string) => void;
@@ -25532,7 +25536,6 @@ const ProductsView = ({
                       )}
                     </div>
                   </div>
-                </div>
 
                 {/* Right Side: Media & Details */}
                 <div className="space-y-6">
@@ -25966,6 +25969,7 @@ const ProductsView = ({
               </button>
             </div>
           </div>
+        </div>
       )}
 
 
@@ -30750,7 +30754,7 @@ export default function App() {
     }
   };
 
-  const saveGeneralSettings = async (silent: boolean = false) => {
+  const saveGeneralSettings = async (silent: boolean = false, overrides?: any) => {
     if (!companyData?.id) return;
     touchSettingsLocal();
     lastTypedSpecificationConfigRef.current = Date.now();
@@ -30764,7 +30768,7 @@ export default function App() {
         setDoc(
           doc(db, "companies", companyData.id, "settings", "general"),
           {
-            coefficients,
+            coefficients: overrides?.coefficients || coefficients,
             calcMode,
             trimming,
             sawKerf,
@@ -30789,7 +30793,7 @@ export default function App() {
         ),
         setDoc(
           doc(db, "companies", companyData.id, "settings", "production"),
-          isOwn ? ownProductionConfig : contractConfig,
+          isOwn ? (overrides?.ownProductionConfig || ownProductionConfig) : contractConfig,
           { merge: true },
         ),
         setDoc(
