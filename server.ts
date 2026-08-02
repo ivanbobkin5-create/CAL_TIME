@@ -15,11 +15,11 @@ let adjustedDbUrl: string | undefined = undefined;
 if (dbUrl) {
   try {
     const urlObj = new URL(dbUrl);
-    urlObj.searchParams.set("connection_limit", "5");
-    urlObj.searchParams.set("pool_timeout", "10");
+    urlObj.searchParams.set("connection_limit", "20");
+    urlObj.searchParams.set("pool_timeout", "30");
     adjustedDbUrl = urlObj.toString();
   } catch (e) {
-    adjustedDbUrl = dbUrl + (dbUrl.includes("?") ? "&" : "?") + "connection_limit=5&pool_timeout=10";
+    adjustedDbUrl = dbUrl + (dbUrl.includes("?") ? "&" : "?") + "connection_limit=20&pool_timeout=30";
   }
 }
 
