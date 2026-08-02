@@ -15,11 +15,11 @@ let adjustedDbUrl: string | undefined = undefined;
 if (dbUrl) {
   try {
     const urlObj = new URL(dbUrl);
-    urlObj.searchParams.set("connection_limit", "30");
-    urlObj.searchParams.set("pool_timeout", "0");
+    urlObj.searchParams.set("connection_limit", "5");
+    urlObj.searchParams.set("pool_timeout", "10");
     adjustedDbUrl = urlObj.toString();
   } catch (e) {
-    adjustedDbUrl = dbUrl + (dbUrl.includes("?") ? "&" : "?") + "connection_limit=30&pool_timeout=0";
+    adjustedDbUrl = dbUrl + (dbUrl.includes("?") ? "&" : "?") + "connection_limit=5&pool_timeout=10";
   }
 }
 
@@ -734,27 +734,30 @@ function transliterate(str: string): string {
       let docs: any[] = [];
       if (searchMfg) {
         docs = await dbQueryWithRetry(() => prisma.$queryRaw<any[]>`
-          SELECT id, "docId", collection, path, data
+          SELECT id, "docId", collection, path,
+            REGEXP_REPLACE(data, 'data:image/[^"]+', '', 'g') as data
           FROM "DbDocument"
           WHERE collection LIKE 'companies/%/products'
             AND LOWER(data) LIKE ${'%' + searchMfg + '%'}
-          LIMIT 50
+          LIMIT 25
         `);
       } else if (cleanArticle) {
         docs = await dbQueryWithRetry(() => prisma.$queryRaw<any[]>`
-          SELECT id, "docId", collection, path, data
+          SELECT id, "docId", collection, path,
+            REGEXP_REPLACE(data, 'data:image/[^"]+', '', 'g') as data
           FROM "DbDocument"
           WHERE collection LIKE 'companies/%/products'
             AND LOWER(data) LIKE ${'%' + cleanArticle + '%'}
-          LIMIT 50
+          LIMIT 25
         `);
       } else if (cleanName && cleanName.length >= 3) {
         docs = await dbQueryWithRetry(() => prisma.$queryRaw<any[]>`
-          SELECT id, "docId", collection, path, data
+          SELECT id, "docId", collection, path,
+            REGEXP_REPLACE(data, 'data:image/[^"]+', '', 'g') as data
           FROM "DbDocument"
           WHERE collection LIKE 'companies/%/products'
             AND LOWER(data) LIKE ${'%' + cleanName + '%'}
-          LIMIT 50
+          LIMIT 25
         `);
       }
       
@@ -867,8 +870,31 @@ function transliterate(str: string): string {
       res.setHeader("Expires", "0");
       res.setHeader("Surrogate-Control", "no-store");
       
-      const docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({ where: { collection: colPath } }));
-      let mapped = docs.map(d => ({ id: d.docId, data: JSON.parse(d.data), path: d.path }));
+      let docs: any[] = [];
+      if (colPath.endsWith("/products")) {
+        docs = await dbQueryWithRetry(() => prisma.$queryRaw<any[]>`
+          SELECT id, "docId", collection, path,
+            REGEXP_REPLACE(data, 'data:image/[^"]+', '', 'g') as data
+          FROM "DbDocument"
+          WHERE collection = ${colPath}
+        `);
+      } else {
+        docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({ where: { collection: colPath } }));
+      }
+
+      let mapped = docs.map(d => {
+        let parsedData: any = {};
+        try {
+          parsedData = typeof d.data === 'string' ? JSON.parse(d.data) : (d.data || {});
+        } catch {
+          parsedData = {};
+        }
+        return {
+          id: d.docId || d.docid || d.id,
+          data: parsedData,
+          path: d.path
+        };
+      });
       
       // If fetching a products collection, strip heavy images for high-speed, lightweight delivery
       if (colPath.endsWith("/products")) {
