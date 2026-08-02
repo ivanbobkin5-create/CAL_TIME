@@ -13,6 +13,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { ProductRequiredProductsList } from "./components/ProductRequiredProductsList";
+import { BlockSaleModal, isSaleBlocked, formatBlockedUntil } from "./components/BlockSaleModal";
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
@@ -112,6 +113,7 @@ import {
   Info,
   PlayCircle,
   Eye,
+  EyeOff,
   Image as ImageIconIcon,
   Upload,
   Palette,
@@ -3471,6 +3473,7 @@ const PriceView = ({
   setEdgePrices,
   customEdgeMapping,
   setCustomEdgeMapping,
+  resolveBrandCoefficient,
 }: {
   calcMode: string;
   prices: Record<string, number>;
@@ -3510,6 +3513,7 @@ const PriceView = ({
   setEdgePrices: React.Dispatch<React.SetStateAction<Record<string, number>>>;
   customEdgeMapping?: Record<string, { edgeBrand?: string; edgeDecor?: string }>;
   setCustomEdgeMapping?: React.Dispatch<React.SetStateAction<Record<string, { edgeBrand?: string; edgeDecor?: string }>>>;
+  resolveBrandCoefficient?: (category: string, brand?: string) => number;
 }) => {
   const [priceSearch, setPriceSearch] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -4684,12 +4688,18 @@ const PriceView = ({
                                     <div className="w-32 ml-auto">
                                       <PriceInputWithSave
                                         priceKey={srv.name}
-                                        value={prices[srv.name] !== undefined ? prices[srv.name] : srv.price || 0}
+                                        value={
+                                          prices[srv.name] !== undefined
+                                            ? prices[srv.name]
+                                            : !isProduction && isCreatedByProd
+                                            ? Math.round((srv.price || 0) * (resolveBrandCoefficient ? resolveBrandCoefficient("services", "") : 1))
+                                            : srv.price || 0
+                                        }
                                         setPrices={setPrices}
                                         db={db}
                                         auth={auth}
                                         userRole={userRole}
-                                        canEdit={canEdit}
+                                        canEdit={canEdit && !(!isProduction && isCreatedByProd)}
                                         prices={prices}
                                         onShowHistory={onShowHistory}
                                         logPriceChange={logPriceChange}
@@ -5937,7 +5947,7 @@ const CalculatorView = ({
             </div>
             <div className="mt-4">
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Толщина реза (мм)
+                {cuttingType === "nesting" ? "Диаметр фрезы (мм)" : "Толщина реза пилы (мм)"}
               </label>
               <input
                 type="number"
@@ -9812,10 +9822,15 @@ const SummaryView = ({
 
   // Add Added Services
   addedServices.forEach((service) => {
-    const coeff = resolveBrandCoefficient("services", ""); // Fallback to general service markup
-    const displayPrice = service.purchasePrice
-      ? Math.round(service.purchasePrice * coeff)
-      : service.price;
+    const isFromProd = service.isProductionService || service.createdByProduction || (!service.createdBySalon && !isProduction);
+    const serviceCoeff = resolveBrandCoefficient("services", "");
+    const purchasePrice = service.purchasePrice !== undefined ? service.purchasePrice : service.price;
+    let displayPrice = service.price;
+    if (isSalonOrDesigner && isFromProd && purchasePrice) {
+      displayPrice = Math.round(purchasePrice * serviceCoeff);
+    } else if (service.purchasePrice && !service.price) {
+      displayPrice = Math.round(service.purchasePrice * serviceCoeff);
+    }
 
     const isManualService =
       service.price === undefined &&
@@ -9829,11 +9844,13 @@ const SummaryView = ({
         ? `От поставщика: ${service.supplier}`
         : "Услуги производства",
       decor: "-",
-      qty: `${service.quantity} ${service.unit}`,
+      qty: `${service.quantity} ${service.unit || "шт"}`,
       price: displayPrice,
       total: displayPrice * service.quantity,
-      coef: coeff,
+      coef: serviceCoeff,
       isManual: isManualService,
+      rawPrice: purchasePrice,
+      isFromProduction: isFromProd,
     });
   });
 
@@ -10292,7 +10309,8 @@ const SummaryView = ({
         row.type === "material" ||
         row.type === "edge" ||
         (rawProd && (rawProd.source === "manufacturer" || rawProd.isManufacturer || rawProd.fromProduction)) ||
-        (row.type === "product" && !rawProd);
+        (row.type === "product" && !rawProd) ||
+        (row.type === "service" && row.isFromProduction);
 
       const qty = parseFloat(row.qty) || 1;
       const retailTotal = row.netPaid !== undefined ? row.netPaid : row.total;
@@ -12044,6 +12062,10 @@ const SettingsView = ({
   setCalcMode,
   trimming,
   setTrimming,
+  sawKerf,
+  setSawKerf,
+  cutterDiameter,
+  setCutterDiameter,
   defaultCuttingType,
   setDefaultCuttingType,
   hardwareKitPrice,
@@ -12114,6 +12136,10 @@ const SettingsView = ({
   setCalcMode: React.Dispatch<React.SetStateAction<"sheet" | "area">>;
   trimming: number;
   setTrimming: React.Dispatch<React.SetStateAction<number>>;
+  sawKerf: number;
+  setSawKerf: React.Dispatch<React.SetStateAction<number>>;
+  cutterDiameter: number;
+  setCutterDiameter: React.Dispatch<React.SetStateAction<number>>;
   defaultCuttingType: "saw" | "nesting";
   setDefaultCuttingType: React.Dispatch<
     React.SetStateAction<"saw" | "nesting">
@@ -13267,6 +13293,35 @@ const SettingsView = ({
                 <div className="flex items-center justify-between gap-4 p-4 bg-gray-50 rounded-xl">
                   <div>
                     <span className="font-bold text-gray-700 block">
+                      {defaultCuttingType === "nesting" ? "Диаметр фрезы (нестинг), мм" : "Толщина реза пилы, мм"}
+                    </span>
+                    <span className="text-xs text-gray-500">
+                      {defaultCuttingType === "nesting" ? "Диаметр концевой фрезы при нестинг раскрое" : "Ширина пропила пильного диска при раскрое"}
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    value={defaultCuttingType === "nesting" ? cutterDiameter : sawKerf}
+                    onChange={(e) => {
+                      if (isContract) return;
+                      const val = parseFloat(e.target.value) || 0;
+                      if (defaultCuttingType === "nesting") {
+                        setCutterDiameter(val);
+                      } else {
+                        setSawKerf(val);
+                      }
+                    }}
+                    disabled={isContract}
+                    className={cn(
+                      "w-24 p-2 border border-gray-200 rounded-lg text-right font-bold focus:ring-2 focus:ring-blue-500 outline-none",
+                      isContract && "bg-gray-100 text-gray-500 cursor-not-allowed",
+                    )}
+                  />
+                </div>
+
+                <div className="flex items-center justify-between gap-4 p-4 bg-gray-50 rounded-xl">
+                  <div>
+                    <span className="font-bold text-gray-700 block">
                       Обпил листа (мм)
                     </span>
                     <span className="text-xs text-gray-500">
@@ -13368,6 +13423,11 @@ const SettingsView = ({
                       id: "hardware",
                       label: "Фурнитура",
                       sub: "На комплектующие",
+                    },
+                    {
+                      id: "services",
+                      label: "Услуги производства",
+                      sub: "На работы / услуги",
                     },
                   ].map((item) => (
                     <div key={item.id} className="p-4 bg-gray-50 rounded-xl">
@@ -15525,21 +15585,34 @@ const ServiceItem = ({
   service,
   defaultPrice,
   onAdd,
+  isSalonOrDesigner,
+  isProduction,
+  serviceCoeff = 1,
 }: {
   service: any;
   defaultPrice: number;
   onAdd: (service: any, qty: number, price: number) => void;
+  isSalonOrDesigner?: boolean;
+  isProduction?: boolean;
+  serviceCoeff?: number;
 }) => {
   const [qty, setQty] = useState(1);
+  const isCreatedByProd = service.isProductionService || service.createdByProduction || (!service.createdBySalon && !isProduction);
+  
+  const basePrice = defaultPrice > 0 ? defaultPrice : (service.price || 0);
+  const retailPrice = isSalonOrDesigner && isCreatedByProd
+    ? Math.round(basePrice * serviceCoeff)
+    : basePrice;
+
   const [customPrice, setCustomPrice] = useState<string | number>(
-    defaultPrice > 0 ? defaultPrice : "",
+    retailPrice > 0 ? retailPrice : "",
   );
 
   useEffect(() => {
-    if (defaultPrice > 0) {
-      setCustomPrice(defaultPrice);
+    if (retailPrice > 0) {
+      setCustomPrice(retailPrice);
     }
-  }, [defaultPrice]);
+  }, [retailPrice]);
 
   const currentPrice =
     typeof customPrice === "number"
@@ -15549,22 +15622,38 @@ const ServiceItem = ({
   return (
     <div className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex flex-col md:flex-row md:items-center justify-between gap-4">
       <div className="flex-1">
-        <h3 className="font-bold text-gray-800">{service.name}</h3>
-        <div className="flex items-center gap-3 mt-2">
+        <div className="flex items-center gap-2">
+          <h3 className="font-bold text-gray-800">{service.name}</h3>
+          {isCreatedByProd && !isProduction && (
+            <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full shrink-0">
+              От производства
+            </span>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center gap-3 mt-2">
           <span className="text-sm text-gray-500">Ед. изм: {service.unit}</span>
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              placeholder="Цена"
-              value={customPrice}
-              onChange={(e) => {
-                const val = e.target.value.replace(",", ".").replace(/[^0-9.]/g, "");
-                setCustomPrice(val);
-              }}
-              className="w-24 px-3 py-1 border border-gray-200 rounded-lg text-sm font-bold text-blue-600 focus:ring-2 focus:ring-blue-500 outline-none"
-            />
-            <span className="text-sm font-bold text-gray-500">₽</span>
-          </div>
+          {!isProduction && isCreatedByProd ? (
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-gray-400 font-medium">Закупка: {basePrice.toLocaleString()} ₽</span>
+              <span className="font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-lg border border-indigo-100">
+                Розничная цена: {retailPrice.toLocaleString()} ₽ (наценка x{serviceCoeff})
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Цена"
+                value={customPrice}
+                onChange={(e) => {
+                  const val = e.target.value.replace(",", ".").replace(/[^0-9.]/g, "");
+                  setCustomPrice(val);
+                }}
+                className="w-24 px-3 py-1 border border-gray-200 rounded-lg text-sm font-bold text-blue-600 focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+              <span className="text-sm font-bold text-gray-500">₽</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -15591,7 +15680,16 @@ const ServiceItem = ({
         </div>
         <button
           onClick={() =>
-            onAdd({ ...service, price: currentPrice }, qty, currentPrice)
+            onAdd(
+              {
+                ...service,
+                price: currentPrice,
+                purchasePrice: isCreatedByProd ? basePrice : currentPrice,
+                isProductionService: isCreatedByProd,
+              },
+              qty,
+              currentPrice,
+            )
           }
           disabled={currentPrice <= 0}
           className={cn(
@@ -15615,12 +15713,18 @@ const ServicesView = ({
   setPrices,
   catalogServices,
   setCatalogServices,
+  isSalonOrDesigner,
+  isProduction,
+  serviceCoeff = 1,
 }: {
   onAddService: (service: any, qty: number) => void;
   prices: Record<string, number>;
   setPrices: React.Dispatch<React.SetStateAction<Record<string, number>>>;
   catalogServices: any[];
   setCatalogServices: React.Dispatch<React.SetStateAction<any[]>>;
+  isSalonOrDesigner?: boolean;
+  isProduction?: boolean;
+  serviceCoeff?: number;
 }) => {
   const [quantities, setQuantities] = useState<Record<string, any>>({});
   const [customDeliverySupplier, setCustomDeliverySupplier] = useState("");
@@ -15736,6 +15840,9 @@ const ServicesView = ({
                 service={service}
                 defaultPrice={defaultPrice}
                 onAdd={onAddService}
+                isSalonOrDesigner={isSalonOrDesigner}
+                isProduction={isProduction}
+                serviceCoeff={serviceCoeff}
               />
             );
           })
@@ -16227,6 +16334,8 @@ const ReadyMadeProductsView = ({
   onDeleteProduct = (product: any) => window.dispatchEvent(new CustomEvent("products_view_delete", { detail: product })),
   onUpdateProduct = (id: string, updates: any) => window.dispatchEvent(new CustomEvent("products_view_update", { detail: { id, updates } })),
   onAddNewProduct = () => window.dispatchEvent(new CustomEvent("products_view_add_new", { detail: { category: selectedCategory || "Кухни" } })),
+  onHideProduct,
+  onRestoreProduct,
   userRole,
 }: {
   catalogProducts: any[];
@@ -16247,6 +16356,8 @@ const ReadyMadeProductsView = ({
   onDeleteProduct?: (product: any) => void;
   onUpdateProduct?: (productId: string, updates: any) => void;
   onAddNewProduct?: () => void;
+  onHideProduct?: (product: any) => void;
+  onRestoreProduct?: (product: any) => void;
   userRole?: string;
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
@@ -16255,6 +16366,12 @@ const ReadyMadeProductsView = ({
   const [kitchenStyleFilter, setKitchenStyleFilter] = useState<string | null>(null);
   const [kitchenMinPriceFilter, setKitchenMinPriceFilter] = useState<string>("");
   const [kitchenMaxPriceFilter, setKitchenMaxPriceFilter] = useState<string>("");
+  const [showHiddenOnly, setShowHiddenOnly] = useState(false);
+  const [blockingSaleProduct, setBlockingSaleProduct] = useState<any>(null);
+
+  const hiddenProductIds: string[] = useMemo(() => {
+    return (companyData?.hiddenProductIds || []).map((id: any) => String(id));
+  }, [companyData?.hiddenProductIds]);
 
   const disabledReadyMadeCats = companyData?.readyMadeConfig?.disabledCategories || [];
   const readyMadeCats = (companyData?.readyMadeConfig?.categories || [
@@ -16268,8 +16385,19 @@ const ReadyMadeProductsView = ({
   ]).filter((c: string) => !c.toLowerCase().includes("гарнитур") && !disabledReadyMadeCats.includes(c));
 
   const readyMadeProducts = useMemo(() => {
+    const hiddenSet = new Set(hiddenProductIds);
     return catalogProducts.filter((p) => {
       if (!p) return false;
+
+      const pIdStr = String(p.id || p.parentProductId);
+      const isHidden = hiddenSet.has(pIdStr);
+
+      if (showHiddenOnly) {
+        if (!isHidden) return false;
+      } else {
+        if (isHidden) return false;
+      }
+
       const cat = p.category || "";
       const catLower = cat.toLowerCase();
       if (catLower.includes("модул") || catLower.includes("фурнитур") || catLower.includes("столешниц") || catLower.includes("освещен") || catLower.includes("кромоч")) {
@@ -16327,7 +16455,7 @@ const ReadyMadeProductsView = ({
 
       return true;
     });
-  }, [catalogProducts, readyMadeCats, selectedCategory, searchQuery, kitchenTypeFilter, kitchenStyleFilter, kitchenMinPriceFilter, kitchenMaxPriceFilter]);
+  }, [catalogProducts, readyMadeCats, selectedCategory, searchQuery, kitchenTypeFilter, kitchenStyleFilter, kitchenMinPriceFilter, kitchenMaxPriceFilter, hiddenProductIds, showHiddenOnly]);
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-300">
@@ -16338,7 +16466,7 @@ const ReadyMadeProductsView = ({
             Каталог готовой мебели (кухни, шкафы, прихожие, столы, комоды) с подробными характеристиками и параметрами.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <input
             type="text"
             placeholder="Поиск по названию или артикулу..."
@@ -16346,6 +16474,18 @@ const ReadyMadeProductsView = ({
             onChange={(e) => setSearchQuery(e.target.value)}
             className="px-4 py-2 border border-gray-200 rounded-xl text-sm w-72 focus:ring-2 focus:ring-blue-500 outline-none bg-white shadow-sm"
           />
+          <button
+            onClick={() => setShowHiddenOnly(!showHiddenOnly)}
+            className={cn(
+              "flex items-center justify-center gap-2 px-4 py-2 rounded-xl font-bold transition-all border text-xs shadow-sm flex-shrink-0 cursor-pointer",
+              showHiddenOnly
+                ? "bg-amber-500 text-white border-amber-600 shadow-amber-100"
+                : "bg-white text-gray-700 border-gray-200 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200"
+            )}
+          >
+            <EyeOff className="w-4 h-4 text-amber-500" />
+            {showHiddenOnly ? "Показать основной каталог" : `Скрытые товары (${hiddenProductIds.length})`}
+          </button>
           <button
             onClick={() => {
               if (onAddNewProduct) {
@@ -16484,61 +16624,138 @@ const ReadyMadeProductsView = ({
                     </div>
                   )}
 
-                  {/* Quick Actions overlay for editing/deleting */}
-                  {product.source !== "manufacturer" && (
-                    <div className="absolute top-3 right-3 z-20 flex flex-col gap-1.5 translate-x-12 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 transition-all duration-300">
-                      {onEditProduct && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onEditProduct(product);
-                          }}
-                          className="p-1.5 bg-white text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg shadow-md transition-all cursor-pointer"
-                          title="Редактировать"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                      {onCreateBasedOn && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onCreateBasedOn(product);
-                          }}
-                          className="p-1.5 bg-white text-teal-600 hover:bg-teal-600 hover:text-white rounded-lg shadow-md transition-all cursor-pointer"
-                          title="Создать на основании"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                      {(userRole === 'admin' || userRole === 'supervisor') && onUpdateProduct && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onUpdateProduct(product.id, { saleBlocked: !product.saleBlocked });
-                          }}
-                          className={`p-1.5 bg-white ${product.saleBlocked ? 'text-amber-600' : 'text-gray-500'} hover:bg-amber-600 hover:text-white rounded-lg shadow-md transition-all cursor-pointer`}
-                          title={product.saleBlocked ? "Разблокировать продажу" : "Заблокировать продажу"}
-                        >
-                          <Lock className={`w-3.5 h-3.5 ${product.saleBlocked ? 'fill-current' : ''}`} />
-                        </button>
-                      )}
-                      {onDeleteProduct && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onDeleteProduct(product);
-                          }}
-                          className="p-1.5 bg-white text-red-500 hover:bg-red-500 hover:text-white rounded-lg shadow-md transition-all cursor-pointer"
-                          title="Удалить"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  )}
+                  {/* Quick Actions overlay for editing/deleting/hiding */}
+                  {(() => {
+                    const isManufacturerProduct =
+                      product.source === "manufacturer" ||
+                      product.isManufacturer ||
+                      product.fromProduction ||
+                      (product.companyId && companyData?.id && product.companyId !== companyData.id);
 
-                  <div className="absolute top-3 left-3 flex flex-wrap gap-1.5">
+                    const isSalonOrDesigner =
+                      companyData?.type === "Салон" ||
+                      companyData?.type === "Салон мебели" ||
+                      companyData?.type === "Дизайнер" ||
+                      userRole === "salon" ||
+                      userRole === "designer";
+
+                    const canEditOrDelete = !isManufacturerProduct || (!isSalonOrDesigner && userRole === "admin");
+                    const isCardHidden = hiddenProductIds.includes(String(product.id || product.parentProductId));
+
+                    return (
+                      <div className="absolute top-3 right-3 z-20 flex flex-col gap-1.5 translate-x-12 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 transition-all duration-300">
+                        {isCardHidden ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (onRestoreProduct) onRestoreProduct(product);
+                            }}
+                            className="p-1.5 bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg shadow-md transition-all cursor-pointer flex items-center gap-1 text-[10px] font-bold px-2 py-1"
+                            title="Вернуть в каталог"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>Вернуть</span>
+                          </button>
+                        ) : (
+                          <>
+                            {onHideProduct && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onHideProduct(product);
+                                }}
+                                className="p-1.5 bg-white text-amber-600 hover:bg-amber-600 hover:text-white rounded-lg shadow-md transition-all cursor-pointer"
+                                title="Скрыть товар из каталога"
+                              >
+                                <EyeOff className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                            {canEditOrDelete && onEditProduct && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onEditProduct(product);
+                                }}
+                                className="p-1.5 bg-white text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg shadow-md transition-all cursor-pointer"
+                                title="Редактировать"
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                            {onCreateBasedOn && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onCreateBasedOn(product);
+                                }}
+                                className="p-1.5 bg-white text-teal-600 hover:bg-teal-600 hover:text-white rounded-lg shadow-md transition-all cursor-pointer"
+                                title="Создать на основании"
+                              >
+                                <Copy className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                            {(userRole === 'admin' || userRole === 'supervisor') && onUpdateProduct && canEditOrDelete && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setBlockingSaleProduct(product);
+                                }}
+                                className={`p-1.5 rounded-lg shadow-md transition-all cursor-pointer ${
+                                  isSaleBlocked(product)
+                                    ? 'bg-amber-500 text-white hover:bg-amber-600'
+                                    : 'bg-white text-gray-500 hover:bg-amber-500 hover:text-white'
+                                }`}
+                                title={
+                                  isSaleBlocked(product)
+                                    ? `Управление блокировкой продажи (Заблокировано${
+                                        product.saleBlockedUntil ? ` до ${formatBlockedUntil(product.saleBlockedUntil)}` : ''
+                                      })`
+                                    : "Заблокировать продажу"
+                                }
+                              >
+                                <Lock className={`w-3.5 h-3.5 ${isSaleBlocked(product) ? 'fill-current' : ''}`} />
+                              </button>
+                            )}
+
+                            {canEditOrDelete && onDeleteProduct && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onDeleteProduct(product);
+                                }}
+                                className="p-1.5 bg-white text-red-500 hover:bg-red-500 hover:text-white rounded-lg shadow-md transition-all cursor-pointer"
+                                title="Удалить"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
+
+                  <div className="absolute top-3 left-3 flex flex-wrap gap-1.5 z-10">
+                    {isSaleBlocked(product) && (
+                      <span
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (userRole === 'admin' || userRole === 'supervisor') {
+                            setBlockingSaleProduct(product);
+                          }
+                        }}
+                        className="px-2.5 py-1 bg-amber-500 text-white text-[10px] font-bold rounded-lg shadow-sm flex items-center gap-1 cursor-pointer hover:bg-amber-600 transition-colors"
+                        title={product.saleBlockedReason || "Продажа заблокирована"}
+                      >
+                        <Lock className="w-3 h-3" />
+                        {product.saleBlockedUntil
+                          ? `До ${formatBlockedUntil(product.saleBlockedUntil)}`
+                          : 'Заблокирован'}
+                      </span>
+                    )}
                     {activePromos.length > 0 && (
                       <span className="px-2.5 py-1 bg-gradient-to-r from-rose-500 to-pink-500 text-white text-[10px] font-bold rounded-lg shadow-sm flex items-center gap-1 shadow-rose-200">
                         <Percent className="w-3 h-3" /> АКЦИЯ
@@ -16635,10 +16852,19 @@ const ReadyMadeProductsView = ({
 
                       <button
                         onClick={() => {
+                          if (isSaleBlocked(product)) {
+                            showAlert(
+                              "Продажа заблокирована",
+                              `Данный товар временно недоступен для заказа${
+                                product.saleBlockedUntil ? ` до ${formatBlockedUntil(product.saleBlockedUntil)}` : ''
+                              }.${product.saleBlockedReason ? `\nПричина: ${product.saleBlockedReason}` : ''}`
+                            );
+                            return;
+                          }
                           onAddProduct(product, qty);
                           showAlert("Добавлено в проект", `Товар "${product.name}" (${qty} шт.) успешно добавлен в спецификацию проекта.`);
                         }}
-                        className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-200 transition-all flex items-center justify-center gap-1.5 active:scale-95"
+                        className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-md shadow-blue-200 transition-all flex items-center justify-center gap-1.5 active:scale-95 cursor-pointer"
                       >
                         <ShoppingBag className="w-4 h-4" /> В проект
                       </button>
@@ -16650,6 +16876,15 @@ const ReadyMadeProductsView = ({
           })}
         </div>
       )}
+
+      <BlockSaleModal
+        isOpen={!!blockingSaleProduct}
+        onClose={() => setBlockingSaleProduct(null)}
+        product={blockingSaleProduct}
+        onSave={(id, updates) => {
+          if (onUpdateProduct) onUpdateProduct(String(id), updates);
+        }}
+      />
     </div>
   );
 };
@@ -16690,6 +16925,10 @@ const ProductsView = ({
   selectedProductForDetail,
   setSelectedProductForDetail,
   promotions = [],
+  pendingProductAction,
+  clearPendingProductAction,
+  onHideProduct,
+  onRestoreProduct,
 }: {
   onAddProduct: (product: any, qty: number) => void;
   catalogProducts: any[];
@@ -16738,8 +16977,18 @@ const ProductsView = ({
   selectedProductForDetail: any;
   setSelectedProductForDetail: React.Dispatch<React.SetStateAction<any>>;
   promotions?: any[];
+  pendingProductAction?: any;
+  clearPendingProductAction?: () => void;
+  onHideProduct?: (product: any) => void;
+  onRestoreProduct?: (product: any) => void;
 }) => {
   const [showChecklistWindow, setShowChecklistWindow] = useState(false);
+  const [showHiddenOnly, setShowHiddenOnly] = useState(false);
+  const [blockingSaleProduct, setBlockingSaleProduct] = useState<any>(null);
+
+  const hiddenProductIds: string[] = useMemo(() => {
+    return (companyData?.hiddenProductIds || []).map((id: any) => String(id));
+  }, [companyData?.hiddenProductIds]);
 
   // Function to determine if an item is present
   const isItemPresent = (itemName: string) => {
@@ -16925,25 +17174,89 @@ const ProductsView = ({
   const [duplicateMatches, setDuplicateMatches] = useState<any[]>([]);
   const [isCheckingDuplicates, setIsCheckingDuplicates] = useState(false);
 
-  const checkDuplicates = useCallback(async (article: string, name: string) => {
+  const checkDuplicates = useCallback(async (manufacturerArticle: string, article: string, name: string) => {
     if (!companyData?.id) return;
-    if (!article && !name) {
+    if (!manufacturerArticle && !article && (!name || name.length < 3)) {
       setDuplicateMatches([]);
       return;
     }
+
+    const cleanMfg = (manufacturerArticle || "").trim().toLowerCase();
+    const cleanArt = (article || "").trim().toLowerCase();
+    const cleanName = (name || "").trim().toLowerCase();
+
+    // 1. Instant local search in catalogProducts
+    let localMatches: any[] = [];
+    if (catalogProducts && Array.isArray(catalogProducts)) {
+      localMatches = catalogProducts.filter((p: any) => {
+        const pMfg = (p.manufacturerArticle || "").trim().toLowerCase();
+        const pArt = (p.article || "").trim().toLowerCase();
+        const pVend = (p.vendorArticle || "").trim().toLowerCase();
+        const pName = (p.name || "").trim().toLowerCase();
+
+        const hasMatchingVariation = p.variations && Array.isArray(p.variations) && p.variations.some((v: any) => {
+          const vMfg = (v.manufacturerArticle || "").trim().toLowerCase();
+          const vArt = (v.article || "").trim().toLowerCase();
+          return (cleanMfg && (vMfg === cleanMfg || vMfg.includes(cleanMfg))) || (cleanArt && (vArt === cleanArt || vArt.includes(cleanArt)));
+        });
+
+        const matchMfg = cleanMfg && (pMfg === cleanMfg || pMfg.includes(cleanMfg) || pArt === cleanMfg || pVend === cleanMfg || hasMatchingVariation);
+        const matchArt = cleanArt && (pArt === cleanArt || pVend === cleanArt || pMfg === cleanArt || hasMatchingVariation);
+        const matchName = cleanName && cleanName.length >= 3 && pName.includes(cleanName);
+
+        return matchMfg || matchArt || matchName;
+      }).map((p: any) => ({
+        id: p.id,
+        companyId: p.companyId || companyData.id,
+        name: p.name,
+        article: p.article,
+        vendorArticle: p.vendorArticle,
+        manufacturerArticle: p.manufacturerArticle || p.article,
+        description: p.description,
+        images: p.images || (p.image ? [p.image] : []),
+        color: p.color,
+        unit: p.unit,
+        manufacturer: p.manufacturer,
+        category: p.category,
+        purchasePrice: p.purchasePrice || p.price || 0,
+        dryerWidth: p.dryerWidth,
+        dryerBase: p.dryerBase,
+        handleMaterial: p.handleMaterial,
+        sinkGroup: p.sinkGroup,
+        sinkBrand: p.sinkBrand,
+        faucetBrand: p.faucetBrand,
+        filterBrand: p.filterBrand,
+        fastenerGroup: p.fastenerGroup,
+        wardrobeGroup: p.wardrobeGroup,
+        variations: p.variations || [],
+      }));
+    }
+
+    if (localMatches.length > 0) {
+      setDuplicateMatches(localMatches);
+    }
+
     try {
       setIsCheckingDuplicates(true);
-      const res = await fetch(`/api/products/search-duplicates?article=${encodeURIComponent(article)}&name=${encodeURIComponent(name)}&currentCompanyId=${companyData.id}`);
+      const res = await fetch(`/api/products/search-duplicates?manufacturerArticle=${encodeURIComponent(manufacturerArticle)}&article=${encodeURIComponent(article)}&name=${encodeURIComponent(name)}&currentCompanyId=${companyData.id}`);
       if (res.ok) {
-        const matches = await res.json();
-        setDuplicateMatches(matches);
+        const apiMatches = await res.json();
+        const combined = [...localMatches];
+        const seen = new Set(localMatches.map(m => m.id));
+        for (const m of apiMatches) {
+          if (!seen.has(m.id)) {
+            seen.add(m.id);
+            combined.push(m);
+          }
+        }
+        setDuplicateMatches(combined);
       }
     } catch (e) {
       console.warn("Errors checking duplicate products:", e);
     } finally {
       setIsCheckingDuplicates(false);
     }
-  }, [companyData?.id]);
+  }, [companyData?.id, catalogProducts]);
 
   const [quantities, setQuantities] = useState<Record<string, any>>({});
   const [activeHoverImage, setActiveHoverImage] = useState<{ productId: string; index: number } | null>(null);
@@ -17084,45 +17397,39 @@ const ProductsView = ({
     return [...configuredReadyCats, "Кухонные гарнитуры", "Кухонный гарнитур"].filter((c: string) => !disabledReadyMadeCats.includes(c));
   }, [configuredReadyCats, disabledReadyMadeCats]);
 
+  const isReadyMadeCategory = useCallback((catName: string): boolean => {
+    if (!catName) return false;
+    const cLower = catName.toLowerCase().trim();
+    if (cLower.includes("модул") || cLower.includes("фурнитур") || cLower.includes("мойка") || cLower.includes("техник") || cLower.includes("смесител")) {
+      return false;
+    }
+    const readyKeywords = ["кухн", "кухя", "кухi", "гарнитур", "шкаф", "прихож", "стол", "комод"];
+    if (readyKeywords.some(kw => cLower.includes(kw))) {
+      return true;
+    }
+    return activeReadyMadeCats.some(ac => {
+      const acLower = ac.toLowerCase().trim();
+      if (acLower.includes("модул") || acLower.includes("фурнитур")) return false;
+      return cLower === acLower || cLower.includes(acLower) || acLower.includes(cLower);
+    });
+  }, [activeReadyMadeCats]);
+
   const displayProductCategories = useMemo(() => {
     return productCategories.filter((cat) => {
       const catLower = cat.toLowerCase().trim();
-      if (catLower.includes("гарнитур")) return false;
       if (catLower.includes("модул")) return true;
       if (!isReadyMadeEnabled) return true;
-      const isReadyCat = activeReadyMadeCats.some((rc: string) => {
-        const rcLower = rc.toLowerCase().trim();
-        if (rcLower.includes("гарнитур")) return false;
-        if (rcLower === "кухни" && catLower === "кухни") return true;
-        return catLower === rcLower;
-      });
-      return !isReadyCat;
+      return !isReadyMadeCategory(cat);
     });
-  }, [productCategories, isReadyMadeEnabled, activeReadyMadeCats]);
+  }, [productCategories, isReadyMadeEnabled, isReadyMadeCategory]);
 
   useEffect(() => {
-    if (selectedCategory) {
-      const selLower = selectedCategory.toLowerCase().trim();
-      if (selLower.includes("гарнитур")) {
+    if (selectedCategory && isReadyMadeEnabled) {
+      if (isReadyMadeCategory(selectedCategory)) {
         setSelectedCategory("Все категории");
-        return;
-      }
-      if (selLower.includes("модул")) {
-        return;
-      }
-      if (isReadyMadeEnabled) {
-        const isReadyCat = activeReadyMadeCats.some((rc: string) => {
-          const rcLower = rc.toLowerCase().trim();
-          if (rcLower.includes("гарнитур")) return false;
-          if (rcLower === "кухни" && selLower === "кухни") return true;
-          return selLower === rcLower;
-        });
-        if (isReadyCat) {
-          setSelectedCategory("Все категории");
-        }
       }
     }
-  }, [selectedCategory, isReadyMadeEnabled, activeReadyMadeCats, setSelectedCategory]);
+  }, [selectedCategory, isReadyMadeEnabled, isReadyMadeCategory, setSelectedCategory]);
 
   // Kitchen Modules Picker Modal State
   const [isKitchenModulesModalOpen, setIsKitchenModulesModalOpen] = useState(false);
@@ -17290,14 +17597,14 @@ const ProductsView = ({
 
   useEffect(() => {
     const timer = setTimeout(() => {
-      if (!editingProduct && (newProduct.article || newProduct.name)) {
-        checkDuplicates(newProduct.article, newProduct.name);
+      if (!editingProduct && (newProduct.manufacturerArticle || newProduct.article || newProduct.name)) {
+        checkDuplicates(newProduct.manufacturerArticle || "", newProduct.article || "", newProduct.name || "");
       } else {
         setDuplicateMatches([]);
       }
-    }, 800);
+    }, 500);
     return () => clearTimeout(timer);
-  }, [newProduct.article, newProduct.name, editingProduct, checkDuplicates]);
+  }, [newProduct.manufacturerArticle, newProduct.article, newProduct.name, editingProduct, checkDuplicates]);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -17325,6 +17632,15 @@ const ProductsView = ({
   };
 
   const handleAdd = (product: any) => {
+    if (isSaleBlocked(product)) {
+      showAlert(
+        "Продажа заблокирована",
+        `Данный товар временно недоступен для заказа${
+          product.saleBlockedUntil ? ` до ${formatBlockedUntil(product.saleBlockedUntil)}` : ''
+        }.${product.saleBlockedReason ? `\nПричина: ${product.saleBlockedReason}` : ''}`
+      );
+      return;
+    }
     const qty = quantities[product.id] === undefined ? 1 : (parseInt(quantities[product.id]) || 1);
     
     if (product.variations && product.variations.length > 0) {
@@ -17865,6 +18181,26 @@ const ProductsView = ({
   };
 
   useEffect(() => {
+    if (pendingProductAction) {
+      if (pendingProductAction.type === 'add') {
+        resetForm();
+        if (pendingProductAction.category) {
+          setNewProduct((prev: any) => ({ ...prev, category: pendingProductAction.category }));
+          setSelectedCategory(pendingProductAction.category);
+        }
+        setIsAddingProduct(true);
+      } else if (pendingProductAction.type === 'edit' && pendingProductAction.product) {
+        handleEditProduct(pendingProductAction.product);
+      } else if (pendingProductAction.type === 'copy' && pendingProductAction.product) {
+        handleCreateBasedOn(pendingProductAction.product);
+      }
+      if (clearPendingProductAction) {
+        clearPendingProductAction();
+      }
+    }
+  }, [pendingProductAction, resetForm, handleEditProduct, handleCreateBasedOn, setSelectedCategory, clearPendingProductAction]);
+
+  useEffect(() => {
     const handleEditEvent = (e: any) => {
       if (e.detail) {
         handleEditProduct(e.detail);
@@ -17918,8 +18254,20 @@ const ProductsView = ({
   };
 
   const filteredProducts = useMemo(() => {
+    const hiddenSet = new Set(hiddenProductIds);
     // Stage 1: Filter catalogProducts by category and status
     const initialFiltered = catalogProducts.filter((p) => {
+      if (!p) return false;
+
+      const pIdStr = String(p.id || p.parentProductId || p.id?.split('_var_')[0]);
+      const isHidden = hiddenSet.has(pIdStr);
+
+      if (showHiddenOnly) {
+        if (!isHidden) return false;
+      } else {
+        if (isHidden) return false;
+      }
+
       // Исключаем кромочные материалы из товарного каталога
       if (p.category === "Кромочные материалы" || p.category === "Кромка") {
         return false;
@@ -17933,17 +18281,8 @@ const ProductsView = ({
       const isReadyMadeEnabled = companyData?.readyMadeConfig?.enabled !== false;
 
       if (isReadyMadeEnabled && activeProductsView !== 'moderation') {
-        const pCatLower = (p.category || "").toLowerCase().trim();
-        if (!pCatLower.includes("модул")) {
-          const isReadyMadeItem = activeReadyMadeCats.some((c: string) => {
-            const cLower = c.toLowerCase().trim();
-            if (cLower.includes("гарнитур")) return false;
-            if (cLower === "кухни" && pCatLower === "кухни") return true;
-            return pCatLower === cLower;
-          });
-          if (isReadyMadeItem) {
-            return false;
-          }
+        if (p.isReadyMade === true || isReadyMadeCategory(p.category)) {
+          return false;
         }
       }
 
@@ -18480,6 +18819,8 @@ const ProductsView = ({
     return filtered;
   }, [
     catalogProducts,
+    hiddenProductIds,
+    showHiddenOnly,
     activeProductsView,
     search,
     selectedCategory,
@@ -18818,6 +19159,18 @@ const ProductsView = ({
               className="w-full h-10 pl-10 pr-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-white shadow-sm"
             />
           </div>
+          <button
+            onClick={() => setShowHiddenOnly(!showHiddenOnly)}
+            className={cn(
+              "flex items-center justify-center gap-2 px-4 h-10 font-bold rounded-xl transition-all border shadow-sm flex-shrink-0 cursor-pointer text-xs",
+              showHiddenOnly
+                ? "bg-amber-500 text-white border-amber-600 shadow-amber-100"
+                : "bg-white text-gray-700 border-gray-200 hover:bg-amber-50 hover:text-amber-700 hover:border-amber-200"
+            )}
+          >
+            <EyeOff className="w-4 h-4 text-amber-500" />
+            {showHiddenOnly ? "Показать основной каталог" : `Скрытые товары (${hiddenProductIds.length})`}
+          </button>
           <button
             onClick={() => {
               resetForm();
@@ -20125,11 +20478,67 @@ const ProductsView = ({
                     />
                   </div>
 
-                  {/* Duplicate verification banner */}
+                  {!(newProduct.variations && newProduct.variations.length > 0) && (
+                    <div className="grid grid-cols-1 gap-4">
+                      <div>
+                        <label className="block text-sm font-bold text-gray-700 mb-2">
+                          Артикул
+                        </label>
+                        <input
+                          type="text"
+                          value={newProduct.article}
+                          onChange={(e) =>
+                            setNewProduct((prev) => ({
+                              ...prev,
+                              article: e.target.value,
+                            }))
+                          }
+                          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
+                          placeholder="Внутренний артикул"
+                        />
+                      </div>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-2">
+                            Арт. поставщика
+                          </label>
+                          <input
+                            type="text"
+                            value={newProduct.vendorArticle}
+                            onChange={(e) =>
+                              setNewProduct((prev) => ({
+                                ...prev,
+                                vendorArticle: e.target.value,
+                              }))
+                            }
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-bold text-gray-700 mb-2">
+                            Арт. производителя
+                          </label>
+                          <input
+                            type="text"
+                            value={newProduct.manufacturerArticle}
+                            onChange={(e) =>
+                              setNewProduct((prev) => ({
+                                ...prev,
+                                manufacturerArticle: e.target.value,
+                              }))
+                            }
+                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Duplicate verification banner & results under articles */}
                   {isCheckingDuplicates && (
                     <div className="flex items-center gap-2 p-3 bg-blue-50/50 border border-blue-100 text-blue-800 rounded-xl text-xs font-semibold animate-pulse">
                       <Search className="w-4 h-4 animate-spin" />
-                      <span>Ищем похожие товары в каталогах других компаний...</span>
+                      <span>Ищем похожие товары по артикулу в каталогах...</span>
                     </div>
                   )}
 
@@ -20139,25 +20548,30 @@ const ProductsView = ({
                         <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
                         <div>
                           <h4 className="text-sm font-bold text-amber-950">
-                            Товар найден у других компаний!
+                            Товар найден в каталоге!
                           </h4>
                           <p className="text-[11px] text-amber-800 leading-normal mt-0.5">
-                            В каталогах других компаний уже содержатся аналогичные товары. Чтобы сэкономить время, вы можете скопировать их атрибуты (картинки, бренд, описание, артикулы). Наценку и цену вы установите сами.
+                            По артикулу производителя найден ранее созданный товар. Нажмите «Использовать», чтобы автоматически подтянуть название, категорию, описание, бренд, фото и характеристики. Ваши <strong className="text-amber-950 underline">внутренний артикул</strong> и <strong className="text-amber-950 underline">артикул поставщика</strong> сохранятся без изменений.
                           </p>
                         </div>
                       </div>
 
-                      <div className="divide-y divide-amber-100 max-h-[180px] overflow-y-auto pr-1 bg-white/70 rounded-xl border border-amber-100">
+                      <div className="divide-y divide-amber-100 max-h-[220px] overflow-y-auto pr-1 bg-white/80 rounded-xl border border-amber-100 shadow-2xs">
                         {duplicateMatches.map((dm) => (
                           <div key={dm.id} className="p-2.5 flex items-center justify-between gap-3 text-xs">
                             <div className="flex items-center gap-3 min-w-0">
                               {dm.images && dm.images.length > 0 ? (
-                                <img
-                                  src={dm.images[0]}
-                                  alt={dm.name}
-                                  className="w-10 h-10 rounded-lg object-cover bg-gray-50 border border-amber-100 flex-shrink-0"
-                                  referrerPolicy="no-referrer"
-                                />
+                                <div className="flex -space-x-2 overflow-hidden flex-shrink-0">
+                                  {dm.images.slice(0, 3).map((imgUrl: string, idx: number) => (
+                                    <img
+                                      key={idx}
+                                      src={imgUrl}
+                                      alt={dm.name}
+                                      className="w-10 h-10 rounded-lg object-cover bg-gray-50 border border-white shadow-2xs flex-shrink-0"
+                                      referrerPolicy="no-referrer"
+                                    />
+                                  ))}
+                                </div>
                               ) : (
                                 <div className="w-10 h-10 rounded-lg bg-gray-50 border border-amber-100 flex items-center justify-center text-gray-400 flex-shrink-0">
                                   <ImageIcon className="w-5 h-5 text-amber-400" />
@@ -20165,8 +20579,8 @@ const ProductsView = ({
                               )}
                               <div className="min-w-0">
                                 <span className="font-bold text-gray-900 block truncate">{dm.name}</span>
-                                <span className="text-[10px] text-gray-500 block">
-                                  Арт: {dm.article || "—"} • {dm.manufacturer || "Без бренда"} • {dm.category}
+                                <span className="text-[10px] text-gray-600 block truncate">
+                                  <strong className="text-amber-700 font-bold">Арт. произв: {dm.manufacturerArticle || dm.article || "—"}</strong> • Арт: {dm.article || "—"} • {dm.manufacturer || "Без бренда"} • {dm.category}
                                 </span>
                               </div>
                             </div>
@@ -20176,19 +20590,31 @@ const ProductsView = ({
                                 setNewProduct((prev: any) => ({
                                   ...prev,
                                   name: dm.name || prev.name,
-                                  article: dm.article || prev.article,
+                                  manufacturerArticle: dm.manufacturerArticle || prev.manufacturerArticle || prev.article,
                                   description: dm.description || prev.description,
-                                  images: dm.images || prev.images,
+                                  images: (prev.images && prev.images.length > 0) ? prev.images : (dm.images && dm.images.length > 0 ? dm.images : []),
                                   color: dm.color || prev.color,
                                   unit: dm.unit || prev.unit,
                                   manufacturer: dm.manufacturer || prev.manufacturer,
                                   category: dm.category || prev.category,
+                                  purchasePrice: dm.purchasePrice || prev.purchasePrice,
                                   dryerWidth: dm.dryerWidth || prev.dryerWidth,
                                   dryerBase: dm.dryerBase || prev.dryerBase,
+                                  handleMaterial: dm.handleMaterial || prev.handleMaterial,
+                                  sinkGroup: dm.sinkGroup || prev.sinkGroup,
+                                  sinkBrand: dm.sinkBrand || prev.sinkBrand,
+                                  faucetBrand: dm.faucetBrand || prev.faucetBrand,
+                                  filterBrand: dm.filterBrand || prev.filterBrand,
+                                  fastenerGroup: dm.fastenerGroup || prev.fastenerGroup,
+                                  wardrobeGroup: dm.wardrobeGroup || prev.wardrobeGroup,
+                                  variations: (dm.variations && dm.variations.length > 0) ? dm.variations : prev.variations,
                                 }));
-                                showAlert("Шаблон скопирован", "Характеристики товара успешно перенесены в форму!");
+                                showAlert(
+                                  "Данные карточки заполнены",
+                                  "Название, категория, описание, бренд и характеристики товара заполнены из каталога. Внутренний артикул и артикул поставщика сохранены."
+                                );
                               }}
-                              className="px-2.5 py-1.5 bg-amber-600 text-white rounded-lg hover:bg-amber-700 transition-all font-bold text-[10px] flex-shrink-0 cursor-pointer shadow-sm"
+                              className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl transition-all font-bold text-[11px] flex-shrink-0 cursor-pointer shadow-sm active:scale-95 flex items-center gap-1"
                             >
                               Использовать
                             </button>
@@ -24451,62 +24877,6 @@ const ProductsView = ({
                     </div>
                   )}
 
-                  {!(newProduct.variations && newProduct.variations.length > 0) && (
-                    <div className="grid grid-cols-1 gap-4">
-                      <div>
-                        <label className="block text-sm font-bold text-gray-700 mb-2">
-                          Артикул
-                        </label>
-                        <input
-                          type="text"
-                          value={newProduct.article}
-                          onChange={(e) =>
-                            setNewProduct((prev) => ({
-                              ...prev,
-                              article: e.target.value,
-                            }))
-                          }
-                          className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
-                          placeholder="Внутренний артикул"
-                        />
-                      </div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-bold text-gray-700 mb-2">
-                            Арт. поставщика
-                          </label>
-                          <input
-                            type="text"
-                            value={newProduct.vendorArticle}
-                            onChange={(e) =>
-                              setNewProduct((prev) => ({
-                                ...prev,
-                                vendorArticle: e.target.value,
-                              }))
-                            }
-                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-bold text-gray-700 mb-2">
-                            Арт. производителя
-                          </label>
-                          <input
-                            type="text"
-                            value={newProduct.manufacturerArticle}
-                            onChange={(e) =>
-                              setNewProduct((prev) => ({
-                                ...prev,
-                                manufacturerArticle: e.target.value,
-                              }))
-                            }
-                            className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  )}
-
                   <div className="p-5 bg-blue-50/50 border border-blue-100 rounded-2xl space-y-4">
                     {!(newProduct.variations && newProduct.variations.length > 0) ? (
                       <>
@@ -25804,6 +26174,25 @@ const ProductsView = ({
 
                   {/* Overlay Badges */}
                   <div className="absolute top-4 left-4 flex flex-col gap-2">
+                    {isSaleBlocked(product) && (
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (userRole === 'admin' || userRole === 'supervisor') {
+                            setBlockingSaleProduct(product);
+                          }
+                        }}
+                        className="flex items-center gap-1.5 px-2.5 py-1 bg-amber-500 text-white text-[10px] font-bold rounded-lg shadow-lg cursor-pointer hover:bg-amber-600 transition-colors z-10"
+                        title={product.saleBlockedReason || "Продажа заблокирована"}
+                      >
+                        <Lock className="w-3 h-3" />
+                        <span>
+                          {product.saleBlockedUntil
+                            ? `До ${formatBlockedUntil(product.saleBlockedUntil)}`
+                            : 'Заблокирован'}
+                        </span>
+                      </div>
+                    )}
                     {activePromos.length > 0 && (
                       <span className="flex items-center gap-1.5 px-2 py-1 bg-gradient-to-r from-rose-500 to-pink-500 text-white text-[9px] font-black uppercase tracking-widest rounded-lg shadow-lg z-10">
                         <Percent className="w-2.5 h-2.5" /> Акция
@@ -25854,53 +26243,120 @@ const ProductsView = ({
                     )}
                   </div>
 
-                  {/* Quick Actions */}
-                  {product.source !== "manufacturer" && (
-                    <div className="absolute top-4 right-4 flex flex-col gap-2 translate-x-12 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 transition-all duration-300">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleEditProduct(product);
-                        }}
-                        className="p-2 bg-white text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl shadow-lg transition-all"
-                        title="Редактировать"
-                      >
-                        <Edit2 className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCreateBasedOn(product);
-                        }}
-                        className="p-2 bg-white text-teal-600 hover:bg-teal-600 hover:text-white rounded-xl shadow-lg transition-all"
-                        title="Создать на основании"
-                      >
-                        <Copy className="w-4 h-4" />
-                      </button>
-                      {(userRole === 'admin' || userRole === 'supervisor') && (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            updateProduct(product.id, { saleBlocked: !product.saleBlocked });
-                          }}
-                          className={`p-2 bg-white ${product.saleBlocked ? 'text-amber-600' : 'text-gray-500'} hover:bg-amber-600 hover:text-white rounded-xl shadow-lg transition-all`}
-                          title={product.saleBlocked ? "Разблокировать продажу" : "Заблокировать продажу"}
-                        >
-                          <Lock className={`w-4 h-4 ${product.saleBlocked ? 'fill-current' : ''}`} />
-                        </button>
-                      )}
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteProduct(product);
-                        }}
-                        className="p-2 bg-white text-red-500 hover:bg-red-500 hover:text-white rounded-xl shadow-lg transition-all"
-                        title="Удалить"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
+                  {/* Quick Actions overlay for editing/deleting/hiding */}
+                  {(() => {
+                    const isManufacturerProduct =
+                      product.source === "manufacturer" ||
+                      product.isManufacturer ||
+                      product.fromProduction ||
+                      (product.companyId && companyData?.id && product.companyId !== companyData.id);
+
+                    const isSalonOrDesigner =
+                      companyData?.type === "Салон" ||
+                      companyData?.type === "Салон мебели" ||
+                      companyData?.type === "Дизайнер" ||
+                      userRole === "salon" ||
+                      userRole === "designer";
+
+                    const canEditOrDelete = !isManufacturerProduct || (!isSalonOrDesigner && userRole === "admin");
+                    const pIdStr = String(product.id || product.parentProductId || (product.id && String(product.id).split('_var_')[0]));
+                    const isCardHidden = hiddenProductIds.includes(pIdStr);
+
+                    return (
+                      <div className="absolute top-4 right-4 flex flex-col gap-2 translate-x-12 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 transition-all duration-300 z-20">
+                        {isCardHidden ? (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (onRestoreProduct) onRestoreProduct(product);
+                            }}
+                            className="p-2 bg-emerald-600 text-white hover:bg-emerald-700 rounded-xl shadow-lg transition-all cursor-pointer flex items-center gap-1 text-xs font-bold"
+                            title="Вернуть в каталог"
+                          >
+                            <Eye className="w-4 h-4" />
+                            <span>Вернуть</span>
+                          </button>
+                        ) : (
+                          <>
+                            {onHideProduct && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onHideProduct(product);
+                                }}
+                                className="p-2 bg-white text-amber-600 hover:bg-amber-600 hover:text-white rounded-xl shadow-lg transition-all cursor-pointer"
+                                title="Скрыть товар из каталога"
+                              >
+                                <EyeOff className="w-4 h-4" />
+                              </button>
+                            )}
+
+                            {canEditOrDelete && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditProduct(product);
+                                }}
+                                className="p-2 bg-white text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl shadow-lg transition-all cursor-pointer"
+                                title="Редактировать"
+                              >
+                                <Edit2 className="w-4 h-4" />
+                              </button>
+                            )}
+
+                            {canEditOrDelete && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleCreateBasedOn(product);
+                                }}
+                                className="p-2 bg-white text-teal-600 hover:bg-teal-600 hover:text-white rounded-xl shadow-lg transition-all cursor-pointer"
+                                title="Создать на основании"
+                              >
+                                <Copy className="w-4 h-4" />
+                              </button>
+                            )}
+
+                            {(userRole === 'admin' || userRole === 'supervisor') && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setBlockingSaleProduct(product);
+                                }}
+                                className={`p-2 rounded-xl shadow-lg transition-all cursor-pointer ${
+                                  isSaleBlocked(product)
+                                    ? 'bg-amber-500 text-white hover:bg-amber-600'
+                                    : 'bg-white text-gray-500 hover:bg-amber-500 hover:text-white'
+                                }`}
+                                title={
+                                  isSaleBlocked(product)
+                                    ? `Управление блокировкой продажи (Заблокировано${
+                                        product.saleBlockedUntil ? ` до ${formatBlockedUntil(product.saleBlockedUntil)}` : ''
+                                      })`
+                                    : "Заблокировать продажу"
+                                }
+                              >
+                                <Lock className={`w-4 h-4 ${isSaleBlocked(product) ? 'fill-current' : ''}`} />
+                              </button>
+                            )}
+
+                            {canEditOrDelete && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteProduct(product);
+                                }}
+                                className="p-2 bg-white text-red-500 hover:bg-red-500 hover:text-white rounded-xl shadow-lg transition-all cursor-pointer"
+                                title="Удалить"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="p-4 flex-1 flex flex-col">
@@ -26252,6 +26708,15 @@ const ProductsView = ({
           </p>
         </div>
       )}
+
+      <BlockSaleModal
+        isOpen={!!blockingSaleProduct}
+        onClose={() => setBlockingSaleProduct(null)}
+        product={blockingSaleProduct}
+        onSave={(id, updates) => {
+          updateProduct(id, updates);
+        }}
+      />
     </div>
   );
 };
@@ -26897,6 +27362,8 @@ export default function App() {
               }
               if (data.assemblyIncludes !== undefined) setAssemblyIncludes(data.assemblyIncludes);
               if (data.trimming !== undefined) setTrimming(data.trimming);
+              if (data.sawKerf !== undefined) setSawKerf(data.sawKerf);
+              if (data.cutterDiameter !== undefined) setCutterDiameter(data.cutterDiameter);
               if (data.hardwareKitPrice !== undefined) setHardwareKitPrice(data.hardwareKitPrice);
               if (data.catalogMaterials) setCatalogMaterials(data.catalogMaterials);
               if (data.mapLink) setMapLink(data.mapLink);
@@ -27004,6 +27471,8 @@ export default function App() {
         }
         if (genData.assemblyIncludes !== undefined) setAssemblyIncludes(genData.assemblyIncludes);
         if (genData.trimming !== undefined) setTrimming(genData.trimming);
+        if (genData.sawKerf !== undefined) setSawKerf(genData.sawKerf);
+        if (genData.cutterDiameter !== undefined) setCutterDiameter(genData.cutterDiameter);
         if (genData.hardwareKitPrice !== undefined) setHardwareKitPrice(genData.hardwareKitPrice);
         if (genData.catalogMaterials) setCatalogMaterials(genData.catalogMaterials);
         if (genData.mapLink) setMapLink(genData.mapLink);
@@ -27604,6 +28073,7 @@ export default function App() {
       facadeSheet: 1.8,
       facadeCustom: 1.5,
       hardware: 1.5,
+      services: 1.5,
       assembly: 1.5,
       delivery: 1.5,
       products: INITIAL_PRODUCT_CATEGORIES.reduce(
@@ -27618,6 +28088,7 @@ export default function App() {
       facadeSheet: 1.2,
       facadeCustom: 1.2,
       hardware: 1.2,
+      services: 1.2,
       assembly: 1.2,
       delivery: 1.2,
       products: INITIAL_PRODUCT_CATEGORIES.reduce(
@@ -27632,6 +28103,7 @@ export default function App() {
       facadeSheet: 1.3,
       facadeCustom: 1.3,
       hardware: 1.3,
+      services: 1.3,
       assembly: 1.3,
       delivery: 1.3,
       products: INITIAL_PRODUCT_CATEGORIES.reduce(
@@ -28027,6 +28499,8 @@ export default function App() {
     "saw" | "nesting"
   >("saw");
   const [cuttingType, setCuttingType] = useState<"nesting" | "saw">("saw");
+  const [sawKerf, setSawKerf] = useState<number>(4);
+  const [cutterDiameter, setCutterDiameter] = useState<number>(12);
   const [isGluingMode, setIsGluingMode] = useState(false);
   const [selectedForGlue, setSelectedForGlue] = useState<string[]>([]);
   const [gluedAssemblies, setGluedAssemblies] = useState<
@@ -28078,9 +28552,9 @@ export default function App() {
 
   useEffect(() => {
     setCuttingType(defaultCuttingType);
-    setKerf(defaultCuttingType === "nesting" ? 12 : 4);
-  }, [defaultCuttingType]);
-  const [kerf, setKerf] = useState(defaultCuttingType === "nesting" ? 12 : 4);
+    setKerf(defaultCuttingType === "nesting" ? cutterDiameter : sawKerf);
+  }, [defaultCuttingType, sawKerf, cutterDiameter]);
+  const [kerf, setKerf] = useState(defaultCuttingType === "nesting" ? cutterDiameter : sawKerf);
   const [addedProducts, setAddedProducts] = useState<any[]>([]);
   const [expandedKitchens, setExpandedKitchens] = useState<Record<string, boolean>>({});
   const [replaceKitchenItemModal, setReplaceKitchenItemModal] = useState<{ kitchenId: string | number; itemType: 'module' | 'hardware' | 'countertop'; itemIdx: number; currentItemName: string } | null>(null);
@@ -28565,6 +29039,8 @@ export default function App() {
           }
           if (data.calcMode) setCalcMode(data.calcMode);
           if (data.trimming !== undefined) setTrimming(data.trimming);
+          if (data.sawKerf !== undefined) setSawKerf(data.sawKerf);
+          if (data.cutterDiameter !== undefined) setCutterDiameter(data.cutterDiameter);
           if (data.hardwareKitPrice !== undefined)
             setHardwareKitPrice(data.hardwareKitPrice);
           if (data.assemblyPercentage !== undefined)
@@ -28833,6 +29309,8 @@ export default function App() {
             setCuttingType(data.defaultCuttingType);
           }
           if (data.trimming !== undefined) setTrimming(data.trimming);
+          if (data.sawKerf !== undefined) setSawKerf(data.sawKerf);
+          if (data.cutterDiameter !== undefined) setCutterDiameter(data.cutterDiameter);
           if (data.mapLink) setMapLink(data.mapLink);
         }
       },
@@ -29512,6 +29990,34 @@ export default function App() {
     }
   };
 
+  const handleHideProduct = async (product: any) => {
+    if (!companyData?.id) return;
+    const pIdStr = String(product.id || product.parentProductId || (product.id && String(product.id).split('_var_')[0]));
+    const currentHidden = (companyData.hiddenProductIds || []).map((id: any) => String(id));
+    if (!currentHidden.includes(pIdStr)) {
+      const updated = [...currentHidden, pIdStr];
+      try {
+        await updateDoc(doc(db, "companies", companyData.id), { hiddenProductIds: updated });
+        showAlert("Скрыто", "Товар скрыт из каталога");
+      } catch (err) {
+        console.error("Error hiding product:", err);
+      }
+    }
+  };
+
+  const handleRestoreProduct = async (product: any) => {
+    if (!companyData?.id) return;
+    const pIdStr = String(product.id || product.parentProductId || (product.id && String(product.id).split('_var_')[0]));
+    const currentHidden = (companyData.hiddenProductIds || []).map((id: any) => String(id));
+    const updated = currentHidden.filter((id) => id !== pIdStr);
+    try {
+      await updateDoc(doc(db, "companies", companyData.id), { hiddenProductIds: updated });
+      showAlert("Восстановлено", "Товар возвращен в основной каталог");
+    } catch (err) {
+      console.error("Error restoring product:", err);
+    }
+  };
+
   const handleToggleUnavailableThickness = (
     brandId: string,
     thickness: string,
@@ -29771,6 +30277,8 @@ export default function App() {
             coefficients,
             calcMode,
             trimming,
+            sawKerf,
+            cutterDiameter,
             hardwareKitPrice,
             assemblyPercentage,
             assemblyPercentages,
@@ -29889,7 +30397,7 @@ export default function App() {
 
   const handleCuttingTypeChange = (type: "nesting" | "saw") => {
     setCuttingType(type);
-    setKerf(type === "nesting" ? 12 : 4);
+    setKerf(type === "nesting" ? cutterDiameter : sawKerf);
   };
 
   const toggleRotation = (key: string) => {
@@ -30348,6 +30856,7 @@ export default function App() {
       facadeSheet: 1,
       facadeCustom: 1,
       hardware: 1,
+      services: 1,
       assembly: 1,
       delivery: 1,
       products: INITIAL_PRODUCT_CATEGORIES.reduce(
@@ -30403,6 +30912,7 @@ export default function App() {
       facadeCustom:
         (baseCoeffs.facadeCustom || 1) * (myMarkup.facadeCustom || 1),
       hardware: (baseCoeffs.hardware || 1) * (myMarkup.hardware || 1),
+      services: (baseCoeffs.services || 1) * (myMarkup.services || 1),
       assembly: (baseCoeffs.assembly || 1) * (myMarkup.assembly || 1),
       delivery: (baseCoeffs.delivery || 1) * (myMarkup.delivery || 1),
       products: { ...baseCoeffs.products },
@@ -31961,6 +32471,45 @@ export default function App() {
               setActiveTab={(tab: string) => setActiveTab(tab as any)}
               promotions={promotions}
               userRole={userRole}
+              onAddNewProduct={() => {
+                setActiveTab("products");
+                setTimeout(() => {
+                  window.dispatchEvent(new CustomEvent("products_view_add_new", { detail: { category: selectedReadyMadeCategory || "Кухни" } }));
+                }, 100);
+              }}
+              onEditProduct={(product) => {
+                setActiveTab("products");
+                setTimeout(() => {
+                  window.dispatchEvent(new CustomEvent("products_view_edit", { detail: product }));
+                }, 100);
+              }}
+              onCreateBasedOn={(product) => {
+                setActiveTab("products");
+                setTimeout(() => {
+                  window.dispatchEvent(new CustomEvent("products_view_create_copy", { detail: product }));
+                }, 100);
+              }}
+              onDeleteProduct={(product) => {
+                if (userRole === 'admin' || userRole === 'supervisor') {
+                  showConfirm(
+                    "Удаление товара",
+                    `Вы уверены, что хотите удалить товар "${product.name}"?`,
+                    () => deleteProduct(product.id)
+                  );
+                } else {
+                  if (companyData?.id) {
+                    updateDoc(doc(db, "companies", companyData.id, "products", String(product.id)), { markedForDeletion: true });
+                    showAlert("Отправлено на модерацию", "Товар помечен на удаление и отправлен администратору.");
+                  }
+                }
+              }}
+              onUpdateProduct={(productId, updates) => {
+                if (companyData?.id) {
+                  updateDoc(doc(db, "companies", companyData.id, "products", String(productId)), updates);
+                }
+              }}
+              onHideProduct={handleHideProduct}
+              onRestoreProduct={handleRestoreProduct}
             />
           ) : activeTab === "projects" ? (
             <ProjectsView
@@ -32149,6 +32698,9 @@ export default function App() {
               setPrices={setPrices}
               catalogServices={catalogServices}
               setCatalogServices={setCatalogServices}
+              isSalonOrDesigner={companyData?.type === "Салон" || companyData?.type === "Дизайнер"}
+              isProduction={companyData?.type === "Мебельное производство"}
+              serviceCoeff={resolveBrandCoefficient("services", "")}
             />
           ) : activeTab === "service-section" ? (
             <ServiceSectionView
@@ -32271,6 +32823,10 @@ export default function App() {
               setCalcMode={setCalcMode}
               trimming={trimming}
               setTrimming={setTrimming}
+              sawKerf={sawKerf}
+              setSawKerf={setSawKerf}
+              cutterDiameter={cutterDiameter}
+              setCutterDiameter={setCutterDiameter}
               defaultCuttingType={defaultCuttingType}
               setDefaultCuttingType={setDefaultCuttingType}
               hardwareKitPrice={hardwareKitPrice}

@@ -721,25 +721,42 @@ function transliterate(str: string): string {
   });
 
   app.get("/api/products/search-duplicates", async (req, res) => {
-    const { article, name, currentCompanyId } = req.query;
+    const { article, name, currentCompanyId, manufacturerArticle, mfgArticle } = req.query;
     try {
-      if (!article && !name) {
+      const searchMfg = typeof manufacturerArticle === 'string' ? manufacturerArticle.trim().toLowerCase() : (typeof mfgArticle === 'string' ? mfgArticle.trim().toLowerCase() : "");
+      const cleanArticle = typeof article === 'string' ? article.trim().toLowerCase() : "";
+      const cleanName = typeof name === 'string' ? name.trim().toLowerCase() : "";
+
+      if (!searchMfg && !cleanArticle && (!cleanName || cleanName.length < 3)) {
         return res.json([]);
       }
       
-      const cleanArticle = typeof article === 'string' ? article.trim().toLowerCase() : "";
-      const cleanName = typeof name === 'string' ? name.trim().toLowerCase() : "";
-      
-      const docs = await dbQueryWithRetry(() => prisma.$queryRaw<any[]>`
-        SELECT id, "docId", collection, path,
-          CASE 
-            WHEN (data::jsonb ? 'images') OR (data::jsonb ? 'image')
-            THEN (data::jsonb - 'images' - 'image')::text
-            ELSE data
-          END as data
-        FROM "DbDocument"
-        WHERE collection LIKE 'companies/%/products'
-      `);
+      let docs: any[] = [];
+      if (searchMfg) {
+        docs = await dbQueryWithRetry(() => prisma.$queryRaw<any[]>`
+          SELECT id, "docId", collection, path, data
+          FROM "DbDocument"
+          WHERE collection LIKE 'companies/%/products'
+            AND LOWER(data) LIKE ${'%' + searchMfg + '%'}
+          LIMIT 50
+        `);
+      } else if (cleanArticle) {
+        docs = await dbQueryWithRetry(() => prisma.$queryRaw<any[]>`
+          SELECT id, "docId", collection, path, data
+          FROM "DbDocument"
+          WHERE collection LIKE 'companies/%/products'
+            AND LOWER(data) LIKE ${'%' + cleanArticle + '%'}
+          LIMIT 50
+        `);
+      } else if (cleanName && cleanName.length >= 3) {
+        docs = await dbQueryWithRetry(() => prisma.$queryRaw<any[]>`
+          SELECT id, "docId", collection, path, data
+          FROM "DbDocument"
+          WHERE collection LIKE 'companies/%/products'
+            AND LOWER(data) LIKE ${'%' + cleanName + '%'}
+          LIMIT 50
+        `);
+      }
       
       const normalizedDocs = docs.map(d => ({
         id: d.id,
@@ -753,30 +770,57 @@ function transliterate(str: string): string {
       const seenIds = new Set<string>();
 
       for (const doc of normalizedDocs) {
-        if (currentCompanyId && doc.collection.includes(`companies/${currentCompanyId}/`)) {
+        let data: any = {};
+        try {
+          data = typeof doc.data === 'string' ? JSON.parse(doc.data) : doc.data;
+        } catch {
           continue;
         }
+
+        const mfgArt = data.manufacturerArticle ? String(data.manufacturerArticle).trim().toLowerCase() : "";
+        const art = data.article ? String(data.article).trim().toLowerCase() : "";
+        const vArt = data.vendorArticle ? String(data.vendorArticle).trim().toLowerCase() : "";
+        const nName = data.name ? String(data.name).trim().toLowerCase() : "";
+
+        const hasMatchingVariation = data.variations && Array.isArray(data.variations) && data.variations.some((v: any) => {
+          const vMfg = v.manufacturerArticle ? String(v.manufacturerArticle).trim().toLowerCase() : "";
+          const vArt = v.article ? String(v.article).trim().toLowerCase() : "";
+          return (searchMfg && (vMfg === searchMfg || vMfg.includes(searchMfg))) || (cleanArticle && (vArt === cleanArticle || vArt.includes(cleanArticle)));
+        });
         
-        const data = JSON.parse(doc.data);
-        const matchArticle = cleanArticle && data.article && String(data.article).trim().toLowerCase() === cleanArticle;
-        const matchName = cleanName && data.name && String(data.name).trim().toLowerCase() === cleanName;
+        const matchMfg = searchMfg && (mfgArt === searchMfg || mfgArt.includes(searchMfg) || art === searchMfg || vArt === searchMfg || hasMatchingVariation);
+        const matchArticle = cleanArticle && (art === cleanArticle || art.includes(cleanArticle) || vArt === cleanArticle || mfgArt === cleanArticle || hasMatchingVariation);
+        const matchName = cleanName && cleanName.length >= 3 && nName.includes(cleanName);
         
-        if (matchArticle || matchName) {
+        if (matchMfg || matchArticle || matchName) {
           const ukey = `${doc.collection}-${doc.docId}`;
           if (seenIds.has(ukey)) continue;
           seenIds.add(ukey);
 
           duplicates.push({
-            id: doc.docId,
+            id: doc.docId || doc.id,
             companyId: doc.collection.split('/')[1],
             name: data.name,
             article: data.article,
+            vendorArticle: data.vendorArticle,
+            manufacturerArticle: data.manufacturerArticle || data.article,
             description: data.description,
             images: data.images || (data.image ? [data.image] : []),
             color: data.color,
             unit: data.unit,
             manufacturer: data.manufacturer,
             category: data.category,
+            purchasePrice: data.purchasePrice || data.price || 0,
+            dryerWidth: data.dryerWidth,
+            dryerBase: data.dryerBase,
+            handleMaterial: data.handleMaterial,
+            sinkGroup: data.sinkGroup,
+            sinkBrand: data.sinkBrand,
+            faucetBrand: data.faucetBrand,
+            filterBrand: data.filterBrand,
+            fastenerGroup: data.fastenerGroup,
+            wardrobeGroup: data.wardrobeGroup,
+            variations: data.variations || [],
           });
         }
       }
