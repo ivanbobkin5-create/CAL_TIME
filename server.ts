@@ -154,7 +154,11 @@ function transliterate(str: string): string {
           const parsed = JSON.parse(doc.data);
           if (parsed.landingPage?.customDomain === host || (parsed.landingPage?.customDomain && parsed.landingPage.customDomain.replace(/^https?:\/\//, '') === host)) {
             const autoAlias = transliterate(parsed.name || "");
-            return res.json({ id: doc.docId, alias: parsed.landingPage?.alias || autoAlias || doc.docId });
+            return res.json({ 
+              id: doc.docId, 
+              companySlug: autoAlias || doc.docId,
+              storefrontAlias: parsed.landingPage?.alias || "catalog"
+            });
           }
         } catch (e) {}
       }

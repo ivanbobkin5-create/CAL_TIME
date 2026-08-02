@@ -83,8 +83,8 @@ export function LandingSettingsView({
     ...(companyData?.landingPage || {}),
   };
 
-  const autoSlug = companyData?.name ? transliterate(companyData.name) : (companyData?.id || "catalog");
-  const effectiveAlias = landingConfig.alias || autoSlug;
+  const companySlug = companyData?.name ? transliterate(companyData.name) : (companyData?.id || "company");
+  const effectiveAlias = landingConfig.alias || "catalog";
 
   const handleUpdateConfig = (updates: Partial<LandingPageConfig>) => {
     setCompanyData((prev: any) => ({
@@ -134,7 +134,7 @@ export function LandingSettingsView({
 
   const publicUrl = landingConfig.customDomain 
     ? (landingConfig.customDomain.startsWith('http') ? landingConfig.customDomain : `https://${landingConfig.customDomain}`)
-    : `${currentOrigin}/${effectiveAlias}`;
+    : `${currentOrigin}/${companySlug}/${effectiveAlias}`;
 
   const handleCopyLink = (urlToCopy: string, msg: string) => {
     navigator.clipboard.writeText(urlToCopy);
@@ -261,28 +261,27 @@ export function LandingSettingsView({
               {/* Alias input */}
               <div>
                 <label className="block text-xs font-black uppercase text-gray-500 tracking-wider mb-1.5">
-                  Адрес витрины (Название компании)
+                  Название страницы витрины (Например: moduli, catalog, shop)
                 </label>
                 <div className="flex rounded-xl shadow-sm">
                   <span className="inline-flex items-center px-3.5 rounded-l-xl border border-r-0 border-gray-300 bg-gray-100 text-gray-600 text-xs font-mono font-bold shrink-0">
-                    {currentHost}/
+                    {currentHost}/{companySlug}/
                   </span>
                   <input
                     type="text"
-                    value={effectiveAlias}
-                    readOnly
-                    disabled
-                    className="block w-full min-w-0 flex-1 rounded-none rounded-r-xl border border-gray-200 px-3.5 py-2.5 text-sm font-mono font-bold text-gray-500 bg-gray-50 cursor-not-allowed"
+                    value={landingConfig.alias}
+                    onChange={handleAliasChange}
+                    placeholder="catalog"
+                    className="block w-full min-w-0 flex-1 rounded-none rounded-r-xl border border-gray-300 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:ring-blue-500 font-mono font-bold text-gray-900 bg-white"
                   />
                 </div>
                 <div className="mt-2 p-3 bg-blue-50/80 rounded-xl border border-blue-100 text-xs text-blue-900 space-y-1">
                   <div className="flex items-center gap-1.5 font-bold text-blue-950">
                     <Info className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    <span>Автоматически сгенерированный адрес</span>
+                    <span>Структура адреса</span>
                   </div>
                   <p className="text-[11px] leading-relaxed">
-                    Адрес витрины генерируется автоматически из названия вашей компании и <b>не может быть изменен вручную</b>. 
-                    Ваша страница доступна по адресу: <code className="bg-white px-1.5 py-0.5 rounded border border-blue-200 font-mono font-bold text-blue-700">/{effectiveAlias}</code>, а вложенные страницы (например, каталог) имеют формат <code className="bg-white px-1.5 py-0.5 rounded border border-blue-200 font-mono font-bold text-blue-700">/{effectiveAlias}/catalog</code>.
+                    Название компании (<code className="bg-white px-1 py-0.5 rounded border border-blue-200 font-mono font-bold text-blue-700">{companySlug}</code>) неизменно и привязывает витрину к вашему профилю. Название самой витрины вы можете менять по своему усмотрению (по умолчанию <code className="bg-white px-1 py-0.5 rounded border border-blue-200 font-mono font-bold text-blue-700">catalog</code>).
                   </p>
                 </div>
               </div>
@@ -324,9 +323,14 @@ export function LandingSettingsView({
                     </span>
                   </div>
 
-                  <p className="text-xs text-slate-300 leading-relaxed">
-                    Чтобы ваш каталог открывался по вашему собственному адресу (например, <code className="text-emerald-300 font-mono">shop.mebel-faktura.ru</code>), внесите записи в личной панели регистратора вашего домена (<b>Reg.ru</b>, <b>Beget</b>, <b>Timeweb</b>, <b>Cloudflare</b>, <b>Яндекс.360</b> и др.):
+                  <p className="text-xs text-slate-300 leading-relaxed mb-2">
+                    Чтобы ваша витрина открывалась по вашему собственному адресу (например, <code className="text-emerald-300 font-mono">shop.mebel-faktura.ru</code>), внесите записи в панели регистратора вашего домена (<b>Reg.ru</b>, <b>Beget</b>, <b>Timeweb</b> и др.).
                   </p>
+                  <div className="bg-slate-800 p-3 rounded-lg border border-slate-700 text-xs text-slate-200 mb-3">
+                    <b className="text-emerald-400">Обратите внимание:</b> При привязке домена к витрине автоматически привязывается весь ваш каталог и все категории! 
+                    Например, страница витрины <code className="bg-slate-900 px-1 py-0.5 rounded text-emerald-300">{currentHost}/{companySlug}/{effectiveAlias}</code> 
+                    будет автоматически доступна по вашему домену <code className="bg-slate-900 px-1 py-0.5 rounded text-emerald-300">shop.mebel-faktura.ru</code>, а переход в категорию кухни — по <code className="bg-slate-900 px-1 py-0.5 rounded text-emerald-300">shop.mebel-faktura.ru/kuhni</code>.
+                  </div>
 
                   <div className="space-y-3">
                     {/* Step 1 & 2 */}

@@ -27515,28 +27515,33 @@ export default function App() {
   const [isSessionBlocked, setIsSessionBlocked] = useState(false);
   const [isEndingSessions, setIsEndingSessions] = useState(false);
   const [sessionId] = useState(() => Math.random().toString(36).substr(2, 9));
-  const [hostMappedAlias, setHostMappedAlias] = useState<string | null>(null);
+  const [hostMappedAlias, setHostMappedAlias] = useState<{ companySlug: string, storefrontAlias: string } | null>(null);
+  const [isCheckingDomain, setIsCheckingDomain] = useState(() => {
+    const hostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+    return hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.includes('.run.app') && !hostname.includes('mebel-plan.ru');
+  });
 
   useEffect(() => {
     const checkCustomDomain = async () => {
+      if (!isCheckingDomain) return;
       const hostname = window.location.hostname;
-      // Skip if we are on the main app domain or localhost
-      if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname.includes('.run.app')) {
-        return;
-      }
-
+      
       try {
         const res = await fetch(`/api/public/lookup-by-host?host=${hostname}`);
         if (res.ok) {
           const data = await res.json();
-          setHostMappedAlias(data.alias || data.id);
+          if (data.companySlug) {
+            setHostMappedAlias({ companySlug: data.companySlug, storefrontAlias: data.storefrontAlias || "catalog" });
+          }
         }
       } catch (e) {
         console.error("Custom domain lookup failed", e);
+      } finally {
+        setIsCheckingDomain(false);
       }
     };
     checkCustomDomain();
-  }, []);
+  }, [isCheckingDomain]);
 
   const [productionFormat, setProductionFormat] =
     useState<ProductionFormat>("contract");
@@ -31734,6 +31739,17 @@ export default function App() {
     return <PublicLandingView aliasOrId={aliasOrId} initialSubPath={subPath} />;
   }
 
+  // Handle custom domain at root OR any sub-path
+  if (hostMappedAlias) {
+    let subPath = currentPath === "/" ? "" : currentPath.substring(1);
+    if (!subPath) {
+      subPath = hostMappedAlias.storefrontAlias;
+    } else if (!subPath.startsWith(hostMappedAlias.storefrontAlias)) {
+      subPath = hostMappedAlias.storefrontAlias + "/" + subPath;
+    }
+    return <PublicLandingView aliasOrId={hostMappedAlias.companySlug} initialSubPath={subPath} />;
+  }
+
   // Handle direct custom slug routes (e.g. /mebelfaktura, /mebelfaktura/moduli, /mebelfaktura/catalog)
   const pathSegments = currentPath.split("/").filter(Boolean);
   const reservedSystemRoutes = [
@@ -31743,19 +31759,14 @@ export default function App() {
     "procurement_plan", "arrivals", "summary", "checkout_current", "ready_made",
     "moduli", "kuhni", "fasady", "stoleshnicy", "petli", "posudosushiteli", "catalog", "all", "vse"
   ];
-
+  
   if (pathSegments.length > 0 && !reservedSystemRoutes.includes(pathSegments[0].toLowerCase())) {
     const aliasOrId = pathSegments[0];
     const subPath = pathSegments.slice(1).join("/");
     return <PublicLandingView aliasOrId={aliasOrId} initialSubPath={subPath} />;
   }
 
-  // Handle custom domain at root
-  if (hostMappedAlias && (currentPath === "/" || currentPath === "")) {
-    return <PublicLandingView aliasOrId={hostMappedAlias} initialSubPath="" />;
-  }
-
-  if (isLoading) {
+  if (isLoading || isCheckingDomain) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-white overflow-hidden">
         <motion.div

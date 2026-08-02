@@ -4,8 +4,8 @@
   "scripts": {
     "dev": "tsx server.ts",
     "seed": "tsx seed.ts",
-    "build": "npx prisma generate && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
-    "start": "npx prisma db push --accept-data-loss && npx tsx seed.ts && node dist/server.cjs",
+    "build": "npx prisma generate && vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs && esbuild seed.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/seed.cjs",
+    "start": "npx prisma db push --skip-generate --accept-data-loss && node dist/seed.cjs && node dist/server.cjs",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
@@ -41,6 +41,7 @@
     "react-konva": "^19.2.3",
     "recharts": "^3.8.1",
     "tailwind-merge": "^3.5.0",
+    "tsx": "^4.22.1",
     "use-image": "^1.1.4",
     "vite": "^6.2.0",
     "xlsx": "^0.18.5"
@@ -52,7 +53,6 @@
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.28.0",
     "tailwindcss": "^4.1.14",
-    "tsx": "^4.22.1",
     "typescript": "~5.8.2",
     "vite": "^6.2.0",
     "vite-plugin-pwa": "^1.2.0"

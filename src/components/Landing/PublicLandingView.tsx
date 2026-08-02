@@ -55,10 +55,20 @@ const GRADIENT_CLASSES: Record<string, string> = {
   "purple-violet": "from-purple-600 to-violet-800",
 };
 
-function resolveCategoryFromSubpath(cats: string[], subPath?: string): string {
-  if (!subPath) return cats[0] || "";
-  const norm = subPath.toLowerCase().trim();
-  if (norm === "catalog" || norm === "all" || norm === "vse") return ""; // Show all products
+function resolveCategoryFromSubpath(cats: string[], subPath?: string, storefrontAlias?: string): string {
+  let actualSubpath = subPath || "";
+  if (storefrontAlias && actualSubpath.startsWith(storefrontAlias)) {
+    const withoutStore = actualSubpath.substring(storefrontAlias.length);
+    if (withoutStore.startsWith("/")) {
+      actualSubpath = withoutStore.substring(1);
+    } else {
+      actualSubpath = "";
+    }
+  }
+
+  const norm = actualSubpath.toLowerCase().trim();
+  if (norm === "" || norm === "catalog" || norm === "all" || norm === "vse") return ""; // Show all products
+  
   if (norm === "moduli" || norm === "modules") {
     const matched = cats.find(c => c.toLowerCase().includes("модули") || c.toLowerCase().includes("модуль"));
     if (matched) return matched;
@@ -84,11 +94,26 @@ function categoryToSubpath(category: string): string {
   return transliterate(category) || "catalog";
 }
 
-function updateUrlSubpath(category: string, aliasOrId: string) {
-  if (!aliasOrId) return;
+function updateUrlSubpath(category: string, companySlug: string, storefrontAlias?: string) {
+  if (!companySlug) return;
   const sub = categoryToSubpath(category);
+  const hostname = window.location.hostname;
+  const isCustomDomain = hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.includes('.run.app') && !hostname.includes('mebel-plan.ru');
   const isCPath = window.location.pathname.startsWith("/c/");
-  const newPath = isCPath ? `/c/${aliasOrId}/${sub}` : `/${aliasOrId}/${sub}`;
+  
+  let newPath = "";
+  if (isCustomDomain) {
+    newPath = `/${sub && sub !== "catalog" ? sub : ""}`;
+  } else {
+    newPath = isCPath ? `/c/${companySlug}` : `/${companySlug}`;
+    if (storefrontAlias) {
+      newPath += `/${storefrontAlias}`;
+    }
+    if (sub && sub !== "catalog") {
+      newPath += `/${sub}`;
+    }
+  }
+  
   if (window.location.pathname !== newPath) {
     window.history.pushState({ category }, "", newPath);
   }
@@ -155,7 +180,12 @@ export function PublicLandingView({ aliasOrId, initialSubPath }: PublicLandingVi
           
           const cats = Array.from(new Set((data.products || []).map((p: any) => p.category))) as string[];
           if (cats.length > 0) {
-            setSelectedCategory(resolveCategoryFromSubpath(cats, initialSubPath));
+            const storefrontAlias = data?.generalSettings?.landingPage?.alias || "";
+            const resolvedCat = resolveCategoryFromSubpath(cats, initialSubPath, storefrontAlias);
+            setSelectedCategory(resolvedCat);
+            if (!initialSubPath && storefrontAlias) {
+               updateUrlSubpath(resolvedCat, aliasOrId, storefrontAlias);
+            }
           }
           setLoading(false); // Instant load
         }
@@ -196,7 +226,13 @@ export function PublicLandingView({ aliasOrId, initialSubPath }: PublicLandingVi
         
         const cats = Array.from(new Set((data.products || []).map((p: any) => p.category))) as string[];
         if (cats.length > 0) {
-          setSelectedCategory(resolveCategoryFromSubpath(cats, initialSubPath));
+          const storefrontAlias = data?.generalSettings?.landingPage?.alias || "";
+          const resolvedCat = resolveCategoryFromSubpath(cats, initialSubPath, storefrontAlias);
+          setSelectedCategory(resolvedCat);
+          
+          if (!initialSubPath && storefrontAlias) {
+             updateUrlSubpath(resolvedCat, aliasOrId, storefrontAlias);
+          }
         }
       } catch (err: any) {
         if (!cached) setError(err.message || "Ошибка соединения с сервером");
@@ -763,7 +799,7 @@ export function PublicLandingView({ aliasOrId, initialSubPath }: PublicLandingVi
                     onClick={() => {
                       setSelectedCategory(cat);
                       setSelectedBrands([]); // Сброс брендов при смене категории
-                      updateUrlSubpath(cat, aliasOrId);
+                      updateUrlSubpath(cat, aliasOrId, generalSettings?.landingPage?.alias || "");
                     }}
                     className={`px-3 py-2.5 rounded-xl text-left font-bold text-xs transition-all flex items-center justify-between gap-2 whitespace-nowrap md:whitespace-normal w-full border ${
                       selectedCategory === cat
@@ -872,7 +908,7 @@ export function PublicLandingView({ aliasOrId, initialSubPath }: PublicLandingVi
                   onClick={() => {
                     setSelectedCategory("");
                     setSelectedBrands([]);
-                    updateUrlSubpath("", aliasOrId);
+                    updateUrlSubpath("", aliasOrId, generalSettings?.landingPage?.alias || "");
                   }}
                   className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap border ${
                     selectedCategory === ""
@@ -893,7 +929,7 @@ export function PublicLandingView({ aliasOrId, initialSubPath }: PublicLandingVi
                     onClick={() => {
                       setSelectedCategory(cat);
                       setSelectedBrands([]);
-                      updateUrlSubpath(cat, aliasOrId);
+                      updateUrlSubpath(cat, aliasOrId, generalSettings?.landingPage?.alias || "");
                     }}
                     className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap border ${
                       selectedCategory === cat
