@@ -200,7 +200,7 @@ export const SpecificationPrintView = ({
 
           {/* Projects Breakdown */}
           {projects.length > 0 && (
-            <div className="mb-6 page-break-after-always">
+            <div className="mb-6 break-inside-avoid shadow-sm rounded-xl overflow-hidden border border-gray-200 bg-white p-4">
               <p className="font-bold mb-3 text-sm text-gray-700">
                 Состав комплекта:
               </p>
@@ -255,41 +255,39 @@ export const SpecificationPrintView = ({
             </div>
           )}
 
-          <div className="border border-gray-200 rounded-xl overflow-hidden mb-6 shadow-sm break-inside-avoid">
-            {/* General Info */}
-            <div className="bg-yellow-50 p-3 border-b border-yellow-200 text-yellow-900 flex flex-col justify-center items-start gap-1">
-              <div className="flex items-center gap-2">
-                <span className="text-lg font-bold">
-                  Общая сумма:{" "}
-                  {(
-                    (summary.totalMaterialsPrice || 0) +
-                    (summary.totalHardwarePrice || 0) +
-                    (summary.totalServicesPrice || 0) +
-                    (summary.totalDeliveryPrice || 0) +
-                    (summary.totalAssemblyPrice || 0)
-                  ).toLocaleString()}{" "}
-                  ₽
-                </span>
-                <span className="text-xs font-medium opacity-75">
-                  — Стоимость изделия, товаров и услуг
-                </span>
-              </div>
-              {(summary.totalDeliveryPrice > 0 ||
-                summary.totalAssemblyPrice > 0) && (
-                <span className="text-xs font-medium opacity-75">
-                  * Доставка и Сборка оплачиваются отдельно
-                </span>
-              )}
+          <div className="border border-yellow-200 bg-yellow-50 rounded-xl p-4 text-yellow-900 flex flex-col justify-center items-start gap-1 mb-6 break-inside-avoid shadow-sm">
+            <div className="flex items-center gap-2">
+              <span className="text-lg font-bold">
+                Общая сумма:{" "}
+                {(
+                  (summary.totalMaterialsPrice || 0) +
+                  (summary.totalHardwarePrice || 0) +
+                  (summary.totalServicesPrice || 0) +
+                  (summary.totalDeliveryPrice || 0) +
+                  (summary.totalAssemblyPrice || 0)
+                ).toLocaleString()}{" "}
+                ₽
+              </span>
+              <span className="text-xs font-medium opacity-75">
+                — Стоимость изделия, товаров и услуг
+              </span>
             </div>
+            {(summary.totalDeliveryPrice > 0 ||
+              summary.totalAssemblyPrice > 0) && (
+              <span className="text-xs font-medium opacity-75">
+                * Доставка и Сборка оплачиваются отдельно
+              </span>
+            )}
+          </div>
 
-            {/* Materials Block */}
-            {summary.materials && summary.materials.length > 0 && (
-              <div className="mb-4 break-inside-avoid">
-                <div className="bg-blue-50 font-bold p-2 px-3 text-xs text-blue-900 rounded-t-xl border border-b-0 border-blue-100 flex items-center gap-2">
-                  <div className="w-1.5 h-3 bg-blue-500 rounded-full"></div>
-                  Материалы, кромка и фасады
-                </div>
-                <div className="border border-gray-200 rounded-b-xl px-4 py-3 bg-white text-[10px] space-y-3">
+          {/* Materials Block */}
+          {summary.materials && summary.materials.length > 0 && (
+            <div className="mb-6 break-inside-avoid shadow-sm rounded-xl overflow-hidden border border-gray-200">
+              <div className="bg-blue-50 font-bold p-2.5 px-3 text-xs text-blue-900 flex items-center gap-2 border-b border-gray-200">
+                <div className="w-1.5 h-3 bg-blue-500 rounded-full"></div>
+                Материалы, кромка и фасады
+              </div>
+              <div className="px-4 py-3 bg-white text-[10px] space-y-3">
                      {Object.entries((() => {
                         const groups: Record<string, any> = {};
                         projects.forEach(p => {
@@ -380,12 +378,12 @@ export const SpecificationPrintView = ({
 
             {/* Items Table */}
             {summary.hardware.filter((item: any) => item.name).length > 0 && (
-              <div className="mb-4 break-inside-avoid">
-                <div className="bg-indigo-50 font-bold p-2 px-3 text-xs text-indigo-900 rounded-t-xl border border-b-0 border-indigo-100 flex items-center gap-2">
+              <div className="mb-6 break-inside-avoid shadow-sm rounded-xl overflow-hidden border border-gray-200 bg-white">
+                <div className="bg-indigo-50 font-bold p-2.5 px-3 text-xs text-indigo-900 flex items-center gap-2 border-b border-gray-200">
                   <div className="w-1.5 h-3 bg-indigo-500 rounded-full"></div>
                   Товары и комплектующие
                 </div>
-                <div className="border border-gray-200 rounded-b-xl overflow-hidden">
+                <div className="overflow-hidden">
                   <table className="w-full text-[10px]">
                     <thead>
                       <tr className="bg-gray-50 border-b border-gray-200 text-gray-500 uppercase tracking-wider text-[9px]">
@@ -467,12 +465,12 @@ export const SpecificationPrintView = ({
             {(summary.services.length > 0 ||
               summary.totalDeliveryPrice > 0 ||
               summary.totalAssemblyPrice > 0) && (
-              <div className="break-inside-avoid mb-4">
-                <div className="bg-orange-50 font-bold p-2 px-3 text-xs text-orange-900 rounded-t-xl border border-b-0 border-orange-100 flex items-center gap-2 break-inside-avoid">
+              <div className="mb-6 break-inside-avoid shadow-sm rounded-xl overflow-hidden border border-gray-200 bg-white">
+                <div className="bg-orange-50 font-bold p-2.5 px-3 text-xs text-orange-900 flex items-center gap-2 border-b border-gray-200">
                   <div className="w-1.5 h-3 bg-orange-400 rounded-full"></div>
                   Услуги, доставка и сборка
                 </div>
-                <div className="border border-gray-200 rounded-b-xl overflow-hidden">
+                <div className="overflow-hidden">
                   <table className="w-full text-[10px]">
                     <tbody className="divide-y divide-gray-100">
                       {Array.from(
@@ -567,9 +565,8 @@ export const SpecificationPrintView = ({
                 </div>
               </div>
             )}
-          </div>
 
-          <div className="mt-8 text-xs text-gray-500 bg-gray-50 p-4 rounded-xl border border-gray-100 break-inside-avoid shadow-sm">
+            <div className="mt-8 text-xs text-gray-500 bg-gray-50 p-4 rounded-xl border border-gray-100 break-inside-avoid shadow-sm">
             <p className="font-bold mb-1">Согласование спецификации</p>
             <p className="whitespace-pre-line">
               {specificationConfig?.approvalText || "Заказчик подтверждает и согласен со Спецификацией к заказу. Внесенные изменения после подписания могут повлечь изменение стоимости и сроков."}
@@ -606,6 +603,14 @@ export const SpecificationPrintView = ({
             overflow: visible !important;
             padding: 0 !important;
             margin: 0 !important;
+          }
+          .page-break-after-always {
+            page-break-after: always !important;
+            break-after: page !important;
+          }
+          .break-inside-avoid {
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
         }
       `,

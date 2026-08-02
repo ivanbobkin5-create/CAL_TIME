@@ -12,7 +12,9 @@ import {
   PieChart as PieIcon,
   Layers,
   Sparkles,
-  Info
+  Info,
+  Factory,
+  Package
 } from "lucide-react";
 import {
   ResponsiveContainer,
@@ -39,11 +41,75 @@ interface Project {
 
 export const ProjectAnalyticsModal = ({
   project,
+  companyType,
   onClose,
 }: {
   project: Project;
+  companyType?: string;
   onClose: () => void;
 }) => {
+  // Calculate salonAnalytics for Salons and Designers
+  const salonAnalytics = useMemo(() => {
+    const isSalonOrDesigner = companyType === "Салон" || companyType === "Дизайнер";
+    if (!isSalonOrDesigner) return null;
+
+    let prodCost = 0;
+    let prodRetail = 0;
+    let ownCost = 0;
+    let ownRetail = 0;
+
+    const rows: any[] = [];
+    if (project.data?.summaryRows && project.data.summaryRows.length > 0) {
+      rows.push(...project.data.summaryRows);
+    } else if (project.specification?.summaryRows && project.specification.summaryRows.length > 0) {
+      rows.push(...project.specification.summaryRows);
+    } else if (project.data?.summary) {
+      const s = project.data.summary;
+      if (s.materials) rows.push(...s.materials.map((m: any) => ({ ...m, type: "material" })));
+      if (s.hardware) rows.push(...s.hardware.map((h: any) => ({ ...h, type: "hardware" })));
+      if (s.services) rows.push(...s.services.map((s: any) => ({ ...s, type: "service" })));
+    }
+
+    rows.forEach((row) => {
+      const rawProd = row.rawProduct;
+      const isFromProduction =
+        row.isCustomFacade ||
+        row.type === "material" ||
+        row.type === "edge" ||
+        (rawProd && (rawProd.source === "manufacturer" || rawProd.isManufacturer || rawProd.fromProduction)) ||
+        (row.type === "product" && !rawProd) ||
+        (row.type === "service" && row.isFromProduction);
+
+      const qty = parseFloat(row.qty) || 1;
+      const retailTotal = row.netPaid !== undefined ? row.netPaid : row.total;
+      const rawUnitCost = row.rawPrice || (row.coef ? row.price / row.coef : row.price);
+      const itemCost = Math.round(rawUnitCost * qty);
+
+      if (isFromProduction) {
+        prodCost += itemCost;
+        prodRetail += retailTotal;
+      } else {
+        ownCost += itemCost;
+        ownRetail += retailTotal;
+      }
+    });
+
+    const prodProfit = prodRetail - prodCost;
+    const ownProfit = ownRetail - ownCost;
+    const totalCost = prodCost + ownCost;
+    const totalProfit = prodProfit + ownProfit;
+
+    return {
+      prodCost,
+      prodRetail,
+      prodProfit,
+      ownCost,
+      ownRetail,
+      ownProfit,
+      totalCost,
+      totalProfit,
+    };
+  }, [project, companyType]);
   // Parsing algorithm to separate Carcass, Facades, Hardware, and Services
   const analyticsData = useMemo(() => {
     let totalMaterialsRevenue = 0;
@@ -321,6 +387,92 @@ export const ProjectAnalyticsModal = ({
               <span className="text-[10px] text-purple-500 font-medium mt-1 inline-block">Наценка: х{totals.markup}</span>
             </div>
           </div>
+
+          {salonAnalytics && (
+            <div className="bg-slate-900 text-white rounded-3xl p-6 shadow-xl border border-slate-850">
+              <div className="flex items-center gap-3 mb-5 pb-4 border-b border-white/10">
+                <div className="p-2 bg-indigo-500/20 text-indigo-300 rounded-xl">
+                  <TrendingUp className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-base text-white">
+                    Финансовая аналитика закупки и прибыли
+                  </h3>
+                  <p className="text-xs text-slate-400">
+                    Разделение на товары производства и ваши собственные товары
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                {/* Товары производства */}
+                <div className="bg-white/5 rounded-2xl p-5 border border-white/10">
+                  <div className="flex items-center gap-2 text-indigo-300 text-xs font-bold uppercase tracking-wider mb-3">
+                    <Factory className="w-4 h-4" />
+                    <span>Товары производства</span>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between text-slate-300">
+                      <span>Закупка у нас:</span>
+                      <span className="font-semibold text-white">{salonAnalytics.prodCost.toLocaleString()} ₽</span>
+                    </div>
+                    <div className="flex justify-between text-slate-300">
+                      <span>Продажа клиенту:</span>
+                      <span className="font-semibold text-white">{salonAnalytics.prodRetail.toLocaleString()} ₽</span>
+                    </div>
+                    <div className="pt-2.5 border-t border-white/10 flex justify-between font-bold text-emerald-400">
+                      <span>Ваша маржа:</span>
+                      <span>+{salonAnalytics.prodProfit.toLocaleString()} ₽</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Свои товары */}
+                <div className="bg-white/5 rounded-2xl p-5 border border-white/10">
+                  <div className="flex items-center gap-2 text-amber-300 text-xs font-bold uppercase tracking-wider mb-3">
+                    <Package className="w-4 h-4" />
+                    <span>Собственные товары</span>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between text-slate-300">
+                      <span>Ваша закупка:</span>
+                      <span className="font-semibold text-white">{salonAnalytics.ownCost.toLocaleString()} ₽</span>
+                    </div>
+                    <div className="flex justify-between text-slate-300">
+                      <span>Продажа клиенту:</span>
+                      <span className="font-semibold text-white">{salonAnalytics.ownRetail.toLocaleString()} ₽</span>
+                    </div>
+                    <div className="pt-2.5 border-t border-white/10 flex justify-between font-bold text-emerald-400">
+                      <span>Ваша маржа:</span>
+                      <span>+{salonAnalytics.ownProfit.toLocaleString()} ₽</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Итого */}
+                <div className="bg-indigo-600/20 rounded-2xl p-5 border border-indigo-500/30">
+                  <div className="flex items-center gap-2 text-indigo-200 text-xs font-bold uppercase tracking-wider mb-3">
+                    <TrendingUp className="w-4 h-4 text-emerald-400" />
+                    <span>Итого по проекту</span>
+                  </div>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex justify-between text-indigo-200">
+                      <span>Всего затраты:</span>
+                      <span className="font-semibold text-white">{salonAnalytics.totalCost.toLocaleString()} ₽</span>
+                    </div>
+                    <div className="flex justify-between text-indigo-200">
+                      <span>Всего выручка:</span>
+                      <span className="font-semibold text-white">{(salonAnalytics.prodRetail + salonAnalytics.ownRetail).toLocaleString()} ₽</span>
+                    </div>
+                    <div className="pt-2.5 border-t border-white/20 flex justify-between text-base font-black text-emerald-300">
+                      <span>Общая прибыль:</span>
+                      <span>+{salonAnalytics.totalProfit.toLocaleString()} ₽</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Graphical Section */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

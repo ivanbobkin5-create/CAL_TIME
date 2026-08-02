@@ -274,53 +274,76 @@ const compressImage = (base64: string, maxWidth = 400, maxHeight = 400, quality 
   });
 };
 
-const hydrateCollectionWithImages = async (url: string, parsedList: any[]): Promise<any[]> => {
-  if (!url.endsWith("/products") || !Array.isArray(parsedList)) {
-    return parsedList;
-  }
-  
-  // Asynchronously check and inject cached image data for every product in the collection
-  const hydratedList = await Promise.all(parsedList.map(async (item: any) => {
-    if (!item || !item.id) return item;
-    
-    // Check if we have the full product stored in IndexedDB under its document path
-    const docKey = `meb_cache:${url.replace("/col/", "/doc/")}/${item.id}`;
-    try {
-      const cachedDocStr = await idbCache.get(docKey);
-      if (cachedDocStr) {
-        const cachedDoc = JSON.parse(cachedDocStr);
-        const img = cachedDoc?.image || cachedDoc?.images?.[0];
-        if (img) {
-          // Self-healing: if the base64 string is large (e.g. >50,000 chars),
-          // compress it in the background and update the cache to save memory!
-          if (img.length > 50000 && img.startsWith("data:image/")) {
-            compressImage(img, 400, 400, 0.6).then((compressedImg) => {
-              if (compressedImg.length < img.length) {
-                const updatedDoc = {
-                  ...cachedDoc,
-                  image: compressedImg,
-                  images: [compressedImg]
-                };
-                idbCache.set(docKey, JSON.stringify(updatedDoc));
-              }
-            }).catch(() => {});
-          }
+const ProductImg = ({
+  product,
+  imageIndex = 0,
+  fallback,
+  className,
+  companyId,
+}: {
+  product: any;
+  imageIndex?: number;
+  fallback?: React.ReactNode;
+  className?: string;
+  companyId?: string;
+}) => {
+  const [src, setSrc] = useState<string | null>(null);
 
-          return {
-            ...item,
-            data: {
-              ...item.data,
-              image: img,
-              images: [img]
-            }
-          };
-        }
+  useEffect(() => {
+    const imgs = (product?.images || []).filter(Boolean);
+    const existingImg = imgs[imageIndex] || (imageIndex === 0 ? product?.imageUrl || product?.image : null);
+    if (existingImg) {
+      setSrc(existingImg);
+      return;
+    }
+
+    if (!product?.id) {
+      setSrc(null);
+      return;
+    }
+
+    let active = true;
+    const compId = product.companyId || companyId;
+    if (!compId) return;
+
+    const docKey = `meb_cache:/api/db/doc/companies/${compId}/products/${product.id}`;
+    idbCache.get(docKey).then((cachedStr) => {
+      if (!active) return;
+      if (cachedStr) {
+        try {
+          const parsed = JSON.parse(cachedStr);
+          const cachedImgs = (parsed?.images || []).filter(Boolean);
+          const img = cachedImgs[imageIndex] || (imageIndex === 0 ? parsed?.image : null);
+          if (img) {
+            setSrc(img);
+            return;
+          }
+        } catch (_) {}
       }
-    } catch (_) {}
-    return item;
-  }));
-  
-  return hydratedList;
+      setSrc(null);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [product?.id, product?.imageUrl, product?.image, imageIndex, companyId]);
+
+  if (!src) {
+    return fallback ? <>{fallback}</> : null;
+  }
+
+  return (
+    <img
+      src={src}
+      alt={product?.name || "Product"}
+      className={className}
+      referrerPolicy="no-referrer"
+    />
+  );
+};
+
+const hydrateCollectionWithImages = async (url: string, parsedList: any[]): Promise<any[]> => {
+  return parsedList;
 };
 
 const pruneDeep = (obj: any): any => {
@@ -1357,6 +1380,13 @@ const INITIAL_PRODUCT_CATEGORIES = [
   "Оснащение шкафов",
   "Кухонные модули",
 ];
+
+const mergeCategories = (catsList: string[] | undefined | null): string[] => {
+  const filtered = (catsList || []).filter(
+    (c: string) => c !== "Кухонные гарнитуры" && c !== "Кухонный гарнитур"
+  );
+  return Array.from(new Set([...INITIAL_PRODUCT_CATEGORIES, ...filtered]));
+};
 
 const INITIAL_ASSEMBLY_INCLUDES = [
   "Монтаж и сборка корпусов мебели",
@@ -11028,20 +11058,25 @@ const SummaryView = ({
                   >
                     <td className="px-6 py-2">
                       <div className="flex items-center gap-3">
-                        {row.image && (
+                        {(row.image || row.rawProduct) && (
                           <div 
                             onClick={() => {
                               if (setSelectedProductForDetail && row.rawProduct) {
-                                setSelectedProductForDetail(row.rawProduct);
+                                if (typeof row.rawProduct === "object") {
+                                  setSelectedProductForDetail(row.rawProduct);
+                                }
                               }
                             }}
                             className="w-10 h-10 rounded-xl bg-gray-50 overflow-hidden border border-gray-150 flex-shrink-0 cursor-pointer shadow-sm hover:scale-105 transition-all"
                           >
-                            <img 
-                              src={row.image} 
-                              alt={row.name} 
-                              className="w-full h-full object-cover" 
-                              referrerPolicy="no-referrer"
+                            <ProductImg
+                              product={row.rawProduct || { id: row.id || row.productId }}
+                              className="w-full h-full object-cover"
+                              fallback={
+                                <div className="w-full h-full flex items-center justify-center text-gray-300">
+                                  <ImageIcon className="w-4 h-4" />
+                                </div>
+                              }
                             />
                           </div>
                         )}
@@ -11399,20 +11434,25 @@ const SummaryView = ({
                         >
                         <td className="px-6 py-2">
                           <div className="flex items-center gap-3">
-                            {row.image && (
+                            {(row.image || row.rawProduct) && (
                               <div 
                                 onClick={() => {
                                   if (setSelectedProductForDetail && row.rawProduct) {
-                                    setSelectedProductForDetail(row.rawProduct);
+                                    if (typeof row.rawProduct === "object") {
+                                      setSelectedProductForDetail(row.rawProduct);
+                                    }
                                   }
                                 }}
                                 className="w-10 h-10 rounded-xl bg-gray-50 overflow-hidden border border-gray-150 flex-shrink-0 cursor-pointer shadow-sm hover:scale-105 transition-all"
                               >
-                                <img 
-                                  src={row.image} 
-                                  alt={row.name} 
-                                  className="w-full h-full object-cover" 
-                                  referrerPolicy="no-referrer"
+                                <ProductImg
+                                  product={row.rawProduct || { id: row.id || row.productId }}
+                                  className="w-full h-full object-cover"
+                                  fallback={
+                                    <div className="w-full h-full flex items-center justify-center text-gray-300">
+                                      <ImageIcon className="w-4 h-4" />
+                                    </div>
+                                  }
                                 />
                               </div>
                             )}
@@ -11922,92 +11962,6 @@ const SummaryView = ({
         </table>
       </div>
 
-      {isSalonOrDesigner && salonAnalytics && (
-        <div className="bg-slate-900 text-white rounded-2xl p-6 shadow-xl border border-slate-800 my-6">
-          <div className="flex items-center gap-3 mb-4 pb-3 border-b border-white/10">
-            <div className="p-2 bg-indigo-500/20 text-indigo-300 rounded-xl">
-              <BarChart3 className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="font-bold text-base text-white">
-                Финансовая аналитика закупки и прибыли
-              </h3>
-              <p className="text-xs text-slate-400">
-                Разделение на товары нашего производства и ваши собственные товары
-              </p>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Товары производства */}
-            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-              <div className="flex items-center gap-2 text-indigo-300 text-xs font-bold uppercase tracking-wider mb-2">
-                <Factory className="w-4 h-4" />
-                <span>Товары производства</span>
-              </div>
-              <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between text-slate-300">
-                  <span>Закупка у нас:</span>
-                  <span className="font-semibold text-white">{salonAnalytics.prodCost.toLocaleString()} ₽</span>
-                </div>
-                <div className="flex justify-between text-slate-300">
-                  <span>Продажа клиенту:</span>
-                  <span className="font-semibold text-white">{salonAnalytics.prodRetail.toLocaleString()} ₽</span>
-                </div>
-                <div className="pt-2 border-t border-white/10 flex justify-between font-bold text-emerald-400">
-                  <span>Ваша маржа:</span>
-                  <span>+{salonAnalytics.prodProfit.toLocaleString()} ₽</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Свои товары */}
-            <div className="bg-white/5 rounded-xl p-4 border border-white/10">
-              <div className="flex items-center gap-2 text-amber-300 text-xs font-bold uppercase tracking-wider mb-2">
-                <Package className="w-4 h-4" />
-                <span>Собственные товары</span>
-              </div>
-              <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between text-slate-300">
-                  <span>Ваша закупка:</span>
-                  <span className="font-semibold text-white">{salonAnalytics.ownCost.toLocaleString()} ₽</span>
-                </div>
-                <div className="flex justify-between text-slate-300">
-                  <span>Продажа клиенту:</span>
-                  <span className="font-semibold text-white">{salonAnalytics.ownRetail.toLocaleString()} ₽</span>
-                </div>
-                <div className="pt-2 border-t border-white/10 flex justify-between font-bold text-emerald-400">
-                  <span>Ваша маржа:</span>
-                  <span>+{salonAnalytics.ownProfit.toLocaleString()} ₽</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Итого */}
-            <div className="bg-indigo-600/20 rounded-xl p-4 border border-indigo-500/30">
-              <div className="flex items-center gap-2 text-indigo-200 text-xs font-bold uppercase tracking-wider mb-2">
-                <TrendingUp className="w-4 h-4 text-emerald-400" />
-                <span>Итого по проекту</span>
-              </div>
-              <div className="space-y-1.5 text-sm">
-                <div className="flex justify-between text-indigo-200">
-                  <span>Всего затраты:</span>
-                  <span className="font-semibold text-white">{salonAnalytics.totalCost.toLocaleString()} ₽</span>
-                </div>
-                <div className="flex justify-between text-indigo-200">
-                  <span>Всего выручка:</span>
-                  <span className="font-semibold text-white">{(salonAnalytics.prodRetail + salonAnalytics.ownRetail).toLocaleString()} ₽</span>
-                </div>
-                <div className="pt-2 border-t border-white/20 flex justify-between text-base font-black text-emerald-300">
-                  <span>Общая прибыль:</span>
-                  <span>+{salonAnalytics.totalProfit.toLocaleString()} ₽</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
         {finalTotal > 0 && (
           <div className="mt-6 flex justify-end">
             <button
@@ -12425,7 +12379,7 @@ const CoefficientsTableSection = ({
                 >
                   <td className="py-2.5 px-4 text-[11px] font-bold text-gray-800">
                     <div className="flex items-center gap-2">
-                      {isProduct && (
+                      {isProduct && !INITIAL_PRODUCT_CATEGORIES.includes(catName!) && (
                         <button
                           onClick={() => handleRemoveCategory(catName!)}
                           className="p-1 text-red-500 hover:bg-red-50 rounded-lg transition-colors"
@@ -13078,6 +13032,10 @@ const SettingsView = ({
   };
 
   const handleRemoveCategory = (cat: string) => {
+    if (INITIAL_PRODUCT_CATEGORIES.includes(cat)) {
+      showAlert("Внимание", `Категорию "${cat}" нельзя удалить, так как она является предустановленной.`);
+      return;
+    }
     setProductCategories((prev) => prev.filter((c) => c !== cat));
   };
 
@@ -16909,19 +16867,17 @@ const ReadyMadeProductsView = ({
                   className="aspect-square bg-gray-50 relative overflow-hidden flex items-center justify-center cursor-pointer"
                   onClick={() => setSelectedProductForDetail(product)}
                 >
-                  {product.imageUrl || product.image ? (
-                    <img
-                      src={product.imageUrl || product.image}
-                      alt={product.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <div className="text-gray-300 flex flex-col items-center justify-center space-y-2">
-                      <Package className="w-12 h-12 stroke-[1.5]" />
-                      <span className="text-xs font-medium text-gray-400">Нет фото</span>
-                    </div>
-                  )}
+                  <ProductImg
+                    product={product}
+                    companyId={companyData?.id || companyData?.manufacturerId}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                    fallback={
+                      <div className="text-gray-300 flex flex-col items-center justify-center space-y-2">
+                        <Package className="w-12 h-12 stroke-[1.5]" />
+                        <span className="text-xs font-medium text-gray-400">Нет фото</span>
+                      </div>
+                    }
+                  />
 
                   {/* Quick Actions overlay for editing/deleting/hiding */}
                   {(() => {
@@ -17386,6 +17342,8 @@ const ProductsView = ({
       : null;
 
   const [search, setSearch] = useState("");
+  const [filterOwnCatalog, setFilterOwnCatalog] = useState(true);
+  const [filterProductionCatalog, setFilterProductionCatalog] = useState(true);
   const [hingeTypeFilter, setHingeTypeFilter] = useState<string | null>(null);
   const [hingeDampingFilter, setHingeDampingFilter] = useState<string | null>(null);
   const [drawerSubFilter, setDrawerSubFilter] = useState<string | null>(null);
@@ -18574,6 +18532,11 @@ const ProductsView = ({
     const initialFiltered = catalogProducts.filter((p) => {
       if (!p) return false;
 
+      // Filter by catalog source (own vs production)
+      const isFromProd = p.fromProduction || p.source === "manufacturer" || p.isManufacturer;
+      if (isFromProd && !filterProductionCatalog) return false;
+      if (!isFromProd && !filterOwnCatalog) return false;
+
       const pIdStr = String(p.id || p.parentProductId || p.id?.split('_var_')[0]);
       const isHidden = hiddenSet.has(pIdStr);
 
@@ -19489,6 +19452,42 @@ const ProductsView = ({
             <EyeOff className="w-4 h-4 text-amber-500" />
             {showHiddenOnly ? "Показать основной каталог" : `Скрытые товары (${hiddenProductIds.length})`}
           </button>
+          {(companyType === "Салон" || companyType === "Дизайнер") && (
+            <div className="flex items-center bg-gray-100 p-1 rounded-xl h-10 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  if (filterOwnCatalog && !filterProductionCatalog) return;
+                  setFilterOwnCatalog(!filterOwnCatalog);
+                }}
+                className={cn(
+                  "px-3 h-8 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer",
+                  filterOwnCatalog
+                    ? "bg-white text-gray-800 shadow-sm"
+                    : "text-gray-400 hover:text-gray-600"
+                )}
+              >
+                <div className={cn("w-2 h-2 rounded-full", filterOwnCatalog ? "bg-blue-500" : "bg-gray-300")} />
+                Свой каталог
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (filterProductionCatalog && !filterOwnCatalog) return;
+                  setFilterProductionCatalog(!filterProductionCatalog);
+                }}
+                className={cn(
+                  "px-3 h-8 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer",
+                  filterProductionCatalog
+                    ? "bg-white text-gray-800 shadow-sm"
+                    : "text-gray-400 hover:text-gray-600"
+                )}
+              >
+                <div className={cn("w-2 h-2 rounded-full", filterProductionCatalog ? "bg-indigo-500" : "bg-gray-300")} />
+                Каталог производства
+              </button>
+            </div>
+          )}
           <button
             onClick={() => {
               resetForm();
@@ -26413,24 +26412,23 @@ const ProductsView = ({
                   onClick={() => setSelectedProductForDetail(product)}
                   className={`relative ${isKitchen ? "h-80 sm:h-96" : "h-40 sm:h-48"} overflow-hidden bg-gray-100 flex items-center justify-center cursor-pointer group`}
                 >
-                  {displayImage ? (
-                    <img
-                      src={displayImage}
-                      alt={product.name}
-                      referrerPolicy="no-referrer"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
-                    />
-                  ) : (
-                    <div className="flex flex-col items-center justify-center text-gray-400 w-full h-full">
-                      <ImageIcon
-                        className="w-12 h-12 text-gray-200 mb-2"
-                        strokeWidth={1.5}
-                      />
-                      <span className="text-[10px] uppercase font-bold tracking-widest text-gray-300">
-                        Нет фото
-                      </span>
-                    </div>
-                  )}
+                  <ProductImg
+                    product={product}
+                    imageIndex={activeIdx}
+                    companyId={companyData?.id || companyData?.manufacturerId}
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                    fallback={
+                      <div className="flex flex-col items-center justify-center text-gray-400 w-full h-full">
+                        <ImageIcon
+                          className="w-12 h-12 text-gray-200 mb-2"
+                          strokeWidth={1.5}
+                        />
+                        <span className="text-[10px] uppercase font-bold tracking-widest text-gray-300">
+                          Нет фото
+                        </span>
+                      </div>
+                    }
+                  />
 
                   {/* Horizontal hover sliding strips */}
                   {imagesList.length > 1 && (
@@ -27378,6 +27376,36 @@ export default function App() {
   };
 
   const [companyData, setCompanyData] = useState<any>(null);
+
+  useEffect(() => {
+    if (!selectedProductForDetail || !selectedProductForDetail.id) return;
+    if (selectedProductForDetail.image || (selectedProductForDetail.images && selectedProductForDetail.images.length > 0)) return;
+
+    const compId = selectedProductForDetail.companyId || companyData?.id || companyData?.manufacturerId;
+    if (!compId) return;
+
+    const docKey = `meb_cache:/api/db/doc/companies/${compId}/products/${selectedProductForDetail.id}`;
+    idbCache.get(docKey).then((cachedStr) => {
+      if (cachedStr) {
+        try {
+          const parsed = JSON.parse(cachedStr);
+          const img = parsed?.image || parsed?.images?.[0];
+          if (img) {
+            setSelectedProductForDetail((prev: any) => {
+              if (prev && prev.id === selectedProductForDetail.id) {
+                return {
+                  ...prev,
+                  image: img,
+                  images: parsed.images || [img]
+                };
+              }
+              return prev;
+            });
+          }
+        } catch (_) {}
+      }
+    });
+  }, [selectedProductForDetail?.id, companyData?.id, companyData?.manufacturerId]);
   const isProcurementAllowed = companyData?.procurementAllowed !== undefined ? !!companyData.procurementAllowed : !!companyData?.procurementEnabled;
   const [isLoading, setIsLoading] = useState(true);
   const [preloadProgress, setPreloadProgress] = useState<number>(0);
@@ -27670,7 +27698,7 @@ export default function App() {
           try {
             const data = JSON.parse(cached);
             if (key.includes('categories')) {
-              const loadedCats = (data.categories || INITIAL_PRODUCT_CATEGORIES).filter((c: string) => c !== "Кухонные гарнитуры" && c !== "Кухонный гарнитур");
+              const loadedCats = mergeCategories(data.categories);
               setProductCategories(loadedCats);
               setCoefficients((prev: any) => ({ ...prev, products: data.coefficients || {} }));
             }
@@ -27772,7 +27800,7 @@ export default function App() {
 
       if (catData) {
         await safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyId}/settings/categories`, JSON.stringify(catData));
-        const loadedCats = (catData.categories || INITIAL_PRODUCT_CATEGORIES).filter((c: string) => c !== "Кухонные гарнитуры" && c !== "Кухонный гарнитур");
+        const loadedCats = mergeCategories(catData.categories);
         setProductCategories(loadedCats);
         setCoefficients((prev: any) => ({ ...prev, products: catData.coefficients || {} }));
       }
@@ -28987,7 +29015,15 @@ export default function App() {
   const [manufacturerProducts, setManufacturerProducts] = useState<any[]>([]);
 
   const catalogProducts = useMemo(() => {
-    return [...ownProducts, ...manufacturerProducts];
+    return [
+      ...ownProducts,
+      ...manufacturerProducts.map((p) => ({
+        ...p,
+        source: "manufacturer",
+        isManufacturer: true,
+        fromProduction: true,
+      })),
+    ];
   }, [ownProducts, manufacturerProducts]);
 
   const facadeProductsList = useMemo(() => {
@@ -29140,6 +29176,7 @@ export default function App() {
       (snapshot) => {
         const products = snapshot.docs.map((doc) => ({
           id: doc.id,
+          companyId: companyId,
           ...doc.data(),
         }));
         console.log("Loaded own products:", products);
@@ -29164,6 +29201,7 @@ export default function App() {
         (snapshot) => {
           const products = snapshot.docs.map((doc) => ({
             id: doc.id,
+            companyId: companyData.manufacturerId,
             ...doc.data(),
           }));
           console.log("Loaded manufacturer products:", products);
@@ -29187,35 +29225,13 @@ export default function App() {
         (snapshot) => {
           if (snapshot.exists()) {
             const data = snapshot.data();
-            let cats = (data.categories || INITIAL_PRODUCT_CATEGORIES).filter((c: string) => c !== "Кухонные гарнитуры" && c !== "Кухонный гарнитур");
-  
-            // Ensure new system categories are present even for old users
-            const mandatoryCategories = ["Кухонные модули", "Освещение"];
-            let hasNew = false;
-            mandatoryCategories.forEach((mc) => {
-              if (!cats.includes(mc)) {
-                cats = [...cats, mc];
-                hasNew = true;
-              }
-            });
+            let cats = mergeCategories(data.categories);
   
             setProductCategories(cats);
             setCoefficients((prev) => ({
               ...prev,
               products: data.coefficients || {},
             }));
-  
-            // Auto-save if we added mandatory categories
-            if (hasNew && userRole === "admin") {
-              setDoc(
-                doc(db, "companies", companyId, "settings", "categories"),
-                {
-                  categories: cats,
-                  coefficients: data.coefficients || {},
-                },
-                { merge: true },
-              );
-            }
           } else {
             // If no settings exist, initialize with defaults
             setProductCategories(INITIAL_PRODUCT_CATEGORIES);
@@ -33914,13 +33930,16 @@ export default function App() {
                                   return (
                                     <div key={idx} className="flex items-center gap-3 bg-white p-2.5 rounded-xl border border-blue-100/50 shadow-xs">
                                       <div className="w-8 h-8 rounded-lg overflow-hidden bg-gray-50 flex-shrink-0">
-                                        {(cp.images?.[0] || cp.image) ? (
-                                          <img src={cp.images?.[0] || cp.image} className="w-full h-full object-cover" />
-                                        ) : (
-                                          <div className="w-full h-full flex items-center justify-center text-gray-300">
-                                            <ImageIcon className="w-4 h-4" />
-                                          </div>
-                                        )}
+                                        <ProductImg
+                                          product={cp}
+                                          companyId={companyData?.id || companyData?.manufacturerId}
+                                          className="w-full h-full object-cover"
+                                          fallback={
+                                            <div className="w-full h-full flex items-center justify-center text-gray-300">
+                                              <ImageIcon className="w-4 h-4" />
+                                            </div>
+                                          }
+                                        />
                                       </div>
                                       <div className="flex-1 min-w-0">
                                         <div className="text-xs font-bold text-gray-800 truncate" title={cp.name}>{cp.name}</div>
@@ -34004,15 +34023,18 @@ export default function App() {
                               return (
                                 <div key={idx} className="flex justify-between items-center bg-white p-3 rounded-xl border border-amber-100 shadow-sm hover:border-amber-300 transition-colors text-left">
                                   <div className="flex items-center gap-2.5 min-w-0">
-                                    {(analogProd.images?.[0] || analogProd.image) && (
-                                      <div className="w-8 h-8 rounded bg-gray-100 overflow-hidden border border-gray-150 flex-shrink-0">
-                                        <img 
-                                          src={analogProd.images?.[0] || analogProd.image} 
-                                          alt={analogProd.name} 
-                                          className="w-full h-full object-cover" 
-                                        />
-                                      </div>
-                                    )}
+                                    <div className="w-8 h-8 rounded bg-gray-100 overflow-hidden border border-gray-150 flex-shrink-0">
+                                      <ProductImg 
+                                        product={analogProd} 
+                                        companyId={companyData?.id || companyData?.manufacturerId}
+                                        className="w-full h-full object-cover" 
+                                        fallback={
+                                          <div className="w-full h-full flex items-center justify-center text-gray-300">
+                                            <ImageIcon className="w-4 h-4" />
+                                          </div>
+                                        }
+                                      />
+                                    </div>
                                     <div className="min-w-0">
                                       <div className="font-bold text-gray-800 text-xs truncate max-w-[180px] sm:max-w-[300px]" title={analogProd.name}>
                                         {analogProd.name}

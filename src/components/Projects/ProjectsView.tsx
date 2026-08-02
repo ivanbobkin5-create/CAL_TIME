@@ -1449,6 +1449,7 @@ export const ProjectsView = ({
       {selectedAnalyticsProject && (
         <ProjectAnalyticsModal
           project={selectedAnalyticsProject}
+          companyType={companyType}
           onClose={() => setSelectedAnalyticsProject(null)}
         />
       )}
