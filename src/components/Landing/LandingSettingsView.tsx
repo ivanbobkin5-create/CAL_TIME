@@ -261,7 +261,7 @@ export function LandingSettingsView({
               {/* Alias input */}
               <div>
                 <label className="block text-xs font-black uppercase text-gray-500 tracking-wider mb-1.5">
-                  Адрес витрины (Alias / Псевдоним)
+                  Адрес витрины (Название компании)
                 </label>
                 <div className="flex rounded-xl shadow-sm">
                   <span className="inline-flex items-center px-3.5 rounded-l-xl border border-r-0 border-gray-300 bg-gray-100 text-gray-600 text-xs font-mono font-bold shrink-0">
@@ -269,19 +269,20 @@ export function LandingSettingsView({
                   </span>
                   <input
                     type="text"
-                    value={landingConfig.alias}
-                    onChange={handleAliasChange}
-                    placeholder={autoSlug}
-                    className="block w-full min-w-0 flex-1 rounded-none rounded-r-xl border border-gray-300 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:ring-blue-500 font-mono font-bold text-gray-900 bg-white"
+                    value={effectiveAlias}
+                    readOnly
+                    disabled
+                    className="block w-full min-w-0 flex-1 rounded-none rounded-r-xl border border-gray-200 px-3.5 py-2.5 text-sm font-mono font-bold text-gray-500 bg-gray-50 cursor-not-allowed"
                   />
                 </div>
                 <div className="mt-2 p-3 bg-blue-50/80 rounded-xl border border-blue-100 text-xs text-blue-900 space-y-1">
                   <div className="flex items-center gap-1.5 font-bold text-blue-950">
                     <Info className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                    <span>Автоматически предложенный адрес:</span>
+                    <span>Автоматически сгенерированный адрес</span>
                   </div>
                   <p className="text-[11px] leading-relaxed">
-                    Система транслитерировала название вашей компании «<b>{companyData?.name || "Ваша компания"}</b>» на латиницу: <code className="bg-white px-1.5 py-0.5 rounded border border-blue-200 font-mono font-bold text-blue-700">/{autoSlug}</code>. Вы можете оставить его или указать свой адрес латинскими буквами.
+                    Адрес витрины генерируется автоматически из названия вашей компании и <b>не может быть изменен вручную</b>. 
+                    Ваша страница доступна по адресу: <code className="bg-white px-1.5 py-0.5 rounded border border-blue-200 font-mono font-bold text-blue-700">/{effectiveAlias}</code>, а вложенные страницы (например, каталог) имеют формат <code className="bg-white px-1.5 py-0.5 rounded border border-blue-200 font-mono font-bold text-blue-700">/{effectiveAlias}/catalog</code>.
                   </p>
                 </div>
               </div>

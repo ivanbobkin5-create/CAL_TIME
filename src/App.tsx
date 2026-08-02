@@ -8,7 +8,7 @@ import {
 import {
   arrayMove,
   SortableContext,
-  verticalListSortingStrategy,
+  verticalListSortingSSortingStrategy,
   useSortable,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -16844,15 +16844,7 @@ const ReadyMadeProductsView = ({
           )}
           <button
             onClick={() => {
-              if (setActiveTab) {
-                setActiveTab("products");
-                if (setSelectedCategory) {
-                  setSelectedCategory(selectedCategory || "Кухни");
-                }
-                setTimeout(() => {
-                  window.dispatchEvent(new CustomEvent("products_view_add_new", { detail: { category: selectedCategory || "Кухни" } }));
-                }, 150);
-              } else if (onAddNewProduct) {
+              if (onAddNewProduct) {
                 onAddNewProduct();
               }
             }}
@@ -18419,7 +18411,7 @@ const ProductsView = ({
       brand: product.brand || "",
       variations: product.variations || [],
     });
-    setIsAddingProduct(true);
+    console.log("handleAddNewEvent fired, setting isAddingProduct to true"); setIsAddingProduct(true);
   };
 
   const handleCreateBasedOn = (product: any) => {
@@ -18525,7 +18517,7 @@ const ProductsView = ({
       brand: product.brand || "",
       variations: product.variations || [],
     });
-    setIsAddingProduct(true);
+    console.log("handleAddNewEvent fired, setting isAddingProduct to true"); setIsAddingProduct(true);
   };
 
   const handleDeleteProduct = (product: any) => {
@@ -18566,7 +18558,7 @@ const ProductsView = ({
           setNewProduct((prev: any) => ({ ...prev, category: pendingProductAction.category }));
           setSelectedCategory(pendingProductAction.category);
         }
-        setIsAddingProduct(true);
+        console.log("handleAddNewEvent fired, setting isAddingProduct to true"); setIsAddingProduct(true);
       } else if (pendingProductAction.type === 'edit' && pendingProductAction.product) {
         handleEditProduct(pendingProductAction.product);
       } else if (pendingProductAction.type === 'copy' && pendingProductAction.product) {
@@ -18599,7 +18591,7 @@ const ProductsView = ({
       if (e.detail?.category) {
         setNewProduct((prev: any) => ({ ...prev, category: e.detail.category }));
       }
-      setIsAddingProduct(true);
+      console.log("handleAddNewEvent fired, setting isAddingProduct to true"); setIsAddingProduct(true);
     };
     const handleUpdateEvent = (e: any) => {
       if (e.detail?.id && e.detail?.updates) {
@@ -19598,7 +19590,7 @@ const ProductsView = ({
           <button
             onClick={() => {
               resetForm();
-              setIsAddingProduct(true);
+              console.log("handleAddNewEvent fired, setting isAddingProduct to true"); setIsAddingProduct(true);
             }}
             className="flex items-center justify-center gap-2 px-6 h-10 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-md shadow-blue-100 flex-shrink-0"
           >
@@ -26473,7 +26465,7 @@ const ProductsView = ({
           <button
             onClick={() => {
               resetForm();
-              setIsAddingProduct(true);
+              console.log("handleAddNewEvent fired, setting isAddingProduct to true"); setIsAddingProduct(true);
             }}
             className="px-6 py-2 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors"
           >
@@ -26658,16 +26650,18 @@ const ProductsView = ({
                           Продажа закрыта
                         </div>
                     )}
-                    {(product.source === "manufacturer" || product.isManufacturer || product.fromProduction) && (
-                      <span className="flex items-center justify-center w-6 h-6 bg-indigo-700 text-white rounded-full shadow-md z-10 cursor-help" title="Товар поставляется вашим производством">
-                        <Factory className="w-3.5 h-3.5" />
+                    <div className="flex items-center gap-1.5 max-w-full overflow-hidden">
+                      {(product.source === "manufacturer" || product.isManufacturer || product.fromProduction) && (
+                        <span className="flex items-center justify-center w-5 h-5 bg-indigo-700 text-white rounded-full shadow-md z-10 cursor-help shrink-0" title="Товар поставляется вашим производством">
+                          <Factory className="w-2.5 h-2.5" />
+                        </span>
+                      )}
+                      <span className="px-1.5 py-0.5 bg-white/95 backdrop-blur shadow-sm text-[8px] font-bold uppercase tracking-wider text-blue-600 rounded-lg truncate shrink block min-w-0">
+                        {product.category}
                       </span>
-                    )}
-                    <span className="px-2 py-1 bg-white/95 backdrop-blur shadow-sm text-[10px] font-bold uppercase tracking-wider text-blue-600 rounded-lg">
-                      {product.category}
-                    </span>
+                    </div>
                     {product.variations && product.variations.length > 0 && (
-                      <span className="px-2 py-1 bg-indigo-600 text-white shadow-sm text-[9px] font-black uppercase tracking-wider rounded-lg">
+                      <span className="px-2 py-1 bg-indigo-600 text-white shadow-sm text-[8px] font-black uppercase tracking-wider rounded-lg shrink-0">
                         {product.variations.length} вар.
                       </span>
                     )}
@@ -26693,17 +26687,17 @@ const ProductsView = ({
                     const isCardHidden = hiddenProductIds.includes(pIdStr);
 
                     return (
-                      <div className="absolute top-4 right-4 flex flex-col gap-2 translate-x-12 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 transition-all duration-300 z-20">
+                      <div className="absolute top-3 right-3 flex flex-col gap-1.5 translate-x-12 opacity-0 group-hover:translate-x-0 group-hover:opacity-100 transition-all duration-300 z-20">
                         {isCardHidden ? (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
                               if (onRestoreProduct) onRestoreProduct(product);
                             }}
-                            className="p-2 bg-emerald-600 text-white hover:bg-emerald-700 rounded-xl shadow-lg transition-all cursor-pointer flex items-center gap-1 text-xs font-bold"
+                            className="p-1.5 bg-emerald-600 text-white hover:bg-emerald-700 rounded-lg shadow-lg transition-all cursor-pointer flex items-center gap-1 text-xs font-bold"
                             title="Вернуть в каталог"
                           >
-                            <Eye className="w-4 h-4" />
+                            <Eye className="w-3.5 h-3.5" />
                             <span>Вернуть</span>
                           </button>
                         ) : (
@@ -26714,10 +26708,10 @@ const ProductsView = ({
                                   e.stopPropagation();
                                   onHideProduct(product);
                                 }}
-                                className="p-2 bg-white text-amber-600 hover:bg-amber-600 hover:text-white rounded-xl shadow-lg transition-all cursor-pointer"
+                                className="p-1.5 bg-white text-amber-600 hover:bg-amber-600 hover:text-white rounded-lg shadow-lg transition-all cursor-pointer"
                                 title="Скрыть товар из каталога"
                               >
-                                <EyeOff className="w-4 h-4" />
+                                <EyeOff className="w-3.5 h-3.5" />
                               </button>
                             )}
 
@@ -26727,10 +26721,10 @@ const ProductsView = ({
                                   e.stopPropagation();
                                   handleEditProduct(product);
                                 }}
-                                className="p-2 bg-white text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl shadow-lg transition-all cursor-pointer"
+                                className="p-1.5 bg-white text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg shadow-lg transition-all cursor-pointer"
                                 title="Редактировать"
                               >
-                                <Edit2 className="w-4 h-4" />
+                                <Edit2 className="w-3.5 h-3.5" />
                               </button>
                             )}
 
@@ -26740,10 +26734,10 @@ const ProductsView = ({
                                   e.stopPropagation();
                                   handleCreateBasedOn(product);
                                 }}
-                                className="p-2 bg-white text-teal-600 hover:bg-teal-600 hover:text-white rounded-xl shadow-lg transition-all cursor-pointer"
+                                className="p-1.5 bg-white text-teal-600 hover:bg-teal-600 hover:text-white rounded-lg shadow-lg transition-all cursor-pointer"
                                 title="Создать на основании"
                               >
-                                <Copy className="w-4 h-4" />
+                                <Copy className="w-3.5 h-3.5" />
                               </button>
                             )}
 
@@ -26753,7 +26747,7 @@ const ProductsView = ({
                                   e.stopPropagation();
                                   setBlockingSaleProduct(product);
                                 }}
-                                className={`p-2 rounded-xl shadow-lg transition-all cursor-pointer ${
+                                className={`p-1.5 rounded-lg shadow-lg transition-all cursor-pointer ${
                                   isSaleBlocked(product)
                                     ? 'bg-amber-500 text-white hover:bg-amber-600'
                                     : 'bg-white text-gray-500 hover:bg-amber-500 hover:text-white'
@@ -26766,7 +26760,7 @@ const ProductsView = ({
                                     : "Заблокировать продажу"
                                 }
                               >
-                                <Lock className={`w-4 h-4 ${isSaleBlocked(product) ? 'fill-current' : ''}`} />
+                                <Lock className={`w-3.5 h-3.5 ${isSaleBlocked(product) ? 'fill-current' : ''}`} />
                               </button>
                             )}
 
@@ -26776,10 +26770,10 @@ const ProductsView = ({
                                   e.stopPropagation();
                                   handleDeleteProduct(product);
                                 }}
-                                className="p-2 bg-white text-red-500 hover:bg-red-500 hover:text-white rounded-xl shadow-lg transition-all cursor-pointer"
+                                className="p-1.5 bg-white text-red-500 hover:bg-red-500 hover:text-white rounded-lg shadow-lg transition-all cursor-pointer"
                                 title="Удалить"
                               >
-                                <Trash2 className="w-4 h-4" />
+                                <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             )}
                           </>
@@ -32939,13 +32933,25 @@ export default function App() {
               promotions={promotions}
               userRole={userRole}
               onAddNewProduct={() => {
-                window.dispatchEvent(new CustomEvent("products_view_add_new", { detail: { category: selectedReadyMadeCategory || "Кухни" } }));
+                setActiveTab("products");
+                setSelectedCategory(selectedReadyMadeCategory || "Кухни");
+                setTimeout(() => {
+                  window.dispatchEvent(new CustomEvent("products_view_add_new", { detail: { category: selectedReadyMadeCategory || "Кухни" } }));
+                }, 400);
               }}
               onEditProduct={(product) => {
-                window.dispatchEvent(new CustomEvent("products_view_edit", { detail: product }));
+                setActiveTab("products");
+                setSelectedCategory(product.category);
+                setTimeout(() => {
+                  window.dispatchEvent(new CustomEvent("products_view_edit", { detail: product }));
+                }, 400);
               }}
               onCreateBasedOn={(product) => {
-                window.dispatchEvent(new CustomEvent("products_view_create_copy", { detail: product }));
+                setActiveTab("products");
+                setSelectedCategory(product.category);
+                setTimeout(() => {
+                  window.dispatchEvent(new CustomEvent("products_view_create_copy", { detail: product }));
+                }, 400);
               }}
               onDeleteProduct={(product) => {
                 if (userRole === 'admin' || userRole === 'supervisor') {
