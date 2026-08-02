@@ -8631,6 +8631,8 @@ const SummaryView = ({
   currentProjectId,
   selectedProjectCoefficientsMode = 'saved',
   setSelectedProjectCoefficientsMode,
+  currentProjectName,
+  onSaveProject,
 }: {
   results: any;
   selectedDecor: Record<string, string>;
@@ -8644,6 +8646,8 @@ const SummaryView = ({
   cuttingType: "nesting" | "saw";
   calcMode: "sheet" | "area";
   coefficients: any;
+  currentProjectName?: string;
+  onSaveProject?: (name: string, isDraft?: boolean) => Promise<void>;
   edgeToEdge: Record<string, boolean>;
   textureAlignments?: Record<string, boolean>;
   edgePrices: Record<string, number>;
@@ -32762,6 +32766,8 @@ export default function App() {
 
           <div className={cn(activeTab === "summary" || activeTab === "checkout_current" ? "block" : "hidden")}>
             <SummaryView
+              currentProjectName={currentProjectName}
+              onSaveProject={saveProject}
               loadedProjectCoefficientsSnapshot={loadedProjectCoefficientsSnapshot}
               currentProjectId={currentProjectId}
               selectedProjectCoefficientsMode={selectedProjectCoefficientsMode}

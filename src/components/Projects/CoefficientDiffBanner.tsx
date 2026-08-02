@@ -204,8 +204,8 @@ export const CoefficientDiffBanner: React.FC<CoefficientDiffBannerProps> = ({
 
   const isCurrentMode = activeMode === 'current';
 
-  // When no diffs exist, show reassuring green status block
-  if (diffs.length === 0) {
+  // When no diffs exist or price didn't actually change, show reassuring green status block
+  if (diffs.length === 0 || Math.abs(calcSavedTotal - calcCurrentTotal) < 1) {
     return (
       <div className={cn(
         "rounded-2xl border border-emerald-200/80 bg-emerald-50/50 p-3.5 sm:p-4 transition-all duration-200 shadow-2xs",
@@ -221,11 +221,11 @@ export const CoefficientDiffBanner: React.FC<CoefficientDiffBannerProps> = ({
                 Актуальные коэффициенты компании
               </span>
               <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded bg-emerald-200/70 text-emerald-900 tracking-wider">
-                Совпадают
+                Применены
               </span>
             </div>
             <p className="text-xs text-emerald-800/90 mt-0.5">
-              Расчет соответствует текущей тарифной сетке наценок и категорий компании.
+              Текущий расчет соответствует актуальной тарифной сетке наценок.
             </p>
           </div>
         </div>

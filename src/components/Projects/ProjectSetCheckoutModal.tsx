@@ -445,7 +445,7 @@ export const ProjectSetCheckoutModal = ({
     <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-300">
       <div className="bg-gray-50 w-full max-w-5xl max-h-[90vh] rounded-[2.5rem] shadow-2xl flex flex-col overflow-hidden border border-white/20">
         {/* Header */}
-        <div className="px-8 py-6 bg-white border-b border-gray-100 flex items-center justify-between sticky top-0 z-10">
+        <div className="px-8 py-6 bg-white rounded-t-[2.5rem] border-b border-gray-100 flex items-center justify-between sticky top-0 z-10">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center">
               <ClipboardCheck className="w-6 h-6 text-indigo-600" />

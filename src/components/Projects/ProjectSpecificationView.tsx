@@ -306,7 +306,7 @@ export const ProjectSpecificationView = ({
   return (
     <div className="p-4 md:p-8 max-w-6xl mx-auto">
       <div className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden flex flex-col">
-        <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+        <div className="p-6 rounded-t-[2.5rem] border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-200">
               <FileText className="text-white w-5 h-5" />
