@@ -74,11 +74,21 @@ export const ProjectAnalyticsModal = ({
       const rawProd = row.rawProduct;
       const isFromProduction =
         row.isCustomFacade ||
+        row.isManufacturer ||
+        row.fromProduction ||
+        row.source === "manufacturer" ||
         row.type === "material" ||
         row.type === "edge" ||
-        (rawProd && (rawProd.source === "manufacturer" || rawProd.isManufacturer || rawProd.fromProduction)) ||
+        (rawProd && (
+          rawProd.source === "manufacturer" ||
+          rawProd.isManufacturer ||
+          rawProd.fromProduction ||
+          rawProd.isManufacturerProduct ||
+          (rawProd.companyId && rawProd.companyId === (project?.data?.manufacturerId || project?.data?.companyData?.manufacturerId)) ||
+          (rawProd.source !== "own" && rawProd.companyId !== (project?.data?.companyId || (project as any)?.companyId))
+        )) ||
         (row.type === "product" && !rawProd) ||
-        (row.type === "service" && row.isFromProduction);
+        (row.type === "service" && (row.isFromProduction || row.isProductionService || row.createdByProduction));
 
       const qty = parseFloat(row.qty) || 1;
       const retailTotal = row.netPaid !== undefined ? row.netPaid : row.total;

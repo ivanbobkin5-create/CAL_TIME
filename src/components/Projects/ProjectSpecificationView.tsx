@@ -42,7 +42,7 @@ function collection(db: any, ...pathParts: string[]) {
 const serverTimestamp = () => new Date().toISOString();
 import { cn } from '../../lib/utils';
 import { SketchAnnotator } from './SketchAnnotator';
-import { CoefficientDiffBanner } from './CoefficientDiffBanner';
+import { CoefficientDiffBanner, normalizeCoefficients } from './CoefficientDiffBanner';
 
 
 interface Project {
@@ -98,6 +98,17 @@ export const ProjectSpecificationView = ({
   } : undefined);
 
   // Calculate alternative price under new coefficients if available
+  const getCatCoeff = (coeffs: any, cat: string, defaultVal: number = 1) => {
+    if (!coeffs) return defaultVal;
+    const norm = normalizeCoefficients(coeffs);
+    if (cat && norm.products?.[cat] !== undefined) return norm.products[cat];
+    if (cat === "Посудосушитель" && norm.products?.["Посудосушители"] !== undefined) return norm.products["Посудосушители"];
+    if (cat === "Посудосушители" && norm.products?.["Посудосушитель"] !== undefined) return norm.products["Посудосушитель"];
+    if (cat && coeffs[cat] !== undefined) return coeffs[cat];
+    if (cat && coeffs[`cat_${cat}`] !== undefined) return coeffs[`cat_${cat}`];
+    return coeffs.hardware || defaultVal;
+  };
+
   const recalculateTotal = (rows: any[], targetCoeffs: any, sourceCoeffs: any): number => {
     if (!rows || !targetCoeffs) return project.totalPrice || 0;
     let sum = 0;
@@ -113,8 +124,8 @@ export const ProjectSpecificationView = ({
         srcCoef = sourceCoeffs?.edge || row.coef || 1;
       } else if (row.type === 'hardware' || row.type === 'product') {
         const cat = row.category || row.rawProduct?.category;
-        tgtCoef = (cat && targetCoeffs.products?.[cat]) || targetCoeffs.hardware || 1;
-        srcCoef = (cat && sourceCoeffs?.products?.[cat]) || sourceCoeffs?.hardware || row.coef || 1;
+        tgtCoef = getCatCoeff(targetCoeffs, cat, targetCoeffs.hardware || 1);
+        srcCoef = getCatCoeff(sourceCoeffs, cat, row.coef || sourceCoeffs?.hardware || 1);
       } else if (row.type === 'facade') {
         tgtCoef = targetCoeffs.facadeSheet || targetCoeffs.facadeCustom || 1;
         srcCoef = sourceCoeffs?.facadeSheet || sourceCoeffs?.facadeCustom || row.coef || 1;

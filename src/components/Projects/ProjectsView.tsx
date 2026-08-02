@@ -57,11 +57,11 @@ function writeBatch(db: any) {
     update: (ref: any, data: any, options?: any) => operations.push({ type: 'update', ref, data, options }),
     delete: (ref: any) => operations.push({ type: 'delete', ref }),
     commit: async () => {
-      for (const op of operations) {
+      await Promise.all(operations.map(async (op) => {
         if (op.type === 'set') await setDoc(op.ref, op.data, op.options);
         if (op.type === 'update') await updateDoc(op.ref, op.data, op.options);
         if (op.type === 'delete') await deleteDoc(op.ref);
-      }
+      }));
     }
   };
 }
@@ -139,6 +139,7 @@ interface Project {
   revisionComment?: string;
   totalPrice?: number;
   isDeleted?: boolean;
+  createdByPhoto?: string;
 }
 
 export const ProjectsView = ({
@@ -427,13 +428,74 @@ export const ProjectsView = ({
     }
   };
 
-  const handleCreateSet = () => {
+  const handleCreateSet = async () => {
+    if (!companyId) return;
     const selectedProjects = projects.filter((p) =>
       selectedProjectIds.has(p.id),
     );
-    if (onCreateSet) {
-      onCreateSet(selectedProjects);
+    if (selectedProjects.length === 0) return;
+
+    try {
+      const setId = `set-${Date.now()}`;
+      const setDocRef = doc(db, "companies", companyId, "sets", setId);
+
+      const totalPrice = selectedProjects.reduce((sum: number, p: any) => {
+        const pPrice = Number(p.totalPrice || (p.data?.results ? Object.values(p.data.results).reduce((acc: number, r: any) => acc + Number(r.totalPrice || 0), 0) : 0));
+        return sum + pPrice;
+      }, 0);
+
+      const defaultName = `Комплект от ${new Date().toLocaleDateString('ru-RU')}`;
+      
+      const setRecord: any = {
+        id: setId,
+        name: defaultName,
+        projectIds: selectedProjects.map(p => p.id),
+        totalPrice: totalPrice,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        createdBy: userId || "",
+        createdByName: "Пользователь",
+        status: "draft",
+        summary: {
+          totalMaterialsPrice: 0,
+          totalHardwarePrice: 0,
+          totalServicesPrice: 0,
+          materials: [],
+          hardware: [],
+          services: [],
+          totalDeliveryPrice: 0,
+          totalAssemblyPrice: 0,
+        }
+      };
+
+      const employee = companyEmployees.find(emp => emp.uid === userId);
+      if (employee) {
+        setRecord.createdByName = employee.name || employee.displayName || employee.email || "Пользователь";
+      }
+
+      const batch = writeBatch(db);
+      
+      batch.set(setDocRef, setRecord);
+
+      for (const p of selectedProjects) {
+        const projectDocRef = doc(db, "companies", companyId, "projects", p.id);
+        batch.update(projectDocRef, {
+          setId: setId,
+        });
+      }
+
+      await batch.commit();
+
+      if (showAlert) {
+        showAlert("Успешно", `Комплект "${defaultName}" успешно создан`);
+      }
+    } catch (err) {
+      console.error("Error creating set:", err);
+      if (showAlert) {
+        showAlert("Ошибка", "Не удалось создать комплект");
+      }
     }
+
     // Reset selection
     setSelectedProjectIds(new Set());
     setIsSelectionMode(false);
@@ -479,13 +541,15 @@ export const ProjectsView = ({
   const handleUnlinkProject = async (project: Project, set: any) => {
     if (!companyId) return;
     try {
-      await updateDoc(doc(db, "companies", companyId, "projects", project.id), {
+      const batch = writeBatch(db);
+      batch.update(doc(db, "companies", companyId, "projects", project.id), {
         setId: null,
       });
       const updatedProjectIds = (set.projectIds || []).filter((id: string) => id !== project.id);
-      await updateDoc(doc(db, "companies", companyId, "sets", set.id), {
+      batch.update(doc(db, "companies", companyId, "sets", set.id), {
         projectIds: updatedProjectIds,
       });
+      await batch.commit();
       if (showAlert) showAlert("Успешно", `Проект "${project.name}" исключен из комплекта`);
     } catch (err) {
       console.error("Error unlinking project from set:", err);
@@ -1060,6 +1124,34 @@ export const ProjectsView = ({
                                         Добавить проект в комплект
                                       </button>
 
+                                      {(userRole === "manager" || userRole === "admin") && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedBitrixProject(set);
+                                            setOpenMenuId(null);
+                                          }}
+                                          className="w-full text-left px-4 py-2.5 text-xs font-semibold text-orange-600 hover:bg-orange-50 flex items-center gap-2"
+                                        >
+                                          <Send className="w-4 h-4" />
+                                          Bitrix24
+                                        </button>
+                                      )}
+
+                                      {(userRole === "manager" || userRole === "admin") && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setSelectedTransferProject(set);
+                                            setOpenMenuId(null);
+                                          }}
+                                          className="w-full text-left px-4 py-2.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 flex items-center gap-2"
+                                        >
+                                          <Send className="w-4 h-4" />
+                                          Отдать комплект
+                                        </button>
+                                      )}
+
                                       <div className="my-1 border-t border-gray-100" />
 
                                       <button
@@ -1333,11 +1425,12 @@ export const ProjectsView = ({
                           const employee = companyEmployees.find(emp => emp.uid === project.createdBy);
                           const displayManagerName = employee ? (employee.name || employee.displayName || employee.email) : (project.createdByName || "Пользователь");
                           const avatarLetter = (displayManagerName?.charAt(0) || "U").toUpperCase();
+                          const avatarUrl = employee?.avatarUrl || employee?.photoURL || employee?.photoUrl || employee?.avatar || project.data?.createdByPhoto || project.createdByPhoto;
                           return (
                             <div className="flex items-center gap-3">
                               <div className="w-10 h-10 bg-gray-100 rounded-full flex-shrink-0 flex items-center justify-center text-sm font-bold text-gray-500 overflow-hidden">
-                                {project.data?.createdByPhoto ? (
-                                  <img src={project.data.createdByPhoto} alt={displayManagerName} className="w-full h-full object-cover" />
+                                {avatarUrl ? (
+                                  <img src={avatarUrl} alt={displayManagerName} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                                 ) : (
                                   avatarLetter
                                 )}
@@ -1464,19 +1557,44 @@ export const ProjectsView = ({
             try {
               const targetEmp = companyEmployees.find(e => e.uid === targetUserId);
               const targetName = targetEmp ? (targetEmp.name || targetEmp.displayName || targetEmp.email) : "Пользователь";
-              await updateDoc(
-                doc(db, "companies", companyId!, "projects", selectedTransferProject.id),
-                {
-                  createdBy: targetUserId,
-                  createdByName: targetName,
-                  status: "draft"
+              const isSet = selectedTransferProject.id.startsWith("set-") || (selectedTransferProject as any).projectIds !== undefined;
+              
+              if (isSet) {
+                const batch = writeBatch(db);
+                batch.update(
+                  doc(db, "companies", companyId!, "sets", selectedTransferProject.id),
+                  {
+                    createdBy: targetUserId,
+                    createdByName: targetName,
+                  }
+                );
+                const subProjs = projects.filter(p => p.setId === selectedTransferProject.id || (selectedTransferProject as any).projectIds?.includes(p.id));
+                for (const p of subProjs) {
+                  batch.update(
+                    doc(db, "companies", companyId!, "projects", p.id),
+                    {
+                      createdBy: targetUserId,
+                      createdByName: targetName,
+                    }
+                  );
                 }
-              );
+                await batch.commit();
+                if (showAlert) showAlert("Успешно", "Комплект и входящие в него проекты переданы");
+              } else {
+                await updateDoc(
+                  doc(db, "companies", companyId!, "projects", selectedTransferProject.id),
+                  {
+                    createdBy: targetUserId,
+                    createdByName: targetName,
+                    status: "draft"
+                  }
+                );
+                if (showAlert) showAlert("Успешно", "Проект передан");
+              }
               setSelectedTransferProject(null);
-              if (showAlert) showAlert("Успешно", "Проект передан");
             } catch (e) {
               console.error(e);
-              if (showAlert) showAlert("Ошибка", "Не удалось передать проект");
+              if (showAlert) showAlert("Ошибка", "Не удалось передать");
             }
           }}
         />

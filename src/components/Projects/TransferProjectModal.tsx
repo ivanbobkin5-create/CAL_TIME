@@ -23,7 +23,9 @@ export const TransferProjectModal = ({
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-fade-in">
       <div className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl border border-gray-50 flex flex-col">
         <div className="flex justify-between items-center mb-6">
-          <h2 className="text-xl font-black text-gray-900">Передать проект "{project.name}"</h2>
+          <h2 className="text-xl font-black text-gray-900">
+            {project.id?.startsWith("set-") || project.projectIds ? "Передать комплект" : "Передать проект"} "{project.name}"
+          </h2>
           <button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 rounded-xl">
             <X className="w-5 h-5" />
           </button>

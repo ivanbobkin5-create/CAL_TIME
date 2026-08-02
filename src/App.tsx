@@ -1318,11 +1318,11 @@ function writeBatch(db: any) {
     update: (ref: any, data: any, options?: any) => operations.push({ type: 'update', ref, data, options }),
     delete: (ref: any) => operations.push({ type: 'delete', ref }),
     commit: async () => {
-      for (const op of operations) {
+      await Promise.all(operations.map(async (op) => {
         if (op.type === 'set') await setDoc(op.ref, op.data, op.options);
         if (op.type === 'update') await updateDoc(op.ref, op.data, op.options);
         if (op.type === 'delete') await deleteDoc(op.ref);
-      }
+      }));
     }
   };
 }
@@ -10387,11 +10387,21 @@ const SummaryView = ({
       const rawProd = row.rawProduct;
       const isFromProduction =
         row.isCustomFacade ||
+        row.isManufacturer ||
+        row.fromProduction ||
+        row.source === "manufacturer" ||
         row.type === "material" ||
         row.type === "edge" ||
-        (rawProd && (rawProd.source === "manufacturer" || rawProd.isManufacturer || rawProd.fromProduction)) ||
+        (rawProd && (
+          rawProd.source === "manufacturer" ||
+          rawProd.isManufacturer ||
+          rawProd.fromProduction ||
+          rawProd.isManufacturerProduct ||
+          (rawProd.companyId && rawProd.companyId === ((window as any).companyData?.manufacturerId || currentProjectId ? (window as any).projects?.find((p: any) => p.id === currentProjectId)?.data?.manufacturerId : undefined)) ||
+          (rawProd.source !== "own" && rawProd.companyId !== (window as any).companyData?.id)
+        )) ||
         (row.type === "product" && !rawProd) ||
-        (row.type === "service" && row.isFromProduction);
+        (row.type === "service" && (row.isFromProduction || row.isProductionService || row.createdByProduction));
 
       const qty = parseFloat(row.qty) || 1;
       const retailTotal = row.netPaid !== undefined ? row.netPaid : row.total;
@@ -11083,13 +11093,14 @@ const SummaryView = ({
                         <div className="min-w-0 flex-1">
                           <div
                             onClick={() => {
-                              if (setSelectedProductForDetail && row.rawProduct) {
-                                setSelectedProductForDetail(row.rawProduct);
+                              const prod = row.rawProduct || catalogProducts.find((p: any) => String(p.id) === String(row.productId) || p.name === row.name);
+                              if (setSelectedProductForDetail && prod) {
+                                setSelectedProductForDetail(prod);
                               }
                             }}
                             className={cn(
                               "font-medium text-gray-900 leading-snug",
-                              row.rawProduct ? "cursor-pointer hover:text-blue-600 hover:underline decoration-blue-350 transition-colors" : "",
+                              (row.rawProduct || row.productId || catalogProducts.some((p: any) => p.name === row.name)) ? "cursor-pointer hover:text-blue-600 hover:underline decoration-blue-350 transition-colors" : "",
                               row.type === "edge" && "pl-6 flex items-center gap-2 text-gray-600 text-sm"
                             )}
                           >
@@ -11103,11 +11114,24 @@ const SummaryView = ({
                                   {row.isCompanion ? "Сопутствующий" : "Автоподбор"}
                                 </span>
                               )}
-                              {row.rawProduct?.analogs && row.rawProduct.analogs.length > 0 && (
-                                <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-amber-50 text-amber-800 border border-amber-200 tracking-wider">
-                                  <Replace className="w-2.5 h-2.5" /> Есть аналоги
-                                </span>
-                              )}
+                              {(() => {
+                                const prod = row.rawProduct || catalogProducts.find((p: any) => String(p.id) === String(row.productId) || p.name === row.name);
+                                const hasAnalogs = (prod?.analogs && prod.analogs.length > 0) || (row.analogs && row.analogs.length > 0);
+                                if (!hasAnalogs) return null;
+                                return (
+                                  <span 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (setSelectedProductForDetail && prod) {
+                                        setSelectedProductForDetail(prod);
+                                      }
+                                    }}
+                                    className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 tracking-wider cursor-pointer transition-colors"
+                                  >
+                                    <Replace className="w-2.5 h-2.5" /> Есть аналоги
+                                  </span>
+                                );
+                              })()}
                             </span>
                           </div>
                           <div
@@ -11460,7 +11484,7 @@ const SummaryView = ({
                               <div
                                 className={cn(
                                   "font-medium text-gray-900 leading-snug flex items-center gap-2 flex-wrap",
-                                  row.rawProduct ? "cursor-pointer hover:text-blue-600 hover:underline decoration-blue-350 transition-colors" : "",
+                                  (row.rawProduct || row.productId || catalogProducts.some((p: any) => p.name === row.name)) ? "cursor-pointer hover:text-blue-600 hover:underline decoration-blue-350 transition-colors" : "",
                                   row.type === "product_edge" && "pl-6 flex items-center gap-2 text-gray-600 text-sm"
                                 )}
                               >
@@ -11469,19 +11493,33 @@ const SummaryView = ({
                                 )}
                                 <span 
                                   onClick={() => {
-                                    if (setSelectedProductForDetail && row.rawProduct) {
-                                      setSelectedProductForDetail(row.rawProduct);
+                                    const prod = row.rawProduct || catalogProducts.find((p: any) => String(p.id) === String(row.productId) || p.name === row.name);
+                                    if (setSelectedProductForDetail && prod) {
+                                      setSelectedProductForDetail(prod);
                                     }
                                   }}
-                                  className="inline-flex items-center gap-1.5 flex-wrap"
+                                  className="inline-flex items-center gap-1.5 flex-wrap cursor-pointer"
                                 >
                                   {row.name}
                                 </span>
-                                {row.rawProduct?.analogs && row.rawProduct.analogs.length > 0 && (
-                                  <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-amber-50 text-amber-800 border border-amber-200 tracking-wider">
-                                    <Replace className="w-2.5 h-2.5" /> Есть аналоги
-                                  </span>
-                                )}
+                                {(() => {
+                                  const prod = row.rawProduct || catalogProducts.find((p: any) => String(p.id) === String(row.productId) || p.name === row.name);
+                                  const hasAnalogs = (prod?.analogs && prod.analogs.length > 0) || (row.analogs && row.analogs.length > 0);
+                                  if (!hasAnalogs) return null;
+                                  return (
+                                    <span 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        if (setSelectedProductForDetail && prod) {
+                                          setSelectedProductForDetail(prod);
+                                        }
+                                      }}
+                                      className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 tracking-wider cursor-pointer transition-colors"
+                                    >
+                                      <Replace className="w-2.5 h-2.5" /> Есть аналоги
+                                    </span>
+                                  );
+                                })()}
                                 {row.rawProduct?.category === "Кухонные гарнитуры" && (
                                   <button
                                     type="button"
@@ -11963,7 +12001,19 @@ const SummaryView = ({
       </div>
 
         {finalTotal > 0 && (
-          <div className="mt-6 flex justify-end">
+          <div className="mt-8 flex items-center justify-end gap-4">
+            <button
+              onClick={() => {
+                if (onSaveProject) {
+                  onSaveProject(currentProjectName || "Новый проект");
+                }
+                setActiveTab("projects");
+              }}
+              className="flex items-center gap-2 px-6 py-4 bg-white border border-gray-200 text-gray-700 rounded-2xl font-bold shadow-sm hover:bg-gray-50 hover:border-gray-300 hover:scale-[1.02] transition-all"
+            >
+              <FolderOpen className="w-5 h-5 text-blue-600" />
+              Сохранить проект
+            </button>
             <button
               onClick={() => setActiveTab("checkout_current")}
               className="flex items-center gap-2 px-8 py-4 bg-blue-600 text-white rounded-2xl font-black shadow-lg shadow-blue-100 hover:bg-blue-700 hover:scale-[1.02] transition-all"
@@ -16614,6 +16664,9 @@ const ReadyMadeProductsView = ({
   userRole?: string;
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
+  const [filterOwnCatalog, setFilterOwnCatalog] = useState(true);
+  const [filterProductionCatalog, setFilterProductionCatalog] = useState(true);
+  const companyType = companyData?.type;
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const [kitchenTypeFilter, setKitchenTypeFilter] = useState<string | null>(null);
   const [kitchenStyleFilter, setKitchenStyleFilter] = useState<string | null>(null);
@@ -16641,6 +16694,11 @@ const ReadyMadeProductsView = ({
     const hiddenSet = new Set(hiddenProductIds);
     return catalogProducts.filter((p) => {
       if (!p) return false;
+
+      // Filter by catalog source (own vs production)
+      const isFromProd = p.fromProduction || p.source === "manufacturer" || p.isManufacturer;
+      if (isFromProd && !filterProductionCatalog) return false;
+      if (!isFromProd && !filterOwnCatalog) return false;
 
       const pIdStr = String(p.id || p.parentProductId);
       const isHidden = hiddenSet.has(pIdStr);
@@ -16709,7 +16767,7 @@ const ReadyMadeProductsView = ({
 
       return true;
     });
-  }, [catalogProducts, readyMadeCats, selectedCategory, searchQuery, kitchenTypeFilter, kitchenStyleFilter, kitchenMinPriceFilter, kitchenMaxPriceFilter, hiddenProductIds, showHiddenOnly]);
+  }, [catalogProducts, readyMadeCats, selectedCategory, searchQuery, kitchenTypeFilter, kitchenStyleFilter, kitchenMinPriceFilter, kitchenMaxPriceFilter, hiddenProductIds, showHiddenOnly, filterOwnCatalog, filterProductionCatalog]);
 
   return (
     <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-300">
@@ -16740,15 +16798,54 @@ const ReadyMadeProductsView = ({
             <EyeOff className="w-4 h-4 text-amber-500" />
             {showHiddenOnly ? "Показать основной каталог" : `Скрытые товары (${hiddenProductIds.length})`}
           </button>
+          {(companyType === "Салон" || companyType === "Дизайнер") && (
+            <div className="flex items-center bg-gray-100 p-1 rounded-xl h-10 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  if (filterOwnCatalog && !filterProductionCatalog) return;
+                  setFilterOwnCatalog(!filterOwnCatalog);
+                }}
+                className={cn(
+                  "px-3 h-8 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer",
+                  filterOwnCatalog
+                    ? "bg-white text-gray-800 shadow-sm"
+                    : "text-gray-400 hover:text-gray-600"
+                )}
+              >
+                <div className={cn("w-2 h-2 rounded-full", filterOwnCatalog ? "bg-blue-500" : "bg-gray-300")} />
+                Свой каталог
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (filterProductionCatalog && !filterOwnCatalog) return;
+                  setFilterProductionCatalog(!filterProductionCatalog);
+                }}
+                className={cn(
+                  "px-3 h-8 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 cursor-pointer",
+                  filterProductionCatalog
+                    ? "bg-white text-gray-800 shadow-sm"
+                    : "text-gray-400 hover:text-gray-600"
+                )}
+              >
+                <div className={cn("w-2 h-2 rounded-full", filterProductionCatalog ? "bg-indigo-500" : "bg-gray-300")} />
+                Каталог производства
+              </button>
+            </div>
+          )}
           <button
             onClick={() => {
-              if (onAddNewProduct) {
+              if (setActiveTab) {
+                setActiveTab("products");
+                if (setSelectedCategory) {
+                  setSelectedCategory(selectedCategory || "Кухни");
+                }
+                setTimeout(() => {
+                  window.dispatchEvent(new CustomEvent("products_view_add_new", { detail: { category: selectedCategory || "Кухни" } }));
+                }, 150);
+              } else if (onAddNewProduct) {
                 onAddNewProduct();
-              } else {
-                // @ts-ignore
-                resetForm?.(selectedCategory || "Кухни");
-                // @ts-ignore
-                setIsAddingProduct?.(true);
               }
             }}
             className="flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-md shadow-blue-100 text-xs flex-shrink-0 cursor-pointer"
@@ -19169,6 +19266,8 @@ const ProductsView = ({
     wtThicknessFilter,
     wtEdgeFilter,
     coefficients,
+    filterOwnCatalog,
+    filterProductionCatalog,
   ]);
 
   const handleProductsInCatalog = useMemo(() => {
@@ -25837,29 +25936,30 @@ const ProductsView = ({
                 </div>
               </div>
 
-              <div className="flex justify-end gap-3 mt-10 pt-6 border-t border-gray-100">
-                <button
-                  onClick={resetForm}
-                  disabled={isSavingProduct}
-                  className="px-8 py-3 bg-gray-100 text-gray-600 font-bold rounded-xl hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  Отмена
-                </button>
-                <button
-                  onClick={handleCreateProduct}
-                  disabled={!newProduct.name || isSavingProduct}
-                  className="px-12 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2 justify-center"
-                >
-                  {isSavingProduct ? (
-                    <span className="flex items-center gap-2">
-                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-                      <span>Сохранение...</span>
-                    </span>
-                  ) : (
-                    editingProduct ? "Сохранить изменения" : "Добавить в каталог"
-                  )}
-                </button>
-              </div>
+            </div>
+
+            <div className="px-8 py-5 border-t border-gray-100 bg-gray-50 flex justify-end gap-4 rounded-b-3xl z-10">
+              <button
+                onClick={resetForm}
+                disabled={isSavingProduct}
+                className="px-8 py-3 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-100 hover:text-gray-900 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={handleCreateProduct}
+                disabled={!newProduct.name || isSavingProduct}
+                className="px-12 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-md hover:shadow-lg disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center gap-2 justify-center cursor-pointer"
+              >
+                {isSavingProduct ? (
+                  <span className="flex items-center gap-2">
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    <span>Сохранение...</span>
+                  </span>
+                ) : (
+                  editingProduct ? "Сохранить изменения" : "Добавить в каталог"
+                )}
+              </button>
             </div>
           </div>
       )}
@@ -26551,9 +26651,8 @@ const ProductsView = ({
                         </div>
                     )}
                     {(product.source === "manufacturer" || product.isManufacturer || product.fromProduction) && (
-                      <span className="flex items-center gap-1 px-2 py-1 bg-indigo-700/90 backdrop-blur text-white text-[9px] font-black uppercase tracking-wider rounded-lg shadow-md z-10" title="Товар от производства">
-                        <Factory className="w-2.5 h-2.5" />
-                        Производство
+                      <span className="flex items-center justify-center w-6 h-6 bg-indigo-700 text-white rounded-full shadow-md z-10 cursor-help" title="Товар поставляется вашим производством">
+                        <Factory className="w-3.5 h-3.5" />
                       </span>
                     )}
                     <span className="px-2 py-1 bg-white/95 backdrop-blur shadow-sm text-[10px] font-bold uppercase tracking-wider text-blue-600 rounded-lg">
@@ -26901,11 +27000,6 @@ const ProductsView = ({
                   <div className="mt-4 pt-4 border-t border-gray-50 space-y-4">
                     <div className="flex items-center justify-between gap-2">
                                             <div className="flex flex-col min-w-0">
-                        {(companyType === "Салон" || companyType === "Дизайнер") && (
-                          <span className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">
-                            Розница клиенту
-                          </span>
-                        )}
                         {(() => {
                           const coeff = getProductCoefficient(product, customerType, resolveBrandCoefficient);
                           let minPurchasePrice = product.purchasePrice || product.price || 0;
@@ -33044,6 +33138,8 @@ export default function App() {
               resolveBrandCoefficient={resolveBrandCoefficient}
               selectedProductForDetail={selectedProductForDetail}
               setSelectedProductForDetail={setSelectedProductForDetail}
+              onHideProduct={handleHideProduct}
+              onRestoreProduct={handleRestoreProduct}
             />
           ) : activeTab === "services" ? (
             <ServicesView

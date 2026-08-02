@@ -579,6 +579,10 @@ export const SpecificationPrintView = ({
         dangerouslySetInnerHTML={{
           __html: `
         @media print {
+          @page {
+            size: A4 portrait;
+            margin: 0 !important;
+          }
           body * {
             visibility: hidden;
             -webkit-print-color-adjust: exact !important;
@@ -601,8 +605,9 @@ export const SpecificationPrintView = ({
             width: 100%;
             height: auto !important;
             overflow: visible !important;
-            padding: 0 !important;
+            padding: 15mm 15mm 15mm 15mm !important;
             margin: 0 !important;
+            box-sizing: border-box !important;
           }
           .page-break-after-always {
             page-break-after: always !important;

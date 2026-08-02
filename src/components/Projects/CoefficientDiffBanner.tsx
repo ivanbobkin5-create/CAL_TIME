@@ -41,7 +41,29 @@ export function normalizeCoefficients(raw: any, customerType: string = 'retail')
     return undefined;
   };
 
-  const productsSrc = src.products || raw.products || {};
+  const productsSrc: Record<string, number> = {};
+  const rawProds = src.products || raw.products || {};
+  Object.entries(rawProds).forEach(([k, v]) => {
+    const num = getNum(v);
+    if (num !== undefined) productsSrc[k] = num;
+  });
+
+  Object.entries(src).forEach(([k, v]) => {
+    const num = getNum(v);
+    if (num !== undefined) {
+      if (k.startsWith('cat_')) {
+        productsSrc[k.replace('cat_', '')] = num;
+      } else if (!['ldsp', 'hdf', 'edge', 'facadeSheet', 'facadeCustom', 'hardware', 'services', 'assembly', 'delivery', 'products', 'retail', 'wholesale', 'designer'].includes(k)) {
+        productsSrc[k] = num;
+      }
+    }
+  });
+
+  if (productsSrc["Посудосушитель"] && !productsSrc["Посудосушители"]) {
+    productsSrc["Посудосушители"] = productsSrc["Посудосушитель"];
+  } else if (productsSrc["Посудосушители"] && !productsSrc["Посудосушитель"]) {
+    productsSrc["Посудосушитель"] = productsSrc["Посудосушители"];
+  }
 
   return {
     ldsp: getNum(src.ldsp, raw.ldsp),
