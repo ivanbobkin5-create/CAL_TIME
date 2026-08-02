@@ -1,6 +1,7 @@
 import express from "express";
 import "dotenv/config";
 import path from "path";
+import fs from "fs";
 import cors from "cors";
 import { createServer as createViteServer } from "vite";
 import { PrismaClient } from "@prisma/client";
@@ -98,6 +99,27 @@ async function startServer() {
   // API Routes
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok" });
+  });
+
+  // SEO Endpoints: robots.txt & sitemap.xml
+  app.get("/robots.txt", (req, res) => {
+    const robotsPath = path.join(process.cwd(), "public", "robots.txt");
+    if (fs.existsSync(robotsPath)) {
+      res.setHeader("Content-Type", "text/plain; charset=utf-8");
+      return res.sendFile(robotsPath);
+    }
+    res.setHeader("Content-Type", "text/plain; charset=utf-8");
+    res.send("User-agent: *\nAllow: /\nDisallow: /api/\nSitemap: https://mebel-plan.ru/sitemap.xml\nHost: https://mebel-plan.ru\n");
+  });
+
+  app.get("/sitemap.xml", (req, res) => {
+    const sitemapPath = path.join(process.cwd(), "public", "sitemap.xml");
+    if (fs.existsSync(sitemapPath)) {
+      res.setHeader("Content-Type", "application/xml; charset=utf-8");
+      return res.sendFile(sitemapPath);
+    }
+    res.setHeader("Content-Type", "application/xml; charset=utf-8");
+    res.send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://mebel-plan.ru/</loc><lastmod>2026-08-01</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url></urlset>`);
   });
 
 function transliterate(str: string): string {

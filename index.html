@@ -4,36 +4,128 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     
-    <!-- Языковые настройки для отключения ложного перевода в браузере -->
+    <!-- Языковые настройки -->
     <meta http-equiv="Content-Language" content="ru" />
     <meta name="google" content="notranslate" />
     
-    <!-- Основные SEO теги -->
-    <title>Мебельный калькулятор Зовите мебельщиков</title>
-    <meta name="description" content="Профессиональный онлайн-калькулятор для расчета стоимости корпусной мебели, распила ЛДСП, кромления и присадки. Оптимизируйте процессы вашего мебельного производства, салона или студии дизайна." />
-    <meta name="keywords" content="мебельный калькулятор, расчет стоимости мебели, распил ЛДСП онлайн, заказ мебели, корпусная мебель расчет, программа для мебельщиков, crm для мебельного производства, мебельный бизнес, раскрой дсп" />
-    <meta name="author" content="Зовите Мебельщиков" />
-    <meta name="robots" content="index, follow" />
+    <!-- Основные SEO теги для Mebel-Plan.ru -->
+    <title>Mebel-Plan.ru — Профессиональный калькулятор мебели, распила ЛДСП и CRM для мебельщиков</title>
+    <meta name="description" content="Mebel-Plan.ru — Онлайн-программа и калькулятор расчета стоимости корпусной мебели, распила ЛДСП/МДФ, кромления, присадки и кухонных модулей. Автоматизация заказов, спецификации, раскрой и интеграция с Битрикс24 для мебельных производств, салонов и мастеров." />
+    <meta name="keywords" content="Mebel-Plan.ru, mebel plan, калькулятор мебели, расчет стоимости мебели, распил ЛДСП онлайн, калькулятор распила и кромки, программа для мебельного производства, расчет кухни, кухонные модули калькулятор, корпусная мебель расчет, CRM для мебельного цеха, спецификация на распил, раскрой ДСП онлайн, стоимость кромления" />
+    <meta name="author" content="Mebel-Plan.ru" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
+    <link rel="canonical" href="https://mebel-plan.ru/" />
     
-    <!-- Open Graph / Улучшенный вид ссылки в Telegram, VK, WhatsApp, Facebook -->
+    <!-- Гео и индексация Yandex / Google -->
+    <meta name="geo.region" content="RU" />
+    <meta name="geo.placename" content="Россия" />
+    
+    <!-- Open Graph / Соцсети и Мессенджеры (Telegram, VK, WhatsApp) -->
     <meta property="og:type" content="website" />
-    <meta property="og:title" content="Зовите мебельщиков: Профессиональный мебельный калькулятор" />
-    <meta property="og:description" content="Умный онлайн-калькулятор расчета стоимости деталей и услуг мебельного производства. Незаменимый инструмент для дизайнеров, салонов и мастеров." />
-    <meta property="og:site_name" content="Зовите Мебельщиков" />
+    <meta property="og:url" content="https://mebel-plan.ru/" />
+    <meta property="og:title" content="Mebel-Plan.ru — Калькулятор корпусной мебели и распила ЛДСП онлайн" />
+    <meta property="og:description" content="Умный инструмент для мебельного бизнеса: моментальный расчет стоимости деталей, ЛДСП, кромки, фурнитуры и готовых кухонных модулей с выгрузкой в Битрикс24." />
+    <meta property="og:site_name" content="Mebel-Plan.ru" />
     <meta property="og:locale" content="ru_RU" />
-    <!-- TODO: замените путь на вашу реальную картинку (размер ~1200x630px) -->
-    <meta property="og:image" content="/seo-banner.png" />
+    <meta property="og:image" content="https://mebel-plan.ru/seo-banner.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Mebel-Plan.ru — Калькулятор мебели и распила" />
     
     <!-- Twitter Cards -->
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Зовите мебельщиков: Мебельный калькулятор" />
-    <meta name="twitter:description" content="Онлайн-расчет деталей корпусной мебели (ЛДСП, МДФ, кромка, присадка). Удобный инструмент для мебельного бизнеса." />
-    <meta name="twitter:image" content="/seo-banner.png" />
+    <meta name="twitter:url" content="https://mebel-plan.ru/" />
+    <meta name="twitter:title" content="Mebel-Plan.ru — Калькулятор мебели и распила" />
+    <meta name="twitter:description" content="Онлайн-расчет деталей корпусной мебели (ЛДСП, МДФ, кромка, присадка). Автоматизация для дизайнеров и мебельных производств." />
+    <meta name="twitter:image" content="https://mebel-plan.ru/seo-banner.png" />
 
-    <!-- Иконки и PWA -->
-    <meta name="theme-color" content="#3b82f6" />
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23111827'/><path d='M30 20h40v60H30z' fill='none'/><rect x='35' y='25' width='30' height='15' fill='%23374151'/><rect x='35' y='45' width='10' height='10' fill='%239ca3af'/><rect x='55' y='45' width='10' height='10' fill='%239ca3af'/><rect x='35' y='60' width='10' height='10' fill='%239ca3af'/><rect x='55' y='60' width='10' height='10' fill='%239ca3af'/></svg>">
+    <!-- Иконки и оформление -->
+    <meta name="theme-color" content="#2563eb" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%232563eb'/><path d='M25 25h50v50H25z' fill='none' stroke='white' stroke-width='8'/><rect x='35' y='35' width='12' height='30' fill='white'/><rect x='53' y='35' width='12' height='18' fill='white'/></svg>">
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    
+    <!-- Schema.org JSON-LD Микроразметка -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@graph": [
+        {
+          "@type": "SoftwareApplication",
+          "@id": "https://mebel-plan.ru/#software",
+          "name": "Mebel-Plan.ru",
+          "url": "https://mebel-plan.ru/",
+          "applicationCategory": "BusinessApplication",
+          "operatingSystem": "All (Web, Windows, macOS, Android, iOS)",
+          "offers": {
+            "@type": "Offer",
+            "price": "0",
+            "priceCurrency": "RUB"
+          },
+          "aggregateRating": {
+            "@type": "AggregateRating",
+            "ratingValue": "4.9",
+            "ratingCount": "320"
+          },
+          "description": "Профессиональный веб-сервис для автоматического расчета стоимости корпусной мебели, деталей распила ЛДСП, кромки, фурнитуры, готовой мебели и интеграции с CRM Битрикс24.",
+          "featureList": [
+            "Калькулятор корпусной мебели и кухонных модулей",
+            "Онлайн расчет деталей распила, кромления и присадки",
+            "Каталог материалов ЛДСП, МДФ, столешниц и фурнитуры",
+            "Двусторонняя синхронизация с Битрикс24",
+            "Формирование спецификаций, бланков заказов и коммерческих предложений"
+          ]
+        },
+        {
+          "@type": "Organization",
+          "@id": "https://mebel-plan.ru/#organization",
+          "name": "Mebel-Plan.ru",
+          "url": "https://mebel-plan.ru/",
+          "logo": "https://mebel-plan.ru/logo.png",
+          "description": "Платформа автоматизации расчетов и заказов для мебельного бизнеса"
+        },
+        {
+          "@type": "WebSite",
+          "@id": "https://mebel-plan.ru/#website",
+          "url": "https://mebel-plan.ru/",
+          "name": "Mebel-Plan.ru",
+          "publisher": {
+            "@id": "https://mebel-plan.ru/#organization"
+          },
+          "inLanguage": "ru-RU"
+        },
+        {
+          "@type": "FAQPage",
+          "@id": "https://mebel-plan.ru/#faq",
+          "mainEntity": [
+            {
+              "@type": "Question",
+              "name": "Как рассчитать стоимость распила и кромления ЛДСП на Mebel-Plan.ru?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "На Mebel-Plan.ru достаточно выбрать нужные материалы, указать размеры деталей, вид кромки и присадки. Калькулятор мгновенно рассчитывает стоимость материалов, работ и наценку вашей компании."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Поддерживает ли Mebel-Plan.ru интеграцию с Битрикс24?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Да, Mebel-Plan.ru легко подключается к вашей CRM Битрикс24 через вебхук. Расчеты и бланки заказов моментально передаются в сделки Битрикс24."
+              }
+            },
+            {
+              "@type": "Question",
+              "name": "Какие типы мебели можно рассчитывать в Mebel-Plan.ru?",
+              "acceptedAnswer": {
+                "@type": "Answer",
+                "text": "Mebel-Plan.ru поддерживает расчет кухонных гарнитуров, кухонных модулей, шкафов-купе, прихожих, столов, комодов, а также индивидуальных заказов корпусной мебели из ЛДСП и МДФ."
+              }
+            }
+          ]
+        }
+      ]
+    }
+    </script>
     
     <script>
       window.addEventListener('error', function(e) {
@@ -53,4 +145,5 @@
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
+
 

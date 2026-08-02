@@ -1316,7 +1316,6 @@ type ProductionFormat = "own" | "contract";
 const isDryerCategory = (cat: string) => cat === "Посудосушитель" || cat === "Посудосушители";
 
 const INITIAL_PRODUCT_CATEGORIES = [
-  "Кухонные гарнитуры",
   "Столешницы и стеновые",
   "Крепежные элементы и цоколь",
   "Ручки и крючки",
@@ -17076,6 +17075,55 @@ const ProductsView = ({
     return Array.from(widths).sort((a, b) => parseInt(a) - parseInt(b));
   }, [catalogProducts]);
 
+  // Ready-made vs Product Categories filtering
+  const isReadyMadeEnabled = companyData?.readyMadeConfig?.enabled !== false;
+  const disabledReadyMadeCats = companyData?.readyMadeConfig?.disabledCategories || [];
+  const defaultReadyCats = ["Кухни", "Шкафы", "Прихожие", "Столы", "Комоды", "Кухонные гарнитуры", "Кухонный гарнитур"];
+  const configuredReadyCats = companyData?.readyMadeConfig?.categories || defaultReadyCats;
+  const activeReadyMadeCats = useMemo(() => {
+    return [...configuredReadyCats, "Кухонные гарнитуры", "Кухонный гарнитур"].filter((c: string) => !disabledReadyMadeCats.includes(c));
+  }, [configuredReadyCats, disabledReadyMadeCats]);
+
+  const displayProductCategories = useMemo(() => {
+    return productCategories.filter((cat) => {
+      const catLower = cat.toLowerCase().trim();
+      if (catLower.includes("гарнитур")) return false;
+      if (catLower.includes("модул")) return true;
+      if (!isReadyMadeEnabled) return true;
+      const isReadyCat = activeReadyMadeCats.some((rc: string) => {
+        const rcLower = rc.toLowerCase().trim();
+        if (rcLower.includes("гарнитур")) return false;
+        if (rcLower === "кухни" && catLower === "кухни") return true;
+        return catLower === rcLower;
+      });
+      return !isReadyCat;
+    });
+  }, [productCategories, isReadyMadeEnabled, activeReadyMadeCats]);
+
+  useEffect(() => {
+    if (selectedCategory) {
+      const selLower = selectedCategory.toLowerCase().trim();
+      if (selLower.includes("гарнитур")) {
+        setSelectedCategory("Все категории");
+        return;
+      }
+      if (selLower.includes("модул")) {
+        return;
+      }
+      if (isReadyMadeEnabled) {
+        const isReadyCat = activeReadyMadeCats.some((rc: string) => {
+          const rcLower = rc.toLowerCase().trim();
+          if (rcLower.includes("гарнитур")) return false;
+          if (rcLower === "кухни" && selLower === "кухни") return true;
+          return selLower === rcLower;
+        });
+        if (isReadyCat) {
+          setSelectedCategory("Все категории");
+        }
+      }
+    }
+  }, [selectedCategory, isReadyMadeEnabled, activeReadyMadeCats, setSelectedCategory]);
+
   // Kitchen Modules Picker Modal State
   const [isKitchenModulesModalOpen, setIsKitchenModulesModalOpen] = useState(false);
   const [kitchenModuleSearch, setKitchenModuleSearch] = useState("");
@@ -17084,7 +17132,7 @@ const ProductsView = ({
 
   const [newProduct, setNewProduct] = useState({
     name: "",
-    category: productCategories[0],
+    category: displayProductCategories[0] || productCategories[0],
     purchasePrice: 0,
     images: [] as string[],
     article: "",
@@ -17450,12 +17498,13 @@ const ProductsView = ({
   };
 
   const resetForm = (targetCategory?: any) => {
-    let defaultCat = (targetCategory && typeof targetCategory === "string" && productCategories.includes(targetCategory))
+    const validCats = displayProductCategories.length > 0 ? displayProductCategories : productCategories;
+    let defaultCat = (targetCategory && typeof targetCategory === "string" && validCats.includes(targetCategory))
       ? targetCategory
-      : (selectedCategory && productCategories.includes(selectedCategory) ? selectedCategory : productCategories[0]);
-    if (defaultCat === "Посудосушители" && productCategories.includes("Посудосушитель")) {
+      : (selectedCategory && validCats.includes(selectedCategory) ? selectedCategory : validCats[0]);
+    if (defaultCat === "Посудосушители" && validCats.includes("Посудосушитель")) {
       defaultCat = "Посудосушитель";
-    } else if (defaultCat === "Посудосушитель" && productCategories.includes("Посудосушители")) {
+    } else if (defaultCat === "Посудосушитель" && validCats.includes("Посудосушители")) {
       defaultCat = "Посудосушители";
     }
     setNewProduct({
@@ -17577,7 +17626,7 @@ const ProductsView = ({
     setEditingProduct(product);
     setNewProduct({
       name: product.name || "",
-      category: product.category || productCategories[0],
+      category: product.category || displayProductCategories[0] || productCategories[0],
       purchasePrice: product.purchasePrice || 0,
       images: product.images || (product.image ? [product.image] : []),
       article: product.article || "",
@@ -17683,7 +17732,7 @@ const ProductsView = ({
     setEditingProduct(null);
     setNewProduct({
       name: product.name ? `${product.name} (копия)` : "",
-      category: product.category || productCategories[0],
+      category: product.category || displayProductCategories[0] || productCategories[0],
       purchasePrice: product.purchasePrice || 0,
       images: product.images || (product.image ? [product.image] : []),
       article: product.article ? `${product.article}_копия` : "",
@@ -17884,14 +17933,17 @@ const ProductsView = ({
       const isReadyMadeEnabled = companyData?.readyMadeConfig?.enabled !== false;
 
       if (isReadyMadeEnabled && activeProductsView !== 'moderation') {
-        const pCatLower = (p.category || "").toLowerCase();
-        const isReadyMadeItem = activeReadyMadeCats.some((c: string) => {
-          const cLower = c.toLowerCase();
-          if (cLower.includes("кух") && pCatLower.includes("кух")) return true;
-          return pCatLower.includes(cLower) || cLower.includes(pCatLower);
-        });
-        if (isReadyMadeItem) {
-          return false;
+        const pCatLower = (p.category || "").toLowerCase().trim();
+        if (!pCatLower.includes("модул")) {
+          const isReadyMadeItem = activeReadyMadeCats.some((c: string) => {
+            const cLower = c.toLowerCase().trim();
+            if (cLower.includes("гарнитур")) return false;
+            if (cLower === "кухни" && pCatLower === "кухни") return true;
+            return pCatLower === cLower;
+          });
+          if (isReadyMadeItem) {
+            return false;
+          }
         }
       }
 
@@ -18816,7 +18868,7 @@ const ProductsView = ({
             </button>
           );
         })()}
-        {productCategories.map((cat) => (
+        {displayProductCategories.map((cat) => (
           <button
             key={cat}
             onClick={() => setSelectedCategory(cat)}
@@ -20165,7 +20217,7 @@ const ProductsView = ({
                         }}
                         className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none bg-gray-50/50"
                       >
-                        {productCategories.map((c) => (
+                        {displayProductCategories.map((c) => (
                           <option key={c} value={c}>
                             {c}
                           </option>
@@ -26821,7 +26873,8 @@ export default function App() {
           try {
             const data = JSON.parse(cached);
             if (key.includes('categories')) {
-              setProductCategories(data.categories || INITIAL_PRODUCT_CATEGORIES);
+              const loadedCats = (data.categories || INITIAL_PRODUCT_CATEGORIES).filter((c: string) => c !== "Кухонные гарнитуры" && c !== "Кухонный гарнитур");
+              setProductCategories(loadedCats);
               setCoefficients((prev: any) => ({ ...prev, products: data.coefficients || {} }));
             }
             if (key.includes('production')) {
@@ -26911,7 +26964,8 @@ export default function App() {
 
       if (catData) {
         await safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyId}/settings/categories`, JSON.stringify(catData));
-        setProductCategories(catData.categories || INITIAL_PRODUCT_CATEGORIES);
+        const loadedCats = (catData.categories || INITIAL_PRODUCT_CATEGORIES).filter((c: string) => c !== "Кухонные гарнитуры" && c !== "Кухонный гарнитур");
+        setProductCategories(loadedCats);
         setCoefficients((prev: any) => ({ ...prev, products: catData.coefficients || {} }));
       }
 
@@ -28309,10 +28363,10 @@ export default function App() {
         (snapshot) => {
           if (snapshot.exists()) {
             const data = snapshot.data();
-            let cats = data.categories || INITIAL_PRODUCT_CATEGORIES;
+            let cats = (data.categories || INITIAL_PRODUCT_CATEGORIES).filter((c: string) => c !== "Кухонные гарнитуры" && c !== "Кухонный гарнитур");
   
             // Ensure new system categories are present even for old users
-            const mandatoryCategories = ["Кухонные гарнитуры", "Кухонные модули", "Освещение"];
+            const mandatoryCategories = ["Кухонные модули", "Освещение"];
             let hasNew = false;
             mandatoryCategories.forEach((mc) => {
               if (!cats.includes(mc)) {

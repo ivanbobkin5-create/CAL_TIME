@@ -1,6 +1,17 @@
 User-agent: *
 Allow: /
-Disallow: /*?* # Запрещаем индексировать страницы с техническими параметрами и сессиями
+Disallow: /api/
 
-# Адрес карты сайта (sitemap)
-Sitemap: https://zovitemebelschikov.ru/sitemap.xml
+# Яндекс и Google роботы
+User-agent: Yandex
+Allow: /
+Disallow: /api/
+
+User-agent: Googlebot
+Allow: /
+Disallow: /api/
+
+# Карта сайта
+Sitemap: https://mebel-plan.ru/sitemap.xml
+Host: https://mebel-plan.ru
+
