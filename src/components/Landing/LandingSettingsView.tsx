@@ -123,7 +123,10 @@ export function LandingSettingsView({
   const handleSave = async () => {
     try {
       setIsSaving(true);
-      await onSaveSettings(false);
+      // Passing the latest state as an override ensures we don't save stale data
+      await onSaveSettings(false, {
+        landingPage: landingConfig
+      });
     } finally {
       setIsSaving(false);
     }
@@ -326,10 +329,16 @@ export function LandingSettingsView({
                   <p className="text-xs text-slate-300 leading-relaxed mb-2">
                     Чтобы ваша витрина открывалась по вашему собственному адресу (например, <code className="text-emerald-300 font-mono">shop.mebel-faktura.ru</code>), внесите записи в панели регистратора вашего домена (<b>Reg.ru</b>, <b>Beget</b>, <b>Timeweb</b> и др.).
                   </p>
-                  <div className="bg-slate-800 p-3 rounded-lg border border-slate-700 text-xs text-slate-200 mb-3">
-                    <b className="text-emerald-400">Обратите внимание:</b> При привязке домена к витрине автоматически привязывается весь ваш каталог и все категории! 
-                    Например, страница витрины <code className="bg-slate-900 px-1 py-0.5 rounded text-emerald-300">{currentHost}/{companySlug}/{effectiveAlias}</code> 
-                    будет автоматически доступна по вашему домену <code className="bg-slate-900 px-1 py-0.5 rounded text-emerald-300">shop.mebel-faktura.ru</code>, а переход в категорию кухни — по <code className="bg-slate-900 px-1 py-0.5 rounded text-emerald-300">shop.mebel-faktura.ru/kuhni</code>.
+                  <div className="bg-slate-800/80 p-4 rounded-xl border border-slate-700/50 text-xs text-slate-200 mb-4 shadow-sm backdrop-blur-sm">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-1.5 h-4 bg-emerald-500 rounded-full" />
+                      <b className="text-emerald-400">Как это работает:</b>
+                    </div>
+                    <p className="leading-relaxed">
+                      При переходе по вашему домену сервер автоматически определит компанию <span className="text-emerald-300 font-bold">«{companyData?.name}»</span>. 
+                      Вам <b>не нужно</b> указывать путь <code className="bg-slate-900/50 px-1 py-0.5 rounded text-slate-400">/{companySlug}</code> в настройках DNS — просто направьте домен на наш сервер, а мы сделаем всё остальное. 
+                      Ваша витрина будет доступна прямо по адресу <code className="bg-slate-900/50 px-1 py-0.5 rounded text-emerald-300">https://{landingConfig.customDomain || 'ваш-домен.рф'}</code>.
+                    </p>
                   </div>
 
                   <div className="space-y-3">
@@ -346,7 +355,7 @@ export function LandingSettingsView({
                         <span className="text-[10px] text-slate-400 font-mono">Рекомендуется</span>
                       </div>
                       
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-slate-950 p-2.5 rounded-lg font-mono text-[11px] border border-slate-800">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 bg-slate-950/50 p-3 rounded-xl font-mono text-[11px] border border-slate-800">
                         <div>
                           <span className="text-slate-500 block text-[9px] uppercase font-sans">Тип записи</span>
                           <span className="font-bold text-amber-400">CNAME</span>
@@ -380,7 +389,7 @@ export function LandingSettingsView({
                       </div>
                       
                       <div className="space-y-1.5 font-mono text-[11px]">
-                        <div className="bg-slate-950 p-2 rounded-lg border border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                        <div className="bg-slate-950/50 p-2.5 rounded-xl border border-slate-800 flex flex-wrap items-center justify-between gap-2">
                           <div>
                             <span className="text-amber-400 font-bold mr-2">Тип A:</span>
                             <span className="text-slate-400 mr-1">Имя:</span> <code className="text-slate-200 font-bold">@</code>
@@ -390,7 +399,7 @@ export function LandingSettingsView({
                           </div>
                         </div>
 
-                        <div className="bg-slate-950 p-2 rounded-lg border border-slate-800 flex flex-wrap items-center justify-between gap-2">
+                        <div className="bg-slate-950/50 p-2.5 rounded-xl border border-slate-800 flex flex-wrap items-center justify-between gap-2">
                           <div>
                             <span className="text-amber-400 font-bold mr-2">Тип CNAME:</span>
                             <span className="text-slate-400 mr-1">Имя:</span> <code className="text-slate-200 font-bold">www</code>

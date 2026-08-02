@@ -28934,37 +28934,51 @@ export default function App() {
   ) => {
     const clean = value.replace(",", ".");
     const numValue = clean === "" ? 0 : (isNaN(parseFloat(clean)) ? 0 : parseFloat(clean));
-    setOwnProductionConfig((prev) => ({
-      ...prev,
-      salonCoefficients: {
-        ...prev.salonCoefficients,
-        [salonId]: {
-          ...(prev.salonCoefficients?.[salonId] || {}),
-          [category]: numValue,
+    setOwnProductionConfig((prev) => {
+      const updated = {
+        ...prev,
+        salonCoefficients: {
+          ...(prev.salonCoefficients || {}),
+          [salonId]: {
+            ...(prev.salonCoefficients?.[salonId] || {}),
+            [category]: numValue,
+          },
         },
-      },
-    }));
+      };
+      // Auto-save
+      saveGeneralSettings(true, { ownProductionConfig: updated });
+      return updated;
+    });
   };
 
   const updateStandardCoefficient = (category: string, value: string) => {
     const clean = value.replace(",", ".");
     const numValue = clean === "" ? 0 : (isNaN(parseFloat(clean)) ? 0 : parseFloat(clean));
-    setOwnProductionConfig((prev) => ({
-      ...prev,
-      standardCoefficients: {
-        ...(prev.standardCoefficients || {}),
-        [category]: numValue,
-      },
-    }));
+    setOwnProductionConfig((prev) => {
+      const updated = {
+        ...prev,
+        standardCoefficients: {
+          ...(prev.standardCoefficients || {}),
+          [category]: numValue,
+        },
+      };
+      // Auto-save
+      saveGeneralSettings(true, { ownProductionConfig: updated });
+      return updated;
+    });
   };
 
-  const toggleSpecialCondition = (salonId: string) => {
+  const toggleSpecialCondition = async (salonId: string) => {
     setOwnProductionConfig((prev) => {
       const currentIds = prev.specialConditionIds || [];
       const newIds = currentIds.includes(salonId)
-        ? currentIds.filter((id) => id !== salonId)
+        ? currentIds.filter((id: string) => id !== salonId)
         : [...currentIds, salonId];
-      return { ...prev, specialConditionIds: newIds };
+      
+      const updated = { ...prev, specialConditionIds: newIds };
+      // Save immediately for better UX on toggles
+      saveGeneralSettings(true, { ownProductionConfig: updated });
+      return updated;
     });
   };
 

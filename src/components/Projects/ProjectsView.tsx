@@ -1013,7 +1013,7 @@ export const ProjectsView = ({
                         key={set.id}
                         className="bg-white rounded-3xl border-2 border-indigo-100 hover:border-indigo-300 shadow-sm hover:shadow-xl transition-all overflow-visible relative flex flex-col justify-between"
                       >
-                        <div className="h-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-600" />
+                        <div className="h-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-600 rounded-t-[22px]" />
                         
                         <div className="p-5 md:p-6 flex-1 flex flex-col justify-between">
                           <div>
