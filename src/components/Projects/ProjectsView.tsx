@@ -25,6 +25,7 @@ import {
   Box,
   X,
   Check,
+  AlertTriangle,
 } from "lucide-react";
 // TimeWeb DB Setup
 const db = {};
@@ -149,6 +150,7 @@ import { Bitrix24Modal } from "./Bitrix24Modal";
 import { ProjectAnalyticsModal } from "./ProjectAnalyticsModal";
 import { TransferProjectModal } from "./TransferProjectModal";
 import { getCoefficientDifferences } from "./CoefficientDiffBanner";
+import { DealAnalysisModal } from "./DealAnalysisModal";
 
 
 interface Project {
@@ -158,7 +160,7 @@ interface Project {
   createdBy: string;
   createdByName: string;
   data: any;
-  status?: "draft" | "sent" | "transferred" | "deleted";
+  status?: string;
   sketches?: string[];
   specification?: any;
   sourceCompanyId?: string;
@@ -253,6 +255,7 @@ export const ProjectsView = ({
   const [renamingSet, setRenamingSet] = useState<any | null>(null);
   const [newSetNameInput, setNewSetNameInput] = useState("");
   const [isSavingRename, setIsSavingRename] = useState(false);
+  const [selectedSetForDealAnalysis, setSelectedSetForDealAnalysis] = useState<any | null>(null);
 
   const [localProjects, setLocalProjects] = useState<Project[]>(projects);
   const [localSets, setLocalSets] = useState<any[]>(sets);
@@ -760,6 +763,128 @@ export const ProjectsView = ({
     }
   };
 
+  const handleConfirmTransferToProduction = async (set: any, subProjs: Project[]) => {
+    if (!companyId) return;
+
+    const targetManufacturerId = manufacturerId || companyData?.manufacturerId;
+    if (!targetManufacturerId) {
+      if (showAlert) showAlert("Ошибка", "Не настроено производство-партнер в настройках компании. Пожалуйста, укажите производство-партнера в профиле или настройках компании.");
+      return;
+    }
+
+    try {
+      const batch = writeBatch(db);
+      const timestamp = new Date().toISOString();
+
+      // 1. Update status in Salon's database
+      batch.update(doc(db, "companies", companyId, "sets", set.id), {
+        status: "production_transferred",
+        transferredToProductionAt: timestamp,
+      });
+
+      for (const sp of subProjs) {
+        batch.update(doc(db, "companies", companyId, "projects", sp.id), {
+          status: "production_transferred",
+          transferredToProductionAt: timestamp,
+        });
+      }
+
+      // 2. Create the exact copies in the partner manufacturer's space
+      const partnerSetRef = doc(db, "companies", targetManufacturerId, "partner_sets", set.id);
+      const partnerSetData = {
+        ...set,
+        status: "pending",
+        originalSalonId: companyId,
+        originalSalonName: companyData?.name || "Салон-партнер",
+        createdAt: timestamp,
+      };
+      batch.set(partnerSetRef, partnerSetData);
+
+      for (const sp of subProjs) {
+        const partnerProjRef = doc(db, "companies", targetManufacturerId, "partner_projects", sp.id);
+        const partnerProjData = {
+          ...sp,
+          status: "pending",
+          originalSalonId: companyId,
+          originalSalonName: companyData?.name || "Салон-партнер",
+          createdAt: timestamp,
+        };
+        batch.set(partnerProjRef, partnerProjData);
+      }
+
+      await batch.commit();
+
+      // Optimistic local state updates
+      setLocalSets(prev => prev.map(s => s.id === set.id ? { ...s, status: "production_transferred" } : s));
+      const subProjIds = new Set(subProjs.map(p => p.id));
+      setLocalProjects(prev => prev.map(p => subProjIds.has(p.id) ? { ...p, status: "production_transferred" } : p));
+
+      if (showAlert) showAlert("Успешно", "Заказ успешно передан в производство партнера!");
+      setSelectedSetForDealAnalysis(null);
+    } catch (err) {
+      console.error("Error transferring to production:", err);
+      if (showAlert) showAlert("Ошибка", "Не удалось передать заказ в производство");
+    }
+  };
+
+  const handleReturnOrder = async () => {
+    if (!returnOrderModal || !companyId) return;
+    const { item, isSet } = returnOrderModal;
+    if (!returnReasonInput.trim()) {
+      if (showAlert) showAlert("Предупреждение", "Пожалуйста, введите причину возврата на доработку");
+      return;
+    }
+
+    setIsReturning(true);
+    try {
+      const batch = writeBatch(db);
+      const timestamp = new Date().toISOString();
+
+      if (isSet) {
+        batch.update(doc(db, "companies", companyId, "sets", item.id), {
+          status: "returned",
+          revisionComment: returnReasonInput,
+          returnedAt: timestamp,
+        });
+
+        const subProjs = setSubProjectsMap[item.id] || [];
+        for (const sp of subProjs) {
+          batch.update(doc(db, "companies", companyId, "projects", sp.id), {
+            status: "returned",
+            revisionComment: returnReasonInput,
+            returnedAt: timestamp,
+          });
+        }
+      } else {
+        batch.update(doc(db, "companies", companyId, "projects", item.id), {
+          status: "returned",
+          revisionComment: returnReasonInput,
+          returnedAt: timestamp,
+        });
+      }
+
+      await batch.commit();
+      
+      if (isSet) {
+        setLocalSets(prev => prev.map(s => s.id === item.id ? { ...s, status: "returned", revisionComment: returnReasonInput } : s));
+        const subProjs = setSubProjectsMap[item.id] || [];
+        const subProjIds = new Set(subProjs.map(p => p.id));
+        setLocalProjects(prev => prev.map(p => subProjIds.has(p.id) ? { ...p, status: "returned", revisionComment: returnReasonInput } : p));
+      } else {
+        setLocalProjects(prev => prev.map(p => p.id === item.id ? { ...p, status: "returned", revisionComment: returnReasonInput } : p));
+      }
+
+      if (showAlert) showAlert("Успешно", "Заказ возвращен менеджеру на доработку");
+      setReturnOrderModal(null);
+      setReturnReasonInput("");
+    } catch (err) {
+      console.error("Error returning order to revision:", err);
+      if (showAlert) showAlert("Ошибка", "Не удалось вернуть заказ на доработку");
+    } finally {
+      setIsReturning(false);
+    }
+  };
+
   // Add standalone project to set
   const handleAddProjectToSet = async (projectId: string, set: any) => {
     if (!companyId) return;
@@ -933,6 +1058,12 @@ export const ProjectsView = ({
       if (activeFilter === "all" || activeFilter === "sets") return true;
 
       const setStatus = s.status || (subProjs.length > 0 && subProjs.every(p => p.status === "sent") ? "sent" : "draft");
+      if (activeFilter === "draft") {
+        return setStatus === "draft" || setStatus === "returned";
+      }
+      if (activeFilter === "transferred") {
+        return setStatus === "transferred" || setStatus === "production_transferred" || setStatus === "accepted" || setStatus === "accepted_with_revisions";
+      }
       return setStatus === activeFilter;
     });
   }, [userSets, setSubProjectsMap, searchQuery, selectedManagerId, activeFilter, selectedMonth, companyEmployees]);
@@ -949,7 +1080,15 @@ export const ProjectsView = ({
 
       if (activeFilter === "all") return true;
       if (activeFilter === "sets") return false;
-      return (p.status || "draft") === activeFilter;
+      
+      const pStatus = p.status || "draft";
+      if (activeFilter === "draft") {
+        return pStatus === "draft" || pStatus === "returned";
+      }
+      if (activeFilter === "transferred") {
+        return pStatus === "transferred" || pStatus === "production_transferred" || pStatus === "accepted" || pStatus === "accepted_with_revisions";
+      }
+      return pStatus === activeFilter;
     });
   }, [standaloneProjects, searchQuery, selectedManagerId, activeFilter, selectedMonth, companyEmployees]);
 
@@ -1167,6 +1306,8 @@ export const ProjectsView = ({
 
                     const employee = companyEmployees.find(emp => emp.uid === set.createdBy);
                     const displayManagerName = employee ? (employee.name || employee.displayName || employee.email) : (set.createdByName || "Пользователь");
+                    const setStatus = set.status || (subProjects.length > 0 && subProjects.every((p: any) => p.status === "sent") ? "sent" : "draft");
+                    const isSetSent = setStatus === "sent";
 
                     return (
                       <div 
@@ -1195,6 +1336,31 @@ export const ProjectsView = ({
                                     {set.contractNumber && (
                                       <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-gray-100 text-gray-700 flex-shrink-0">
                                         № {set.contractNumber}
+                                      </span>
+                                    )}
+                                    {setStatus === "sent" && (
+                                      <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-orange-100 text-orange-700 flex-shrink-0">
+                                        Оформлен
+                                      </span>
+                                    )}
+                                    {setStatus === "transferred" && (
+                                      <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-blue-100 text-blue-700 flex-shrink-0">
+                                        Передан руководителю
+                                      </span>
+                                    )}
+                                    {setStatus === "production_transferred" && (
+                                      <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-green-100 text-green-700 flex-shrink-0">
+                                        Передан в производство
+                                      </span>
+                                    )}
+                                    {setStatus === "returned" && (
+                                      <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-red-100 text-red-700 flex-shrink-0">
+                                        Возвращен на доработку
+                                      </span>
+                                    )}
+                                    {(setStatus === "accepted" || setStatus === "accepted_with_revisions") && (
+                                      <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-700 flex-shrink-0">
+                                        Принят производством
                                       </span>
                                     )}
                                   </div>
@@ -1244,10 +1410,10 @@ export const ProjectsView = ({
                                         className="w-full text-left px-4 py-2.5 text-xs font-semibold text-gray-700 hover:bg-indigo-50 hover:text-indigo-600 flex items-center gap-2"
                                       >
                                         <ClipboardList className="w-4 h-4 text-indigo-500" />
-                                        Оформить комплект
+                                        {isSetSent ? "Внести изменения в спецификацию" : "Оформить комплект"}
                                       </button>
 
-                                      {onOpenSetProposal && (
+                                      {!isSetSent && onOpenSetProposal && (
                                         <button
                                           onClick={(e) => {
                                             e.stopPropagation();
@@ -1299,7 +1465,7 @@ export const ProjectsView = ({
                                         </button>
                                       )}
 
-                                      {(userRole === "manager" || userRole === "admin") && (
+                                      {!isSetSent && (userRole === "manager" || userRole === "admin") && (
                                         <button
                                           onClick={(e) => {
                                             e.stopPropagation();
@@ -1327,17 +1493,19 @@ export const ProjectsView = ({
                                         Расформировать комплект
                                       </button>
 
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setOpenMenuId(null);
-                                          handleDeleteSetWithProjects(set, subProjects);
-                                        }}
-                                        className="w-full text-left px-4 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-50 flex items-center gap-2"
-                                      >
-                                        <Trash2 className="w-4 h-4" />
-                                        Удалить комплект и все проекты
-                                      </button>
+                                      {(!isSetSent || userRole === "admin" || userRole === "supervisor") && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setOpenMenuId(null);
+                                            handleDeleteSetWithProjects(set, subProjects);
+                                          }}
+                                          className="w-full text-left px-4 py-2.5 text-xs font-semibold text-red-600 hover:bg-red-50 flex items-center gap-2"
+                                        >
+                                          <Trash2 className="w-4 h-4" />
+                                          Удалить комплект и все проекты
+                                        </button>
+                                      )}
                                     </div>
                                   )}
                                 </div>
@@ -1436,6 +1604,98 @@ export const ProjectsView = ({
                                     })
                                   )}
                                 </div>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Revision warning banner */}
+                          {setStatus === "returned" && set.revisionComment && (
+                            <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3 shadow-2xs">
+                              <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5 animate-bounce" />
+                              <div className="space-y-1">
+                                <div className="text-xs font-black text-red-950 uppercase tracking-wider">Возвращен на доработку</div>
+                                <div className="text-xs text-red-800 font-semibold">{set.revisionComment}</div>
+                                <div className="text-[10px] text-red-500 font-medium">Пожалуйста, внесите необходимые правки и оформите спецификацию заново.</div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Action Buttons Row for Set Card */}
+                          <div className="mt-5 pt-4 border-t border-indigo-50/80 flex flex-wrap items-center justify-between gap-3">
+                            {/* Left Side: Secondary Actions or Info */}
+                            <div className="flex items-center gap-2">
+                              {(userRole === "admin" || userRole === "supervisor") && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedSetForDealAnalysis({ ...set, projects: subProjects });
+                                  }}
+                                  className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                                >
+                                  <TrendingUp className="w-3.5 h-3.5" />
+                                  <span>Анализ сделки</span>
+                                </button>
+                              )}
+                            </div>
+
+                            {/* Right Side: Primary Actions */}
+                            <div className="flex items-center gap-2">
+                              {/* Return for revision (for supervisor or admin if sent or production_transferred) */}
+                              {(userRole === "admin" || userRole === "supervisor") && (setStatus === "sent" || setStatus === "production_transferred") && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setReturnOrderModal({ item: set, isSet: true });
+                                  }}
+                                  className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                                >
+                                  <AlertTriangle className="w-3.5 h-3.5" />
+                                  <span>Вернуть на доработку</span>
+                                </button>
+                              )}
+
+                              {/* Dissolve Set Button for sent / returned / draft */}
+                              {(setStatus === "sent" || setStatus === "returned" || setStatus === "draft") && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDissolveSet(set);
+                                  }}
+                                  className="px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                                >
+                                  <Unlink className="w-3.5 h-3.5" />
+                                  <span>Расформировать комплект</span>
+                                </button>
+                              )}
+
+                              {/* "Передать заказ в работу" Button for Sent sets */}
+                              {setStatus === "sent" && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleConfirmTransferToProduction(set, subProjects);
+                                  }}
+                                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-100"
+                                >
+                                  <Send className="w-3.5 h-3.5" />
+                                  <span>Передать заказ в работу</span>
+                                </button>
+                              )}
+
+                              {/* Checkout / Edit specs button */}
+                              {(setStatus === "draft" || setStatus === "returned" || setStatus === "sent") && (userRole === "manager" || userRole === "admin") && (
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (onCreateSet && subProjects.length > 0) {
+                                      onCreateSet(subProjects, set);
+                                    }
+                                  }}
+                                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-indigo-100"
+                                >
+                                  <ClipboardList className="w-3.5 h-3.5" />
+                                  <span>{setStatus === "sent" ? "Внести изменения" : "Оформить комплект"}</span>
+                                </button>
                               )}
                             </div>
                           </div>
@@ -1548,7 +1808,7 @@ export const ProjectsView = ({
                                 <ClipboardList className="w-4 h-4" /> {project.status === "sent" || project.status === "transferred" ? "Спецификация" : "Оформить"}
                               </button>
                             )}
-                            {(userRole === "manager" || userRole === "admin") && onOpenProposal && (
+                            {project.status !== "sent" && project.status !== "transferred" && (userRole === "manager" || userRole === "admin") && onOpenProposal && (
                               <button onClick={(e) => { e.stopPropagation(); onOpenProposal(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-indigo-600 flex items-center gap-2">
                                 <FileText className="w-4 h-4" /> Комм. предложение (КП)
                               </button>
@@ -1563,7 +1823,7 @@ export const ProjectsView = ({
                                 <Send className="w-4 h-4" /> Bitrix24
                               </button>
                             )}
-                            {(userRole === "manager" || userRole === "admin") && (
+                            {project.status !== "sent" && project.status !== "transferred" && (userRole === "manager" || userRole === "admin") && (
                               <button onClick={(e) => { e.stopPropagation(); setSelectedTransferProject(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-blue-600 flex items-center gap-2">
                                 <Send className="w-4 h-4" /> Отдать проект
                               </button>
@@ -1573,9 +1833,11 @@ export const ProjectsView = ({
                                 <TrendingUp className="w-4 h-4" /> Анализ
                               </button>
                             )}
-                            <button onClick={(e) => { handleDelete(e, project.id); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-red-600 flex items-center gap-2">
-                              <Trash2 className="w-4 h-4" /> Удалить
-                            </button>
+                            {(project.status !== "sent" && project.status !== "transferred" && project.status !== "production_transferred" && project.status !== "accepted" && project.status !== "accepted_with_revisions" || userRole === "admin" || userRole === "supervisor") && (
+                              <button onClick={(e) => { handleDelete(e, project.id); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-red-600 flex items-center gap-2">
+                                <Trash2 className="w-4 h-4" /> Удалить
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>
@@ -1611,9 +1873,17 @@ export const ProjectsView = ({
                             {project.status && project.status !== "draft" && (
                               <span className={cn(
                                 "px-2 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider",
-                                project.status === "sent" ? "bg-orange-100 text-orange-700" : "bg-green-100 text-green-700"
+                                project.status === "sent" ? "bg-orange-100 text-orange-700" :
+                                project.status === "transferred" ? "bg-blue-100 text-blue-700" :
+                                project.status === "production_transferred" ? "bg-green-100 text-green-700" :
+                                project.status === "returned" ? "bg-red-100 text-red-700" :
+                                (project.status === "accepted" || project.status === "accepted_with_revisions") ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-700"
                               )}>
-                                {project.status === "sent" ? "Оформлен" : "Передан"}
+                                {project.status === "sent" ? "Оформлен" :
+                                 project.status === "transferred" ? "Передан руководителю" :
+                                 project.status === "production_transferred" ? "Передан в работу" :
+                                 project.status === "returned" ? "Возвращен на доработку" :
+                                 (project.status === "accepted" || project.status === "accepted_with_revisions") ? "Принят производством" : project.status}
                               </span>
                             )}
                             {project.bitrix24DealId && (
@@ -1635,6 +1905,82 @@ export const ProjectsView = ({
                           <span className="text-xl font-extrabold text-slate-800 tracking-tight">
                             {(project.totalPrice || (project.data?.results ? Object.values(project.data.results).reduce((acc: number, r: any) => acc + (r.totalPrice || 0), 0) : 0)).toLocaleString()} ₽
                           </span>
+                        </div>
+                      </div>
+
+                      {/* Revision warning banner */}
+                      {project.status === "returned" && project.revisionComment && (
+                        <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3 shadow-2xs" onClick={(e) => e.stopPropagation()}>
+                          <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5 animate-bounce" />
+                          <div className="space-y-1">
+                            <div className="text-xs font-black text-red-950 uppercase tracking-wider">Возвращен на доработку</div>
+                            <div className="text-xs text-red-800 font-semibold">{project.revisionComment}</div>
+                            <div className="text-[10px] text-red-500 font-medium">Пожалуйста, внесите необходимые правки и оформите заново.</div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Action Buttons Row for Standalone Project Card */}
+                      <div className="mt-5 pt-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3" onClick={(e) => e.stopPropagation()}>
+                        {/* Left Side: Secondary Actions or Info */}
+                        <div className="flex items-center gap-2">
+                          {(userRole === "admin" || userRole === "supervisor") && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedSetForDealAnalysis({ ...project, projects: [project] });
+                              }}
+                              className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                            >
+                              <TrendingUp className="w-3.5 h-3.5" />
+                              <span>Анализ сделки</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Right Side: Primary Actions */}
+                        <div className="flex items-center gap-2">
+                          {/* Return for revision (for supervisor or admin if sent or production_transferred) */}
+                          {(userRole === "admin" || userRole === "supervisor") && (project.status === "sent" || project.status === "production_transferred") && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setReturnOrderModal({ item: project, isSet: false });
+                              }}
+                              className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
+                            >
+                              <AlertTriangle className="w-3.5 h-3.5" />
+                              <span>Вернуть</span>
+                            </button>
+                          )}
+
+                          {/* "Передать заказ в работу" Button for Sent standalone projects */}
+                          {project.status === "sent" && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleConfirmTransferToProduction(project, [project]);
+                              }}
+                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-100"
+                            >
+                              <Send className="w-3.5 h-3.5" />
+                              <span>В работу</span>
+                            </button>
+                          )}
+
+                          {/* Checkout / Edit specs button */}
+                          {(project.status === "draft" || project.status === "returned" || project.status === "sent") && (userRole === "manager" || userRole === "admin") && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onOpenSpecification(project);
+                              }}
+                              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-indigo-100"
+                            >
+                              <ClipboardList className="w-3.5 h-3.5" />
+                              <span>{project.status === "sent" ? "Внести изменения" : "Оформить"}</span>
+                            </button>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1875,6 +2221,69 @@ export const ProjectsView = ({
                 ) : (
                   <span>Сохранить</span>
                 )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedSetForDealAnalysis && (
+        <DealAnalysisModal
+          project={selectedSetForDealAnalysis}
+          companyType={companyType}
+          onClose={() => setSelectedSetForDealAnalysis(null)}
+          onConfirmTransfer={() => handleConfirmTransferToProduction(selectedSetForDealAnalysis, setSubProjectsMap[selectedSetForDealAnalysis.id] || [])}
+        />
+      )}
+
+      {returnOrderModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-gray-100 space-y-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-900 text-base">Вернуть на доработку</h3>
+                  <p className="text-xs text-gray-500">Укажите причину возврата заказа менеджеру</p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setReturnOrderModal(null)}
+                className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              <textarea
+                value={returnReasonInput}
+                onChange={(e) => setReturnReasonInput(e.target.value)}
+                rows={4}
+                className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-medium focus:ring-2 focus:ring-red-500 outline-none transition-all text-gray-900"
+                placeholder="Например: Не прикреплены эскизы, отсутствует спецификация материалов..."
+                autoFocus
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setReturnOrderModal(null)}
+                disabled={isReturning}
+                className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={handleReturnOrder}
+                disabled={isReturning || !returnReasonInput.trim()}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold shadow-md shadow-red-200 transition-all flex items-center gap-2 disabled:opacity-50"
+              >
+                {isReturning ? "Возврат..." : "Вернуть"}
               </button>
             </div>
           </div>

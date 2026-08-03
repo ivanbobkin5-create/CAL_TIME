@@ -63,6 +63,7 @@ import { ProcurementView } from "./components/Procurement/ProcurementView";
 import { ArrivalsView } from "./components/Procurement/ArrivalsView";
 import { ProcurementPlanView } from "./components/Procurement/ProcurementPlanView";
 import { ProjectsView } from "./components/Projects/ProjectsView";
+import { PartnerOrdersView } from "./components/Projects/PartnerOrdersView";
 import { ProjectSpecificationView } from "./components/Projects/ProjectSpecificationView";
 import { CoefficientDiffBanner } from "./components/Projects/CoefficientDiffBanner";
 import { ProjectSetCheckoutModal } from "./components/Projects/ProjectSetCheckoutModal";
@@ -102,6 +103,7 @@ import {
   User,
   LogOut,
   FolderOpen,
+  Handshake,
   ShieldCheck,
   Lock,
   Star,
@@ -31095,6 +31097,7 @@ export default function App() {
     | "procurement_plan"
     | "arrivals"
     | "ready_made"
+    | "partner_orders"
   >("calculator");
   const [isReadyMadeExpanded, setIsReadyMadeExpanded] = useState(false);
   const [selectedReadyMadeCategory, setSelectedReadyMadeCategory] = useState<string | null>(null);
@@ -32894,7 +32897,7 @@ export default function App() {
             totalPrice: setData.totalPrice,
             clientName: setData.summary.clientName || "",
             sketches: setData.sketches || [],
-            createdAt: new Date().toISOString(),
+            createdAt: editingSet?.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString(),
             createdBy: activeProjects[0]?.createdBy || userData.uid,
             createdByName: userData.displayName || userData.name || userData.email || activeProjects[0]?.createdByName || "Пользователь",
@@ -32904,6 +32907,7 @@ export default function App() {
             paymentPercentages: setData.paymentPercentages || null,
             paymentAmounts: setData.paymentAmounts || null,
             paymentRestAmount: setData.paymentRestAmount || null,
+            status: isFinal ? "sent" : "draft",
           };
 
           batch.set(setDocRef, setRecord);
@@ -35020,6 +35024,24 @@ export default function App() {
                       <span className="text-[13px] font-medium">Проекты</span>
                     )}
                   </button>
+
+                  {companyData?.type === "Мебельное производство" && (
+                    <button
+                      onClick={() => setActiveTab("partner_orders")}
+                      className={cn(
+                        "w-full flex items-center rounded-lg transition-all mb-1",
+                        isSidebarOpen ? "gap-2.5 px-2.5 py-1.5" : "justify-center py-1.5",
+                        activeTab === "partner_orders"
+                          ? "bg-blue-600 text-white shadow-md shadow-blue-200"
+                          : "text-gray-600 hover:bg-gray-100",
+                      )}
+                    >
+                      <Handshake className="w-4 h-4 flex-shrink-0" />
+                      {isSidebarOpen && (
+                        <span className="text-[13px] font-medium">Заказы партнеров</span>
+                      )}
+                    </button>
+                  )}
                 </>
               )}
               
@@ -35657,6 +35679,7 @@ export default function App() {
                   await finalizeSet({ ...setData, id: editingSet?.id, projectIds: [projId] }, [activeProject], false);
                 }}
                 productionCycle={ownProductionConfig.productionCycle || "working"}
+                editingSet={editingSet}
               />
               );
             })()}
@@ -35838,6 +35861,12 @@ export default function App() {
               showAlert={showAlert}
               projects={projects}
               sets={projectSets}
+            />
+          ) : activeTab === "partner_orders" && companyData?.type === "Мебельное производство" ? (
+            <PartnerOrdersView
+              companyId={companyData.id}
+              showAlert={showAlert}
+              showConfirm={showConfirm}
             />
           ) : null}
 

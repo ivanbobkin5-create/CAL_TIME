@@ -546,12 +546,14 @@ export const ProjectSetCheckoutModal = ({
                     className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold shadow-sm"
                   />
                   {editingSet?.contractDate && contractDate === editingSet.contractDate && contractDate !== new Date().toISOString().split("T")[0] && (
-                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs font-semibold text-amber-800 flex items-center justify-between gap-2 mt-1">
-                      <span>Первоначальная дата сохранения: {new Date(editingSet.contractDate).toLocaleDateString("ru-RU")}. Сохранена по умолчанию.</span>
+                    <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl text-xs font-semibold text-amber-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 mt-2 shadow-xs">
+                      <div className="flex-1">
+                        <span>Если необходимо изменить дату на текущую, то нажмите кнопку: <strong className="font-extrabold text-amber-950">Применить текущую дату</strong>, тогда дата изменится на число, которым переоформляется спецификация.</span>
+                      </div>
                       <button
                         type="button"
                         onClick={() => setContractDate(new Date().toISOString().split("T")[0])}
-                        className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-[11px] whitespace-nowrap shadow-xs"
+                        className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs whitespace-nowrap shadow-sm transition-all"
                       >
                         Применить текущую дату
                       </button>
