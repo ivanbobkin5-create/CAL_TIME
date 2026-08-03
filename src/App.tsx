@@ -138,6 +138,7 @@ import {
   Target,
   Clock,
   Navigation,
+  LayoutGrid,
   ShieldAlert,
   History,
   CheckCircle,
@@ -149,7 +150,6 @@ import {
   Copy,
   TrendingUp,
   Sliders,
-  LayoutGrid,
   Loader2,
 } from "lucide-react";
 
@@ -874,15 +874,20 @@ const customFetch = async function (this: any, input: any, init?: any): Promise<
       try { queue = JSON.parse(queueStr); } catch (_) {}
       
       if (typeof window !== "undefined" && navigator.onLine && queue.length === 0) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 3000);
         try {
-          const res = await originalFetch(url, init);
+          const fetchOptions = { ...init, signal: controller.signal };
+          const res = await originalFetch(url, fetchOptions);
+          clearTimeout(timeoutId);
           if (res.ok) {
             await updateLocalCache(url, method, bodyStr);
             window.dispatchEvent(new CustomEvent("meb_sync_completed"));
           }
           return res;
         } catch (err) {
-          console.warn("Direct online write fetch failed, falling back to offline sync queue:", err);
+          clearTimeout(timeoutId);
+          console.warn("Direct online write fetch failed or timed out, falling back to offline sync queue:", err);
         }
       }
       
@@ -1374,16 +1379,19 @@ const INITIAL_PRODUCT_CATEGORIES = [
   "Петли",
   "Системы выдвижения",
   "Выдвижные корзины",
-  "Посудосушитель",
+  "Посудосушители",
   "Подъёмные механизмы",
   "Освещение",
   "Оснащение шкафов",
   "Кухонные модули",
+  "Сопутствующие товары",
+  "Акционные товары",
+  "Мебельные ноги и опоры",
 ];
 
 const mergeCategories = (catsList: string[] | undefined | null): string[] => {
   const filtered = (catsList || []).filter(
-    (c: string) => c !== "Кухонные гарнитуры" && c !== "Кухонный гарнитур"
+    (c: string) => c !== "Кухонные гарнитуры" && c !== "Кухонный гарнитур" && c !== "Посудосушитель"
   );
   return Array.from(new Set([...INITIAL_PRODUCT_CATEGORIES, ...filtered]));
 };
@@ -1397,6 +1405,36 @@ const INITIAL_ASSEMBLY_INCLUDES = [
   "Навеска и регулировка фасадов",
   "Установка ручек или систем Push to Open",
   "Пропилы под коммуникации для воды (один шкаф)",
+];
+
+const DEFAULT_EXTRA_ASSEMBLY_CATEGORIES = [
+  {
+    id: "cat_elec",
+    name: "Электрика",
+    services: [
+      { id: "svc_el_1", name: "Монтаж/подключение розетки", unit: "точка", price: 500 },
+      { id: "svc_el_2", name: "Установка светодиодной ленты", unit: "м.п.", price: 400 },
+      { id: "svc_el_3", name: "Подключение трансформатора/блока питания", unit: "шт", price: 600 },
+    ],
+  },
+  {
+    id: "cat_plumb",
+    name: "Сантехника",
+    services: [
+      { id: "svc_pl_1", name: "Установка и подключение смесителя", unit: "шт", price: 1500 },
+      { id: "svc_pl_2", name: "Установка и подключение мойки", unit: "шт", price: 2000 },
+      { id: "svc_pl_3", name: "Подключение сифона и слива", unit: "комплект", price: 800 },
+    ],
+  },
+  {
+    id: "cat_cut",
+    name: "Выпилы и подгонка",
+    services: [
+      { id: "svc_ct_1", name: "Выпил под мойку / варочную панель", unit: "шт", price: 1000 },
+      { id: "svc_ct_2", name: "Выпил под розетку в стеновой панели", unit: "шт", price: 400 },
+      { id: "svc_ct_3", name: "Подрезка карниза / цоколя по месту", unit: "м.п.", price: 300 },
+    ],
+  },
 ];
 
 interface ContractServiceConfig {
@@ -2454,55 +2492,87 @@ const ProductionView = ({
 
               <div className="space-y-3">
                 {[
-                  { id: "cabinet", label: "Изготовление корпуса" },
-                  { id: "facades", label: "Изготовление/заказ фасадов" },
-                  { id: "hardware", label: "Поставка фурнитуры" },
-                  { id: "assembly", label: "Оказание услуг сборки" },
-                  { id: "delivery", label: "Оказание услуг доставки" },
+                  { 
+                    id: "cabinet", 
+                    label: "Изготовление корпуса",
+                    hint: "Производство изготавливает корпус по договорной себестоимости." 
+                  },
+                  { 
+                    id: "facades", 
+                    label: "Изготовление/заказ фасадов",
+                    hint: "Заказ и поставка фасадов производством." 
+                  },
+                  { 
+                    id: "hardware", 
+                    label: "Поставка фурнитуры",
+                    hint: "Комплектация фурнитурой со склада производства." 
+                  },
+                  { 
+                    id: "assembly", 
+                    label: "Оказание услуг сборки",
+                    hint: "Сборка выполняется производством по его тарифам (закупочная стоимость для вашего салона/дизайнера)." 
+                  },
+                  { 
+                    id: "delivery", 
+                    label: "Оказание услуг доставки",
+                    hint: "Доставка выполняется производством по его тарифам (закупочная стоимость для вашего салона/дизайнера)." 
+                  },
                 ].map((item) => (
                   <div
                     key={item.id}
-                    className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6 p-4 bg-gray-50 rounded-xl border border-gray-100"
+                    className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-3"
                   >
-                    <label className="flex items-center gap-3 min-w-[280px] cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={(contractConfig as any)[item.id].enabled}
-                        onChange={(e) =>
-                          updateContractConfig(
-                            item.id as any,
-                            "enabled",
-                            e.target.checked,
-                          )
-                        }
-                        className="w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
-                      />
-                      <span className="font-bold text-gray-800">
-                        {item.label}
-                      </span>
-                    </label>
-
-                    {(contractConfig as any)[item.id].enabled && (
-                      <label className="flex items-center gap-3 cursor-pointer text-sm text-gray-600 ml-8 sm:ml-0">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-6">
+                      <label className="flex items-center gap-3 min-w-[280px] cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={
-                            (contractConfig as any)[item.id].calculateForClients
-                          }
+                          checked={(contractConfig as any)[item.id].enabled}
                           onChange={(e) =>
                             updateContractConfig(
                               item.id as any,
-                              "calculateForClients",
+                              "enabled",
                               e.target.checked,
                             )
                           }
-                          className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                          className="w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
                         />
-                        <span className="font-medium">
-                          Считаю для своих клиентов в этом же калькуляторе
-                        </span>
+                        <div>
+                          <span className="font-bold text-gray-800 block text-sm">
+                            {item.label}
+                          </span>
+                          <span className="text-[11px] text-gray-500 font-medium block">
+                            {item.hint}
+                          </span>
+                        </div>
                       </label>
-                    )}
+
+                      {(contractConfig as any)[item.id].enabled && (
+                        <div className="flex flex-col gap-1 ml-8 sm:ml-0 bg-white p-3 rounded-xl border border-gray-200">
+                          <label className="flex items-center gap-3 cursor-pointer text-xs font-bold text-gray-700">
+                            <input
+                              type="checkbox"
+                              checked={
+                                (contractConfig as any)[item.id].calculateForClients
+                              }
+                              onChange={(e) =>
+                                updateContractConfig(
+                                  item.id as any,
+                                  "calculateForClients",
+                                  e.target.checked,
+                                )
+                              }
+                              className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                            />
+                            <span>
+                              Считаю для своих клиентов в этом же калькуляторе
+                            </span>
+                          </label>
+                          <p className="text-[10px] text-gray-500 leading-tight pl-7 font-normal">
+                            💡 Позволяет рассчитывать розничную стоимость данной услуги для ваших покупателей. В настройках «Сборка и доставка» вы сможете задать собственный розничный прайс (если оставить пустым — применятся розничные цены производства).
+                          </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -8586,6 +8656,9 @@ const SummaryView = ({
   serviceData,
   assemblyPercentage,
   assemblyPercentages,
+  minAssemblyPrice,
+  turnkeyAssemblyEnabled,
+  extraAssemblyServices,
   deliveryTariffs,
   canEditCabinet,
   canEditFacades,
@@ -8676,6 +8749,9 @@ const SummaryView = ({
   serviceData: any;
   assemblyPercentage: number;
   assemblyPercentages?: Record<string, number>;
+  minAssemblyPrice?: number;
+  turnkeyAssemblyEnabled?: boolean;
+  extraAssemblyServices?: any[];
   deliveryTariffs: DeliveryTariffs;
   canEditCabinet: boolean;
   canEditFacades: boolean;
@@ -9951,20 +10027,57 @@ const SummaryView = ({
     const productsSubtotal = summaryRows
       .filter((row) => row.type !== "service")
       .reduce((sum, row) => sum + row.total, 0);
-    const assemblyFee = Math.round(
+    let assemblyFee = Math.round(
       productsSubtotal * (effectiveAssemblyPercentage / 100),
     );
+
+    const effectiveMinAssembly = minAssemblyPrice || (productionFormat === "contract" ? productionSettings?.general?.minAssemblyPrice || 0 : 0);
+    let isMinAssemblyApplied = false;
+
+    if (effectiveMinAssembly > 0 && assemblyFee < effectiveMinAssembly) {
+      assemblyFee = effectiveMinAssembly;
+      isMinAssemblyApplied = true;
+    }
+
     summaryRows.push({
       type: "service",
       name: "Базовый пакет сборки",
-      sub: `Сервис (${effectiveAssemblyPercentage}% от стоимости товаров)`,
+      sub: isMinAssemblyApplied
+        ? `⚠️ Применена минимальная стоимость сборки (${effectiveMinAssembly.toLocaleString()} ₽)`
+        : `Сервис (${effectiveAssemblyPercentage}% от стоимости товаров)`,
       decor: "-",
       qty: "1 усл",
       price: assemblyFee,
       total: assemblyFee,
       coef: 1,
+      isMinApplied: isMinAssemblyApplied,
     });
     totalCost += assemblyFee;
+
+    // Additional Turnkey Assembly Services
+    if (serviceData.extraAssemblyQuantities && extraAssemblyServices && extraAssemblyServices.length > 0) {
+      extraAssemblyServices.forEach((cat: any) => {
+        if (cat.services && Array.isArray(cat.services)) {
+          cat.services.forEach((svc: any) => {
+            const qty = serviceData.extraAssemblyQuantities?.[svc.id] || 0;
+            if (qty > 0) {
+              const svcTotal = Math.round((svc.price || 0) * qty);
+              summaryRows.push({
+                type: "service",
+                name: `[Доп. монтаж] ${svc.name}`,
+                sub: `Раздел: ${cat.name || 'Доп. работы'} (${(svc.price || 0).toLocaleString()} ₽/${svc.unit || 'шт'})`,
+                decor: "-",
+                qty: `${qty} ${svc.unit || 'шт'}`,
+                price: svc.price || 0,
+                total: svcTotal,
+                coef: 1,
+              });
+              totalCost += svcTotal;
+            }
+          });
+        }
+      });
+    }
   }
 
   // Add Delivery Fee if enabled
@@ -12666,6 +12779,12 @@ const SettingsView = ({
   setAssemblyPercentage,
   assemblyPercentages,
   setAssemblyPercentages,
+  minAssemblyPrice,
+  setMinAssemblyPrice,
+  turnkeyAssemblyEnabled,
+  setTurnkeyAssemblyEnabled,
+  extraAssemblyServices,
+  setExtraAssemblyServices,
   deliveryTariffs,
   setDeliveryTariffs,
   mapLink,
@@ -12748,6 +12867,12 @@ const SettingsView = ({
   setAssemblyPercentage: React.Dispatch<React.SetStateAction<number>>;
   assemblyPercentages?: Record<string, number>;
   setAssemblyPercentages?: React.Dispatch<React.SetStateAction<Record<string, number>>>;
+  minAssemblyPrice?: number;
+  setMinAssemblyPrice?: React.Dispatch<React.SetStateAction<number>>;
+  turnkeyAssemblyEnabled?: boolean;
+  setTurnkeyAssemblyEnabled?: React.Dispatch<React.SetStateAction<boolean>>;
+  extraAssemblyServices?: any[];
+  setExtraAssemblyServices?: React.Dispatch<React.SetStateAction<any[]>>;
   deliveryTariffs: DeliveryTariffs;
   setDeliveryTariffs: React.Dispatch<React.SetStateAction<DeliveryTariffs>>;
   mapLink: string;
@@ -12832,6 +12957,10 @@ const SettingsView = ({
 
   const [localAssemblyPercentage, setLocalAssemblyPercentage] = useState<number>(assemblyPercentage);
   const lastMovedAssemblyPercentageRef = useRef<number>(0);
+
+  const [showExtraAssemblyModal, setShowExtraAssemblyModal] = useState(false);
+  const [newExtraCatName, setNewExtraCatName] = useState("");
+  const [newExtraSvcInputs, setNewExtraSvcInputs] = useState<Record<string, { name: string; unit: string; price: number }>>({});
 
   // Sync from props only if user hasn't typed recently (to avoid snapshot race overwrite)
   useEffect(() => {
@@ -13122,8 +13251,8 @@ const SettingsView = ({
         [cat]: value,
       };
       if (isDryerCategory(cat)) {
-        updatedProducts["Посудосушитель"] = value;
         updatedProducts["Посудосушители"] = value;
+        delete updatedProducts["Посудосушитель"];
       }
       return {
         ...prev,
@@ -14589,6 +14718,16 @@ const SettingsView = ({
                   </div>
                 </div>
 
+                {isSalonOrDesigner && productionFormat === "contract" && (
+                  <div className="mb-6 p-4 bg-blue-50/80 border border-blue-100 rounded-2xl text-xs text-blue-900 leading-relaxed flex items-start gap-3">
+                    <Info className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block text-sm mb-0.5">Розничный прайс услуг для ваших клиентов</span>
+                      Укажите ваши розничные расценки. Если поле оставить незаполненным или равным 0, для расчёта клиентам будет автоматически использоваться стандартный тариф производства.
+                    </div>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   {/* Delivery & Loading */}
                   <div className="space-y-4">
@@ -14880,6 +15019,100 @@ const SettingsView = ({
                               );
                             })}
                           </div>
+                        </div>
+
+                        {/* Minimum Assembly Price */}
+                        <div className="pt-4 border-t border-gray-200">
+                          <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2 font-sans">
+                            Минимальная стоимость сборки и монтажа
+                          </span>
+                          <div className="flex items-center justify-between gap-4 p-3 bg-white rounded-xl border border-gray-100 shadow-2xs">
+                            <div>
+                              <span className="text-xs font-bold text-gray-800 block font-sans">Минимальная сумма услуги (₽)</span>
+                              <span className="text-[11px] text-gray-400 block font-sans">Если расчёт по проценту ниже этой суммы, будет применим данный минимум</span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <input
+                                type="number"
+                                min="0"
+                                step="100"
+                                value={minAssemblyPrice || ""}
+                                placeholder="0"
+                                onChange={(e) => {
+                                  const val = parseInt(e.target.value);
+                                  if (setMinAssemblyPrice) {
+                                    setMinAssemblyPrice(isNaN(val) ? 0 : val);
+                                  }
+                                }}
+                                className="w-28 px-3 py-1.5 text-right font-bold text-xs bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
+                              />
+                              <span className="text-xs text-gray-400 font-medium">₽</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Turnkey Assembly Toggle & Price List Editor Button */}
+                        <div className="pt-4 border-t border-gray-200 space-y-3">
+                          <div className="flex items-center justify-between p-3.5 bg-indigo-50/60 border border-indigo-100 rounded-2xl">
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-2">
+                                <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
+                                <span className="text-xs font-bold text-gray-800 font-sans">
+                                  Оказываю услуги сборки и монтажа под ключ
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-gray-500 pl-6 leading-tight font-sans">
+                                При активации вы можете составлять подробный прайс-лист на дополнительные монтажные работы (электрика, сантехника, подгонка)
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const nextVal = !turnkeyAssemblyEnabled;
+                                if (setTurnkeyAssemblyEnabled) setTurnkeyAssemblyEnabled(nextVal);
+                                if (nextVal && (!extraAssemblyServices || extraAssemblyServices.length === 0)) {
+                                  if (setExtraAssemblyServices) setExtraAssemblyServices(DEFAULT_EXTRA_ASSEMBLY_CATEGORIES);
+                                }
+                              }}
+                              className={cn(
+                                "w-12 h-6 rounded-full relative transition-colors shrink-0",
+                                turnkeyAssemblyEnabled ? "bg-indigo-600" : "bg-gray-200"
+                              )}
+                            >
+                              <div
+                                className={cn(
+                                  "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
+                                  turnkeyAssemblyEnabled ? "left-7" : "left-1"
+                                )}
+                              />
+                            </button>
+                          </div>
+
+                          {turnkeyAssemblyEnabled && (
+                            <div className="p-4 bg-white border border-indigo-100 rounded-2xl shadow-2xs space-y-3">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div>
+                                  <h4 className="font-bold text-gray-800 text-xs font-sans flex items-center gap-1.5">
+                                    <Wrench className="w-4 h-4 text-indigo-600" />
+                                    Прайс-лист дополнительных услуг оказания монтажа
+                                  </h4>
+                                  <p className="text-[11px] text-gray-500 mt-0.5 font-sans">
+                                    Категорий: {extraAssemblyServices?.length || 0} • Позиций прайса: {
+                                      (extraAssemblyServices || []).reduce((acc: number, c: any) => acc + (c.services?.length || 0), 0)
+                                    }
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowExtraAssemblyModal(true)}
+                                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-100 flex items-center justify-center gap-2"
+                                >
+                                  <SettingsIcon className="w-4 h-4" />
+                                  Редактировать прайс-лист
+                                </button>
+                              </div>
+                            </div>
+                          )}
                         </div>
 
                         <div className="pt-4 border-t border-gray-200">
@@ -15853,6 +16086,281 @@ const SettingsView = ({
           </div>
         </div>
       )}
+
+      {/* Extra Assembly Services Price List Modal */}
+      {showExtraAssemblyModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 overflow-y-auto animate-in fade-in">
+          <div className="bg-white rounded-3xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden border border-gray-100 my-auto">
+            <div className="p-6 bg-gray-900 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-indigo-600 rounded-2xl flex items-center justify-center text-white">
+                  <Wrench className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-lg">Прайс-лист дополнительных услуг монтажа под ключ</h3>
+                  <p className="text-xs text-gray-400 font-medium">Создавайте категории и позиционные расценки работ</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowExtraAssemblyModal(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center font-bold text-sm transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 overflow-y-auto space-y-6 flex-1 bg-gray-50/50">
+              {/* Instruction box */}
+              <div className="p-4 bg-blue-50/80 rounded-2xl border border-blue-100 text-xs text-blue-900 space-y-1.5">
+                <div className="font-bold flex items-center gap-2 text-blue-800">
+                  <Info className="w-4 h-4 text-blue-600 shrink-0" />
+                  Инструкция по заполнению прайс-листа:
+                </div>
+                <p className="text-gray-600 leading-relaxed pl-6">
+                  1. Добавляйте тематические разделы (например, <strong>Электрика</strong>, <strong>Сантехника</strong>, <strong>Выпилы и подгонка</strong>).<br />
+                  2. Заполняйте наименование услуги, единицу измерения (шт, м.п., точка, услуга) и цену в рублях.<br />
+                  3. При расчёте проектов в разделе "Сборка и монтаж" вы сможете выставлять объем каждой доп. услуги, и она автоматически войдет в итоговую спецификацию для заказчика.
+                </p>
+              </div>
+
+              {/* Add new Category */}
+              <div className="p-4 bg-white rounded-2xl border border-gray-200 shadow-2xs space-y-2">
+                <label className="block text-xs font-bold text-gray-700">Добавить новый раздел / категорию услуг:</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={newExtraCatName}
+                    onChange={(e) => setNewExtraCatName(e.target.value)}
+                    placeholder="Например: Встраиваемая техника, Декоративный свет..."
+                    className="flex-1 px-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!newExtraCatName.trim()) return;
+                      const newCat = {
+                        id: "cat_" + Date.now(),
+                        name: newExtraCatName.trim(),
+                        services: [],
+                      };
+                      if (setExtraAssemblyServices) {
+                        setExtraAssemblyServices([...(extraAssemblyServices || []), newCat]);
+                      }
+                      setNewExtraCatName("");
+                    }}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 shrink-0"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Добавить раздел
+                  </button>
+                </div>
+              </div>
+
+              {/* List of Categories */}
+              <div className="space-y-6">
+                {(extraAssemblyServices || []).map((cat: any, catIdx: number) => (
+                  <div key={cat.id || catIdx} className="bg-white rounded-2xl border border-gray-200 shadow-2xs p-5 space-y-4">
+                    <div className="flex items-center justify-between gap-3 pb-3 border-b border-gray-100">
+                      <input
+                        type="text"
+                        value={cat.name}
+                        onChange={(e) => {
+                          const newName = e.target.value;
+                          const updated = [...(extraAssemblyServices || [])];
+                          updated[catIdx] = { ...updated[catIdx], name: newName };
+                          if (setExtraAssemblyServices) setExtraAssemblyServices(updated);
+                        }}
+                        className="font-black text-sm text-indigo-900 bg-transparent border-b border-transparent hover:border-indigo-300 focus:border-indigo-600 outline-none px-1 py-0.5 rounded transition-colors"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const updated = (extraAssemblyServices || []).filter((_, idx) => idx !== catIdx);
+                          if (setExtraAssemblyServices) setExtraAssemblyServices(updated);
+                        }}
+                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-colors shrink-0"
+                        title="Удалить категорию"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Services in Category */}
+                    <div className="space-y-2">
+                      {(cat.services || []).map((svc: any, svcIdx: number) => (
+                        <div key={svc.id || svcIdx} className="grid grid-cols-12 gap-2 items-center p-2.5 bg-gray-50/70 rounded-xl border border-gray-100">
+                          <div className="col-span-6">
+                            <input
+                              type="text"
+                              value={svc.name}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const updated = [...(extraAssemblyServices || [])];
+                                const svcs = [...(updated[catIdx].services || [])];
+                                svcs[svcIdx] = { ...svcs[svcIdx], name: val };
+                                updated[catIdx] = { ...updated[catIdx], services: svcs };
+                                if (setExtraAssemblyServices) setExtraAssemblyServices(updated);
+                              }}
+                              placeholder="Название услуги"
+                              className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-bold text-gray-800 outline-none"
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <input
+                              type="text"
+                              value={svc.unit || "шт"}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                const updated = [...(extraAssemblyServices || [])];
+                                const svcs = [...(updated[catIdx].services || [])];
+                                svcs[svcIdx] = { ...svcs[svcIdx], unit: val };
+                                updated[catIdx] = { ...updated[catIdx], services: svcs };
+                                if (setExtraAssemblyServices) setExtraAssemblyServices(updated);
+                              }}
+                              placeholder="Ед. изм."
+                              className="w-full px-2 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium text-center text-gray-600 outline-none"
+                            />
+                          </div>
+                          <div className="col-span-3 flex items-center gap-1">
+                            <input
+                              type="number"
+                              min="0"
+                              value={svc.price || 0}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value) || 0;
+                                const updated = [...(extraAssemblyServices || [])];
+                                const svcs = [...(updated[catIdx].services || [])];
+                                svcs[svcIdx] = { ...svcs[svcIdx], price: val };
+                                updated[catIdx] = { ...updated[catIdx], services: svcs };
+                                if (setExtraAssemblyServices) setExtraAssemblyServices(updated);
+                              }}
+                              className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-bold text-right text-gray-800 outline-none"
+                            />
+                            <span className="text-xs text-gray-400 font-medium shrink-0">₽</span>
+                          </div>
+                          <div className="col-span-1 flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const updated = [...(extraAssemblyServices || [])];
+                                const svcs = (updated[catIdx].services || []).filter((_: any, idx: number) => idx !== svcIdx);
+                                updated[catIdx] = { ...updated[catIdx], services: svcs };
+                                if (setExtraAssemblyServices) setExtraAssemblyServices(updated);
+                              }}
+                              className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+
+                      {/* Add new service to category form */}
+                      <div className="pt-2">
+                        <div className="grid grid-cols-12 gap-2 items-center p-2.5 bg-indigo-50/30 rounded-xl border border-dashed border-indigo-200">
+                          <div className="col-span-6">
+                            <input
+                              type="text"
+                              value={newExtraSvcInputs[cat.id]?.name || ""}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setNewExtraSvcInputs((prev) => ({
+                                  ...prev,
+                                  [cat.id]: {
+                                    ...(prev[cat.id] || { unit: "шт", price: 500 }),
+                                    name: val,
+                                  },
+                                }));
+                              }}
+                              placeholder="+ Новая услуга"
+                              className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-medium outline-none"
+                            />
+                          </div>
+                          <div className="col-span-2">
+                            <input
+                              type="text"
+                              value={newExtraSvcInputs[cat.id]?.unit || "шт"}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                setNewExtraSvcInputs((prev) => ({
+                                  ...prev,
+                                  [cat.id]: {
+                                    ...(prev[cat.id] || { name: "", price: 500 }),
+                                    unit: val,
+                                  },
+                                }));
+                              }}
+                              placeholder="Ед. (шт, м.п.)"
+                              className="w-full px-2 py-1.5 bg-white border border-gray-200 rounded-lg text-xs text-center outline-none"
+                            />
+                          </div>
+                          <div className="col-span-3 flex items-center gap-1">
+                            <input
+                              type="number"
+                              min="0"
+                              value={newExtraSvcInputs[cat.id]?.price || 500}
+                              onChange={(e) => {
+                                const val = parseInt(e.target.value) || 0;
+                                setNewExtraSvcInputs((prev) => ({
+                                  ...prev,
+                                  [cat.id]: {
+                                    ...(prev[cat.id] || { name: "", unit: "шт" }),
+                                    price: val,
+                                  },
+                                }));
+                              }}
+                              placeholder="Цена (₽)"
+                              className="w-full px-2.5 py-1.5 bg-white border border-gray-200 rounded-lg text-xs font-bold text-right outline-none"
+                            />
+                            <span className="text-xs text-gray-400">₽</span>
+                          </div>
+                          <div className="col-span-1 flex justify-end">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const currentInput = newExtraSvcInputs[cat.id];
+                                if (!currentInput || !currentInput.name.trim()) return;
+                                const newSvc = {
+                                  id: "svc_" + Date.now(),
+                                  name: currentInput.name.trim(),
+                                  unit: currentInput.unit || "шт",
+                                  price: currentInput.price || 0,
+                                };
+                                const updated = [...(extraAssemblyServices || [])];
+                                const svcs = [...(updated[catIdx].services || []), newSvc];
+                                updated[catIdx] = { ...updated[catIdx], services: svcs };
+                                if (setExtraAssemblyServices) setExtraAssemblyServices(updated);
+                                setNewExtraSvcInputs((prev) => ({
+                                  ...prev,
+                                  [cat.id]: { name: "", unit: "шт", price: 500 },
+                                }));
+                              }}
+                              className="p-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors flex items-center justify-center"
+                              title="Добавить услугу"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-4 bg-white border-t border-gray-100 flex items-center justify-end gap-3 shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowExtraAssemblyModal(false)}
+                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md shadow-indigo-100 transition-all"
+              >
+                Готово (Сохранить изменения)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -16260,6 +16768,9 @@ const ServiceSectionView = ({
   totalLdspSheets,
   totalLdspArea = 0,
   assemblyIncludes,
+  minAssemblyPrice,
+  turnkeyAssemblyEnabled,
+  extraAssemblyServices,
 }: {
   data: any;
   setData: (data: any) => void;
@@ -16274,6 +16785,9 @@ const ServiceSectionView = ({
   totalLdspSheets: number;
   totalLdspArea?: number;
   assemblyIncludes: string[];
+  minAssemblyPrice?: number;
+  turnkeyAssemblyEnabled?: boolean;
+  extraAssemblyServices?: any[];
 }) => {
   const updateAddress = (field: string, value: string) => {
     setData({
@@ -16282,32 +16796,53 @@ const ServiceSectionView = ({
     });
   };
 
+  const effectiveTariffs = useMemo(() => {
+    const prodTariffs = productionSettings?.general?.deliveryTariffs;
+    if (productionFormat === "contract" && prodTariffs) {
+      return {
+        basePrice: deliveryTariffs?.basePrice || prodTariffs.basePrice || 3000,
+        baseDistance: deliveryTariffs?.baseDistance || prodTariffs.baseDistance || 30,
+        baseVolume: deliveryTariffs?.baseVolume || prodTariffs.baseVolume || 10,
+        extraKmPrice: deliveryTariffs?.extraKmPrice || prodTariffs.extraKmPrice || 50,
+        extraVolumePrice: deliveryTariffs?.extraVolumePrice || prodTariffs.extraVolumePrice || 200,
+        extraLoaderPrice: deliveryTariffs?.extraLoaderPrice || prodTariffs.extraLoaderPrice || 1000,
+        loadingBase: deliveryTariffs?.loadingBase || prodTariffs.loadingBase || 500,
+        floorPrice: deliveryTariffs?.floorPrice || prodTariffs.floorPrice || 200,
+        elevatorPrice: deliveryTariffs?.elevatorPrice || prodTariffs.elevatorPrice || 500,
+      };
+    }
+    return deliveryTariffs || {
+      basePrice: 3000, baseDistance: 30, baseVolume: 10, extraKmPrice: 50,
+      extraVolumePrice: 200, extraLoaderPrice: 1000, loadingBase: 500, floorPrice: 200, elevatorPrice: 500
+    };
+  }, [deliveryTariffs, productionSettings, productionFormat]);
+
   const calculatedDeliveryPrice = useMemo(() => {
     if (!data.delivery) return 0;
-    let fee = deliveryTariffs?.basePrice || 0;
-    if (data.distance > (deliveryTariffs?.baseDistance || 0)) {
+    let fee = effectiveTariffs?.basePrice || 0;
+    if (data.distance > (effectiveTariffs?.baseDistance || 0)) {
       fee +=
-        (data.distance - (deliveryTariffs?.baseDistance || 0)) *
-        (deliveryTariffs?.extraKmPrice || 0);
+        (data.distance - (effectiveTariffs?.baseDistance || 0)) *
+        (effectiveTariffs?.extraKmPrice || 0);
     }
     const projectM2 = totalLdspArea;
-    if (projectM2 > (deliveryTariffs?.baseVolume || 0)) {
+    if (projectM2 > (effectiveTariffs?.baseVolume || 0)) {
       fee +=
-        (projectM2 - (deliveryTariffs?.baseVolume || 0)) *
-        (deliveryTariffs?.extraVolumePrice || 0);
+        (projectM2 - (effectiveTariffs?.baseVolume || 0)) *
+        (effectiveTariffs?.extraVolumePrice || 0);
     }
-    let loadingFee = deliveryTariffs?.loadingBase || 0;
+    let loadingFee = effectiveTariffs?.loadingBase || 0;
     const floor = parseInt(data.address?.floor) || 0;
     if (floor > 1) {
       if (data.address?.elevator === "none") {
-        loadingFee += (floor - 1) * (deliveryTariffs?.floorPrice || 0);
+        loadingFee += (floor - 1) * (effectiveTariffs?.floorPrice || 0);
       } else {
-        loadingFee += deliveryTariffs?.elevatorPrice || 0;
+        loadingFee += effectiveTariffs?.elevatorPrice || 0;
       }
     }
     fee += loadingFee;
     if (data.extraLoader) {
-      fee += deliveryTariffs?.extraLoaderPrice || 0;
+      fee += effectiveTariffs?.extraLoaderPrice || 0;
     }
     return Math.round(fee);
   }, [
@@ -16316,18 +16851,52 @@ const ServiceSectionView = ({
     data.extraLoader,
     data.address?.floor,
     data.address?.elevator,
-    deliveryTariffs,
+    effectiveTariffs,
     totalLdspArea,
   ]);
 
+  const baseAssemblyFeeByPercent = useMemo(() => {
+    let pct = assemblyPercentage;
+    if (!pct && productionFormat === "contract" && productionSettings?.general?.assemblyPercentage) {
+      pct = productionSettings.general.assemblyPercentage;
+    }
+    if (furnitureType && assemblyPercentages && assemblyPercentages[furnitureType] !== undefined && assemblyPercentages[furnitureType] > 0) {
+      pct = assemblyPercentages[furnitureType];
+    } else if (furnitureType && productionFormat === "contract" && productionSettings?.general?.assemblyPercentages?.[furnitureType]) {
+      pct = productionSettings.general.assemblyPercentages[furnitureType];
+    }
+    return Math.round(totalCost * ((pct || 10) / 100));
+  }, [totalCost, assemblyPercentage, furnitureType, assemblyPercentages, productionSettings, productionFormat]);
+
+  const effectiveMinAssembly = useMemo(() => {
+    return minAssemblyPrice || (productionFormat === "contract" ? productionSettings?.general?.minAssemblyPrice || 0 : 0);
+  }, [minAssemblyPrice, productionSettings, productionFormat]);
+
+  const isMinAssemblyApplied = useMemo(() => {
+    return !!(data.assembly && effectiveMinAssembly > 0 && baseAssemblyFeeByPercent < effectiveMinAssembly);
+  }, [data.assembly, effectiveMinAssembly, baseAssemblyFeeByPercent]);
+
+  const calculatedExtraAssemblyPrice = useMemo(() => {
+    if (!data.assembly || !data.extraAssemblyQuantities || !extraAssemblyServices) return 0;
+    let sum = 0;
+    extraAssemblyServices.forEach((cat: any) => {
+      if (cat.services && Array.isArray(cat.services)) {
+        cat.services.forEach((svc: any) => {
+          const qty = data.extraAssemblyQuantities?.[svc.id] || 0;
+          if (qty > 0) {
+            sum += (svc.price || 0) * qty;
+          }
+        });
+      }
+    });
+    return sum;
+  }, [data.assembly, data.extraAssemblyQuantities, extraAssemblyServices]);
+
   const calculatedAssemblyPrice = useMemo(() => {
     if (!data.assembly) return 0;
-    let pct = assemblyPercentage;
-    if (furnitureType && assemblyPercentages && assemblyPercentages[furnitureType] !== undefined) {
-      pct = assemblyPercentages[furnitureType];
-    }
-    return Math.round(totalCost * (pct / 100));
-  }, [data.assembly, totalCost, assemblyPercentage, furnitureType, assemblyPercentages]);
+    const baseFee = isMinAssemblyApplied ? effectiveMinAssembly : baseAssemblyFeeByPercent;
+    return baseFee + calculatedExtraAssemblyPrice;
+  }, [data.assembly, isMinAssemblyApplied, effectiveMinAssembly, baseAssemblyFeeByPercent, calculatedExtraAssemblyPrice]);
 
   useEffect(() => {
     if (
@@ -16599,27 +17168,157 @@ const ServiceSectionView = ({
       </div>
 
       {data.assembly && (
-        <div className="mt-8 bg-blue-50/50 rounded-3xl p-8 border border-blue-100">
-          <h4 className="font-bold text-blue-800 mb-4 flex items-center gap-2">
-            <CheckCircle2 className="w-5 h-5" />
-            Базовый пакет сборки включает:
-          </h4>
-          <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
-            {assemblyIncludes.map((item, i) => (
-              <li
-                key={i}
-                className="text-sm text-blue-700 flex items-start gap-2"
-              >
-                <span className="mt-1.5 w-1.5 h-1.5 bg-blue-400 rounded-full flex-shrink-0" />
-                {item}
-              </li>
-            ))}
-          </ul>
-          <p className="mt-6 text-xs text-blue-600 italic border-t border-blue-100 pt-4">
-            Не перечисленные в "Базовый пакет сборки" работы оплачиваются
-            отдельно на основании АКТ О ВЫПОЛНЕНИИ РАБОТ исходя из заказанных
-            услуг при монтаже по дополнительному прайсу.
-          </p>
+        <div className="mt-8 space-y-6">
+          {isMinAssemblyApplied && (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-3 text-xs text-amber-900 shadow-sm">
+              <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <span className="font-bold text-sm block mb-0.5">Применена минимальная стоимость сборки и монтажа</span>
+                Расчётная стоимость базовой сборки по проценту ({baseAssemblyFeeByPercent.toLocaleString()} ₽) ниже установленного минимума ({effectiveMinAssembly.toLocaleString()} ₽). К проекту автоматически применен минимальный тариф.
+              </div>
+            </div>
+          )}
+
+          <div className="bg-blue-50/50 rounded-3xl p-8 border border-blue-100">
+            <h4 className="font-bold text-blue-800 mb-4 flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5" />
+              Базовый пакет сборки включает:
+            </h4>
+            <ul className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-3">
+              {assemblyIncludes.map((item, i) => (
+                <li
+                  key={i}
+                  className="text-sm text-blue-700 flex items-start gap-2"
+                >
+                  <span className="mt-1.5 w-1.5 h-1.5 bg-blue-400 rounded-full flex-shrink-0" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-6 text-xs text-blue-600 italic border-t border-blue-100 pt-4">
+              Не перечисленные в "Базовый пакет сборки" работы оплачиваются
+              отдельно на основании АКТ О ВЫПОЛНЕНИИ РАБОТ исходя из заказанных
+              услуг при монтаже по дополнительному прайсу.
+            </p>
+          </div>
+
+          {/* Turnkey Additional Assembly Services Table */}
+          {extraAssemblyServices && extraAssemblyServices.length > 0 && (
+            <div className="bg-white rounded-3xl p-6 border border-gray-200 shadow-sm space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-gray-100">
+                <div>
+                  <h4 className="font-bold text-gray-800 text-base flex items-center gap-2">
+                    <Wrench className="w-5 h-5 text-indigo-600" />
+                    Дополнительные работы по монтажу (под ключ)
+                  </h4>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Отметьте объем выполненных или планируемых доп. работ. Стоимость автоматически суммируется к итоговой сборке и детализируется в спецификации.
+                  </p>
+                </div>
+                {calculatedExtraAssemblyPrice > 0 && (
+                  <div className="px-3.5 py-2 bg-indigo-50 border border-indigo-100 rounded-xl text-right shrink-0">
+                    <span className="text-[10px] uppercase font-black text-indigo-400 block font-sans">Итого доп. работы</span>
+                    <span className="text-base font-black text-indigo-600">{calculatedExtraAssemblyPrice.toLocaleString()} ₽</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-6">
+                {extraAssemblyServices.map((cat: any) => {
+                  if (!cat.services || cat.services.length === 0) return null;
+                  return (
+                    <div key={cat.id || cat.name} className="space-y-3">
+                      <h5 className="text-xs font-black uppercase tracking-wider text-indigo-900/80 bg-indigo-50/60 px-3 py-1.5 rounded-lg inline-block">
+                        {cat.name}
+                      </h5>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {cat.services.map((svc: any) => {
+                          const currentQty = data.extraAssemblyQuantities?.[svc.id] || 0;
+                          return (
+                            <div
+                              key={svc.id}
+                              className={cn(
+                                "p-3.5 rounded-2xl border transition-all flex items-center justify-between gap-3",
+                                currentQty > 0 ? "bg-indigo-50/40 border-indigo-200 shadow-xs" : "bg-gray-50/40 border-gray-100 hover:border-gray-200"
+                              )}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <span className="text-xs font-bold text-gray-800 block truncate">{svc.name}</span>
+                                <span className="text-[11px] text-gray-400 font-medium">
+                                  {(svc.price || 0).toLocaleString()} ₽ / {svc.unit || 'шт'}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0">
+                                <div className="flex items-center gap-1 bg-white border border-gray-200 rounded-xl p-1 shadow-2xs">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const newQ = Math.max(0, currentQty - 1);
+                                      setData({
+                                        ...data,
+                                        extraAssemblyQuantities: {
+                                          ...(data.extraAssemblyQuantities || {}),
+                                          [svc.id]: newQ,
+                                        }
+                                      });
+                                    }}
+                                    className="w-7 h-7 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 flex items-center justify-center text-xs font-bold transition-colors"
+                                  >
+                                    -
+                                  </button>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={currentQty === 0 ? "" : currentQty}
+                                    placeholder="0"
+                                    onClick={(e) => e.stopPropagation()}
+                                    onChange={(e) => {
+                                      const val = parseInt(e.target.value);
+                                      const newQ = isNaN(val) ? 0 : Math.max(0, val);
+                                      setData({
+                                        ...data,
+                                        extraAssemblyQuantities: {
+                                          ...(data.extraAssemblyQuantities || {}),
+                                          [svc.id]: newQ,
+                                        }
+                                      });
+                                    }}
+                                    className="w-10 text-center font-bold text-xs outline-none bg-transparent"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      const newQ = currentQty + 1;
+                                      setData({
+                                        ...data,
+                                        extraAssemblyQuantities: {
+                                          ...(data.extraAssemblyQuantities || {}),
+                                          [svc.id]: newQ,
+                                        }
+                                      });
+                                    }}
+                                    className="w-7 h-7 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-bold transition-colors"
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                                <span className="text-xs font-bold text-gray-700 min-w-[55px] text-right font-sans">
+                                  {(currentQty * (svc.price || 0)).toLocaleString()} ₽
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -16627,11 +17326,13 @@ const ServiceSectionView = ({
 };
 
 const ReadyMadeProductsView = ({
+  ownProductionConfig,
   catalogProducts,
   onAddProduct,
   selectedCategory,
   setSelectedCategory,
   companyData,
+  companyInfo,
   customerType,
   resolveBrandCoefficient,
   setSelectedProductForDetail,
@@ -16640,20 +17341,25 @@ const ReadyMadeProductsView = ({
   showConfirm,
   setActiveTab,
   promotions,
+  onSaveProduct,
+  onBuildFromCatalog,
   onEditProduct = (product: any) => window.dispatchEvent(new CustomEvent("products_view_edit", { detail: product })),
   onCreateBasedOn = (product: any) => window.dispatchEvent(new CustomEvent("products_view_create_copy", { detail: product })),
   onDeleteProduct = (product: any) => window.dispatchEvent(new CustomEvent("products_view_delete", { detail: product })),
   onUpdateProduct = (id: string, updates: any) => window.dispatchEvent(new CustomEvent("products_view_update", { detail: { id, updates } })),
-  onAddNewProduct = () => window.dispatchEvent(new CustomEvent("products_view_add_new", { detail: { category: selectedCategory || "Кухни" } })),
+  onAddNewProduct,
   onHideProduct,
   onRestoreProduct,
   userRole,
+  isViewHidden = false,
 }: {
+  ownProductionConfig?: OwnProductionConfig;
   catalogProducts: any[];
   onAddProduct: (product: any, qty: number) => void;
   selectedCategory: string | null;
   setSelectedCategory: (cat: string | null) => void;
   companyData: any;
+  companyInfo?: any;
   customerType: string;
   resolveBrandCoefficient: (cat: string, brand: string) => number;
   setSelectedProductForDetail: (p: any) => void;
@@ -16662,6 +17368,8 @@ const ReadyMadeProductsView = ({
   showConfirm: any;
   setActiveTab?: (tab: string) => void;
   promotions?: any[];
+  onSaveProduct?: (product: any) => Promise<void> | void;
+  onBuildFromCatalog?: () => void;
   onEditProduct?: (product: any) => void;
   onCreateBasedOn?: (product: any) => void;
   onDeleteProduct?: (product: any) => void;
@@ -16670,6 +17378,7 @@ const ReadyMadeProductsView = ({
   onHideProduct?: (product: any) => void;
   onRestoreProduct?: (product: any) => void;
   userRole?: string;
+  isViewHidden?: boolean;
 }) => {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterOwnCatalog, setFilterOwnCatalog] = useState(true);
@@ -16682,6 +17391,540 @@ const ReadyMadeProductsView = ({
   const [kitchenMaxPriceFilter, setKitchenMaxPriceFilter] = useState<string>("");
   const [showHiddenOnly, setShowHiddenOnly] = useState(false);
   const [blockingSaleProduct, setBlockingSaleProduct] = useState<any>(null);
+
+  // Ready-Made Product modal state
+  const [isAddingProduct, setIsAddingProduct] = useState(false);
+  const [isProductModalMinimized, setIsProductModalMinimized] = useState(false);
+  const [isSavingProduct, setIsSavingProduct] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<any>(null);
+  const [imageUrlInput, setImageUrlInput] = useState("");
+  const [isKitchenModulesModalOpen, setIsKitchenModulesModalOpen] = useState(false);
+  const [kitchenModuleSearch, setKitchenModuleSearch] = useState("");
+  const [kitchenModuleGroupFilter, setKitchenModuleGroupFilter] = useState("Все");
+  const [kitchenModuleWidthFilter, setKitchenModuleWidthFilter] = useState("Все");
+  const [kitchenModuleCategoryFilter, setKitchenModuleCategoryFilter] = useState("Все");
+  const [fittingPickerTarget, setFittingPickerTarget] = useState<any>(null);
+  const [autoSyncSetPrices, setAutoSyncSetPrices] = useState(true);
+
+  const [newProduct, setNewProduct] = useState<any>({
+    name: "",
+    category: "Кухни",
+    purchasePrice: 0,
+    price: 0,
+    images: [],
+    article: "",
+    unit: "комплект",
+    description: "",
+    manufacturer: "",
+    color: "",
+    kitchenType: "Прямая",
+    kitchenStyle: "Современный",
+    kitchenWidth: "",
+    kitchenHeight: "",
+    kitchenDepth: "",
+    kitchenWidthLeft: "",
+    kitchenWidthRight: "",
+    kitchenWidthWall1: "",
+    kitchenWidthWall2: "",
+    kitchenWidthWall3: "",
+    islandWidth: "",
+    islandDepth: "",
+    islandHeight: "",
+    facadeBottomMaterial: "",
+    facadeTopMaterial: "",
+    facadeLowerProduct: "",
+    facadeLowerPriceM2: 0,
+    facadeLowerSellPriceM2: 0,
+    facadeLowerMaterial: "",
+    facadeUpperProduct: "",
+    facadeUpperPriceM2: 0,
+    facadeUpperSellPriceM2: 0,
+    facadeUpperMaterial: "",
+    facadeMezzanineProduct: "",
+    facadeMezzaninePriceM2: 0,
+    facadeMezzanineSellPriceM2: 0,
+    facadeMezzanineMaterial: "",
+    facadeCaseProduct: "",
+    facadeCasePriceM2: 0,
+    facadeCaseSellPriceM2: 0,
+    facadeCaseMaterial: "",
+    kitchenModules: [],
+    selectedFittings: {},
+  });
+
+  const calculatedFittingDemands = useMemo(() => {
+    const demandsMap: Record<string, { key: string; label: string; category: string; hingeType?: string; qty: number }> = {};
+
+    const addDemand = (key: string, label: string, category: string, qty: number, hingeType?: string) => {
+      if (qty <= 0) return;
+      if (!demandsMap[key]) {
+        demandsMap[key] = { key, label, category, hingeType, qty: 0 };
+      }
+      demandsMap[key].qty += qty;
+    };
+
+    const modules = (newProduct.kitchenModules || []) as any[];
+    modules.forEach((km) => {
+      const mod = catalogProducts.find((cp) => String(cp.id) === String(km.id));
+      if (!mod) return;
+      const modQty = Number(km.qty) || 1;
+
+      if (mod.moduleFittings && Array.isArray(mod.moduleFittings) && mod.moduleFittings.length > 0) {
+        mod.moduleFittings.forEach((fit: any) => {
+          const cat = (fit.category || "").toLowerCase();
+          const fQty = (Number(fit.qty) || 1) * modQty;
+          const hType = fit.hingeType || fit.type || "Накладная";
+
+          if (cat.includes("петл")) {
+            addDemand(`hinges_${hType}`, `Петли (${hType})`, "Петли", fQty, hType);
+          } else if (cat.includes("выдвиж") || cat.includes("направл") || cat.includes("ящик")) {
+            addDemand("drawers", "Системы выдвижения / Направляющие", "Системы выдвижения", fQty);
+          } else if (cat.includes("подъем") || cat.includes("подъём") || cat.includes("газлифт")) {
+            addDemand("lifters", "Подъёмные механизмы", "Подъёмные механизмы", fQty);
+          } else if (cat.includes("ручк")) {
+            addDemand("handles", "Ручки и фурнитура", "Ручки и крючки", fQty);
+          } else if (cat.includes("опор") || cat.includes("цокол") || cat.includes("крепеж") || cat.includes("крепёж")) {
+            addDemand("legs", "Опоры и цоколь", "Крепежные элементы и цоколь", fQty);
+          } else {
+            addDemand(`other_${fit.category}`, fit.category, fit.category, fQty);
+          }
+        });
+      } else {
+        const expDrawers = mod.guidesCount ?? mod.drawersCount ?? mod.drawers ?? mod.guidesQty;
+        const expHinges = mod.hingesCount ?? mod.hinges;
+        const expLifters = mod.liftersCount ?? mod.lifters;
+        const expLegs = mod.legsCount ?? mod.legs;
+        const expHandles = mod.handlesCount ?? mod.handles;
+        const hType = mod.hingeType || "Накладная";
+
+        let handled = false;
+        if (expDrawers !== undefined || expHinges !== undefined || expLifters !== undefined || expLegs !== undefined || expHandles !== undefined) {
+          handled = true;
+          if (expDrawers) addDemand("drawers", "Системы выдвижения / Направляющие", "Системы выдвижения", Number(expDrawers) * modQty);
+          if (expHinges) addDemand(`hinges_${hType}`, `Петли (${hType})`, "Петли", Number(expHinges) * modQty, hType);
+          if (expLifters) addDemand("lifters", "Подъёмные механизмы", "Подъёмные механизмы", Number(expLifters) * modQty);
+          if (expLegs) addDemand("legs", "Опоры и цоколь", "Крепежные элементы и цоколь", Number(expLegs) * modQty);
+          if (expHandles) addDemand("handles", "Ручки и фурнитура", "Ручки и крючки", Number(expHandles) * modQty);
+        }
+
+        if (!handled) {
+          const name = (mod.name || "").toLowerCase();
+          const group = mod.moduleGroup || "Нижние";
+          const h = Number(mod.moduleHeight || mod.height || 720);
+
+          let numDrawers = 0;
+          const match = name.match(/(\d+)\s*я/i);
+          if (match) numDrawers = parseInt(match[1]);
+          else if (name.includes("3я") || name.includes("3 ящик")) numDrawers = 3;
+          else if (name.includes("2я") || name.includes("2 ящик")) numDrawers = 2;
+          else if (name.includes("1я") || name.includes("1 ящик")) numDrawers = 1;
+          else if (name.includes("ящик") || name.includes("метабокс") || name.includes("тандем") || name.includes("дравер")) numDrawers = 1;
+
+          if (numDrawers > 0) {
+            addDemand("drawers", "Системы выдвижения / Направляющие", "Системы выдвижения", numDrawers * modQty);
+            addDemand("handles", "Ручки и фурнитура", "Ручки и крючки", numDrawers * modQty);
+            if (group === "Нижние") {
+              addDemand("legs", "Опоры и цоколь", "Крепежные элементы и цоколь", 4 * modQty);
+            }
+          } else {
+            if (group === "Нижние") {
+              const hingesPerDoor = h >= 900 ? 3 : 2;
+              const doors = name.includes("2д") || name.includes("2 дверь") ? 2 : 1;
+              addDemand("hinges_Накладная", "Петли (Накладная)", "Петли", doors * hingesPerDoor * modQty, "Накладная");
+              addDemand("legs", "Опоры и цоколь", "Крепежные элементы и цоколь", 4 * modQty);
+              addDemand("handles", "Ручки и фурнитура", "Ручки и крючки", doors * modQty);
+            } else if (group === "Верхние") {
+              const hingesPerDoor = h >= 900 ? 3 : 2;
+              const doors = name.includes("2д") || name.includes("2 дверь") ? 2 : 1;
+              addDemand("hinges_Накладная", "Петли (Накладная)", "Петли", doors * hingesPerDoor * modQty, "Накладная");
+              addDemand("handles", "Ручки и фурнитура", "Ручки и крючки", doors * modQty);
+            } else if (group === "Пеналы") {
+              addDemand("hinges_Накладная", "Петли (Накладная)", "Петли", 4 * modQty, "Накладная");
+              addDemand("legs", "Опоры и цоколь", "Крепежные элементы и цоколь", 4 * modQty);
+              addDemand("handles", "Ручки и фурнитура", "Ручки и крючки", 2 * modQty);
+            } else if (group === "Антресоли") {
+              addDemand("lifters", "Подъёмные механизмы", "Подъёмные механизмы", 2 * modQty);
+              addDemand("handles", "Ручки и фурнитура", "Ручки и крючки", 1 * modQty);
+            }
+          }
+        }
+      }
+    });
+
+    return Object.values(demandsMap);
+  }, [newProduct.kitchenModules, catalogProducts]);
+
+  const allFacadeOptions = useMemo(() => {
+    const list: Array<{
+      id: string;
+      name: string;
+      purchasePrice: number;
+      price: number;
+      category: string;
+      brand?: string;
+      article?: string;
+      isPriceListFacade?: boolean;
+      image?: string;
+    }> = [];
+
+    if (ownProductionConfig) {
+      if (ownProductionConfig.facadeSettings) {
+        const fName = ownProductionConfig.facadeSettings.displayName || "Пленка";
+        const cats = ownProductionConfig.facadeSettings.categories || [];
+        if (cats.length > 0) {
+          cats.forEach((c: any) => {
+            const pPrice = Number(c.purchasePrice || c.price || 0);
+            const sPrice = Number(c.price || Math.round(pPrice * 1.3) || 0);
+            list.push({
+              id: `cfg_facadeSettings_${c.id || c.name}`,
+              name: `[Прайс: ${fName}] ${c.name}`,
+              purchasePrice: pPrice,
+              price: sPrice,
+              category: "Фасады (Прайс-лист)",
+              brand: fName,
+              isPriceListFacade: true,
+            });
+          });
+        } else {
+          list.push({
+            id: `cfg_facadeSettings_main`,
+            name: `[Прайс-лист] ${fName}`,
+            purchasePrice: 0,
+            price: 0,
+            category: "Фасады (Прайс-лист)",
+            brand: fName,
+            isPriceListFacade: true,
+          });
+        }
+      }
+
+      if (ownProductionConfig.enamelSettings) {
+        const eName = ownProductionConfig.enamelSettings.displayName || "Эмаль";
+        const cats = ownProductionConfig.enamelSettings.categories || [];
+        if (cats.length > 0) {
+          cats.forEach((c: any) => {
+            const pPrice = Number(c.purchasePrice || c.price || 0);
+            const sPrice = Number(c.price || Math.round(pPrice * 1.3) || 0);
+            list.push({
+              id: `cfg_enamelSettings_${c.id || c.name}`,
+              name: `[Прайс: ${eName}] ${c.name}`,
+              purchasePrice: pPrice,
+              price: sPrice,
+              category: "Фасады (Прайс-лист)",
+              brand: eName,
+              isPriceListFacade: true,
+            });
+          });
+        } else {
+          list.push({
+            id: `cfg_enamelSettings_main`,
+            name: `[Прайс-лист] ${eName}`,
+            purchasePrice: 0,
+            price: 0,
+            category: "Фасады (Прайс-лист)",
+            brand: eName,
+            isPriceListFacade: true,
+          });
+        }
+      }
+
+      if (Array.isArray(ownProductionConfig.extraFacadeTypes)) {
+        ownProductionConfig.extraFacadeTypes.forEach((t: any, idx: number) => {
+          const tName = t.displayName || `Заказной фасад ${idx + 1}`;
+          const cats = t.settings?.categories || [];
+          if (cats.length > 0) {
+            cats.forEach((c: any) => {
+              const pPrice = Number(c.purchasePrice || c.price || 0);
+              const sPrice = Number(c.price || Math.round(pPrice * 1.3) || 0);
+              list.push({
+                id: `cfg_extra_${idx}_${c.id || c.name}`,
+                name: `[Прайс: ${tName}] ${c.name}`,
+                purchasePrice: pPrice,
+                price: sPrice,
+                category: "Фасады (Прайс-лист)",
+                brand: tName,
+                isPriceListFacade: true,
+              });
+            });
+          } else {
+            list.push({
+              id: `cfg_extra_${idx}_main`,
+              name: `[Прайс-лист] ${tName}`,
+              purchasePrice: 0,
+              price: 0,
+              category: "Фасады (Прайс-лист)",
+              brand: tName,
+              isPriceListFacade: true,
+            });
+          }
+        });
+      }
+
+      if (Array.isArray(ownProductionConfig.customFacades)) {
+        ownProductionConfig.customFacades.forEach((fStr: string, idx: number) => {
+          if (fStr && !list.some((item) => item.name.toLowerCase().includes(fStr.toLowerCase()))) {
+            list.push({
+              id: `cfg_custom_${idx}`,
+              name: `[Прайс-лист] ${fStr}`,
+              purchasePrice: 0,
+              price: 0,
+              category: "Фасады (Прайс-лист)",
+              brand: fStr,
+              isPriceListFacade: true,
+            });
+          }
+        });
+      }
+    }
+
+    (catalogProducts || []).forEach((p: any) => {
+      const catLower = (p.category || "").toLowerCase();
+      const customCatLower = (p.customCategory || "").toLowerCase();
+      const isFacadeProduct =
+        p.isFacade === true ||
+        catLower === "фасад (заказной)" ||
+        catLower === "фасады" ||
+        catLower.includes("пленк") ||
+        catLower.includes("эмаль") ||
+        catLower.includes("пластик") ||
+        catLower.includes("шпон") ||
+        catLower.includes("массив") ||
+        catLower.includes("акрил") ||
+        customCatLower.includes("фасад") ||
+        (catLower.includes("фасад") && !catLower.includes("кромк"));
+
+      if (isFacadeProduct) {
+        list.push({
+          id: String(p.id),
+          name: `${p.name}${p.brand ? ` (${p.brand})` : ""}`,
+          purchasePrice: Number(p.purchasePrice || p.price || 0),
+          price: Number(p.price || p.purchasePrice || 0),
+          category: p.category || "Фасады",
+          brand: p.brand || p.manufacturer,
+          article: p.article,
+          image: p.image || p.images?.[0],
+        });
+      }
+    });
+
+    return list;
+  }, [catalogProducts, ownProductionConfig]);
+
+  const calculatedSetSummary = useMemo(() => {
+    const modules = (newProduct.kitchenModules || []) as any[];
+
+    let modulesPurchaseSubtotal = 0;
+    let modulesSellingSubtotal = 0;
+
+    const facadeAreaByGroup: Record<string, number> = {
+      "Нижние": 0,
+      "Верхние": 0,
+      "Антресоли": 0,
+      "Пеналы": 0,
+    };
+    let totalFacadeAreaM2 = 0;
+
+    modules.forEach((km) => {
+      const mod = catalogProducts.find((cp) => String(cp.id) === String(km.id));
+      if (!mod) return;
+      const modQty = Number(km.qty) || 1;
+      const purchP = Number(mod.purchasePrice || mod.price || 0);
+      const sellP = Number(mod.price || mod.purchasePrice || 0);
+
+      modulesPurchaseSubtotal += purchP * modQty;
+      modulesSellingSubtotal += sellP * modQty;
+
+      // Facade area calculation: (H in mm / 1000) * (W in mm / 1000) * qty
+      const h = Number(mod.moduleHeight || mod.height || 720);
+      const w = Number(mod.moduleWidth || mod.width || 600);
+      const areaUnitM2 = (h / 1000) * (w / 1000);
+      const totalModArea = areaUnitM2 * modQty;
+
+      const grp = mod.moduleGroup || "Нижние";
+      if (facadeAreaByGroup[grp] !== undefined) {
+        facadeAreaByGroup[grp] += totalModArea;
+      } else {
+        facadeAreaByGroup[grp] = totalModArea;
+      }
+      totalFacadeAreaM2 += totalModArea;
+    });
+
+    // Hardware / Fittings
+    let fittingsPurchaseSubtotal = 0;
+    let fittingsSellingSubtotal = 0;
+
+    calculatedFittingDemands.forEach((demand) => {
+      const selectedId = newProduct.selectedFittings?.[demand.key];
+      if (!selectedId) return;
+      const prod = catalogProducts.find((cp: any) => String(cp.id) === String(selectedId));
+      if (!prod) return;
+      const purchP = Number(prod.purchasePrice || prod.price || 0);
+      const sellP = Number(prod.price || prod.purchasePrice || 0);
+      fittingsPurchaseSubtotal += purchP * demand.qty;
+      fittingsSellingSubtotal += sellP * demand.qty;
+    });
+
+    // Facades calculation for 4 individual groups: "Нижние", "Верхние", "Антресоли", "Пеналы"
+    const groupsMeta = [
+      { key: "lower", grpName: "Нижние", stateKey: "Lower" },
+      { key: "upper", grpName: "Верхние", stateKey: "Upper" },
+      { key: "mezzanine", grpName: "Антресоли", stateKey: "Mezzanine" },
+      { key: "case", grpName: "Пеналы", stateKey: "Case" },
+    ];
+
+    let facadesPurchaseSubtotal = 0;
+    let facadesSellingSubtotal = 0;
+
+    const facadeGroupDetails: Record<string, {
+      area: number;
+      prod: any;
+      purchPriceM2: number;
+      sellPriceM2: number;
+      purchSubtotal: number;
+      sellSubtotal: number;
+    }> = {};
+
+    groupsMeta.forEach(({ key, grpName, stateKey }) => {
+      const area = facadeAreaByGroup[grpName] || 0;
+
+      const prodId = newProduct[`facade${stateKey}Product`] ||
+        (key === "lower" ? newProduct.facadeBottomProduct : key === "upper" ? newProduct.facadeTopProduct : null);
+
+      const prod = prodId
+        ? (allFacadeOptions.find((cp: any) => String(cp.id) === String(prodId)) || catalogProducts.find((cp: any) => String(cp.id) === String(prodId)))
+        : null;
+
+      const purchPriceM2 = prod
+        ? Number(prod.purchasePrice || prod.price || 0)
+        : Number(
+            newProduct[`facade${stateKey}PriceM2`] ||
+            (key === "lower" ? newProduct.facadeBottomPriceM2 : key === "upper" ? newProduct.facadeTopPriceM2 : 0) ||
+            0
+          );
+
+      const sellPriceM2 = prod
+        ? Number(prod.price || prod.purchasePrice || 0)
+        : Number(
+            newProduct[`facade${stateKey}SellPriceM2`] ||
+            (key === "lower" ? newProduct.facadeBottomSellPriceM2 : key === "upper" ? newProduct.facadeTopSellPriceM2 : 0) ||
+            (purchPriceM2 * 1.3) ||
+            0
+          );
+
+      const purchSubtotal = area * purchPriceM2;
+      const sellSubtotal = area * sellPriceM2;
+
+      facadesPurchaseSubtotal += purchSubtotal;
+      facadesSellingSubtotal += sellSubtotal;
+
+      facadeGroupDetails[key] = {
+        area,
+        prod,
+        purchPriceM2,
+        sellPriceM2,
+        purchSubtotal,
+        sellSubtotal,
+      };
+    });
+
+    const grandTotalPurchasePrice = modulesPurchaseSubtotal + fittingsPurchaseSubtotal + facadesPurchaseSubtotal;
+    const grandTotalSellingPrice = modulesSellingSubtotal + fittingsSellingSubtotal + facadesSellingSubtotal;
+
+    return {
+      modulesPurchaseSubtotal,
+      modulesSellingSubtotal,
+      fittingsPurchaseSubtotal,
+      fittingsSellingSubtotal,
+      facadesPurchaseSubtotal,
+      facadesSellingSubtotal,
+      grandTotalPurchasePrice,
+      grandTotalSellingPrice,
+      facadeAreaByGroup,
+      totalFacadeAreaM2,
+      facadeGroupDetails,
+    };
+  }, [
+    newProduct.kitchenModules,
+    newProduct.selectedFittings,
+    newProduct.facadeLowerProduct,
+    newProduct.facadeUpperProduct,
+    newProduct.facadeMezzanineProduct,
+    newProduct.facadeCaseProduct,
+    newProduct.facadeLowerPriceM2,
+    newProduct.facadeUpperPriceM2,
+    newProduct.facadeMezzaninePriceM2,
+    newProduct.facadeCasePriceM2,
+    newProduct.facadeLowerSellPriceM2,
+    newProduct.facadeUpperSellPriceM2,
+    newProduct.facadeMezzanineSellPriceM2,
+    newProduct.facadeCaseSellPriceM2,
+    newProduct.facadeTopProduct,
+    newProduct.facadeBottomProduct,
+    newProduct.facadeTopPriceM2,
+    newProduct.facadeBottomPriceM2,
+    newProduct.facadeTopSellPriceM2,
+    newProduct.facadeBottomSellPriceM2,
+    catalogProducts,
+    calculatedFittingDemands,
+  ]);
+
+  useEffect(() => {
+    if (autoSyncSetPrices && calculatedSetSummary.grandTotalPurchasePrice > 0) {
+      setNewProduct((prev: any) => {
+        if (
+          prev.purchasePrice === calculatedSetSummary.grandTotalPurchasePrice &&
+          prev.price === calculatedSetSummary.grandTotalSellingPrice
+        ) {
+          return prev;
+        }
+        return {
+          ...prev,
+          purchasePrice: calculatedSetSummary.grandTotalPurchasePrice,
+          price: calculatedSetSummary.grandTotalSellingPrice,
+        };
+      });
+    }
+  }, [
+    autoSyncSetPrices,
+    calculatedSetSummary.grandTotalPurchasePrice,
+    calculatedSetSummary.grandTotalSellingPrice,
+  ]);
+
+  const handleOpenBuildFromCatalog = () => {
+    setEditingProduct(null);
+    setNewProduct({
+      name: "",
+      category: "Кухонные гарнитуры",
+      purchasePrice: 0,
+      price: 0,
+      images: [],
+      article: "",
+      unit: "комплект",
+      description: "",
+      manufacturer: "Собственное производство",
+      color: "",
+      kitchenType: "Прямая",
+      kitchenStyle: "Современный",
+      kitchenWidth: "2000",
+      kitchenHeight: "2140",
+      kitchenDepth: "600",
+      kitchenWidthLeft: "",
+      kitchenWidthRight: "",
+      kitchenWidthWall1: "",
+      kitchenWidthWall2: "",
+      kitchenWidthWall3: "",
+      islandWidth: "",
+      islandDepth: "",
+      islandHeight: "",
+      facadeBottomMaterial: "",
+      facadeTopMaterial: "",
+      kitchenModules: [],
+      vat: companyInfo?.vat !== undefined ? companyInfo.vat : 20,
+      includeVat: true,
+    });
+    setImageUrlInput("");
+    setIsAddingProduct(true);
+  };
 
   const hiddenProductIds: string[] = useMemo(() => {
     return (companyData?.hiddenProductIds || []).map((id: any) => String(id));
@@ -16697,6 +17940,153 @@ const ReadyMadeProductsView = ({
     "Кухонные гарнитуры",
     "Кухонный гарнитур",
   ]).filter((c: string) => !c.toLowerCase().includes("гарнитур") && !disabledReadyMadeCats.includes(c));
+
+  const handleOpenAddNew = () => {
+    setEditingProduct(null);
+    const initialCat = selectedCategory || readyMadeCats[0] || "Кухни";
+    setNewProduct({
+      name: "",
+      category: initialCat,
+      purchasePrice: 0,
+      price: 0,
+      images: [],
+      article: "",
+      unit: "комплект",
+      description: "",
+      manufacturer: "",
+      color: "",
+      kitchenType: "Прямая",
+      kitchenStyle: "Современный",
+      kitchenWidth: "",
+      kitchenHeight: "",
+      kitchenDepth: "",
+      kitchenWidthLeft: "",
+      kitchenWidthRight: "",
+      kitchenWidthWall1: "",
+      kitchenWidthWall2: "",
+      kitchenWidthWall3: "",
+      islandWidth: "",
+      islandDepth: "",
+      islandHeight: "",
+      facadeBottomMaterial: "",
+      facadeTopMaterial: "",
+      vat: companyInfo?.vat !== undefined ? companyInfo.vat : 20,
+      includeVat: true,
+    });
+    setImageUrlInput("");
+    setIsAddingProduct(true);
+  };
+
+  const handleOpenEdit = (product: any) => {
+    setEditingProduct(product);
+    setNewProduct({
+      ...product,
+      name: product.name || "",
+      category: product.category || "Кухни",
+      purchasePrice: product.purchasePrice || product.price || 0,
+      price: product.price || 0,
+      images: product.images || (product.image ? [product.image] : []),
+      article: product.article || "",
+      unit: product.unit || "комплект",
+      description: product.description || "",
+      manufacturer: product.manufacturer || "",
+      color: product.color || "",
+      kitchenType: product.kitchenType || "Прямая",
+      kitchenStyle: product.kitchenStyle || "Современный",
+      kitchenWidth: product.kitchenWidth || product.width || "",
+      kitchenHeight: product.kitchenHeight || product.height || "",
+      kitchenDepth: product.kitchenDepth || product.depth || "",
+      kitchenWidthLeft: product.kitchenWidthLeft || "",
+      kitchenWidthRight: product.kitchenWidthRight || "",
+      kitchenWidthWall1: product.kitchenWidthWall1 || "",
+      kitchenWidthWall2: product.kitchenWidthWall2 || "",
+      kitchenWidthWall3: product.kitchenWidthWall3 || "",
+      islandWidth: product.islandWidth || "",
+      islandDepth: product.islandDepth || "",
+      islandHeight: product.islandHeight || "",
+      facadeBottomMaterial: product.facadeBottomMaterial || "",
+      facadeTopMaterial: product.facadeTopMaterial || "",
+      vat: product.vat !== undefined ? product.vat : 20,
+      includeVat: product.includeVat ?? true,
+    });
+    setImageUrlInput("");
+    setIsAddingProduct(true);
+  };
+
+  const handleOpenCreateBasedOn = (product: any) => {
+    setEditingProduct(null);
+    setNewProduct({
+      ...product,
+      id: undefined,
+      name: product.name ? `${product.name} (копия)` : "",
+      article: product.article ? `${product.article}_копия` : "",
+      category: product.category || "Кухни",
+      purchasePrice: product.purchasePrice || product.price || 0,
+      price: product.price || 0,
+      images: product.images || (product.image ? [product.image] : []),
+      unit: product.unit || "комплект",
+      description: product.description || "",
+      manufacturer: product.manufacturer || "",
+      color: product.color || "",
+      kitchenType: product.kitchenType || "Прямая",
+      kitchenStyle: product.kitchenStyle || "Современный",
+      kitchenWidth: product.kitchenWidth || product.width || "",
+      kitchenHeight: product.kitchenHeight || product.height || "",
+      kitchenDepth: product.kitchenDepth || product.depth || "",
+      kitchenWidthLeft: product.kitchenWidthLeft || "",
+      kitchenWidthRight: product.kitchenWidthRight || "",
+      kitchenWidthWall1: product.kitchenWidthWall1 || "",
+      kitchenWidthWall2: product.kitchenWidthWall2 || "",
+      kitchenWidthWall3: product.kitchenWidthWall3 || "",
+      islandWidth: product.islandWidth || "",
+      islandDepth: product.islandDepth || "",
+      islandHeight: product.islandHeight || "",
+      facadeBottomMaterial: product.facadeBottomMaterial || "",
+      facadeTopMaterial: product.facadeTopMaterial || "",
+      vat: product.vat !== undefined ? product.vat : 20,
+      includeVat: product.includeVat ?? true,
+    });
+    setImageUrlInput("");
+    setIsAddingProduct(true);
+  };
+
+  const handleSaveReadyMadeProduct = async () => {
+    if (!newProduct.name || !newProduct.name.trim()) {
+      showAlert("Ошибка", "Заполните название товара/гарнитура");
+      return;
+    }
+    setIsSavingProduct(true);
+    try {
+      const coeff = resolveBrandCoefficient
+        ? resolveBrandCoefficient(newProduct.category, newProduct.manufacturer || newProduct.brand || "")
+        : 1.5;
+      const purchasePrice = Number(newProduct.purchasePrice) || 0;
+      const computedPrice = newProduct.price && Number(newProduct.price) > 0
+        ? Number(newProduct.price)
+        : Math.round(purchasePrice * coeff);
+
+      const productToSave = {
+        ...newProduct,
+        id: editingProduct?.id || Date.now().toString(),
+        purchasePrice: purchasePrice,
+        price: computedPrice,
+        image: newProduct.images?.[0] || "",
+        status: userRole === 'admin' ? 'approved' : (editingProduct?.status || 'pending'),
+        updatedAt: new Date().toISOString(),
+      };
+
+      if (onSaveProduct) {
+        await onSaveProduct(productToSave);
+      }
+      setIsAddingProduct(false);
+      setEditingProduct(null);
+    } catch (err: any) {
+      console.error("Error saving ready-made product:", err);
+      showAlert("Ошибка", "Не удалось сохранить товар: " + (err?.message || "Ошибка"));
+    } finally {
+      setIsSavingProduct(false);
+    }
+  };
 
   const readyMadeProducts = useMemo(() => {
     const hiddenSet = new Set(hiddenProductIds);
@@ -16778,7 +18168,8 @@ const ReadyMadeProductsView = ({
   }, [catalogProducts, readyMadeCats, selectedCategory, searchQuery, kitchenTypeFilter, kitchenStyleFilter, kitchenMinPriceFilter, kitchenMaxPriceFilter, hiddenProductIds, showHiddenOnly, filterOwnCatalog, filterProductionCatalog]);
 
   return (
-    <div className="p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-300">
+    <>
+      <div className={isViewHidden ? "hidden" : "p-8 max-w-7xl mx-auto space-y-8 animate-in fade-in duration-300"}>
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h2 className="text-2xl font-black text-gray-900 tracking-tight">Готовая мебель</h2>
@@ -16842,17 +18233,22 @@ const ReadyMadeProductsView = ({
               </button>
             </div>
           )}
-          <button
-            onClick={() => {
-              if (onAddNewProduct) {
-                onAddNewProduct();
-              }
-            }}
-            className="flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-md shadow-blue-100 text-xs flex-shrink-0 cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            Добавить товар / гарнитур
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={handleOpenBuildFromCatalog}
+              className="flex items-center justify-center gap-2 px-5 py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-all shadow-md shadow-indigo-100 text-xs flex-shrink-0 cursor-pointer"
+            >
+              <LayoutGrid className="w-4 h-4" />
+              Создать Готовую мебель из товаров каталога
+            </button>
+            <button
+              onClick={handleOpenAddNew}
+              className="flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-md shadow-blue-100 text-xs flex-shrink-0 cursor-pointer"
+            >
+              <Plus className="w-4 h-4" />
+              Добавить готовую мебель
+            </button>
+          </div>
         </div>
       </div>
 
@@ -17023,11 +18419,11 @@ const ReadyMadeProductsView = ({
                               </button>
                             )}
 
-                            {canEditOrDelete && onEditProduct && (
+                            {canEditOrDelete && (
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
-                                  onEditProduct(product);
+                                  handleOpenEdit(product);
                                 }}
                                 className="p-1.5 bg-white text-blue-600 hover:bg-blue-600 hover:text-white rounded-lg shadow-md transition-all cursor-pointer"
                                 title="Редактировать"
@@ -17036,18 +18432,16 @@ const ReadyMadeProductsView = ({
                               </button>
                             )}
 
-                            {onCreateBasedOn && (
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onCreateBasedOn(product);
-                                }}
-                                className="p-1.5 bg-white text-teal-600 hover:bg-teal-600 hover:text-white rounded-lg shadow-md transition-all cursor-pointer"
-                                title="Создать на основании"
-                              >
-                                <Copy className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleOpenCreateBasedOn(product);
+                              }}
+                              className="p-1.5 bg-white text-teal-600 hover:bg-teal-600 hover:text-white rounded-lg shadow-md transition-all cursor-pointer"
+                              title="Создать на основании"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
 
                             {(userRole === 'admin' || userRole === 'supervisor') && onUpdateProduct && canEditOrDelete && (
                               <button
@@ -17246,11 +18640,1301 @@ const ReadyMadeProductsView = ({
           if (onUpdateProduct) onUpdateProduct(String(id), updates);
         }}
       />
-    </div>
+      </div>
+
+      {/* Ready-Made Furniture Creation & Editing Modal */}
+      {isAddingProduct && !isProductModalMinimized && (
+        <div className="fixed inset-0 bg-black/60 z-[110] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-4xl max-h-[92vh] overflow-hidden rounded-3xl shadow-2xl flex flex-col">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center font-bold">
+                  <Package className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-gray-900">
+                    {editingProduct ? "Редактировать готовый гарнитур / товар" : "Новый готовый гарнитур / товар"}
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    Раздел «Готовая мебель» — параметры и характеристики изделия
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsProductModalMinimized(true)}
+                  className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-xs transition-all flex items-center gap-1.5 cursor-pointer border border-indigo-200/80"
+                  title="Свернуть окно"
+                >
+                  <Minus className="w-4 h-4" />
+                  <span>Свернуть</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setIsAddingProduct(false); setEditingProduct(null); setIsProductModalMinimized(false); }}
+                  className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-400 hover:text-gray-600 cursor-pointer"
+                  title="Закрыть"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6 text-sm">
+              {/* Category & Name */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                    Категория готовой мебели *
+                  </label>
+                  <select
+                    value={newProduct.category}
+                    onChange={(e) => setNewProduct((prev: any) => ({ ...prev, category: e.target.value }))}
+                    className="w-full px-4 py-2.5 bg-gray-50 border border-gray-200 rounded-xl font-bold text-gray-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  >
+                    {readyMadeCats.map((c: string) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                    {!readyMadeCats.includes("Кухонные гарнитуры") && (
+                      <option value="Кухонные гарнитуры">Кухонные гарнитуры</option>
+                    )}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                    Название гарнитура / товара *
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Например: Кухонный гарнитур Лофт 2.0м"
+                    value={newProduct.name || ""}
+                    onChange={(e) => setNewProduct((prev: any) => ({ ...prev, name: e.target.value }))}
+                    className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl font-bold text-gray-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Article, Manufacturer, Unit */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                    Артикул
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="АРТ-123"
+                    value={newProduct.article || ""}
+                    onChange={(e) => setNewProduct((prev: any) => ({ ...prev, article: e.target.value }))}
+                    className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl font-medium text-gray-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                    Производитель / Бренд
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Собственное производство"
+                    value={newProduct.manufacturer || ""}
+                    onChange={(e) => setNewProduct((prev: any) => ({ ...prev, manufacturer: e.target.value }))}
+                    className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl font-medium text-gray-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                    Ед. измерения
+                  </label>
+                  <select
+                    value={newProduct.unit || "комплект"}
+                    onChange={(e) => setNewProduct((prev: any) => ({ ...prev, unit: e.target.value }))}
+                    className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl font-medium text-gray-900 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  >
+                    <option value="комплект">комплект</option>
+                    <option value="шт">шт</option>
+                    <option value="пог. м">пог. м</option>
+                    <option value="м2">м2</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Prices & Costs */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100">
+                <div>
+                  <label className="block text-xs font-bold text-indigo-900 uppercase tracking-wider mb-1.5">
+                    Закупочная цена / Себестоимость (₽)
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="0"
+                    value={newProduct.purchasePrice || ""}
+                    onChange={(e) => setNewProduct((prev: any) => ({ ...prev, purchasePrice: e.target.value }))}
+                    className="w-full px-4 py-2.5 bg-white border border-indigo-200 rounded-xl font-bold text-indigo-950 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-indigo-900 uppercase tracking-wider mb-1.5">
+                    Продажная розничная цена (₽)
+                  </label>
+                  <input
+                    type="number"
+                    placeholder="Оставьте пустым для авторасчета"
+                    value={newProduct.price || ""}
+                    onChange={(e) => setNewProduct((prev: any) => ({ ...prev, price: e.target.value }))}
+                    className="w-full px-4 py-2.5 bg-white border border-indigo-200 rounded-xl font-bold text-indigo-950 focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+              </div>
+
+              {/* Dimensions */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                  Габаритные размеры (мм)
+                </label>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <span className="text-xs text-gray-500 font-medium mb-1 block">Ширина</span>
+                    <input
+                      type="text"
+                      placeholder="2000"
+                      value={newProduct.kitchenWidth || newProduct.width || ""}
+                      onChange={(e) => setNewProduct((prev: any) => ({ ...prev, kitchenWidth: e.target.value, width: e.target.value }))}
+                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-xs text-gray-500 font-medium mb-1 block">Высота</span>
+                    <input
+                      type="text"
+                      placeholder="2140"
+                      value={newProduct.kitchenHeight || newProduct.height || ""}
+                      onChange={(e) => setNewProduct((prev: any) => ({ ...prev, kitchenHeight: e.target.value, height: e.target.value }))}
+                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                  </div>
+                  <div>
+                    <span className="text-xs text-gray-500 font-medium mb-1 block">Глубина</span>
+                    <input
+                      type="text"
+                      placeholder="600"
+                      value={newProduct.kitchenDepth || newProduct.depth || ""}
+                      onChange={(e) => setNewProduct((prev: any) => ({ ...prev, kitchenDepth: e.target.value, depth: e.target.value }))}
+                      className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Kitchen specific settings */}
+              {(newProduct.category?.toLowerCase().includes("кух") || newProduct.category === "Кухонный гарнитур" || newProduct.category === "Кухонные гарнитуры") && (
+                <div className="p-4 bg-gray-50 rounded-2xl border border-gray-200 space-y-4">
+                  <span className="text-xs font-extrabold text-indigo-700 uppercase tracking-wider block">
+                    Специфика кухонного гарнитура
+                  </span>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Вид гарнитура</label>
+                      <select
+                        value={newProduct.kitchenType || "Прямая"}
+                        onChange={(e) => setNewProduct((prev: any) => ({ ...prev, kitchenType: e.target.value }))}
+                        className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold outline-none"
+                      >
+                        <option value="Прямая">Прямая</option>
+                        <option value="Угловая">Угловая</option>
+                        <option value="П-образная">П-образная</option>
+                        <option value="с Островом">с Островом</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">Стиль</label>
+                      <select
+                        value={newProduct.kitchenStyle || "Современный"}
+                        onChange={(e) => setNewProduct((prev: any) => ({ ...prev, kitchenStyle: e.target.value }))}
+                        className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs font-bold outline-none"
+                      >
+                        <option value="Современный">Современный</option>
+                        <option value="Классический">Классический</option>
+                        <option value="Неоклассика">Неоклассика</option>
+                        <option value="Лофт">Лофт</option>
+                        <option value="Скандинавский">Скандинавский</option>
+                        <option value="Минимализм">Минимализм</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  {/* Corner / Wall details */}
+                  {newProduct.kitchenType === "Угловая" && (
+                    <div className="grid grid-cols-2 gap-3 pt-2">
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-600 mb-1">Левая сторона (мм)</label>
+                        <input
+                          type="text"
+                          placeholder="1500"
+                          value={newProduct.kitchenWidthLeft || ""}
+                          onChange={(e) => setNewProduct((prev: any) => ({ ...prev, kitchenWidthLeft: e.target.value }))}
+                          className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs outline-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-600 mb-1">Правая сторона (мм)</label>
+                        <input
+                          type="text"
+                          placeholder="2400"
+                          value={newProduct.kitchenWidthRight || ""}
+                          onChange={(e) => setNewProduct((prev: any) => ({ ...prev, kitchenWidthRight: e.target.value }))}
+                          className="w-full px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs outline-none"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Конструктор гарнитура / мебельного комплекта из товаров каталога */}
+              <div className="p-5 bg-indigo-50/60 rounded-2xl border border-indigo-100 space-y-5">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div>
+                    <h4 className="text-xs font-black text-indigo-950 uppercase tracking-wider flex items-center gap-2">
+                      <LayoutGrid className="w-4 h-4 text-indigo-600" /> Конструктор гарнитура из модулей каталога
+                    </h4>
+                    <p className="text-[11px] text-gray-500 mt-0.5">
+                      Сформируйте комплект из модулей, и система автоматически рассчитает необходимую фурнитуру
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFittingPickerTarget(null);
+                      setIsKitchenModulesModalOpen(true);
+                    }}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" /> Добавить кухонные модули
+                  </button>
+                </div>
+
+                {/* Список добавленных модулей */}
+                <div className="space-y-2">
+                  <div className="text-[11px] font-bold text-gray-700 uppercase tracking-wider">
+                    1. Выбранные модули гарнитура ({((newProduct.kitchenModules || []) as any[]).length} шт.):
+                  </div>
+                  {((newProduct.kitchenModules || []) as any[]).length === 0 ? (
+                    <div className="py-6 text-center border-2 border-dashed border-indigo-200/70 rounded-xl bg-white/70">
+                      <p className="text-gray-500 font-medium text-xs">Кухонные модули пока не добавлены</p>
+                      <p className="text-[11px] text-gray-400 mt-1">
+                        Нажмите <strong className="text-indigo-600 font-bold">«Добавить кухонные модули»</strong>, чтобы выбрать шкафы и тумбы из каталога.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                      {((newProduct.kitchenModules || []) as any[]).map((km: any, idx: number) => {
+                        const mod = catalogProducts.find((cp: any) => String(cp.id) === String(km.id));
+                        if (!mod) return null;
+                        const itemPrice = Number(mod.purchasePrice || mod.price || 0);
+                        const subtotal = itemPrice * km.qty;
+                        return (
+                          <div key={km.id || idx} className="flex items-center justify-between p-3 rounded-xl bg-white border border-indigo-100 hover:border-indigo-300 transition-all text-xs">
+                            <div className="flex-1 min-w-0 pr-3">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="font-bold text-gray-900 truncate">{mod.name}</span>
+                                {mod.article && <span className="text-[10px] bg-gray-100 text-gray-700 px-1.5 py-0.5 rounded font-mono">Арт: {mod.article}</span>}
+                                {mod.moduleGroup && <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded font-bold">{mod.moduleGroup}</span>}
+                              </div>
+                              <div className="text-[11px] text-gray-500 mt-0.5 flex items-center gap-2">
+                                <span>Цена за ед.: <strong>{itemPrice.toLocaleString()} ₽</strong></span>
+                                <span>• Сумма: <strong className="text-indigo-700">{subtotal.toLocaleString()} ₽</strong></span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <div className="flex items-center border border-gray-300 rounded-lg bg-gray-50 overflow-hidden">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const current = [...(newProduct.kitchenModules || [])];
+                                    if (km.qty > 1) {
+                                      current[idx].qty -= 1;
+                                    } else {
+                                      current.splice(idx, 1);
+                                    }
+                                    setNewProduct((prev: any) => ({ ...prev, kitchenModules: current }));
+                                  }}
+                                  className="px-2.5 py-1 text-gray-600 hover:bg-gray-200 font-bold text-xs cursor-pointer"
+                                >
+                                  -
+                                </button>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  value={km.qty}
+                                  onChange={(e) => {
+                                    const val = Math.max(1, parseInt(e.target.value) || 1);
+                                    const current = [...(newProduct.kitchenModules || [])];
+                                    current[idx].qty = val;
+                                    setNewProduct((prev: any) => ({ ...prev, kitchenModules: current }));
+                                  }}
+                                  className="w-10 text-center font-bold text-xs py-1 bg-white outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const current = [...(newProduct.kitchenModules || [])];
+                                    current[idx].qty += 1;
+                                    setNewProduct((prev: any) => ({ ...prev, kitchenModules: current }));
+                                  }}
+                                  className="px-2.5 py-1 text-gray-600 hover:bg-gray-200 font-bold text-xs cursor-pointer"
+                                >
+                                  +
+                                </button>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const current = [...(newProduct.kitchenModules || [])];
+                                  current.splice(idx, 1);
+                                  setNewProduct((prev: any) => ({ ...prev, kitchenModules: current }));
+                                }}
+                                className="p-1.5 text-red-500 hover:bg-red-50 rounded-lg transition-colors cursor-pointer"
+                                title="Удалить из гарнитура"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Сопутствующие товары и фурнитура (расчёт) */}
+                {calculatedFittingDemands.length > 0 && (
+                  <div className="space-y-3 pt-2 border-t border-indigo-100">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="text-[11px] font-bold text-indigo-950 uppercase tracking-wider flex items-center gap-1.5">
+                          <span>2. Сопутствующие товары и фурнитура (авто-расчёт)</span>
+                        </div>
+                        <p className="text-[11px] text-gray-500 mt-0.5">
+                          Потребность сформирована автоматически по выбранным модулям. Выберите конкретные модели из каталога:
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-2.5">
+                      {calculatedFittingDemands.map((demand) => {
+                        const selectedId = newProduct.selectedFittings?.[demand.key];
+                        const selectedProd = selectedId ? catalogProducts.find((cp: any) => String(cp.id) === String(selectedId)) : null;
+                        const unitPrice = Number(selectedProd?.purchasePrice || selectedProd?.price || 0);
+                        const demandTotalCost = unitPrice * demand.qty;
+
+                        return (
+                          <div
+                            key={demand.key}
+                            className={`p-3 rounded-xl border transition-all ${
+                              selectedProd
+                                ? "bg-white border-emerald-200 shadow-2xs"
+                                : "bg-amber-50/70 border-amber-200"
+                            }`}
+                          >
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                              <div className="flex items-center gap-2">
+                                <span className="font-extrabold text-xs text-gray-900">{demand.label}</span>
+                                <span className="text-[11px] font-black bg-indigo-100 text-indigo-900 px-2 py-0.5 rounded-md">
+                                  Требуется: {demand.qty} шт.
+                                </span>
+                              </div>
+
+                              {selectedProd ? (
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-bold text-emerald-800">
+                                    Итого: {demandTotalCost.toLocaleString()} ₽ ({unitPrice.toLocaleString()} ₽/шт.)
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setFittingPickerTarget(demand);
+                                      setKitchenModuleSearch("");
+                                      setIsKitchenModulesModalOpen(true);
+                                    }}
+                                    className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold text-[11px] rounded-lg transition-all cursor-pointer"
+                                  >
+                                    Заменить
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setNewProduct((prev: any) => {
+                                        const next = { ...(prev.selectedFittings || {}) };
+                                        delete next[demand.key];
+                                        return { ...prev, selectedFittings: next };
+                                      });
+                                    }}
+                                    className="p-1 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer"
+                                    title="Сбросить выбор"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setFittingPickerTarget(demand);
+                                    setKitchenModuleSearch("");
+                                    setIsKitchenModulesModalOpen(true);
+                                  }}
+                                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-2xs transition-all cursor-pointer flex items-center gap-1"
+                                >
+                                  <Plus className="w-3.5 h-3.5" /> Выбрать {demand.category} из каталога
+                                </button>
+                              )}
+                            </div>
+
+                            {selectedProd && (
+                              <div className="mt-2 pt-2 border-t border-gray-100 flex items-center gap-3 text-xs text-gray-700">
+                                <div className="w-8 h-8 rounded-lg bg-gray-100 overflow-hidden shrink-0 flex items-center justify-center border border-gray-200">
+                                  {selectedProd.images?.[0] || selectedProd.image ? (
+                                    <img src={selectedProd.images?.[0] || selectedProd.image} alt={selectedProd.name} className="w-full h-full object-cover" />
+                                  ) : (
+                                    <LayoutGrid className="w-4 h-4 text-gray-400" />
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="font-bold text-gray-900 truncate">{selectedProd.name}</div>
+                                  {selectedProd.article && <div className="text-[10px] text-gray-500 font-mono">Артикул: {selectedProd.article}</div>}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. Расчёт площади и стоимости фасадов по 4 группам модулей (авто-расчёт м²) */}
+                {calculatedSetSummary.totalFacadeAreaM2 > 0 && (
+                  <div className="space-y-3 pt-3 border-t border-indigo-100">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div>
+                        <div className="text-[11px] font-bold text-indigo-950 uppercase tracking-wider flex items-center gap-1.5">
+                          <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>3. Фасады кухонного гарнитура (4 группы модулей)</span>
+                        </div>
+                        <p className="text-[11px] text-gray-500 mt-0.5">
+                          Индивидуальный выбор заказных фасадов для каждой группы модулей (Нижние, Верхние, Антресоли, Пеналы)
+                        </p>
+                      </div>
+                      <span className="text-xs font-black bg-indigo-100 text-indigo-950 px-2.5 py-1 rounded-xl border border-indigo-200">
+                        Общая площадь: {calculatedSetSummary.totalFacadeAreaM2.toFixed(2)} м²
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      {[
+                        { key: "lower", title: "1. Нижние модули", groupName: "Нижние", stateKey: "Lower", pickerKey: "facade_lower", color: "bg-blue-500" },
+                        { key: "upper", title: "2. Верхние модули", groupName: "Верхние", stateKey: "Upper", pickerKey: "facade_upper", color: "bg-indigo-500" },
+                        { key: "mezzanine", title: "3. Антресольные модули", groupName: "Антресоли", stateKey: "Mezzanine", pickerKey: "facade_mezzanine", color: "bg-emerald-500" },
+                        { key: "case", title: "4. Пеналы и колонны", groupName: "Пеналы", stateKey: "Case", pickerKey: "facade_case", color: "bg-purple-500" },
+                      ].map((grp) => {
+                        const detail = calculatedSetSummary.facadeGroupDetails[grp.key] || {
+                          area: 0,
+                          prod: null,
+                          purchPriceM2: 0,
+                          sellPriceM2: 0,
+                          purchSubtotal: 0,
+                          sellSubtotal: 0,
+                        };
+
+                        const selectedProdId = newProduct[`facade${grp.stateKey}Product`] || (grp.key === "lower" ? newProduct.facadeBottomProduct : grp.key === "upper" ? newProduct.facadeTopProduct : "");
+                        const selectedPriceM2 = newProduct[`facade${grp.stateKey}PriceM2`] || (grp.key === "lower" ? newProduct.facadeBottomPriceM2 : grp.key === "upper" ? newProduct.facadeTopPriceM2 : 0);
+                        const selectedSellPriceM2 = newProduct[`facade${grp.stateKey}SellPriceM2`] || (grp.key === "lower" ? newProduct.facadeBottomSellPriceM2 : grp.key === "upper" ? newProduct.facadeTopSellPriceM2 : 0);
+
+                        return (
+                          <div key={grp.key} className="p-3 bg-white rounded-xl border border-gray-200 space-y-2 shadow-xs">
+                            <div className="flex items-center justify-between">
+                              <span className="font-extrabold text-xs text-gray-900 flex items-center gap-1.5">
+                                <span className={`w-2.5 h-2.5 rounded-full ${grp.color}`}></span>
+                                {grp.title}
+                              </span>
+                              <span className="text-[11px] font-bold text-indigo-900 bg-indigo-50 px-2 py-0.5 rounded-md border border-indigo-100">
+                                {detail.area.toFixed(2)} м²
+                              </span>
+                            </div>
+
+                            <div>
+                              <label className="block text-[11px] font-medium text-gray-500 mb-1">Заказной фасад из каталога:</label>
+                              <div className="flex gap-1.5">
+                                <select
+                                  value={selectedProdId || ""}
+                                  onChange={(e) => {
+                                    const prodId = e.target.value;
+                                    const prod = allFacadeOptions.find((f: any) => String(f.id) === String(prodId));
+                                    setNewProduct((prev: any) => ({
+                                      ...prev,
+                                      [`facade${grp.stateKey}Product`]: prodId,
+                                      [`facade${grp.stateKey}Material`]: prod ? prod.name : "",
+                                      [`facade${grp.stateKey}PriceM2`]: prod ? prod.purchasePrice : prev[`facade${grp.stateKey}PriceM2`],
+                                      [`facade${grp.stateKey}SellPriceM2`]: prod ? prod.price : prev[`facade${grp.stateKey}SellPriceM2`],
+                                      ...(grp.key === "lower" ? { facadeBottomProduct: prodId, facadeBottomPriceM2: prod?.purchasePrice, facadeBottomSellPriceM2: prod?.price } : {}),
+                                      ...(grp.key === "upper" ? { facadeTopProduct: prodId, facadeTopPriceM2: prod?.purchasePrice, facadeTopSellPriceM2: prod?.price } : {}),
+                                    }));
+                                  }}
+                                  className="flex-1 px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg bg-white outline-none font-medium truncate focus:border-indigo-500"
+                                >
+                                  <option value="">-- Выбрать фасад из каталога или прайса --</option>
+                                  {allFacadeOptions.map((f: any) => (
+                                    <option key={f.id} value={f.id}>
+                                      {f.name} {f.price ? `(${f.price.toLocaleString()} ₽/м²)` : ""}
+                                    </option>
+                                  ))}
+                                </select>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setFittingPickerTarget({
+                                      key: grp.pickerKey,
+                                      label: `Заказные фасады: ${grp.title}`,
+                                      category: "Фасады",
+                                      qty: detail.area || 1,
+                                    });
+                                    setKitchenModuleSearch("");
+                                    setIsKitchenModulesModalOpen(true);
+                                  }}
+                                  className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] rounded-lg border border-indigo-200 transition-all cursor-pointer whitespace-nowrap"
+                                >
+                                  Каталог
+                                </button>
+                              </div>
+                            </div>
+
+                            {!selectedProdId && (
+                              <div className="grid grid-cols-2 gap-2 pt-1">
+                                <div>
+                                  <label className="block text-[10px] text-gray-500">Закупка ₽/м²:</label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={selectedPriceM2 || ""}
+                                    onChange={(e) => {
+                                      const val = parseFloat(e.target.value) || 0;
+                                      setNewProduct((prev: any) => ({
+                                        ...prev,
+                                        [`facade${grp.stateKey}PriceM2`]: val,
+                                        ...(grp.key === "lower" ? { facadeBottomPriceM2: val } : {}),
+                                        ...(grp.key === "upper" ? { facadeTopPriceM2: val } : {}),
+                                      }));
+                                    }}
+                                    placeholder="0 ₽"
+                                    className="w-full px-2 py-1 text-xs border border-gray-200 rounded-lg outline-none font-bold"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-gray-500">Продажа ₽/м²:</label>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    value={selectedSellPriceM2 || ""}
+                                    onChange={(e) => {
+                                      const val = parseFloat(e.target.value) || 0;
+                                      setNewProduct((prev: any) => ({
+                                        ...prev,
+                                        [`facade${grp.stateKey}SellPriceM2`]: val,
+                                        ...(grp.key === "lower" ? { facadeBottomSellPriceM2: val } : {}),
+                                        ...(grp.key === "upper" ? { facadeTopSellPriceM2: val } : {}),
+                                      }));
+                                    }}
+                                    placeholder="0 ₽"
+                                    className="w-full px-2 py-1 text-xs border border-gray-200 rounded-lg outline-none font-bold"
+                                  />
+                                </div>
+                              </div>
+                            )}
+
+                            {detail.area > 0 && (detail.purchPriceM2 > 0 || detail.sellPriceM2 > 0) && (
+                              <div className="text-[11px] bg-slate-50 p-2 rounded-lg border border-slate-100 space-y-0.5">
+                                <div className="flex justify-between text-gray-700">
+                                  <span>Закупка фасадов:</span>
+                                  <strong className="text-gray-900">{detail.purchSubtotal.toLocaleString()} ₽</strong>
+                                </div>
+                                <div className="flex justify-between text-emerald-800 font-bold">
+                                  <span>Продажа фасадов:</span>
+                                  <strong>{detail.sellSubtotal.toLocaleString()} ₽</strong>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* 4. Итоговый сводный расчет стоимости (Закупка + Продажа) */}
+                {calculatedSetSummary.grandTotalPurchasePrice > 0 && (
+                  <div className="pt-3 bg-gradient-to-r from-indigo-900 to-slate-900 text-white p-5 rounded-2xl shadow-md space-y-4">
+                    <div className="flex items-center justify-between border-b border-indigo-700/60 pb-3 flex-wrap gap-2">
+                      <div>
+                        <span className="font-black text-xs uppercase tracking-wider text-indigo-200 flex items-center gap-1.5">
+                          <Calculator className="w-4 h-4 text-emerald-400" /> Сводный расчет цен готового гарнитура
+                        </span>
+                        <p className="text-[11px] text-indigo-300 mt-0.5">
+                          Рассчитано от всех выбранных кухонных модулей, фурнитуры и фасадов
+                        </p>
+                      </div>
+
+                      <label className="flex items-center gap-2 cursor-pointer bg-indigo-800/60 hover:bg-indigo-800 px-3 py-1.5 rounded-xl border border-indigo-600/60 text-xs transition-all">
+                        <input
+                          type="checkbox"
+                          checked={autoSyncSetPrices}
+                          onChange={(e) => setAutoSyncSetPrices(e.target.checked)}
+                          className="rounded text-emerald-500 focus:ring-emerald-400 w-4 h-4"
+                        />
+                        <span className="font-bold text-emerald-300">Авто-синхронизация цен</span>
+                      </label>
+                    </div>
+
+                    {/* Детализация составляющих */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs bg-indigo-950/50 p-3 rounded-xl border border-indigo-800/50">
+                      <div className="space-y-1">
+                        <div className="text-[10px] text-indigo-300 uppercase font-bold">1. Модули шкафов</div>
+                        <div className="flex justify-between text-indigo-100">
+                          <span>Закупка:</span>
+                          <strong>{calculatedSetSummary.modulesPurchaseSubtotal.toLocaleString()} ₽</strong>
+                        </div>
+                        <div className="flex justify-between text-emerald-300 font-bold">
+                          <span>Продажа:</span>
+                          <strong>{calculatedSetSummary.modulesSellingSubtotal.toLocaleString()} ₽</strong>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="text-[10px] text-indigo-300 uppercase font-bold">2. Фурнитура</div>
+                        <div className="flex justify-between text-indigo-100">
+                          <span>Закупка:</span>
+                          <strong>{calculatedSetSummary.fittingsPurchaseSubtotal.toLocaleString()} ₽</strong>
+                        </div>
+                        <div className="flex justify-between text-emerald-300 font-bold">
+                          <span>Продажа:</span>
+                          <strong>{calculatedSetSummary.fittingsSellingSubtotal.toLocaleString()} ₽</strong>
+                        </div>
+                      </div>
+
+                      <div className="space-y-1">
+                        <div className="text-[10px] text-indigo-300 uppercase font-bold">3. Фасады ({calculatedSetSummary.totalFacadeAreaM2.toFixed(2)} м²)</div>
+                        <div className="flex justify-between text-indigo-100">
+                          <span>Закупка:</span>
+                          <strong>{calculatedSetSummary.facadesPurchaseSubtotal.toLocaleString()} ₽</strong>
+                        </div>
+                        <div className="flex justify-between text-emerald-300 font-bold">
+                          <span>Продажа:</span>
+                          <strong>{calculatedSetSummary.facadesSellingSubtotal.toLocaleString()} ₽</strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Итоговый результат */}
+                    <div className="flex items-center justify-between flex-wrap gap-4 pt-2 border-t border-indigo-700/60">
+                      <div className="flex items-center gap-6 flex-wrap">
+                        <div>
+                          <div className="text-[10px] uppercase font-bold text-indigo-300">Закупочная цена (себестоимость)</div>
+                          <div className="text-xl font-black text-white">{calculatedSetSummary.grandTotalPurchasePrice.toLocaleString()} ₽</div>
+                        </div>
+
+                        <div className="h-8 w-px bg-indigo-700/60 hidden sm:block"></div>
+
+                        <div>
+                          <div className="text-[10px] uppercase font-bold text-emerald-300">Продажная цена (розница)</div>
+                          <div className="text-2xl font-black text-emerald-400">{calculatedSetSummary.grandTotalSellingPrice.toLocaleString()} ₽</div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setNewProduct((prev: any) => ({
+                            ...prev,
+                            purchasePrice: calculatedSetSummary.grandTotalPurchasePrice,
+                            price: calculatedSetSummary.grandTotalSellingPrice,
+                          }));
+                        }}
+                        className="px-4 py-2.5 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold rounded-xl text-xs shadow-lg transition-all cursor-pointer flex items-center gap-2"
+                      >
+                        <Check className="w-4 h-4" />
+                        <span>Применить цены в карточку товара</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Photos & Images */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
+                  Фотографии гарнитура / товара
+                </label>
+                <div className="space-y-3">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Вставьте ссылку на изображение (https://...)"
+                      value={imageUrlInput}
+                      onChange={(e) => setImageUrlInput(e.target.value)}
+                      className="flex-1 px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (imageUrlInput.trim()) {
+                          setNewProduct((prev: any) => ({
+                            ...prev,
+                            images: [...(prev.images || []), imageUrlInput.trim()],
+                          }));
+                          setImageUrlInput("");
+                        }
+                      }}
+                      className="px-4 py-2 bg-indigo-600 text-white font-bold rounded-xl text-xs hover:bg-indigo-700 transition-all cursor-pointer"
+                    >
+                      + Добавить URL
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <label className="px-4 py-2 bg-gray-100 text-gray-700 hover:bg-gray-200 font-bold rounded-xl text-xs cursor-pointer transition-all flex items-center gap-2">
+                      <Upload className="w-4 h-4" />
+                      Загрузить файл с устройства
+                      <input
+                        type="file"
+                        accept="image/*"
+                        multiple
+                        onChange={(e) => {
+                          const files = e.target.files;
+                          if (!files || files.length === 0) return;
+                          Array.from(files).forEach((file) => {
+                            const reader = new FileReader();
+                            reader.onload = (ev) => {
+                              if (ev.target?.result) {
+                                setNewProduct((prev: any) => ({
+                                  ...prev,
+                                  images: [...(prev.images || []), ev.target!.result as string],
+                                }));
+                              }
+                            };
+                            reader.readAsDataURL(file);
+                          });
+                        }}
+                        className="hidden"
+                      />
+                    </label>
+                    <span className="text-[11px] text-gray-400">Поддерживаются PNG, JPG, WebP</span>
+                  </div>
+
+                  {/* Thumbnail Gallery */}
+                  {newProduct.images && newProduct.images.length > 0 && (
+                    <div className="flex flex-wrap gap-3 pt-2">
+                      {newProduct.images.map((imgUrl: string, idx: number) => (
+                        <div key={idx} className="relative w-20 h-20 rounded-xl overflow-hidden border border-gray-200 group">
+                          <img src={imgUrl} alt={`фото ${idx + 1}`} className="w-full h-full object-cover" />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setNewProduct((prev: any) => ({
+                                ...prev,
+                                images: prev.images.filter((_: any, i: number) => i !== idx),
+                              }));
+                            }}
+                            className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full opacity-80 hover:opacity-100 transition-opacity"
+                            title="Удалить фото"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
+                  Описание товара / Комплектация
+                </label>
+                <textarea
+                  rows={3}
+                  placeholder="Подробное описание готовой мебели, используемых материалов, комплектации..."
+                  value={newProduct.description || ""}
+                  onChange={(e) => setNewProduct((prev: any) => ({ ...prev, description: e.target.value }))}
+                  className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-8 py-4 border-t border-gray-100 bg-gray-50 flex justify-end gap-3 rounded-b-3xl">
+              <button
+                onClick={() => { setIsAddingProduct(false); setEditingProduct(null); }}
+                disabled={isSavingProduct}
+                className="px-6 py-2.5 bg-white border border-gray-200 text-gray-700 font-bold rounded-xl hover:bg-gray-100 transition-all text-xs cursor-pointer"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={handleSaveReadyMadeProduct}
+                disabled={!newProduct.name || !newProduct.name.trim() || isSavingProduct}
+                className="px-8 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-md text-xs flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+              >
+                {isSavingProduct ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Сохранение...
+                  </>
+                ) : (
+                  editingProduct ? "Сохранить изменения" : "Добавить в каталог"
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Модальное окно подбора модулей или конкретной фурнитуры из каталога */}
+      {isKitchenModulesModalOpen && (
+        <div className="fixed inset-0 bg-black/60 z-[120] flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white w-full max-w-4xl rounded-[28px] shadow-2xl p-6 flex flex-col space-y-5 max-h-[90vh] overflow-hidden">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+              <div>
+                <h3 className="text-lg font-extrabold text-indigo-950 flex items-center gap-2">
+                  <LayoutGrid className="w-5 h-5 text-indigo-600" />
+                  {fittingPickerTarget ? (
+                    <span>Выбор: {fittingPickerTarget.label} (требуется {fittingPickerTarget.qty} шт.)</span>
+                  ) : (
+                    <span>Добавление кухонных модулей из каталога</span>
+                  )}
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {fittingPickerTarget ? (
+                    <span>Автоматический фильтр: показаны только подходящие позиция из категории «<strong>{fittingPickerTarget.category}</strong>»</span>
+                  ) : (
+                    <span>Выберите модули шкафов из каталога для сборки готового гарнитура</span>
+                  )}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setIsKitchenModulesModalOpen(false);
+                  setFittingPickerTarget(null);
+                }}
+                className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-full transition-all cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Фильтры и поиск */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100/60">
+              <div className="md:col-span-2">
+                <label className="block text-[11px] font-bold text-indigo-950 mb-1">Поиск по названию или артикулу</label>
+                <div className="relative">
+                  <Search className="w-4 h-4 text-gray-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    value={kitchenModuleSearch}
+                    onChange={(e) => setKitchenModuleSearch(e.target.value)}
+                    placeholder="Введите название, модель или артикул..."
+                    className="w-full pl-9 pr-3 py-2 text-xs border border-gray-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
+                  />
+                </div>
+              </div>
+
+              {!fittingPickerTarget ? (
+                <div>
+                  <label className="block text-[11px] font-bold text-indigo-950 mb-1">Группа кухонных модулей</label>
+                  <select
+                    value={kitchenModuleGroupFilter}
+                    onChange={(e) => setKitchenModuleGroupFilter(e.target.value)}
+                    className="w-full px-3 py-2 text-xs border border-gray-200 rounded-xl bg-white outline-none focus:ring-2 focus:ring-indigo-500 font-bold text-gray-800"
+                  >
+                    <option value="Все">Все группы модулей</option>
+                    <option value="Нижние">Нижние модули</option>
+                    <option value="Верхние">Верхние модули</option>
+                    <option value="Антресоли">Антресольные модули</option>
+                    <option value="Пеналы">Пеналы / Колонны</option>
+                  </select>
+                </div>
+              ) : (
+                <div className="flex items-center justify-end">
+                  <span className="text-xs font-bold text-indigo-900 bg-indigo-100/80 px-3 py-2 rounded-xl">
+                    Фильтр: {fittingPickerTarget.category} {fittingPickerTarget.hingeType ? `(${fittingPickerTarget.hingeType})` : ""}
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Список позиций из каталога */}
+            <div className="flex-1 overflow-y-auto pr-1 space-y-2.5 min-h-[250px]">
+              {(() => {
+                const isFacadeTarget = fittingPickerTarget && (fittingPickerTarget.category === "Фасады" || fittingPickerTarget.key?.startsWith("facade_"));
+                const itemsPool = isFacadeTarget ? allFacadeOptions : catalogProducts;
+
+                const filtered = itemsPool.filter((p: any) => {
+                  // Search string filter
+                  if (kitchenModuleSearch.trim()) {
+                    const searchStr = kitchenModuleSearch.toLowerCase().trim();
+                    const nameMatch = (p.name || "").toLowerCase().includes(searchStr);
+                    const artMatch = p.article && p.article.toLowerCase().includes(searchStr);
+                    const groupMatch = p.moduleGroup && p.moduleGroup.toLowerCase().includes(searchStr);
+                    const catMatch = (p.category || "").toLowerCase().includes(searchStr);
+                    const brandMatch = (p.brand || "").toLowerCase().includes(searchStr);
+                    if (!nameMatch && !artMatch && !groupMatch && !catMatch && !brandMatch) return false;
+                  }
+
+                  if (fittingPickerTarget) {
+                    if (isFacadeTarget) {
+                      return true;
+                    }
+                    // Filter specifically for hardware requirement
+                    const catLower = (p.category || "").toLowerCase();
+                    const targetCatLower = (fittingPickerTarget.category || "").toLowerCase();
+
+                    let matchesCategory = false;
+                    if (targetCatLower.includes("петл")) {
+                      matchesCategory = catLower.includes("петл");
+                    } else if (targetCatLower.includes("выдвиж") || targetCatLower.includes("направл") || targetCatLower.includes("система")) {
+                      matchesCategory = catLower.includes("выдвиж") || catLower.includes("направл") || catLower.includes("ящик");
+                    } else if (targetCatLower.includes("подъем") || targetCatLower.includes("подъём")) {
+                      matchesCategory = catLower.includes("подъем") || catLower.includes("подъём") || catLower.includes("газлифт");
+                    } else if (targetCatLower.includes("ручк")) {
+                      matchesCategory = catLower.includes("ручк") || catLower.includes("лицевая");
+                    } else if (targetCatLower.includes("опор") || targetCatLower.includes("цокол") || targetCatLower.includes("крепеж") || targetCatLower.includes("крепёж")) {
+                      matchesCategory = catLower.includes("опор") || catLower.includes("цокол") || catLower.includes("крепеж") || catLower.includes("крепёж") || catLower.includes("ножк");
+                    } else {
+                      matchesCategory = catLower.includes(targetCatLower);
+                    }
+
+                    if (!matchesCategory) return false;
+
+                    if (fittingPickerTarget.hingeType && p.hingeType) {
+                      if (p.hingeType !== fittingPickerTarget.hingeType) return false;
+                    }
+
+                    return true;
+                  } else {
+                    // Filter for modules only
+                    const isMod = p.category === "Кухонные модули" || (p.category || "").toLowerCase().includes("модул") || Boolean(p.moduleGroup);
+                    if (!isMod) return false;
+
+                    if (kitchenModuleGroupFilter !== "Все" && p.moduleGroup !== kitchenModuleGroupFilter) {
+                      return false;
+                    }
+                    return true;
+                  }
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="py-12 text-center border-2 border-dashed border-gray-200 rounded-2xl bg-gray-50/50">
+                      <p className="text-gray-500 font-bold">Подходящие позиции не найдены</p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        {fittingPickerTarget
+                          ? `В каталоге пока нет товаров в категории «${fittingPickerTarget.category}». Создайте их в разделе «Товары».`
+                          : "В каталоге не найдено кухонных модулей. Проверьте категорию или добавьте модули."}
+                      </p>
+                    </div>
+                  );
+                }
+
+                return filtered.slice(0, 100).map((mod: any) => {
+                  const price = Number(mod.purchasePrice || mod.price || 0);
+
+                  if (fittingPickerTarget) {
+                    const isCurrentlySelected =
+                      fittingPickerTarget.key === "facade_lower" || fittingPickerTarget.key === "facade_bottom"
+                        ? (newProduct.facadeLowerProduct || newProduct.facadeBottomProduct) === mod.id
+                        : fittingPickerTarget.key === "facade_upper" || fittingPickerTarget.key === "facade_top"
+                        ? (newProduct.facadeUpperProduct || newProduct.facadeTopProduct) === mod.id
+                        : fittingPickerTarget.key === "facade_mezzanine"
+                        ? newProduct.facadeMezzanineProduct === mod.id
+                        : fittingPickerTarget.key === "facade_case"
+                        ? newProduct.facadeCaseProduct === mod.id
+                        : newProduct.selectedFittings?.[fittingPickerTarget.key] === mod.id;
+
+                    const isFacadePicker = fittingPickerTarget.category === "Фасады" || fittingPickerTarget.key.startsWith("facade_");
+
+                    return (
+                      <div
+                        key={mod.id}
+                        className={`flex items-center justify-between p-3.5 rounded-2xl border transition-all gap-3 ${
+                          isCurrentlySelected ? "bg-emerald-50 border-emerald-300 shadow-2xs" : "bg-white border-gray-200 hover:border-gray-300"
+                        }`}
+                      >
+                        <div className="flex-1 min-w-0 flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-xl bg-gray-100 border border-gray-200 overflow-hidden shrink-0 flex items-center justify-center">
+                            {mod.images?.[0] || mod.image ? (
+                              <img src={mod.images?.[0] || mod.image} alt={mod.name} className="w-full h-full object-cover" />
+                            ) : (
+                              <LayoutGrid className="w-5 h-5 text-gray-400" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-extrabold text-gray-900 text-sm">{mod.name}</span>
+                              {mod.article && (
+                                <span className="text-[10px] font-mono bg-gray-100 text-gray-700 px-2 py-0.5 rounded-md font-semibold">
+                                  Арт: {mod.article}
+                                </span>
+                              )}
+                              {mod.hingeType && (
+                                <span className="text-[10px] font-bold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-md">
+                                  {mod.hingeType}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-3">
+                              <span>Цена: <strong className="text-indigo-700">{price.toLocaleString()} ₽ {isFacadePicker ? "/ м²" : "/ шт."}</strong></span>
+                              <span>Итого за {isFacadePicker ? `${fittingPickerTarget.qty.toFixed(2)} м²` : `${fittingPickerTarget.qty} шт.`}: <strong className="text-emerald-700 font-black">{(price * fittingPickerTarget.qty).toLocaleString()} ₽</strong></span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (fittingPickerTarget.key === "facade_lower" || fittingPickerTarget.key === "facade_bottom") {
+                              setNewProduct((prev: any) => ({
+                                ...prev,
+                                facadeLowerProduct: mod.id,
+                                facadeLowerMaterial: mod.name,
+                                facadeLowerPriceM2: mod.purchasePrice || 0,
+                                facadeLowerSellPriceM2: mod.price || 0,
+                                facadeBottomProduct: mod.id,
+                                facadeBottomMaterial: mod.name,
+                                facadeBottomPriceM2: mod.purchasePrice || 0,
+                                facadeBottomSellPriceM2: mod.price || 0,
+                              }));
+                            } else if (fittingPickerTarget.key === "facade_upper" || fittingPickerTarget.key === "facade_top") {
+                              setNewProduct((prev: any) => ({
+                                ...prev,
+                                facadeUpperProduct: mod.id,
+                                facadeUpperMaterial: mod.name,
+                                facadeUpperPriceM2: mod.purchasePrice || 0,
+                                facadeUpperSellPriceM2: mod.price || 0,
+                                facadeTopProduct: mod.id,
+                                facadeTopMaterial: mod.name,
+                                facadeTopPriceM2: mod.purchasePrice || 0,
+                                facadeTopSellPriceM2: mod.price || 0,
+                              }));
+                            } else if (fittingPickerTarget.key === "facade_mezzanine") {
+                              setNewProduct((prev: any) => ({
+                                ...prev,
+                                facadeMezzanineProduct: mod.id,
+                                facadeMezzanineMaterial: mod.name,
+                                facadeMezzaninePriceM2: mod.purchasePrice || 0,
+                                facadeMezzanineSellPriceM2: mod.price || 0,
+                              }));
+                            } else if (fittingPickerTarget.key === "facade_case") {
+                              setNewProduct((prev: any) => ({
+                                ...prev,
+                                facadeCaseProduct: mod.id,
+                                facadeCaseMaterial: mod.name,
+                                facadeCasePriceM2: mod.purchasePrice || 0,
+                                facadeCaseSellPriceM2: mod.price || 0,
+                              }));
+                            } else {
+                              setNewProduct((prev: any) => ({
+                                ...prev,
+                                selectedFittings: {
+                                  ...(prev.selectedFittings || {}),
+                                  [fittingPickerTarget.key]: mod.id,
+                                },
+                              }));
+                            }
+                            setIsKitchenModulesModalOpen(false);
+                            setFittingPickerTarget(null);
+                          }}
+                          className={`px-4 py-2 font-bold text-xs rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+                            isCurrentlySelected
+                              ? "bg-emerald-600 text-white shadow-sm"
+                              : "bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm"
+                          }`}
+                        >
+                          <Check className="w-4 h-4" />
+                          {isCurrentlySelected ? "Выбрано" : "Выбрать эту позицию"}
+                        </button>
+                      </div>
+                    );
+                  }
+
+                  // Standard module selection
+                  const currentModules = newProduct.kitchenModules || [];
+                  const existingIdx = currentModules.findIndex((m: any) => String(m.id) === String(mod.id));
+                  const isAdded = existingIdx >= 0;
+                  const currentQty = isAdded ? currentModules[existingIdx].qty : 0;
+
+                  return (
+                    <div
+                      key={mod.id}
+                      className={`flex flex-col sm:flex-row items-start sm:items-center justify-between p-3.5 rounded-2xl border transition-all gap-3 ${
+                        isAdded ? "bg-indigo-50/50 border-indigo-200 shadow-2xs" : "bg-white border-gray-200 hover:border-gray-300"
+                      }`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-extrabold text-gray-900 text-sm">{mod.name}</span>
+                          {mod.article && (
+                            <span className="text-[10px] font-mono bg-gray-100 text-gray-700 px-2 py-0.5 rounded-md font-semibold">
+                              Арт: {mod.article}
+                            </span>
+                          )}
+                          {mod.moduleGroup && (
+                            <span className="text-[10px] font-bold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-md">
+                              {mod.moduleGroup}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1 flex items-center gap-3 flex-wrap">
+                          {price > 0 && <span>Цена: <strong className="text-indigo-700">{price.toLocaleString()} ₽</strong></span>}
+                          {mod.width && <span>Ширина: <strong className="text-gray-700">{mod.width} мм</strong></span>}
+                          {(mod.height || mod.moduleHeight) && <span>Высота: <strong className="text-gray-700">{mod.height || mod.moduleHeight} мм</strong></span>}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                        <div className="flex items-center border border-gray-300 rounded-xl bg-white overflow-hidden shadow-2xs">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = [...(newProduct.kitchenModules || [])];
+                              const idx = updated.findIndex((m: any) => String(m.id) === String(mod.id));
+                              if (idx >= 0) {
+                                if (updated[idx].qty > 1) {
+                                  updated[idx].qty -= 1;
+                                } else {
+                                  updated.splice(idx, 1);
+                                }
+                                setNewProduct((prev: any) => ({ ...prev, kitchenModules: updated }));
+                              }
+                            }}
+                            disabled={!isAdded}
+                            className="px-3 py-1.5 text-gray-600 hover:bg-gray-100 disabled:opacity-30 font-bold text-sm cursor-pointer"
+                          >
+                            -
+                          </button>
+                          <span className="px-3 py-1 font-bold text-xs text-gray-800 min-w-[28px] text-center">
+                            {currentQty}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = [...(newProduct.kitchenModules || [])];
+                              const idx = updated.findIndex((m: any) => String(m.id) === String(mod.id));
+                              if (idx >= 0) {
+                                updated[idx].qty += 1;
+                              } else {
+                                updated.push({ id: mod.id, qty: 1 });
+                              }
+                              setNewProduct((prev: any) => ({ ...prev, kitchenModules: updated }));
+                            }}
+                            className="px-3 py-1.5 text-indigo-600 hover:bg-indigo-50 font-bold text-sm cursor-pointer"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+
+            <div className="pt-3 border-t border-gray-100 flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setIsKitchenModulesModalOpen(false);
+                  setFittingPickerTarget(null);
+                }}
+                className="px-6 py-2.5 bg-indigo-600 text-white font-bold rounded-xl text-xs hover:bg-indigo-700 transition-all shadow-md cursor-pointer"
+              >
+                Готово
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Minimized Widget for Draft Product/Kitchen Set */}
+      {isAddingProduct && isProductModalMinimized && (
+        <div className="fixed bottom-6 right-6 z-[200] bg-slate-900 text-white p-4 rounded-2xl shadow-2xl border border-slate-700/80 flex items-center gap-4 animate-in slide-in-from-bottom-5 duration-200 max-w-md backdrop-blur-md bg-slate-900/95">
+          <div className="w-10 h-10 rounded-xl bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center text-indigo-400 flex-shrink-0">
+            <Layers className="w-5 h-5 animate-pulse" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase font-black tracking-wider text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded border border-emerald-800/50">
+                Черновик свернут
+              </span>
+              <span className="text-xs text-slate-400 font-medium truncate">
+                {editingProduct ? "Редактирование" : "Создание гарнитура"}
+              </span>
+            </div>
+            <h4 className="text-sm font-extrabold text-white truncate mt-0.5">
+              {newProduct.name || (editingProduct ? editingProduct.name : "Кухонный гарнитур")}
+            </h4>
+            <div className="text-[11px] text-slate-300 flex items-center gap-2 mt-0.5">
+              {newProduct.kitchenModules?.length > 0 && (
+                <span>Модулей: <strong>{newProduct.kitchenModules.length} шт.</strong></span>
+              )}
+              {calculatedSetSummary?.grandTotalSellingPrice > 0 && (
+                <span className="text-emerald-400 font-bold">
+                  {calculatedSetSummary.grandTotalSellingPrice.toLocaleString()} ₽
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => setIsProductModalMinimized(false)}
+              className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold rounded-xl shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+              title="Развернуть модальное окно"
+            >
+              <Maximize2 className="w-4 h-4" />
+              <span>Развернуть</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                showConfirm(
+                  "Закрыть черновик?",
+                  "Вы уверены, что хотите закрыть редактирование гарнитура? Несохраненные данные будут сброшены.",
+                  () => {
+                    setIsAddingProduct(false);
+                    setIsProductModalMinimized(false);
+                    setEditingProduct(null);
+                  }
+                );
+              }}
+              className="p-2 hover:bg-slate-800 text-slate-400 hover:text-red-400 rounded-xl transition-all cursor-pointer"
+              title="Закрыть черновик"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+    </>
   );
 };
 
 const ProductsView = ({
+  isTabActive = true,
+  ownProductionConfig,
   onAddProduct,
   catalogProducts,
   productCategories,
@@ -17292,6 +19976,8 @@ const ProductsView = ({
   onRestoreProduct,
   modalOnly = false,
 }: {
+  isTabActive?: boolean;
+  ownProductionConfig?: OwnProductionConfig;
   modalOnly?: boolean;
   onAddProduct: (product: any, qty: number) => void;
   catalogProducts: any[];
@@ -18777,7 +21463,11 @@ const ProductsView = ({
 
       const matchesCategory =
         !selectedCategory || 
-        (selectedCategory === "Акционные товары" ? isPromo : p.category === selectedCategory);
+        (selectedCategory === "Акционные товары"
+          ? isPromo
+          : isDryerCategory(selectedCategory)
+            ? isDryerCategory(p.category)
+            : p.category === selectedCategory);
 
       let matchesHingeType = true;
       if (selectedCategory === "Петли" && hingeTypeFilter) {
@@ -19343,6 +22033,10 @@ const ProductsView = ({
     return Array.from(set).sort();
   }, [handleProductsInCatalog]);
 
+  if (!isTabActive && !isAddingProduct) {
+    return null;
+  }
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
       {currentChecklist && !showChecklistWindow && (
@@ -19484,7 +22178,7 @@ const ProductsView = ({
         </div>
       )}
 
-      {!modalOnly && (
+      {!modalOnly && isTabActive && (
         <>
           {/* Header */}
           <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-8">
@@ -27835,6 +30529,9 @@ export default function App() {
               if (data.assemblyPercentages !== undefined) {
                 setAssemblyPercentages(data.assemblyPercentages);
               }
+              if (data.minAssemblyPrice !== undefined) setMinAssemblyPrice(data.minAssemblyPrice);
+              if (data.turnkeyAssemblyEnabled !== undefined) setTurnkeyAssemblyEnabled(data.turnkeyAssemblyEnabled);
+              if (data.extraAssemblyServices !== undefined) setExtraAssemblyServices(data.extraAssemblyServices);
               if (data.assemblyIncludes !== undefined) setAssemblyIncludes(data.assemblyIncludes);
               if (data.trimming !== undefined) setTrimming(data.trimming);
               if (data.sawKerf !== undefined) setSawKerf(data.sawKerf);
@@ -27953,6 +30650,9 @@ export default function App() {
         if (genData.assemblyPercentages !== undefined) {
           setAssemblyPercentages(genData.assemblyPercentages);
         }
+        if (genData.minAssemblyPrice !== undefined) setMinAssemblyPrice(genData.minAssemblyPrice);
+        if (genData.turnkeyAssemblyEnabled !== undefined) setTurnkeyAssemblyEnabled(genData.turnkeyAssemblyEnabled);
+        if (genData.extraAssemblyServices !== undefined) setExtraAssemblyServices(genData.extraAssemblyServices);
         if (genData.assemblyIncludes !== undefined) setAssemblyIncludes(genData.assemblyIncludes);
         if (genData.trimming !== undefined) setTrimming(genData.trimming);
         if (genData.sawKerf !== undefined) setSawKerf(genData.sawKerf);
@@ -29126,6 +31826,9 @@ export default function App() {
   const [addedServices, setAddedServices] = useState<any[]>([]);
   const [assemblyPercentage, setAssemblyPercentage] = useState(12);
   const [assemblyPercentages, setAssemblyPercentages] = useState<Record<string, number>>({});
+  const [minAssemblyPrice, setMinAssemblyPrice] = useState<number>(0);
+  const [turnkeyAssemblyEnabled, setTurnkeyAssemblyEnabled] = useState<boolean>(false);
+  const [extraAssemblyServices, setExtraAssemblyServices] = useState<any[]>(DEFAULT_EXTRA_ASSEMBLY_CATEGORIES);
   const [assemblyIncludes, setAssemblyIncludes] = useState<string[]>(
     INITIAL_ASSEMBLY_INCLUDES,
   );
@@ -29542,6 +32245,12 @@ export default function App() {
             setAssemblyPercentage(data.assemblyPercentage);
           if (data.assemblyPercentages !== undefined)
             setAssemblyPercentages(data.assemblyPercentages);
+          if (data.minAssemblyPrice !== undefined)
+            setMinAssemblyPrice(data.minAssemblyPrice);
+          if (data.turnkeyAssemblyEnabled !== undefined)
+            setTurnkeyAssemblyEnabled(data.turnkeyAssemblyEnabled);
+          if (data.extraAssemblyServices !== undefined)
+            setExtraAssemblyServices(data.extraAssemblyServices);
           if (data.assemblyIncludes !== undefined)
             setAssemblyIncludes(data.assemblyIncludes);
           if (data.deliveryTariffs) setDeliveryTariffs(data.deliveryTariffs);
@@ -30794,6 +33503,9 @@ export default function App() {
             hardwareKitPrice,
             assemblyPercentage,
             assemblyPercentages,
+            minAssemblyPrice,
+            turnkeyAssemblyEnabled,
+            extraAssemblyServices,
             assemblyIncludes,
             deliveryTariffs,
             mapLink,
@@ -31449,10 +34161,11 @@ export default function App() {
       result.products[cat] = baseVal * markupVal;
     });
 
-    if (result.products["Посудосушитель"] && !result.products["Посудосушители"]) {
-      result.products["Посудосушители"] = result.products["Посудосушитель"];
-    } else if (result.products["Посудосушители"] && !result.products["Посудосушитель"]) {
-      result.products["Посудосушитель"] = result.products["Посудосушители"];
+    if (result.products["Посудосушитель"]) {
+      if (!result.products["Посудосушители"]) {
+        result.products["Посудосушители"] = result.products["Посудосушитель"];
+      }
+      delete result.products["Посудосушитель"];
     }
 
     return result;
@@ -32834,6 +35547,9 @@ export default function App() {
               serviceData={serviceData}
               assemblyPercentage={assemblyPercentage}
               assemblyPercentages={assemblyPercentages}
+              minAssemblyPrice={minAssemblyPrice}
+              turnkeyAssemblyEnabled={turnkeyAssemblyEnabled}
+              extraAssemblyServices={extraAssemblyServices}
               deliveryTariffs={deliveryTariffs}
               canEditCabinet={canEditCabinet}
               canEditFacades={canEditFacades}
@@ -32946,66 +35662,49 @@ export default function App() {
             })()}
           </div>
 
-          {activeTab === "ready_made" ? (
-            <ReadyMadeProductsView
-              catalogProducts={catalogProducts}
-              onAddProduct={onAddProduct}
-              selectedCategory={selectedReadyMadeCategory}
-              setSelectedCategory={setSelectedReadyMadeCategory}
-              companyData={companyData}
-              customerType={customerType}
-              resolveBrandCoefficient={resolveBrandCoefficient}
-              setSelectedProductForDetail={setSelectedProductForDetail}
-              showAlert={showAlert}
-              showPrompt={showPrompt}
-              showConfirm={showConfirm}
-              setActiveTab={(tab: string) => setActiveTab(tab as any)}
-              promotions={promotions}
-              userRole={userRole}
-              onAddNewProduct={() => {
-                setActiveTab("products");
-                setSelectedProductCategory(selectedReadyMadeCategory || "Кухни");
-                setTimeout(() => {
-                  window.dispatchEvent(new CustomEvent("products_view_add_new", { detail: { category: selectedReadyMadeCategory || "Кухни" } }));
-                }, 400);
-              }}
-              onEditProduct={(product) => {
-                setActiveTab("products");
-                setSelectedProductCategory(product.category);
-                setTimeout(() => {
-                  window.dispatchEvent(new CustomEvent("products_view_edit", { detail: product }));
-                }, 400);
-              }}
-              onCreateBasedOn={(product) => {
-                setActiveTab("products");
-                setSelectedProductCategory(product.category);
-                setTimeout(() => {
-                  window.dispatchEvent(new CustomEvent("products_view_create_copy", { detail: product }));
-                }, 400);
-              }}
-              onDeleteProduct={(product) => {
-                if (userRole === 'admin' || userRole === 'supervisor') {
-                  showConfirm(
-                    "Удаление товара",
-                    `Вы уверены, что хотите удалить товар "${product.name}"?`,
-                    () => deleteProduct(product.id)
-                  );
-                } else {
-                  if (companyData?.id) {
-                    updateDoc(doc(db, "companies", companyData.id, "products", String(product.id)), { markedForDeletion: true });
-                    showAlert("Отправлено на модерацию", "Товар помечен на удаление и отправлен администратору.");
-                  }
-                }
-              }}
-              onUpdateProduct={(productId, updates) => {
+          <ReadyMadeProductsView
+            isViewHidden={activeTab !== "ready_made"}
+            catalogProducts={catalogProducts}
+            onAddProduct={onAddProduct}
+            selectedCategory={selectedReadyMadeCategory}
+            setSelectedCategory={setSelectedReadyMadeCategory}
+            companyData={companyData}
+            companyInfo={companyInfo}
+            customerType={customerType}
+            resolveBrandCoefficient={resolveBrandCoefficient}
+            setSelectedProductForDetail={setSelectedProductForDetail}
+            showAlert={showAlert}
+            showPrompt={showPrompt}
+            showConfirm={showConfirm}
+            setActiveTab={(tab: string) => setActiveTab(tab as any)}
+            promotions={promotions}
+            userRole={userRole}
+            onSaveProduct={saveProduct}
+            onBuildFromCatalog={() => {}}
+            onDeleteProduct={(product) => {
+              if (userRole === 'admin' || userRole === 'supervisor') {
+                showConfirm(
+                  "Удаление товара",
+                  `Вы уверены, что хотите удалить товар "${product.name}"?`,
+                  () => deleteProduct(product.id)
+                );
+              } else {
                 if (companyData?.id) {
-                  updateDoc(doc(db, "companies", companyData.id, "products", String(productId)), updates);
+                  updateDoc(doc(db, "companies", companyData.id, "products", String(product.id)), { markedForDeletion: true });
+                  showAlert("Отправлено на модерацию", "Товар помечен на удаление и отправлен администратору.");
                 }
-              }}
-              onHideProduct={handleHideProduct}
-              onRestoreProduct={handleRestoreProduct}
-            />
-          ) : activeTab === "projects" ? (
+              }
+            }}
+            onUpdateProduct={(productId, updates) => {
+              if (companyData?.id) {
+                updateDoc(doc(db, "companies", companyData.id, "products", String(productId)), updates);
+              }
+            }}
+            onHideProduct={handleHideProduct}
+            onRestoreProduct={handleRestoreProduct}
+          />
+
+          {activeTab === "ready_made" ? null : activeTab === "projects" ? (
             <ProjectsView
               companyId={companyData?.id}
               companyData={companyData}
@@ -33140,54 +35839,58 @@ export default function App() {
               projects={projects}
               sets={projectSets}
             />
-          ) : activeTab === "products" ? (
-            <ProductsView
-              onAddProduct={onAddProduct}
-              catalogProducts={catalogProducts}
-              productCategories={productCategories}
-              setProductCategories={(catsOrFn) => {
-                const newCats =
-                  typeof catsOrFn === "function"
-                    ? (catsOrFn as any)(productCategories)
-                    : catsOrFn;
-                setProductCategories(newCats);
-                saveProductCategories(newCats);
-              }}
-              coefficients={currentCoefficients}
-              globalCoefficients={coefficients}
-              productionFormat={productionFormat}
-              onSaveProduct={saveProduct}
-              onDeleteProduct={deleteProduct}
-              userRole={userRole}
-              companyType={companyData?.type}
-              furnitureType={furnitureType}
-              setFurnitureType={setFurnitureType}
-              checklistRefused={checklistRefused}
-              setChecklistRefused={setChecklistRefused}
-              worktopCuts={worktopCuts}
-              setWorktopCuts={setWorktopCuts}
-              gluedEdgeDecor={gluedEdgeDecor}
-              setGluedEdgeDecor={setGluedEdgeDecor}
-              addedProducts={addedProducts}
-              showAlert={showAlert}
-              showPrompt={showPrompt}
-              showConfirm={showConfirm}
-              selectedCategory={selectedProductCategory}
-              setSelectedCategory={setSelectedProductCategory}
-              companyData={companyData}
-              companyInfo={companyInfo}
-              db={db}
-              doc={doc}
-              updateDoc={updateDoc}
-              userData={userData}
-              customerType={customerType}
-              resolveBrandCoefficient={resolveBrandCoefficient}
-              selectedProductForDetail={selectedProductForDetail}
-              setSelectedProductForDetail={setSelectedProductForDetail}
-              onHideProduct={handleHideProduct}
-              onRestoreProduct={handleRestoreProduct}
-            />
-          ) : activeTab === "services" ? (
+          ) : null}
+
+          <ProductsView
+            isTabActive={activeTab === "products"}
+            ownProductionConfig={ownProductionConfig}
+            onAddProduct={onAddProduct}
+            catalogProducts={catalogProducts}
+            productCategories={productCategories}
+            setProductCategories={(catsOrFn) => {
+              const newCats =
+                typeof catsOrFn === "function"
+                  ? (catsOrFn as any)(productCategories)
+                  : catsOrFn;
+              setProductCategories(newCats);
+              saveProductCategories(newCats);
+            }}
+            coefficients={currentCoefficients}
+            globalCoefficients={coefficients}
+            productionFormat={productionFormat}
+            onSaveProduct={saveProduct}
+            onDeleteProduct={deleteProduct}
+            userRole={userRole}
+            companyType={companyData?.type}
+            furnitureType={furnitureType}
+            setFurnitureType={setFurnitureType}
+            checklistRefused={checklistRefused}
+            setChecklistRefused={setChecklistRefused}
+            worktopCuts={worktopCuts}
+            setWorktopCuts={setWorktopCuts}
+            gluedEdgeDecor={gluedEdgeDecor}
+            setGluedEdgeDecor={setGluedEdgeDecor}
+            addedProducts={addedProducts}
+            showAlert={showAlert}
+            showPrompt={showPrompt}
+            showConfirm={showConfirm}
+            selectedCategory={selectedProductCategory}
+            setSelectedCategory={setSelectedProductCategory}
+            companyData={companyData}
+            companyInfo={companyInfo}
+            db={db}
+            doc={doc}
+            updateDoc={updateDoc}
+            userData={userData}
+            customerType={customerType}
+            resolveBrandCoefficient={resolveBrandCoefficient}
+            selectedProductForDetail={selectedProductForDetail}
+            setSelectedProductForDetail={setSelectedProductForDetail}
+            onHideProduct={handleHideProduct}
+            onRestoreProduct={handleRestoreProduct}
+          />
+
+          {activeTab === "services" ? (
             <ServicesView
               onAddService={onAddService}
               prices={prices}
@@ -33208,6 +35911,9 @@ export default function App() {
               totalCost={totalCostForService}
               assemblyPercentage={assemblyPercentage}
               assemblyPercentages={assemblyPercentages}
+              minAssemblyPrice={minAssemblyPrice}
+              turnkeyAssemblyEnabled={turnkeyAssemblyEnabled}
+              extraAssemblyServices={extraAssemblyServices}
               furnitureType={furnitureType}
               deliveryTariffs={deliveryTariffs}
               assemblyIncludes={assemblyIncludes}
@@ -33331,6 +36037,12 @@ export default function App() {
               setAssemblyPercentage={setAssemblyPercentage}
               assemblyPercentages={assemblyPercentages}
               setAssemblyPercentages={setAssemblyPercentages}
+              minAssemblyPrice={minAssemblyPrice}
+              setMinAssemblyPrice={setMinAssemblyPrice}
+              turnkeyAssemblyEnabled={turnkeyAssemblyEnabled}
+              setTurnkeyAssemblyEnabled={setTurnkeyAssemblyEnabled}
+              extraAssemblyServices={extraAssemblyServices}
+              setExtraAssemblyServices={setExtraAssemblyServices}
               deliveryTariffs={deliveryTariffs}
               setDeliveryTariffs={setDeliveryTariffs}
               mapLink={mapLink}

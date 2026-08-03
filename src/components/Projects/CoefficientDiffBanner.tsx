@@ -59,10 +59,11 @@ export function normalizeCoefficients(raw: any, customerType: string = 'retail')
     }
   });
 
-  if (productsSrc["Посудосушитель"] && !productsSrc["Посудосушители"]) {
-    productsSrc["Посудосушители"] = productsSrc["Посудосушитель"];
-  } else if (productsSrc["Посудосушители"] && !productsSrc["Посудосушитель"]) {
-    productsSrc["Посудосушитель"] = productsSrc["Посудосушители"];
+  if (productsSrc["Посудосушитель"]) {
+    if (!productsSrc["Посудосушители"]) {
+      productsSrc["Посудосушители"] = productsSrc["Посудосушитель"];
+    }
+    delete productsSrc["Посудосушитель"];
   }
 
   return {

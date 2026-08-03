@@ -314,10 +314,16 @@ export function PublicLandingView({ aliasOrId, initialSubPath }: PublicLandingVi
   const categories = useMemo(() => {
     const landing = company?.landingPage || {};
     const baseCategories = Array.from(new Set(products.map(p => p.category))) as string[];
+    const visibleSet = landing.visibleCategories && landing.visibleCategories.length > 0
+      ? new Set(landing.visibleCategories)
+      : null;
     
     return baseCategories.filter(cat => {
       if (cat === "Акционные товары") {
         return landing.showPromoSection && landing.promoDisplayType === "category";
+      }
+      if (visibleSet) {
+        return visibleSet.has(cat);
       }
       return true;
     });
@@ -349,9 +355,18 @@ export function PublicLandingView({ aliasOrId, initialSubPath }: PublicLandingVi
   // Filter products matching category, search, brands and price
   const filteredProducts = useMemo(() => {
     const landing = company?.landingPage || {};
+    const visibleSet = landing.visibleCategories && landing.visibleCategories.length > 0
+      ? new Set(landing.visibleCategories)
+      : null;
+
     return products.filter(p => {
       // If promo section is disabled, hide all promo products from main grid
       if (p.category === "Акционные товары" && !landing.showPromoSection) {
+        return false;
+      }
+
+      // Hide products from categories that are not selected in visibleCategories
+      if (visibleSet && p.category !== "Акционные товары" && !visibleSet.has(p.category)) {
         return false;
       }
       
@@ -888,7 +903,7 @@ export function PublicLandingView({ aliasOrId, initialSubPath }: PublicLandingVi
         </aside>
 
         {/* Right Side: Products Grid & Welcome Text */}
-        <section className="flex-1 space-y-8">
+        <section className="flex-1 min-w-0 space-y-8">
           {displayWelcome && (
             <div className="bg-blue-50/50 border border-blue-100/50 p-6 rounded-3xl text-sm text-blue-900 leading-relaxed space-y-2">
               <div className="font-black flex items-center gap-1.5 uppercase text-xs tracking-wider text-blue-800">

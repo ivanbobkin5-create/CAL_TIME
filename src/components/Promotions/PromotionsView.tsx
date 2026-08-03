@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Percent, Plus, Trash2, Calendar, Tag, Shield, 
   Settings, CheckCircle, Info, ToggleLeft, ToggleRight, 
@@ -104,8 +104,14 @@ export const PromotionsView = ({
   const [name, setName] = useState('');
   const [startDate, setStartDate] = useState(new Date().toISOString().split('T')[0]);
   const [endDate, setEndDate] = useState('');
-  const [buyerTypes, setBuyerTypes] = useState<("retail" | "wholesale" | "designer")[]>([]);
+  const [buyerTypes, setBuyerTypes] = useState<("retail" | "wholesale" | "designer")[]>(["retail"]);
   const [promoType, setPromoType] = useState<Promotion['promoType']>("discount");
+
+  useEffect(() => {
+    if (buyerTypes.length === 0) {
+      setBuyerTypes(["retail"]);
+    }
+  }, [buyerTypes.length]);
   const [allowOverlap, setAllowOverlap] = useState(false);
 
   // Specific Type parameters
@@ -257,7 +263,8 @@ export const PromotionsView = ({
       showAlert("Ошибка", "Выберите срок действия акции");
       return;
     }
-    if (buyerTypes.length === 0) {
+    const effectiveBuyerTypes = buyerTypes.length > 0 ? buyerTypes : ["retail"];
+    if (effectiveBuyerTypes.length === 0) {
       showAlert("Ошибка", "Выберите типы покупателей для акции");
       return;
     }
@@ -270,7 +277,7 @@ export const PromotionsView = ({
       name,
       startDate,
       endDate,
-      buyerTypes,
+      buyerTypes: effectiveBuyerTypes as ("retail" | "wholesale" | "designer")[],
       promoType,
       allowOverlap,
       isActive: true,

@@ -246,6 +246,18 @@ export const ProjectsView = ({
   const [selectedManagerId, setSelectedManagerId] = useState<string>("");
   const [renamingSet, setRenamingSet] = useState<any | null>(null);
   const [newSetNameInput, setNewSetNameInput] = useState("");
+  const [isSavingRename, setIsSavingRename] = useState(false);
+
+  const [localProjects, setLocalProjects] = useState<Project[]>(projects);
+  const [localSets, setLocalSets] = useState<any[]>(sets);
+
+  useEffect(() => {
+    setLocalProjects(projects);
+  }, [projects]);
+
+  useEffect(() => {
+    setLocalSets(sets);
+  }, [sets]);
 
   const [isSetsGroupCollapsed, setIsSetsGroupCollapsed] = useState(true);
   const [isStandaloneGroupCollapsed, setIsStandaloneGroupCollapsed] = useState(false);
@@ -461,7 +473,7 @@ export const ProjectsView = ({
 
   const handleCreateSet = async () => {
     if (!companyId) return;
-    const selectedProjects = projects.filter((p) =>
+    const selectedProjects = localProjects.filter((p) =>
       selectedProjectIds.has(p.id),
     );
     if (selectedProjects.length === 0) return;
@@ -505,6 +517,15 @@ export const ProjectsView = ({
         setRecord.createdByName = employee.name || employee.displayName || employee.email || "Пользователь";
       }
 
+      // Optimistic update
+      setLocalSets(prev => [setRecord, ...prev]);
+      setLocalProjects(prev => prev.map(p => {
+        if (selectedProjectIds.has(p.id)) {
+          return { ...p, setId: setId, data: { ...(p.data || {}), setId: setId } };
+        }
+        return p;
+      }));
+
       const batch = writeBatch(db);
       
       batch.set(setDocRef, setRecord);
@@ -543,6 +564,7 @@ export const ProjectsView = ({
   const handleSingleProjectDelete = async (projectId: string) => {
     if (!companyId) return;
     setDeletedProjects(prev => new Set(prev).add(projectId));
+    setLocalProjects(prev => prev.filter(p => p.id !== projectId));
     try {
       await deleteDoc(
         doc(db, "companies", companyId, "projects", projectId),
@@ -580,6 +602,22 @@ export const ProjectsView = ({
   const handleUnlinkProject = async (project: Project, set: any) => {
     if (!companyId) return;
     try {
+      // Optimistic update
+      setLocalProjects(prev => prev.map(p => {
+        if (p.id === project.id) {
+          const updatedData = p.data ? { ...p.data } : {};
+          delete updatedData.setId;
+          return { ...p, setId: undefined, data: updatedData };
+        }
+        return p;
+      }));
+      setLocalSets(prev => prev.map(s => {
+        if (s.id === set.id) {
+          return { ...s, projectIds: (s.projectIds || []).filter((id: string) => id !== project.id) };
+        }
+        return s;
+      }));
+
       const batch = writeBatch(db);
       batch.update(doc(db, "companies", companyId, "projects", project.id), {
         setId: null,
@@ -604,7 +642,20 @@ export const ProjectsView = ({
       `Вы хотите расформировать комплект "${set.name || 'без названия'}"? Все входящие в него проекты сохранятся как отдельные проекты.`,
       async () => {
         try {
-          const subProjs = userProjects.filter(p => p.setId === set.id || set.projectIds?.includes(p.id));
+          const subProjs = userProjects.filter(p => p.setId === set.id || p.data?.setId === set.id || set.projectIds?.includes(p.id));
+          const subProjIds = new Set(subProjs.map(p => p.id));
+
+          // Optimistic local update
+          setLocalSets(prev => prev.filter(s => s.id !== set.id));
+          setLocalProjects(prev => prev.map(p => {
+            if (subProjIds.has(p.id) || p.setId === set.id || p.data?.setId === set.id) {
+              const updatedData = p.data ? { ...p.data } : {};
+              delete updatedData.setId;
+              return { ...p, setId: undefined, data: updatedData };
+            }
+            return p;
+          }));
+
           const batch = writeBatch(db);
           for (const sp of subProjs) {
             batch.update(doc(db, "companies", companyId, "projects", sp.id), { setId: null });
@@ -628,6 +679,12 @@ export const ProjectsView = ({
       `Внимание! Это действие удалит комплект "${set.name || 'без названия'}" и ВСЕ (${subProjs.length}) входящие в него проекты. Продолжить?`,
       async () => {
         try {
+          const subProjIds = new Set(subProjs.map(p => p.id));
+
+          // Optimistic local update
+          setLocalSets(prev => prev.filter(s => s.id !== set.id));
+          setLocalProjects(prev => prev.filter(p => !subProjIds.has(p.id) && p.setId !== set.id && p.data?.setId !== set.id));
+
           const batch = writeBatch(db);
           for (const sp of subProjs) {
             batch.delete(doc(db, "companies", companyId, "projects", sp.id));
@@ -652,9 +709,15 @@ export const ProjectsView = ({
 
   const handleSaveRenameSet = async () => {
     if (!companyId || !renamingSet || !newSetNameInput.trim()) return;
+    const trimmedName = newSetNameInput.trim();
+    setIsSavingRename(true);
+
+    // Optimistic local update
+    setLocalSets(prev => prev.map(s => s.id === renamingSet.id ? { ...s, name: trimmedName } : s));
+
     try {
       await updateDoc(doc(db, "companies", companyId, "sets", renamingSet.id), {
-        name: newSetNameInput.trim(),
+        name: trimmedName,
       });
       if (showAlert) showAlert("Успешно", "Название комплекта обновлено");
       setRenamingSet(null);
@@ -662,6 +725,8 @@ export const ProjectsView = ({
     } catch (err) {
       console.error("Error renaming set:", err);
       if (showAlert) showAlert("Ошибка", "Не удалось переименовать комплект");
+    } finally {
+      setIsSavingRename(false);
     }
   };
 
@@ -669,6 +734,21 @@ export const ProjectsView = ({
   const handleAddProjectToSet = async (projectId: string, set: any) => {
     if (!companyId) return;
     try {
+      // Optimistic update
+      setLocalProjects(prev => prev.map(p => {
+        if (p.id === projectId) {
+          return { ...p, setId: set.id, data: { ...(p.data || {}), setId: set.id } };
+        }
+        return p;
+      }));
+      setLocalSets(prev => prev.map(s => {
+        if (s.id === set.id) {
+          const updatedProjectIds = Array.from(new Set([...(s.projectIds || []), projectId]));
+          return { ...s, projectIds: updatedProjectIds };
+        }
+        return s;
+      }));
+
       await updateDoc(doc(db, "companies", companyId, "projects", projectId), {
         setId: set.id,
       });
@@ -692,11 +772,11 @@ export const ProjectsView = ({
       companyData?.ownerUid === userId;
 
     const baseProjects = (!userRole || isManagerOrHigher)
-      ? projects
-      : projects.filter((p) => p.createdBy === userId);
+      ? localProjects
+      : localProjects.filter((p) => p.createdBy === userId);
 
     return baseProjects.filter(p => !deletedProjects.has(p.id) && !p.isDeleted && p.status !== "deleted");
-  }, [projects, userRole, userId, deletedProjects, companyData?.ownerUid]);
+  }, [localProjects, userRole, userId, deletedProjects, companyData?.ownerUid]);
 
   const userSets = useMemo(() => {
     const isAdminOrSupervisor = 
@@ -705,10 +785,10 @@ export const ProjectsView = ({
       companyData?.ownerUid === userId;
 
     if (!userRole || isAdminOrSupervisor) {
-      return sets;
+      return localSets;
     }
-    return sets.filter((s) => s.createdBy === userId);
-  }, [sets, userRole, userId, companyData?.ownerUid]);
+    return localSets.filter((s) => s.createdBy === userId);
+  }, [localSets, userRole, userId, companyData?.ownerUid]);
 
   // Map set.id -> subProjects
   const setSubProjectsMap = useMemo(() => {
@@ -716,8 +796,9 @@ export const ProjectsView = ({
     userSets.forEach(s => { map[s.id] = []; });
 
     userProjects.forEach(p => {
-      if (p.setId && map[p.setId]) {
-        map[p.setId].push(p);
+      const pSetId = p.setId || p.data?.setId;
+      if (pSetId && map[pSetId]) {
+        map[pSetId].push(p);
       } else {
         const foundSet = userSets.find(s => s.projectIds?.includes(p.id));
         if (foundSet) {
@@ -1713,16 +1794,27 @@ export const ProjectsView = ({
 
             <div className="flex items-center justify-end gap-3 pt-2">
               <button
+                type="button"
                 onClick={() => setRenamingSet(null)}
-                className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all"
+                disabled={isSavingRename}
+                className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all disabled:opacity-50"
               >
                 Отмена
               </button>
               <button
+                type="button"
                 onClick={handleSaveRenameSet}
-                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-200 transition-all"
+                disabled={isSavingRename || !newSetNameInput.trim()}
+                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-200 transition-all flex items-center gap-2 disabled:opacity-50"
               >
-                Сохранить
+                {isSavingRename ? (
+                  <>
+                    <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Сохранение...</span>
+                  </>
+                ) : (
+                  <span>Сохранить</span>
+                )}
               </button>
             </div>
           </div>
