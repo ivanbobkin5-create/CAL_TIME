@@ -525,15 +525,38 @@ export const ProjectSetCheckoutModal = ({
                   />
                 </div>
                 <div className="space-y-2">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
-                    Дата договора
-                  </label>
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
+                      Дата договора / спецификации
+                    </label>
+                    {editingSet?.contractDate && contractDate !== new Date().toISOString().split("T")[0] && (
+                      <button
+                        type="button"
+                        onClick={() => setContractDate(new Date().toISOString().split("T")[0])}
+                        className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 underline bg-indigo-50 px-2 py-0.5 rounded-lg"
+                      >
+                        Применить текущую дату
+                      </button>
+                    )}
+                  </div>
                   <input
                     type="date"
                     value={contractDate}
                     onChange={(e) => setContractDate(e.target.value)}
                     className="w-full px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-indigo-500 outline-none text-sm font-bold shadow-sm"
                   />
+                  {editingSet?.contractDate && contractDate === editingSet.contractDate && contractDate !== new Date().toISOString().split("T")[0] && (
+                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-xs font-semibold text-amber-800 flex items-center justify-between gap-2 mt-1">
+                      <span>Первоначальная дата сохранения: {new Date(editingSet.contractDate).toLocaleDateString("ru-RU")}. Сохранена по умолчанию.</span>
+                      <button
+                        type="button"
+                        onClick={() => setContractDate(new Date().toISOString().split("T")[0])}
+                        className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded-lg font-bold text-[11px] whitespace-nowrap shadow-xs"
+                      >
+                        Применить текущую дату
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-4">
                   <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">
@@ -1010,59 +1033,115 @@ export const ProjectSetCheckoutModal = ({
                 </div>
               </div>
 
-              {/* Sketches / Images */}
-              <section className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
-                <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest mb-4 flex items-center gap-2">
-                  <ImageIcon className="w-4 h-4 text-purple-500" /> Эскизы и
-                  визуализации
-                </h3>
-                <div className="flex flex-wrap gap-4">
-                  {sketches.map((url, idx) => (
-                    <div
-                      key={idx}
-                      onClick={() => {
-                        setSelectedSketchIndex(idx);
-                        setIsAnnotating(true);
-                      }}
-                      className="relative group w-32 h-32 rounded-2xl overflow-hidden border border-gray-100 shadow-sm transition-all hover:shadow-md cursor-pointer"
-                    >
-                      <img
-                        src={url}
-                        alt={`Sketch ${idx + 1}`}
-                        className="w-full h-full object-cover"
-                      />
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSketches((prev) =>
-                            prev.filter((_, i) => i !== idx),
-                          );
+              {/* Sketches / Images Grouped by Project */}
+              <section className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm space-y-6">
+                <div>
+                  <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest flex items-center gap-2">
+                    <ImageIcon className="w-4 h-4 text-purple-500" /> Эскизы и визуализации по проектам
+                  </h3>
+                  <p className="text-xs text-gray-500 mt-1">
+                    Каждая визуализация привязана к своему проекту для наглядности
+                  </p>
+                </div>
+
+                <div className="space-y-6">
+                  {projects.map((p, pIdx) => {
+                    const projectSketches = p.data?.sketches || p.data?.sketchImages || (p.data?.sketchUrl ? [p.data.sketchUrl] : []);
+                    return (
+                      <div key={p.id || pIdx} className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200/60 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <span className="w-2 h-2 rounded-full bg-indigo-600" />
+                          <h4 className="text-xs font-black text-gray-900 uppercase tracking-wider">
+                            Проект: {p.name}
+                          </h4>
+                          {projectSketches.length > 0 && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-700 ml-auto">
+                              {projectSketches.length} {projectSketches.length === 1 ? "эскиз" : "эскиза"}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap gap-3">
+                          {projectSketches.map((url: string, idx: number) => (
+                            <div
+                              key={idx}
+                              onClick={() => {
+                                const allIdx = sketches.indexOf(url);
+                                setSelectedSketchIndex(allIdx >= 0 ? allIdx : 0);
+                                setIsAnnotating(true);
+                              }}
+                              className="relative group w-28 h-28 rounded-2xl overflow-hidden border border-gray-200 shadow-xs hover:shadow-md cursor-pointer bg-white"
+                            >
+                              <img
+                                src={url}
+                                alt={`${p.name} - ${idx + 1}`}
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
+                          ))}
+
+                          {projectSketches.length === 0 && (
+                            <div className="text-xs text-gray-400 italic py-2">
+                              В проекте "{p.name}" нет загруженных эскизов. Загрузите эскиз ниже.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* General Kit Sketches Upload */}
+                <div className="pt-4 border-t border-gray-100">
+                  <h4 className="text-xs font-black text-gray-700 uppercase tracking-wider mb-3">
+                    Все эскизы и прикрепленные файлы спецификации ({sketches.length}):
+                  </h4>
+                  <div className="flex flex-wrap gap-3">
+                    {sketches.map((url, idx) => (
+                      <div
+                        key={idx}
+                        onClick={() => {
+                          setSelectedSketchIndex(idx);
+                          setIsAnnotating(true);
                         }}
-                        className="absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-red-500 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all shadow-sm"
-                        title="Удалить эскиз"
+                        className="relative group w-28 h-28 rounded-2xl overflow-hidden border border-gray-200 shadow-xs hover:shadow-md cursor-pointer bg-white"
                       >
-                        <X className="w-3 h-3" />
-                      </button>
-                    </div>
-                  ))}
+                        <img
+                          src={url}
+                          alt={`Sketch ${idx + 1}`}
+                          className="w-full h-full object-cover"
+                        />
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSketches((prev) => prev.filter((_, i) => i !== idx));
+                          }}
+                          className="absolute top-1.5 right-1.5 p-1.5 bg-black/60 hover:bg-red-500 text-white rounded-lg opacity-0 group-hover:opacity-100 transition-all shadow-sm"
+                          title="Удалить эскиз"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      </div>
+                    ))}
 
-                  <input
-                    type="file"
-                    accept="image/*"
-                    ref={fileInputRef}
-                    onChange={handleFileUpload}
-                    className="hidden"
-                  />
+                    <input
+                      type="file"
+                      accept="image/*"
+                      ref={fileInputRef}
+                      onChange={handleFileUpload}
+                      className="hidden"
+                    />
 
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="w-32 h-32 rounded-2xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center gap-2 text-gray-400 hover:border-indigo-400 hover:text-indigo-400 transition-all group hover:bg-indigo-50/30"
-                  >
-                    <Upload className="w-6 h-6 group-hover:-translate-y-1 transition-transform" />
-                    <span className="text-[10px] font-black uppercase tracking-widest text-center px-2">
-                      Загрузить с ПК
-                    </span>
-                  </button>
+                    <button
+                      onClick={() => fileInputRef.current?.click()}
+                      className="w-28 h-28 rounded-2xl border-2 border-dashed border-indigo-200 flex flex-col items-center justify-center gap-1.5 text-indigo-500 hover:border-indigo-500 hover:bg-indigo-50/50 transition-all group"
+                    >
+                      <Upload className="w-5 h-5 group-hover:-translate-y-0.5 transition-transform" />
+                      <span className="text-[10px] font-black uppercase tracking-wider text-center px-1">
+                        Загрузить эскиз
+                      </span>
+                    </button>
+                  </div>
                 </div>
               </section>
             </div>

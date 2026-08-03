@@ -33,6 +33,7 @@ interface LandingPageConfig {
   showPromoSection?: boolean;
   promoDisplayType?: "slider" | "category";
   customDomain?: string;
+  notificationEmail?: string;
 }
 
 interface LandingSettingsViewProps {
@@ -80,6 +81,7 @@ export function LandingSettingsView({
     showPromoSection: false,
     promoDisplayType: "slider",
     customDomain: "",
+    notificationEmail: "",
     ...(companyData?.landingPage || {}),
   };
 
@@ -559,6 +561,43 @@ export function LandingSettingsView({
                     className="block w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
                   />
                 </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Notifications Settings */}
+          <div className="bg-gray-50/50 p-6 rounded-2xl border border-gray-100 space-y-6">
+            <div className="space-y-1">
+              <h4 className="font-bold text-gray-900 flex items-center gap-2">
+                <span className="w-1.5 h-6 bg-indigo-600 rounded-full" />
+                <Mail className="w-5 h-5 text-indigo-600 inline shrink-0" />
+                Уведомления о новых заказах
+              </h4>
+              <p className="text-xs text-gray-500">
+                Настройте получение автоматических e-mail сообщений о каждой новой заявке, поступившей с вашей онлайн-витрины.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-black uppercase text-gray-500 tracking-wider mb-2">
+                  E-mail получателя уведомлений
+                </label>
+                <div className="relative rounded-xl shadow-xs">
+                  <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                    <Mail className="h-4 w-4 text-gray-400" />
+                  </div>
+                  <input
+                    type="email"
+                    value={landingConfig.notificationEmail || ""}
+                    onChange={(e) => handleUpdateConfig({ notificationEmail: e.target.value })}
+                    placeholder="manager@company.ru"
+                    className="block w-full rounded-xl border border-gray-300 pl-10 pr-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500 focus:outline-none"
+                  />
+                </div>
+                <p className="mt-2 text-[11px] text-gray-500 leading-relaxed">
+                  На этот адрес будет мгновенно отправляться подробное письмо со всей информацией о клиенте и списком товаров в корзине при оформлении заказа на витрине. Письмо будет отправлено с почты, подключенной в системе (SMTP). Если оставить это поле пустым, уведомления будут отправляться на общий <b>Email компании ({landingConfig.email || 'не указан'})</b>.
+                </p>
               </div>
             </div>
           </div>

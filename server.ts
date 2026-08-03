@@ -318,6 +318,122 @@ function transliterate(str: string): string {
           data: JSON.stringify(projectData)
         }
       }));
+
+      // Send email notification to company if they configured notification email or general email
+      try {
+        const companyDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } }));
+        if (companyDoc) {
+          const companyData = JSON.parse(companyDoc.data);
+          const landingConfig = companyData.landingPage || {};
+          const notificationEmail = (landingConfig.notificationEmail || landingConfig.email || "").trim();
+
+          if (notificationEmail) {
+            const companyName = companyData.name || "Онлайн-витрина";
+            const subject = `🛍️ Новая заявка с онлайн-витрины "${companyName}"`;
+            
+            let itemsHtml = "";
+            if (cartItems && cartItems.length > 0) {
+              itemsHtml = cartItems.map((item: any) => {
+                const itemTotal = (item.price || 0) * (item.quantity || 1);
+                return `
+                <tr>
+                  <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: left;">
+                    <b style="color: #2d3748;">${item.name}</b>${item.article ? `<br><span style="font-size: 11px; color: #718096;">Артикул: ${item.article}</span>` : ""}
+                  </td>
+                  <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: center; color: #4a5568;">
+                    ${item.quantity} шт.
+                  </td>
+                  <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; color: #4a5568; white-space: nowrap;">
+                    ${(item.price || 0).toLocaleString()} ₽
+                  </td>
+                  <td style="padding: 10px; border-bottom: 1px solid #e2e8f0; text-align: right; font-weight: bold; color: #2d3748; white-space: nowrap;">
+                    ${itemTotal.toLocaleString()} ₽
+                  </td>
+                </tr>`;
+              }).join("");
+            }
+
+            const rawHtml = `
+              <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 20px; background-color: #ffffff; color: #1a202c; box-sizing: border-box;">
+                <div style="text-align: center; margin-bottom: 24px; padding-bottom: 20px; border-bottom: 2px solid #e2e8f0;">
+                  <div style="font-size: 40px; margin-bottom: 10px;">🛍️</div>
+                  <h2 style="color: #4f46e5; margin: 0 0 5px 0; font-size: 22px; font-weight: 800; line-height: 1.3;">Новая заявка с витрины</h2>
+                  <p style="margin: 0; color: #718096; font-size: 14px;">Компания: <b style="color: #4a5568;">${companyName}</b></p>
+                </div>
+
+                <div style="margin-bottom: 24px; background-color: #f7fafc; padding: 18px; border-radius: 16px; border: 1px solid #edf2f7;">
+                  <h3 style="margin-top: 0; margin-bottom: 12px; color: #1a202c; font-size: 15px; font-weight: 700; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px;">
+                    Данные клиента
+                  </h3>
+                  <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+                    <tbody>
+                      <tr>
+                        <td style="padding: 6px 0; color: #718096; width: 110px; font-weight: bold;">Имя:</td>
+                        <td style="padding: 6px 0; color: #1a202c; font-weight: bold;">${customerName}</td>
+                      </tr>
+                      <tr>
+                        <td style="padding: 6px 0; color: #718096; font-weight: bold;">Телефон:</td>
+                        <td style="padding: 6px 0; color: #1a202c;"><a href="tel:${customerPhone}" style="color: #4f46e5; text-decoration: none; font-weight: bold;">${customerPhone}</a></td>
+                      </tr>
+                      ${customerEmail ? `
+                      <tr>
+                        <td style="padding: 6px 0; color: #718096; font-weight: bold;">Email:</td>
+                        <td style="padding: 6px 0; color: #1a202c;"><a href="mailto:${customerEmail}" style="color: #4f46e5; text-decoration: none;">${customerEmail}</a></td>
+                      </tr>` : ""}
+                      ${customerComment ? `
+                      <tr>
+                        <td style="padding: 6px 0; color: #718096; vertical-align: top; font-weight: bold;">Комментарий:</td>
+                        <td style="padding: 6px 0; color: #4a5568; font-style: italic; white-space: pre-line;">${customerComment}</td>
+                      </tr>` : ""}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div style="margin-bottom: 24px;">
+                  <h3 style="margin-top: 0; margin-bottom: 12px; color: #1a202c; font-size: 15px; font-weight: 700;">
+                    Содержимое корзины
+                  </h3>
+                  <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                    <thead>
+                      <tr style="background-color: #edf2f7;">
+                        <th style="padding: 10px; text-align: left; border-bottom: 2px solid #cbd5e0; color: #4a5568; font-weight: bold;">Товар</th>
+                        <th style="padding: 10px; text-align: center; border-bottom: 2px solid #cbd5e0; color: #4a5568; font-weight: bold; width: 70px;">Кол-во</th>
+                        <th style="padding: 10px; text-align: right; border-bottom: 2px solid #cbd5e0; color: #4a5568; font-weight: bold; width: 90px;">Цена</th>
+                        <th style="padding: 10px; text-align: right; border-bottom: 2px solid #cbd5e0; color: #4a5568; font-weight: bold; width: 100px;">Итого</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${itemsHtml || `<tr><td colspan="4" style="padding: 15px; text-align: center; color: #a0aec0; font-style: italic;">Корзина пуста</td></tr>`}
+                    </tbody>
+                    <tfoot>
+                      <tr>
+                        <td colspan="3" style="padding: 15px 10px; text-align: right; font-weight: bold; font-size: 14px; color: #4a5568;">
+                          Общая стоимость:
+                        </td>
+                        <td style="padding: 15px 10px; text-align: right; font-weight: 800; font-size: 16px; color: #4f46e5; white-space: nowrap;">
+                          ${(totalPrice || 0).toLocaleString()} ₽
+                        </td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+
+                <div style="text-align: center; padding-top: 15px; border-top: 1px solid #e2e8f0; font-size: 11px; color: #a0aec0;">
+                  Заявка сгенерирована автоматически. Вы можете увидеть её в разделе «Проекты» вашей административной панели.
+                </div>
+              </div>
+            `;
+
+            // Replace newlines with spaces to avoid raw <br> tags being added inside HTML structures
+            const htmlMessage = rawHtml.replace(/\n/g, " ");
+
+            await sendEmail(notificationEmail, subject, htmlMessage);
+            console.log(`--- [ORDER NOTIFICATION] Sent notification to ${notificationEmail} ---`);
+          }
+        }
+      } catch (mailErr) {
+        console.error("Failed to send order email notification:", mailErr);
+      }
       
       res.json({ success: true, orderId });
     } catch (e) {

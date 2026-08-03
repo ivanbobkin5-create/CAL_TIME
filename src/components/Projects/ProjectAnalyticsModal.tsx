@@ -59,15 +59,32 @@ export const ProjectAnalyticsModal = ({
     let ownRetail = 0;
 
     const rows: any[] = [];
-    if (project.data?.summaryRows && project.data.summaryRows.length > 0) {
-      rows.push(...project.data.summaryRows);
-    } else if (project.specification?.summaryRows && project.specification.summaryRows.length > 0) {
-      rows.push(...project.specification.summaryRows);
-    } else if (project.data?.summary) {
-      const s = project.data.summary;
-      if (s.materials) rows.push(...s.materials.map((m: any) => ({ ...m, type: "material" })));
-      if (s.hardware) rows.push(...s.hardware.map((h: any) => ({ ...h, type: "hardware" })));
-      if (s.services) rows.push(...s.services.map((s: any) => ({ ...s, type: "service" })));
+    const subProjs = (project as any).subProjects || (project as any).projects || [];
+    
+    if (subProjs.length > 0) {
+      subProjs.forEach((sp: any) => {
+        if (sp.data?.summaryRows) rows.push(...sp.data.summaryRows);
+        else if (sp.specification?.summaryRows) rows.push(...sp.specification.summaryRows);
+        else if (sp.data?.summary) {
+          const s = sp.data.summary;
+          if (s.materials) rows.push(...s.materials.map((m: any) => ({ ...m, type: "material" })));
+          if (s.hardware) rows.push(...s.hardware.map((h: any) => ({ ...h, type: "hardware" })));
+          if (s.services) rows.push(...s.services.map((s: any) => ({ ...s, type: "service" })));
+        }
+      });
+    }
+
+    if (rows.length === 0) {
+      if (project.data?.summaryRows && project.data.summaryRows.length > 0) {
+        rows.push(...project.data.summaryRows);
+      } else if (project.specification?.summaryRows && project.specification.summaryRows.length > 0) {
+        rows.push(...project.specification.summaryRows);
+      } else if (project.data?.summary) {
+        const s = project.data.summary;
+        if (s.materials) rows.push(...s.materials.map((m: any) => ({ ...m, type: "material" })));
+        if (s.hardware) rows.push(...s.hardware.map((h: any) => ({ ...h, type: "hardware" })));
+        if (s.services) rows.push(...s.services.map((s: any) => ({ ...s, type: "service" })));
+      }
     }
 
     rows.forEach((row) => {
@@ -135,17 +152,32 @@ export const ProjectAnalyticsModal = ({
     let totalServicesCost = 0;
 
     const rows: any[] = [];
+    const subProjs = (project as any).subProjects || (project as any).projects || [];
+    
+    if (subProjs.length > 0) {
+      subProjs.forEach((sp: any) => {
+        if (sp.data?.summaryRows) rows.push(...sp.data.summaryRows);
+        else if (sp.specification?.summaryRows) rows.push(...sp.specification.summaryRows);
+        else if (sp.data?.summary) {
+          const s = sp.data.summary;
+          if (s.materials) rows.push(...s.materials.map((m: any) => ({ ...m, type: "material" })));
+          if (s.hardware) rows.push(...s.hardware.map((h: any) => ({ ...h, type: "hardware" })));
+          if (s.services) rows.push(...s.services.map((s: any) => ({ ...s, type: "service" })));
+        }
+      });
+    }
 
-    // Extract rows from project data
-    if (project.data?.summaryRows && project.data.summaryRows.length > 0) {
-      rows.push(...project.data.summaryRows);
-    } else if (project.specification?.summaryRows && project.specification.summaryRows.length > 0) {
-      rows.push(...project.specification.summaryRows);
-    } else if (project.data?.summary) {
-      const s = project.data.summary;
-      if (s.materials) rows.push(...s.materials.map((m: any) => ({ ...m, type: "material" })));
-      if (s.hardware) rows.push(...s.hardware.map((h: any) => ({ ...h, type: "hardware" })));
-      if (s.services) rows.push(...s.services.map((s: any) => ({ ...s, type: "service" })));
+    if (rows.length === 0) {
+      if (project.data?.summaryRows && project.data.summaryRows.length > 0) {
+        rows.push(...project.data.summaryRows);
+      } else if (project.specification?.summaryRows && project.specification.summaryRows.length > 0) {
+        rows.push(...project.specification.summaryRows);
+      } else if (project.data?.summary) {
+        const s = project.data.summary;
+        if (s.materials) rows.push(...s.materials.map((m: any) => ({ ...m, type: "material" })));
+        if (s.hardware) rows.push(...s.hardware.map((h: any) => ({ ...h, type: "hardware" })));
+        if (s.services) rows.push(...s.services.map((s: any) => ({ ...s, type: "service" })));
+      }
     }
 
     if (rows.length > 0) {

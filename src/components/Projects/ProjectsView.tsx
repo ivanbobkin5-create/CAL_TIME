@@ -242,6 +242,12 @@ export const ProjectsView = ({
   const [selectedBitrixProject, setSelectedBitrixProject] = useState<Project | null>(null);
   const [selectedAnalyticsProject, setSelectedAnalyticsProject] = useState<Project | null>(null);
   const [selectedTransferProject, setSelectedTransferProject] = useState<Project | null>(null);
+  const [returnOrderModal, setReturnOrderModal] = useState<{ item: any; isSet: boolean } | null>(null);
+  const [returnReasonInput, setReturnReasonInput] = useState("");
+  const [isReturning, setIsReturning] = useState(false);
+  const [productionNotesModal, setProductionNotesModal] = useState<{ item: any; isSet: boolean } | null>(null);
+  const [productionNotesInput, setProductionNotesInput] = useState("");
+  const [isSavingProductionNotes, setIsSavingProductionNotes] = useState(false);
   const [companyEmployees, setCompanyEmployees] = useState<any[]>([]);
   const [selectedManagerId, setSelectedManagerId] = useState<string>("");
   const [renamingSet, setRenamingSet] = useState<any | null>(null);
@@ -498,7 +504,8 @@ export const ProjectsView = ({
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         createdBy: userId || "",
-        createdByName: "Пользователь",
+        createdByName: "Менеджер",
+        createdByPhoto: "",
         status: "draft",
         summary: {
           totalMaterialsPrice: 0,
@@ -514,7 +521,8 @@ export const ProjectsView = ({
 
       const employee = companyEmployees.find(emp => emp.uid === userId);
       if (employee) {
-        setRecord.createdByName = employee.name || employee.displayName || employee.email || "Пользователь";
+        setRecord.createdByName = employee.name || employee.displayName || employee.email || setRecord.createdByName;
+        setRecord.createdByPhoto = employee.avatarUrl || employee.photoURL || setRecord.createdByPhoto;
       }
 
       // Optimistic update
@@ -597,10 +605,54 @@ export const ProjectsView = ({
 
   const [collapsedSetIds, setCollapsedSetIds] = useState<Set<string>>(new Set());
   const [addProjectToSetModal, setAddProjectToSetModal] = useState<any | null>(null);
+  const [addingProjects, setAddingProjects] = useState<Record<string, boolean>>({});
+
+  // Execute actual database and state updates for dissolving a set
+  const executeDissolveSet = async (set: any) => {
+    if (!companyId) return;
+    try {
+      const subProjs = userProjects.filter(p => p.setId === set.id || p.data?.setId === set.id || set.projectIds?.includes(p.id));
+      const subProjIds = new Set(subProjs.map(p => p.id));
+
+      // Optimistic local update
+      setLocalSets(prev => prev.filter(s => s.id !== set.id));
+      setLocalProjects(prev => prev.map(p => {
+        if (subProjIds.has(p.id) || p.setId === set.id || p.data?.setId === set.id) {
+          const updatedData = p.data ? { ...p.data } : {};
+          delete updatedData.setId;
+          return { ...p, setId: undefined, status: "draft", data: updatedData };
+        }
+        return p;
+      }));
+
+      const batch = writeBatch(db);
+      for (const sp of subProjs) {
+        batch.update(doc(db, "companies", companyId, "projects", sp.id), { setId: null, status: "draft" });
+      }
+      batch.delete(doc(db, "companies", companyId, "sets", set.id));
+      await batch.commit();
+      if (showAlert) showAlert("Успешно", "Комплект расформирован. Проекты переведены в черновики и доступны по отдельности.");
+    } catch (err) {
+      console.error("Error dissolving set:", err);
+      if (showAlert) showAlert("Ошибка", "Не удалось расформировать комплект");
+    }
+  };
 
   // Unlink a single project from a set
   const handleUnlinkProject = async (project: Project, set: any) => {
     if (!companyId) return;
+    const currentSubProjects = (setSubProjectsMap[set.id] || []).filter((p: any) => p.id !== project.id);
+    const remainingCount = currentSubProjects.length;
+
+    if (remainingCount === 0) {
+      showConfirm(
+        "Расформирование комплекта",
+        `Вы исключаете единственный проект из комплекта "${set.name || 'без названия'}". В комплекте больше не останется проектов, поэтому он будет полностью расформирован, а проекты станут самостоятельными черновиками. Вы действительно хотите продолжить?`,
+        () => executeDissolveSet(set)
+      );
+      return;
+    }
+
     try {
       // Optimistic update
       setLocalProjects(prev => prev.map(p => {
@@ -637,37 +689,15 @@ export const ProjectsView = ({
   // Dissolve set (keeps projects as standalone)
   const handleDissolveSet = async (set: any) => {
     if (!companyId) return;
+    const isIssued = set.status === "sent" || set.status === "ordered" || set.status === "submitted" || set.status === "transferred";
+    const confirmMessage = isIssued
+      ? `Внимание! Комплект "${set.name || 'без названия'}" находится в статусе «Оформлен / Передан». При расформировании комплект перейдет из статуса «Оформлен» в обычные проекты, где необходимо будет заново собрать комплект или оформить проекты по отдельности. Продолжить?`
+      : `Вы хотите расформировать комплект "${set.name || 'без названия'}"? Все входящие в него проекты сохранятся как отдельные проекты.`;
+
     showConfirm(
       "Расформировать комплект",
-      `Вы хотите расформировать комплект "${set.name || 'без названия'}"? Все входящие в него проекты сохранятся как отдельные проекты.`,
-      async () => {
-        try {
-          const subProjs = userProjects.filter(p => p.setId === set.id || p.data?.setId === set.id || set.projectIds?.includes(p.id));
-          const subProjIds = new Set(subProjs.map(p => p.id));
-
-          // Optimistic local update
-          setLocalSets(prev => prev.filter(s => s.id !== set.id));
-          setLocalProjects(prev => prev.map(p => {
-            if (subProjIds.has(p.id) || p.setId === set.id || p.data?.setId === set.id) {
-              const updatedData = p.data ? { ...p.data } : {};
-              delete updatedData.setId;
-              return { ...p, setId: undefined, data: updatedData };
-            }
-            return p;
-          }));
-
-          const batch = writeBatch(db);
-          for (const sp of subProjs) {
-            batch.update(doc(db, "companies", companyId, "projects", sp.id), { setId: null });
-          }
-          batch.delete(doc(db, "companies", companyId, "sets", set.id));
-          await batch.commit();
-          if (showAlert) showAlert("Успешно", "Комплект расформирован. Проекты теперь отображаются по отдельности.");
-        } catch (err) {
-          console.error("Error dissolving set:", err);
-          if (showAlert) showAlert("Ошибка", "Не удалось расформировать комплект");
-        }
-      }
+      confirmMessage,
+      () => executeDissolveSet(set)
     );
   };
 
@@ -734,6 +764,8 @@ export const ProjectsView = ({
   const handleAddProjectToSet = async (projectId: string, set: any) => {
     if (!companyId) return;
     try {
+      setAddingProjects(prev => ({ ...prev, [projectId]: true }));
+
       // Optimistic update
       setLocalProjects(prev => prev.map(p => {
         if (p.id === projectId) {
@@ -749,18 +781,21 @@ export const ProjectsView = ({
         return s;
       }));
 
-      await updateDoc(doc(db, "companies", companyId, "projects", projectId), {
+      const batch = writeBatch(db);
+      batch.update(doc(db, "companies", companyId, "projects", projectId), {
         setId: set.id,
       });
       const updatedProjectIds = Array.from(new Set([...(set.projectIds || []), projectId]));
-      await updateDoc(doc(db, "companies", companyId, "sets", set.id), {
+      batch.update(doc(db, "companies", companyId, "sets", set.id), {
         projectIds: updatedProjectIds,
       });
-      setAddProjectToSetModal(null);
+      await batch.commit();
       if (showAlert) showAlert("Успешно", "Проект добавлен в комплект");
     } catch (err) {
       console.error("Error adding project to set:", err);
       if (showAlert) showAlert("Ошибка", "Не удалось добавить проект в комплект");
+    } finally {
+      setAddingProjects(prev => ({ ...prev, [projectId]: false }));
     }
   };
 
@@ -1138,9 +1173,10 @@ export const ProjectsView = ({
                         key={set.id}
                         className="bg-white rounded-3xl border-2 border-indigo-100 hover:border-indigo-300 shadow-sm hover:shadow-xl transition-all overflow-visible relative flex flex-col justify-between"
                       >
-                        <div className="h-2 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-600 rounded-t-[22px]" />
+                        {/* Beautifully Integrated Top Gradient Stripe */}
+                        <div className="absolute -top-[2px] -left-[2px] -right-[2px] h-2.5 bg-gradient-to-r from-indigo-500 via-purple-500 to-indigo-600 rounded-t-3xl" />
                         
-                        <div className="p-5 md:p-6 flex-1 flex flex-col justify-between">
+                        <div className="p-5 md:p-6 pt-7 md:pt-8 flex-1 flex flex-col justify-between">
                           <div>
                             {/* Header Row */}
                             <div className="flex items-start justify-between gap-4 mb-4">
@@ -1612,48 +1648,67 @@ export const ProjectsView = ({
       </div>
 
       {/* Modal: Add Standalone Project to Set */}
-      {addProjectToSetModal && (
-        <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setAddProjectToSetModal(null)}>
-          <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-gray-100" onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
-              <h3 className="font-bold text-gray-900 text-lg flex items-center gap-2">
-                <FolderPlus className="w-5 h-5 text-indigo-600" />
-                Добавить проект в комплект
-              </h3>
-              <button onClick={() => setAddProjectToSetModal(null)} className="p-1 hover:bg-gray-100 rounded-full text-gray-400">
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-            
-            <p className="text-xs text-gray-500 mb-4">
-              Выберите отдельный проект для добавления в комплект "{addProjectToSetModal.name || 'Без названия'}":
-            </p>
+      {addProjectToSetModal && (() => {
+        const activeSet = localSets.find(s => s.id === addProjectToSetModal.id) || addProjectToSetModal;
+        return (
+          <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200" onClick={() => setAddProjectToSetModal(null)}>
+            <div className="bg-white rounded-3xl p-6 max-w-lg w-full shadow-2xl border border-gray-100 flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
+                <h3 className="font-bold text-gray-900 text-lg flex items-center gap-2">
+                  <FolderPlus className="w-5 h-5 text-indigo-600" />
+                  Добавить проекты в комплект
+                </h3>
+                <button onClick={() => setAddProjectToSetModal(null)} className="p-1 hover:bg-gray-100 rounded-full text-gray-400">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <p className="text-xs text-gray-500 mb-4">
+                Выберите отдельный проект для добавления в комплект <strong className="text-gray-900 font-bold">"{activeSet.name || 'Без названия'}"</strong>. Проекты добавляются мгновенно, вы можете добавить несколько подряд:
+              </p>
 
-            <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
-              {standaloneProjects.length === 0 ? (
-                <div className="text-xs text-gray-400 italic p-4 text-center bg-gray-50 rounded-2xl">
-                  Нет свободных отдельных проектов для добавления
-                </div>
-              ) : (
-                standaloneProjects.map(sp => (
-                  <div key={sp.id} className="flex items-center justify-between p-3 bg-gray-50 hover:bg-indigo-50 rounded-2xl transition-colors border border-gray-100">
-                    <div>
-                      <div className="font-bold text-gray-900 text-sm">{sp.name}</div>
-                      <div className="text-xs text-indigo-600 font-bold">{(sp.totalPrice || 0).toLocaleString()} ₽</div>
-                    </div>
-                    <button
-                      onClick={() => handleAddProjectToSet(sp.id, addProjectToSetModal)}
-                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs"
-                    >
-                      Добавить
-                    </button>
+              <div className="overflow-y-auto space-y-2 pr-1 flex-1">
+                {standaloneProjects.length === 0 ? (
+                  <div className="text-xs text-gray-400 italic p-6 text-center bg-gray-50 rounded-2xl">
+                    Нет свободных отдельных проектов для добавления
                   </div>
-                ))
-              )}
+                ) : (
+                  standaloneProjects.map(sp => {
+                    const isAdding = !!addingProjects[sp.id];
+                    return (
+                      <div key={sp.id} className="flex items-center justify-between p-3 bg-gray-50 hover:bg-indigo-50/50 rounded-2xl transition-all border border-gray-100/60 hover:border-indigo-100">
+                        <div className="min-w-0 pr-2">
+                          <div className="font-bold text-gray-900 text-sm truncate">{sp.name}</div>
+                          <div className="text-xs text-indigo-600 font-extrabold">
+                            {(sp.totalPrice || (sp.data?.results ? Object.values(sp.data.results).reduce((acc: number, r: any) => acc + (r.totalPrice || 0), 0) : 0)).toLocaleString()} ₽
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleAddProjectToSet(sp.id, activeSet)}
+                          disabled={isAdding}
+                          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center gap-1.5 disabled:opacity-50 flex-shrink-0"
+                        >
+                          {isAdding && <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />}
+                          <span>Добавить</span>
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="mt-4 pt-3 border-t border-gray-100 flex justify-end">
+                <button
+                  onClick={() => setAddProjectToSetModal(null)}
+                  className="px-6 py-2.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-black rounded-xl transition-all"
+                >
+                  Готово
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {selectedBitrixProject && (
         <Bitrix24Modal
@@ -1746,10 +1801,15 @@ export const ProjectsView = ({
             </button>
             <button
               onClick={handleCreateSet}
-              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-500/30 transition-all flex items-center gap-2"
+              disabled={isCreatingSet}
+              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-500/30 transition-all flex items-center gap-2 disabled:opacity-50"
             >
-              <Combine className="w-4 h-4" />
-              <span>Создать комплект ({selectedProjectIds.size})</span>
+              {isCreatingSet ? (
+                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+              ) : (
+                <Combine className="w-4 h-4" />
+              )}
+              <span>{isCreatingSet ? "Создание..." : `Создать комплект (${selectedProjectIds.size})`}</span>
             </button>
           </div>
         </div>
