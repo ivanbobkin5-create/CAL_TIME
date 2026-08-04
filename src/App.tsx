@@ -45,6 +45,73 @@ const switchLayout = (text: string) => {
     .join("");
   return [text.toLowerCase(), switchedEn, switchedRu];
 };
+
+const resolveMaterialPrice = (decor: string, thickness: string | number, prices: any) => {
+  if (!decor || !prices) return 0;
+  const thickStr = String(thickness || "16");
+
+  if (thickStr === "16") {
+    const keysToCheck = [
+      decor,
+      decor.replace(" ", "|"),
+      decor.replace(/ /g, "|"),
+    ];
+    for (const key of keysToCheck) {
+      if (prices[key] !== undefined && prices[key] !== null && prices[key] !== 0) {
+        return prices[key];
+      }
+    }
+    return 0;
+  }
+
+  const keysToCheck = [
+    `${decor}|${thickStr}`,
+    `${decor.replace(" ", "|")}|${thickStr}`,
+    `${decor.replace(/ /g, "|")}|${thickStr}`,
+  ];
+  for (const key of keysToCheck) {
+    if (prices[key] !== undefined && prices[key] !== null && prices[key] !== 0) {
+      return prices[key];
+    }
+  }
+  return 0;
+};
+
+const getCleanCategoryName = (category: string) => {
+  if (!category) return "";
+  const cat = category.toLowerCase().trim();
+  if (cat === "c1" || cat === "e1" || cat === "1") return "Категория 1";
+  if (cat === "c2" || cat === "e2" || cat === "2") return "Категория 2";
+  if (cat === "c3" || cat === "e3" || cat === "3") return "Категория 3";
+  if (cat === "c4" || cat === "4") return "Категория 4";
+  if (cat === "c5" || cat === "5") return "Категория 5";
+  if (/^[ce]\d+$/i.test(category)) {
+    return `Категория ${category.replace(/^[ceCE]/, "")}`;
+  }
+  return category;
+};
+
+const getCleanMillingName = (milling: string) => {
+  if (!milling) return "";
+  const mill = milling.toLowerCase().trim();
+  if (mill === "m1" || mill === "em1" || mill === "мыло") return "Фрезеровка мыло";
+  if (mill === "m2" || mill === "em2" || mill === "фрезеровка тип 1") return "Фрезеровка тип 1";
+  if (mill === "m3" || mill === "фрезеровка тип 2") return "Фрезеровка тип 2";
+  if (mill === "m4" || mill === "фрезеровка тип 3") return "Фрезеровка тип 3";
+  if (mill === "m5" || mill === "фрезеровка тип 4") return "Фрезеровка тип 4";
+  if (/^[em]\d+$/i.test(milling)) {
+    const numPart = milling.replace(/^[a-zA-Z]+/, "");
+    if (numPart === "1") {
+      return "Фрезеровка мыло";
+    }
+    return `Фрезеровка ТИП ${numPart}`;
+  }
+  if (!/^фрезеровка/i.test(mill)) {
+    return `Фрезеровка ${milling}`;
+  }
+  return milling;
+};
+
 import {
   RegistrationForm,
   RegistrationData,
@@ -3610,6 +3677,7 @@ const PriceView = ({
   customEdgeMapping,
   setCustomEdgeMapping,
   resolveBrandCoefficient,
+  isSavingConfig,
 }: {
   calcMode: string;
   prices: Record<string, number>;
@@ -3650,6 +3718,7 @@ const PriceView = ({
   customEdgeMapping?: Record<string, { edgeBrand?: string; edgeDecor?: string }>;
   setCustomEdgeMapping?: React.Dispatch<React.SetStateAction<Record<string, { edgeBrand?: string; edgeDecor?: string }>>>;
   resolveBrandCoefficient?: (category: string, brand?: string) => number;
+  isSavingConfig?: boolean;
 }) => {
   const [priceSearch, setPriceSearch] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -5445,85 +5514,162 @@ const PriceView = ({
                           )}
                         </div>
 
-                        <div className={cn(
-                          (brand.includes("AGT") || brand.includes("Evosoft") || isServices)
-                            ? "flex flex-col gap-2"
-                            : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3"
-                        )}>
-                          {filtered.map((decor) => {
-                            const priceKey = isServices
-                              ? decor
-                              : `${brand}|${decor}`;
-                            return (
-                              <div
-                                key={decor}
-                                className={cn(
-                                  "border border-gray-100 rounded-lg hover:border-blue-200 transition-colors group bg-white shadow-sm relative",
-                                  (brand.includes("AGT") || brand.includes("Evosoft") || isServices) 
-                                    ? "flex items-center justify-between p-3" 
-                                    : "p-2"
-                                )}
-                              >
-                                {!isServices && isProduction && (
-                                  <button
-                                    onClick={() => {
-                                      showConfirm(
-                                        "Удалить декор",
-                                        `Удалить декор "${decor}"?`,
-                                        () => {
-                                          updateAndSaveCatalogMaterials((prev) => ({
-                                            ...prev,
-                                            [brand]: prev[brand].filter(
-                                              (d) => d !== decor,
-                                            ),
-                                          }));
-                                        },
+                        {brand === "Egger" || brand === "Nordeco" ? (
+                          <div className="overflow-x-auto border border-gray-100 rounded-xl">
+                            <table className="w-full border-collapse text-left text-xs text-gray-700">
+                              <thead>
+                                <tr className="border-b border-gray-100 bg-gray-50/50">
+                                  <th className="py-3 px-4 font-bold text-gray-500 min-w-[200px]">Декор / Цвет</th>
+                                  {(brand === "Egger" ? ["10", "16", "25"] : ["16", "22"]).map((thick) => (
+                                    <th key={thick} className="py-3 px-4 font-bold text-gray-500 text-center w-36">
+                                      {thick} мм
+                                    </th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100">
+                                {filtered.map((decor) => (
+                                  <tr key={decor} className="hover:bg-gray-50/40 transition-colors group">
+                                    <td className="py-3 px-4 font-semibold text-gray-800 relative">
+                                      {decor}
+                                      {!isServices && isProduction && (
+                                        <button
+                                          onClick={() => {
+                                            showConfirm(
+                                              "Удалить декор",
+                                              `Удалить декор "${decor}"?`,
+                                              () => {
+                                                updateAndSaveCatalogMaterials((prev) => ({
+                                                  ...prev,
+                                                  [brand]: prev[brand].filter(
+                                                    (d) => d !== decor,
+                                                  ),
+                                                }));
+                                              },
+                                            );
+                                          }}
+                                          className="absolute right-2 top-1/2 -translate-y-1/2 w-5 h-5 bg-white border border-gray-200 text-gray-400 hover:text-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm z-10"
+                                        >
+                                          <X className="w-3 h-3" />
+                                        </button>
+                                      )}
+                                    </td>
+                                    {(brand === "Egger" ? ["10", "16", "25"] : ["16", "22"]).map((thick) => {
+                                      const key = thick === "16" ? `${brand}|${decor}` : `${brand}|${decor}|${thick}`;
+                                      return (
+                                        <td key={thick} className="py-2 px-4">
+                                          <div className="flex items-center justify-center gap-1">
+                                            <div className="w-24">
+                                              <PriceInputWithSave 
+                                                priceKey={key}
+                                                value={prices[key] || 0}
+                                                setPrices={setPrices}
+                                                db={db}
+                                                auth={auth}
+                                                userRole={userRole}
+                                                canEdit={canEdit}
+                                                prices={prices}
+                                                onShowHistory={onShowHistory}
+                                                logPriceChange={logPriceChange}
+                                              />
+                                            </div>
+                                            <button 
+                                              onClick={() => onShowHistory(key)}
+                                              className="p-1 text-gray-400 hover:text-blue-600 transition-colors shrink-0"
+                                              title="История цен"
+                                            >
+                                              <History className="w-3.5 h-3.5" />
+                                            </button>
+                                          </div>
+                                        </td>
                                       );
-                                    }}
-                                    className="absolute -top-2 -right-2 w-5 h-5 bg-white border border-gray-200 text-gray-400 hover:text-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm z-10"
-                                  >
-                                    <X className="w-3 h-3" />
-                                  </button>
-                                )}
+                                    })}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : (
+                          <div className={cn(
+                            (brand.includes("AGT") || brand.includes("Evosoft") || isServices)
+                              ? "flex flex-col gap-2"
+                              : "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3"
+                          )}>
+                            {filtered.map((decor) => {
+                              const priceKey = isServices
+                                ? decor
+                                : `${brand}|${decor}`;
+                              return (
                                 <div
+                                  key={decor}
                                   className={cn(
-                                    "font-bold text-gray-500 leading-tight pr-4",
-                                    (brand.includes("AGT") || brand.includes("Evosoft") || isServices) ? "text-sm text-gray-700" : "text-[10px] mb-1.5",
-                                    !isServices && "truncate"
+                                    "border border-gray-100 rounded-lg hover:border-blue-200 transition-colors group bg-white shadow-sm relative",
+                                    (brand.includes("AGT") || brand.includes("Evosoft") || isServices) 
+                                      ? "flex items-center justify-between p-3" 
+                                      : "p-2"
                                   )}
-                                  title={decor}
                                 >
-                                  {decor}
-                                </div>
-                                <div className="flex items-center justify-between gap-2 shrink-0">
-                                  <div className={cn(
-                                    (brand.includes("AGT") || brand.includes("Evosoft") || isServices) ? "w-32" : "w-full"
-                                  )}>
-                                    <PriceInputWithSave 
-                                      priceKey={priceKey}
-                                      value={prices[priceKey] || 0}
-                                      setPrices={setPrices}
-                                      db={db}
-                                      auth={auth}
-                                      userRole={userRole}
-                                      canEdit={canEdit}
-                                      prices={prices}
-                                      onShowHistory={onShowHistory}
-                                      logPriceChange={logPriceChange}
-                                    />
-                                  </div>
-                                  <button 
-                                    onClick={() => onShowHistory(priceKey)}
-                                    className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
-                                    title="История цен"
+                                  {!isServices && isProduction && (
+                                    <button
+                                      onClick={() => {
+                                        showConfirm(
+                                          "Удалить декор",
+                                          `Удалить декор "${decor}"?`,
+                                          () => {
+                                            updateAndSaveCatalogMaterials((prev) => ({
+                                              ...prev,
+                                              [brand]: prev[brand].filter(
+                                                (d) => d !== decor,
+                                              ),
+                                            }));
+                                          },
+                                        );
+                                      }}
+                                      className="absolute -top-2 -right-2 w-5 h-5 bg-white border border-gray-200 text-gray-400 hover:text-red-500 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all shadow-sm z-10"
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  )}
+                                  <div
+                                    className={cn(
+                                      "font-bold text-gray-500 leading-tight pr-4",
+                                      (brand.includes("AGT") || brand.includes("Evosoft") || isServices) ? "text-sm text-gray-700" : "text-[10px] mb-1.5",
+                                      !isServices && "truncate"
+                                    )}
+                                    title={decor}
                                   >
-                                    <History className="w-3.5 h-3.5" />
-                                  </button>
+                                    {decor}
+                                  </div>
+                                  <div className="flex items-center justify-between gap-2 shrink-0">
+                                    <div className={cn(
+                                      (brand.includes("AGT") || brand.includes("Evosoft") || isServices) ? "w-32" : "w-full"
+                                    )}>
+                                      <PriceInputWithSave 
+                                        priceKey={priceKey}
+                                        value={prices[priceKey] || 0}
+                                        setPrices={setPrices}
+                                        db={db}
+                                        auth={auth}
+                                        userRole={userRole}
+                                        canEdit={canEdit}
+                                        prices={prices}
+                                        onShowHistory={onShowHistory}
+                                        logPriceChange={logPriceChange}
+                                      />
+                                    </div>
+                                    <button 
+                                      onClick={() => onShowHistory(priceKey)}
+                                      className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                                      title="История цен"
+                                    >
+                                      <History className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
                                 </div>
-                              </div>
-                            );
-                          })}
-                        </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     );
                   })
@@ -5564,7 +5710,20 @@ const PriceView = ({
 
               {cat.title === "Фасады заказные" && isProduction && (
                 <div className="space-y-8 animate-in fade-in duration-500 pt-6 border-t border-gray-100">
-                  <div className="flex justify-end">
+                  <div className="flex items-center justify-between gap-4 flex-wrap bg-gray-50/50 p-4 rounded-2xl border border-gray-100">
+                    <div className="flex items-center gap-2">
+                      {isSavingConfig ? (
+                        <span className="flex items-center gap-2 text-xs font-bold text-indigo-600 uppercase tracking-wider animate-pulse">
+                          <span className="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
+                          Сохранение изменений...
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-2 text-xs font-semibold text-emerald-600 uppercase tracking-wider bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                          Сохранено в облако
+                        </span>
+                      )}
+                    </div>
                     <button
                       onClick={() => {
                         showPrompt(
@@ -9117,7 +9276,10 @@ const SummaryView = ({
 
         // If manual, use a unique key for this specific material row to avoid price sharing
         const priceKey = isManualMaterial ? `manual_${key}` : basePriceKey;
-        const price = prices[priceKey] || 0;
+        let price = prices[priceKey] || 0;
+        if (!isManualMaterial && typeof decor === "string") {
+          price = resolveMaterialPrice(decor, item.thickness, prices);
+        }
 
         const isCustomFacade =
           item.type === "Фасад" && facadeType[key] === "custom";
@@ -9168,11 +9330,14 @@ const SummaryView = ({
             )?.settings;
           }
 
+          let matchingCat = null;
+          let matchingMill = null;
+
           if (settings) {
-            const matchingCat = settings.categories?.find(
+            matchingCat = settings.categories?.find(
               (c: any) => c.name === category || c.id === category,
             );
-            const matchingMill = settings.millings?.find(
+            matchingMill = settings.millings?.find(
               (m: any) => m.name === milling || m.id === milling,
             );
 
@@ -9184,6 +9349,20 @@ const SummaryView = ({
               const thickKey = `${thickness}:${matchingMill.id}`;
               basePrice += settings.thicknessGrid?.[thickKey] || 0;
             }
+          }
+
+          let categoryDisp = "";
+          if (matchingCat) {
+            categoryDisp = getCleanCategoryName(matchingCat.name);
+          } else if (category) {
+            categoryDisp = getCleanCategoryName(category);
+          }
+
+          let millingDisp = "";
+          if (matchingMill) {
+            millingDisp = getCleanMillingName(matchingMill.name);
+          } else if (milling) {
+            millingDisp = getCleanMillingName(milling);
           }
 
           // If we found a base price in the grid, use it. Otherwise fallback to the manually entered price.
@@ -9201,7 +9380,7 @@ const SummaryView = ({
           rows.push({
             type: "material",
             name: `Фасад (${customType})`,
-            sub: `${thickness} мм${category ? `, ${category}` : ""}${milling ? `, ${milling}` : ""}`,
+            sub: `${thickness} мм${categoryDisp ? `, ${categoryDisp}` : ""}${millingDisp ? `, ${millingDisp}` : ""}`,
             decor: decor || "Не выбран",
             qty: qtyText,
             price: rawPrice,
@@ -30244,6 +30423,8 @@ export default function App() {
     checkCustomDomain();
   }, [isCheckingDomain]);
 
+  const [isSavingConfig, setIsSavingConfig] = useState(false);
+
   const [productionFormat, setProductionFormat] =
     useState<ProductionFormat>("contract");
   const [productionSettings, setProductionSettings] = useState<any>(null);
@@ -30338,6 +30519,42 @@ export default function App() {
         },
       },
     });
+
+  const lastSavedProductionConfigRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!companyData?.id || !ownProductionConfig) return;
+
+    const configStr = JSON.stringify(ownProductionConfig);
+    if (lastSavedProductionConfigRef.current === null) {
+      lastSavedProductionConfigRef.current = configStr;
+      return;
+    }
+
+    if (lastSavedProductionConfigRef.current === configStr) {
+      return;
+    }
+
+    window.dispatchEvent(new CustomEvent('price-saving-state', { detail: { saving: true } }));
+
+    const delayDebounceFn = setTimeout(async () => {
+      try {
+        await setDoc(
+          doc(db, "companies", companyData.id, "settings", "production"),
+          ownProductionConfig,
+          { merge: true }
+        );
+        lastSavedProductionConfigRef.current = configStr;
+        window.dispatchEvent(new CustomEvent('price-saving-state', { detail: { saving: false } }));
+        console.log("DEBUG: Autosaved ownProductionConfig successfully");
+      } catch (err) {
+        console.error("Autosave of ownProductionConfig failed:", err);
+        window.dispatchEvent(new CustomEvent('price-saving-state', { detail: { saving: false } }));
+      }
+    }, 1500);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [ownProductionConfig, companyData?.id]);
 
   const [b24Categories, setB24Categories] = useState<{ id: string; name: string }[]>([]);
   const [b24Stages, setB24Stages] = useState<{ id: string; name: string }[]>([]);
@@ -32712,29 +32929,43 @@ export default function App() {
     
     if (isOwn) {
       if (!ownProductionConfig) return;
+      if (lastSavedOwnConfig.current === null) {
+        lastSavedOwnConfig.current = ownProductionConfig;
+        return;
+      }
       if (JSON.stringify(lastSavedOwnConfig.current) === JSON.stringify(ownProductionConfig)) return;
 
+      setIsSavingConfig(true);
       const timer = setTimeout(async () => {
         try {
           lastSavedOwnConfig.current = ownProductionConfig;
           await saveProductionConfig(ownProductionConfig, true);
         } catch (e) {
           console.error("Auto-save own production failed", e);
+        } finally {
+          setIsSavingConfig(false);
         }
-      }, 5000);
+      }, 800);
       return () => clearTimeout(timer);
     } else {
       if (!contractConfig) return;
+      if (lastSavedContractConfig.current === null) {
+        lastSavedContractConfig.current = contractConfig;
+        return;
+      }
       if (JSON.stringify(lastSavedContractConfig.current) === JSON.stringify(contractConfig)) return;
 
+      setIsSavingConfig(true);
       const timer = setTimeout(async () => {
         try {
           lastSavedContractConfig.current = contractConfig;
           await saveProductionConfig(contractConfig, true);
         } catch (e) {
           console.error("Auto-save contract production failed", e);
+        } finally {
+          setIsSavingConfig(false);
         }
-      }, 3000);
+      }, 800);
       return () => clearTimeout(timer);
     }
   }, [ownProductionConfig, contractConfig, companyData?.id, companyData?.type, productionFormat]);
@@ -34255,7 +34486,10 @@ export default function App() {
           configToUse.prices?.[basePriceKey] === 0
         : true;
       const priceKey = isManualMaterial ? `manual_${key}` : basePriceKey;
-      const price = prices[priceKey] || 0;
+      let price = prices[priceKey] || 0;
+      if (!isManualMaterial && typeof decor === "string") {
+        price = resolveMaterialPrice(decor, item.thickness, prices);
+      }
 
       const isSheetFacade =
         item.type === "Фасад" && (facadeType[key] || "sheet") === "sheet";
@@ -36010,6 +36244,7 @@ export default function App() {
               setEdgePrices={setEdgePrices}
               customEdgeMapping={customEdgeMapping}
               setCustomEdgeMapping={setCustomEdgeMapping}
+              isSavingConfig={isSavingConfig}
             />
           ) : activeTab === "production" && userRole === "admin" ? (
             <ProductionView

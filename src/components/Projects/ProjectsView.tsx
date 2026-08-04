@@ -1427,6 +1427,48 @@ export const ProjectsView = ({
                                         </button>
                                       )}
 
+                                      {(userRole === "admin" || userRole === "supervisor") && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setOpenMenuId(null);
+                                            setSelectedSetForDealAnalysis({ ...set, projects: subProjects });
+                                          }}
+                                          className="w-full text-left px-4 py-2.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 flex items-center gap-2"
+                                        >
+                                          <TrendingUp className="w-4 h-4 text-indigo-500" />
+                                          Анализ сделки
+                                        </button>
+                                      )}
+
+                                      {setStatus === "sent" && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setOpenMenuId(null);
+                                            handleConfirmTransferToProduction(set, subProjects);
+                                          }}
+                                          className="w-full text-left px-4 py-2.5 text-xs font-semibold text-emerald-600 hover:bg-emerald-50 flex items-center gap-2"
+                                        >
+                                          <Send className="w-4 h-4 text-emerald-500" />
+                                          Передать комплект в работу
+                                        </button>
+                                      )}
+
+                                      {(userRole === "admin" || userRole === "supervisor") && (setStatus === "sent" || setStatus === "production_transferred") && (
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setOpenMenuId(null);
+                                            setReturnOrderModal({ item: set, isSet: true });
+                                          }}
+                                          className="w-full text-left px-4 py-2.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-2"
+                                        >
+                                          <AlertTriangle className="w-4 h-4 text-rose-500" />
+                                          Вернуть на доработку
+                                        </button>
+                                      )}
+
                                       <button
                                         onClick={(e) => {
                                           e.stopPropagation();
@@ -1621,84 +1663,22 @@ export const ProjectsView = ({
                           )}
 
                           {/* Action Buttons Row for Set Card */}
-                          <div className="mt-5 pt-4 border-t border-indigo-50/80 flex flex-wrap items-center justify-between gap-3">
-                            {/* Left Side: Secondary Actions or Info */}
-                            <div className="flex items-center gap-2">
-                              {(userRole === "admin" || userRole === "supervisor") && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedSetForDealAnalysis({ ...set, projects: subProjects });
-                                  }}
-                                  className="px-4 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
-                                >
-                                  <TrendingUp className="w-3.5 h-3.5" />
-                                  <span>Анализ сделки</span>
-                                </button>
-                              )}
+                          {(setStatus === "draft" || setStatus === "returned" || setStatus === "sent") && (userRole === "manager" || userRole === "admin") && (
+                            <div className="mt-5 pt-4 border-t border-indigo-50/80 flex items-center justify-end gap-3" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  if (onCreateSet && subProjects.length > 0) {
+                                    onCreateSet(subProjects, set);
+                                  }
+                                }}
+                                className="h-10 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-indigo-100 shrink-0"
+                              >
+                                <ClipboardList className="w-3.5 h-3.5 shrink-0" />
+                                <span>{setStatus === "sent" ? "Внести изменения" : "Оформить комплект"}</span>
+                              </button>
                             </div>
-
-                            {/* Right Side: Primary Actions */}
-                            <div className="flex items-center gap-2">
-                              {/* Return for revision (for supervisor or admin if sent or production_transferred) */}
-                              {(userRole === "admin" || userRole === "supervisor") && (setStatus === "sent" || setStatus === "production_transferred") && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setReturnOrderModal({ item: set, isSet: true });
-                                  }}
-                                  className="px-4 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
-                                >
-                                  <AlertTriangle className="w-3.5 h-3.5" />
-                                  <span>Вернуть на доработку</span>
-                                </button>
-                              )}
-
-                              {/* Dissolve Set Button for sent / returned / draft */}
-                              {(setStatus === "sent" || setStatus === "returned" || setStatus === "draft") && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDissolveSet(set);
-                                  }}
-                                  className="px-4 py-2 bg-amber-50 hover:bg-amber-100 text-amber-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
-                                >
-                                  <Unlink className="w-3.5 h-3.5" />
-                                  <span>Расформировать комплект</span>
-                                </button>
-                              )}
-
-                              {/* "Передать заказ в работу" Button for Sent sets */}
-                              {setStatus === "sent" && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleConfirmTransferToProduction(set, subProjects);
-                                  }}
-                                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-100"
-                                >
-                                  <Send className="w-3.5 h-3.5" />
-                                  <span>Передать заказ в работу</span>
-                                </button>
-                              )}
-
-                              {/* Checkout / Edit specs button */}
-                              {(setStatus === "draft" || setStatus === "returned" || setStatus === "sent") && (userRole === "manager" || userRole === "admin") && (
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (onCreateSet && subProjects.length > 0) {
-                                      onCreateSet(subProjects, set);
-                                    }
-                                  }}
-                                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-indigo-100"
-                                >
-                                  <ClipboardList className="w-3.5 h-3.5" />
-                                  <span>{setStatus === "sent" ? "Внести изменения" : "Оформить комплект"}</span>
-                                </button>
-                              )}
-                            </div>
-                          </div>
+                          )}
                         </div>
                       </div>
                     );
@@ -1794,47 +1774,62 @@ export const ProjectsView = ({
 
                         {/* Menu */}
                         {openMenuId === project.id && (
-                          <div className="absolute top-14 right-4 w-48 bg-white rounded-xl shadow-2xl border border-gray-100 py-1 z-[100]" onClick={(e) => e.stopPropagation()}>
+                          <div className="absolute top-14 right-4 w-52 bg-white rounded-2xl shadow-2xl border border-gray-100 py-2 z-[100]" onClick={(e) => e.stopPropagation()}>
                             {isSelectionMode && (
-                              <button onClick={(e) => { handleCreateSet(); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-bold text-indigo-600 flex items-center gap-2 border-b border-gray-50">
+                              <button onClick={(e) => { handleCreateSet(); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-xs font-bold text-indigo-600 flex items-center gap-2 border-b border-gray-50">
                                 <Combine className="w-4 h-4" /> Собрать комплект
                               </button>
                             )}
-                            <button onClick={(e) => { e.stopPropagation(); onLoadProject(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 bg-blue-50 text-blue-600 text-sm font-bold flex items-center gap-2">
+                            <button onClick={(e) => { e.stopPropagation(); onLoadProject(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 bg-blue-50 text-blue-600 text-xs font-bold flex items-center gap-2">
                               <ArrowRight className="w-4 h-4" /> Открыть
                             </button>
                             {(userRole === "manager" || userRole === "admin") && (
-                              <button onClick={(e) => { onOpenSpecification(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-blue-600 flex items-center gap-2">
+                              <button onClick={(e) => { onOpenSpecification(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-xs font-medium text-blue-600 flex items-center gap-2">
                                 <ClipboardList className="w-4 h-4" /> {project.status === "sent" || project.status === "transferred" ? "Спецификация" : "Оформить"}
                               </button>
                             )}
                             {project.status !== "sent" && project.status !== "transferred" && (userRole === "manager" || userRole === "admin") && onOpenProposal && (
-                              <button onClick={(e) => { e.stopPropagation(); onOpenProposal(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-indigo-600 flex items-center gap-2">
+                              <button onClick={(e) => { e.stopPropagation(); onOpenProposal(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-xs font-medium text-indigo-600 flex items-center gap-2">
                                 <FileText className="w-4 h-4" /> Комм. предложение (КП)
                               </button>
                             )}
+                            {(userRole === "admin" || userRole === "supervisor") && (
+                              <button onClick={(e) => { e.stopPropagation(); setSelectedSetForDealAnalysis({ ...project, projects: [project] }); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-indigo-50 text-xs font-semibold text-indigo-600 flex items-center gap-2">
+                                <TrendingUp className="w-4 h-4 text-indigo-500" /> Анализ сделки
+                              </button>
+                            )}
                             {project.status === "sent" && (
-                              <button onClick={(e) => { handleTransfer(e, project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-blue-600 flex items-center gap-2">
+                              <button onClick={(e) => { e.stopPropagation(); handleConfirmTransferToProduction(project, [project]); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-emerald-50 text-xs font-semibold text-emerald-600 flex items-center gap-2">
+                                <Send className="w-4 h-4 text-emerald-500" /> Передать в работу
+                              </button>
+                            )}
+                            {(userRole === "admin" || userRole === "supervisor") && (project.status === "sent" || project.status === "production_transferred") && (
+                              <button onClick={(e) => { e.stopPropagation(); setReturnOrderModal({ item: project, isSet: false }); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-rose-50 text-xs font-semibold text-rose-600 flex items-center gap-2">
+                                <AlertTriangle className="w-4 h-4 text-rose-500" /> Вернуть на доработку
+                              </button>
+                            )}
+                            {project.status === "sent" && (
+                              <button onClick={(e) => { handleTransfer(e, project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-xs font-medium text-blue-600 flex items-center gap-2">
                                 <Send className="w-4 h-4" /> Передать руководителю
                               </button>
                             )}
                             {(userRole === "manager" || userRole === "admin") && (
-                              <button onClick={(e) => { setSelectedBitrixProject(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-orange-600 flex items-center gap-2">
+                              <button onClick={(e) => { setSelectedBitrixProject(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-xs font-medium text-orange-600 flex items-center gap-2">
                                 <Send className="w-4 h-4" /> Bitrix24
                               </button>
                             )}
                             {project.status !== "sent" && project.status !== "transferred" && (userRole === "manager" || userRole === "admin") && (
-                              <button onClick={(e) => { e.stopPropagation(); setSelectedTransferProject(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-blue-600 flex items-center gap-2">
+                              <button onClick={(e) => { e.stopPropagation(); setSelectedTransferProject(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-xs font-medium text-blue-600 flex items-center gap-2">
                                 <Send className="w-4 h-4" /> Отдать проект
                               </button>
                             )}
                             {(userRole === "manager" || userRole === "admin") && (
-                              <button onClick={(e) => { setSelectedAnalyticsProject(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-indigo-600 flex items-center gap-2">
+                              <button onClick={(e) => { setSelectedAnalyticsProject(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-xs font-medium text-indigo-600 flex items-center gap-2">
                                 <TrendingUp className="w-4 h-4" /> Анализ
                               </button>
                             )}
                             {(project.status !== "sent" && project.status !== "transferred" && project.status !== "production_transferred" && project.status !== "accepted" && project.status !== "accepted_with_revisions" || userRole === "admin" || userRole === "supervisor") && (
-                              <button onClick={(e) => { handleDelete(e, project.id); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-sm font-medium text-red-600 flex items-center gap-2">
+                              <button onClick={(e) => { handleDelete(e, project.id); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-xs font-medium text-red-600 flex items-center gap-2">
                                 <Trash2 className="w-4 h-4" /> Удалить
                               </button>
                             )}
@@ -1921,68 +1916,20 @@ export const ProjectsView = ({
                       )}
 
                       {/* Action Buttons Row for Standalone Project Card */}
-                      <div className="mt-5 pt-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-3" onClick={(e) => e.stopPropagation()}>
-                        {/* Left Side: Secondary Actions or Info */}
-                        <div className="flex items-center gap-2">
-                          {(userRole === "admin" || userRole === "supervisor") && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setSelectedSetForDealAnalysis({ ...project, projects: [project] });
-                              }}
-                              className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
-                            >
-                              <TrendingUp className="w-3.5 h-3.5" />
-                              <span>Анализ сделки</span>
-                            </button>
-                          )}
+                      {(project.status === "draft" || project.status === "returned" || project.status === "sent") && (userRole === "manager" || userRole === "admin") && (
+                        <div className="mt-5 pt-4 border-t border-gray-100 flex items-center justify-end gap-3" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onOpenSpecification(project);
+                            }}
+                            className="h-10 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-indigo-100 shrink-0"
+                          >
+                            <ClipboardList className="w-3.5 h-3.5 shrink-0" />
+                            <span>{project.status === "sent" ? "Внести изменения" : "Оформить"}</span>
+                          </button>
                         </div>
-
-                        {/* Right Side: Primary Actions */}
-                        <div className="flex items-center gap-2">
-                          {/* Return for revision (for supervisor or admin if sent or production_transferred) */}
-                          {(userRole === "admin" || userRole === "supervisor") && (project.status === "sent" || project.status === "production_transferred") && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setReturnOrderModal({ item: project, isSet: false });
-                              }}
-                              className="px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm"
-                            >
-                              <AlertTriangle className="w-3.5 h-3.5" />
-                              <span>Вернуть</span>
-                            </button>
-                          )}
-
-                          {/* "Передать заказ в работу" Button for Sent standalone projects */}
-                          {project.status === "sent" && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleConfirmTransferToProduction(project, [project]);
-                              }}
-                              className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-emerald-100"
-                            >
-                              <Send className="w-3.5 h-3.5" />
-                              <span>В работу</span>
-                            </button>
-                          )}
-
-                          {/* Checkout / Edit specs button */}
-                          {(project.status === "draft" || project.status === "returned" || project.status === "sent") && (userRole === "manager" || userRole === "admin") && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onOpenSpecification(project);
-                              }}
-                              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-indigo-100"
-                            >
-                              <ClipboardList className="w-3.5 h-3.5" />
-                              <span>{project.status === "sent" ? "Внести изменения" : "Оформить"}</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
+                      )}
                     </div>
                   ))}
                 </div>
