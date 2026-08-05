@@ -220,6 +220,7 @@ import {
   TrendingUp,
   Sliders,
   Loader2,
+  ArrowLeftRight,
 } from "lucide-react";
 
 // --- START OF OFFLINE CACHE AND SYNC ENGINE ---
@@ -1594,6 +1595,15 @@ interface FurnitureSet {
   updatedAt: string;
 }
 
+export interface MaterialWorkCost {
+  retail?: number;
+  designer?: number;
+  salon?: number;
+  salons?: Record<string, number>;
+  includeEdgeWork?: boolean;
+  edgeWorkPrices?: Record<string, number>;
+}
+
 interface OwnProductionConfig {
   ldspBrands: LdspBrandFormat[];
   edgeTypes: { eva: boolean; pur: boolean };
@@ -1614,7 +1624,54 @@ interface OwnProductionConfig {
   standardCoefficients?: Record<string, number>; // standard coefficients for all salons
   brandCoefficients?: BrandCoefficient[];
   productionCycle?: "working" | "calendar";
+  clientCalcModesEnabled?: boolean;
+  clientCalcModes?: {
+    retail?: "coefficients" | "area" | "sheet";
+    salon?: "coefficients" | "area" | "sheet";
+    designer?: "coefficients" | "area" | "sheet";
+  };
+  areaWorkCosts?: Record<string, MaterialWorkCost>;
+  sheetWorkCosts?: Record<string, MaterialWorkCost>;
 }
+
+const STANDARD_MATERIAL_WORK_TYPES = [
+  "ЛДСП 10 мм",
+  "ЛДСП 16 мм",
+  "ЛДСП 22 мм",
+  "ЛДСП 25 мм",
+  "МДФ 18 мм",
+  "МДФ 19 мм",
+  "МДФ 22 мм",
+  "ХДФ",
+  "ДВП",
+];
+
+const STANDARD_EDGE_THICKNESSES = ["0.4", "0.8", "1", "2"];
+
+const getMaterialWorkTypeKey = (item: any, sheetConfig?: any): string => {
+  const type = (item?.type || "").trim().toUpperCase();
+  const thickness = item?.thickness || sheetConfig?.thickness || "";
+
+  if (type === "ХДФ") return "ХДФ";
+  if (type === "ДВП") return "ДВП";
+
+  if (type === "ЛДСП") {
+    const thStr = String(thickness);
+    if (thStr === "10") return "ЛДСП 10 мм";
+    if (thStr === "16") return "ЛДСП 16 мм";
+    if (thStr === "22") return "ЛДСП 22 мм";
+    if (thStr === "25") return "ЛДСП 25 мм";
+    return `ЛДСП ${thStr || "16"} мм`;
+  }
+  if (type === "МДФ") {
+    const thStr = String(thickness);
+    if (thStr === "18") return "МДФ 18 мм";
+    if (thStr === "19") return "МДФ 19 мм";
+    if (thStr === "22") return "МДФ 22 мм";
+    return `МДФ ${thStr || "19"} мм`;
+  }
+  return `${item?.type || "Материал"} ${thickness ? thickness + " мм" : ""}`.trim();
+};
 
 const CITIES = [
   "Москва",
@@ -3161,6 +3218,7 @@ const FacadePriceGrid = ({
   onUpdateTitle,
   surchargeThicknesses = ["16", "19", "22"],
   onUpdateThicknesses,
+  onSaveConfig,
 }: {
   title: string;
   icon: any;
@@ -3171,6 +3229,7 @@ const FacadePriceGrid = ({
   onUpdateTitle?: (newTitle: string) => void;
   surchargeThicknesses?: string[];
   onUpdateThicknesses?: (newThicknesses: string[]) => void;
+  onSaveConfig?: () => void;
 }) => {
   const [showAddThickness, setShowAddThickness] = useState(false);
   const [newThickVal, setNewThickVal] = useState("19");
@@ -3250,6 +3309,7 @@ const FacadePriceGrid = ({
                     minOrderVolume: parseFloat(e.target.value) || 0,
                   }))
                 }
+                onBlur={() => onSaveConfig?.()}
                 className="w-16 px-1.5 py-0.5 bg-white border border-amber-200 rounded text-sm font-bold text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
               />
               <span className="text-xs font-black text-amber-600">м²</span>
@@ -3391,6 +3451,7 @@ const FacadePriceGrid = ({
                           ),
                         }));
                       }}
+                      onBlur={() => onSaveConfig?.()}
                       className="bg-transparent text-center font-bold text-gray-800 text-xs outline-none focus:ring-1 focus:ring-purple-500 rounded px-1 w-full"
                     />
                     <button
@@ -3437,6 +3498,7 @@ const FacadePriceGrid = ({
                           ),
                         }));
                       }}
+                      onBlur={() => onSaveConfig?.()}
                       className="bg-transparent font-bold text-gray-800 text-xs outline-none focus:ring-1 focus:ring-blue-500 rounded px-1 w-full"
                     />
                     <button
@@ -3483,6 +3545,7 @@ const FacadePriceGrid = ({
                               },
                             }));
                           }}
+                          onBlur={() => onSaveConfig?.()}
                           className="w-full h-14 p-4 text-center text-sm font-black text-blue-600 bg-transparent outline-none focus:ring-2 focus:ring-blue-500 focus:bg-blue-50/50 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           placeholder="0"
                         />
@@ -3538,6 +3601,7 @@ const FacadePriceGrid = ({
                               },
                             }));
                           }}
+                          onBlur={() => onSaveConfig?.()}
                           className="w-full h-14 p-4 text-center text-sm font-bold text-orange-600 bg-transparent outline-none focus:ring-2 focus:ring-orange-500 focus:bg-orange-50/50 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                           placeholder="0"
                         />
@@ -5836,6 +5900,7 @@ const PriceView = ({
                       }));
                     }}
                     showConfirm={showConfirm}
+                    onSaveConfig={() => onSave?.()}
                   />
 
                   <FacadePriceGrid
@@ -5896,6 +5961,7 @@ const PriceView = ({
                       }));
                     }}
                     showConfirm={showConfirm}
+                    onSaveConfig={() => onSave?.()}
                   />
 
                   {ownProductionConfig.extraFacadeTypes?.map((extraType) => (
@@ -5950,6 +6016,7 @@ const PriceView = ({
                         );
                       }}
                       showConfirm={showConfirm}
+                      onSaveConfig={() => onSave?.()}
                     />
                   ))}
                 </div>
@@ -6196,11 +6263,12 @@ const CalculatorView = ({
         <div className="mb-8 p-6 bg-gray-50 rounded-2xl border border-gray-200 grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
-              Загрузить файл отчета из Pro100 (CSV)
+              Загрузить отчет из Pro100 (CSV) или Базис-Мебельщик (XLS, XLSX)
             </label>
             <div className="relative group">
               <input
                 type="file"
+                accept=".csv,.xls,.xlsx,.txt"
                 onChange={handleFileUpload}
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
               />
@@ -8878,7 +8946,7 @@ const SummaryView = ({
   kerf: number;
   rotations: Record<string, boolean>;
   cuttingType: "nesting" | "saw";
-  calcMode: "sheet" | "area";
+  calcMode: "sheet" | "area" | "coefficients";
   coefficients: any;
   currentProjectName?: string;
   onSaveProject?: (name: string, isDraft?: boolean) => Promise<void>;
@@ -9365,8 +9433,14 @@ const SummaryView = ({
             millingDisp = getCleanMillingName(milling);
           }
 
-          // If we found a base price in the grid, use it. Otherwise fallback to the manually entered price.
-          const rawPrice = basePrice > 0 ? basePrice : price;
+          // Prioritize manager custom price if entered, otherwise grid basePrice, otherwise fallback price
+          const userCustomPrice = prices[priceKey];
+          const rawPrice =
+            userCustomPrice !== undefined && userCustomPrice > 0
+              ? userCustomPrice
+              : basePrice > 0
+              ? basePrice
+              : price || 0;
           const facadeCoef = resolveBrandCoefficient("facadeCustom", brand);
 
           // APPLY MIN VOLUME CHECK
@@ -9389,7 +9463,7 @@ const SummaryView = ({
             total: Math.round(itemCost),
             coef: facadeCoef,
             key: key,
-            isManual: isManualMaterial && basePrice === 0,
+            isManual: true,
             isCustomFacade: true,
           });
         } else {
@@ -9415,10 +9489,50 @@ const SummaryView = ({
             totalLdspArea += sheetCount * sheetArea;
           }
 
-          if (calcMode === "area") {
+          let effectiveCalcMode = calcMode;
+          if (ownProductionConfig?.clientCalcModesEnabled && ownProductionConfig?.clientCalcModes) {
+            if (selectedSalonId || customerType === "wholesale") {
+              effectiveCalcMode = ownProductionConfig.clientCalcModes.salon || calcMode;
+            } else if (customerType === "designer") {
+              effectiveCalcMode = ownProductionConfig.clientCalcModes.designer || calcMode;
+            } else {
+              effectiveCalcMode = ownProductionConfig.clientCalcModes.retail || calcMode;
+            }
+          }
+
+          const matWorkKey = getMaterialWorkTypeKey(item, sheetConfigs[key]);
+
+          if (effectiveCalcMode === "area") {
             const totalArea = sheetCount * sheetArea;
-            itemCost = totalArea * price * coef;
+            const workCostObj = ownProductionConfig?.areaWorkCosts?.[matWorkKey];
+            let workCostPerM2 = 0;
+            if (selectedSalonId && workCostObj?.salons?.[selectedSalonId] !== undefined) {
+              workCostPerM2 = workCostObj.salons[selectedSalonId];
+            } else if (selectedSalonId || customerType === "wholesale") {
+              workCostPerM2 = workCostObj?.salon ?? 0;
+            } else if (customerType === "designer") {
+              workCostPerM2 = workCostObj?.designer ?? 0;
+            } else {
+              workCostPerM2 = workCostObj?.retail ?? 0;
+            }
+
+            itemCost = totalArea * (price + workCostPerM2);
             qtyText = `${totalArea.toFixed(2)} м²`;
+          } else if (effectiveCalcMode === "sheet") {
+            const workCostObj = ownProductionConfig?.sheetWorkCosts?.[matWorkKey];
+            let workCostPerSheet = 0;
+            if (selectedSalonId && workCostObj?.salons?.[selectedSalonId] !== undefined) {
+              workCostPerSheet = workCostObj.salons[selectedSalonId];
+            } else if (selectedSalonId || customerType === "wholesale") {
+              workCostPerSheet = workCostObj?.salon ?? 0;
+            } else if (customerType === "designer") {
+              workCostPerSheet = workCostObj?.designer ?? 0;
+            } else {
+              workCostPerSheet = workCostObj?.retail ?? 0;
+            }
+
+            itemCost = sheetCount * (price + workCostPerSheet);
+            qtyText = `${sheetCount} л.`;
           } else {
             itemCost = sheetCount * price * coef;
             qtyText = `${sheetCount} л.`;
@@ -9681,16 +9795,45 @@ const SummaryView = ({
 
           const multiplicity = configToUse.edgeMultiplicity?.[mKey] || 0;
 
-          let eCost = edgeLenRounded * group.price * group.coef;
+          let effectiveCalcMode = calcMode;
+          if (ownProductionConfig?.clientCalcModesEnabled && ownProductionConfig?.clientCalcModes) {
+            if (selectedSalonId || customerType === "wholesale") {
+              effectiveCalcMode = ownProductionConfig.clientCalcModes.salon || calcMode;
+            } else if (customerType === "designer") {
+              effectiveCalcMode = ownProductionConfig.clientCalcModes.designer || calcMode;
+            } else {
+              effectiveCalcMode = ownProductionConfig.clientCalcModes.retail || calcMode;
+            }
+          }
+
+          const parentMatItem = results[group.key];
+          const matWorkKey = parentMatItem ? getMaterialWorkTypeKey(parentMatItem, sheetConfigs[group.key]) : "";
+          const workCostsObj = effectiveCalcMode === "area" ? ownProductionConfig?.areaWorkCosts : ownProductionConfig?.sheetWorkCosts;
+          const matWorkConfig = matWorkKey ? workCostsObj?.[matWorkKey] : undefined;
+          const includeEdgeWork = matWorkConfig?.includeEdgeWork ?? true;
+
+          let edgeWorkPrice = 0;
+          if (effectiveCalcMode !== "coefficients" && !includeEdgeWork) {
+            const normThick = String(thickness).replace(" мм", "").trim();
+            edgeWorkPrice = matWorkConfig?.edgeWorkPrices?.[normThick] || matWorkConfig?.edgeWorkPrices?.[String(parseFloat(normThick))] || 0;
+          }
+
+          const effectiveUnitPrice = group.price + edgeWorkPrice;
+
+          let eCost = edgeLenRounded * effectiveUnitPrice * (effectiveCalcMode === "coefficients" ? group.coef : 1);
           let displayQty = `${edgeLenRounded} м`;
 
           if (multiplicity > 0) {
             const buyLen =
               Math.ceil(group.totalLength / multiplicity) * multiplicity;
             if (buyLen > edgeLenRounded) {
-              eCost =
-                buyLen * group.price +
-                edgeLenRounded * group.price * (group.coef - 1);
+              if (effectiveCalcMode === "coefficients") {
+                eCost =
+                  buyLen * effectiveUnitPrice +
+                  edgeLenRounded * effectiveUnitPrice * (group.coef - 1);
+              } else {
+                eCost = buyLen * effectiveUnitPrice;
+              }
               displayQty = `${buyLen} м`;
             }
           }
@@ -11543,7 +11686,11 @@ const SummaryView = ({
                           <input
                             type="text"
                             inputMode="decimal"
-                            value={edgePrices[row.priceKey || row.key!] || row.rawPrice || ""}
+                            value={
+                              edgePrices[row.priceKey || row.key!] !== undefined
+                                ? edgePrices[row.priceKey || row.key!]
+                                : row.rawPrice || 0
+                            }
                             onFocus={(e) => e.target.select()}
                             onChange={(e) => {
                               const v = e.target.value.replace(",", ".");
@@ -11599,13 +11746,17 @@ const SummaryView = ({
                           />
                           <span>₽</span>
                         </div>
-                      ) : row.type === "material" && row.isManual ? (
+                      ) : row.type === "material" ? (
                         <div className="flex flex-col items-end gap-1">
                           <div className="flex items-center justify-end gap-2 group/price-warn relative">
                             <input
                               type="text"
                               inputMode="decimal"
-                              value={prices[row.priceKey!] || ""}
+                              value={
+                                prices[row.priceKey!] !== undefined
+                                  ? prices[row.priceKey!]
+                                  : row.price || 0
+                              }
                               onFocus={(e) => e.target.select()}
                               onChange={(e) => {
                                 const v = e.target.value.replace(",", ".");
@@ -12939,6 +13090,785 @@ const CoefficientsTableSection = ({
   );
 };
 
+const MaterialWorkCostsSection = ({
+  mode,
+  ownProductionConfig,
+  setOwnProductionConfig,
+  salonsInTable,
+  onSaveSettings,
+  showAlert,
+}: {
+  mode: "area" | "sheet";
+  ownProductionConfig: OwnProductionConfig;
+  setOwnProductionConfig: React.Dispatch<React.SetStateAction<OwnProductionConfig>>;
+  salonsInTable: any[];
+  onSaveSettings: (silent?: boolean, overrides?: any) => Promise<void>;
+  showAlert: (title: string, message: string) => void;
+}) => {
+  const isArea = mode === "area";
+  const title = isArea ? "Расценка работы за м² (Метод: За м²)" : "Расценка работы за 1 лист (Метод: За лист)";
+  const desc = isArea
+    ? "Укажите стоимость работы за 1 м² по видам материалов и параметры включения обработки кромкой."
+    : "Укажите стоимость работы за 1 лист по видам материалов и параметры включения обработки кромкой.";
+  const unitLabel = isArea ? "₽/м²" : "₽/лист";
+
+  const configKey = isArea ? "areaWorkCosts" : "sheetWorkCosts";
+  const currentCosts = ownProductionConfig[configKey] || {};
+
+  const [drafts, setDrafts] = useState<Record<string, any>>({});
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const initDrafts = useCallback(() => {
+    const next: Record<string, any> = {};
+    STANDARD_MATERIAL_WORK_TYPES.forEach((matKey) => {
+      const matData = currentCosts[matKey] || {};
+      next[`ret_${matKey}`] = matData.retail !== undefined ? String(matData.retail).replace(".", ",") : "0";
+      next[`des_${matKey}`] = matData.designer !== undefined ? String(matData.designer).replace(".", ",") : "0";
+      next[`stdSalon_${matKey}`] = matData.salon !== undefined ? String(matData.salon).replace(".", ",") : "0";
+
+      salonsInTable.forEach((s) => {
+        const salonVal = matData.salons?.[s.id];
+        next[`salon_${s.id}_${matKey}`] = salonVal !== undefined ? String(salonVal).replace(".", ",") : "";
+      });
+
+      next[`incEdge_${matKey}`] = matData.includeEdgeWork !== undefined ? matData.includeEdgeWork : true;
+
+      STANDARD_EDGE_THICKNESSES.forEach((th) => {
+        const edgePrice = matData.edgeWorkPrices?.[th];
+        next[`edgePrice_${th}_${matKey}`] = edgePrice !== undefined ? String(edgePrice).replace(".", ",") : "0";
+      });
+    });
+
+    setDrafts(next);
+    setHasUnsavedChanges(false);
+  }, [currentCosts, salonsInTable]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) {
+      initDrafts();
+    }
+  }, [JSON.stringify(currentCosts), salonsInTable.map((s) => s.id).join(",")]);
+
+  const handleChange = (key: string, val: any) => {
+    setDrafts((prev) => ({ ...prev, [key]: val }));
+    setHasUnsavedChanges(true);
+  };
+
+  const commitAndSave = async () => {
+    setIsSaving(true);
+    try {
+      const updatedCosts: Record<string, MaterialWorkCost> = {};
+
+      STANDARD_MATERIAL_WORK_TYPES.forEach((matKey) => {
+        const retNum = parseFloat((drafts[`ret_${matKey}`] || "0").replace(",", ".")) || 0;
+        const desNum = parseFloat((drafts[`des_${matKey}`] || "0").replace(",", ".")) || 0;
+        const stdSalonNum = parseFloat((drafts[`stdSalon_${matKey}`] || "0").replace(",", ".")) || 0;
+
+        const salonsObj: Record<string, number> = {};
+        salonsInTable.forEach((s) => {
+          const sVal = drafts[`salon_${s.id}_${matKey}`];
+          if (sVal !== undefined && sVal !== null && sVal.trim() !== "") {
+            salonsObj[s.id] = parseFloat(sVal.replace(",", ".")) || 0;
+          }
+        });
+
+        const incEdge = drafts[`incEdge_${matKey}`] !== false;
+
+        const edgePricesObj: Record<string, number> = {};
+        STANDARD_EDGE_THICKNESSES.forEach((th) => {
+          edgePricesObj[th] = parseFloat((drafts[`edgePrice_${th}_${matKey}`] || "0").replace(",", ".")) || 0;
+        });
+
+        updatedCosts[matKey] = {
+          retail: retNum,
+          designer: desNum,
+          salon: stdSalonNum,
+          salons: salonsObj,
+          includeEdgeWork: incEdge,
+          edgeWorkPrices: edgePricesObj,
+        };
+      });
+
+      const updatedOwnConfig = {
+        ...ownProductionConfig,
+        [configKey]: updatedCosts,
+      };
+
+      setOwnProductionConfig(updatedOwnConfig);
+      await onSaveSettings(false, { ownProductionConfig: updatedOwnConfig });
+      setHasUnsavedChanges(false);
+      showAlert("Сохранено", `Настройки расчетов «${isArea ? "За м²" : "За лист"}» сохранены.`);
+    } catch (e) {
+      console.error("Error saving work costs:", e);
+      showAlert("Ошибка", "Не удалось сохранить настройки расчета.");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="mb-10 bg-white rounded-2xl border border-gray-200 p-6 shadow-xs">
+      <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
+        <div>
+          <h4 className="text-base font-bold text-gray-900">{title}</h4>
+          <p className="text-xs text-gray-500 mt-0.5">{desc}</p>
+        </div>
+        {hasUnsavedChanges && (
+          <button
+            onClick={commitAndSave}
+            disabled={isSaving}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition-all flex items-center gap-2"
+          >
+            {isSaving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+            Сохранить
+          </button>
+        )}
+      </div>
+
+      <div className="overflow-x-auto rounded-xl border border-gray-200">
+        <table className="w-full text-left border-collapse bg-white">
+          <thead>
+            <tr className="bg-gray-50 text-[10px] font-bold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+              <th className="py-3 px-4 min-w-[140px]">Вид материала</th>
+              <th className="py-3 px-3 min-w-[100px] border-l border-gray-200">Розница ({unitLabel})</th>
+              <th className="py-3 px-3 min-w-[100px] border-l border-gray-200">Дизайнеры ({unitLabel})</th>
+              <th className="py-3 px-3 min-w-[120px] bg-blue-50/50 border-l border-blue-200 text-blue-800">
+                Салоны (Стандарт, {unitLabel})
+              </th>
+              {salonsInTable.map((s) => (
+                <th key={s.id} className="py-3 px-3 min-w-[120px] border-l border-gray-200 bg-gray-100/50">
+                  {s.name} ({unitLabel})
+                </th>
+              ))}
+              <th className="py-3 px-4 min-w-[180px] border-l border-gray-200">
+                Кромка входит в стоимость?
+              </th>
+              <th className="py-3 px-4 min-w-[260px] border-l border-gray-200">
+                Цена работы по кромке (₽/м, если НЕ входит)
+              </th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-100 text-xs">
+            {STANDARD_MATERIAL_WORK_TYPES.map((matKey, idx) => {
+              const isHdfOrDvp = matKey === "ХДФ" || matKey === "ДВП";
+              const incEdge = drafts[`incEdge_${matKey}`] !== false;
+
+              return (
+                <tr key={matKey} className={idx % 2 === 0 ? "bg-white" : "bg-gray-50/30"}>
+                  <td className="py-3 px-4 font-bold text-gray-800">
+                    {matKey}
+                  </td>
+
+                  {/* Retail */}
+                  <td className="py-2 px-3 border-l border-gray-100">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={drafts[`ret_${matKey}`] ?? "0"}
+                      onChange={(e) => handleChange(`ret_${matKey}`, e.target.value)}
+                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </td>
+
+                  {/* Designer */}
+                  <td className="py-2 px-3 border-l border-gray-100">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={drafts[`des_${matKey}`] ?? "0"}
+                      onChange={(e) => handleChange(`des_${matKey}`, e.target.value)}
+                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </td>
+
+                  {/* Standard Salon */}
+                  <td className="py-2 px-3 border-l border-blue-100 bg-blue-50/10">
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      value={drafts[`stdSalon_${matKey}`] ?? "0"}
+                      onChange={(e) => handleChange(`stdSalon_${matKey}`, e.target.value)}
+                      className="w-full px-2 py-1.5 border border-blue-200 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </td>
+
+                  {/* Salons in table */}
+                  {salonsInTable.map((s) => (
+                    <td key={s.id} className="py-2 px-3 border-l border-gray-100 bg-gray-50/20">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={drafts[`salon_${s.id}_${matKey}`] ?? ""}
+                        placeholder="По умолч."
+                        onChange={(e) => handleChange(`salon_${s.id}_${matKey}`, e.target.value)}
+                        className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                    </td>
+                  ))}
+
+                  {/* Edge included toggle */}
+                  <td className="py-2 px-4 border-l border-gray-100">
+                    {isHdfOrDvp ? (
+                      <span className="text-[11px] text-gray-400 font-medium italic">Кромка не применяется</span>
+                    ) : (
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleChange(`incEdge_${matKey}`, !incEdge)}
+                          className={cn(
+                            "px-3 py-1 rounded-full text-[11px] font-extrabold transition-all border",
+                            incEdge
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : "bg-amber-50 text-amber-700 border-amber-200",
+                          )}
+                        >
+                          {incEdge ? "Да (входит)" : "Нет (отдельно)"}
+                        </button>
+                      </div>
+                    )}
+                  </td>
+
+                  {/* Edge work prices by thickness */}
+                  <td className="py-2 px-4 border-l border-gray-100">
+                    {isHdfOrDvp ? (
+                      <span className="text-[11px] text-gray-400 font-medium italic">—</span>
+                    ) : incEdge ? (
+                      <span className="text-[11px] text-emerald-600 font-semibold">
+                        Работа по кромке включена в цену за {isArea ? "м²" : "лист"}
+                      </span>
+                    ) : (
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {STANDARD_EDGE_THICKNESSES.map((th) => (
+                          <div key={th} className="flex flex-col">
+                            <span className="text-[9px] font-bold text-gray-400 text-center">{th} мм</span>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={drafts[`edgePrice_${th}_${matKey}`] ?? "0"}
+                              onChange={(e) => handleChange(`edgePrice_${th}_${matKey}`, e.target.value)}
+                              className="w-full px-1.5 py-1 border border-gray-200 rounded text-[11px] font-bold text-center focus:ring-1 focus:ring-blue-500 outline-none"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+const AccountingMappingSettings = ({
+  companyData,
+  setCompanyData,
+  catalogProducts,
+  showAlert,
+}: {
+  companyData: any;
+  setCompanyData: React.Dispatch<React.SetStateAction<any>>;
+  catalogProducts: any[];
+  showAlert: (title: string, message: string) => void;
+}) => {
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<string>("all");
+  const [newSkuInputs, setNewSkuInputs] = useState<Record<string, string>>({});
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
+
+  const isEnabled = companyData?.accountingMappingConfig?.enabled !== false;
+
+  const toggleEnabled = async (val: boolean) => {
+    if (!companyData?.id) return;
+    try {
+      const nextConfig = {
+        ...(companyData?.accountingMappingConfig || {}),
+        enabled: val,
+      };
+      setCompanyData((prev: any) => ({
+        ...prev,
+        accountingMappingConfig: nextConfig,
+      }));
+      await setDoc(
+        doc(db, "companies", companyData.id),
+        { accountingMappingConfig: nextConfig },
+        { merge: true }
+      );
+      showAlert(
+        "Настройки сохранены",
+        val
+          ? "Режим поиска соответствий артикулов активирован"
+          : "Режим поиска соответствий артикулов отключен"
+      );
+    } catch (err) {
+      console.error("Error toggling accounting mapping:", err);
+    }
+  };
+
+  const isExcludedCategory = (catName: string = "", prodName: string = "") => {
+    const c = (catName || "").toLowerCase().trim();
+    const n = (prodName || "").toLowerCase().trim();
+    return (
+      c === "материалы" ||
+      c === "кромочные материалы" ||
+      c === "фасады" ||
+      c.includes("лдсп") ||
+      c.includes("дсп") ||
+      c.includes("хдф") ||
+      c.includes("двп") ||
+      c.includes("мдф") ||
+      c.includes("кромк") ||
+      c.includes("столешниц") ||
+      c.includes("стеновая") ||
+      n.includes("лдсп") ||
+      n.includes("дсп") ||
+      n.includes("хдф") ||
+      n.includes("двп") ||
+      n.includes("мдф") ||
+      n.includes("фасад")
+    );
+  };
+
+  const eligibleProducts = useMemo(() => {
+    return (catalogProducts || []).filter(
+      (p) => !isExcludedCategory(p.category, p.name)
+    );
+  }, [catalogProducts]);
+
+  const availableCategories = useMemo(() => {
+    const set = new Set<string>();
+    eligibleProducts.forEach((p) => {
+      if (p.category) set.add(p.category);
+    });
+    return Array.from(set).sort();
+  }, [eligibleProducts]);
+
+  const filteredProducts = useMemo(() => {
+    return eligibleProducts.filter((p) => {
+      if (selectedCategory !== "all" && p.category !== selectedCategory) {
+        return false;
+      }
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const nameMatch = (p.name || "").toLowerCase().includes(q);
+        const catMatch = (p.category || "").toLowerCase().includes(q);
+        const brandMatch = (p.brand || "").toLowerCase().includes(q);
+        const articleMatch = (p.article || "").toLowerCase().includes(q);
+        const skusMatch = Array.isArray(p.skuList) && p.skuList.some((s: any) => String(s).toLowerCase().includes(q));
+        const acctSkusMatch = Array.isArray(p.accountingSkus) && p.accountingSkus.some((s: any) => String(s).toLowerCase().includes(q));
+        return nameMatch || catMatch || brandMatch || articleMatch || skusMatch || acctSkusMatch;
+      }
+      return true;
+    });
+  }, [eligibleProducts, selectedCategory, searchQuery]);
+
+  const groupedProducts = useMemo(() => {
+    const groups: Record<string, any[]> = {};
+    filteredProducts.forEach((p) => {
+      const cat = p.category || "Без категории";
+      if (!groups[cat]) groups[cat] = [];
+      groups[cat].push(p);
+    });
+    return groups;
+  }, [filteredProducts]);
+
+  const mappedCount = useMemo(() => {
+    return eligibleProducts.filter((p) => {
+      const skus = [p.article, ...(p.skuList || []), ...(p.accountingSkus || [])].filter(Boolean);
+      return skus.length > 0;
+    }).length;
+  }, [eligibleProducts]);
+
+  const totalSkusCount = useMemo(() => {
+    let count = 0;
+    eligibleProducts.forEach((p) => {
+      const skus = [p.article, ...(p.skuList || []), ...(p.accountingSkus || [])].filter(Boolean);
+      count += skus.length;
+    });
+    return count;
+  }, [eligibleProducts]);
+
+  const handleAddSku = async (product: any) => {
+    const rawVal = newSkuInputs[product.id] || "";
+    if (!rawVal.trim()) return;
+
+    const newItems = rawVal
+      .split(/[,;\n]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+
+    if (newItems.length === 0) return;
+
+    const currentSkus: string[] = Array.isArray(product.skuList)
+      ? [...product.skuList]
+      : Array.isArray(product.accountingSkus)
+      ? [...product.accountingSkus]
+      : product.article
+      ? [String(product.article)]
+      : [];
+
+    const updatedSkus = Array.from(new Set([...currentSkus, ...newItems]));
+
+    try {
+      const companyId = product.companyId || companyData?.id;
+      if (companyId && product.id) {
+        await updateDoc(
+          doc(db, "companies", companyId, "products", String(product.id)),
+          { skuList: updatedSkus }
+        );
+      }
+      setNewSkuInputs((prev) => ({ ...prev, [product.id]: "" }));
+    } catch (err) {
+      console.error("Error updating product SKUs:", err);
+      showAlert("Ошибка", "Не удалось сохранить артикул");
+    }
+  };
+
+  const handleRemoveSku = async (product: any, skuToRemove: string) => {
+    const currentSkus: string[] = Array.isArray(product.skuList)
+      ? [...product.skuList]
+      : Array.isArray(product.accountingSkus)
+      ? [...product.accountingSkus]
+      : product.article
+      ? [String(product.article)]
+      : [];
+
+    const updatedSkus = currentSkus.filter((s) => s !== skuToRemove);
+
+    try {
+      const companyId = product.companyId || companyData?.id;
+      if (companyId && product.id) {
+        await updateDoc(
+          doc(db, "companies", companyId, "products", String(product.id)),
+          { skuList: updatedSkus }
+        );
+      }
+    } catch (err) {
+      console.error("Error removing product SKU:", err);
+      showAlert("Ошибка", "Не удалось удалить артикул");
+    }
+  };
+
+  const toggleCategoryExpand = (cat: string) => {
+    setExpandedCategories((prev) => ({
+      ...prev,
+      [cat]: prev[cat] === false ? true : false,
+    }));
+  };
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300 font-sans">
+      <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white rounded-3xl p-6 md:p-8 shadow-xl relative overflow-hidden">
+        <div className="absolute right-0 top-0 translate-x-12 -translate-y-8 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="relative z-10 space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="space-y-2 max-w-2xl">
+              <div className="inline-flex items-center gap-2 px-3 py-1 bg-blue-500/20 text-blue-300 rounded-full text-xs font-bold border border-blue-400/20">
+                <ArrowLeftRight className="w-3.5 h-3.5" />
+                Интеграция учетных систем (Базис-Мебельщик, 1С, ERP)
+              </div>
+              <h3 className="text-2xl font-black tracking-tight">Соответствие учета</h3>
+              <p className="text-sm text-blue-100/80 leading-relaxed font-medium">
+                Настройте сопоставление внутренних артикулов из конструкторских программ и 1С с товарами из каталога. При загрузке отчетов калькулятор автоматически найдет фурнитуру и товары по артикулам и добавит их в итоговый расчёт.
+              </p>
+            </div>
+
+            <div className="bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl p-4 shrink-0 flex flex-col gap-3 min-w-[280px]">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-blue-200">
+                  Режим сопоставления
+                </span>
+                <span
+                  className={cn(
+                    "text-[10px] font-black px-2.5 py-0.5 rounded-full uppercase tracking-wider",
+                    isEnabled
+                      ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                      : "bg-gray-500/20 text-gray-300 border border-gray-500/30"
+                  )}
+                >
+                  {isEnabled ? "Активен" : "Отключен"}
+                </span>
+              </div>
+
+              <label className="flex items-center justify-between cursor-pointer gap-3 pt-1">
+                <span className="text-sm font-extrabold text-white">
+                  Поиск соответствий при импорте
+                </span>
+                <button
+                  type="button"
+                  onClick={() => toggleEnabled(!isEnabled)}
+                  className={cn(
+                    "relative inline-flex h-7 w-13 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none",
+                    isEnabled ? "bg-blue-500" : "bg-gray-600"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow-lg ring-0 transition duration-200 ease-in-out",
+                      isEnabled ? "translate-x-6" : "translate-x-0"
+                    )}
+                  />
+                </button>
+              </label>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 border-t border-white/10">
+            <div className="bg-white/5 rounded-2xl p-3.5 border border-white/10 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-300 shrink-0">
+                <Package className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-xs text-blue-200/80 font-medium block">Всего товаров в каталоге</span>
+                <span className="text-lg font-black text-white">{eligibleProducts.length} шт.</span>
+              </div>
+            </div>
+
+            <div className="bg-white/5 rounded-2xl p-3.5 border border-white/10 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-300 shrink-0">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-xs text-blue-200/80 font-medium block">Сопоставлено товаров</span>
+                <span className="text-lg font-black text-white">{mappedCount} из {eligibleProducts.length}</span>
+              </div>
+            </div>
+
+            <div className="bg-white/5 rounded-2xl p-3.5 border border-white/10 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-amber-300 shrink-0">
+                <Tag className="w-5 h-5" />
+              </div>
+              <div>
+                <span className="text-xs text-blue-200/80 font-medium block">Всего сопоставленных артикулов</span>
+                <span className="text-lg font-black text-white">{totalSkusCount} артикулов</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-4 bg-gray-50 rounded-2xl border border-gray-200/80 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Поиск по названию товара, категории или артикулу..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-sm font-semibold"
+          />
+        </div>
+
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-bold text-gray-500 shrink-0 flex items-center gap-1.5">
+            <Filter className="w-3.5 h-3.5" />
+            Категория:
+          </span>
+          <select
+            value={selectedCategory}
+            onChange={(e) => setSelectedCategory(e.target.value)}
+            className="px-3 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-xs font-bold text-gray-700"
+          >
+            <option value="all">Все категории ({eligibleProducts.length})</option>
+            {availableCategories.map((cat) => (
+              <option key={cat} value={cat}>
+                {cat} ({eligibleProducts.filter((p) => p.category === cat).length})
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {Object.keys(groupedProducts).length === 0 ? (
+        <div className="p-12 text-center bg-gray-50 rounded-2xl border border-dashed border-gray-200 space-y-3">
+          <Package className="w-10 h-10 text-gray-300 mx-auto" />
+          <h4 className="text-base font-bold text-gray-700">Товары не найдены</h4>
+          <p className="text-xs text-gray-500 max-w-md mx-auto font-medium">
+            По вашему запросу не найдено ни одного товара. Добавьте товары в каталог или измените параметры поиска.
+          </p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {Object.entries(groupedProducts).map(([categoryName, products]) => {
+            const isCollapsed = expandedCategories[categoryName] === true;
+            const catMappedCount = products.filter((p) => {
+              const skus = [p.article, ...(p.skuList || []), ...(p.accountingSkus || [])].filter(Boolean);
+              return skus.length > 0;
+            }).length;
+
+            return (
+              <div key={categoryName} className="bg-white border border-gray-200 rounded-2xl overflow-hidden shadow-2xs">
+                <div
+                  onClick={() => toggleCategoryExpand(categoryName)}
+                  className="px-5 py-3.5 bg-gray-50/80 border-b border-gray-200/80 flex items-center justify-between cursor-pointer hover:bg-gray-100/80 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="font-extrabold text-sm text-gray-900">{categoryName}</span>
+                    <span className="text-xs font-bold px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md border border-blue-200/60">
+                      {products.length} товаров
+                    </span>
+                    <span className="text-xs font-bold px-2 py-0.5 bg-emerald-50 text-emerald-700 rounded-md border border-emerald-200/60">
+                      {catMappedCount} сопоставлено
+                    </span>
+                  </div>
+
+                  <button className="text-gray-400 hover:text-gray-600 transition-colors">
+                    {isCollapsed ? <ChevronDown className="w-5 h-5" /> : <ChevronUp className="w-5 h-5" />}
+                  </button>
+                </div>
+
+                {!isCollapsed && (
+                  <div className="divide-y divide-gray-100">
+                    {products.map((product) => {
+                      const existingSkus: string[] = Array.from(
+                        new Set(
+                          [
+                            product.article,
+                            ...(Array.isArray(product.skuList) ? product.skuList : []),
+                            ...(Array.isArray(product.accountingSkus) ? product.accountingSkus : []),
+                          ]
+                            .filter(Boolean)
+                            .map((s) => String(s).trim())
+                        )
+                      );
+
+                      const currentInput = newSkuInputs[product.id] || "";
+
+                      return (
+                        <div
+                          key={product.id}
+                          className="p-4 flex flex-col md:flex-row md:items-start justify-between gap-4 hover:bg-gray-50/50 transition-colors"
+                        >
+                          <div className="flex items-start gap-3 md:w-1/3 shrink-0">
+                            {product.image ? (
+                              <img
+                                src={product.image}
+                                alt={product.name}
+                                className="w-12 h-12 rounded-xl object-cover border border-gray-200 shrink-0"
+                              />
+                            ) : (
+                              <div className="w-12 h-12 rounded-xl bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-400 shrink-0">
+                                <Package className="w-6 h-6" />
+                              </div>
+                            )}
+
+                            <div className="space-y-1 min-w-0">
+                              <h5 className="text-sm font-bold text-gray-900 leading-snug truncate" title={product.name}>
+                                {product.name}
+                              </h5>
+                              <div className="flex flex-wrap items-center gap-2">
+                                {product.brand && (
+                                  <span className="text-[10px] font-bold px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
+                                    {product.brand}
+                                  </span>
+                                )}
+                                {product.price !== undefined && (
+                                  <span className="text-xs font-black text-blue-600">
+                                    {product.price} ₽
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex-1 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                                Артикулы в системах учета (1С, Базис-Мебельщик)
+                              </span>
+                              {existingSkus.length > 0 && (
+                                <span className="text-[10px] font-bold text-emerald-600">
+                                  {existingSkus.length} артикулов привязано
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-1.5 min-h-[36px] p-2 bg-gray-50 rounded-xl border border-gray-200">
+                              {existingSkus.length === 0 ? (
+                                <span className="text-xs text-gray-400 italic">
+                                  Артикулы не добавлены. Впишите артикул ниже
+                                </span>
+                              ) : (
+                                existingSkus.map((sku, idx) => (
+                                  <span
+                                    key={sku}
+                                    className={cn(
+                                      "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all shadow-2xs border",
+                                      idx === 0
+                                        ? "bg-blue-600 text-white border-blue-700"
+                                        : "bg-white text-gray-800 border-gray-300"
+                                    )}
+                                  >
+                                    <Tag className="w-3 h-3 opacity-70" />
+                                    <span>{sku}</span>
+                                    {idx === 0 && (
+                                      <span className="text-[9px] bg-blue-800 text-blue-100 px-1 rounded font-black uppercase">
+                                        1С
+                                      </span>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveSku(product, sku)}
+                                      className={cn(
+                                        "ml-1 rounded p-0.5 hover:bg-black/10 transition-colors",
+                                        idx === 0 ? "text-white" : "text-gray-400 hover:text-red-600"
+                                      )}
+                                      title="Удалить артикул"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </span>
+                                ))
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                placeholder="Добавить артикул (например: 1234, 7594, 00-00123)"
+                                value={currentInput}
+                                onChange={(e) =>
+                                  setNewSkuInputs((prev) => ({
+                                    ...prev,
+                                    [product.id]: e.target.value,
+                                  }))
+                                }
+                                onKeyDown={(e) => {
+                                  if (e.key === "Enter") {
+                                    e.preventDefault();
+                                    handleAddSku(product);
+                                  }
+                                }}
+                                className="flex-1 px-3 py-1.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-xs font-semibold"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => handleAddSku(product)}
+                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1 shrink-0"
+                              >
+                                <Plus className="w-3.5 h-3.5" />
+                                Добавить
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 const SettingsView = ({
   coefficients,
   specificationConfig,
@@ -13017,15 +13947,17 @@ const SettingsView = ({
   loadB24Categories,
   loadB24Stages,
   loadProcurementB24Stages,
+  contractConfig,
 }: {
+  contractConfig?: any;
   coefficients: { retail: any; wholesale: any; designer: any };
   setCoefficients: React.Dispatch<
     React.SetStateAction<{ retail: any; wholesale: any; designer: any }>
   >;
   suppliers: Supplier[];
   setSuppliers: React.Dispatch<React.SetStateAction<Supplier[]>>;
-  calcMode: "sheet" | "area";
-  setCalcMode: React.Dispatch<React.SetStateAction<"sheet" | "area">>;
+  calcMode: "sheet" | "area" | "coefficients";
+  setCalcMode: React.Dispatch<React.SetStateAction<"sheet" | "area" | "coefficients">>;
   trimming: number;
   setTrimming: React.Dispatch<React.SetStateAction<number>>;
   sawKerf: number;
@@ -13119,10 +14051,92 @@ const SettingsView = ({
   const isProcurementAllowed = companyData?.procurementAllowed !== undefined ? !!companyData.procurementAllowed : !!companyData?.procurementEnabled;
   const [newCategory, setNewCategory] = useState("");
   const [activeSubTab, setActiveSubTab] = useState<
-    "general" | "services" | "production" | "account" | "facades" | "bitrix24" | "promotions" | "suppliers" | "specification" | "landing" | "catalog"
+    "general" | "services" | "production" | "account" | "facades" | "bitrix24" | "promotions" | "suppliers" | "specification" | "landing" | "catalog" | "mapping"
   >("general");
   const [showBrandCoeffModal, setShowBrandCoeffModal] = useState(false);
-  const isSalonOrDesigner = companyType === "Салон" || companyType === "Дизайнер";
+  const isSalonOrDesigner = companyType === "Салон" || companyType === "Дизайнер" || companyData?.type === "Салон" || companyData?.type === "Дизайнер" || companyData?.type === "Дилер";
+  const isContractMode = productionFormat === "contract" && (isSalonOrDesigner || companyType === "Дилер");
+
+  const prodDeliveryTariffs = productionSettings?.general?.deliveryTariffs || {};
+  const prodAssemblyPercentage = productionSettings?.general?.assemblyPercentage ?? 10;
+  const prodAssemblyPercentages = productionSettings?.general?.assemblyPercentages || {};
+  const prodMinAssemblyPrice = productionSettings?.general?.minAssemblyPrice ?? 0;
+
+  const renderDeliveryTariffField = (
+    label: string,
+    unit: string,
+    fieldKey: keyof DeliveryTariffs,
+    defaultProdVal: number
+  ) => {
+    const prodVal = prodDeliveryTariffs?.[fieldKey] !== undefined ? prodDeliveryTariffs[fieldKey] : defaultProdVal;
+
+    if (!isContractMode) {
+      return (
+        <div className="space-y-1">
+          <span className="text-[11px] font-bold text-gray-600 block ml-1 font-sans">
+            {label} ({unit})
+          </span>
+          <input
+            type="text"
+            value={
+              deliveryTariffs[fieldKey] === 0
+                ? ""
+                : deliveryTariffs[fieldKey]
+            }
+            onChange={(e) => {
+              const val = e.target.value.replace(/[^0-9]/g, "");
+              setDeliveryTariffs((prev) => ({
+                ...prev,
+                [fieldKey]: val === "" ? 0 : parseInt(val),
+              }));
+            }}
+            className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
+          />
+        </div>
+      );
+    }
+
+    return (
+      <div className="p-3 bg-white rounded-xl border border-gray-200 space-y-2 shadow-2xs">
+        <span className="text-[11px] font-bold text-gray-800 block font-sans">
+          {label} ({unit})
+        </span>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <span className="text-[9px] font-bold text-gray-400 block mb-0.5 uppercase tracking-tight font-sans">
+              Производство
+            </span>
+            <div className="w-full px-2.5 py-1.5 bg-gray-100 border border-gray-200 rounded-lg text-xs font-bold text-gray-600 cursor-not-allowed flex items-center justify-between">
+              <span>{prodVal}</span>
+              <span className="text-[10px] text-gray-400 font-normal">{unit}</span>
+            </div>
+          </div>
+          <div>
+            <span className="text-[9px] font-bold text-blue-600 block mb-0.5 uppercase tracking-tight font-sans">
+              Ваша розница
+            </span>
+            <input
+              type="text"
+              placeholder={String(prodVal)}
+              value={
+                deliveryTariffs[fieldKey] === 0
+                  ? ""
+                  : deliveryTariffs[fieldKey]
+              }
+              onChange={(e) => {
+                const val = e.target.value.replace(/[^0-9]/g, "");
+                setDeliveryTariffs((prev) => ({
+                  ...prev,
+                  [fieldKey]: val === "" ? 0 : parseInt(val),
+                }));
+              }}
+              className="w-full px-2.5 py-1.5 bg-blue-50/30 border border-blue-200 focus:border-blue-500 focus:bg-white rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-xs font-bold text-blue-900"
+            />
+          </div>
+        </div>
+      </div>
+    );
+  };
   
   const [brandCoeffForm, setBrandCoeffForm] = useState({
     categoryId: "ldsp",
@@ -13482,6 +14496,7 @@ const SettingsView = ({
           { id: "catalog", label: "Готовая мебель (Меню)", icon: Layers },
           { id: "bitrix24", label: "Bitrix24", icon: Link },
           { id: "suppliers", label: "Поставщики", icon: Database },
+          { id: "mapping", label: "Соответствие учета", icon: ArrowLeftRight },
           { id: "specification", label: "Настройки спецификаций и КП", icon: ClipboardList },
         ].map((tab) => (
           <button
@@ -13501,6 +14516,14 @@ const SettingsView = ({
       </div>
 
       <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-8 space-y-12">
+        {activeSubTab === "mapping" && (
+          <AccountingMappingSettings
+            companyData={companyData}
+            setCompanyData={setCompanyData}
+            catalogProducts={catalogProducts}
+            showAlert={showAlert}
+          />
+        )}
         {activeSubTab === "landing" && (
           <LandingSettingsView
             companyData={companyData}
@@ -14124,7 +15147,7 @@ const SettingsView = ({
                       Метод расчета стоимости
                     </span>
                     <span className="text-xs text-gray-500">
-                      Считать цену за целый лист или за м²
+                      Считать цену за м², за лист или по коэффициентам
                     </span>
                   </div>
                   <div className="flex gap-2 p-1 bg-gray-200 rounded-lg">
@@ -14150,7 +15173,150 @@ const SettingsView = ({
                     >
                       За лист
                     </button>
+                    <button
+                      onClick={() => setCalcMode("coefficients")}
+                      className={cn(
+                        "px-4 py-1.5 rounded-md text-xs font-bold transition-all",
+                        calcMode === "coefficients"
+                          ? "bg-white text-blue-600 shadow-sm"
+                          : "text-gray-500 hover:text-gray-700",
+                      )}
+                    >
+                      Коэффициенты
+                    </button>
                   </div>
+                </div>
+
+                <div className="p-4 bg-gray-50 rounded-xl space-y-3 border border-gray-200">
+                  <div className="flex items-center justify-between gap-4">
+                    <div>
+                      <span className="font-bold text-gray-700 block text-xs md:text-sm">
+                        Индивидуальные методы расчета для типов клиентов
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        Укажите отдельные методы расчета стоимости для розничных клиентов, салонов и дизайнеров
+                      </span>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input
+                        type="checkbox"
+                        checked={ownProductionConfig.clientCalcModesEnabled || false}
+                        onChange={(e) => {
+                          const val = e.target.checked;
+                          setOwnProductionConfig((prev) => ({
+                            ...prev,
+                            clientCalcModesEnabled: val,
+                            clientCalcModes: prev.clientCalcModes || {
+                              retail: calcMode,
+                              salon: calcMode,
+                              designer: calcMode,
+                            },
+                          }));
+                        }}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+
+                  {ownProductionConfig.clientCalcModesEnabled && (
+                    <div className="pt-2 border-t border-gray-200 space-y-2">
+                      {[
+                        { id: "retail", label: "Розничные клиенты (Розница)" },
+                        { id: "salon", label: "Салоны (Дилеры)" },
+                        { id: "designer", label: "Дизайнеры" },
+                      ].map((clientType) => {
+                        const curMode =
+                          ownProductionConfig.clientCalcModes?.[
+                            clientType.id as "retail" | "salon" | "designer"
+                          ] || calcMode;
+                        return (
+                          <div
+                            key={clientType.id}
+                            className="flex items-center justify-between bg-white p-2.5 rounded-lg border border-gray-200"
+                          >
+                            <span className="text-xs font-bold text-gray-700">
+                              {clientType.label}
+                            </span>
+                            <div className="flex gap-1 bg-gray-100 p-1 rounded-md">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOwnProductionConfig((prev) => ({
+                                    ...prev,
+                                    clientCalcModes: {
+                                      ...(prev.clientCalcModes || {
+                                        retail: calcMode,
+                                        salon: calcMode,
+                                        designer: calcMode,
+                                      }),
+                                      [clientType.id]: "coefficients",
+                                    },
+                                  }));
+                                }}
+                                className={cn(
+                                  "px-2.5 py-1 text-[11px] font-bold rounded transition-all",
+                                  curMode === "coefficients"
+                                    ? "bg-white text-blue-600 shadow-xs"
+                                    : "text-gray-500 hover:text-gray-700",
+                                )}
+                              >
+                                Коэффициенты
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOwnProductionConfig((prev) => ({
+                                    ...prev,
+                                    clientCalcModes: {
+                                      ...(prev.clientCalcModes || {
+                                        retail: calcMode,
+                                        salon: calcMode,
+                                        designer: calcMode,
+                                      }),
+                                      [clientType.id]: "area",
+                                    },
+                                  }));
+                                }}
+                                className={cn(
+                                  "px-2.5 py-1 text-[11px] font-bold rounded transition-all",
+                                  curMode === "area"
+                                    ? "bg-white text-blue-600 shadow-xs"
+                                    : "text-gray-500 hover:text-gray-700",
+                                )}
+                              >
+                                За м²
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOwnProductionConfig((prev) => ({
+                                    ...prev,
+                                    clientCalcModes: {
+                                      ...(prev.clientCalcModes || {
+                                        retail: calcMode,
+                                        salon: calcMode,
+                                        designer: calcMode,
+                                      }),
+                                      [clientType.id]: "sheet",
+                                    },
+                                  }));
+                                }}
+                                className={cn(
+                                  "px-2.5 py-1 text-[11px] font-bold rounded transition-all",
+                                  curMode === "sheet"
+                                    ? "bg-white text-blue-600 shadow-xs"
+                                    : "text-gray-500 hover:text-gray-700",
+                                )}
+                              >
+                                За лист
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center justify-between gap-4 p-4 bg-gray-50 rounded-xl">
@@ -14913,144 +16079,24 @@ const SettingsView = ({
                   {/* Delivery & Loading */}
                   <div className="space-y-4">
                     <div className="p-4 bg-gray-50 rounded-2xl border border-gray-100 space-y-4">
-                      <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest font-sans">
-                        Тарифы на доставку
-                      </label>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                          <span className="text-[11px] font-bold text-gray-600 block ml-1 font-sans">
-                            Минимальная (₽)
+                      <div className="flex items-center justify-between">
+                        <label className="block text-[10px] font-black text-gray-400 uppercase tracking-widest font-sans">
+                          Тарифы на доставку
+                        </label>
+                        {isContractMode && (
+                          <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-md font-sans">
+                            Производство + Ваша розница
                           </span>
-                          <input
-                            type="text"
-                            value={
-                              deliveryTariffs.basePrice === 0
-                                ? ""
-                                : deliveryTariffs.basePrice
-                            }
-                            onChange={(e) => {
-                              const val = e.target.value.replace(/[^0-9]/g, "");
-                              setDeliveryTariffs((prev) => ({
-                                ...prev,
-                                basePrice: val === "" ? 0 : parseInt(val),
-                              }));
-                            }}
-                            className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <span className="text-[11px] font-bold text-gray-600 block ml-1 font-sans">
-                            Бесплатно (км)
-                          </span>
-                          <input
-                            type="text"
-                            value={
-                              deliveryTariffs.baseDistance === 0
-                                ? ""
-                                : deliveryTariffs.baseDistance
-                            }
-                            onChange={(e) => {
-                              const val = e.target.value.replace(/[^0-9]/g, "");
-                              setDeliveryTariffs((prev) => ({
-                                ...prev,
-                                baseDistance: val === "" ? 0 : parseInt(val),
-                              }));
-                            }}
-                            className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
-                          />
-                        </div>
+                        )}
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                          <span className="text-[11px] font-bold text-gray-600 block ml-1 font-sans">
-                            Базовый объем (м²)
-                          </span>
-                          <input
-                            type="text"
-                            value={
-                              deliveryTariffs.baseVolume === 0
-                                ? ""
-                                : deliveryTariffs.baseVolume
-                            }
-                            onChange={(e) => {
-                              const val = e.target.value.replace(/[^0-9]/g, "");
-                              setDeliveryTariffs((prev) => ({
-                                ...prev,
-                                baseVolume: val === "" ? 0 : parseInt(val),
-                              }));
-                            }}
-                            className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <span className="text-[11px] font-bold text-gray-600 block ml-1 font-sans">
-                            Доплата за доп. м² (₽)
-                          </span>
-                          <input
-                            type="text"
-                            value={
-                              deliveryTariffs.extraVolumePrice === 0
-                                ? ""
-                                : deliveryTariffs.extraVolumePrice
-                            }
-                            onChange={(e) => {
-                              const val = e.target.value.replace(/[^0-9]/g, "");
-                              setDeliveryTariffs((prev) => ({
-                                ...prev,
-                                extraVolumePrice: val === "" ? 0 : parseInt(val),
-                              }));
-                            }}
-                            className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <div className="space-y-1">
-                          <span className="text-[11px] font-bold text-gray-600 block ml-1 font-sans">
-                            Цена за км (₽/км)
-                          </span>
-                          <input
-                            type="text"
-                            value={
-                              deliveryTariffs.extraKmPrice === 0
-                                ? ""
-                                : deliveryTariffs.extraKmPrice
-                            }
-                            onChange={(e) => {
-                              const val = e.target.value.replace(/[^0-9]/g, "");
-                              setDeliveryTariffs((prev) => ({
-                                ...prev,
-                                extraKmPrice: val === "" ? 0 : parseInt(val),
-                              }));
-                            }}
-                            className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <span className="text-[11px] font-bold text-gray-600 block ml-1 font-sans">
-                            Доп. грузчик (₽)
-                          </span>
-                          <input
-                            type="text"
-                            value={
-                              deliveryTariffs.extraLoaderPrice === 0
-                                ? ""
-                                : deliveryTariffs.extraLoaderPrice
-                            }
-                            onChange={(e) => {
-                              const val = e.target.value.replace(/[^0-9]/g, "");
-                              setDeliveryTariffs((prev) => ({
-                                ...prev,
-                                extraLoaderPrice:
-                                  val === "" ? 0 : parseInt(val),
-                              }));
-                            }}
-                            className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
-                          />
-                        </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {renderDeliveryTariffField("Минимальная цена", "₽", "basePrice", 3000)}
+                        {renderDeliveryTariffField("Бесплатно", "км", "baseDistance", 30)}
+                        {renderDeliveryTariffField("Базовый объем", "м²", "baseVolume", 10)}
+                        {renderDeliveryTariffField("Доплата за доп. м²", "₽", "extraVolumePrice", 200)}
+                        {renderDeliveryTariffField("Цена за км", "₽/км", "extraKmPrice", 50)}
+                        {renderDeliveryTariffField("Доп. грузчик", "₽", "extraLoaderPrice", 1000)}
                       </div>
                     </div>
 
@@ -15060,69 +16106,9 @@ const SettingsView = ({
                       </label>
 
                       <div className="grid grid-cols-1 gap-3">
-                        <div className="flex items-center justify-between gap-4">
-                          <span className="text-xs font-bold text-blue-800 font-sans">
-                            Базовый подъем (₽)
-                          </span>
-                          <input
-                            type="text"
-                            value={
-                              deliveryTariffs.loadingBase === 0
-                                ? ""
-                                : deliveryTariffs.loadingBase
-                            }
-                            onChange={(e) => {
-                              const val = e.target.value.replace(/[^0-9]/g, "");
-                              setDeliveryTariffs((prev) => ({
-                                ...prev,
-                                loadingBase: val === "" ? 0 : parseInt(val),
-                              }));
-                            }}
-                            className="w-24 px-3 py-1.5 bg-white border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold text-right"
-                          />
-                        </div>
-                        <div className="flex items-center justify-between gap-4">
-                          <span className="text-xs font-bold text-blue-800 font-sans">
-                            Этаж без лифта (₽/эт)
-                          </span>
-                          <input
-                            type="text"
-                            value={
-                              deliveryTariffs.floorPrice === 0
-                                ? ""
-                                : deliveryTariffs.floorPrice
-                            }
-                            onChange={(e) => {
-                              const val = e.target.value.replace(/[^0-9]/g, "");
-                              setDeliveryTariffs((prev) => ({
-                                ...prev,
-                                floorPrice: val === "" ? 0 : parseInt(val),
-                              }));
-                            }}
-                            className="w-24 px-3 py-1.5 bg-white border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold text-right"
-                          />
-                        </div>
-                        <div className="flex items-center justify-between gap-4">
-                          <span className="text-xs font-bold text-blue-800 font-sans">
-                            С лифтом (фикс ₽)
-                          </span>
-                          <input
-                            type="text"
-                            value={
-                              deliveryTariffs.elevatorPrice === 0
-                                ? ""
-                                : deliveryTariffs.elevatorPrice
-                            }
-                            onChange={(e) => {
-                              const val = e.target.value.replace(/[^0-9]/g, "");
-                              setDeliveryTariffs((prev) => ({
-                                ...prev,
-                                elevatorPrice: val === "" ? 0 : parseInt(val),
-                              }));
-                            }}
-                            className="w-24 px-3 py-1.5 bg-white border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold text-right"
-                          />
-                        </div>
+                        {renderDeliveryTariffField("Базовый подъем", "₽", "loadingBase", 500)}
+                        {renderDeliveryTariffField("Этаж без лифта", "₽/эт", "floorPrice", 200)}
+                        {renderDeliveryTariffField("С лифтом", "фикс ₽", "elevatorPrice", 500)}
                       </div>
                     </div>
                   </div>
@@ -15138,11 +16124,18 @@ const SettingsView = ({
                         <div>
                           <div className="flex items-center justify-between mb-2">
                             <span className="text-sm font-bold text-gray-700 font-sans">
-                              Процент на сборку
+                              Процент на сборку (базовый)
                             </span>
-                            <span className="text-lg font-black text-blue-600 font-sans">
-                              {localAssemblyPercentage}%
-                            </span>
+                            <div className="flex items-center gap-2 font-sans">
+                              {isContractMode && (
+                                <span className="text-xs px-2 py-0.5 bg-gray-200 text-gray-700 font-bold rounded-lg">
+                                  Закуп: {prodAssemblyPercentage}%
+                                </span>
+                              )}
+                              <span className="text-lg font-black text-blue-600">
+                                {isContractMode ? `Розница: ${localAssemblyPercentage}%` : `${localAssemblyPercentage}%`}
+                              </span>
+                            </div>
                           </div>
                           <input
                             type="range"
@@ -15168,33 +16161,45 @@ const SettingsView = ({
                           <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                             {["Кухня", "Шкаф", "Шкаф-купе", "Стол", "Прихожая", "Тумба в ванную", "Консоль подвесная"].map((type) => {
                               const currentVal = localAssemblyPercentages?.[type] !== undefined ? localAssemblyPercentages[type] : localAssemblyPercentage;
+                              const prodTypeVal = prodAssemblyPercentages?.[type] !== undefined ? prodAssemblyPercentages[type] : prodAssemblyPercentage;
                               return (
-                                <div key={type} className="flex items-center justify-between gap-4 p-2 bg-white rounded-xl border border-gray-100 shadow-sm">
-                                  <span className="text-xs font-semibold text-gray-700">{type}</span>
-                                  <div className="flex items-center gap-1.5">
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      max="50"
-                                      value={currentVal}
-                                      onChange={(e) => {
-                                        const val = parseInt(e.target.value);
-                                        const finalVal = isNaN(val) ? 0 : val;
-                                        lastTypedPercentagesRef.current = Date.now();
-                                        setLocalAssemblyPercentages((prev) => ({
-                                          ...prev,
-                                          [type]: finalVal,
-                                        }));
-                                        if (setAssemblyPercentages) {
-                                          setAssemblyPercentages((prev) => ({
+                                <div key={type} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-2.5 bg-white rounded-xl border border-gray-100 shadow-2xs">
+                                  <span className="text-xs font-bold text-gray-800">{type}</span>
+                                  <div className="flex items-center gap-3">
+                                    {isContractMode && (
+                                      <div className="flex items-center gap-1.5 px-2 py-1 bg-gray-100 rounded-lg border border-gray-200">
+                                        <span className="text-[10px] text-gray-400 font-medium">Произв:</span>
+                                        <span className="text-xs font-bold text-gray-700">{prodTypeVal}%</span>
+                                      </div>
+                                    )}
+                                    <div className="flex items-center gap-1.5">
+                                      {isContractMode && (
+                                        <span className="text-[10px] text-blue-600 font-bold">Розница:</span>
+                                      )}
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        max="50"
+                                        value={currentVal}
+                                        onChange={(e) => {
+                                          const val = parseInt(e.target.value);
+                                          const finalVal = isNaN(val) ? 0 : val;
+                                          lastTypedPercentagesRef.current = Date.now();
+                                          setLocalAssemblyPercentages((prev) => ({
                                             ...prev,
-                                            [type]: finalVal
+                                            [type]: finalVal,
                                           }));
-                                        }
-                                      }}
-                                      className="w-14 px-2 py-1 text-center font-bold text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                    />
-                                    <span className="text-xs text-gray-400 font-medium">%</span>
+                                          if (setAssemblyPercentages) {
+                                            setAssemblyPercentages((prev) => ({
+                                              ...prev,
+                                              [type]: finalVal
+                                            }));
+                                          }
+                                        }}
+                                        className="w-14 px-2 py-1 text-center font-bold text-xs bg-blue-50/40 border border-blue-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-blue-900"
+                                      />
+                                      <span className="text-xs text-gray-400 font-medium">%</span>
+                                    </div>
                                   </div>
                                 </div>
                               );
@@ -15207,27 +16212,38 @@ const SettingsView = ({
                           <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2 font-sans">
                             Минимальная стоимость сборки и монтажа
                           </span>
-                          <div className="flex items-center justify-between gap-4 p-3 bg-white rounded-xl border border-gray-100 shadow-2xs">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-white rounded-xl border border-gray-100 shadow-2xs">
                             <div>
                               <span className="text-xs font-bold text-gray-800 block font-sans">Минимальная сумма услуги (₽)</span>
                               <span className="text-[11px] text-gray-400 block font-sans">Если расчёт по проценту ниже этой суммы, будет применим данный минимум</span>
                             </div>
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <input
-                                type="number"
-                                min="0"
-                                step="100"
-                                value={minAssemblyPrice || ""}
-                                placeholder="0"
-                                onChange={(e) => {
-                                  const val = parseInt(e.target.value);
-                                  if (setMinAssemblyPrice) {
-                                    setMinAssemblyPrice(isNaN(val) ? 0 : val);
-                                  }
-                                }}
-                                className="w-28 px-3 py-1.5 text-right font-bold text-xs bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                              />
-                              <span className="text-xs text-gray-400 font-medium">₽</span>
+                            <div className="flex items-center gap-3 shrink-0">
+                              {isContractMode && (
+                                <div className="flex items-center gap-1 px-2.5 py-1.5 bg-gray-100 border border-gray-200 rounded-xl">
+                                  <span className="text-[10px] text-gray-400 font-medium">Производство:</span>
+                                  <span className="text-xs font-bold text-gray-700">{prodMinAssemblyPrice} ₽</span>
+                                </div>
+                              )}
+                              <div className="flex items-center gap-1.5">
+                                {isContractMode && (
+                                  <span className="text-[10px] text-blue-600 font-bold">Розница:</span>
+                                )}
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="100"
+                                  value={minAssemblyPrice || ""}
+                                  placeholder={isContractMode ? String(prodMinAssemblyPrice) : "0"}
+                                  onChange={(e) => {
+                                    const val = parseInt(e.target.value);
+                                    if (setMinAssemblyPrice) {
+                                      setMinAssemblyPrice(isNaN(val) ? 0 : val);
+                                    }
+                                  }}
+                                  className="w-28 px-3 py-1.5 text-right font-bold text-xs bg-blue-50/40 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-blue-900"
+                                />
+                                <span className="text-xs text-gray-400 font-medium">₽</span>
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -15609,10 +16625,38 @@ const SettingsView = ({
               </div>
             </section>
 
+            {/* Material work costs section for Area calculation mode */}
+            {(calcMode === "area" ||
+              (ownProductionConfig.clientCalcModesEnabled &&
+                Object.values(ownProductionConfig.clientCalcModes || {}).includes("area"))) && (
+              <MaterialWorkCostsSection
+                mode="area"
+                ownProductionConfig={ownProductionConfig}
+                setOwnProductionConfig={setOwnProductionConfig}
+                salonsInTable={salonsInTable}
+                onSaveSettings={onSaveSettings}
+                showAlert={showAlert}
+              />
+            )}
+
+            {/* Material work costs section for Sheet calculation mode */}
+            {(calcMode === "sheet" ||
+              (ownProductionConfig.clientCalcModesEnabled &&
+                Object.values(ownProductionConfig.clientCalcModes || {}).includes("sheet"))) && (
+              <MaterialWorkCostsSection
+                mode="sheet"
+                ownProductionConfig={ownProductionConfig}
+                setOwnProductionConfig={setOwnProductionConfig}
+                salonsInTable={salonsInTable}
+                onSaveSettings={onSaveSettings}
+                showAlert={showAlert}
+              />
+            )}
+
             <section>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">
-                  Коэффициенты и клиенты
+                  Коэффициенты наценки и коэффициенты клиентов
                 </h3>
               </div>
               <p className="text-xs text-gray-500 mb-6 font-medium">
@@ -31434,7 +32478,7 @@ export default function App() {
   const toggleSpareSheet = (materialKey: string) => {
     setSpareSheets((prev) => ({ ...prev, [materialKey]: !prev[materialKey] }));
   };
-  const [calcMode, setCalcMode] = useState<"sheet" | "area">("sheet");
+  const [calcMode, setCalcMode] = useState<"sheet" | "area" | "coefficients">("coefficients");
   const [specificationConfig, setSpecificationConfigReal] = useState<any>({
     contractSumIncludes: {
       materials: true,
@@ -32262,535 +33306,915 @@ export default function App() {
       );
     }
 
-    // Sync Categories
-    const categoriesUnsubscribe = onSnapshot(
-        doc(db, "companies", companyId, "settings", "categories"),
-        (snapshot) => {
-          if (snapshot.exists()) {
-            const data = snapshot.data();
-            let cats = mergeCategories(data.categories);
-  
-            setProductCategories(cats);
-            setCoefficients((prev) => ({
-              ...prev,
-              products: data.coefficients || {},
-            }));
-          } else {
-            // If no settings exist, initialize with defaults
-            setProductCategories(INITIAL_PRODUCT_CATEGORIES);
-            if (userRole === "admin") {
-              setDoc(doc(db, "companies", companyId, "settings", "categories"), {
-                categories: INITIAL_PRODUCT_CATEGORIES,
-                coefficients: INITIAL_PRODUCT_CATEGORIES.reduce(
-                  (acc, cat) => ({ ...acc, [cat]: 1.5 }),
-                  {},
-                ),
-              });
-            }
+    return () => {
+      if (typeof manufacturerProductsUnsubscribe === "function") {
+        manufacturerProductsUnsubscribe();
+      }
+    };
+  }, [companyData?.manufacturerId, isPreloaded]);
+
+  const isBazisReport = (data: any[][]) => {
+    if (!data || data.length === 0) return false;
+    for (let i = 0; i < Math.min(data.length, 15); i++) {
+      const rowStr = (data[i] || []).map((c) => String(c).toLowerCase()).join(" ");
+      if (
+        rowStr.includes("расчетное количество") ||
+        rowStr.includes("расчётное количество") ||
+        rowStr.includes("количество в заказе") ||
+        rowStr.includes("стоимость в заказе") ||
+        rowStr.includes("ед. изм. в модели") ||
+        rowStr.includes("стоимость в изделии")
+      ) {
+        return true;
+      }
+    }
+    for (let i = 0; i < Math.min(data.length, 20); i++) {
+      const row = data[i] || [];
+      if (row.length >= 8) {
+        const colStr = (String(row[0] || "") + " " + String(row[1] || "") + " " + String(row[2] || "")).toLowerCase();
+        if (
+          colStr.includes("лдсп") ||
+          colStr.includes("хдф") ||
+          colStr.includes("лхдф") ||
+          colStr.includes("лдвп") ||
+          colStr.includes("кромка") ||
+          /\b0[,.]4[*xх]19\b/.test(colStr) ||
+          /\b2[*xх]19\b/.test(colStr)
+        ) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  const parseBazisReport = (rawData: any[][], fileName: string) => {
+    if (!rawData || rawData.length === 0) return false;
+
+    let headerRowIdx = -1;
+    let colArticle = 0;
+    let colName = 1;
+    let colUnit = 2;
+    let colCalcQty = 3;
+    let colCoef = 4;
+    let colCostInProd = 5;
+    let colPrice = 6;
+    let colQtyInProd = 7;
+    let colOrderQty = 8;
+    let colOrderCost = 9;
+    let colModelUnit = 10;
+    let colNote = 11;
+
+    for (let i = 0; i < Math.min(rawData.length, 15); i++) {
+      const row = rawData[i] || [];
+      const rowText = row.map((c: any) => String(c).toLowerCase()).join(" ");
+      if (
+        rowText.includes("наименование") ||
+        rowText.includes("расчет") ||
+        rowText.includes("артикул") ||
+        rowText.includes("заказ")
+      ) {
+        headerRowIdx = i;
+        row.forEach((cell: any, cIdx: number) => {
+          const h = String(cell || "").toLowerCase().trim();
+          if (h.includes("артикул")) colArticle = cIdx;
+          else if (h.includes("наименование")) colName = cIdx;
+          else if (h.includes("ед. изм") || h.includes("единица")) {
+            if (h.includes("модел")) colModelUnit = cIdx;
+            else colUnit = cIdx;
           }
-        },
-        (error) =>
-          handleDbError(
-            error,
-            OperationType.GET,
-            `companies/${companyId}/settings/categories`,
-          ),
+          else if (h.includes("расчет") || h.includes("расчёт")) colCalcQty = cIdx;
+          else if (h.includes("коэффициент")) colCoef = cIdx;
+          else if (h.includes("стоимость в изд")) colCostInProd = cIdx;
+          else if (h.includes("цена")) colPrice = cIdx;
+          else if (h.includes("кол-во в изд") || h.includes("количество в изд")) colQtyInProd = cIdx;
+          else if (h.includes("заказ")) colOrderQty = cIdx;
+          else if (h.includes("стоимость в зак")) colOrderCost = cIdx;
+          else if (h.includes("примечание")) colNote = cIdx;
+        });
+        break;
+      }
+    }
+
+    const startIdx = headerRowIdx !== -1 ? headerRowIdx + 1 : 0;
+
+    const parseNum = (val: any): number => {
+      if (val === undefined || val === null) return 0;
+      if (typeof val === "number") return val;
+      const s = String(val).replace(/\s+/g, "").replace(",", ".");
+      const p = parseFloat(s);
+      return isNaN(p) ? 0 : p;
+    };
+
+    const grouped: Record<string, any> = {};
+    const initialSheetConfigs: Record<string, SheetConfig> = {};
+    const initialExpanded: Set<string> = new Set();
+    const initialRotations: Record<string, boolean> = { ...rotations };
+    const initialEdgeToEdge: Record<string, boolean> = { ...edgeToEdge };
+    const matchedProductsList: any[] = [];
+    const pendingEdgebands: Array<{ decor: string; lengthM: number; rawName: string }> = [];
+
+    let foundLdspSheets = 0;
+    let foundLdspM2 = 0;
+    let foundHdfSheets = 0;
+    let foundHdfM2 = 0;
+    let foundFacadeM2 = 0;
+    let foundEdgeMeters = 0;
+
+    for (let i = startIdx; i < rawData.length; i++) {
+      const row = rawData[i];
+      if (!row || !Array.isArray(row) || row.length === 0) continue;
+      const rawName = String(row[colName] || "").trim();
+      if (!rawName) continue;
+
+      const lName = rawName.toLowerCase();
+      if (
+        lName.includes("наименование") ||
+        lName.includes("итого") ||
+        lName.includes("всего в заказе") ||
+        lName.includes("стоимость заказа")
+      ) {
+        continue;
+      }
+
+      const article = String(row[colArticle] || "").trim();
+      const unit = String(row[colUnit] || "").trim();
+      const calcQty = parseNum(row[colCalcQty]);
+      const orderQty = parseNum(row[colOrderQty]) || calcQty;
+      const price = parseNum(row[colPrice]);
+      const modelUnit = String(row[colModelUnit] || "").trim().toLowerCase();
+
+      // 1. Accounting SKU Mapping (Catalog Match)
+      let isCatalogMatch = false;
+      if (companyData?.accountingMappingConfig?.enabled !== false && catalogProducts && catalogProducts.length > 0) {
+        const normArt = article.toLowerCase();
+        const foundProd = catalogProducts.find((p: any) => {
+          if (normArt && p.article && String(p.article).trim().toLowerCase() === normArt) return true;
+          if (normArt && Array.isArray(p.skuList) && p.skuList.some((s: any) => String(s).trim().toLowerCase() === normArt)) return true;
+          if (normArt && Array.isArray(p.accountingSkus) && p.accountingSkus.some((s: any) => String(s).trim().toLowerCase() === normArt)) return true;
+          return false;
+        });
+
+        if (foundProd) {
+          const pQty = orderQty > 0 ? orderQty : calcQty > 0 ? calcQty : 1;
+          matchedProductsList.push({
+            ...foundProd,
+            quantity: pQty,
+            qty: pQty,
+            fromSkuMapping: true,
+          });
+          isCatalogMatch = true;
+        }
+      }
+
+      // 2. Identify Category
+      const isLdsp = (lName.includes("лдсп") || lName.includes("дсп")) &&
+        !lName.includes("хдф") && !lName.includes("двп") && !lName.includes("лхдф") &&
+        !lName.includes("лдвп") && !lName.includes("кромк");
+
+      const isEdge = lName.includes("кромк") ||
+        /\b0[,.]4[*xх]19\b/.test(lName) ||
+        /\b0[,.]8[*xх]19\b/.test(lName) ||
+        /\b1[*xх]19\b/.test(lName) ||
+        /\b2[*xх]19\b/.test(lName) ||
+        /\b0[,.]4[*xх]28\b/.test(lName) ||
+        /\b2[*xх]28\b/.test(lName) ||
+        (modelUnit === "м" && (unit === "м" || unit.includes("пог")));
+
+      const isHdf = !isLdsp && !isEdge && (
+        lName.includes("хдф") ||
+        lName.includes("двп") ||
+        lName.includes("лхдф") ||
+        lName.includes("лдвп")
       );
 
-    // Sync Production Config
-    const productionUnsubscribe = onSnapshot(
-      doc(db, "companies", companyId, "settings", "production"),
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          // Improved check: if it has common contract fields, it's a contract config
-          const isContract =
-            companyData?.type !== "Мебельное производство" ||
-            productionFormat === "contract" ||
-            ("cabinet" in data) ||
-            ("facades" in data) ||
-            ("hardware" in data) ||
-            ("assembly" in data) ||
-            ("delivery" in data) ||
-            ("productionId" in data && data.productionId) ||
-            ("city" in data && data.city);
-          
-          if (isContract) {
-            setContractConfig(data as ContractConfig);
-          } else {
-            setOwnProductionConfig((prev) => {
-              const migrated = {
-                ...prev,
-                ...data,
-                photos: data.photos || prev.photos || [],
-                specialConditionIds: (data as any).specialConditionIds || [],
-                standardCoefficients: (data as any).standardCoefficients || {},
-                salonCoefficients: (data as any).salonCoefficients || {},
-              } as OwnProductionConfig;
+      const isFacade = !isLdsp && !isEdge && !isHdf && (
+        lName.includes("фасад") ||
+        lName.includes("пленка") ||
+        lName.includes("эмаль") ||
+        lName.includes("шпон") ||
+        (lName.includes("мдф") && !lName.includes("хдф"))
+      );
 
-              // Migrate facadeCustom coefficient if missing
-              if (
-                migrated.standardCoefficients &&
-                !migrated.standardCoefficients.facadeCustom
-              ) {
-                migrated.standardCoefficients.facadeCustom = 1.2;
-              }
-              if (migrated.salonCoefficients) {
-                Object.keys(migrated.salonCoefficients).forEach((sId) => {
-                  if (!migrated.salonCoefficients[sId].facadeCustom) {
-                    migrated.salonCoefficients[sId].facadeCustom = 1.1;
-                  }
-                });
-              }
-              return migrated;
-            });
-          }
+      if (isLdsp) {
+        let thickness = 16;
+        const thickMatch = rawName.match(/\b(\d{1,2})\s*мм\b/i) || rawName.match(/[*xх]\s*(\d{1,2})\b/i);
+        if (thickMatch && thickMatch[1]) thickness = parseInt(thickMatch[1]);
+
+        let decor = rawName
+          .replace(/лдсп|дсп|e1|e0\.5|e05|p2|p1/gi, "")
+          .replace(/\d{3,4}\s*[*xх]\s*\d{3,4}\s*([*xх]\s*\d{1,2}\s*(мм)?)?/gi, "")
+          .replace(/\b\d{1,2}\s*мм\b/gi, "")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (!decor) decor = rawName;
+
+        const sheetsCount = calcQty > 0 ? calcQty : Math.ceil(orderQty / 5.0);
+        const areaM2 = orderQty > 0 ? orderQty : sheetsCount * 5.0;
+
+        foundLdspSheets += sheetsCount;
+        foundLdspM2 += areaM2;
+
+        const key = "ЛДСП|" + decor + "|" + thickness;
+        if (!grouped[key]) {
+          grouped[key] = {
+            type: "ЛДСП",
+            name: "ЛДСП",
+            color: decor,
+            thickness: thickness,
+            area: 0,
+            edgeLength: 0,
+            details: [],
+          };
+          initialSheetConfigs[key] = { width: 2800, height: 2070, name: "Default" };
+          initialExpanded.add(key);
         }
-      },
-      (error) =>
-        handleDbError(
-          error,
-          OperationType.GET,
-          `companies/${companyId}/settings/production`,
-        ),
+
+        grouped[key].area += areaM2;
+
+        const numSheets = Math.max(1, Math.ceil(sheetsCount));
+        const singleArea = areaM2 / numSheets;
+        for (let s = 0; s < numSheets; s++) {
+          grouped[key].details.push({
+            id: `bazis-ldsp-${Math.random().toString(36).substring(2, 9)}`,
+            type: "ЛДСП",
+            name: rawName,
+            height: 1900,
+            width: Math.max(100, Math.round((singleArea * 1000000) / 1900)),
+            thickness,
+            qty: 1,
+            color: decor,
+            area: singleArea,
+            edgeLength: 0,
+            edgeSides: { top: false, bottom: false, left: false, right: false },
+            canRotate: false,
+          });
+        }
+      } else if (isEdge) {
+        const lengthM = orderQty > 0 ? orderQty : calcQty;
+        foundEdgeMeters += lengthM;
+
+        let edgeDecor = rawName
+          .replace(/кромка|пвх|abs|абс|0[,.]4[*xх]19|0[,.]8[*xх]19|1[*xх]19|2[*xх]19|0[,.]4[*xх]28|2[*xх]28/gi, "")
+          .replace(/\s+/g, " ")
+          .trim();
+
+        pendingEdgebands.push({ decor: edgeDecor, lengthM, rawName });
+      } else if (isHdf) {
+        let thickness = 3;
+        const thickMatch = rawName.match(/\b(\d{1,2})\s*мм\b/i);
+        if (thickMatch && thickMatch[1]) thickness = parseInt(thickMatch[1]);
+
+        let hColor = rawName
+          .replace(/хдф|двп|лхдф|лдвп/gi, "")
+          .replace(/\b\d{1,2}\s*мм\b/gi, "")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (!hColor) hColor = "Белый";
+
+        const sheetsCount = calcQty > 0 ? calcQty : Math.ceil(orderQty / 5.0);
+        const areaM2 = orderQty > 0 ? orderQty : sheetsCount * 5.0;
+
+        foundHdfSheets += sheetsCount;
+        foundHdfM2 += areaM2;
+
+        const key = "ХДФ|" + hColor + "|" + thickness;
+        if (!grouped[key]) {
+          grouped[key] = {
+            type: "ХДФ",
+            name: "ДВП/ХДФ",
+            color: hColor,
+            thickness: thickness,
+            area: 0,
+            edgeLength: 0,
+            details: [],
+          };
+          initialSheetConfigs[key] = { width: 2800, height: 2070, name: "Default" };
+          initialExpanded.add(key);
+          initialRotations[key] = true;
+        }
+
+        grouped[key].area += areaM2;
+
+        const numSheets = Math.max(1, Math.ceil(sheetsCount));
+        const singleArea = areaM2 / numSheets;
+        for (let s = 0; s < numSheets; s++) {
+          grouped[key].details.push({
+            id: `bazis-hdf-${Math.random().toString(36).substring(2, 9)}`,
+            type: "ХДФ",
+            name: rawName,
+            height: 1900,
+            width: Math.max(100, Math.round((singleArea * 1000000) / 1900)),
+            thickness,
+            qty: 1,
+            color: hColor,
+            area: singleArea,
+            edgeLength: 0,
+            edgeSides: { top: false, bottom: false, left: false, right: false },
+            canRotate: true,
+          });
+        }
+      } else if (isFacade) {
+        let thickness = 18;
+        const thickMatch = rawName.match(/\b(\d{1,2})\s*мм\b/i);
+        if (thickMatch && thickMatch[1]) thickness = parseInt(thickMatch[1]);
+
+        let fColor = rawName
+          .replace(/фасад|мдф/gi, "")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (!fColor) fColor = "Фасады";
+
+        const areaM2 = orderQty > 0 ? orderQty : calcQty;
+        foundFacadeM2 += areaM2;
+
+        const key = "Фасад|" + fColor + "|" + thickness;
+        if (!grouped[key]) {
+          grouped[key] = {
+            type: "Фасад",
+            name: "Фасады",
+            color: fColor,
+            thickness: thickness,
+            area: 0,
+            edgeLength: 0,
+            details: [],
+          };
+          initialSheetConfigs[key] = { width: 2800, height: 2070, name: "Default" };
+          initialExpanded.add(key);
+        }
+
+        grouped[key].area += areaM2;
+        grouped[key].details.push({
+          id: `bazis-facade-${Math.random().toString(36).substring(2, 9)}`,
+          type: "Фасад",
+          name: rawName,
+          height: 1000,
+          width: Math.max(100, Math.round((areaM2 * 1000000) / 1000)),
+          thickness,
+          qty: 1,
+          color: fColor,
+          area: areaM2,
+          edgeLength: 0,
+          edgeSides: { top: false, bottom: false, left: false, right: false },
+          canRotate: false,
+        });
+      } else if (!isCatalogMatch && (article || rawName)) {
+        const pQty = orderQty > 0 ? orderQty : calcQty > 0 ? calcQty : 1;
+        matchedProductsList.push({
+          id: `bazis-prod-${Math.random().toString(36).substring(2, 9)}`,
+          name: rawName,
+          article: article,
+          price: price || 0,
+          quantity: pQty,
+          qty: pQty,
+          category: "Фурнитура и комплектующие",
+          fromSkuMapping: true,
+        });
+      }
+    }
+
+    // Attach pending edgebands to matching LDSP materials
+    pendingEdgebands.forEach((pe) => {
+      let matchedKey = Object.keys(grouped).find((k) => {
+        const item = grouped[k];
+        if (item.type !== "ЛДСП") return false;
+        const c = (item.color || "").toLowerCase();
+        const ed = (pe.decor || "").toLowerCase();
+        return ed && (c.includes(ed) || ed.includes(c));
+      });
+
+      if (!matchedKey) {
+        matchedKey = Object.keys(grouped).find((k) => grouped[k].type === "ЛДСП");
+      }
+
+      if (matchedKey && grouped[matchedKey]) {
+        grouped[matchedKey].edgeLength += pe.lengthM;
+      }
+    });
+
+    if (matchedProductsList.length > 0) {
+      setAddedProducts((prev) => {
+        const updated = [...prev];
+        matchedProductsList.forEach((mp) => {
+          const existingIdx = updated.findIndex((p) => String(p.id) === String(mp.id) || (mp.article && p.article && String(p.article) === String(mp.article)));
+          if (existingIdx !== -1) {
+            const currentQty = updated[existingIdx].quantity || updated[existingIdx].qty || 0;
+            updated[existingIdx] = {
+              ...updated[existingIdx],
+              quantity: currentQty + mp.quantity,
+              qty: currentQty + mp.quantity,
+            };
+          } else {
+            updated.push(mp);
+          }
+        });
+        return updated;
+      });
+    }
+
+    setSheetConfigs((prev) => ({ ...prev, ...initialSheetConfigs }));
+    setRotations(initialRotations);
+    setEdgeToEdge((prev) => ({ ...prev, ...initialEdgeToEdge }));
+    setExpandedResults((prev) => new Set([...prev, ...initialExpanded]));
+    setResults(grouped);
+
+    const fileNameWithoutExt = fileName.replace(/\.[^/.]+$/, "");
+    const newProjectId = Date.now().toString();
+    setCurrentProjectId(newProjectId);
+    setCurrentProjectName(fileNameWithoutExt);
+
+    saveProject(fileNameWithoutExt, true, {
+      projectId: newProjectId,
+      results: grouped,
+      currentProjectTotal: 0,
+      currentSummaryRows: [],
+      addedProducts: matchedProductsList,
+      addedServices: []
+    });
+
+    setActiveTab("calculator");
+
+    const summaryParts: string[] = [];
+    if (foundLdspSheets > 0 || foundLdspM2 > 0) summaryParts.push(`ЛДСП: ${foundLdspSheets} л. (${foundLdspM2.toFixed(1)} м²)`);
+    if (foundHdfSheets > 0 || foundHdfM2 > 0) summaryParts.push(`ХДФ: ${foundHdfSheets} л. (${foundHdfM2.toFixed(1)} м²)`);
+    if (foundFacadeM2 > 0) summaryParts.push(`Фасады: ${foundFacadeM2.toFixed(1)} м²`);
+    if (foundEdgeMeters > 0) summaryParts.push(`Кромка: ${foundEdgeMeters.toFixed(1)} м`);
+    if (matchedProductsList.length > 0) summaryParts.push(`Товаров/фурнитуры: ${matchedProductsList.length} наим.`);
+
+    showAlert(
+      "Отчет Базис-Мебельщик загружен",
+      summaryParts.length > 0
+        ? `Успешно обработано: ${summaryParts.join(", ")}`
+        : "Данные из файла Базис-Мебельщик успешно загружены."
     );
 
-    // Sync General Settings
-    const generalSettingsUnsubscribe = onSnapshot(
-      doc(db, "companies", companyId, "settings", "general"),
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const isRecentlyEdited = (Date.now() - lastSettingsLocalUpdateRef.current) < 15000;
-          if (isRecentlyEdited) {
-            console.log("Prevented overwriting local settings with remote snapshot (user is typing/editing)");
+    return true;
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    // Clear input value so that the onChange event will trigger if the user selects the same file again
+    event.target.value = "";
+
+    const isExcel = file.name.match(/\.xlsx?$/i) || file.type.includes("spreadsheet") || file.type.includes("excel");
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const buffer = e.target?.result as ArrayBuffer;
+
+      if (isExcel) {
+        try {
+          const workbook = XLSX.read(buffer, { type: "array" });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" }) as any[][];
+          if (!rawData || rawData.length === 0) {
+            showAlert("Ошибка чтения", "Файл пуст или содержит нечитаемые данные");
             return;
           }
-          const data = snapshot.data();
-          // Removed duplicate category sync to avoid conflicts with dedicated categories document
-          if (data.defaultCuttingType)
-            setDefaultCuttingType(data.defaultCuttingType);
-          if (data.companyInfo) setCompanyInfo(data.companyInfo);
-          if (data.coefficients) {
-            // Ensure structure is correct
-            if (
-              data.coefficients.retail &&
-              data.coefficients.wholesale &&
-              data.coefficients.designer
-            ) {
-              setCoefficients(data.coefficients);
+          parseBazisReport(rawData, file.name);
+        } catch (err: any) {
+          console.error("XLSX parse error:", err);
+          showAlert("Ошибка чтения", "Не удалось прочитать Excel файл: " + (err?.message || err));
+        }
+      } else {
+        let decodedText = "";
+        try {
+          const decoder = new TextDecoder("utf-8", { fatal: true });
+          decodedText = decoder.decode(buffer);
+        } catch (err) {
+          console.log("UTF-8 decoding failed, falling back to Windows-1251");
+          const cp1251Decoder = new TextDecoder("windows-1251");
+          decodedText = cp1251Decoder.decode(buffer);
+        }
+
+        let delimiter = "";
+        const firstLines = decodedText.split("\n").slice(0, 5);
+        const semiCount = (firstLines.join("").match(/;/g) || []).length;
+        const commaCount = (firstLines.join("").match(/,/g) || []).length;
+        if (semiCount > commaCount && semiCount > 5) {
+          delimiter = ";";
+        }
+
+        Papa.parse(decodedText, {
+          skipEmptyLines: true,
+          header: false,
+          delimiter,
+          complete: (results) => {
+            const rawData = results.data as string[][];
+            if (!rawData || rawData.length === 0) return;
+
+            if (isBazisReport(rawData)) {
+              parseBazisReport(rawData, file.name);
             } else {
-              // Migration for old format
-              const migrated: any = { ...data.coefficients };
-              const defaults = {
-                ldsp: 4,
-                hdf: 4,
-                edge: 4,
-                facadeSheet: 1.8,
-                facadeCustom: 1.5,
-                hardware: 1.5,
-                assembly: 1.5,
-                delivery: 1.5,
-                products: {},
-              };
-              const wholesaleDefaults = {
-                ldsp: 2,
-                hdf: 2,
-                edge: 2,
-                facadeSheet: 1.2,
-                facadeCustom: 1.2,
-                hardware: 1.2,
-                assembly: 1.2,
-                delivery: 1.2,
-                products: {},
-              };
+              // Standard Pro100 CSV Parser
+              let headerRowIdx = -1;
+              for (let i = 0; i < Math.min(rawData.length, 10); i++) {
+                const row = rawData[i];
+                const hasSignificantKeywords = row.some((cell) =>
+                  /название|имя|name|height|высота|width|ширина|длина|длинна|толщина|thickness|кол-во|количество|qty|цвет|color|материал|material|кромка|edge/i.test(
+                    cell,
+                  ),
+                );
+                if (hasSignificantKeywords) {
+                  headerRowIdx = i;
+                  break;
+                }
+              }
 
-              if (!migrated.retail) {
-                migrated.retail = { ...defaults };
-                // Keep existing top-level fields if they was in old format
-                Object.keys(defaults).forEach((key) => {
-                  if (data.coefficients[key] !== undefined)
-                    migrated.retail[key] = data.coefficients[key];
+              const headerRow = headerRowIdx !== -1 ? rawData[headerRowIdx] : null;
+
+              let nameIdx = -1;
+              let heightIdx = -1;
+              let widthIdx = -1;
+              let thickIdx = -1;
+              let qtyIdx = -1;
+              let colorIdx = -1;
+              let materialIdx = -1;
+              const edgeCols: number[] = [];
+
+              if (headerRow) {
+                headerRow.forEach((cell, idx) => {
+                  const h = (cell || "").toString().toLowerCase().trim();
+                  if (/название|имя|^имя|^name$/i.test(h)) { if (nameIdx === -1) nameIdx = idx; }
+                  else if (/высота|height/i.test(h)) heightIdx = idx;
+                  else if (/ширина|длина|width|length/i.test(h) && h !== "высота") widthIdx = idx;
+                  else if (/толщина|thickness/i.test(h)) thickIdx = idx;
+                  else if (/кол-во|количество|qty|quantity/i.test(h)) qtyIdx = idx;
+                  else if (/цвет|color/i.test(h)) colorIdx = idx;
+                  else if (/кромка|edge/i.test(h)) {
+                    if (!edgeCols.includes(idx)) edgeCols.push(idx);
+                  }
+                  else if (/материал|material/i.test(h)) materialIdx = idx;
                 });
               }
-              if (!migrated.wholesale) {
-                migrated.wholesale = { ...wholesaleDefaults };
-                // Try to infer from retail if missing
-                Object.keys(wholesaleDefaults).forEach((key) => {
-                  if (
-                    migrated.retail[key] !== undefined &&
-                    key !== "products"
-                  ) {
-                    migrated.wholesale[key] = Math.max(
-                      1,
-                      migrated.retail[key] * 0.5,
+
+              if (nameIdx === -1) nameIdx = 0;
+              if (heightIdx === -1) heightIdx = 1;
+              if (widthIdx === -1) widthIdx = 3;
+              if (thickIdx === -1) thickIdx = 5;
+              if (qtyIdx === -1) qtyIdx = 6;
+              if (colorIdx === -1) colorIdx = 7;
+
+              if (edgeCols.length === 0) {
+                edgeCols.push(2);
+                edgeCols.push(4);
+              }
+
+              const parsedDetails = rawData
+                .slice(headerRowIdx + 1)
+                .map((row) => {
+                  if (row.length < 3) return null;
+                  const name = (row[nameIdx] || "Без имени").toString();
+                  const height = parseFloat((row[heightIdx]?.toString() || "0").replace(",", "."));
+                  const width = parseFloat((row[widthIdx]?.toString() || "0").replace(",", "."));
+                  const thickness = parseFloat((row[thickIdx]?.toString() || "0").replace(",", "."));
+                  const qty = parseInt(row[qtyIdx] || "1");
+                  const color = (row[colorIdx] || (materialIdx !== -1 ? row[materialIdx] : "Default")).toString();
+
+                  const isOneEdge = (s: any) => {
+                    if (s === undefined || s === null) return false;
+                    const p = s.toString().toLowerCase().trim();
+                    return p === "1" || p === "." || p === "-" || p === "—" || p === "–";
+                  };
+
+                  const isTwoEdges = (s: any) => {
+                    if (s === undefined || s === null) return false;
+                    const p = s.toString().toLowerCase().trim();
+                    return p === "2" || p === ":" || p === "=" || p === "==" || p === "4";
+                  };
+
+                  const edgeSides = { top: false, bottom: false, left: false, right: false };
+
+                  if (edgeCols.length >= 4) {
+                    if (isOneEdge(row[edgeCols[0]]) || isTwoEdges(row[edgeCols[0]])) edgeSides.left = true;
+                    if (isOneEdge(row[edgeCols[1]]) || isTwoEdges(row[edgeCols[1]])) edgeSides.right = true;
+                    if (isOneEdge(row[edgeCols[2]]) || isTwoEdges(row[edgeCols[2]])) edgeSides.top = true;
+                    if (isOneEdge(row[edgeCols[3]]) || isTwoEdges(row[edgeCols[3]])) edgeSides.bottom = true;
+                  } else if (edgeCols.length === 2) {
+                    const hE = row[edgeCols[0]];
+                    if (isTwoEdges(hE)) { edgeSides.left = true; edgeSides.right = true; }
+                    else if (isOneEdge(hE)) { edgeSides.left = true; }
+
+                    const wE = row[edgeCols[1]];
+                    if (isTwoEdges(wE)) { edgeSides.top = true; edgeSides.bottom = true; }
+                    else if (isOneEdge(wE)) { edgeSides.top = true; }
+                  } else if (edgeCols.length === 1 || edgeCols.length > 0) {
+                    const p = (row[edgeCols[0] || 0] || "").toString().toLowerCase().trim();
+                    const separator = p.includes(".") ? "." : p.includes(":") ? ":" : p.includes(",") ? "," : p.includes("|") ? "|" : p.includes(" ") ? " " : null;
+
+                    if (separator) {
+                      const segments = p.split(separator).map(s => s.trim());
+                      if (segments.length >= 4) {
+                        edgeSides.left = isOneEdge(segments[0]) || isTwoEdges(segments[0]);
+                        edgeSides.right = isOneEdge(segments[1]) || isTwoEdges(segments[1]);
+                        edgeSides.top = isOneEdge(segments[2]) || isTwoEdges(segments[2]);
+                        edgeSides.bottom = isOneEdge(segments[3]) || isTwoEdges(segments[3]);
+                      } else if (segments.length >= 2) {
+                        if (isTwoEdges(segments[0])) { edgeSides.left = true; edgeSides.right = true; }
+                        else if (isOneEdge(segments[0])) { edgeSides.left = true; }
+
+                        if (isTwoEdges(segments[1])) { edgeSides.top = true; edgeSides.bottom = true; }
+                        else if (isOneEdge(segments[1])) { edgeSides.top = true; }
+                      }
+                    } else {
+                      if (p.length === 4) {
+                        edgeSides.left = isOneEdge(p[0]);
+                        edgeSides.right = isOneEdge(p[1]);
+                        edgeSides.top = isOneEdge(p[2]);
+                        edgeSides.bottom = isOneEdge(p[3]);
+                      } else if (isTwoEdges(p)) {
+                        edgeSides.left = true; edgeSides.right = true;
+                      } else if (isOneEdge(p)) {
+                        edgeSides.left = true;
+                      }
+                    }
+                  }
+
+                  const edgeLength = ((edgeSides.top ? width : 0) + (edgeSides.bottom ? width : 0) + (edgeSides.left ? height : 0) + (edgeSides.right ? height : 0)) / 1000;
+                  const area = (height * width) / 1000000;
+                  let type: Detail["type"] = "ЛДСП";
+                  const lName = name.toLowerCase();
+                  const lColor = color.toLowerCase();
+                  const lMaterial = (materialIdx !== -1 && row[materialIdx] ? row[materialIdx].toLowerCase() : "");
+
+                  if (thickness < 10 || lName.includes("хдф") || lName.includes("двп") || lColor.includes("хдф") || lColor.includes("двп")) {
+                    type = "ХДФ";
+                  } else if (lName.includes("фасад") || lColor.includes("фасад") || lMaterial.includes("фасад")) {
+                    type = "Фасад";
+                  } else if (lName.includes("мдф") || lColor.includes("мдф") || lMaterial.includes("мдф")) {
+                    type = "МДФ";
+                  } else if (lName.includes("столешница") || lName.includes("worktop") || lColor.includes("столешница") || lMaterial.includes("столешница")) {
+                    type = "Столешница";
+                  } else if (lName.includes("стеновая") || lName.includes("backsplash") || lColor.includes("стеновая") || lMaterial.includes("стеновая")) {
+                    type = "Стеновая панель";
+                  } else if (lName.includes("лдсп") || lColor.includes("лдсп") || lMaterial.includes("лдсп")) {
+                    type = "ЛДСП";
+                  }
+
+                  if (lName.includes("модуль") || lColor.includes("модуль") || lMaterial.includes("модуль")) return null;
+
+                  return {
+                    id: Math.random().toString(36).substring(2, 9),
+                    type,
+                    name,
+                    height,
+                    edgeProc: "",
+                    width,
+                    thickness,
+                    qty,
+                    color,
+                    area,
+                    edgeLength,
+                    edgeSides,
+                    canRotate: type === "ХДФ",
+                  };
+                })
+                .filter((d) => d !== null) as Detail[];
+
+              if (parsedDetails.length === 0) {
+                showAlert(
+                  "Ошибка",
+                  "Не удалось найти данные в файле. Проверьте структуру колонок.",
+                );
+                return;
+              }
+
+              const grouped: any = {};
+              const initialSheetConfigs: Record<string, SheetConfig> = {};
+              const initialExpanded: Set<string> = new Set();
+              const initialRotations: Record<string, boolean> = { ...rotations };
+              const initialEdgeToEdge: Record<string, boolean> = { ...edgeToEdge };
+
+              parsedDetails.forEach((d) => {
+                const key = `${d.type}|${d.color}|${d.thickness}`;
+
+                if (!grouped[key]) {
+                  if (d.type === "ХДФ") initialRotations[key] = true;
+                  grouped[key] = {
+                    type: d.type,
+                    name:
+                      d.type === "Фасад"
+                        ? "Фасады"
+                        : d.type === "ХДФ"
+                          ? "ДВП/ХДФ"
+                          : d.type === "ЛДСП"
+                            ? "ЛДСП"
+                            : d.name,
+                    color: d.color,
+                    thickness: d.thickness,
+                    area: 0,
+                    edgeLength: 0,
+                    details: [],
+                  };
+
+                  const configToUse =
+                    productionFormat === "contract" &&
+                    productionSettings?.production
+                      ? productionSettings.production
+                      : ownProductionConfig;
+
+                  const brandString = (d.color + " " + d.name).toLowerCase();
+                  const brandMatch =
+                    configToUse?.ldspBrands?.find((b: any) =>
+                      brandString.includes(b.brand.toLowerCase()),
+                    ) ||
+                    LDSP_BRANDS.find((b) =>
+                      brandString.includes(b.name.split(" ")[0].toLowerCase()),
                     );
-                  }
-                });
-              }
-              if (!migrated.designer) {
-                migrated.designer = { ...migrated.wholesale };
-                Object.keys(migrated.wholesale).forEach((key) => {
-                  if (
-                    key !== "products" &&
-                    typeof migrated.wholesale[key] === "number"
-                  ) {
-                    migrated.designer[key] = migrated.wholesale[key] * 1.1;
-                  }
-                });
-              }
 
-              // Ensure critical missing fields exist even if sub-objects were present
-              ["retail", "wholesale", "designer"].forEach((type) => {
-                if (!migrated[type].facadeCustom)
-                  migrated[type].facadeCustom = type === "retail" ? 1.5 : 1.2;
-                if (!migrated[type].hardware)
-                  migrated[type].hardware = type === "retail" ? 1.5 : 1.2;
-                if (!migrated[type].assembly)
-                  migrated[type].assembly = type === "retail" ? 1.5 : 1.2;
-                if (!migrated[type].delivery)
-                  migrated[type].delivery = type === "retail" ? 1.5 : 1.2;
-                if (!migrated[type].products) migrated[type].products = {};
+                  if (brandMatch) {
+                    if ("format" in brandMatch && brandMatch.format) {
+                      const [w, h] = brandMatch.format
+                        .split("x")
+                        .map((n: string) => parseInt(n));
+                      if (w && h)
+                        initialSheetConfigs[key] = {
+                          width: w,
+                          height: h,
+                          name: brandMatch.brand,
+                        };
+                    } else if ("width" in brandMatch) {
+                      initialSheetConfigs[key] = {
+                        width: brandMatch.width,
+                        height: brandMatch.height,
+                        name: brandMatch.name,
+                      };
+                    }
+                  } else {
+                    initialSheetConfigs[key] = {
+                      width: 2800,
+                      height: 2070,
+                      name: "Default",
+                    };
+                  }
+                  initialExpanded.add(key);
+                }
+
+                grouped[key].area += d.area * d.qty;
+                grouped[key].edgeLength += d.edgeLength * d.qty;
+                for (let i = 0; i < d.qty; i++) {
+                  grouped[key].details.push({
+                    ...d,
+                    id: `${d.id}-${i}`,
+                    rotated: false,
+                  });
+                }
               });
 
-              setCoefficients(migrated);
-            }
-          }
-          if (data.calcMode) setCalcMode(data.calcMode);
-          if (data.trimming !== undefined) setTrimming(data.trimming);
-          if (data.sawKerf !== undefined) setSawKerf(data.sawKerf);
-          if (data.cutterDiameter !== undefined) setCutterDiameter(data.cutterDiameter);
-          if (data.hardwareKitPrice !== undefined)
-            setHardwareKitPrice(data.hardwareKitPrice);
-          if (data.assemblyPercentage !== undefined)
-            setAssemblyPercentage(data.assemblyPercentage);
-          if (data.assemblyPercentages !== undefined)
-            setAssemblyPercentages(data.assemblyPercentages);
-          if (data.minAssemblyPrice !== undefined)
-            setMinAssemblyPrice(data.minAssemblyPrice);
-          if (data.turnkeyAssemblyEnabled !== undefined)
-            setTurnkeyAssemblyEnabled(data.turnkeyAssemblyEnabled);
-          if (data.extraAssemblyServices !== undefined)
-            setExtraAssemblyServices(data.extraAssemblyServices);
-          if (data.assemblyIncludes !== undefined)
-            setAssemblyIncludes(data.assemblyIncludes);
-          if (data.deliveryTariffs) setDeliveryTariffs(data.deliveryTariffs);
-          if (data.mapLink) setMapLink(data.mapLink);
-          if (data.catalogMaterials) setCatalogMaterials(data.catalogMaterials);
-          if (data.catalogServices) setCatalogServices(data.catalogServices);
-          if (data.customEdgeMapping) setCustomEdgeMapping(data.customEdgeMapping);
-          if (data.specificationConfig) {
-            if (Date.now() - lastTypedSpecificationConfigRef.current > 5000) {
-              setSpecificationConfigReal(data.specificationConfig);
-            }
-          }
-          if (data.landingPage) {
-            setCompanyData((prev: any) => ({
-              ...prev,
-              landingPage: data.landingPage,
-            }));
-          }
-        }
-      },
-      (error) =>
-        handleDbError(
-          error,
-          OperationType.GET,
-          `companies/${companyId}/settings/general`,
-        ),
-    );
+              const isSkuMappingEnabled = companyData?.accountingMappingConfig?.enabled !== false;
+              let matchedProductsList: any[] = [];
 
-    // Sync Global Prices
-    const pricesUnsubscribe = onSnapshot(
-      doc(db, "companies", companyId, "settings", "prices"),
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          if (data.edgePrices) {
-            setEdgePrices(data.edgePrices);
-          }
-          if (data.prices) {
-            setPrices((currentPrices: any) => {
-              const merged = { ...data.prices };
-              if (currentPrices) {
-                Object.keys(currentPrices).forEach((k) => {
-                  if (
-                    k.startsWith("manual_") || 
-                    k.startsWith("edgePrice_") || 
-                    (currentPrices[k] !== undefined && data.prices[k] === undefined)
-                  ) {
-                    merged[k] = currentPrices[k];
+              if (isSkuMappingEnabled && catalogProducts && catalogProducts.length > 0) {
+                const skuLookupMap: Record<string, any> = {};
+                catalogProducts.forEach((p: any) => {
+                  const skus: string[] = [];
+                  if (p.article) skus.push(String(p.article).trim());
+                  if (Array.isArray(p.skuList)) {
+                    p.skuList.forEach((s: any) => { if (s) skus.push(String(s).trim()); });
                   }
+                  if (Array.isArray(p.accountingSkus)) {
+                    p.accountingSkus.forEach((s: any) => { if (s) skus.push(String(s).trim()); });
+                  }
+                  skus.forEach((sku) => {
+                    const norm = sku.toLowerCase();
+                    if (norm) skuLookupMap[norm] = p;
+                  });
                 });
-                // If there's currently an unsaved globalPriceBuffer, make sure it's also merged
-                Object.assign(merged, globalPriceBuffer);
+
+                if (Object.keys(skuLookupMap).length > 0) {
+                  const matchedMap: Record<string, { product: any; qty: number }> = {};
+
+                  rawData.forEach((row) => {
+                    if (!row || !Array.isArray(row) || row.length === 0) return;
+
+                    let matchedProduct: any = null;
+                    let foundSku = "";
+
+                    for (let c = 0; c < Math.min(row.length, 6); c++) {
+                      const cellVal = (row[c] || "").toString().trim().toLowerCase();
+                      if (cellVal && skuLookupMap[cellVal]) {
+                        matchedProduct = skuLookupMap[cellVal];
+                        foundSku = cellVal;
+                        break;
+                      }
+                    }
+
+                    if (matchedProduct) {
+                      let qty = 1;
+                      for (let c = 0; c < row.length; c++) {
+                        const cellRaw = (row[c] || "").toString().trim();
+                        if (cellRaw && cellRaw.toLowerCase() !== foundSku) {
+                          const parsed = parseInt(cellRaw.replace(/\s+/g, ""));
+                          if (!isNaN(parsed) && parsed > 0 && parsed < 10000) {
+                            qty = parsed;
+                            if (qtyIdx !== -1 && c === qtyIdx) break;
+                          }
+                        }
+                      }
+
+                      const pId = String(matchedProduct.id);
+                      if (matchedMap[pId]) {
+                        matchedMap[pId].qty += qty;
+                      } else {
+                        matchedMap[pId] = { product: matchedProduct, qty };
+                      }
+                    }
+                  });
+
+                  matchedProductsList = Object.values(matchedMap).map((item) => ({
+                    ...item.product,
+                    quantity: item.qty,
+                    qty: item.qty,
+                    fromSkuMapping: true,
+                  }));
+                }
               }
-              return merged;
-            });
-          }
-        }
-      },
-      (error) =>
-        handleDbError(
-          error,
-          OperationType.GET,
-          `companies/${companyId}/settings/prices`,
-        ),
-    );
 
-    const promotionsUnsubscribe = onSnapshot(
-      doc(db, "companies", companyId, "settings", "promotions"),
-      (snapshot) => {
-        if (snapshot.exists()) {
-          const data = snapshot.data();
-          if (Array.isArray(data.promotions)) {
-            setPromotions(data.promotions);
-          }
-        }
-      },
-      (error) => {
-        console.error("Error syncing promotions:", error);
-      }
-    );
+              if (matchedProductsList.length > 0) {
+                setAddedProducts((prev) => {
+                  const updated = [...prev];
+                  matchedProductsList.forEach((mp) => {
+                    const existingIdx = updated.findIndex((p) => String(p.id) === String(mp.id));
+                    if (existingIdx !== -1) {
+                      const currentQty = updated[existingIdx].quantity || updated[existingIdx].qty || 0;
+                      updated[existingIdx] = {
+                        ...updated[existingIdx],
+                        quantity: currentQty + mp.quantity,
+                        qty: currentQty + mp.quantity,
+                      };
+                    } else {
+                      updated.push(mp);
+                    }
+                  });
+                  return updated;
+                });
 
-    return () => {
-      productsUnsubscribe();
-      manufacturerProductsUnsubscribe();
-      categoriesUnsubscribe();
-      productionUnsubscribe();
-      generalSettingsUnsubscribe();
-      pricesUnsubscribe();
-      promotionsUnsubscribe();
-    };
-  }, [
-    isAuthenticated,
-    companyData?.id,
-    productionFormat,
-    companyData?.manufacturerId,
-  ]);
+                const totalQty = matchedProductsList.reduce((acc, item) => acc + item.quantity, 0);
+                showAlert(
+                  "Соответствие учета",
+                  `Распознано товаров по артикулам и добавлено в расчёт: ${matchedProductsList.length} наим. (всего ${totalQty} шт.)`
+                );
+              }
 
-  // Sync Projects and Sets
-  useEffect(() => {
-    if (!isAuthenticated || !companyData?.id || !userData?.uid || !isPreloaded) return;
+              setSheetConfigs((prev) => ({ ...prev, ...initialSheetConfigs }));
+              setRotations(initialRotations);
+              setEdgeToEdge((prev) => ({ ...prev, ...initialEdgeToEdge }));
+              setExpandedResults((prev) => new Set([...prev, ...initialExpanded]));
+              setResults(grouped);
 
-    setIsProjectsLoading(true);
-    setIsSetsLoading(true);
+              const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+              const newProjectId = Date.now().toString();
+              setCurrentProjectId(newProjectId);
+              setCurrentProjectName(fileNameWithoutExt);
 
-    let qProjects;
-    let qSets;
+              saveProject(fileNameWithoutExt, true, {
+                projectId: newProjectId,
+                results: grouped,
+                currentProjectTotal: 0,
+                currentSummaryRows: [],
+                addedProducts: matchedProductsList,
+                addedServices: []
+              });
 
-    const isAdminOrSupervisor = 
-      userRole === "admin" || 
-      userRole === "supervisor" || 
-      companyData?.ownerUid === userData?.uid ||
-      userData?.role === "admin" ||
-      userData?.accessLevel === "admin" ||
-      userData?.accessLevel === "supervisor";
-
-    if (isAdminOrSupervisor) {
-      qProjects = query(
-        collection(db, "companies", companyData.id, "projects"),
-        orderBy("createdAt", "desc"),
-        limit(500),
-      );
-      qSets = query(
-        collection(db, "companies", companyData.id, "sets"),
-        orderBy("createdAt", "desc"),
-        limit(500),
-      );
-    } else {
-      qProjects = query(
-        collection(db, "companies", companyData.id, "projects"),
-        where("createdBy", "==", userData.uid),
-        orderBy("createdAt", "desc"),
-        limit(500),
-      );
-      qSets = query(
-        collection(db, "companies", companyData.id, "sets"),
-        where("createdBy", "==", userData.uid),
-        orderBy("createdAt", "desc"),
-        limit(500),
-      );
-    }
-
-    const safeISOProjectDate = (dataVal: any, fallbackVal?: any) => {
-      const target = dataVal || fallbackVal;
-      if (!target) return new Date().toISOString();
-      let d: Date | null = null;
-      if (typeof target === 'object' && (target as any)?.seconds) {
-        d = new Date((target as any).seconds * 1000);
-      } else if (typeof target === 'number' || typeof target === 'string') {
-        d = new Date(target);
-      }
-      if (!d || isNaN(d.getTime()) || d.getFullYear() <= 1970) {
-        if (fallbackVal && fallbackVal !== dataVal) {
-          return safeISOProjectDate(fallbackVal);
-        }
-        return new Date().toISOString();
-      }
-      return d.toISOString();
-    };
-
-    const unsubProjects = onSnapshot(
-      qProjects, 
-      (snapshot) => {
-        const projs = snapshot.docs.map((doc) => {
-          const data = doc.data();
-          return { 
-            id: doc.id, 
-            ...data,
-            createdAt: safeISOProjectDate(data.createdAt, data.updatedAt || data.savedAt)
-          };
+              setActiveTab("calculator");
+            }
+          },
+          error: (error) => {
+            showAlert(
+              "Ошибка чтения",
+              "Произошла ошибка при обработке файла: " + error.message,
+            );
+          },
         });
-        console.log(`DEBUG: Fetched ${projs.length} projects for company ${companyData.id}`);
-        setProjects(projs);
-        setIsProjectsLoading(false);
-      },
-      (error) => {
-        console.error("Error syncing projects:", error);
-        setIsProjectsLoading(false);
       }
-    );
-
-    const unsubSets = onSnapshot(
-      qSets, 
-      (snapshot) => {
-        const setsData = snapshot.docs.map((doc) => {
-          const data = doc.data();
-          return { id: doc.id, ...data, createdAt: safeISOProjectDate(data.createdAt, data.updatedAt || data.savedAt) };
-        });
-        setProjectSets(setsData);
-        setIsSetsLoading(false);
-      },
-      (error) => {
-        console.error("Error syncing sets:", error);
-        setIsSetsLoading(false);
-      }
-    );
-
-    const unsubProcOrders = onSnapshot(
-      collection(db, "companies", companyData.id, "projectSets"),
-      (snapshot) => {
-        const ordersData = snapshot.docs.map((doc) => {
-          const data = doc.data();
-          return { id: doc.id, ...data, createdAt: safeISOProjectDate(data.createdAt, data.updatedAt || data.savedAt) };
-        });
-        setProcurementOrders(ordersData);
-      },
-      (error) => console.error("Error syncing procurement orders:", error)
-    );
-
-    const unsubSuppliers = onSnapshot(
-      collection(db, "companies", companyData.id, "suppliers"),
-      (snapshot) => {
-        const suppliersData = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-        setSuppliers(suppliersData);
-      },
-      (error) => console.error("Error syncing suppliers:", error)
-    );
-
-    return () => {
-      unsubProjects();
-      unsubSets();
-      unsubProcOrders();
-      unsubSuppliers();
     };
-  }, [isAuthenticated, companyData?.id, userData?.uid, userRole, userData?.role, userData?.accessLevel, companyData?.ownerUid]);
+    reader.readAsArrayBuffer(file);
+  };
 
-  // Sync Production Settings (for Contract mode)
-  useEffect(() => {
-    if (productionFormat !== "contract" || !contractConfig.productionId) {
-      setProductionSettings(null);
-      return;
-    }
-
-    const prodId = contractConfig.productionId;
-
-    // Sync Production's Categories (for coefficients)
-    const unsubCategories = onSnapshot(
-      doc(db, "companies", prodId, "settings", "categories"),
-      (doc) => {
-        if (doc.exists()) {
-          setProductionSettings((prev) => ({
-            ...prev,
-            categories: doc.data(),
-          }));
-        }
-      },
-    );
-
-    const unsubGeneral = onSnapshot(
-      doc(db, "companies", prodId, "settings", "general"),
-      (doc) => {
-        if (doc.exists()) {
-          const data = doc.data();
-          setProductionSettings((prev) => ({
-            ...prev,
-            general: data,
-          }));
-          // Auto-apply locked settings
-          if (data.defaultCuttingType) {
-            setDefaultCuttingType(data.defaultCuttingType);
-            setCuttingType(data.defaultCuttingType);
-          }
-          if (data.trimming !== undefined) setTrimming(data.trimming);
-          if (data.sawKerf !== undefined) setSawKerf(data.sawKerf);
-          if (data.cutterDiameter !== undefined) setCutterDiameter(data.cutterDiameter);
-          if (data.mapLink) setMapLink(data.mapLink);
-        }
-      },
-    );
-
-    const unsubProduction = onSnapshot(
-      doc(db, "companies", prodId, "settings", "production"),
-      (doc) => {
-        if (doc.exists()) {
-          setProductionSettings((prev) => ({
-            ...prev,
-            production: doc.data(),
-          }));
-        }
-      },
-    );
-
-    return () => {
-      unsubCategories();
-      unsubGeneral();
-      unsubProduction();
-    };
-  }, [productionFormat, contractConfig.productionId]);
-
-  // Save actions
   const saveProject = async (
-    projectName: string,
+    name?: string,
     silent: boolean = false,
-    overrides?: {
+    overrideData?: {
       projectId?: string;
-      results?: any;
+      results?: Record<string, any>;
       currentProjectTotal?: number;
-      currentSummaryRows?: any[];
+      currentSummaryRows?: Array<{ id: string; name: string; type: string; price: number; isManual?: boolean; details?: any[] }>;
       addedProducts?: any[];
       addedServices?: any[];
     }
   ) => {
-    if (!companyData?.id || !userData?.uid) return;
-    
-    const now = Date.now();
-    lastWriteAt.current = now;
-
-    setIsSyncing(true);
     try {
-      const projectId = overrides?.projectId || currentProjectId || Date.now().toString();
-      const activeProducts = overrides?.hasOwnProperty('addedProducts') ? overrides.addedProducts : addedProducts;
-      const activeResults = overrides?.hasOwnProperty('results') ? overrides.results : results;
-      const activeTotal = overrides?.hasOwnProperty('currentProjectTotal') ? overrides.currentProjectTotal : currentProjectTotal;
-      const activeSummaryRows = overrides?.hasOwnProperty('currentSummaryRows') ? overrides.currentSummaryRows : currentSummaryRows;
-      const activeServices = overrides?.hasOwnProperty('addedServices') ? overrides.addedServices : addedServices;
+      const activeResults = overrideData?.results || results;
+      const activeTotal = overrideData?.currentProjectTotal !== undefined ? overrideData.currentProjectTotal : currentProjectTotal;
+      const activeSummaryRows = overrideData?.currentSummaryRows || currentSummaryRows;
+      const activeProducts = overrideData?.addedProducts || addedProducts;
+      const activeServices = overrideData?.addedServices || addedServices;
 
-      const hardwareTotal = (activeProducts || []).reduce((acc: number, p: any) => {
-        const basePrice = p.price || 0;
-        const qty = p.quantity || 1;
-        return acc + (basePrice * qty);
-      }, 0);
+      const projectId = overrideData?.projectId || currentProjectId || Date.now().toString();
+      const projectName = name || currentProjectName || "Новый проект";
 
       const existingProject = projects.find((p: any) => p.id === projectId);
       const createdByValue = existingProject?.createdBy || userData.uid;
@@ -32810,6 +34234,8 @@ export default function App() {
             customerType: customerType,
           };
 
+      const currentHardwareTotal = activeProducts.reduce((acc: number, p: any) => acc + (Number(p.price || 0) * Number(p.quantity || p.qty || 1)), 0);
+
       const projectData: any = {
         id: projectId,
         name: projectName,
@@ -32818,7 +34244,7 @@ export default function App() {
         createdByName: createdByNameValue,
         status: existingProject?.status || "draft",
         totalPrice: activeTotal,
-        totalHardwareCost: hardwareTotal,
+        totalHardwareCost: currentHardwareTotal,
         type: furnitureType || facadeType || "Мебель",
         data: {
           summaryRows: activeSummaryRows,
@@ -32860,9 +34286,9 @@ export default function App() {
         },
       };
 
-      if (!currentProjectId && !overrides?.projectId) {
+      if (!currentProjectId && !overrideData?.projectId) {
         projectData.createdAt = new Date().toISOString();
-      } else if (overrides?.projectId) {
+      } else if (overrideData?.projectId) {
         projectData.createdAt = new Date().toISOString();
       }
 
@@ -33902,7 +35328,7 @@ export default function App() {
 
   // Start of core calculation and utility functions
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const _unusedHandleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -34220,6 +35646,104 @@ export default function App() {
             }
           });
 
+          // 3. Accounting SKU Matching Mode (Соответствие учета)
+          const isSkuMappingEnabled = companyData?.accountingMappingConfig?.enabled !== false;
+          let matchedProductsList: any[] = [];
+
+          if (isSkuMappingEnabled && catalogProducts && catalogProducts.length > 0) {
+            // Build lookup map for all normalized SKUs
+            const skuLookupMap: Record<string, any> = {};
+            catalogProducts.forEach((p: any) => {
+              const skus: string[] = [];
+              if (p.article) skus.push(String(p.article).trim());
+              if (Array.isArray(p.skuList)) {
+                p.skuList.forEach((s: any) => { if (s) skus.push(String(s).trim()); });
+              }
+              if (Array.isArray(p.accountingSkus)) {
+                p.accountingSkus.forEach((s: any) => { if (s) skus.push(String(s).trim()); });
+              }
+              skus.forEach((sku) => {
+                const norm = sku.toLowerCase();
+                if (norm) skuLookupMap[norm] = p;
+              });
+            });
+
+            if (Object.keys(skuLookupMap).length > 0) {
+              const matchedMap: Record<string, { product: any; qty: number }> = {};
+
+              rawData.forEach((row) => {
+                if (!row || !Array.isArray(row) || row.length === 0) return;
+
+                let matchedProduct: any = null;
+                let foundSku = "";
+
+                // Look for article in early columns of row
+                for (let c = 0; c < Math.min(row.length, 6); c++) {
+                  const cellVal = (row[c] || "").toString().trim().toLowerCase();
+                  if (cellVal && skuLookupMap[cellVal]) {
+                    matchedProduct = skuLookupMap[cellVal];
+                    foundSku = cellVal;
+                    break;
+                  }
+                }
+
+                if (matchedProduct) {
+                  let qty = 1;
+                  for (let c = 0; c < row.length; c++) {
+                    const cellRaw = (row[c] || "").toString().trim();
+                    if (cellRaw && cellRaw.toLowerCase() !== foundSku) {
+                      const parsed = parseInt(cellRaw.replace(/\s+/g, ""));
+                      if (!isNaN(parsed) && parsed > 0 && parsed < 10000) {
+                        qty = parsed;
+                        if (qtyIdx !== -1 && c === qtyIdx) break;
+                      }
+                    }
+                  }
+
+                  const pId = String(matchedProduct.id);
+                  if (matchedMap[pId]) {
+                    matchedMap[pId].qty += qty;
+                  } else {
+                    matchedMap[pId] = { product: matchedProduct, qty };
+                  }
+                }
+              });
+
+              matchedProductsList = Object.values(matchedMap).map((item) => ({
+                ...item.product,
+                quantity: item.qty,
+                qty: item.qty,
+                fromSkuMapping: true,
+              }));
+            }
+          }
+
+          if (matchedProductsList.length > 0) {
+            setAddedProducts((prev) => {
+              const updated = [...prev];
+              matchedProductsList.forEach((mp) => {
+                const existingIdx = updated.findIndex((p) => String(p.id) === String(mp.id));
+                if (existingIdx !== -1) {
+                  const currentQty = updated[existingIdx].quantity || updated[existingIdx].qty || 0;
+                  updated[existingIdx] = {
+                    ...updated[existingIdx],
+                    quantity: currentQty + mp.quantity,
+                    qty: currentQty + mp.quantity,
+                  };
+                } else {
+                  updated.push(mp);
+                }
+              });
+              return updated;
+            });
+
+            const totalQty = matchedProductsList.reduce((acc, item) => acc + item.quantity, 0);
+            showAlert(
+              "Соответствие учета",
+              `Распознано товаров по артикулам и добавлено в расчёт: ${matchedProductsList.length} наим. (всего ${totalQty} шт.)`
+            );
+          }
+
           setSheetConfigs((prev) => ({ ...prev, ...initialSheetConfigs }));
           setRotations(initialRotations);
           setEdgeToEdge((prev) => ({ ...prev, ...initialEdgeToEdge }));
@@ -34237,7 +35761,7 @@ export default function App() {
             results: grouped,
             currentProjectTotal: 0,
             currentSummaryRows: [],
-            addedProducts: [],
+            addedProducts: matchedProductsList,
             addedServices: []
           });
 
@@ -34546,7 +36070,13 @@ export default function App() {
           }
         }
 
-        const finalRawPrice = basePrice > 0 ? basePrice : price;
+        const userCustomPrice = prices[priceKey];
+        const finalRawPrice =
+          userCustomPrice !== undefined && userCustomPrice > 0
+            ? userCustomPrice
+            : basePrice > 0
+            ? basePrice
+            : price || 0;
 
         // APPLY MIN VOLUME CHECK
         const actualArea = item.area;
@@ -36358,6 +37888,7 @@ export default function App() {
               loadB24Categories={loadB24Categories}
               loadB24Stages={loadB24Stages}
               loadProcurementB24Stages={loadProcurementB24Stages}
+              contractConfig={contractConfig}
             />
           ) : activeTab === "promotions" ? (
             <PromotionsView
