@@ -37,15 +37,21 @@ interface Project {
   status?: string;
   totalPrice?: number;
   specification?: any;
+  manufacturerId?: string;
+  companyId?: string;
 }
 
 export const ProjectAnalyticsModal = ({
   project,
   companyType,
+  companyId,
+  manufacturerId,
   onClose,
 }: {
   project: Project;
   companyType?: string;
+  companyId?: string;
+  manufacturerId?: string;
   onClose: () => void;
 }) => {
   // Calculate salonAnalytics for Salons and Designers
@@ -89,6 +95,18 @@ export const ProjectAnalyticsModal = ({
 
     rows.forEach((row) => {
       const rawProd = row.rawProduct;
+      const resolvedManufacturerId =
+        manufacturerId ||
+        project?.manufacturerId ||
+        project?.data?.manufacturerId ||
+        project?.data?.companyData?.manufacturerId;
+
+      const projectCompanyId =
+        companyId ||
+        project?.companyId ||
+        project?.data?.companyId ||
+        project?.data?.companyData?.id;
+
       const isFromProduction =
         row.isCustomFacade ||
         row.isManufacturer ||
@@ -101,8 +119,8 @@ export const ProjectAnalyticsModal = ({
           rawProd.isManufacturer ||
           rawProd.fromProduction ||
           rawProd.isManufacturerProduct ||
-          (rawProd.companyId && rawProd.companyId === (project?.data?.manufacturerId || project?.data?.companyData?.manufacturerId)) ||
-          (rawProd.source !== "own" && rawProd.companyId !== (project?.data?.companyId || (project as any)?.companyId))
+          (rawProd.companyId && resolvedManufacturerId && rawProd.companyId === resolvedManufacturerId) ||
+          (rawProd.source !== "own" && rawProd.companyId && projectCompanyId && rawProd.companyId !== projectCompanyId)
         )) ||
         (row.type === "product" && !rawProd) ||
         (row.type === "service" && (row.isFromProduction || row.isProductionService || row.createdByProduction));

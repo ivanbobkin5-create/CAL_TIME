@@ -2016,6 +2016,8 @@ export const ProjectsView = ({
         <ProjectAnalyticsModal
           project={selectedAnalyticsProject}
           companyType={companyType}
+          companyId={companyId}
+          manufacturerId={manufacturerId}
           onClose={() => setSelectedAnalyticsProject(null)}
         />
       )}
@@ -2178,6 +2180,7 @@ export const ProjectsView = ({
         <DealAnalysisModal
           project={selectedSetForDealAnalysis}
           companyType={companyType}
+          manufacturerId={manufacturerId}
           onClose={() => setSelectedSetForDealAnalysis(null)}
           onConfirmTransfer={() => handleConfirmTransferToProduction(selectedSetForDealAnalysis, setSubProjectsMap[selectedSetForDealAnalysis.id] || [])}
         />

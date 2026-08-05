@@ -38,6 +38,7 @@ export const DealAnalysisModal = ({
   isProductionView = false,
   onAccept,
   onAcceptWithRevisions,
+  manufacturerId,
 }: {
   project: any;
   companyType?: string;
@@ -46,6 +47,7 @@ export const DealAnalysisModal = ({
   isProductionView?: boolean;
   onAccept?: () => Promise<void>;
   onAcceptWithRevisions?: (comment: string) => Promise<void>;
+  manufacturerId?: string;
 }) => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showRevisionInput, setShowRevisionInput] = useState(false);
@@ -93,6 +95,17 @@ export const DealAnalysisModal = ({
       const clientTotal = row.netPaid !== undefined ? row.netPaid : (row.total || 0);
       
       const rawProd = row.rawProduct;
+      const resolvedManufacturerId =
+        manufacturerId ||
+        project?.manufacturerId ||
+        project?.data?.manufacturerId ||
+        project?.data?.companyData?.manufacturerId;
+
+      const projectCompanyId =
+        project?.companyId ||
+        project?.data?.companyId ||
+        project?.data?.companyData?.id;
+
       const isFromProduction =
         row.isCustomFacade ||
         row.isManufacturer ||
@@ -104,7 +117,9 @@ export const DealAnalysisModal = ({
           rawProd.source === "manufacturer" ||
           rawProd.isManufacturer ||
           rawProd.fromProduction ||
-          rawProd.isManufacturerProduct
+          rawProd.isManufacturerProduct ||
+          (rawProd.companyId && resolvedManufacturerId && rawProd.companyId === resolvedManufacturerId) ||
+          (rawProd.source !== "own" && rawProd.companyId && projectCompanyId && rawProd.companyId !== projectCompanyId)
         )) ||
         (row.type === "product" && !rawProd) ||
         (row.type === "service" && (row.isFromProduction || row.isProductionService || row.createdByProduction));

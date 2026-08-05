@@ -2862,8 +2862,21 @@ const packDetails = (
 ) => {
   const sheets: Detail[][] = [];
 
+  // Preprocess details to clamp dimensions that exceed sheet boundaries (e.g. raw sheet materials from Bazis)
+  const preprocessedDetails = details.map((d) => {
+    let w = d.width;
+    let h = d.height;
+    if (w + kerf > sheetWidth) {
+      w = Math.max(1, sheetWidth - kerf);
+    }
+    if (h + kerf > sheetHeight) {
+      h = Math.max(1, sheetHeight - kerf);
+    }
+    return { ...d, width: w, height: h };
+  });
+
   // Sort by area descending for better packing
-  const sortedDetails = [...details].sort(
+  const sortedDetails = preprocessedDetails.sort(
     (a, b) => b.width * b.height - a.width * a.height,
   );
 
@@ -7602,7 +7615,7 @@ const CalculatorView = ({
               </div>
             </section>
 
-            <section>
+            <section className="hidden">
               <div className="flex items-center gap-2 mb-4">
                 <LayoutDashboard className="w-5 h-5 text-gray-400" />
                 <h2 className="text-xl font-semibold text-gray-800">
@@ -7614,7 +7627,7 @@ const CalculatorView = ({
                   const item = results[key];
                   const type = (item.type || "").trim().toUpperCase();
                   const name = (item.name || "").toLowerCase();
-                  const allowedTypes = ["ЛДСП", "МДФ", "ХДФ", "ДВП", "Фасад", "Столешница", "Стеновая панель"];
+                  const allowedTypes = ["ЛДСП", "МДФ", "ХДФ", "ДВП", "Фасад"];
                   const isAllowedType = allowedTypes.some((t) => type.includes(t.toUpperCase()));
                   const isModule = name.includes("модуль") || type.toLowerCase().includes("модуль");
                   return isAllowedType && !isModule;
@@ -8846,11 +8859,106 @@ const parseFittingDemandKey = (key: string) => {
   };
 };
 
+const CompactCatalogMatcher = ({
+  catalogProducts,
+  defaultCategory,
+  onBind,
+}: {
+  catalogProducts: any[];
+  defaultCategory?: string;
+  onBind: (product: any) => void;
+}) => {
+  const [selectedCategory, setSelectedCategory] = useState<string>(defaultCategory || "Все");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [selectedId, setSelectedId] = useState<string>("");
+
+  const categories = useMemo(() => {
+    const set = new Set<string>();
+    (catalogProducts || []).forEach((p: any) => {
+      if (p.category) set.add(p.category);
+    });
+    return Array.from(set).sort();
+  }, [catalogProducts]);
+
+  const filteredProducts = useMemo(() => {
+    return (catalogProducts || []).filter((p: any) => {
+      if (selectedCategory !== "Все" && p.category !== selectedCategory) {
+        return false;
+      }
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const name = String(p.name || "").toLowerCase();
+        const sku = String(p.sku || p.article || "").toLowerCase();
+        const cat = String(p.category || "").toLowerCase();
+        return name.includes(q) || sku.includes(q) || cat.includes(q);
+      }
+      return true;
+    });
+  }, [catalogProducts, selectedCategory, searchQuery]);
+
+  return (
+    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5 justify-end">
+      <select
+        value={selectedCategory}
+        onChange={(e) => setSelectedCategory(e.target.value)}
+        className="px-2 py-1 bg-white border border-amber-300 rounded-lg text-xs font-semibold text-amber-950 focus:ring-1 focus:ring-amber-500 max-w-[120px] shrink-0"
+      >
+        <option value="Все">Все катег.</option>
+        {categories.map((cat) => (
+          <option key={cat} value={cat}>{cat}</option>
+        ))}
+      </select>
+
+      <input
+        type="text"
+        placeholder="Поиск..."
+        value={searchQuery}
+        onChange={(e) => setSearchQuery(e.target.value)}
+        className="px-2 py-1 bg-white border border-amber-300 rounded-lg text-xs text-amber-950 placeholder-amber-400 focus:ring-1 focus:ring-amber-500 w-24 sm:w-28 shrink-0"
+      />
+
+      <select
+        value={selectedId}
+        onChange={(e) => setSelectedId(e.target.value)}
+        className="px-2 py-1 bg-amber-50 border border-amber-300 rounded-lg text-xs font-medium text-amber-950 focus:ring-1 focus:ring-amber-500 max-w-[170px] truncate shrink-0"
+      >
+        <option value="">-- Выбрать ({filteredProducts.length}) --</option>
+        {filteredProducts.map((p: any) => (
+          <option key={p.id} value={p.id}>
+            {p.name} {p.sku || p.article ? `(${p.sku || p.article})` : ""} — {Math.round(Number(p.price) || 0)} ₽
+          </option>
+        ))}
+      </select>
+
+      <button
+        type="button"
+        disabled={!selectedId}
+        onClick={() => {
+          const chosen = catalogProducts.find((p: any) => String(p.id) === String(selectedId));
+          if (chosen) {
+            onBind(chosen);
+            setSelectedId("");
+          }
+        }}
+        className={cn(
+          "px-2.5 py-1 text-xs font-bold rounded-lg shadow-2xs transition-all cursor-pointer shrink-0 border",
+          selectedId
+            ? "bg-amber-600 hover:bg-amber-700 text-white border-amber-700"
+            : "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+        )}
+      >
+        Привязать
+      </button>
+    </div>
+  );
+};
+
 const SummaryView = ({
   results,
   selectedDecor,
   setSelectedDecor,
   prices,
+  companyData,
   facadeType,
   sheetConfigs,
   trimming,
@@ -8962,7 +9070,7 @@ const SummaryView = ({
   calcMode: "sheet" | "area" | "coefficients";
   coefficients: any;
   currentProjectName?: string;
-  onSaveProject?: (name: string, isDraft?: boolean) => Promise<void>;
+  onSaveProject?: (name: string, isDraft?: boolean, overrideData?: any) => Promise<void>;
   edgeToEdge: Record<string, boolean>;
   textureAlignments?: Record<string, boolean>;
   edgePrices: Record<string, number>;
@@ -9011,6 +9119,7 @@ const SummaryView = ({
   productionSettings: any;
   userRole?: string | null;
   companyType?: string;
+  companyData?: any;
   mergedMaterials: Record<string, string>;
   selectedForGlue: string[];
   spareSheets: Record<string, boolean>;
@@ -9563,7 +9672,7 @@ const SummaryView = ({
           rows.push({
             type: "material",
             name:
-              item.type === "ХДФ" && sheetConfigs[key]?.name
+              item.type === "ХДФ" && sheetConfigs[key]?.name && sheetConfigs[key].name !== "Default"
                 ? sheetConfigs[key].name
                 : item.name,
             sub: item.color,
@@ -9899,11 +10008,22 @@ const SummaryView = ({
     0
   );
 
+  const hasAnySheets = Object.values(results || {}).some((item: any) => 
+    item && !mergedMaterials[item.key] && 
+    (
+      (item.type || "").toUpperCase().includes("ЛДСП") || 
+      (item.type || "").toUpperCase().includes("МДФ") || 
+      (item.type || "").toUpperCase().includes("ХДФ") || 
+      (item.type || "").toUpperCase().includes("ДВП")
+    )
+  );
+
+  const effectiveKitQty = hasAnySheets ? Math.max(1, totalLdspSheets) : 0;
   const kitCost = (detailedFastenersMode && bazisFasteners && bazisFasteners.length > 0)
     ? detailedFastenerCost
-    : totalLdspSheets * currentHardwareKitPriceLocal;
+    : effectiveKitQty * currentHardwareKitPriceLocal;
 
-  if (totalLdspSheets > 0 || (bazisFasteners && bazisFasteners.length > 0)) {
+  if (effectiveKitQty > 0 || (bazisFasteners && bazisFasteners.length > 0)) {
     summaryRows.push({
       type: "material",
       name: "Комплект метизов",
@@ -9911,7 +10031,7 @@ const SummaryView = ({
         ? `Детальный расчет (${bazisFasteners.length} поз.)`
         : totalLdspSheets > 0 ? `На ${totalLdspSheets} л. ЛДСП` : `Стандартный комплект`,
       decor: "-",
-      qty: detailedFastenersMode && bazisFasteners && bazisFasteners.length > 0 ? "1 компл." : `${totalLdspSheets} шт`,
+      qty: detailedFastenersMode && bazisFasteners && bazisFasteners.length > 0 ? "1 компл." : `${effectiveKitQty} шт`,
       price: detailedFastenersMode && bazisFasteners && bazisFasteners.length > 0 ? detailedFastenerCost : currentHardwareKitPriceLocal,
       total: Math.round(kitCost),
       coef: 1,
@@ -10870,8 +10990,8 @@ const SummaryView = ({
           rawProd.isManufacturer ||
           rawProd.fromProduction ||
           rawProd.isManufacturerProduct ||
-          (rawProd.companyId && rawProd.companyId === ((window as any).companyData?.manufacturerId || currentProjectId ? (window as any).projects?.find((p: any) => p.id === currentProjectId)?.data?.manufacturerId : undefined)) ||
-          (rawProd.source !== "own" && rawProd.companyId !== (window as any).companyData?.id)
+          (rawProd.companyId && rawProd.companyId === companyData?.manufacturerId) ||
+          (rawProd.source !== "own" && rawProd.companyId !== companyData?.id)
         )) ||
         (row.type === "product" && !rawProd) ||
         (row.type === "service" && (row.isFromProduction || row.isProductionService || row.createdByProduction));
@@ -11567,27 +11687,15 @@ const SummaryView = ({
                           : "—"}
                       </td>
                       <td className="py-2 px-3 text-right">
-                        <select
-                          className="px-2 py-1 bg-white border border-amber-300 rounded text-xs font-medium text-amber-950 focus:ring-1 focus:ring-amber-500 max-w-[220px] truncate"
-                          defaultValue=""
-                          onChange={(e) => {
-                            const selectedProdId = e.target.value;
-                            if (!selectedProdId) return;
-                            const chosen = (catalogProducts || []).find((p: any) => String(p.id) === String(selectedProdId));
-                            if (chosen && onBindUnmatchedItem) {
-                              onBindUnmatchedItem(item, chosen);
+                        <CompactCatalogMatcher
+                          catalogProducts={catalogProducts || []}
+                          defaultCategory={item.categoryType === "Петли" ? "Петли" : item.categoryType === "Направляющие" ? "Направляющие" : "Все"}
+                          onBind={(chosenProd) => {
+                            if (chosenProd && onBindUnmatchedItem) {
+                              onBindUnmatchedItem(item, chosenProd);
                             }
                           }}
-                        >
-                          <option value="">
-                            {item.isAmbiguous ? `Выбрать ${item.categoryType}...` : "-- Выбрать товар --"}
-                          </option>
-                          {productOptions.map((p: any) => (
-                            <option key={p.id} value={p.id}>
-                              {p.name} {p.article || p.sku ? `(${p.article || p.sku})` : ""} — {p.price || 0} ₽
-                            </option>
-                          ))}
-                        </select>
+                        />
                       </td>
                     </tr>
                   );
@@ -11733,38 +11841,49 @@ const SummaryView = ({
                                   {detailedFastenersMode ? "Стандартный расчет" : "Посчитать детально"}
                                 </button>
                               </div>
-                              <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-200/80 space-y-1.5 max-w-xl">
-                                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
-                                  Состав метизов из файла Базис ({bazisFasteners.length} поз.):
+                              <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200/80 space-y-2 max-w-xl text-xs">
+                                <div className="flex items-center justify-between text-[11px] font-bold text-amber-950 border-b border-amber-200/60 pb-1.5">
+                                  <span>СОСТАВ МЕТИЗОВ И КРЕПЕЖА ИЗ БАЗИС ({bazisFasteners.length} ПОЗ.)</span>
+                                  {detailedFastenersMode && (
+                                    <span className="text-amber-700 font-mono font-bold">
+                                      Итого: {Math.round(detailedFastenerCost).toLocaleString('ru-RU')} ₽
+                                    </span>
+                                  )}
                                 </div>
-                                {bazisFasteners.map((f: any, fIdx: number) => (
-                                  <div key={f.id || fIdx} className="flex items-center justify-between text-xs py-1 border-b border-gray-100 last:border-0 gap-2">
-                                    <div className="flex items-center gap-2 min-w-0">
-                                      <span className="font-semibold text-gray-800 truncate">{f.name}</span>
-                                      {f.article && <span className="text-[10px] text-gray-400 font-mono bg-gray-200/60 px-1 rounded">арт. {f.article}</span>}
+                                <div className="divide-y divide-amber-100 max-h-60 overflow-y-auto pr-1">
+                                  {bazisFasteners.map((f: any, fIdx: number) => (
+                                    <div key={f.id || fIdx} className="flex items-center justify-between py-1.5 gap-2">
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <span className="font-medium text-amber-950 truncate">{f.name}</span>
+                                        {f.article && (
+                                          <span className="text-[10px] text-amber-700 font-mono bg-amber-100 px-1.5 py-0.5 rounded">
+                                            {f.article}
+                                          </span>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-2 shrink-0">
+                                        <span className="font-bold text-amber-900 text-xs">{f.qty} {f.unit || "шт"}</span>
+                                        {detailedFastenersMode ? (
+                                          <div className="flex items-center gap-1 bg-white border border-amber-300 rounded-lg px-2 py-0.5 focus-within:ring-1 focus-within:ring-amber-500">
+                                            <input
+                                              type="number"
+                                              min="0"
+                                              value={f.price || 0}
+                                              onChange={(e) => {
+                                                const p = parseFloat(e.target.value) || 0;
+                                                handleUpdateFastenerPrice(f.id, p);
+                                              }}
+                                              className="w-16 text-right font-bold text-amber-950 text-xs focus:outline-hidden"
+                                            />
+                                            <span className="text-[10px] font-bold text-amber-600">₽</span>
+                                          </div>
+                                        ) : (
+                                          <span className="text-[10px] text-amber-600/70 italic">(входит в комплект)</span>
+                                        )}
+                                      </div>
                                     </div>
-                                    <div className="flex items-center gap-2 shrink-0">
-                                      <span className="font-black text-gray-700 text-[11px]">{f.qty} {f.unit || "шт"}</span>
-                                      {detailedFastenersMode ? (
-                                        <div className="flex items-center gap-1">
-                                          <input
-                                            type="number"
-                                            min="0"
-                                            value={f.price || 0}
-                                            onChange={(e) => {
-                                              const p = parseFloat(e.target.value) || 0;
-                                              handleUpdateFastenerPrice(f.id, p);
-                                            }}
-                                            className="w-16 px-1.5 py-0.5 text-right font-bold border border-gray-300 rounded bg-white text-xs focus:ring-1 focus:ring-amber-500"
-                                          />
-                                          <span className="text-[10px] text-gray-500">₽</span>
-                                        </div>
-                                      ) : (
-                                        <span className="text-[10px] text-gray-400">(входит в комплект)</span>
-                                      )}
-                                    </div>
-                                  </div>
-                                ))}
+                                  ))}
+                                </div>
                               </div>
                             </div>
                           )}
@@ -13689,13 +13808,14 @@ const AccountingMappingSettings = ({
 
     if (newItems.length === 0) return;
 
-    const currentSkus: string[] = localSkus[product.id] !== undefined
-      ? [...localSkus[product.id]]
-      : Array.isArray(product.skuList)
-      ? [...product.skuList]
-      : Array.isArray(product.accountingSkus)
-      ? [...product.accountingSkus]
-      : [];
+    const currentSkusList = Array.isArray(product.skuList) ? product.skuList : [];
+    const currentAccountingSkus = Array.isArray(product.accountingSkus) ? product.accountingSkus : [];
+
+    const currentSkus = Array.from(new Set([
+      ...(localSkus[product.id] || []),
+      ...currentSkusList,
+      ...currentAccountingSkus
+    ]));
 
     const updatedSkus = Array.from(new Set([...currentSkus, ...newItems]));
 
@@ -13707,7 +13827,10 @@ const AccountingMappingSettings = ({
       if (companyId && product.id) {
         await updateDoc(
           doc(db, "companies", companyId, "products", String(product.id)),
-          { skuList: updatedSkus }
+          { 
+            skuList: updatedSkus,
+            accountingSkus: updatedSkus
+          }
         );
       }
     } catch (err) {
@@ -13717,13 +13840,14 @@ const AccountingMappingSettings = ({
   };
 
   const handleRemoveSku = async (product: any, skuToRemove: string) => {
-    const currentSkus: string[] = localSkus[product.id] !== undefined
-      ? [...localSkus[product.id]]
-      : Array.isArray(product.skuList)
-      ? [...product.skuList]
-      : Array.isArray(product.accountingSkus)
-      ? [...product.accountingSkus]
-      : [];
+    const currentSkusList = Array.isArray(product.skuList) ? product.skuList : [];
+    const currentAccountingSkus = Array.isArray(product.accountingSkus) ? product.accountingSkus : [];
+
+    const currentSkus = Array.from(new Set([
+      ...(localSkus[product.id] || []),
+      ...currentSkusList,
+      ...currentAccountingSkus
+    ]));
 
     const updatedSkus = currentSkus.filter((s) => s !== skuToRemove);
 
@@ -13734,7 +13858,10 @@ const AccountingMappingSettings = ({
       if (companyId && product.id) {
         await updateDoc(
           doc(db, "companies", companyId, "products", String(product.id)),
-          { skuList: updatedSkus }
+          { 
+            skuList: updatedSkus,
+            accountingSkus: updatedSkus
+          }
         );
       }
     } catch (err) {
@@ -31949,18 +32076,8 @@ export default function App() {
               setCoefficients((prev: any) => ({ ...prev, products: data.coefficients || {} }));
             }
             if (key.includes('production')) {
-              const isContract =
-                companyData?.type !== "Мебельное производство" ||
-                productionFormat === "contract" ||
-                ("cabinet" in data) ||
-                ("facades" in data) ||
-                ("hardware" in data) ||
-                ("assembly" in data) ||
-                ("delivery" in data) ||
-                ("productionId" in data && data.productionId) ||
-                ("city" in data && data.city);
-              if (isContract) setContractConfig(data);
-              else setOwnProductionConfig((prev: any) => ({ ...prev, ...data }));
+              setContractConfig((prev) => ({ ...prev, ...data }));
+              setOwnProductionConfig((prev: any) => ({ ...prev, ...data }));
             }
             if (key.includes('general')) {
               if (data.defaultCuttingType) setDefaultCuttingType(data.defaultCuttingType);
@@ -32068,18 +32185,8 @@ export default function App() {
       
       if (prodData) {
         await safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyId}/settings/production`, JSON.stringify(prodData));
-        const isContract =
-          companyData?.type !== "Мебельное производство" ||
-          productionFormat === "contract" ||
-          ("cabinet" in prodData) ||
-          ("facades" in prodData) ||
-          ("hardware" in prodData) ||
-          ("assembly" in prodData) ||
-          ("delivery" in prodData) ||
-          ("productionId" in prodData && prodData.productionId) ||
-          ("city" in prodData && prodData.city);
-        if (isContract) setContractConfig(prodData);
-        else setOwnProductionConfig((prev: any) => ({ ...prev, ...prodData }));
+        setContractConfig((prev) => ({ ...prev, ...prodData }));
+        setOwnProductionConfig((prev: any) => ({ ...prev, ...prodData }));
       }
 
       if (genData) {
@@ -33025,6 +33132,25 @@ export default function App() {
     setActiveTab("summary");
   };
 
+  const [bazisImportModalData, setBazisImportModalData] = useState<{
+    rawData: any[][];
+    fileName: string;
+  } | null>(null);
+
+  const [bazisImportOptions, setBazisImportOptions] = useState<{
+    importCarcass: boolean;
+    importFacades: boolean;
+    importWorktops: boolean;
+    importFasteners: boolean;
+    importHardware: boolean;
+  }>({
+    importCarcass: true,
+    importFacades: true,
+    importWorktops: true,
+    importFasteners: true,
+    importHardware: true,
+  });
+
   // Custom Modal State
   const [modal, setModal] = useState<{
     isOpen: boolean;
@@ -33520,7 +33646,23 @@ export default function App() {
     return false;
   };
 
-  const parseBazisReport = (rawData: any[][], fileName: string) => {
+  const parseBazisReport = (
+    rawData: any[][],
+    fileName: string,
+    options: {
+      importCarcass: boolean;
+      importFacades: boolean;
+      importWorktops: boolean;
+      importFasteners: boolean;
+      importHardware: boolean;
+    } = {
+      importCarcass: true,
+      importFacades: true,
+      importWorktops: true,
+      importFasteners: true,
+      importHardware: true,
+    }
+  ) => {
     if (!rawData || rawData.length === 0) return false;
 
     let headerRowIdx = -1;
@@ -33537,16 +33679,10 @@ export default function App() {
     let colModelUnit = 10;
     let colNote = 11;
 
-    for (let i = 0; i < Math.min(rawData.length, 50); i++) {
+    for (let i = 0; i < Math.min(rawData.length, 80); i++) {
       const row = rawData[i] || [];
       const col0Str = String(row[0] || "").toLowerCase().trim();
-      const rowText = row.map((c: any) => String(c).toLowerCase()).join(" ");
-      if (
-        col0Str.includes("артикул") ||
-        col0Str.includes("наименование") ||
-        rowText.includes("артикул") ||
-        rowText.includes("наименование")
-      ) {
+      if (col0Str.includes("артикул")) {
         headerRowIdx = i;
         row.forEach((cell: any, cIdx: number) => {
           const h = String(cell || "").toLowerCase().trim();
@@ -33566,6 +33702,40 @@ export default function App() {
           else if (h.includes("примечание")) colNote = cIdx;
         });
         break;
+      }
+    }
+
+    if (headerRowIdx === -1) {
+      for (let i = 0; i < Math.min(rawData.length, 50); i++) {
+        const row = rawData[i] || [];
+        const col0Str = String(row[0] || "").toLowerCase().trim();
+        const rowText = row.map((c: any) => String(c).toLowerCase()).join(" ");
+        if (
+          col0Str.includes("артикул") ||
+          col0Str.includes("наименование") ||
+          rowText.includes("артикул") ||
+          rowText.includes("наименование")
+        ) {
+          headerRowIdx = i;
+          row.forEach((cell: any, cIdx: number) => {
+            const h = String(cell || "").toLowerCase().trim();
+            if (h.includes("артикул")) colArticle = cIdx;
+            else if (h.includes("наименование")) colName = cIdx;
+            else if (h.includes("ед. изм") || h.includes("единица")) {
+              if (h.includes("модел")) colModelUnit = cIdx;
+              else colUnit = cIdx;
+            }
+            else if (h.includes("расчет") || h.includes("расчёт")) colCalcQty = cIdx;
+            else if (h.includes("коэффициент")) colCoef = cIdx;
+            else if (h.includes("стоимость в изд")) colCostInProd = cIdx;
+            else if (h.includes("цена")) colPrice = cIdx;
+            else if (h.includes("кол-во в изд") || h.includes("количество в изд")) colQtyInProd = cIdx;
+            else if (h.includes("заказ")) colOrderQty = cIdx;
+            else if (h.includes("стоимость в зак")) colOrderCost = cIdx;
+            else if (h.includes("примечание")) colNote = cIdx;
+          });
+          break;
+        }
       }
     }
 
@@ -33594,52 +33764,102 @@ export default function App() {
     let foundHdfSheets = 0;
     let foundHdfM2 = 0;
     let foundFacadeM2 = 0;
+    let foundWorktopM2 = 0;
     let foundEdgeMeters = 0;
 
     const cleanMaterialDecorName = (str: string) => {
       if (!str) return "";
       return str
-        .replace(/хдф|двп|лхдф|лдвп|лдсп|дсп|e1|e0\.5|e05|p2|p1/gi, "")
+        .replace(/хдф|двп|лхдф|лдвп|лдсп|дсп|e1|e0\.5|e05|p2|p1|\bхд\b/gi, "")
         .replace(/\b\d{3,4}\s*[*xхxX]\s*\d{3,4}(\s*[*xхxX]\s*\d{1,2}([.,]\d+)?\s*(мм)?)?\b/gi, "")
         .replace(/\b\d{1,2}([.,]\d+)?\s*мм\b/gi, "")
         .replace(/\s+/g, " ")
         .trim();
     };
 
+    const isTechnicalRow = (str: string) => {
+      const s = str.toLowerCase();
+      return (
+        s.includes("наименование") ||
+        s.includes("артикул") ||
+        s.includes("итого") ||
+        s.includes("всего в заказе") ||
+        s.includes("стоимость заказа") ||
+        s.includes("количество изделий в заказе") ||
+        s.includes("кол-во изделий в заказе") ||
+        s.includes("количество изделий") ||
+        s.includes("кол-во изделий") ||
+        s.includes("спецификация") ||
+        s.includes("разраб") ||
+        s.includes("пров.") ||
+        s.includes("техн. контр.") ||
+        s.includes("н. контр.") ||
+        s.includes("утв.") ||
+        s.includes("чертеж") ||
+        s.includes("чертёж")
+      );
+    };
+
     const isHardwareOrAccessory = (rawName: string) => {
       const s = rawName.toLowerCase();
-      if (/(хдф|двп|лхдф|лдвп|орголит)/i.test(s)) {
+
+      // Explicit exclusions (it's sheet material, NOT hardware)
+      // Unless it explicitly contains a hardware keyword like "гвозди для хдф", "уголок для лдсп", etc.
+      const isSheetMaterial = /(хдф|двп|лхдф|лдвп|орголит|оргалит|лдсп|дсп|мдф)/i.test(s) || /фасад|пленка|плёнка|эмаль|шпон|патина|акрил|\bagt\b|агт/i.test(s);
+      const hasHardwareKeyword = /гвозди|гвоздь|саморез|шуруп|винт|евровинт|конфирмат|болт|гайка|шайба|крепеж|крепление|уголок|кляймер|петля|ручка|направляющ|заглушк|опора|ножка|профиль|держатель|kamar|кронштейн|стяжка|шкант|эксцентрик|минификс|амортизатор|доводчик|демпфер|навес|замок|магнит|комплект\s+метизов|метизы/i.test(s);
+
+      if (isSheetMaterial) {
+        if (hasHardwareKeyword) {
+          return true;
+        }
         return false;
       }
-      if (/фасад|пленка|эмаль|шпон|патина|акрил|\bagt\b|агт/i.test(s) && !/петл|ручк|направляющ|профиль|крепеж|стяжк|инструмент|ножк/i.test(s)) {
-        return false;
+
+      if (hasHardwareKeyword) {
+        return true;
       }
-      if (/для\s+(двп|хдф|лдсп|дсп|столешниц|стеново)/i.test(s)) return true;
-      if (/гвозди|гвоздь|саморез|уголок|винт|петл|стяжк|подпяточник|ножк|опор|направляющ|заглушк|держател|кронштейн|ручк|комплект|полкодержател|эксцентрик|шкант|евровинт|конфирмат|конфират|\bvb\b/i.test(s)) return true;
+
+      if (/для\s+(двп|хдф|лдсп|дсп|столешниц|фасад|кромки)/i.test(s)) {
+        return true;
+      }
+
+      // Worktops/wall panels are finished goods (товары), not sheet cutting materials!
+      if (/столешниц|стеновая\s+панель|скинали|постформинг/i.test(s)) {
+        return true;
+      }
+
       return false;
     };
 
     const isFastener = (str: string) => {
       const s = str.toLowerCase();
-      return /саморез|стяжка|уголок|шкант|конфирмат|конфират|\bvb\b|винт|евровинт|гвозд|заглушк|эксцентрик|подпяточник|опор|полкодержател/i.test(s);
+      // Absolute exclusions (NOT fasteners)
+      if (/заглушк/i.test(s)) return false;
+      if (/навес|камар|camar/i.test(s)) return false;
+      if (/опора\s+(?!м[68]|m[68])/i.test(s) && !/опора\s+м[68]/i.test(s) && !/опора\s+m[68]/i.test(s)) return false;
+      if (/петл|направляющ|подъемник|подъёмник|ручк|профиль|кронштейн|замок|кабель/i.test(s)) return false;
+
+      // Inclusions (fasteners)
+      if (/гвозд/i.test(s)) return true;
+      if (/саморез/i.test(s)) return true;
+      if (/стяжка|стяжк/i.test(s)) return true;
+      if (/уголок/i.test(s)) return true;
+      if (/шкант/i.test(s)) return true;
+      if (/конфирмат|конфират/i.test(s)) return true;
+      if (/\bvb\b|эксцентрик|минификс/i.test(s)) return true;
+      if (/евровинт|винт|болт|гайка|шайба|футорка/i.test(s)) return true;
+      if (/опора\s+м[68]|опора\s+m[68]|ножка\s+м[68]/i.test(s)) return true;
+
+      return false;
     };
 
     for (let i = startIdx; i < rawData.length; i++) {
       const row = rawData[i];
       if (!row || !Array.isArray(row) || row.length === 0) continue;
       const rawName = String(row[colName] || "").trim();
-      if (!rawName) continue;
+      if (!rawName || isTechnicalRow(rawName)) continue;
 
       const lName = rawName.toLowerCase();
-      if (
-        lName.includes("наименование") ||
-        lName.includes("артикул") ||
-        lName.includes("итого") ||
-        lName.includes("всего в заказе") ||
-        lName.includes("стоимость заказа")
-      ) {
-        continue;
-      }
 
       const article = String(row[colArticle] || "").trim();
       const unit = String(row[colUnit] || "").trim();
@@ -33648,9 +33868,9 @@ export default function App() {
       const price = parseNum(row[colPrice]);
       const modelUnit = String(row[colModelUnit] || "").trim().toLowerCase();
 
-      // 1. Accounting SKU Mapping (Catalog Match) - ONLY matches against manually added accounting SKUs!
+      // 1. Accounting SKU Mapping (Catalog Match)
       let isCatalogMatch = false;
-      if (companyData?.accountingMappingConfig?.enabled !== false && catalogProducts && catalogProducts.length > 0) {
+      if (options.importHardware && companyData?.accountingMappingConfig?.enabled !== false && catalogProducts && catalogProducts.length > 0) {
         const normArt = article.toLowerCase();
         const normName = rawName.toLowerCase();
 
@@ -33679,13 +33899,32 @@ export default function App() {
       }
 
       // 2. Identify Category with exclusion rules
-      const hardwareOrAcc = isHardwareOrAccessory(rawName);
+      const isHardwareOrFastenerExplicit = isHardwareOrAccessory(rawName) || isFastener(rawName);
 
-      const isLdsp = !hardwareOrAcc && (lName.includes("лдсп") || lName.includes("дсп")) &&
+      const isWorktop = !isHardwareOrFastenerExplicit && (
+        lName.includes("столешниц") ||
+        lName.includes("стеновая панель") ||
+        lName.includes("скинали") ||
+        lName.includes("постформинг")
+      );
+
+      const isLdsp = !isHardwareOrFastenerExplicit && !isWorktop && (lName.includes("лдсп") || lName.includes("дсп")) &&
         !lName.includes("хдф") && !lName.includes("двп") && !lName.includes("лхдф") &&
         !lName.includes("лдвп") && !lName.includes("кромк");
 
-      const isEdge = !hardwareOrAcc && (
+      const isRunningMetersUnit = (
+        unit.includes("пог") ||
+        unit === "м" ||
+        unit === "м.п." ||
+        unit === "м.п" ||
+        ((modelUnit.includes("м") || modelUnit.includes("m")) &&
+         !modelUnit.includes("2") &&
+         !modelUnit.includes("²") &&
+         !modelUnit.includes("кв") &&
+         !modelUnit.includes("sq"))
+      );
+
+      const isEdge = !isHardwareOrFastenerExplicit && !isWorktop && (
         lName.includes("кромк") ||
         /\b0[,.]4[*xх]19\b/.test(lName) ||
         /\b0[,.]8[*xх]19\b/.test(lName) ||
@@ -33694,14 +33933,10 @@ export default function App() {
         /\b0[,.]4[*xх]28\b/.test(lName) ||
         /\b2[*xх]28\b/.test(lName) ||
         /\b\d+([,.]\d+)?[*xх]\d+\b/.test(lName) ||
-        unit.includes("пог") ||
-        unit === "м" ||
-        unit === "м.п." ||
-        unit === "м.п" ||
-        modelUnit.includes("м")
+        (isRunningMetersUnit && !lName.includes("фасад") && !lName.includes("хдф") && !lName.includes("двп") && !lName.includes("лдсп") && !lName.includes("дсп") && !lName.includes("мдф"))
       );
 
-      const isHdf = !hardwareOrAcc && !isLdsp && !isEdge && (
+      const isHdf = !isHardwareOrFastenerExplicit && !isLdsp && !isEdge && !isWorktop && (
         lName.includes("хдф") ||
         lName.includes("двп") ||
         lName.includes("лхдф") ||
@@ -33711,15 +33946,24 @@ export default function App() {
         /[*xх]\s*(3|3\.2|3,2|4)\b/i.test(lName)
       );
 
-      const isFacade = !hardwareOrAcc && !isLdsp && !isEdge && !isHdf && (
+      const isFacade = !isHardwareOrFastenerExplicit && !isLdsp && !isEdge && !isHdf && !isWorktop && (
         lName.includes("фасад") ||
         lName.includes("пленка") ||
+        lName.includes("плёнка") ||
         lName.includes("эмаль") ||
         lName.includes("шпон") ||
-        (lName.includes("мдф") && !lName.includes("хдф"))
+        lName.includes("патина") ||
+        lName.includes("акрил") ||
+        lName.includes("agt") ||
+        lName.includes("агт") ||
+        (lName.includes("мдф") && !lName.includes("хдф") && !lName.includes("двп"))
       );
 
-      if (isLdsp) {
+      // Worktops/wall panels are finished goods (товары), not sheet cutting materials, so exclude isWorktop here
+      const isMaterial = isLdsp || isEdge || isHdf || isFacade;
+      const hardwareOrAcc = !isMaterial && (isHardwareOrAccessory(rawName) || isFastener(rawName));
+
+      if (isLdsp && options.importCarcass) {
         let thickness = 16;
         const thickMatch = rawName.match(/\b(\d{1,2})\s*мм\b/i) || rawName.match(/[*xх]\s*(\d{1,2})\b/i);
         if (thickMatch && thickMatch[1]) thickness = parseInt(thickMatch[1]);
@@ -33727,7 +33971,6 @@ export default function App() {
         let decor = cleanMaterialDecorName(rawName);
         if (!decor) decor = rawName;
 
-        // Respect raw sheet count from file
         const isSheetUnit = unit.includes("лист") || unit.includes("шт") || modelUnit.includes("лист") || modelUnit.includes("шт");
         let sheetsCount = 1;
         let areaM2 = 0;
@@ -33778,7 +34021,7 @@ export default function App() {
             canRotate: false,
           });
         }
-      } else if (isEdge) {
+      } else if (isEdge && options.importCarcass) {
         const lengthM = orderQty > 0 ? orderQty : calcQty;
         foundEdgeMeters += lengthM;
 
@@ -33788,7 +34031,7 @@ export default function App() {
           .trim();
 
         pendingEdgebands.push({ decor: edgeDecor, lengthM, rawName });
-      } else if (isHdf) {
+      } else if (isHdf && options.importCarcass) {
         let thickness = 3;
         const thickMatch = rawName.match(/\b(\d{1,2})\s*мм\b/i);
         if (thickMatch && thickMatch[1]) thickness = parseInt(thickMatch[1]);
@@ -33847,7 +34090,7 @@ export default function App() {
             canRotate: true,
           });
         }
-      } else if (isFacade) {
+      } else if (isFacade && options.importFacades) {
         let thickness = 18;
         const thickMatch = rawName.match(/\b(\d{1,2})\s*мм\b/i);
         if (thickMatch && thickMatch[1]) thickness = parseInt(thickMatch[1]);
@@ -33894,15 +34137,17 @@ export default function App() {
       } else if (!isCatalogMatch && (article || rawName)) {
         const pQty = orderQty > 0 ? orderQty : calcQty > 0 ? calcQty : 1;
         if (isFastener(rawName)) {
-          bazisFastenersList.push({
-            id: `fastener-${Math.random().toString(36).substring(2, 9)}`,
-            name: rawName,
-            article: article,
-            qty: pQty,
-            unit: unit || modelUnit || "шт",
-            price: price || 0,
-          });
-        } else {
+          if (options.importFasteners) {
+            bazisFastenersList.push({
+              id: `fastener-${Math.random().toString(36).substring(2, 9)}`,
+              name: rawName,
+              article: article,
+              qty: pQty,
+              unit: unit || modelUnit || "шт",
+              price: price || 0,
+            });
+          }
+        } else if ((isWorktop && options.importWorktops) || (!isWorktop && options.importHardware)) {
           unmatchedBazisItemsList.push({
             id: `unmatched-${Math.random().toString(36).substring(2, 9)}`,
             name: rawName,
@@ -33910,8 +34155,8 @@ export default function App() {
             qty: pQty,
             unit: unit || modelUnit || "шт",
             price: price || 0,
-            isAmbiguous: /петл|направляющ/i.test(rawName),
-            categoryType: /петл/i.test(rawName) ? "Петли" : /направляющ/i.test(rawName) ? "Направляющие" : "Фурнитура",
+            isAmbiguous: !isWorktop && /петл|направляющ/i.test(rawName),
+            categoryType: isWorktop ? "Столешницы" : /петл/i.test(rawName) ? "Петли" : /направляющ/i.test(rawName) ? "Направляющие" : "Фурнитура",
           });
         }
       }
@@ -34025,7 +34270,11 @@ export default function App() {
             showAlert("Ошибка чтения", "Файл пуст или содержит нечитаемые данные");
             return;
           }
-          parseBazisReport(rawData, file.name);
+          if (isBazisReport(rawData)) {
+            setBazisImportModalData({ rawData, fileName: file.name });
+          } else {
+            parseBazisReport(rawData, file.name);
+          }
         } catch (err: any) {
           console.error("XLSX parse error:", err);
           showAlert("Ошибка чтения", "Не удалось прочитать Excel файл: " + (err?.message || err));
@@ -34058,7 +34307,7 @@ export default function App() {
             if (!rawData || rawData.length === 0) return;
 
             if (isBazisReport(rawData)) {
-              parseBazisReport(rawData, file.name);
+              setBazisImportModalData({ rawData, fileName: file.name });
             } else {
               // Standard Pro100 CSV Parser
               let headerRowIdx = -1;
@@ -34503,7 +34752,13 @@ export default function App() {
         totalPrice: activeTotal,
         totalHardwareCost: currentHardwareTotal,
         type: furnitureType || facadeType || "Мебель",
+        companyId: companyData?.id || "",
+        manufacturerId: companyData?.manufacturerId || null,
+        productionFormat: companyData?.productionFormat || productionFormat || null,
         data: {
+          companyId: companyData?.id || "",
+          manufacturerId: companyData?.manufacturerId || null,
+          productionFormat: companyData?.productionFormat || productionFormat || null,
           summaryRows: activeSummaryRows,
           results: activeResults,
           selectedDecor,
@@ -35263,11 +35518,14 @@ export default function App() {
       const isOwn =
         productionFormat === "own" ||
         companyData?.type === "Мебельное производство";
-      const config = configToSave || (isOwn ? ownProductionConfig : contractConfig);
+      const config = configToSave 
+        ? { ...contractConfig, ...ownProductionConfig, ...configToSave }
+        : { ...contractConfig, ...ownProductionConfig };
 
       await setDoc(
         doc(db, "companies", companyData.id, "settings", "production"),
         config,
+        { merge: true },
       );
 
       // Also save productionFormat and manufacturerId to company document
@@ -35447,7 +35705,10 @@ export default function App() {
         ),
         setDoc(
           doc(db, "companies", companyData.id, "settings", "production"),
-          isOwn ? (overrides?.ownProductionConfig || ownProductionConfig) : contractConfig,
+          {
+            ...contractConfig,
+            ...(overrides?.ownProductionConfig || ownProductionConfig),
+          },
           { merge: true },
         ),
         setDoc(
@@ -35961,7 +36222,16 @@ export default function App() {
 
     // Add hardware kit cost
     const hwKitPrice = currentHardwareKitPrice || 0;
-    const hwKitTotal = totalLdspSheets * hwKitPrice;
+    const hasAnySheets = Object.values(results || {}).some((item: any) => 
+      item && !mergedMaterials[item.key] && 
+      (
+        (item.type || "").toUpperCase().includes("ЛДСП") || 
+        (item.type || "").toUpperCase().includes("МДФ") || 
+        (item.type || "").toUpperCase().includes("ХДФ") || 
+        (item.type || "").toUpperCase().includes("ДВП")
+      )
+    );
+    const hwKitTotal = hasAnySheets ? Math.max(1, totalLdspSheets) * hwKitPrice : 0;
     total += hwKitTotal;
     productsOnlyTotal += hwKitTotal;
 
@@ -36671,17 +36941,22 @@ export default function App() {
                           },
                         );
                       }}
+                      style={{
+                        height: isReadyMadeExpanded
+                          ? `${220 + ((companyData?.readyMadeConfig?.categories || ["Кухни", "Шкафы", "Прихожие", "Столы", "Комоды"]).filter((cat: string) => !(companyData?.readyMadeConfig?.disabledCategories || []).includes(cat)).length * 28)}px`
+                          : "220px"
+                      }}
                       className={cn(
-                        "w-6 h-[220px] max-h-[220px] shrink-0 rounded-full flex flex-col items-center justify-center py-2 cursor-pointer select-none transition-all border overflow-hidden relative shadow-xs",
+                        "w-6 shrink-0 rounded-full flex flex-col items-center justify-center py-2 cursor-pointer select-none transition-all duration-300 ease-in-out border overflow-hidden relative shadow-xs",
                         !currentProjectName
                           ? "bg-amber-100 text-amber-800 border-amber-200 animate-[pulse_2s_ease-in-out_infinite] hover:bg-amber-200"
                           : "bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100"
                       )}
                     >
-                      <div className="w-full h-full flex items-center justify-center overflow-hidden relative py-1">
+                      <div className="absolute inset-0 flex items-center justify-center overflow-hidden py-1">
                         <span
                           className={cn(
-                            "font-bold text-[10px] tracking-widest whitespace-nowrap inline-block",
+                            "font-bold text-[10px] tracking-widest whitespace-nowrap inline-block max-h-full",
                             (currentProjectName || "").length > 14 && "animate-vmarquee"
                           )}
                           style={{
@@ -37141,9 +37416,34 @@ export default function App() {
               setBazisFasteners={setBazisFasteners}
               detailedFastenersMode={detailedFastenersMode}
               setDetailedFastenersMode={setDetailedFastenersMode}
-              onBindUnmatchedItem={(itemToBind, chosenCatalogProduct) => {
+              onBindUnmatchedItem={async (itemToBind, chosenCatalogProduct) => {
                 if (!chosenCatalogProduct || !itemToBind) return;
                 const itemQty = itemToBind.qty || 1;
+
+                const skuToBind = String(itemToBind.article || itemToBind.name || "").trim();
+                if (skuToBind) {
+                  try {
+                    const companyId = chosenCatalogProduct.companyId || companyData?.id;
+                    if (companyId) {
+                      const currentSkuList = Array.isArray(chosenCatalogProduct.skuList) ? chosenCatalogProduct.skuList : [];
+                      const currentAcctSkus = Array.isArray(chosenCatalogProduct.accountingSkus) ? chosenCatalogProduct.accountingSkus : [];
+
+                      const updatedSkuList = Array.from(new Set([...currentSkuList, skuToBind]));
+                      const updatedAcctSkus = Array.from(new Set([...currentAcctSkus, skuToBind]));
+
+                      await updateDoc(
+                        doc(db, "companies", companyId, "products", String(chosenCatalogProduct.id)),
+                        { 
+                          skuList: updatedSkuList,
+                          accountingSkus: updatedAcctSkus
+                        }
+                      );
+                    }
+                  } catch (err) {
+                    console.error("Error binding SKU in onBindUnmatchedItem:", err);
+                  }
+                }
+
                 setAddedProducts((prev) => {
                   const updated = [...prev];
                   const existingIdx = updated.findIndex((p) => String(p.id) === String(chosenCatalogProduct.id));
@@ -37231,6 +37531,7 @@ export default function App() {
               productionSettings={productionSettings}
               userRole={userRole}
               companyType={companyData?.type}
+              companyData={companyData}
               setPrices={setPrices}
               mergedMaterials={mergedMaterials}
               selectedForGlue={selectedForGlue}
@@ -38743,6 +39044,127 @@ export default function App() {
                 >
                   Добавить с сопутствующими
                 </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {bazisImportModalData && (
+          <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200">
+              <div className="p-6 space-y-4">
+                <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900">Параметры импорта из файла Базис</h3>
+                    <p className="text-xs text-gray-500 font-medium truncate max-w-xs">{bazisImportModalData.fileName}</p>
+                  </div>
+                  <button
+                    onClick={() => setBazisImportModalData(null)}
+                    className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <p className="text-xs text-gray-600 font-medium leading-relaxed">
+                  Выберите, какие типы данных из файла Базис-Мебельщик применить в текущем расчете:
+                </p>
+
+                <div className="space-y-2.5">
+                  <label className="flex items-center justify-between p-3 rounded-2xl border border-gray-200 hover:bg-amber-50/50 cursor-pointer transition-colors">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={bazisImportOptions.importCarcass}
+                        onChange={(e) => setBazisImportOptions((prev) => ({ ...prev, importCarcass: e.target.checked }))}
+                        className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500 cursor-pointer"
+                      />
+                      <div>
+                        <span className="text-xs font-bold text-gray-900 block">Корпус и раскрой</span>
+                        <span className="text-[11px] text-gray-500 block">ЛДСП, ДВП, ХДФ, Кромка</span>
+                      </div>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center justify-between p-3 rounded-2xl border border-gray-200 hover:bg-amber-50/50 cursor-pointer transition-colors">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={bazisImportOptions.importFacades}
+                        onChange={(e) => setBazisImportOptions((prev) => ({ ...prev, importFacades: e.target.checked }))}
+                        className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500 cursor-pointer"
+                      />
+                      <div>
+                        <span className="text-xs font-bold text-gray-900 block">Фасады</span>
+                        <span className="text-[11px] text-gray-500 block">МДФ, Эмаль, Шпон, Пленка, AGT</span>
+                      </div>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center justify-between p-3 rounded-2xl border border-gray-200 hover:bg-amber-50/50 cursor-pointer transition-colors">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={bazisImportOptions.importWorktops}
+                        onChange={(e) => setBazisImportOptions((prev) => ({ ...prev, importWorktops: e.target.checked }))}
+                        className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500 cursor-pointer"
+                      />
+                      <div>
+                        <span className="text-xs font-bold text-gray-900 block">Столешницы и стеновые панели</span>
+                        <span className="text-[11px] text-gray-500 block">Постформинг, Скинали, Плиты</span>
+                      </div>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center justify-between p-3 rounded-2xl border border-gray-200 hover:bg-amber-50/50 cursor-pointer transition-colors">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={bazisImportOptions.importFasteners}
+                        onChange={(e) => setBazisImportOptions((prev) => ({ ...prev, importFasteners: e.target.checked }))}
+                        className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500 cursor-pointer"
+                      />
+                      <div>
+                        <span className="text-xs font-bold text-gray-900 block">Метизы и крепеж</span>
+                        <span className="text-[11px] text-gray-500 block">Саморезы, стяжки, конфирматы, гвозди, шканты, винты</span>
+                      </div>
+                    </div>
+                  </label>
+
+                  <label className="flex items-center justify-between p-3 rounded-2xl border border-gray-200 hover:bg-amber-50/50 cursor-pointer transition-colors">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={bazisImportOptions.importHardware}
+                        onChange={(e) => setBazisImportOptions((prev) => ({ ...prev, importHardware: e.target.checked }))}
+                        className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500 cursor-pointer"
+                      />
+                      <div>
+                        <span className="text-xs font-bold text-gray-900 block">Фурнитура и комплектующие</span>
+                        <span className="text-[11px] text-gray-500 block">Петли, направляющие, подъемники, ручки, навесы, опорные ножки</span>
+                      </div>
+                    </div>
+                  </label>
+                </div>
+
+                <div className="pt-3 border-t border-gray-100 flex items-center justify-end gap-3">
+                  <button
+                    onClick={() => setBazisImportModalData(null)}
+                    className="px-4 py-2.5 text-xs font-bold text-gray-600 hover:bg-gray-100 rounded-xl transition-all cursor-pointer"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    onClick={() => {
+                      const { rawData, fileName } = bazisImportModalData;
+                      setBazisImportModalData(null);
+                      parseBazisReport(rawData, fileName, bazisImportOptions);
+                    }}
+                    className="px-6 py-2.5 text-xs font-bold bg-amber-600 text-white hover:bg-amber-700 rounded-xl shadow-lg shadow-amber-200 transition-all cursor-pointer"
+                  >
+                    Применить импорт
+                  </button>
+                </div>
               </div>
             </div>
           </div>

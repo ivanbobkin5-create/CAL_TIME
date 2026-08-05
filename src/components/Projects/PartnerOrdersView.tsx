@@ -509,6 +509,7 @@ export const PartnerOrdersView = ({
           project={selectedSetForAnalysis}
           companyType="Мебельное производство"
           isProductionView={true}
+          manufacturerId={companyId}
           onClose={() => setSelectedSetForAnalysis(null)}
           onAccept={() => handleAcceptOrder(selectedSetForAnalysis)}
           onAcceptWithRevisions={(comment) => handleAcceptOrderWithRevisions(selectedSetForAnalysis, comment)}
