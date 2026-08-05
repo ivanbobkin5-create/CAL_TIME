@@ -8937,8 +8937,18 @@ const SummaryView = ({
   currentProjectName,
   onSaveProject,
   unmatchedBazisItems = [],
+  bazisFasteners = [],
+  setBazisFasteners,
+  detailedFastenersMode = false,
+  setDetailedFastenersMode,
+  onBindUnmatchedItem,
 }: {
   unmatchedBazisItems?: any[];
+  bazisFasteners?: any[];
+  setBazisFasteners?: React.Dispatch<React.SetStateAction<any[]>>;
+  detailedFastenersMode?: boolean;
+  setDetailedFastenersMode?: (val: boolean) => void;
+  onBindUnmatchedItem?: (item: any, selectedProduct: any) => void;
   results: any;
   selectedDecor: Record<string, string>;
   setSelectedDecor?: React.Dispatch<React.SetStateAction<Record<string, string>>>;
@@ -9037,9 +9047,18 @@ const SummaryView = ({
   selectedProjectCoefficientsMode?: 'saved' | 'current';
   setSelectedProjectCoefficientsMode?: (mode: 'saved' | 'current') => void;
 }) => {
-  const [activeWorktopForCut, setActiveWorktopForCut] = useState<any | null>(
-    null,
-  );
+  const [activeWorktopForCut, setActiveWorktopForCut] = useState<any | null>(null);
+
+  const handleUpdateFastenerPrice = (fastenerId: string, newPrice: number) => {
+    if (!setBazisFasteners) return;
+    const updated = (bazisFasteners || []).map((f: any) =>
+      f.id === fastenerId ? { ...f, price: Math.max(0, newPrice) } : f
+    );
+    setBazisFasteners(updated);
+    if (onSaveProject && currentProjectName) {
+      onSaveProject(currentProjectName, true, { bazisFasteners: updated });
+    }
+  };
   const [showChecklistWindow, setShowChecklistWindow] = useState(false);
   const [selectedPromoIds, setSelectedPromoIds] = useState<string[]>([]);
   const [selectedInstallmentProg, setSelectedInstallmentProg] = useState<string>("");
@@ -9875,15 +9894,25 @@ const SummaryView = ({
 
   const currentCoefficients = coefficients;
 
-  const kitCost = totalLdspSheets * currentHardwareKitPriceLocal;
-  if (totalLdspSheets > 0) {
+  const detailedFastenerCost = (bazisFasteners || []).reduce(
+    (acc: number, f: any) => acc + (Number(f.qty || 0) * Number(f.price || 0)),
+    0
+  );
+
+  const kitCost = (detailedFastenersMode && bazisFasteners && bazisFasteners.length > 0)
+    ? detailedFastenerCost
+    : totalLdspSheets * currentHardwareKitPriceLocal;
+
+  if (totalLdspSheets > 0 || (bazisFasteners && bazisFasteners.length > 0)) {
     summaryRows.push({
       type: "material",
       name: "Комплект метизов",
-      sub: `На ${totalLdspSheets} л. ЛДСП`,
+      sub: detailedFastenersMode && bazisFasteners && bazisFasteners.length > 0
+        ? `Детальный расчет (${bazisFasteners.length} поз.)`
+        : totalLdspSheets > 0 ? `На ${totalLdspSheets} л. ЛДСП` : `Стандартный комплект`,
       decor: "-",
-      qty: `${totalLdspSheets} шт`,
-      price: currentHardwareKitPriceLocal,
+      qty: detailedFastenersMode && bazisFasteners && bazisFasteners.length > 0 ? "1 компл." : `${totalLdspSheets} шт`,
+      price: detailedFastenersMode && bazisFasteners && bazisFasteners.length > 0 ? detailedFastenerCost : currentHardwareKitPriceLocal,
       total: Math.round(kitCost),
       coef: 1,
     });
@@ -11504,19 +11533,65 @@ const SummaryView = ({
                   <th className="py-2 px-3">Артикул в файле</th>
                   <th className="py-2 px-3 text-right">Кол-во</th>
                   <th className="py-2 px-3 text-right">Ед. изм.</th>
+                  <th className="py-2 px-3 text-right">Цена</th>
+                  <th className="py-2 px-3 text-right">Сопоставить с товаром из каталога</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-amber-200/40">
-                {unmatchedBazisItems.map((item: any, idx: number) => (
-                  <tr key={item.id || idx} className="hover:bg-amber-100/40 transition-colors">
-                    <td className="py-2 px-3 font-semibold text-amber-950">{item.name}</td>
-                    <td className="py-2 px-3 font-mono font-bold text-amber-900">
-                      {item.article || <span className="text-amber-600/60 italic">Не указан</span>}
-                    </td>
-                    <td className="py-2 px-3 text-right font-black text-amber-950">{item.qty}</td>
-                    <td className="py-2 px-3 text-right text-amber-800">{item.unit || "шт"}</td>
-                  </tr>
-                ))}
+                {unmatchedBazisItems.map((item: any, idx: number) => {
+                  const preFiltered = (catalogProducts || []).filter((p: any) => {
+                    if (item.categoryType === "Петли") return /петл/i.test(p.name || "") || /петл/i.test(p.category || "");
+                    if (item.categoryType === "Направляющие") return /направляющ|ящик/i.test(p.name || "") || /направляющ|ящик/i.test(p.category || "");
+                    return true;
+                  });
+                  const productOptions = preFiltered.length > 0 ? preFiltered : (catalogProducts || []);
+
+                  return (
+                    <tr key={item.id || idx} className="hover:bg-amber-100/40 transition-colors">
+                      <td className="py-2 px-3 font-semibold text-amber-950">
+                        {item.name}
+                        {item.isAmbiguous && (
+                          <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900">
+                            Выбрать {item.categoryType || "аналог"}
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 px-3 font-mono font-bold text-amber-900">
+                        {item.article || <span className="text-amber-600/60 italic">Не указан</span>}
+                      </td>
+                      <td className="py-2 px-3 text-right font-black text-amber-950">{item.qty}</td>
+                      <td className="py-2 px-3 text-right text-amber-800">{item.unit || "шт"}</td>
+                      <td className="py-2 px-3 text-right font-black text-amber-950">
+                        {item.price !== undefined && item.price !== null && !isNaN(Number(item.price)) && Number(item.price) > 0
+                          ? `${Math.round(Number(item.price)).toLocaleString('ru-RU')} ₽`
+                          : "—"}
+                      </td>
+                      <td className="py-2 px-3 text-right">
+                        <select
+                          className="px-2 py-1 bg-white border border-amber-300 rounded text-xs font-medium text-amber-950 focus:ring-1 focus:ring-amber-500 max-w-[220px] truncate"
+                          defaultValue=""
+                          onChange={(e) => {
+                            const selectedProdId = e.target.value;
+                            if (!selectedProdId) return;
+                            const chosen = (catalogProducts || []).find((p: any) => String(p.id) === String(selectedProdId));
+                            if (chosen && onBindUnmatchedItem) {
+                              onBindUnmatchedItem(item, chosen);
+                            }
+                          }}
+                        >
+                          <option value="">
+                            {item.isAmbiguous ? `Выбрать ${item.categoryType}...` : "-- Выбрать товар --"}
+                          </option>
+                          {productOptions.map((p: any) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name} {p.article || p.sku ? `(${p.article || p.sku})` : ""} — {p.price || 0} ₽
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -11642,6 +11717,57 @@ const SummaryView = ({
                           >
                             {row.sub}
                           </div>
+                          {row.name === "Комплект метизов" && bazisFasteners && bazisFasteners.length > 0 && (
+                            <div className="mt-2 space-y-2">
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setDetailedFastenersMode && setDetailedFastenersMode(!detailedFastenersMode)}
+                                  className={cn(
+                                    "px-2 py-1 rounded text-xs font-bold transition-all shadow-2xs flex items-center gap-1 cursor-pointer",
+                                    detailedFastenersMode
+                                      ? "bg-amber-600 text-white hover:bg-amber-700"
+                                      : "bg-gray-100 text-gray-700 hover:bg-gray-200 border border-gray-300"
+                                  )}
+                                >
+                                  {detailedFastenersMode ? "Стандартный расчет" : "Посчитать детально"}
+                                </button>
+                              </div>
+                              <div className="p-2.5 bg-gray-50 rounded-xl border border-gray-200/80 space-y-1.5 max-w-xl">
+                                <div className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
+                                  Состав метизов из файла Базис ({bazisFasteners.length} поз.):
+                                </div>
+                                {bazisFasteners.map((f: any, fIdx: number) => (
+                                  <div key={f.id || fIdx} className="flex items-center justify-between text-xs py-1 border-b border-gray-100 last:border-0 gap-2">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <span className="font-semibold text-gray-800 truncate">{f.name}</span>
+                                      {f.article && <span className="text-[10px] text-gray-400 font-mono bg-gray-200/60 px-1 rounded">арт. {f.article}</span>}
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0">
+                                      <span className="font-black text-gray-700 text-[11px]">{f.qty} {f.unit || "шт"}</span>
+                                      {detailedFastenersMode ? (
+                                        <div className="flex items-center gap-1">
+                                          <input
+                                            type="number"
+                                            min="0"
+                                            value={f.price || 0}
+                                            onChange={(e) => {
+                                              const p = parseFloat(e.target.value) || 0;
+                                              handleUpdateFastenerPrice(f.id, p);
+                                            }}
+                                            className="w-16 px-1.5 py-0.5 text-right font-bold border border-gray-300 rounded bg-white text-xs focus:ring-1 focus:ring-amber-500"
+                                          />
+                                          <span className="text-[10px] text-gray-500">₽</span>
+                                        </div>
+                                      ) : (
+                                        <span className="text-[10px] text-gray-400">(входит в комплект)</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </td>
@@ -13437,6 +13563,7 @@ const AccountingMappingSettings = ({
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [newSkuInputs, setNewSkuInputs] = useState<Record<string, string>>({});
+  const [localSkus, setLocalSkus] = useState<Record<string, string[]>>({});
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({});
 
   const isEnabled = companyData?.accountingMappingConfig?.enabled !== false;
@@ -13562,15 +13689,18 @@ const AccountingMappingSettings = ({
 
     if (newItems.length === 0) return;
 
-    const currentSkus: string[] = Array.isArray(product.skuList)
+    const currentSkus: string[] = localSkus[product.id] !== undefined
+      ? [...localSkus[product.id]]
+      : Array.isArray(product.skuList)
       ? [...product.skuList]
       : Array.isArray(product.accountingSkus)
       ? [...product.accountingSkus]
-      : product.article
-      ? [String(product.article)]
       : [];
 
     const updatedSkus = Array.from(new Set([...currentSkus, ...newItems]));
+
+    setLocalSkus((prev) => ({ ...prev, [product.id]: updatedSkus }));
+    setNewSkuInputs((prev) => ({ ...prev, [product.id]: "" }));
 
     try {
       const companyId = product.companyId || companyData?.id;
@@ -13580,7 +13710,6 @@ const AccountingMappingSettings = ({
           { skuList: updatedSkus }
         );
       }
-      setNewSkuInputs((prev) => ({ ...prev, [product.id]: "" }));
     } catch (err) {
       console.error("Error updating product SKUs:", err);
       showAlert("Ошибка", "Не удалось сохранить артикул");
@@ -13588,15 +13717,17 @@ const AccountingMappingSettings = ({
   };
 
   const handleRemoveSku = async (product: any, skuToRemove: string) => {
-    const currentSkus: string[] = Array.isArray(product.skuList)
+    const currentSkus: string[] = localSkus[product.id] !== undefined
+      ? [...localSkus[product.id]]
+      : Array.isArray(product.skuList)
       ? [...product.skuList]
       : Array.isArray(product.accountingSkus)
       ? [...product.accountingSkus]
-      : product.article
-      ? [String(product.article)]
       : [];
 
     const updatedSkus = currentSkus.filter((s) => s !== skuToRemove);
+
+    setLocalSkus((prev) => ({ ...prev, [product.id]: updatedSkus }));
 
     try {
       const companyId = product.companyId || companyData?.id;
@@ -13784,15 +13915,15 @@ const AccountingMappingSettings = ({
                   <div className="divide-y divide-gray-100">
                     {products.map((product) => {
                       // Manual accounting SKUs added explicitly by the user (1C / Bazis)
-                      const existingSkus: string[] = Array.from(
-                        new Set(
-                          [
+                      const rawSkus = localSkus[product.id] !== undefined
+                        ? localSkus[product.id]
+                        : [
                             ...(Array.isArray(product.skuList) ? product.skuList : []),
                             ...(Array.isArray(product.accountingSkus) ? product.accountingSkus : []),
-                          ]
-                            .filter(Boolean)
-                            .map((s) => String(s).trim())
-                        )
+                          ];
+
+                      const existingSkus: string[] = Array.from(
+                        new Set(rawSkus.filter(Boolean).map((s) => String(s).trim()))
                       );
 
                       const currentInput = newSkuInputs[product.id] || "";
@@ -13832,7 +13963,7 @@ const AccountingMappingSettings = ({
                                 )}
                                 {product.price !== undefined && (
                                   <span className="font-black text-emerald-700 ml-auto">
-                                    {product.price} ₽
+                                    {Math.round(Number(product.price) || 0).toLocaleString('ru-RU')} ₽
                                   </span>
                                 )}
                               </div>
@@ -13858,14 +13989,17 @@ const AccountingMappingSettings = ({
                                 existingSkus.map((sku) => (
                                   <span
                                     key={sku}
-                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-bold bg-blue-600 text-white shadow-2xs border border-blue-700"
+                                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-bold bg-blue-600 text-white shadow-2xs border border-blue-700"
                                   >
                                     <Tag className="w-3 h-3 opacity-80" />
                                     <span>{sku}</span>
+                                    <span className="text-[9px] bg-blue-800 text-blue-100 px-1 py-0.2 rounded font-black uppercase">
+                                      1С
+                                    </span>
                                     <button
                                       type="button"
                                       onClick={() => handleRemoveSku(product, sku)}
-                                      className="ml-1 rounded p-0.5 hover:bg-blue-800 text-white transition-colors cursor-pointer"
+                                      className="ml-0.5 rounded p-0.5 hover:bg-blue-800 text-white transition-colors cursor-pointer"
                                       title="Удалить привязанный артикул"
                                     >
                                       <Trash2 className="w-3 h-3" />
@@ -33032,6 +33166,8 @@ export default function App() {
     {},
   );
   const [unmatchedBazisItems, setUnmatchedBazisItems] = useState<any[]>([]);
+  const [bazisFasteners, setBazisFasteners] = useState<any[]>([]);
+  const [detailedFastenersMode, setDetailedFastenersMode] = useState<boolean>(false);
 
   const [companyInfo, setCompanyInfoRaw] = useState<any>({
     name: "",
@@ -33401,14 +33537,15 @@ export default function App() {
     let colModelUnit = 10;
     let colNote = 11;
 
-    for (let i = 0; i < Math.min(rawData.length, 15); i++) {
+    for (let i = 0; i < Math.min(rawData.length, 50); i++) {
       const row = rawData[i] || [];
+      const col0Str = String(row[0] || "").toLowerCase().trim();
       const rowText = row.map((c: any) => String(c).toLowerCase()).join(" ");
       if (
-        rowText.includes("наименование") ||
-        rowText.includes("расчет") ||
+        col0Str.includes("артикул") ||
+        col0Str.includes("наименование") ||
         rowText.includes("артикул") ||
-        rowText.includes("заказ")
+        rowText.includes("наименование")
       ) {
         headerRowIdx = i;
         row.forEach((cell: any, cIdx: number) => {
@@ -33449,6 +33586,7 @@ export default function App() {
     const initialEdgeToEdge: Record<string, boolean> = { ...edgeToEdge };
     const matchedProductsList: any[] = [];
     const unmatchedBazisItemsList: any[] = [];
+    const bazisFastenersList: any[] = [];
     const pendingEdgebands: Array<{ decor: string; lengthM: number; rawName: string }> = [];
 
     let foundLdspSheets = 0;
@@ -33458,11 +33596,32 @@ export default function App() {
     let foundFacadeM2 = 0;
     let foundEdgeMeters = 0;
 
+    const cleanMaterialDecorName = (str: string) => {
+      if (!str) return "";
+      return str
+        .replace(/хдф|двп|лхдф|лдвп|лдсп|дсп|e1|e0\.5|e05|p2|p1/gi, "")
+        .replace(/\b\d{3,4}\s*[*xхxX]\s*\d{3,4}(\s*[*xхxX]\s*\d{1,2}([.,]\d+)?\s*(мм)?)?\b/gi, "")
+        .replace(/\b\d{1,2}([.,]\d+)?\s*мм\b/gi, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    };
+
     const isHardwareOrAccessory = (rawName: string) => {
       const s = rawName.toLowerCase();
-      if (/для\s+(двп|хдф|лдсп|дсп|мдф|фасад|столешниц|стеново)/i.test(s)) return true;
-      if (/гвозди|гвоздь|саморез|уголок|винт|петл|стяжк|подпяточник|ножк|опор|направляющ|заглушк|держател|кронштейн|ручк|комплект|полкодержател|эксцентрик|шкант|евровинт|конфирмат/i.test(s)) return true;
+      if (/(хдф|двп|лхдф|лдвп|орголит)/i.test(s)) {
+        return false;
+      }
+      if (/фасад|пленка|эмаль|шпон|патина|акрил|\bagt\b|агт/i.test(s) && !/петл|ручк|направляющ|профиль|крепеж|стяжк|инструмент|ножк/i.test(s)) {
+        return false;
+      }
+      if (/для\s+(двп|хдф|лдсп|дсп|столешниц|стеново)/i.test(s)) return true;
+      if (/гвозди|гвоздь|саморез|уголок|винт|петл|стяжк|подпяточник|ножк|опор|направляющ|заглушк|держател|кронштейн|ручк|комплект|полкодержател|эксцентрик|шкант|евровинт|конфирмат|конфират|\bvb\b/i.test(s)) return true;
       return false;
+    };
+
+    const isFastener = (str: string) => {
+      const s = str.toLowerCase();
+      return /саморез|стяжка|уголок|шкант|конфирмат|конфират|\bvb\b|винт|евровинт|гвозд|заглушк|эксцентрик|подпяточник|опор|полкодержател/i.test(s);
     };
 
     for (let i = startIdx; i < rawData.length; i++) {
@@ -33474,6 +33633,7 @@ export default function App() {
       const lName = rawName.toLowerCase();
       if (
         lName.includes("наименование") ||
+        lName.includes("артикул") ||
         lName.includes("итого") ||
         lName.includes("всего в заказе") ||
         lName.includes("стоимость заказа")
@@ -33545,7 +33705,10 @@ export default function App() {
         lName.includes("хдф") ||
         lName.includes("двп") ||
         lName.includes("лхдф") ||
-        lName.includes("лдвп")
+        lName.includes("лдвп") ||
+        lName.includes("орголит") ||
+        /\b(3|3\.2|3,2|4)\s*мм\b/i.test(lName) ||
+        /[*xх]\s*(3|3\.2|3,2|4)\b/i.test(lName)
       );
 
       const isFacade = !hardwareOrAcc && !isLdsp && !isEdge && !isHdf && (
@@ -33561,12 +33724,7 @@ export default function App() {
         const thickMatch = rawName.match(/\b(\d{1,2})\s*мм\b/i) || rawName.match(/[*xх]\s*(\d{1,2})\b/i);
         if (thickMatch && thickMatch[1]) thickness = parseInt(thickMatch[1]);
 
-        let decor = rawName
-          .replace(/лдсп|дсп|e1|e0\.5|e05|p2|p1/gi, "")
-          .replace(/\d{3,4}\s*[*xх]\s*\d{3,4}\s*([*xх]\s*\d{1,2}\s*(мм)?)?/gi, "")
-          .replace(/\b\d{1,2}\s*мм\b/gi, "")
-          .replace(/\s+/g, " ")
-          .trim();
+        let decor = cleanMaterialDecorName(rawName);
         if (!decor) decor = rawName;
 
         // Respect raw sheet count from file
@@ -33635,11 +33793,7 @@ export default function App() {
         const thickMatch = rawName.match(/\b(\d{1,2})\s*мм\b/i);
         if (thickMatch && thickMatch[1]) thickness = parseInt(thickMatch[1]);
 
-        let hColor = rawName
-          .replace(/хдф|двп|лхдф|лдвп/gi, "")
-          .replace(/\b\d{1,2}\s*мм\b/gi, "")
-          .replace(/\s+/g, " ")
-          .trim();
+        let hColor = cleanMaterialDecorName(rawName);
         if (!hColor) hColor = "Белый";
 
         const isSheetUnit = unit.includes("лист") || unit.includes("шт") || modelUnit.includes("лист") || modelUnit.includes("шт");
@@ -33698,11 +33852,11 @@ export default function App() {
         const thickMatch = rawName.match(/\b(\d{1,2})\s*мм\b/i);
         if (thickMatch && thickMatch[1]) thickness = parseInt(thickMatch[1]);
 
-        let fColor = rawName
-          .replace(/фасад|мдф/gi, "")
+        let fColor = cleanMaterialDecorName(rawName)
+          .replace(/фасад(ы)?|мдф|пленка|эмаль|шпон|патина|акрил|агт|agt/gi, "")
           .replace(/\s+/g, " ")
           .trim();
-        if (!fColor) fColor = "Фасады";
+        if (!fColor) fColor = cleanMaterialDecorName(rawName) || "Фасады";
 
         const areaM2 = orderQty > 0 ? orderQty : calcQty;
         foundFacadeM2 += areaM2;
@@ -33738,16 +33892,28 @@ export default function App() {
           canRotate: false,
         });
       } else if (!isCatalogMatch && (article || rawName)) {
-        // Collect unmatched items (do NOT include in catalog products calculation automatically)
         const pQty = orderQty > 0 ? orderQty : calcQty > 0 ? calcQty : 1;
-        unmatchedBazisItemsList.push({
-          id: `unmatched-${Math.random().toString(36).substring(2, 9)}`,
-          name: rawName,
-          article: article,
-          qty: pQty,
-          unit: unit || modelUnit || "шт",
-          price: price || 0,
-        });
+        if (isFastener(rawName)) {
+          bazisFastenersList.push({
+            id: `fastener-${Math.random().toString(36).substring(2, 9)}`,
+            name: rawName,
+            article: article,
+            qty: pQty,
+            unit: unit || modelUnit || "шт",
+            price: price || 0,
+          });
+        } else {
+          unmatchedBazisItemsList.push({
+            id: `unmatched-${Math.random().toString(36).substring(2, 9)}`,
+            name: rawName,
+            article: article,
+            qty: pQty,
+            unit: unit || modelUnit || "шт",
+            price: price || 0,
+            isAmbiguous: /петл|направляющ/i.test(rawName),
+            categoryType: /петл/i.test(rawName) ? "Петли" : /направляющ/i.test(rawName) ? "Направляющие" : "Фурнитура",
+          });
+        }
       }
     }
 
@@ -33791,6 +33957,8 @@ export default function App() {
     }
 
     setUnmatchedBazisItems(unmatchedBazisItemsList);
+    setBazisFasteners(bazisFastenersList);
+    setDetailedFastenersMode(false);
     setSheetConfigs((prev) => ({ ...prev, ...initialSheetConfigs }));
     setRotations(initialRotations);
     setEdgeToEdge((prev) => ({ ...prev, ...initialEdgeToEdge }));
@@ -33810,6 +33978,8 @@ export default function App() {
       addedProducts: matchedProductsList,
       addedServices: [],
       unmatchedBazisItems: unmatchedBazisItemsList,
+      bazisFasteners: bazisFastenersList,
+      detailedFastenersMode: false,
     });
 
     setActiveTab("calculator");
@@ -34286,6 +34456,8 @@ export default function App() {
       addedProducts?: any[];
       addedServices?: any[];
       unmatchedBazisItems?: any[];
+      bazisFasteners?: any[];
+      detailedFastenersMode?: boolean;
     }
   ) => {
     try {
@@ -34295,6 +34467,8 @@ export default function App() {
       const activeProducts = overrideData?.addedProducts || addedProducts;
       const activeServices = overrideData?.addedServices || addedServices;
       const activeUnmatchedBazis = overrideData?.unmatchedBazisItems || unmatchedBazisItems;
+      const activeBazisFasteners = overrideData?.bazisFasteners || bazisFasteners;
+      const activeDetailedFastenersMode = overrideData?.detailedFastenersMode !== undefined ? overrideData.detailedFastenersMode : detailedFastenersMode;
 
       const projectId = overrideData?.projectId || currentProjectId || Date.now().toString();
       const projectName = name || currentProjectName || "Новый проект";
@@ -34356,6 +34530,8 @@ export default function App() {
           addedProducts: activeProducts,
           addedServices: activeServices,
           unmatchedBazisItems: activeUnmatchedBazis,
+          bazisFasteners: activeBazisFasteners,
+          detailedFastenersMode: activeDetailedFastenersMode,
           serviceData,
           isModularProgram,
           modularAsked,
@@ -34780,6 +34956,8 @@ export default function App() {
     if (d.addedProducts) setAddedProducts(d.addedProducts);
     if (d.addedServices) setAddedServices(d.addedServices);
     setUnmatchedBazisItems(d.unmatchedBazisItems || []);
+    setBazisFasteners(d.bazisFasteners || []);
+    setDetailedFastenersMode(d.detailedFastenersMode ?? false);
     if (d.serviceData) setServiceData(d.serviceData);
     if (d.furnitureType) setFurnitureType(d.furnitureType);
     if (d.checklistRefused) setChecklistRefused(d.checklistRefused);
@@ -36494,23 +36672,28 @@ export default function App() {
                         );
                       }}
                       className={cn(
-                        "w-6 flex-1 rounded-full flex items-center justify-center py-2 cursor-pointer select-none transition-all border",
+                        "w-6 h-[220px] max-h-[220px] shrink-0 rounded-full flex flex-col items-center justify-center py-2 cursor-pointer select-none transition-all border overflow-hidden relative shadow-xs",
                         !currentProjectName
-                          ? "bg-amber-100 text-amber-700 border-amber-200 animate-[pulse_2s_ease-in-out_infinite] hover:bg-amber-200 shadow-sm"
-                          : "bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100 hover:text-blue-700 shadow-sm"
+                          ? "bg-amber-100 text-amber-800 border-amber-200 animate-[pulse_2s_ease-in-out_infinite] hover:bg-amber-200"
+                          : "bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100"
                       )}
                     >
-                      <span
-                        className="font-bold text-[10px] tracking-widest whitespace-nowrap"
-                        style={{
-                          writingMode: "vertical-rl",
-                          transform: "rotate(180deg)",
-                        }}
-                      >
-                        {currentProjectName
-                          ? currentProjectName.toUpperCase()
-                          : "БЕЗ НАЗВАНИЯ"}
-                      </span>
+                      <div className="w-full h-full flex items-center justify-center overflow-hidden relative py-1">
+                        <span
+                          className={cn(
+                            "font-bold text-[10px] tracking-widest whitespace-nowrap inline-block",
+                            (currentProjectName || "").length > 14 && "animate-vmarquee"
+                          )}
+                          style={{
+                            writingMode: "vertical-rl",
+                            transform: "rotate(180deg)",
+                          }}
+                        >
+                          {currentProjectName
+                            ? currentProjectName.toUpperCase()
+                            : "БЕЗ НАЗВАНИЯ"}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -36954,6 +37137,40 @@ export default function App() {
           <div className={cn(activeTab === "summary" || activeTab === "checkout_current" ? "block" : "hidden")}>
             <SummaryView
               unmatchedBazisItems={unmatchedBazisItems}
+              bazisFasteners={bazisFasteners}
+              setBazisFasteners={setBazisFasteners}
+              detailedFastenersMode={detailedFastenersMode}
+              setDetailedFastenersMode={setDetailedFastenersMode}
+              onBindUnmatchedItem={(itemToBind, chosenCatalogProduct) => {
+                if (!chosenCatalogProduct || !itemToBind) return;
+                const itemQty = itemToBind.qty || 1;
+                setAddedProducts((prev) => {
+                  const updated = [...prev];
+                  const existingIdx = updated.findIndex((p) => String(p.id) === String(chosenCatalogProduct.id));
+                  if (existingIdx !== -1) {
+                    const curQty = updated[existingIdx].quantity || updated[existingIdx].qty || 0;
+                    updated[existingIdx] = {
+                      ...updated[existingIdx],
+                      quantity: curQty + itemQty,
+                      qty: curQty + itemQty,
+                    };
+                  } else {
+                    updated.push({
+                      ...chosenCatalogProduct,
+                      quantity: itemQty,
+                      qty: itemQty,
+                    });
+                  }
+                  return updated;
+                });
+                const remainingUnmatched = unmatchedBazisItems.filter((i) => i.id !== itemToBind.id);
+                setUnmatchedBazisItems(remainingUnmatched);
+                if (currentProjectName) {
+                  saveProject(currentProjectName, true, {
+                    unmatchedBazisItems: remainingUnmatched,
+                  });
+                }
+              }}
               currentProjectName={currentProjectName}
               onSaveProject={saveProject}
               loadedProjectCoefficientsSnapshot={loadedProjectCoefficientsSnapshot}
