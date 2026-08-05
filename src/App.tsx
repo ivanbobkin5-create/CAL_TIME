@@ -221,6 +221,7 @@ import {
   Sliders,
   Loader2,
   ArrowLeftRight,
+  AlertCircle,
 } from "lucide-react";
 
 // --- START OF OFFLINE CACHE AND SYNC ENGINE ---
@@ -8935,7 +8936,9 @@ const SummaryView = ({
   setSelectedProjectCoefficientsMode,
   currentProjectName,
   onSaveProject,
+  unmatchedBazisItems = [],
 }: {
+  unmatchedBazisItems?: any[];
   results: any;
   selectedDecor: Record<string, string>;
   setSelectedDecor?: React.Dispatch<React.SetStateAction<Record<string, string>>>;
@@ -11464,6 +11467,62 @@ const SummaryView = ({
         />
       )}
 
+      {unmatchedBazisItems && unmatchedBazisItems.length > 0 && (
+        <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-4 shadow-xs mb-6 font-sans">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-amber-200/60">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-800 flex items-center justify-center font-bold shrink-0">
+                <AlertCircle className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-black text-amber-950 flex items-center gap-2 flex-wrap">
+                  Несопоставленные позиции из отчета (1С / Базис)
+                  <span className="text-xs px-2 py-0.5 bg-amber-200 text-amber-900 rounded-full font-black">
+                    {unmatchedBazisItems.length} поз.
+                  </span>
+                </h4>
+                <p className="text-xs text-amber-800/90 font-medium mt-0.5">
+                  Позиции из файла не сопоставлены с товарами каталога (не привязаны в разделе «Соответствие учета»).
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => setActiveTab && setActiveTab("accounting_mapping")}
+              className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors flex items-center gap-1.5 shrink-0 self-start sm:self-auto cursor-pointer"
+            >
+              <ArrowLeftRight className="w-3.5 h-3.5" />
+              Настроить сопоставление
+            </button>
+          </div>
+
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="text-amber-900/70 font-bold uppercase tracking-wider border-b border-amber-200/50">
+                  <th className="py-2 px-3">Наименование из файла</th>
+                  <th className="py-2 px-3">Артикул в файле</th>
+                  <th className="py-2 px-3 text-right">Кол-во</th>
+                  <th className="py-2 px-3 text-right">Ед. изм.</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-amber-200/40">
+                {unmatchedBazisItems.map((item: any, idx: number) => (
+                  <tr key={item.id || idx} className="hover:bg-amber-100/40 transition-colors">
+                    <td className="py-2 px-3 font-semibold text-amber-950">{item.name}</td>
+                    <td className="py-2 px-3 font-mono font-bold text-amber-900">
+                      {item.article || <span className="text-amber-600/60 italic">Не указан</span>}
+                    </td>
+                    <td className="py-2 px-3 text-right font-black text-amber-950">{item.qty}</td>
+                    <td className="py-2 px-3 text-right text-amber-800">{item.unit || "шт"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse min-w-[800px]">
@@ -13724,10 +13783,10 @@ const AccountingMappingSettings = ({
                 {!isCollapsed && (
                   <div className="divide-y divide-gray-100">
                     {products.map((product) => {
+                      // Manual accounting SKUs added explicitly by the user (1C / Bazis)
                       const existingSkus: string[] = Array.from(
                         new Set(
                           [
-                            product.article,
                             ...(Array.isArray(product.skuList) ? product.skuList : []),
                             ...(Array.isArray(product.accountingSkus) ? product.accountingSkus : []),
                           ]
@@ -13741,33 +13800,38 @@ const AccountingMappingSettings = ({
                       return (
                         <div
                           key={product.id}
-                          className="p-4 flex flex-col md:flex-row md:items-start justify-between gap-4 hover:bg-gray-50/50 transition-colors"
+                          className="p-3.5 flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 hover:bg-gray-50/70 transition-colors"
                         >
-                          <div className="flex items-start gap-3 md:w-1/3 shrink-0">
+                          <div className="flex items-start gap-3 lg:w-5/12 shrink-0">
                             {product.image ? (
                               <img
                                 src={product.image}
                                 alt={product.name}
-                                className="w-12 h-12 rounded-xl object-cover border border-gray-200 shrink-0"
+                                className="w-11 h-11 rounded-xl object-cover border border-gray-200 shrink-0"
                               />
                             ) : (
-                              <div className="w-12 h-12 rounded-xl bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-400 shrink-0">
-                                <Package className="w-6 h-6" />
+                              <div className="w-11 h-11 rounded-xl bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-400 shrink-0">
+                                <Package className="w-5 h-5" />
                               </div>
                             )}
 
-                            <div className="space-y-1 min-w-0">
-                              <h5 className="text-sm font-bold text-gray-900 leading-snug truncate" title={product.name}>
+                            <div className="space-y-1 min-w-0 flex-1">
+                              <h5 className="text-xs font-bold text-gray-900 leading-snug break-words">
                                 {product.name}
                               </h5>
-                              <div className="flex flex-wrap items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+                                {product.article && (
+                                  <span className="font-mono text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded text-[10px] font-semibold">
+                                    Арт. каталога: {product.article}
+                                  </span>
+                                )}
                                 {product.brand && (
-                                  <span className="text-[10px] font-bold px-1.5 py-0.5 bg-gray-100 text-gray-600 rounded">
+                                  <span className="font-bold px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-[10px]">
                                     {product.brand}
                                   </span>
                                 )}
                                 {product.price !== undefined && (
-                                  <span className="text-xs font-black text-blue-600">
+                                  <span className="font-black text-emerald-700 ml-auto">
                                     {product.price} ₽
                                   </span>
                                 )}
@@ -13776,48 +13840,33 @@ const AccountingMappingSettings = ({
                           </div>
 
                           <div className="flex-1 space-y-2">
-                            <div className="flex items-center justify-between">
-                              <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                                Артикулы в системах учета (1С, Базис-Мебельщик)
-                              </span>
+                            <div className="flex items-center justify-between text-[10px] font-bold text-gray-500 uppercase tracking-wider">
+                              <span>Привязанные артикулы 1С / Базис:</span>
                               {existingSkus.length > 0 && (
-                                <span className="text-[10px] font-bold text-emerald-600">
-                                  {existingSkus.length} артикулов привязано
+                                <span className="text-emerald-700 font-extrabold lowercase">
+                                  {existingSkus.length} шт. привязано
                                 </span>
                               )}
                             </div>
 
-                            <div className="flex flex-wrap items-center gap-1.5 min-h-[36px] p-2 bg-gray-50 rounded-xl border border-gray-200">
+                            <div className="flex flex-wrap items-center gap-1.5 min-h-[32px] p-1.5 bg-gray-50 rounded-xl border border-gray-200/90">
                               {existingSkus.length === 0 ? (
-                                <span className="text-xs text-gray-400 italic">
-                                  Артикулы не добавлены. Впишите артикул ниже
+                                <span className="text-xs text-gray-400 italic px-1">
+                                  Нет сопоставления. Введите артикул из 1С / Базис ниже
                                 </span>
                               ) : (
-                                existingSkus.map((sku, idx) => (
+                                existingSkus.map((sku) => (
                                   <span
                                     key={sku}
-                                    className={cn(
-                                      "inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-bold transition-all shadow-2xs border",
-                                      idx === 0
-                                        ? "bg-blue-600 text-white border-blue-700"
-                                        : "bg-white text-gray-800 border-gray-300"
-                                    )}
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-xs font-bold bg-blue-600 text-white shadow-2xs border border-blue-700"
                                   >
-                                    <Tag className="w-3 h-3 opacity-70" />
+                                    <Tag className="w-3 h-3 opacity-80" />
                                     <span>{sku}</span>
-                                    {idx === 0 && (
-                                      <span className="text-[9px] bg-blue-800 text-blue-100 px-1 rounded font-black uppercase">
-                                        1С
-                                      </span>
-                                    )}
                                     <button
                                       type="button"
                                       onClick={() => handleRemoveSku(product, sku)}
-                                      className={cn(
-                                        "ml-1 rounded p-0.5 hover:bg-black/10 transition-colors",
-                                        idx === 0 ? "text-white" : "text-gray-400 hover:text-red-600"
-                                      )}
-                                      title="Удалить артикул"
+                                      className="ml-1 rounded p-0.5 hover:bg-blue-800 text-white transition-colors cursor-pointer"
+                                      title="Удалить привязанный артикул"
                                     >
                                       <Trash2 className="w-3 h-3" />
                                     </button>
@@ -13829,7 +13878,7 @@ const AccountingMappingSettings = ({
                             <div className="flex items-center gap-2">
                               <input
                                 type="text"
-                                placeholder="Добавить артикул (например: 1234, 7594, 00-00123)"
+                                placeholder="Впишите артикул из 1С / Базис (например: 1234, 7594, 00-00123)"
                                 value={currentInput}
                                 onChange={(e) =>
                                   setNewSkuInputs((prev) => ({
@@ -13843,15 +13892,15 @@ const AccountingMappingSettings = ({
                                     handleAddSku(product);
                                   }
                                 }}
-                                className="flex-1 px-3 py-1.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-xs font-semibold"
+                                className="flex-1 px-2.5 py-1.5 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-xs font-semibold"
                               />
                               <button
                                 type="button"
                                 onClick={() => handleAddSku(product)}
-                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1 shrink-0"
+                                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-1 shrink-0 cursor-pointer"
                               >
                                 <Plus className="w-3.5 h-3.5" />
-                                Добавить
+                                Привязать
                               </button>
                             </div>
                           </div>
@@ -32982,6 +33031,7 @@ export default function App() {
   const [gluedEdgeDecor, setGluedEdgeDecor] = useState<Record<string, string>>(
     {},
   );
+  const [unmatchedBazisItems, setUnmatchedBazisItems] = useState<any[]>([]);
 
   const [companyInfo, setCompanyInfoRaw] = useState<any>({
     name: "",
@@ -33398,6 +33448,7 @@ export default function App() {
     const initialRotations: Record<string, boolean> = { ...rotations };
     const initialEdgeToEdge: Record<string, boolean> = { ...edgeToEdge };
     const matchedProductsList: any[] = [];
+    const unmatchedBazisItemsList: any[] = [];
     const pendingEdgebands: Array<{ decor: string; lengthM: number; rawName: string }> = [];
 
     let foundLdspSheets = 0;
@@ -33406,6 +33457,13 @@ export default function App() {
     let foundHdfM2 = 0;
     let foundFacadeM2 = 0;
     let foundEdgeMeters = 0;
+
+    const isHardwareOrAccessory = (rawName: string) => {
+      const s = rawName.toLowerCase();
+      if (/для\s+(двп|хдф|лдсп|дсп|мдф|фасад|столешниц|стеново)/i.test(s)) return true;
+      if (/гвозди|гвоздь|саморез|уголок|винт|петл|стяжк|подпяточник|ножк|опор|направляющ|заглушк|держател|кронштейн|ручк|комплект|полкодержател|эксцентрик|шкант|евровинт|конфирмат/i.test(s)) return true;
+      return false;
+    };
 
     for (let i = startIdx; i < rawData.length; i++) {
       const row = rawData[i];
@@ -33430,14 +33488,21 @@ export default function App() {
       const price = parseNum(row[colPrice]);
       const modelUnit = String(row[colModelUnit] || "").trim().toLowerCase();
 
-      // 1. Accounting SKU Mapping (Catalog Match)
+      // 1. Accounting SKU Mapping (Catalog Match) - ONLY matches against manually added accounting SKUs!
       let isCatalogMatch = false;
       if (companyData?.accountingMappingConfig?.enabled !== false && catalogProducts && catalogProducts.length > 0) {
         const normArt = article.toLowerCase();
+        const normName = rawName.toLowerCase();
+
         const foundProd = catalogProducts.find((p: any) => {
-          if (normArt && p.article && String(p.article).trim().toLowerCase() === normArt) return true;
-          if (normArt && Array.isArray(p.skuList) && p.skuList.some((s: any) => String(s).trim().toLowerCase() === normArt)) return true;
-          if (normArt && Array.isArray(p.accountingSkus) && p.accountingSkus.some((s: any) => String(s).trim().toLowerCase() === normArt)) return true;
+          const manualSkus = [
+            ...(Array.isArray(p.skuList) ? p.skuList : []),
+            ...(Array.isArray(p.accountingSkus) ? p.accountingSkus : [])
+          ].map((s: any) => String(s).trim().toLowerCase()).filter(Boolean);
+
+          if (manualSkus.length === 0) return false;
+          if (normArt && manualSkus.includes(normArt)) return true;
+          if (normName && manualSkus.includes(normName)) return true;
           return false;
         });
 
@@ -33453,28 +33518,37 @@ export default function App() {
         }
       }
 
-      // 2. Identify Category
-      const isLdsp = (lName.includes("лдсп") || lName.includes("дсп")) &&
+      // 2. Identify Category with exclusion rules
+      const hardwareOrAcc = isHardwareOrAccessory(rawName);
+
+      const isLdsp = !hardwareOrAcc && (lName.includes("лдсп") || lName.includes("дсп")) &&
         !lName.includes("хдф") && !lName.includes("двп") && !lName.includes("лхдф") &&
         !lName.includes("лдвп") && !lName.includes("кромк");
 
-      const isEdge = lName.includes("кромк") ||
+      const isEdge = !hardwareOrAcc && (
+        lName.includes("кромк") ||
         /\b0[,.]4[*xх]19\b/.test(lName) ||
         /\b0[,.]8[*xх]19\b/.test(lName) ||
         /\b1[*xх]19\b/.test(lName) ||
         /\b2[*xх]19\b/.test(lName) ||
         /\b0[,.]4[*xх]28\b/.test(lName) ||
         /\b2[*xх]28\b/.test(lName) ||
-        (modelUnit === "м" && (unit === "м" || unit.includes("пог")));
+        /\b\d+([,.]\d+)?[*xх]\d+\b/.test(lName) ||
+        unit.includes("пог") ||
+        unit === "м" ||
+        unit === "м.п." ||
+        unit === "м.п" ||
+        modelUnit.includes("м")
+      );
 
-      const isHdf = !isLdsp && !isEdge && (
+      const isHdf = !hardwareOrAcc && !isLdsp && !isEdge && (
         lName.includes("хдф") ||
         lName.includes("двп") ||
         lName.includes("лхдф") ||
         lName.includes("лдвп")
       );
 
-      const isFacade = !isLdsp && !isEdge && !isHdf && (
+      const isFacade = !hardwareOrAcc && !isLdsp && !isEdge && !isHdf && (
         lName.includes("фасад") ||
         lName.includes("пленка") ||
         lName.includes("эмаль") ||
@@ -33495,8 +33569,18 @@ export default function App() {
           .trim();
         if (!decor) decor = rawName;
 
-        const sheetsCount = calcQty > 0 ? calcQty : Math.ceil(orderQty / 5.0);
-        const areaM2 = orderQty > 0 ? orderQty : sheetsCount * 5.0;
+        // Respect raw sheet count from file
+        const isSheetUnit = unit.includes("лист") || unit.includes("шт") || modelUnit.includes("лист") || modelUnit.includes("шт");
+        let sheetsCount = 1;
+        let areaM2 = 0;
+
+        if (isSheetUnit) {
+          sheetsCount = calcQty > 0 ? calcQty : orderQty > 0 ? orderQty : 1;
+          areaM2 = sheetsCount * 5.796;
+        } else {
+          areaM2 = orderQty > 0 ? orderQty : calcQty;
+          sheetsCount = calcQty > 0 && (calcQty % 1 === 0) ? calcQty : Math.ceil(areaM2 / 5.796);
+        }
 
         foundLdspSheets += sheetsCount;
         foundLdspM2 += areaM2;
@@ -33518,15 +33602,15 @@ export default function App() {
 
         grouped[key].area += areaM2;
 
-        const numSheets = Math.max(1, Math.ceil(sheetsCount));
+        const numSheets = Math.max(1, Math.round(sheetsCount));
         const singleArea = areaM2 / numSheets;
         for (let s = 0; s < numSheets; s++) {
           grouped[key].details.push({
             id: `bazis-ldsp-${Math.random().toString(36).substring(2, 9)}`,
             type: "ЛДСП",
             name: rawName,
-            height: 1900,
-            width: Math.max(100, Math.round((singleArea * 1000000) / 1900)),
+            height: 2070,
+            width: 2800,
             thickness,
             qty: 1,
             color: decor,
@@ -33558,8 +33642,17 @@ export default function App() {
           .trim();
         if (!hColor) hColor = "Белый";
 
-        const sheetsCount = calcQty > 0 ? calcQty : Math.ceil(orderQty / 5.0);
-        const areaM2 = orderQty > 0 ? orderQty : sheetsCount * 5.0;
+        const isSheetUnit = unit.includes("лист") || unit.includes("шт") || modelUnit.includes("лист") || modelUnit.includes("шт");
+        let sheetsCount = 1;
+        let areaM2 = 0;
+
+        if (isSheetUnit) {
+          sheetsCount = calcQty > 0 ? calcQty : orderQty > 0 ? orderQty : 1;
+          areaM2 = sheetsCount * 5.796;
+        } else {
+          areaM2 = orderQty > 0 ? orderQty : calcQty;
+          sheetsCount = calcQty > 0 && (calcQty % 1 === 0) ? calcQty : Math.ceil(areaM2 / 5.796);
+        }
 
         foundHdfSheets += sheetsCount;
         foundHdfM2 += areaM2;
@@ -33582,15 +33675,15 @@ export default function App() {
 
         grouped[key].area += areaM2;
 
-        const numSheets = Math.max(1, Math.ceil(sheetsCount));
+        const numSheets = Math.max(1, Math.round(sheetsCount));
         const singleArea = areaM2 / numSheets;
         for (let s = 0; s < numSheets; s++) {
           grouped[key].details.push({
             id: `bazis-hdf-${Math.random().toString(36).substring(2, 9)}`,
             type: "ХДФ",
             name: rawName,
-            height: 1900,
-            width: Math.max(100, Math.round((singleArea * 1000000) / 1900)),
+            height: 2070,
+            width: 2800,
             thickness,
             qty: 1,
             color: hColor,
@@ -33645,16 +33738,15 @@ export default function App() {
           canRotate: false,
         });
       } else if (!isCatalogMatch && (article || rawName)) {
+        // Collect unmatched items (do NOT include in catalog products calculation automatically)
         const pQty = orderQty > 0 ? orderQty : calcQty > 0 ? calcQty : 1;
-        matchedProductsList.push({
-          id: `bazis-prod-${Math.random().toString(36).substring(2, 9)}`,
+        unmatchedBazisItemsList.push({
+          id: `unmatched-${Math.random().toString(36).substring(2, 9)}`,
           name: rawName,
           article: article,
-          price: price || 0,
-          quantity: pQty,
           qty: pQty,
-          category: "Фурнитура и комплектующие",
-          fromSkuMapping: true,
+          unit: unit || modelUnit || "шт",
+          price: price || 0,
         });
       }
     }
@@ -33698,6 +33790,7 @@ export default function App() {
       });
     }
 
+    setUnmatchedBazisItems(unmatchedBazisItemsList);
     setSheetConfigs((prev) => ({ ...prev, ...initialSheetConfigs }));
     setRotations(initialRotations);
     setEdgeToEdge((prev) => ({ ...prev, ...initialEdgeToEdge }));
@@ -33715,7 +33808,8 @@ export default function App() {
       currentProjectTotal: 0,
       currentSummaryRows: [],
       addedProducts: matchedProductsList,
-      addedServices: []
+      addedServices: [],
+      unmatchedBazisItems: unmatchedBazisItemsList,
     });
 
     setActiveTab("calculator");
@@ -33725,7 +33819,8 @@ export default function App() {
     if (foundHdfSheets > 0 || foundHdfM2 > 0) summaryParts.push(`ХДФ: ${foundHdfSheets} л. (${foundHdfM2.toFixed(1)} м²)`);
     if (foundFacadeM2 > 0) summaryParts.push(`Фасады: ${foundFacadeM2.toFixed(1)} м²`);
     if (foundEdgeMeters > 0) summaryParts.push(`Кромка: ${foundEdgeMeters.toFixed(1)} м`);
-    if (matchedProductsList.length > 0) summaryParts.push(`Товаров/фурнитуры: ${matchedProductsList.length} наим.`);
+    if (matchedProductsList.length > 0) summaryParts.push(`Сопоставлено товаров: ${matchedProductsList.length} наим.`);
+    if (unmatchedBazisItemsList.length > 0) summaryParts.push(`Несопоставленных позиций: ${unmatchedBazisItemsList.length}`);
 
     showAlert(
       "Отчет Базис-Мебельщик загружен",
@@ -34190,6 +34285,7 @@ export default function App() {
       currentSummaryRows?: Array<{ id: string; name: string; type: string; price: number; isManual?: boolean; details?: any[] }>;
       addedProducts?: any[];
       addedServices?: any[];
+      unmatchedBazisItems?: any[];
     }
   ) => {
     try {
@@ -34198,6 +34294,7 @@ export default function App() {
       const activeSummaryRows = overrideData?.currentSummaryRows || currentSummaryRows;
       const activeProducts = overrideData?.addedProducts || addedProducts;
       const activeServices = overrideData?.addedServices || addedServices;
+      const activeUnmatchedBazis = overrideData?.unmatchedBazisItems || unmatchedBazisItems;
 
       const projectId = overrideData?.projectId || currentProjectId || Date.now().toString();
       const projectName = name || currentProjectName || "Новый проект";
@@ -34258,6 +34355,7 @@ export default function App() {
           facadeThicknessOverride,
           addedProducts: activeProducts,
           addedServices: activeServices,
+          unmatchedBazisItems: activeUnmatchedBazis,
           serviceData,
           isModularProgram,
           modularAsked,
@@ -34681,6 +34779,7 @@ export default function App() {
       setFacadeThicknessOverride(d.facadeThicknessOverride);
     if (d.addedProducts) setAddedProducts(d.addedProducts);
     if (d.addedServices) setAddedServices(d.addedServices);
+    setUnmatchedBazisItems(d.unmatchedBazisItems || []);
     if (d.serviceData) setServiceData(d.serviceData);
     if (d.furnitureType) setFurnitureType(d.furnitureType);
     if (d.checklistRefused) setChecklistRefused(d.checklistRefused);
@@ -36854,6 +36953,7 @@ export default function App() {
 
           <div className={cn(activeTab === "summary" || activeTab === "checkout_current" ? "block" : "hidden")}>
             <SummaryView
+              unmatchedBazisItems={unmatchedBazisItems}
               currentProjectName={currentProjectName}
               onSaveProject={saveProject}
               loadedProjectCoefficientsSnapshot={loadedProjectCoefficientsSnapshot}
