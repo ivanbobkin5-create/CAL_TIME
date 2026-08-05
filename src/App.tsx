@@ -33315,7 +33315,7 @@ export default function App() {
 
   const isBazisReport = (data: any[][]) => {
     if (!data || data.length === 0) return false;
-    for (let i = 0; i < Math.min(data.length, 15); i++) {
+    for (let i = 0; i < Math.min(data.length, 25); i++) {
       const rowStr = (data[i] || []).map((c) => String(c).toLowerCase()).join(" ");
       if (
         rowStr.includes("расчетное количество") ||
@@ -33323,26 +33323,12 @@ export default function App() {
         rowStr.includes("количество в заказе") ||
         rowStr.includes("стоимость в заказе") ||
         rowStr.includes("ед. изм. в модели") ||
-        rowStr.includes("стоимость в изделии")
+        rowStr.includes("стоимость в изделии") ||
+        rowStr.includes("базис-мебельщик") ||
+        rowStr.includes("базис мебельщик") ||
+        rowStr.includes("спецификация на детали")
       ) {
         return true;
-      }
-    }
-    for (let i = 0; i < Math.min(data.length, 20); i++) {
-      const row = data[i] || [];
-      if (row.length >= 8) {
-        const colStr = (String(row[0] || "") + " " + String(row[1] || "") + " " + String(row[2] || "")).toLowerCase();
-        if (
-          colStr.includes("лдсп") ||
-          colStr.includes("хдф") ||
-          colStr.includes("лхдф") ||
-          colStr.includes("лдвп") ||
-          colStr.includes("кромка") ||
-          /\b0[,.]4[*xх]19\b/.test(colStr) ||
-          /\b2[*xх]19\b/.test(colStr)
-        ) {
-          return true;
-        }
       }
     }
     return false;
@@ -35328,195 +35314,6 @@ export default function App() {
 
   // Start of core calculation and utility functions
 
-  const _unusedHandleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    // Clear input value so that the onChange event will trigger if the user selects the same file again
-    event.target.value = "";
-
-    // To handle encoding issues (Windows-1251 vs UTF-8),
-    // we first read the file as an ArrayBuffer to detect/convert
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const buffer = e.target?.result as ArrayBuffer;
-      const decoder = new TextDecoder("utf-8", { fatal: true });
-
-      let decodedText = "";
-      try {
-        decodedText = decoder.decode(buffer);
-      } catch (err) {
-        // If UTF-8 fails, fallback to Windows-1251 (common for Russian exports)
-        console.log("UTF-8 decoding failed, falling back to Windows-1251");
-        const cp1251Decoder = new TextDecoder("windows-1251");
-        decodedText = cp1251Decoder.decode(buffer);
-      }
-
-      // Auto-detect semicolon if it's common in the first few lines
-      let delimiter = "";
-      const firstLines = decodedText.split("\n").slice(0, 5);
-      const semiCount = (firstLines.join("").match(/;/g) || []).length;
-      const commaCount = (firstLines.join("").match(/,/g) || []).length;
-      if (semiCount > commaCount && semiCount > 5) {
-        delimiter = ";";
-      }
-
-      Papa.parse(decodedText, {
-        skipEmptyLines: true,
-        header: false,
-        delimiter,
-        complete: (results) => {
-          const rawData = results.data as string[][];
-          if (rawData.length === 0) return;
-
-          // 1. Find the header row (searching through first 10 rows)
-          let headerRowIdx = -1;
-          for (let i = 0; i < Math.min(rawData.length, 10); i++) {
-            const row = rawData[i];
-            const hasSignificantKeywords = row.some((cell) =>
-              /название|имя|name|height|высота|width|ширина|длина|длинна|толщина|thickness|кол-во|количество|qty|цвет|color|материал|material|кромка|edge/i.test(
-                cell,
-              ),
-            );
-            if (hasSignificantKeywords) {
-              headerRowIdx = i;
-              break;
-            }
-          }
-
-          const headerRow = headerRowIdx !== -1 ? rawData[headerRowIdx] : null;
-
-          // 2. Identify Column Indices
-          let nameIdx = -1;
-          let heightIdx = -1;
-          let widthIdx = -1;
-          let thickIdx = -1;
-          let qtyIdx = -1;
-          let colorIdx = -1;
-          let materialIdx = -1;
-          const edgeCols: number[] = [];
-
-          if (headerRow) {
-            headerRow.forEach((cell, idx) => {
-              const h = (cell || "").toString().toLowerCase().trim();
-              if (/название|имя|^имя|^name$/i.test(h)) { if (nameIdx === -1) nameIdx = idx; }
-              else if (/высота|height/i.test(h)) heightIdx = idx;
-              else if (/ширина|длина|width|length/i.test(h) && h !== "высота") widthIdx = idx;
-              else if (/толщина|thickness/i.test(h)) thickIdx = idx;
-              else if (/кол-во|количество|qty|quantity/i.test(h)) qtyIdx = idx;
-              else if (/цвет|color/i.test(h)) colorIdx = idx;
-              else if (/кромка|edge/i.test(h)) {
-                if (!edgeCols.includes(idx)) edgeCols.push(idx);
-              }
-              else if (/материал|material/i.test(h)) materialIdx = idx;
-            });
-          }
-
-          // Fallbacks for common indices if not found by header
-          if (nameIdx === -1) nameIdx = 0;
-          if (heightIdx === -1) heightIdx = 1;
-          if (widthIdx === -1) widthIdx = 3;
-          if (thickIdx === -1) thickIdx = 5;
-          if (qtyIdx === -1) qtyIdx = 6;
-          if (colorIdx === -1) colorIdx = 7;
-          
-          // If no edge columns found, assume they are at indices 2 and 4 (common for this software)
-          if (edgeCols.length === 0) {
-            edgeCols.push(2);
-            edgeCols.push(4);
-          }
-
-          const parsedDetails = rawData
-            .slice(headerRowIdx + 1)
-            .map((row) => {
-              if (row.length < 3) return null;
-              const name = (row[nameIdx] || "Без имени").toString();
-              const height = parseFloat((row[heightIdx]?.toString() || "0").replace(",", "."));
-              const width = parseFloat((row[widthIdx]?.toString() || "0").replace(",", "."));
-              const thickness = parseFloat((row[thickIdx]?.toString() || "0").replace(",", "."));
-              const qty = parseInt(row[qtyIdx] || "1");
-              const color = (row[colorIdx] || (materialIdx !== -1 ? row[materialIdx] : "Default")).toString();
-              
-              const isOneEdge = (s: any) => {
-                if (s === undefined || s === null) return false;
-                const p = s.toString().toLowerCase().trim();
-                // Handle various dashes: regular, en-dash, em-dash
-                return p === "1" || p === "." || p === "-" || p === "—" || p === "–";
-              };
-              
-              const isTwoEdges = (s: any) => {
-                if (s === undefined || s === null) return false;
-                const p = s.toString().toLowerCase().trim();
-                return p === "2" || p === ":" || p === "=" || p === "==" || p === "4";
-              };
-
-              const edgeSides = { top: false, bottom: false, left: false, right: false };
-
-              // Logic for multiple edge columns or complex strings
-              if (edgeCols.length >= 4) {
-                 // Format: L1, L2, W1, W2
-                 if (isOneEdge(row[edgeCols[0]]) || isTwoEdges(row[edgeCols[0]])) edgeSides.left = true;
-                 if (isOneEdge(row[edgeCols[1]]) || isTwoEdges(row[edgeCols[1]])) edgeSides.right = true;
-                 if (isOneEdge(row[edgeCols[2]]) || isTwoEdges(row[edgeCols[2]])) edgeSides.top = true;
-                 if (isOneEdge(row[edgeCols[3]]) || isTwoEdges(row[edgeCols[3]])) edgeSides.bottom = true;
-              } else if (edgeCols.length === 2) {
-                 // Format: H, W
-                 const hE = row[edgeCols[0]];
-                 if (isTwoEdges(hE)) { edgeSides.left = true; edgeSides.right = true; }
-                 else if (isOneEdge(hE)) { edgeSides.left = true; }
-                 
-                 const wE = row[edgeCols[1]];
-                 if (isTwoEdges(wE)) { edgeSides.top = true; edgeSides.bottom = true; }
-                 else if (isOneEdge(wE)) { edgeSides.top = true; }
-              } else if (edgeCols.length === 1 || edgeCols.length > 0) {
-                 // Format: Single string or mixed
-                 const p = (row[edgeCols[0] || 0] || "").toString().toLowerCase().trim();
-                 const separator = p.includes(".") ? "." : p.includes(":") ? ":" : p.includes(",") ? "," : p.includes("|") ? "|" : p.includes(" ") ? " " : null;
-                 
-                 if (separator) {
-                    const segments = p.split(separator).map(s => s.trim());
-                    if (segments.length >= 4) {
-                       edgeSides.left = isOneEdge(segments[0]) || isTwoEdges(segments[0]);
-                        edgeSides.right = isOneEdge(segments[1]) || isTwoEdges(segments[1]);
-                        edgeSides.top = isOneEdge(segments[2]) || isTwoEdges(segments[2]);
-                        edgeSides.bottom = isOneEdge(segments[3]) || isTwoEdges(segments[3]);
-
-                     } else if (segments.length >= 2) {
-                        if (isTwoEdges(segments[0])) { edgeSides.left = true; edgeSides.right = true; }
-                        else if (isOneEdge(segments[0])) { edgeSides.left = true; }
-                        
-                        if (isTwoEdges(segments[1])) { edgeSides.top = true; edgeSides.bottom = true; }
-                        else if (isOneEdge(segments[1])) { edgeSides.top = true; }
-                     }
-                  } else {
-                     if (p.length === 4) {
-                        edgeSides.left = isOneEdge(p[0]);
-                        edgeSides.right = isOneEdge(p[1]);
-                        edgeSides.top = isOneEdge(p[2]);
-                        edgeSides.bottom = isOneEdge(p[3]);
-                     } else if (isTwoEdges(p)) {
-                        edgeSides.left = true; edgeSides.right = true;
-                     } else if (isOneEdge(p)) {
-                        edgeSides.left = true;
-                     }
-                  }
-               }
-
-               const edgeLength = ((edgeSides.top ? width : 0) + (edgeSides.bottom ? width : 0) + (edgeSides.left ? height : 0) + (edgeSides.right ? height : 0)) / 1000;
-
-               const area = (height * width) / 1000000;
-               let type: Detail["type"] = "ЛДСП";
-               const lName = name.toLowerCase();
-               const lColor = color.toLowerCase();
-               const lMaterial = (materialIdx !== -1 && row[materialIdx] ? row[materialIdx].toLowerCase() : "");
-
-               if (thickness < 10 || lName.includes("хдф") || lName.includes("двп") || lColor.includes("хдф") || lColor.includes("двп")) {
-                 type = "ХДФ";
-               } else if (lName.includes("фасад") || lColor.includes("фасад") || lMaterial.includes("фасад")) {
-                 type = "Фасад";
-               } else if (lName.includes("мдф") || lColor.includes("мдф") || lMaterial.includes("мдф")) {
-                 type = "МДФ";
-               } else if (lName.includes("столешница") || lName.includes("worktop") || lColor.includes("столешница") || lMaterial.includes("столешница")) {
 
 
 
@@ -35525,258 +35322,22 @@ export default function App() {
 
 
 
-                type = "Столешница";
-              } else if (lName.includes("стеновая") || lName.includes("backsplash") || lColor.includes("стеновая") || lMaterial.includes("стеновая")) {
-                type = "Стеновая панель";
-              } else if (lName.includes("лдсп") || lColor.includes("лдсп") || lMaterial.includes("лдсп")) {
-                type = "ЛДСП";
-              }
 
-              // Final check for Module - if it contains Module anywhere, we might want to flag it for exclusion later
-              if (lName.includes("модуль") || lColor.includes("модуль") || lMaterial.includes("модуль")) return null;
 
-              return {
-                id: Math.random().toString(36).substring(2, 9),
-                type,
-                name,
-                height,
-                edgeProc: "", // Legacy field
-                width,
-                thickness,
-                qty,
-                color,
-                area,
-                edgeLength,
-                edgeSides,
-                canRotate: type === "ХДФ",
-              };
-            })
-            .filter((d) => d !== null) as Detail[];
 
-          if (parsedDetails.length === 0) {
-            showAlert(
-              "Ошибка",
-              "Не удалось найти данные в файле. Проверьте структуру колонок.",
-            );
-            return;
-          }
 
-          const grouped: any = {};
-          const initialSheetConfigs: Record<string, SheetConfig> = {};
-          const initialExpanded: Set<string> = new Set();
 
-          const initialRotations: Record<string, boolean> = { ...rotations };
-          const initialEdgeToEdge: Record<string, boolean> = { ...edgeToEdge };
 
-          parsedDetails.forEach((d) => {
-            // Группируем по материалу (Тип + Цвет + Толщина), игнорируя Название детали
-            const key = `${d.type}|${d.color}|${d.thickness}`;
 
-            if (!grouped[key]) {
-              if (d.type === "ХДФ") initialRotations[key] = true;
-              grouped[key] = {
-                type: d.type,
-                name:
-                  d.type === "Фасад"
-                    ? "Фасады"
-                    : d.type === "ХДФ"
-                      ? "ДВП/ХДФ"
-                      : d.type === "ЛДСП"
-                        ? "ЛДСП"
-                        : d.name,
-                color: d.color,
-                thickness: d.thickness,
-                area: 0,
-                edgeLength: 0,
-                details: [],
-              };
 
-              // Sheet Config Guessing
-              const configToUse =
-                productionFormat === "contract" &&
-                productionSettings?.production
-                  ? productionSettings.production
-                  : ownProductionConfig;
 
-              const brandString = (d.color + " " + d.name).toLowerCase();
-              const brandMatch =
-                configToUse?.ldspBrands?.find((b: any) =>
-                  brandString.includes(b.brand.toLowerCase()),
-                ) ||
-                LDSP_BRANDS.find((b) =>
-                  brandString.includes(b.name.split(" ")[0].toLowerCase()),
-                );
 
-              if (brandMatch) {
-                if ("format" in brandMatch && brandMatch.format) {
-                  const [w, h] = brandMatch.format
-                    .split("x")
-                    .map((n: string) => parseInt(n));
-                  if (w && h)
-                    initialSheetConfigs[key] = {
-                      width: w,
-                      height: h,
-                      name: brandMatch.brand,
-                    };
-                } else if ("width" in brandMatch) {
-                  initialSheetConfigs[key] = {
-                    width: brandMatch.width,
-                    height: brandMatch.height,
-                    name: brandMatch.name,
-                  };
-                }
-              } else {
-                initialSheetConfigs[key] = {
-                  width: 2800,
-                  height: 2070,
-                  name: "Default",
-                };
-              }
-              initialExpanded.add(key);
-            }
 
-            grouped[key].area += d.area * d.qty;
-            grouped[key].edgeLength += d.edgeLength * d.qty;
-            for (let i = 0; i < d.qty; i++) {
-              grouped[key].details.push({
-                ...d,
-                id: `${d.id}-${i}`,
-                rotated: false,
-              });
-            }
-          });
 
-          // 3. Accounting SKU Matching Mode (Соответствие учета)
-          const isSkuMappingEnabled = companyData?.accountingMappingConfig?.enabled !== false;
-          let matchedProductsList: any[] = [];
 
-          if (isSkuMappingEnabled && catalogProducts && catalogProducts.length > 0) {
-            // Build lookup map for all normalized SKUs
-            const skuLookupMap: Record<string, any> = {};
-            catalogProducts.forEach((p: any) => {
-              const skus: string[] = [];
-              if (p.article) skus.push(String(p.article).trim());
-              if (Array.isArray(p.skuList)) {
-                p.skuList.forEach((s: any) => { if (s) skus.push(String(s).trim()); });
-              }
-              if (Array.isArray(p.accountingSkus)) {
-                p.accountingSkus.forEach((s: any) => { if (s) skus.push(String(s).trim()); });
-              }
-              skus.forEach((sku) => {
-                const norm = sku.toLowerCase();
-                if (norm) skuLookupMap[norm] = p;
-              });
-            });
 
-            if (Object.keys(skuLookupMap).length > 0) {
-              const matchedMap: Record<string, { product: any; qty: number }> = {};
 
-              rawData.forEach((row) => {
-                if (!row || !Array.isArray(row) || row.length === 0) return;
 
-                let matchedProduct: any = null;
-                let foundSku = "";
-
-                // Look for article in early columns of row
-                for (let c = 0; c < Math.min(row.length, 6); c++) {
-                  const cellVal = (row[c] || "").toString().trim().toLowerCase();
-                  if (cellVal && skuLookupMap[cellVal]) {
-                    matchedProduct = skuLookupMap[cellVal];
-                    foundSku = cellVal;
-                    break;
-                  }
-                }
-
-                if (matchedProduct) {
-                  let qty = 1;
-                  for (let c = 0; c < row.length; c++) {
-                    const cellRaw = (row[c] || "").toString().trim();
-                    if (cellRaw && cellRaw.toLowerCase() !== foundSku) {
-                      const parsed = parseInt(cellRaw.replace(/\s+/g, ""));
-                      if (!isNaN(parsed) && parsed > 0 && parsed < 10000) {
-                        qty = parsed;
-                        if (qtyIdx !== -1 && c === qtyIdx) break;
-                      }
-                    }
-                  }
-
-                  const pId = String(matchedProduct.id);
-                  if (matchedMap[pId]) {
-                    matchedMap[pId].qty += qty;
-                  } else {
-                    matchedMap[pId] = { product: matchedProduct, qty };
-                  }
-                }
-              });
-
-              matchedProductsList = Object.values(matchedMap).map((item) => ({
-                ...item.product,
-                quantity: item.qty,
-                qty: item.qty,
-                fromSkuMapping: true,
-              }));
-            }
-          }
-
-          if (matchedProductsList.length > 0) {
-            setAddedProducts((prev) => {
-              const updated = [...prev];
-              matchedProductsList.forEach((mp) => {
-                const existingIdx = updated.findIndex((p) => String(p.id) === String(mp.id));
-                if (existingIdx !== -1) {
-                  const currentQty = updated[existingIdx].quantity || updated[existingIdx].qty || 0;
-                  updated[existingIdx] = {
-                    ...updated[existingIdx],
-                    quantity: currentQty + mp.quantity,
-                    qty: currentQty + mp.quantity,
-                  };
-                } else {
-                  updated.push(mp);
-                }
-              });
-              return updated;
-            });
-
-            const totalQty = matchedProductsList.reduce((acc, item) => acc + item.quantity, 0);
-            showAlert(
-              "Соответствие учета",
-              `Распознано товаров по артикулам и добавлено в расчёт: ${matchedProductsList.length} наим. (всего ${totalQty} шт.)`
-            );
-          }
-
-          setSheetConfigs((prev) => ({ ...prev, ...initialSheetConfigs }));
-          setRotations(initialRotations);
-          setEdgeToEdge((prev) => ({ ...prev, ...initialEdgeToEdge }));
-          setExpandedResults((prev) => new Set([...prev, ...initialExpanded]));
-          setResults(grouped);
-
-          // Get file name without extension and auto-assign
-          const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
-          const newProjectId = Date.now().toString();
-          setCurrentProjectId(newProjectId);
-          setCurrentProjectName(fileNameWithoutExt);
-
-          saveProject(fileNameWithoutExt, true, {
-            projectId: newProjectId,
-            results: grouped,
-            currentProjectTotal: 0,
-            currentSummaryRows: [],
-            addedProducts: matchedProductsList,
-            addedServices: []
-          });
-
-          setActiveTab("calculator");
-        },
-        error: (error) => {
-          showAlert(
-            "Ошибка чтения",
-            "Произошла ошибка при обработке файла: " + error.message,
-          );
-        },
-      });
-    };
-    reader.readAsArrayBuffer(file);
-  };
 
   const updateSheetConfig = (key: string, brand: SheetConfig) => {
     setSheetConfigs((prev) => ({ ...prev, [key]: brand }));
