@@ -8639,16 +8639,107 @@ const isEdgeBandingProduct = (item: any, catalogProductsList: any[]) => {
 };
 
 const getProductCoefficient = (
-  product: { 
-    useCustomCoeffs?: boolean; 
-    customCoeffRetail?: number; 
-    customCoeffWholesale?: number; 
-    customCoeffDesigner?: number; 
-    category?: string;
-  }, 
+  product: any, 
   customerType: string, 
-  resolveBrandCoefficient: (cat: string, brand: string) => number
+  resolveBrandCoefficient: (cat: string, brand: string) => number,
+  coefficients?: any,
+  manufacturerCoefficients?: any,
+  productionFormat?: string
 ): number => {
+  const isFromProd = product && (product.fromProduction || product.source === "manufacturer" || product.isManufacturer || product.isManufacturerProduct);
+
+  if (isFromProd && productionFormat === "contract" && manufacturerCoefficients) {
+    // 1. Get manufacturer's coefficient for the salon
+    let mCoeff = 1;
+    if (product.useCustomCoeffs) {
+      if (product.customCoeffWholesale !== undefined && product.customCoeffWholesale > 0) {
+        mCoeff = product.customCoeffWholesale;
+      } else if (product.customCoeffRetail !== undefined && product.customCoeffRetail > 0) {
+        mCoeff = product.customCoeffRetail;
+      }
+    } else {
+      const cat = product.category || product.type || "";
+      const rawCat = cat.startsWith("cat_") ? cat.replace("cat_", "") : cat;
+      const normalizedCat = rawCat.toLowerCase();
+      
+      let baseMarkup = 1;
+      if (normalizedCat === "material" || normalizedCat === "ldsp" || normalizedCat === "лдсп") {
+        baseMarkup = manufacturerCoefficients.ldsp ?? 1;
+      } else if (normalizedCat === "hdf" || normalizedCat === "хдф") {
+        baseMarkup = manufacturerCoefficients.hdf ?? 1;
+      } else if (normalizedCat === "edge" || normalizedCat === "кромка" || normalizedCat === "кромочный") {
+        baseMarkup = manufacturerCoefficients.edge ?? 1;
+      } else if (normalizedCat === "facadecustom" || normalizedCat === "фасады" || normalizedCat === "фасад") {
+        baseMarkup = manufacturerCoefficients.facadeCustom ?? 1;
+      } else if (normalizedCat === "facadesheet") {
+        baseMarkup = manufacturerCoefficients.facadeSheet ?? 1;
+      } else if (normalizedCat === "hardware" || normalizedCat === "фурнитура") {
+        baseMarkup = manufacturerCoefficients.hardware ?? 1;
+      } else if (normalizedCat === "services" || normalizedCat === "service" || normalizedCat === "услуги") {
+        baseMarkup = manufacturerCoefficients.services ?? 1;
+      } else if (normalizedCat === "assembly" || normalizedCat === "сборка") {
+        baseMarkup = manufacturerCoefficients.assembly ?? 1;
+      } else if (normalizedCat === "delivery" || normalizedCat === "доставка") {
+        baseMarkup = manufacturerCoefficients.delivery ?? 1;
+      } else {
+        baseMarkup =
+          manufacturerCoefficients.products?.[rawCat] ??
+          manufacturerCoefficients[`cat_${rawCat}`] ??
+          manufacturerCoefficients[rawCat] ??
+          1.5;
+      }
+
+      if (manufacturerCoefficients.brandCoefficients) {
+        const prodBrand = product.brand || product.manufacturer || "";
+        const brandLower = prodBrand.toLowerCase();
+        if (brandLower) {
+          const match = manufacturerCoefficients.brandCoefficients.find(
+            (bc: any) =>
+              (bc.categoryId === `cat_${cat}` || bc.categoryId === cat) &&
+              brandLower.includes(bc.brand.toLowerCase())
+          );
+          if (match) {
+            mCoeff = match.standardSalon ?? match.wholesale ?? baseMarkup;
+          } else {
+            mCoeff = baseMarkup;
+          }
+        } else {
+          mCoeff = baseMarkup;
+        }
+      } else {
+        mCoeff = baseMarkup;
+      }
+    }
+
+    // 2. Get the salon's own coefficient for their client
+    let salonCoeff = 1;
+    if (coefficients && coefficients[customerType]) {
+      const myMarkup = coefficients[customerType];
+      const cat = product.category || product.type || "";
+      const rawCat = cat.startsWith("cat_") ? cat.replace("cat_", "") : cat;
+
+      const markupVal =
+        myMarkup.products?.[rawCat] ??
+        myMarkup[`cat_${rawCat}`] ??
+        myMarkup[rawCat] ??
+        (isDryerCategory(rawCat)
+          ? myMarkup.products?.["Посудосушитель"] ??
+            myMarkup.products?.["Посудосушители"] ??
+            myMarkup["cat_Посудосушитель"] ??
+            myMarkup["cat_Посудосушители"] ??
+            myMarkup["Посудосушитель"] ??
+            myMarkup["Посудосушители"]
+          : undefined) ??
+        1;
+      salonCoeff = markupVal;
+    } else {
+      const prodBrand = product.brand || product.manufacturer || product.brandName || "";
+      return resolveBrandCoefficient(`cat_${product?.category}`, prodBrand);
+    }
+
+    return mCoeff * salonCoeff;
+  }
+
   if (product && product.useCustomCoeffs) {
     let role: "retail" | "wholesale" | "designer" = "wholesale";
     if (customerType === "retail") role = "retail";
@@ -8741,13 +8832,21 @@ const calculateKitchenPurchasePrice = (kitchenProduct: any, catalogProductsList:
   return Math.round(totalPurchase);
 };
 
-const calculateKitchenTotalPrice = (kitchenProduct: any, catalogProductsList: any[], custType: string, brandCoeffResolver: any) => {
+const calculateKitchenTotalPrice = (
+  kitchenProduct: any,
+  catalogProductsList: any[],
+  custType: string,
+  brandCoeffResolver: any,
+  coefficients?: any,
+  manufacturerCoefficients?: any,
+  productionFormat?: string
+) => {
   let total = 0;
   if (kitchenProduct.kitchenModules && kitchenProduct.kitchenModules.length > 0) {
     kitchenProduct.kitchenModules.forEach((km: any) => {
       const mod = catalogProductsList.find((cp: any) => String(cp.id) === String(km.id));
       if (mod) {
-        const coeff = getProductCoefficient(mod, custType, brandCoeffResolver);
+        const coeff = getProductCoefficient(mod, custType, brandCoeffResolver, coefficients, manufacturerCoefficients, productionFormat);
         const price = mod.purchasePrice ? Math.round(mod.purchasePrice * coeff) : (mod.price || 0);
         total += price * (km.qty || 1);
       } else if (km.price) {
@@ -8760,7 +8859,7 @@ const calculateKitchenTotalPrice = (kitchenProduct: any, catalogProductsList: an
     kitchenProduct.kitchenHardware.forEach((hw: any) => {
       const p = hw.productId ? catalogProductsList.find((cp: any) => String(cp.id) === String(hw.productId)) : null;
       const basePurchase = hw.purchasePrice || (p ? (p.purchasePrice || p.price || 0) : 0);
-      let coeff = p ? getProductCoefficient(p, custType, brandCoeffResolver) : getProductCoefficient({ category: "Фурнитура" }, custType, brandCoeffResolver);
+      let coeff = p ? getProductCoefficient(p, custType, brandCoeffResolver, coefficients, manufacturerCoefficients, productionFormat) : getProductCoefficient({ category: "Фурнитура" }, custType, brandCoeffResolver, coefficients, manufacturerCoefficients, productionFormat);
       if (hw.isCustomCoeff && hw.customCoeff) {
         coeff = Number(hw.customCoeff);
       }
@@ -8774,7 +8873,7 @@ const calculateKitchenTotalPrice = (kitchenProduct: any, catalogProductsList: an
     kitchenProduct.kitchenCountertops.forEach((ct: any) => {
       const p = ct.productId ? catalogProductsList.find((cp: any) => String(cp.id) === String(ct.productId)) : null;
       const basePurchase = ct.purchasePrice || (p ? (p.purchasePrice || p.price || 0) : 0);
-      let coeff = p ? getProductCoefficient(p, custType, brandCoeffResolver) : getProductCoefficient({ category: "Столешницы и стеновые" }, custType, brandCoeffResolver);
+      let coeff = p ? getProductCoefficient(p, custType, brandCoeffResolver, coefficients, manufacturerCoefficients, productionFormat) : getProductCoefficient({ category: "Столешницы и стеновые" }, custType, brandCoeffResolver, coefficients, manufacturerCoefficients, productionFormat);
       if (ct.isCustomCoeff && ct.customCoeff) {
         coeff = Number(ct.customCoeff);
       }
@@ -8794,7 +8893,7 @@ const calculateKitchenTotalPrice = (kitchenProduct: any, catalogProductsList: an
     kitchenProduct.kitchenExtraProducts.forEach((extra: any) => {
       const p = extra.productId ? catalogProductsList.find((cp: any) => String(cp.id) === String(extra.productId)) : null;
       const basePurchase = extra.purchasePrice || (p ? (p.purchasePrice || p.price || 0) : 0);
-      let coeff = p ? getProductCoefficient(p, custType, brandCoeffResolver) : getProductCoefficient({ category: "Прочее" }, custType, brandCoeffResolver);
+      let coeff = p ? getProductCoefficient(p, custType, brandCoeffResolver, coefficients, manufacturerCoefficients, productionFormat) : getProductCoefficient({ category: "Прочее" }, custType, brandCoeffResolver, coefficients, manufacturerCoefficients, productionFormat);
       if (extra.isCustomCoeff && extra.customCoeff) {
         coeff = Number(extra.customCoeff);
       }
@@ -8808,7 +8907,7 @@ const calculateKitchenTotalPrice = (kitchenProduct: any, catalogProductsList: an
     if (facId) {
       const fac = catalogProductsList.find((cp: any) => String(cp.id) === String(facId));
       if (fac) {
-        const coeff = getProductCoefficient(fac, custType, brandCoeffResolver);
+        const coeff = getProductCoefficient(fac, custType, brandCoeffResolver, coefficients, manufacturerCoefficients, productionFormat);
         const price = fac.purchasePrice ? Math.round(fac.purchasePrice * coeff) : (fac.price || 0);
         total += price;
       }
@@ -8821,7 +8920,7 @@ const calculateKitchenTotalPrice = (kitchenProduct: any, catalogProductsList: an
       const reqQty = typeof rp === "object" ? (rp.qty || 1) : 1;
       const p = catalogProductsList.find((cp: any) => String(cp.id) === String(reqId));
       if (p) {
-        const coeff = getProductCoefficient(p, custType, brandCoeffResolver);
+        const coeff = getProductCoefficient(p, custType, brandCoeffResolver, coefficients, manufacturerCoefficients, productionFormat);
         const basePurchase = p.purchasePrice !== undefined ? p.purchasePrice : (p.price || 0);
         const unitPrice = Math.round(basePurchase * coeff);
         total += unitPrice * reqQty;
@@ -8959,6 +9058,7 @@ const SummaryView = ({
   setSelectedDecor,
   prices,
   companyData,
+  manufacturerCoefficients,
   facadeType,
   sheetConfigs,
   trimming,
@@ -9155,6 +9255,7 @@ const SummaryView = ({
   currentProjectId?: string | null;
   selectedProjectCoefficientsMode?: 'saved' | 'current';
   setSelectedProjectCoefficientsMode?: (mode: 'saved' | 'current') => void;
+  manufacturerCoefficients?: any;
 }) => {
   const [activeWorktopForCut, setActiveWorktopForCut] = useState<any | null>(null);
 
@@ -10230,13 +10331,19 @@ const SummaryView = ({
 
   // Add Added Products
   finalProductsList.forEach((product) => {
-    const coeff = getProductCoefficient(product, customerType, resolveBrandCoefficient);
+    const coeff = getProductCoefficient(product, customerType, resolveBrandCoefficient, coefficients, manufacturerCoefficients, productionFormat);
     const isKitchen = product.category === "Кухонные гарнитуры" || product.category === "Кухонный гарнитур";
     const displayPrice = isKitchen
-      ? calculateKitchenTotalPrice(product, catalogProducts, customerType, resolveBrandCoefficient)
+      ? calculateKitchenTotalPrice(product, catalogProducts, customerType, resolveBrandCoefficient, coefficients, manufacturerCoefficients, productionFormat)
       : (product.purchasePrice
         ? Math.round(product.purchasePrice * coeff)
         : product.price);
+
+    const isFromProd = product && (product.fromProduction || product.source === "manufacturer" || product.isManufacturer || product.isManufacturerProduct);
+    const mCoeffForPurchase = (isFromProd && productionFormat === "contract" && manufacturerCoefficients)
+      ? getProductCoefficient(product, "wholesale", resolveBrandCoefficient, coefficients, manufacturerCoefficients, productionFormat)
+      : 1;
+    const finalPurchasePrice = Math.round((product.purchasePrice || 0) * mCoeffForPurchase);
 
     const vatRate = product.vatRate ?? product.vat ?? 0;
     const includeVat = product.includeVat ?? true;
@@ -10259,8 +10366,8 @@ const SummaryView = ({
         key: String(product.id),
         image: product.image || (product.images && product.images[0]) || "",
         rawProduct: product,
-        purchasePrice: product.purchasePrice || 0,
-        rawPrice: product.purchasePrice || 0,
+        purchasePrice: finalPurchasePrice,
+        rawPrice: finalPurchasePrice,
         vat: vatRate,
         includeVat: includeVat,
         vatAmount: vatDetails.vatAmount * product.quantity,
@@ -10293,8 +10400,8 @@ const SummaryView = ({
         isCompanion: product.isCompanion,
         rawProduct: product,
         image: product.image || (product.images && product.images[0]) || "",
-        purchasePrice: product.purchasePrice || 0,
-        rawPrice: product.purchasePrice || 0,
+        purchasePrice: finalPurchasePrice,
+        rawPrice: finalPurchasePrice,
         vat: vatRate,
         includeVat: includeVat,
         vatAmount: vatDetails.vatAmount * product.quantity,
@@ -37411,6 +37518,7 @@ export default function App() {
 
           <div className={cn(activeTab === "summary" || activeTab === "checkout_current" ? "block" : "hidden")}>
             <SummaryView
+              manufacturerCoefficients={manufacturerCoefficients}
               unmatchedBazisItems={unmatchedBazisItems}
               bazisFasteners={bazisFasteners}
               setBazisFasteners={setBazisFasteners}
