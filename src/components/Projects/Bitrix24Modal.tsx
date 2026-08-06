@@ -454,6 +454,9 @@ export const Bitrix24Modal = ({
       };
 
       const getRowPurchaseSum = (row: any) => {
+        if (row.isStandardEquipment) {
+          return 0;
+        }
         const isKitchen = row.rawProduct?.category === "Кухонные гарнитуры" || row.rawProduct?.category === "Кухонный гарнитур" || row.sub === "Кухонные гарнитуры" || row.sub === "Кухонный гарнитур";
         if (isKitchen) {
           const qty = parseQty(row.qty);

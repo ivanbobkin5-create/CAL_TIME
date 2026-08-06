@@ -12989,6 +12989,10 @@ const CoefficientsTableSection = ({
   handleRemoveBrandCoefficient,
   onSaveSettings,
   showAlert,
+  isProduction = true,
+  manufacturerCoefficients = null,
+  fullManufacturerSettings = null,
+  companyId = "",
 }: {
   categories: Array<{ id: string; label: string }>;
   coefficients: any;
@@ -13005,6 +13009,10 @@ const CoefficientsTableSection = ({
   handleRemoveBrandCoefficient: (id: string) => void;
   onSaveSettings: (silent?: boolean, overrides?: any) => Promise<void>;
   showAlert: (title: string, message: string) => void;
+  isProduction?: boolean;
+  manufacturerCoefficients?: any;
+  fullManufacturerSettings?: any;
+  companyId?: string;
 }) => {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -13204,6 +13212,61 @@ const CoefficientsTableSection = ({
     }
   };
 
+  const getManufacturerCoeffValue = (rowId: string, rowLabel: string) => {
+    if (!manufacturerCoefficients) return 1.0;
+    if (manufacturerCoefficients[rowId] !== undefined) {
+      return manufacturerCoefficients[rowId];
+    }
+    if (rowId.startsWith("cat_")) {
+      const catName = rowLabel;
+      if (manufacturerCoefficients.products?.[catName] !== undefined) {
+        return manufacturerCoefficients.products[catName];
+      }
+      if (manufacturerCoefficients[rowId] !== undefined) {
+        return manufacturerCoefficients[rowId];
+      }
+    }
+    const normalizedId = rowId.replace("cat_", "").toLowerCase();
+    if (normalizedId === "hardware" || normalizedId === "фурнитура") {
+      return manufacturerCoefficients.hardware ?? 1.0;
+    }
+    if (normalizedId === "ldsp" || normalizedId === "лдсп") {
+      return manufacturerCoefficients.ldsp ?? 1.0;
+    }
+    if (normalizedId === "hdf" || normalizedId === "хдф") {
+      return manufacturerCoefficients.hdf ?? 1.0;
+    }
+    if (normalizedId === "edge" || normalizedId === "кромка") {
+      return manufacturerCoefficients.edge ?? 1.0;
+    }
+    if (normalizedId === "facadecustom" || normalizedId === "фасады" || normalizedId === "фасад") {
+      return manufacturerCoefficients.facadeCustom ?? 1.0;
+    }
+    if (normalizedId === "facadesheet") {
+      return manufacturerCoefficients.facadeSheet ?? 1.0;
+    }
+    return 1.0;
+  };
+
+  const getMfgBrandCoeffValue = (bcCategoryId: string, bcBrand: string) => {
+    if (!fullManufacturerSettings || !fullManufacturerSettings.brandCoefficients) {
+      return getManufacturerCoeffValue(bcCategoryId, "");
+    }
+    const brandLower = bcBrand.toLowerCase();
+    const match = fullManufacturerSettings.brandCoefficients.find(
+      (mBc: any) =>
+        mBc.categoryId === bcCategoryId &&
+        brandLower.includes(mBc.brand.toLowerCase())
+    );
+    if (match) {
+      if (companyId && match.salonCoeffs?.[companyId] !== undefined) {
+        return match.salonCoeffs[companyId];
+      }
+      return match.standardSalon ?? match.wholesale ?? getManufacturerCoeffValue(bcCategoryId, "");
+    }
+    return getManufacturerCoeffValue(bcCategoryId, "");
+  };
+
   return (
     <div>
       {/* Unsaved Changes Banner */}
@@ -13250,38 +13313,49 @@ const CoefficientsTableSection = ({
                 Категория
               </th>
 
-              <th className="py-3 px-4 text-[10px] font-bold text-gray-600 uppercase tracking-wider border-l border-gray-200 min-w-[100px]">
-                Розница
-              </th>
-
-              <th className="py-3 px-4 text-[10px] font-bold text-gray-600 uppercase tracking-wider border-l border-gray-200 min-w-[100px]">
-                Дизайнеры
-              </th>
-
-              <th className="py-3 px-4 text-[10px] font-bold text-blue-700 uppercase tracking-wider bg-blue-50/60 min-w-[130px] border-l border-blue-200">
-                <div className="flex items-center gap-1.5">
-                  <Star className="w-3.5 h-3.5 fill-blue-600 text-blue-600" />
-                  <span>Салоны (Стандарт)</span>
-                </div>
-              </th>
-
-              {salonsInTable.map((salon) => (
-                <th
-                  key={salon.id}
-                  className="py-3 px-4 text-[10px] font-bold text-gray-800 uppercase tracking-wider bg-gray-100/70 min-w-[130px] border-l border-gray-200"
-                >
-                  <div className="flex items-center gap-1">
-                    <span className="truncate">{salon.name}</span>
-                    <span className="text-[9px] text-blue-600 font-extrabold bg-blue-100 px-1.5 py-0.5 rounded-full">Спец</span>
-                  </div>
+              {!isProduction && (
+                <th className="py-3 px-4 text-[10px] font-bold text-amber-700 uppercase tracking-wider border-l border-amber-200 min-w-[120px] bg-amber-50/20">
+                  От производства
                 </th>
-              ))}
+              )}
+
+              <th className="py-3 px-4 text-[10px] font-bold text-gray-600 uppercase tracking-wider border-l border-gray-200 min-w-[100px]">
+                {isProduction ? "Розница" : "Наша Розница"}
+              </th>
+
+              <th className="py-3 px-4 text-[10px] font-bold text-gray-600 uppercase tracking-wider border-l border-gray-200 min-w-[100px]">
+                {isProduction ? "Дизайнеры" : "Наши Дизайнеры"}
+              </th>
+
+              {isProduction && (
+                <>
+                  <th className="py-3 px-4 text-[10px] font-bold text-blue-700 uppercase tracking-wider bg-blue-50/60 min-w-[130px] border-l border-blue-200">
+                    <div className="flex items-center gap-1.5">
+                      <Star className="w-3.5 h-3.5 fill-blue-600 text-blue-600" />
+                      <span>Салоны (Стандарт)</span>
+                    </div>
+                  </th>
+
+                  {salonsInTable.map((salon) => (
+                    <th
+                      key={salon.id}
+                      className="py-3 px-4 text-[10px] font-bold text-gray-800 uppercase tracking-wider bg-gray-100/70 min-w-[130px] border-l border-gray-200"
+                    >
+                      <div className="flex items-center gap-1">
+                        <span className="truncate">{salon.name}</span>
+                        <span className="text-[9px] text-blue-600 font-extrabold bg-blue-100 px-1.5 py-0.5 rounded-full">Спец</span>
+                      </div>
+                    </th>
+                  ))}
+                </>
+              )}
             </tr>
           </thead>
           <tbody>
             {categories.map((row: any, idx) => {
               const catName = row.id.startsWith("cat_") ? row.label : null;
               const isProduct = row.id.startsWith("cat_");
+              const manufacturerCoeffVal = getManufacturerCoeffValue(row.id, row.label);
 
               return (
                 <tr
@@ -13305,6 +13379,13 @@ const CoefficientsTableSection = ({
                       <span>{row.label}</span>
                     </div>
                   </td>
+
+                  {/* Manufacturer column (if salon/designer) */}
+                  {!isProduction && (
+                    <td className="py-1.5 px-4 border-l border-amber-200 bg-amber-50/10 text-xs font-bold text-amber-800 text-right">
+                      {String(manufacturerCoeffVal).replace(".", ",")}
+                    </td>
+                  )}
 
                   {/* Retail column */}
                   <td className="py-1.5 px-3 border-l border-gray-100">
@@ -13330,34 +13411,39 @@ const CoefficientsTableSection = ({
                     />
                   </td>
 
-                  {/* Standard Salon column */}
-                  <td className="py-1.5 px-3 border-l border-blue-100 bg-blue-50/10">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={drafts[`cat_stdSalon_${row.id}`] ?? ""}
-                      onChange={(e) => handleCellChange(`cat_stdSalon_${row.id}`, e.target.value)}
-                      className="w-full px-2 py-1.5 border border-blue-200 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none bg-white hover:border-blue-300 transition-colors"
-                      placeholder="1,2"
-                    />
-                  </td>
+                  {/* Standard Salon and Salon specific columns only for manufacturers */}
+                  {isProduction && (
+                    <>
+                      {/* Standard Salon column */}
+                      <td className="py-1.5 px-3 border-l border-blue-100 bg-blue-50/10">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={drafts[`cat_stdSalon_${row.id}`] ?? ""}
+                          onChange={(e) => handleCellChange(`cat_stdSalon_${row.id}`, e.target.value)}
+                          className="w-full px-2 py-1.5 border border-blue-200 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none bg-white hover:border-blue-300 transition-colors"
+                          placeholder="1,2"
+                        />
+                      </td>
 
-                  {/* Salon specific columns */}
-                  {salonsInTable.map((salon) => (
-                    <td
-                      key={salon.id}
-                      className="py-1.5 px-3 border-l border-gray-100 bg-gray-50/20"
-                    >
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={drafts[`cat_salon_${salon.id}_${row.id}`] ?? ""}
-                        onChange={(e) => handleCellChange(`cat_salon_${salon.id}_${row.id}`, e.target.value)}
-                        className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none bg-white hover:border-blue-400 transition-colors shadow-2xs"
-                        placeholder="По умолч."
-                      />
-                    </td>
-                  ))}
+                      {/* Salon specific columns */}
+                      {salonsInTable.map((salon) => (
+                        <td
+                          key={salon.id}
+                          className="py-1.5 px-3 border-l border-gray-100 bg-gray-50/20"
+                        >
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={drafts[`cat_salon_${salon.id}_${row.id}`] ?? ""}
+                            onChange={(e) => handleCellChange(`cat_salon_${salon.id}_${row.id}`, e.target.value)}
+                            className="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none bg-white hover:border-blue-400 transition-colors shadow-2xs"
+                            placeholder="По умолч."
+                          />
+                        </td>
+                      ))}
+                    </>
+                  )}
                 </tr>
               );
             })}
@@ -13378,92 +13464,113 @@ const CoefficientsTableSection = ({
                 <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 uppercase">
                   Категория / Бренд
                 </th>
+                {!isProduction && (
+                  <th className="py-2.5 px-4 text-[10px] font-bold text-amber-700 uppercase bg-amber-50/40 border-l border-amber-200 min-w-[120px]">
+                    От производства
+                  </th>
+                )}
                 <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 uppercase border-l border-gray-200">
                   Розница
                 </th>
                 <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 uppercase border-l border-gray-200">
                   Дизайнер
                 </th>
-                <th className="py-2.5 px-4 text-[10px] font-bold text-blue-700 uppercase bg-blue-50/40 border-l border-blue-200 text-center">
-                  Салон
-                </th>
-                {salonsInTable.map((s) => (
-                  <th
-                    key={s.id}
-                    className="py-2.5 px-4 text-[10px] font-bold text-gray-700 uppercase bg-gray-50 border-l border-gray-200"
-                  >
-                    {s.name}
-                  </th>
-                ))}
+                {isProduction && (
+                  <>
+                    <th className="py-2.5 px-4 text-[10px] font-bold text-blue-700 uppercase bg-blue-50/40 border-l border-blue-200 text-center">
+                      Салон
+                    </th>
+                    {salonsInTable.map((s) => (
+                      <th
+                        key={s.id}
+                        className="py-2.5 px-4 text-[10px] font-bold text-gray-700 uppercase bg-gray-50 border-l border-gray-200"
+                      >
+                        {s.name}
+                      </th>
+                    ))}
+                  </>
+                )}
                 <th className="py-2.5 px-4 bg-gray-50"></th>
               </tr>
             </thead>
             <tbody>
-              {ownProductionConfig.brandCoefficients?.map((bc) => (
-                <tr
-                  key={bc.id}
-                  className="border-b border-gray-100 hover:bg-gray-50/50 transition-colors"
-                >
-                  <td className="py-2.5 px-4 border-r border-gray-100">
-                    <div className="font-bold text-gray-800 text-[11px]">
-                      {bc.brand}
-                    </div>
-                    <div className="text-[9px] text-gray-400 font-bold uppercase">
-                      {categories.find((c) => c.id === bc.categoryId)?.label}
-                    </div>
-                  </td>
-                  <td className="py-1.5 px-3">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={drafts[`brand_retail_${bc.id}`] ?? ""}
-                      onChange={(e) => handleCellChange(`brand_retail_${bc.id}`, e.target.value)}
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                  </td>
-                  <td className="py-1.5 px-3 border-l border-gray-100">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={drafts[`brand_designer_${bc.id}`] ?? ""}
-                      onChange={(e) => handleCellChange(`brand_designer_${bc.id}`, e.target.value)}
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                  </td>
-                  <td className="py-1.5 px-3 border-l border-blue-100 bg-blue-50/10">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={drafts[`brand_stdSalon_${bc.id}`] ?? ""}
-                      onChange={(e) => handleCellChange(`brand_stdSalon_${bc.id}`, e.target.value)}
-                      className="w-full px-2 py-1.5 border border-blue-200 rounded-lg text-xs font-bold text-right bg-white focus:ring-2 focus:ring-blue-500 outline-none"
-                    />
-                  </td>
-                  {salonsInTable.map((s) => (
-                    <td
-                      key={s.id}
-                      className="py-1.5 px-3 border-l border-gray-100"
-                    >
+              {ownProductionConfig.brandCoefficients?.map((bc) => {
+                const mfgBrandCoeffVal = getMfgBrandCoeffValue(bc.categoryId, bc.brand);
+                return (
+                  <tr
+                    key={bc.id}
+                    className="border-b border-gray-100 hover:bg-gray-50/50 transition-colors"
+                  >
+                    <td className="py-2.5 px-4 border-r border-gray-100">
+                      <div className="font-bold text-gray-800 text-[11px]">
+                        {bc.brand}
+                      </div>
+                      <div className="text-[9px] text-gray-400 font-bold uppercase">
+                        {categories.find((c) => c.id === bc.categoryId)?.label}
+                      </div>
+                    </td>
+                    {!isProduction && (
+                      <td className="py-1.5 px-4 border-l border-amber-200 bg-amber-50/10 text-xs font-bold text-amber-800 text-right">
+                        {String(mfgBrandCoeffVal).replace(".", ",")}
+                      </td>
+                    )}
+                    <td className="py-1.5 px-3">
                       <input
                         type="text"
                         inputMode="decimal"
-                        value={drafts[`brand_salon_${s.id}_${bc.id}`] ?? ""}
-                        onChange={(e) => handleCellChange(`brand_salon_${s.id}_${bc.id}`, e.target.value)}
+                        value={drafts[`brand_retail_${bc.id}`] ?? ""}
+                        onChange={(e) => handleCellChange(`brand_retail_${bc.id}`, e.target.value)}
                         className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none"
                       />
                     </td>
-                  ))}
-                  <td className="py-1.5 px-3 text-center">
-                    <button
-                      onClick={() => handleRemoveBrandCoefficient(bc.id)}
-                      className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Удалить коэффициент бренда"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+                    <td className="py-1.5 px-3 border-l border-gray-100">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={drafts[`brand_designer_${bc.id}`] ?? ""}
+                        onChange={(e) => handleCellChange(`brand_designer_${bc.id}`, e.target.value)}
+                        className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                    </td>
+                    {isProduction && (
+                      <>
+                        <td className="py-1.5 px-3 border-l border-blue-100 bg-blue-50/10">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={drafts[`brand_stdSalon_${bc.id}`] ?? ""}
+                            onChange={(e) => handleCellChange(`brand_stdSalon_${bc.id}`, e.target.value)}
+                            className="w-full px-2 py-1.5 border border-blue-200 rounded-lg text-xs font-bold text-right bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                          />
+                        </td>
+                        {salonsInTable.map((s) => (
+                          <td
+                            key={s.id}
+                            className="py-1.5 px-3 border-l border-gray-100"
+                          >
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={drafts[`brand_salon_${s.id}_${bc.id}`] ?? ""}
+                              onChange={(e) => handleCellChange(`brand_salon_${s.id}_${bc.id}`, e.target.value)}
+                              className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none"
+                            />
+                          </td>
+                        ))}
+                      </>
+                    )}
+                    <td className="py-1.5 px-3 text-center">
+                      <button
+                        onClick={() => handleRemoveBrandCoefficient(bc.id)}
+                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        title="Удалить коэффициент бренда"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -14326,6 +14433,7 @@ const SettingsView = ({
   setProductCategories,
   productionFormat,
   productionSettings,
+  manufacturerCoefficients,
   companyType,
   onSaveSettings,
   salonsUsingMe,
@@ -14416,6 +14524,7 @@ const SettingsView = ({
   setProductCategories: React.Dispatch<React.SetStateAction<string[]>>;
   productionFormat: string;
   productionSettings: any;
+  manufacturerCoefficients?: any;
   companyType?: string;
   onSaveSettings: (silent?: boolean, overrides?: any) => Promise<void>;
   salonsUsingMe: any[];
@@ -14905,9 +15014,7 @@ const SettingsView = ({
         {[
           { id: "general", label: "Общие", icon: SettingsIcon },
           { id: "services", label: "Услуги", icon: Truck },
-          ...(isProduction
-            ? [{ id: "production", label: "Производство", icon: Factory }]
-            : []),
+          { id: "production", label: "Наценки", icon: Sliders },
           { id: "promotions", label: "Акции", icon: Percent },
           { id: "landing", label: "Внешний сайт (Каталог)", icon: Globe },
           { id: "catalog", label: "Готовая мебель (Меню)", icon: Layers },
@@ -16866,8 +16973,27 @@ const SettingsView = ({
           </div>
         )}
 
-        {activeSubTab === "production" && isProduction && (
+        {activeSubTab === "production" && (
           <div className="space-y-12 animate-in fade-in duration-500">
+            {!isProduction && (
+              <div className="p-6 bg-blue-50 border border-blue-100 rounded-3xl mb-8">
+                <div className="flex gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-white flex items-center justify-center text-blue-600 shadow-sm shrink-0">
+                    <Info className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-blue-900 mb-1">
+                      Настройка наценок салона
+                    </h4>
+                    <p className="text-xs text-blue-700 font-medium leading-relaxed font-sans">
+                      В этой вкладке вы можете настроить ваши собственные наценки для розничных клиентов и дизайнеров.
+                      В колонке <strong className="text-blue-900 font-bold">«От производства»</strong> отображаются коэффициенты, установленные для вас мебельным производством. 
+                      Ваши наценки («Наша Розница» и «Наши Дизайнеры») будут перемножаться с ценой производства, формируя итоговую стоимость для клиентов.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
             {false && (
               <section className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm">
                 <div className="flex items-center justify-between mb-6">
@@ -16951,68 +17077,70 @@ const SettingsView = ({
               </section>
             )}
 
-            <section>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">
-                  Подключенные клиенты
-                </h3>
-              </div>
-              <p className="text-xs text-gray-500 mb-6">
-                Список салонов и дизайнеров, работающих с вами. Включите «Спец
-                условия», чтобы задать индивидуальные коэффициенты.
-              </p>
+            {isProduction && (
+              <section>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">
+                    Подключенные клиенты
+                  </h3>
+                </div>
+                <p className="text-xs text-gray-500 mb-6">
+                  Список салонов и дизайнеров, работающих с вами. Включите «Спец
+                  условия», чтобы задать индивидуальные коэффициенты.
+                </p>
 
-              {salonsUsingMe.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  {salonsUsingMe.map((salon) => {
-                    const isSpecial =
-                      ownProductionConfig.specialConditionIds?.includes(
-                        salon.id,
-                      );
-                    return (
-                      <div
-                        key={salon.id}
-                        className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex flex-col justify-between gap-4"
-                      >
-                        <div className="flex items-center justify-between">
-                          <div>
-                            <div className="font-bold text-gray-800">
-                              {salon.name}
-                            </div>
-                            <div className="text-[10px] text-gray-400 uppercase font-medium">
-                              {salon.city} | {salon.type}
+                {salonsUsingMe.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {salonsUsingMe.map((salon) => {
+                      const isSpecial =
+                        ownProductionConfig.specialConditionIds?.includes(
+                          salon.id,
+                        );
+                      return (
+                        <div
+                          key={salon.id}
+                          className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex flex-col justify-between gap-4"
+                        >
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="font-bold text-gray-800">
+                                {salon.name}
+                              </div>
+                              <div className="text-[10px] text-gray-400 uppercase font-medium">
+                                {salon.city} | {salon.type}
+                              </div>
                             </div>
                           </div>
+                          <button
+                            onClick={() => toggleSpecialCondition(salon.id)}
+                            className={cn(
+                              "w-full py-2 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2",
+                              isSpecial
+                                ? "bg-blue-600 text-white shadow-md shadow-blue-100"
+                                : "bg-white text-gray-600 border border-gray-200 hover:border-blue-300 hover:text-blue-600",
+                            )}
+                          >
+                            {isSpecial ? (
+                              <CheckCircle2 className="w-4 h-4" />
+                            ) : (
+                              <div className="w-4 h-4" />
+                            )}
+                            Спец условия {isSpecial ? "активны" : "не активны"}
+                          </button>
                         </div>
-                        <button
-                          onClick={() => toggleSpecialCondition(salon.id)}
-                          className={cn(
-                            "w-full py-2 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2",
-                            isSpecial
-                              ? "bg-blue-600 text-white shadow-md shadow-blue-100"
-                              : "bg-white text-gray-600 border border-gray-200 hover:border-blue-300 hover:text-blue-600",
-                          )}
-                        >
-                          {isSpecial ? (
-                            <CheckCircle2 className="w-4 h-4" />
-                          ) : (
-                            <div className="w-4 h-4" />
-                          )}
-                          Спец условия {isSpecial ? "активны" : "не активны"}
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="p-8 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200 text-center">
-                  <Users className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                  <p className="text-sm text-gray-500">
-                    Нет подключенных клиентов
-                  </p>
-                </div>
-              )}
-            </section>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="p-8 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-200 text-center">
+                    <Users className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                    <p className="text-sm text-gray-500">
+                      Нет подключенных клиентов
+                    </p>
+                  </div>
+                )}
+              </section>
+            )}
 
             <section className="mb-12">
               <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider mb-4">
@@ -17043,7 +17171,7 @@ const SettingsView = ({
             </section>
 
             {/* Material work costs section for Area calculation mode */}
-            {(calcMode === "area" ||
+            {isProduction && (calcMode === "area" ||
               (ownProductionConfig.clientCalcModesEnabled &&
                 Object.values(ownProductionConfig.clientCalcModes || {}).includes("area"))) && (
               <MaterialWorkCostsSection
@@ -17057,7 +17185,7 @@ const SettingsView = ({
             )}
 
             {/* Material work costs section for Sheet calculation mode */}
-            {(calcMode === "sheet" ||
+            {isProduction && (calcMode === "sheet" ||
               (ownProductionConfig.clientCalcModesEnabled &&
                 Object.values(ownProductionConfig.clientCalcModes || {}).includes("sheet"))) && (
               <MaterialWorkCostsSection
@@ -17073,12 +17201,13 @@ const SettingsView = ({
             <section>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-bold text-gray-400 uppercase tracking-wider">
-                  Коэффициенты наценки и коэффициенты клиентов
+                  {isProduction ? "Коэффициенты наценки и коэффициенты клиентов" : "Коэффициенты наценки салона"}
                 </h3>
               </div>
               <p className="text-xs text-gray-500 mb-6 font-medium">
-                В этой таблице вы управляете всеми наценками: для розничных
-                клиентов, дизайнеров и ваших салонов-партнеров.
+                {isProduction 
+                  ? "В этой таблице вы управляете всеми наценками: для розничных клиентов, дизайнеров и ваших салонов-партнеров."
+                  : "В этой таблице вы настраиваете наценки на категории товаров для розничных покупателей и дизайнеров."}
               </p>
 
               <CoefficientsTableSection
@@ -17097,6 +17226,10 @@ const SettingsView = ({
                 handleRemoveBrandCoefficient={handleRemoveBrandCoefficient}
                 onSaveSettings={onSaveSettings}
                 showAlert={showAlert}
+                isProduction={isProduction}
+                manufacturerCoefficients={manufacturerCoefficients}
+                fullManufacturerSettings={productionSettings}
+                companyId={companyData?.id}
               />
             </section>
           </div>
@@ -38137,6 +38270,7 @@ export default function App() {
               setProductCategories={setProductCategories}
               productionFormat={productionFormat}
               productionSettings={productionSettings}
+              manufacturerCoefficients={manufacturerCoefficients}
               companyType={companyData?.type}
               onSaveSettings={saveGeneralSettings}
               salonsUsingMe={salonsUsingMe}

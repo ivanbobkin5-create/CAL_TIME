@@ -244,7 +244,10 @@ export const ProjectAnalyticsModal = ({
       let baseCost = row.rawPrice || (row.coef ? row.price / row.coef : row.price) || 0;
       let appliedMCoeff = 1;
 
-      if (isFromProduction) {
+      if (row.isStandardEquipment) {
+        baseCost = 0;
+        appliedMCoeff = 1;
+      } else if (isFromProduction) {
         const mCoeff = getManufacturerCoeffForRow(row, mCoeffs, projectCompanyId);
         if (row.rawProduct?.purchasePrice !== undefined) {
           baseCost = row.rawProduct.purchasePrice;
@@ -373,7 +376,10 @@ export const ProjectAnalyticsModal = ({
         let baseUnitCost = row.rawPrice || (coef ? (totalRev / qty) / coef : (totalRev / qty)) || 0;
         let appliedMCoeff = 1;
 
-        if (isFromProduction) {
+        if (row.isStandardEquipment) {
+          baseUnitCost = 0;
+          appliedMCoeff = 1;
+        } else if (isFromProduction) {
           const mCoeff = getManufacturerCoeffForRow(row, mCoeffs, projectCompanyId);
           if (row.rawProduct?.purchasePrice !== undefined) {
             baseUnitCost = row.rawProduct.purchasePrice;
