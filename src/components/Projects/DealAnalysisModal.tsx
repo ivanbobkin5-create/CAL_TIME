@@ -30,49 +30,64 @@ interface Project {
   specification?: any;
 }
 
-const getManufacturerCoefficient = (category: string, brand: string, mCoeffs: any) => {
+const getManufacturerCoefficient = (category: string, brand: string, mCoeffs: any, projectCompanyId?: string) => {
   if (!mCoeffs) return 1;
+
+  // If mCoeffs is the entire production settings doc, extract the correct subset
+  let coeffsObj = mCoeffs;
+  if (mCoeffs.salonCoefficients || mCoeffs.standardCoefficients) {
+    if (mCoeffs.salonCoefficients && projectCompanyId && mCoeffs.salonCoefficients[projectCompanyId]) {
+      coeffsObj = mCoeffs.salonCoefficients[projectCompanyId];
+    } else if (mCoeffs.standardCoefficients) {
+      coeffsObj = mCoeffs.standardCoefficients;
+    }
+  }
 
   const rawCat = category || "";
   let baseMarkup = 1;
 
-  if (mCoeffs[`cat_${rawCat}`] !== undefined) {
-    baseMarkup = mCoeffs[`cat_${rawCat}`];
-  } else if (mCoeffs[rawCat] !== undefined) {
-    baseMarkup = mCoeffs[rawCat];
-  } else if (mCoeffs.products && mCoeffs.products[rawCat] !== undefined) {
-    baseMarkup = mCoeffs.products[rawCat];
+  if (coeffsObj[`cat_${rawCat}`] !== undefined) {
+    baseMarkup = coeffsObj[`cat_${rawCat}`];
+  } else if (coeffsObj[rawCat] !== undefined) {
+    baseMarkup = coeffsObj[rawCat];
+  } else if (coeffsObj.products && coeffsObj.products[rawCat] !== undefined) {
+    baseMarkup = coeffsObj.products[rawCat];
   } else {
     const normalizedCat = rawCat.toLowerCase();
     if (normalizedCat === "material" || normalizedCat === "ldsp" || normalizedCat === "лдсп") {
-      baseMarkup = mCoeffs.ldsp ?? 1;
+      baseMarkup = coeffsObj.ldsp ?? 1;
     } else if (normalizedCat === "hdf" || normalizedCat === "хдф") {
-      baseMarkup = mCoeffs.hdf ?? 1;
+      baseMarkup = coeffsObj.hdf ?? 1;
     } else if (normalizedCat === "edge" || normalizedCat === "кромка") {
-      baseMarkup = mCoeffs.edge ?? 1;
+      baseMarkup = coeffsObj.edge ?? 1;
     } else if (normalizedCat === "facadecustom" || normalizedCat === "фасады" || normalizedCat === "фасад") {
-      baseMarkup = mCoeffs.facadeCustom ?? 1;
+      baseMarkup = coeffsObj.facadeCustom ?? 1;
     } else if (normalizedCat === "facadesheet") {
-      baseMarkup = mCoeffs.facadeSheet ?? 1;
+      baseMarkup = coeffsObj.facadeSheet ?? 1;
     } else if (normalizedCat === "hardware" || normalizedCat === "фурнитура") {
-      baseMarkup = mCoeffs.hardware ?? 1;
+      baseMarkup = coeffsObj.hardware ?? 1;
     } else if (normalizedCat === "services" || normalizedCat === "service" || normalizedCat === "услуги") {
-      baseMarkup = mCoeffs.services ?? 1;
+      baseMarkup = coeffsObj.services ?? 1;
     } else if (normalizedCat === "assembly" || normalizedCat === "сборка") {
-      baseMarkup = mCoeffs.assembly ?? 1;
+      baseMarkup = coeffsObj.assembly ?? 1;
     } else if (normalizedCat === "delivery" || normalizedCat === "доставка") {
-      baseMarkup = mCoeffs.delivery ?? 1;
+      baseMarkup = coeffsObj.delivery ?? 1;
     }
   }
 
-  if (mCoeffs.brandCoefficients) {
+  // Brand coefficients can be stored either on coeffsObj or on the root mCoeffs doc
+  const brandCoeffsSource = mCoeffs.brandCoefficients || coeffsObj.brandCoefficients;
+  if (brandCoeffsSource) {
     const brandLower = brand ? brand.toLowerCase() : "";
-    const match = mCoeffs.brandCoefficients.find(
+    const match = brandCoeffsSource.find(
       (bc: any) =>
         (bc.categoryId === `cat_${rawCat}` || bc.categoryId === rawCat) &&
         brandLower.includes(bc.brand.toLowerCase()),
     );
     if (match) {
+      if (projectCompanyId && match.salonCoeffs?.[projectCompanyId] !== undefined) {
+        return match.salonCoeffs[projectCompanyId];
+      }
       return match.standardSalon ?? match.wholesale ?? baseMarkup;
     }
   }
@@ -80,7 +95,7 @@ const getManufacturerCoefficient = (category: string, brand: string, mCoeffs: an
   return baseMarkup;
 };
 
-const getManufacturerCoeffForRow = (row: any, mCoeffs: any) => {
+const getManufacturerCoeffForRow = (row: any, mCoeffs: any, projectCompanyId?: string) => {
   if (!mCoeffs) return 1;
   const rawProd = row.rawProduct;
   if (rawProd && rawProd.useCustomCoeffs) {
@@ -95,7 +110,7 @@ const getManufacturerCoeffForRow = (row: any, mCoeffs: any) => {
   const brand = row.brand || (rawProd && (rawProd.brand || rawProd.manufacturer)) || "";
   const category = row.type === "material" ? "ldsp" : (row.category || (rawProd && rawProd.category) || row.type);
   
-  return getManufacturerCoefficient(category, brand, mCoeffs);
+  return getManufacturerCoefficient(category, brand, mCoeffs, projectCompanyId);
 };
 
 export const DealAnalysisModal = ({
@@ -226,7 +241,7 @@ export const DealAnalysisModal = ({
       let appliedMCoeff = 1;
 
       if (isFromProduction) {
-        const mCoeff = getManufacturerCoeffForRow(row, mCoeffs);
+        const mCoeff = getManufacturerCoeffForRow(row, mCoeffs, projectCompanyId);
         if (row.rawProduct?.purchasePrice !== undefined) {
           baseCost = row.rawProduct.purchasePrice;
           appliedMCoeff = mCoeff;
@@ -276,17 +291,22 @@ export const DealAnalysisModal = ({
       const qty = parseFloat(row.qty) || 1;
       const clientTotal = row.netPaid !== undefined ? row.netPaid : (row.total || 0);
 
+      const projectCompanyId =
+        project?.companyId ||
+        project?.data?.companyId ||
+        project?.data?.companyData?.id;
+
       if (rowNameLower.includes("сборк") || rowNameLower.includes("монтаж")) {
         clientAssemblyPrice += clientTotal;
         // production assembly is usually around 70% of the retail price if delegated to production
         if (row.isFromProduction || row.isProductionService) {
-          const mCoeff = getManufacturerCoeffForRow(row, mCoeffs);
+          const mCoeff = getManufacturerCoeffForRow(row, mCoeffs, projectCompanyId);
           productionAssemblyCost += Math.round((row.rawPrice ? (row.rawPrice * mCoeff) : (clientTotal * 0.7)) * qty);
         }
       } else if (rowNameLower.includes("доставк")) {
         clientDeliveryPrice += clientTotal;
         if (row.isFromProduction || row.isProductionService) {
-          const mCoeff = getManufacturerCoeffForRow(row, mCoeffs);
+          const mCoeff = getManufacturerCoeffForRow(row, mCoeffs, projectCompanyId);
           productionDeliveryCost += Math.round((row.rawPrice ? (row.rawPrice * mCoeff) : clientTotal) * qty);
         }
       }
