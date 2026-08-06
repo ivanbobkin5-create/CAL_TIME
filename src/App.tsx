@@ -13323,9 +13323,11 @@ const CoefficientsTableSection = ({
                 {isProduction ? "Розница" : "Наша Розница"}
               </th>
 
-              <th className="py-3 px-4 text-[10px] font-bold text-gray-600 uppercase tracking-wider border-l border-gray-200 min-w-[100px]">
-                {isProduction ? "Дизайнеры" : "Наши Дизайнеры"}
-              </th>
+              {isProduction && (
+                <th className="py-3 px-4 text-[10px] font-bold text-gray-600 uppercase tracking-wider border-l border-gray-200 min-w-[100px]">
+                  Дизайнеры
+                </th>
+              )}
 
               {isProduction && (
                 <>
@@ -13400,16 +13402,18 @@ const CoefficientsTableSection = ({
                   </td>
 
                   {/* Designer column */}
-                  <td className="py-1.5 px-3 border-l border-gray-100">
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      value={drafts[`cat_designer_${row.id}`] ?? ""}
-                      onChange={(e) => handleCellChange(`cat_designer_${row.id}`, e.target.value)}
-                      className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none bg-white hover:border-gray-300 transition-colors"
-                      placeholder="1,5"
-                    />
-                  </td>
+                  {isProduction && (
+                    <td className="py-1.5 px-3 border-l border-gray-100">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={drafts[`cat_designer_${row.id}`] ?? ""}
+                        onChange={(e) => handleCellChange(`cat_designer_${row.id}`, e.target.value)}
+                        className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none bg-white hover:border-gray-300 transition-colors"
+                        placeholder="1,5"
+                      />
+                    </td>
+                  )}
 
                   {/* Standard Salon and Salon specific columns only for manufacturers */}
                   {isProduction && (
@@ -13472,9 +13476,11 @@ const CoefficientsTableSection = ({
                 <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 uppercase border-l border-gray-200">
                   Розница
                 </th>
-                <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 uppercase border-l border-gray-200">
-                  Дизайнер
-                </th>
+                {isProduction && (
+                  <th className="py-2.5 px-4 text-[10px] font-bold text-gray-500 uppercase border-l border-gray-200">
+                    Дизайнер
+                  </th>
+                )}
                 {isProduction && (
                   <>
                     <th className="py-2.5 px-4 text-[10px] font-bold text-blue-700 uppercase bg-blue-50/40 border-l border-blue-200 text-center">
@@ -13523,15 +13529,17 @@ const CoefficientsTableSection = ({
                         className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none"
                       />
                     </td>
-                    <td className="py-1.5 px-3 border-l border-gray-100">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={drafts[`brand_designer_${bc.id}`] ?? ""}
-                        onChange={(e) => handleCellChange(`brand_designer_${bc.id}`, e.target.value)}
-                        className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none"
-                      />
-                    </td>
+                    {isProduction && (
+                      <td className="py-1.5 px-3 border-l border-gray-100">
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={drafts[`brand_designer_${bc.id}`] ?? ""}
+                          onChange={(e) => handleCellChange(`brand_designer_${bc.id}`, e.target.value)}
+                          className="w-full px-2 py-1.5 border border-gray-200 rounded-lg text-xs font-bold text-right focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                      </td>
+                    )}
                     {isProduction && (
                       <>
                         <td className="py-1.5 px-3 border-l border-blue-100 bg-blue-50/10">
