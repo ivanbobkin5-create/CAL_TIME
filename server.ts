@@ -1279,6 +1279,312 @@ function transliterate(str: string): string {
     }
   });
 
+  // --- ERP System Orders & Stages API ---
+  app.get("/api/erp/:companyId/orders", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const companyDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } }));
+      if (!companyDoc) return res.status(404).json({ error: "Компания не найдена" });
+      
+      const companyData = JSON.parse(companyDoc.data);
+      const erpConfig = companyData.erpConfig || companyData.erpSettings || {};
+      const webhookUrl = erpConfig.bitrix24WebhookUrl || companyData.bitrix24?.webhookUrl;
+      const orderSource = erpConfig.orderSource || (webhookUrl ? 'bitrix24' : 'projects');
+      
+      // Load saved local ERP production states for this company
+      const erpOrderDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+        where: { collection: `companies/${companyId}/erp_orders` }
+      }));
+      const localErpOrdersMap: Record<string, any> = {};
+      for (const d of erpOrderDocs) {
+        try {
+          localErpOrdersMap[d.docId] = JSON.parse(d.data);
+        } catch (e) {}
+      }
+
+      let orders: any[] = [];
+
+      if (orderSource === 'bitrix24' && webhookUrl) {
+        const categoryId = erpConfig.bitrix24CategoryId || companyData.bitrix24?.categoryId || "0";
+        const startStageId = erpConfig.bitrix24StageId || companyData.bitrix24?.stageId || "";
+        const doneStageId = erpConfig.bitrix24DoneStageId || "";
+
+        // 1. Fetch pipeline stages to know sequence and human-readable names
+        let stagesList: any[] = [];
+        try {
+          if (categoryId === "0" || categoryId === 0 || !categoryId) {
+            const stRes = await fetch(`${webhookUrl}/crm.status.list`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ filter: { ENTITY_ID: "DEAL_STAGE" }, order: { SORT: "ASC" } })
+            });
+            const stData = await stRes.json();
+            stagesList = stData.result || [];
+          } else {
+            const stRes = await fetch(`${webhookUrl}/crm.dealcategory.stage.list`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ id: categoryId })
+            });
+            const stData = await stRes.json();
+            stagesList = stData.result || [];
+          }
+        } catch (stErr) {
+          console.warn("Could not fetch Bitrix24 stages list:", stErr);
+        }
+
+        // Determine allowed stage IDs range
+        const stageIdsInOrder = stagesList.map((s: any) => s.STATUS_ID || s.ID || s.id);
+        let allowedStageIds: Set<string> | null = null;
+        
+        if (startStageId && stageIdsInOrder.length > 0) {
+          const startIndex = stageIdsInOrder.indexOf(startStageId);
+          let endIndex = doneStageId ? stageIdsInOrder.indexOf(doneStageId) : stageIdsInOrder.length - 1;
+          if (endIndex < 0) endIndex = stageIdsInOrder.length - 1;
+          
+          if (startIndex >= 0) {
+            const minIdx = Math.min(startIndex, endIndex);
+            const maxIdx = Math.max(startIndex, endIndex);
+            const slice = stageIdsInOrder.slice(minIdx, maxIdx + 1);
+            allowedStageIds = new Set(slice);
+          }
+        }
+
+        // 2. Fetch Deals from Bitrix24
+        const dealsFilter: any = {};
+        if (categoryId !== undefined && categoryId !== null && categoryId !== "") {
+          dealsFilter.CATEGORY_ID = categoryId;
+        }
+
+        const dealsRes = await fetch(`${webhookUrl}/crm.deal.list`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            order: { DATE_CREATE: "DESC" },
+            filter: dealsFilter,
+            select: [
+              "ID", "TITLE", "STAGE_ID", "CATEGORY_ID", "OPPORTUNITY", 
+              "CURRENCY_ID", "DATE_CREATE", "CLOSEDATE", "DATE_MODIFY",
+              "COMMENTS", "ASSIGNED_BY_NAME", "CONTACT_ID", "COMPANY_ID",
+              "BEGINDATE", "PROBABILITY"
+            ]
+          })
+        });
+
+        const dealsData = await dealsRes.json();
+        const rawDeals = dealsData.result || [];
+
+        let portalBase = "";
+        try {
+          const urlObj = new URL(webhookUrl);
+          portalBase = `${urlObj.protocol}//${urlObj.host}`;
+        } catch (_) {}
+
+        for (const deal of rawDeals) {
+          const dealStageId = deal.STAGE_ID;
+          
+          if (allowedStageIds && !allowedStageIds.has(dealStageId)) {
+            continue;
+          } else if (!allowedStageIds && startStageId && dealStageId !== startStageId) {
+            continue;
+          }
+
+          const orderId = `b24_${deal.ID}`;
+          const local = localErpOrdersMap[orderId] || {};
+
+          const matchingStage = stagesList.find((s: any) => (s.STATUS_ID || s.ID || s.id) === dealStageId);
+          const stageName = matchingStage ? (matchingStage.NAME || matchingStage.name) : dealStageId;
+
+          const opp = Number(deal.OPPORTUNITY) || 0;
+          const estArea = local.totalAreaM2 !== undefined ? local.totalAreaM2 : Math.max(6, Math.round((opp > 0 ? (opp / 9500) : 16.5) * 10) / 10);
+          const estEdge = local.totalEdgeM !== undefined ? local.totalEdgeM : Math.round(estArea * 2.8);
+          const estParts = local.partsCount !== undefined ? local.partsCount : Math.round(estArea * 1.8);
+          const estFacades = local.facadesCount !== undefined ? local.facadesCount : Math.round(estArea * 0.35);
+
+          const dealLink = portalBase ? `${portalBase}/crm/deal/details/${deal.ID}/` : undefined;
+
+          orders.push({
+            id: orderId,
+            orderNumber: deal.TITLE ? deal.TITLE : `Сделка #${deal.ID}`,
+            clientName: deal.TITLE || `Клиент #${deal.ID}`,
+            projectName: deal.TITLE || `Заказ #${deal.ID}`,
+            createdAt: deal.DATE_CREATE ? deal.DATE_CREATE.substring(0, 10) : new Date().toISOString().substring(0, 10),
+            deadlineDate: deal.CLOSEDATE ? deal.CLOSEDATE.substring(0, 10) : (deal.BEGINDATE ? deal.BEGINDATE.substring(0, 10) : new Date(Date.now() + 7 * 86400000).toISOString().substring(0, 10)),
+            currentStage: local.currentStage || 'queue',
+            priority: local.priority || (opp > 250000 ? 'urgent' : (opp > 120000 ? 'high' : 'normal')),
+            totalAreaM2: estArea,
+            totalEdgeM: estEdge,
+            partsCount: estParts,
+            facadesCount: estFacades,
+            priceTotal: opp,
+            status: local.status || 'in_progress',
+            bitrixDealId: deal.ID,
+            bitrixStageId: deal.STAGE_ID,
+            bitrixStageName: stageName,
+            bitrixUrl: dealLink,
+            comments: deal.COMMENTS || local.comments || "",
+            responsibleEmployeeId: local.responsibleEmployeeId,
+            responsibleEmployeeName: local.responsibleEmployeeName,
+            stageProgress: local.stageProgress || {
+              queue: { status: 'in_progress' }
+            }
+          });
+        }
+      } else {
+        // Internal Projects source
+        const projectDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+          where: { collection: `companies/${companyId}/projects` }
+        }));
+
+        for (const pDoc of projectDocs) {
+          try {
+            const project = JSON.parse(pDoc.data);
+            const pStatus = project.status || 'draft';
+            
+            const startStatus = erpConfig.projectStartStatus || 'in_progress';
+            if (startStatus === 'in_progress' && pStatus !== 'in_progress' && pStatus !== 'transferred_to_production' && pStatus !== 'landing_order' && pStatus !== 'sent') {
+              continue;
+            }
+
+            const orderId = `proj_${pDoc.docId}`;
+            const local = localErpOrdersMap[orderId] || {};
+
+            const addedProducts = project.data?.addedProducts || [];
+            let calcArea = 0;
+            let calcParts = 0;
+            let calcFacades = 0;
+            
+            for (const item of addedProducts) {
+              const qty = Number(item.quantity) || 1;
+              const w = (Number(item.width) || 600) / 1000;
+              const h = (Number(item.height) || 720) / 1000;
+              const d = (Number(item.depth) || 560) / 1000;
+              const itemArea = (2 * (w * h) + 2 * (w * d) + 2 * (h * d)) * qty;
+              calcArea += itemArea;
+              calcParts += 5 * qty;
+              if (item.category === 'facades' || item.type === 'facade' || (item.name && item.name.toLowerCase().includes('фасад'))) {
+                calcFacades += qty;
+              }
+            }
+
+            const finalArea = local.totalAreaM2 !== undefined ? local.totalAreaM2 : Math.max(5, Math.round(calcArea * 10) / 10);
+            const finalEdge = local.totalEdgeM !== undefined ? local.totalEdgeM : Math.round(finalArea * 2.5);
+            const finalParts = local.partsCount !== undefined ? local.partsCount : Math.max(12, calcParts);
+            const finalFacades = local.facadesCount !== undefined ? local.facadesCount : calcFacades;
+
+            orders.push({
+              id: orderId,
+              orderNumber: `ПР-${pDoc.docId.substring(0, 6).toUpperCase()}`,
+              clientName: project.clientInfo?.name || project.createdByName || 'Заказчик',
+              projectName: project.name || 'Мебельный проект',
+              createdAt: project.createdAt ? project.createdAt.substring(0, 10) : new Date().toISOString().substring(0, 10),
+              deadlineDate: project.deadlineDate || new Date(Date.now() + 10 * 86400000).toISOString().substring(0, 10),
+              currentStage: local.currentStage || 'queue',
+              priority: local.priority || (project.totalPrice > 200000 ? 'high' : 'normal'),
+              totalAreaM2: finalArea,
+              totalEdgeM: finalEdge,
+              partsCount: finalParts,
+              facadesCount: finalFacades,
+              priceTotal: Number(project.totalPrice) || 0,
+              status: local.status || 'in_progress',
+              projectId: pDoc.docId,
+              comments: project.clientInfo?.comment || local.comments || "",
+              responsibleEmployeeId: local.responsibleEmployeeId,
+              responsibleEmployeeName: local.responsibleEmployeeName,
+              stageProgress: local.stageProgress || {
+                queue: { status: 'in_progress' }
+              }
+            });
+          } catch (e) {}
+        }
+      }
+
+      res.json({
+        success: true,
+        orderSource,
+        orders,
+        totalCount: orders.length
+      });
+
+    } catch (e: any) {
+      console.error("Error fetching ERP orders:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/erp/:companyId/orders/:orderId/stage", async (req, res) => {
+    try {
+      const { companyId, orderId } = req.params;
+      const { currentStage, stageProgress, status, responsibleEmployeeId, responsibleEmployeeName, comments, priority, totalAreaM2, totalEdgeM, partsCount, facadesCount } = req.body;
+
+      const companyDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } }));
+      if (!companyDoc) return res.status(404).json({ error: "Компания не найдена" });
+      const companyData = JSON.parse(companyDoc.data);
+      const erpConfig = companyData.erpConfig || companyData.erpSettings || {};
+      const webhookUrl = erpConfig.bitrix24WebhookUrl || companyData.bitrix24?.webhookUrl;
+
+      const orderDocPath = `companies/${companyId}/erp_orders/${orderId}`;
+      const existingDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: orderDocPath } }));
+      const existingData = existingDoc ? JSON.parse(existingDoc.data) : {};
+
+      const updatedData = {
+        ...existingData,
+        currentStage: currentStage || existingData.currentStage,
+        stageProgress: stageProgress || existingData.stageProgress,
+        status: status || existingData.status,
+        responsibleEmployeeId: responsibleEmployeeId !== undefined ? responsibleEmployeeId : existingData.responsibleEmployeeId,
+        responsibleEmployeeName: responsibleEmployeeName !== undefined ? responsibleEmployeeName : existingData.responsibleEmployeeName,
+        comments: comments !== undefined ? comments : existingData.comments,
+        priority: priority || existingData.priority,
+        totalAreaM2: totalAreaM2 !== undefined ? totalAreaM2 : existingData.totalAreaM2,
+        totalEdgeM: totalEdgeM !== undefined ? totalEdgeM : existingData.totalEdgeM,
+        partsCount: partsCount !== undefined ? partsCount : existingData.partsCount,
+        facadesCount: facadesCount !== undefined ? facadesCount : existingData.facadesCount,
+        updatedAt: new Date().toISOString()
+      };
+
+      await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+        where: { path: orderDocPath },
+        create: {
+          path: orderDocPath,
+          collection: `companies/${companyId}/erp_orders`,
+          docId: orderId,
+          data: JSON.stringify(updatedData)
+        },
+        update: {
+          data: JSON.stringify(updatedData)
+        }
+      }));
+
+      // If Bitrix24 order and reached 'ready' stage and doneStageId configured
+      if (orderId.startsWith('b24_') && webhookUrl && erpConfig.bitrix24DoneStageId) {
+        const bitrixDealId = orderId.replace('b24_', '');
+        if (currentStage === 'ready' || status === 'completed') {
+          try {
+            await fetch(`${webhookUrl}/crm.deal.update`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                id: bitrixDealId,
+                fields: {
+                  STAGE_ID: erpConfig.bitrix24DoneStageId
+                }
+              })
+            });
+            console.log(`[ERP B24 SYNC] Deal ${bitrixDealId} moved to stage ${erpConfig.bitrix24DoneStageId}`);
+          } catch (b24Err) {
+            console.error("Failed to update Bitrix24 deal stage:", b24Err);
+          }
+        }
+      }
+
+      res.json({ success: true, updatedData });
+    } catch (e: any) {
+      console.error("Error updating ERP order stage:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   // Environment determination
   const isDev = process.env.NODE_ENV === "development";
   const distPath = path.join(process.cwd(), 'dist');

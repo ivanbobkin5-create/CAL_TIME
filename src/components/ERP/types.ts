@@ -50,6 +50,11 @@ export interface ProductionOrder {
   comments?: string;
   priceTotal?: number;
   costTotal?: number;
+  bitrixDealId?: string;
+  bitrixStageId?: string;
+  bitrixStageName?: string;
+  bitrixUrl?: string;
+  projectId?: string;
   stageProgress: {
     [key in ProductionStageId]?: {
       status: 'pending' | 'in_progress' | 'done';

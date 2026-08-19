@@ -16,7 +16,8 @@ import {
   User, 
   X,
   Play,
-  Check
+  Check,
+  ExternalLink
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPEmployee } from '../types';
 
@@ -159,9 +160,17 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                         <h4 className="font-bold text-slate-900 text-xs truncate mb-1">
                           {order.clientName}
                         </h4>
-                        <p className="text-[11px] text-slate-500 truncate mb-3">
+                        <p className="text-[11px] text-slate-500 truncate mb-2">
                           {order.projectName}
                         </p>
+
+                        {/* Bitrix24 Deal info badge if present */}
+                        {order.bitrixStageName && (
+                          <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-blue-50/80 border border-blue-100/80 text-[10px] text-blue-700 font-semibold mb-2.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
+                            <span className="truncate">CRM: {order.bitrixStageName}</span>
+                          </div>
+                        )}
 
                         {/* Metrics specs */}
                         <div className="grid grid-cols-2 gap-1 text-[10px] text-slate-600 bg-slate-50 p-2 rounded-xl border border-slate-100 mb-3">
@@ -226,6 +235,17 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                   <p className="text-xs text-slate-400">
                     {selectedOrderDetails.clientName} • {selectedOrderDetails.projectName}
                   </p>
+                  {selectedOrderDetails.bitrixUrl && (
+                    <a
+                      href={selectedOrderDetails.bitrixUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 hover:text-blue-700 hover:underline mt-1"
+                    >
+                      <span>Открыть сделку #{selectedOrderDetails.bitrixDealId} в Bitrix24</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  )}
                 </div>
               </div>
 

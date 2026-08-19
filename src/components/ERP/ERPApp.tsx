@@ -71,6 +71,9 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
   const [orders, setOrders] = useState<ProductionOrder[]>([]);
   const [employees, setEmployees] = useState<ERPEmployee[]>([]);
   const [shifts, setShifts] = useState<WorkShift[]>([]);
+  const [isSyncingOrders, setIsSyncingOrders] = useState(false);
+  const [syncStatusText, setSyncStatusText] = useState<string | null>(null);
+  const [orderSource, setOrderSource] = useState<string>('projects');
   const [settings, setSettings] = useState<ERPCompanySettings>({
     erpEnabled: true,
     workDayStart: '08:00',
@@ -175,110 +178,6 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
           }));
         }
 
-        // Generate initial mock/real production orders from projects or default set
-        const defaultOrders: ProductionOrder[] = [
-          {
-            id: 'ord-101',
-            orderNumber: 'ПР-24/081',
-            clientName: 'Салон «Кухни Премиум»',
-            projectName: 'Кухня Модерн МДФ Эмаль',
-            createdAt: '2026-08-18',
-            deadlineDate: '2026-08-25',
-            currentStage: 'cutting',
-            priority: 'urgent',
-            totalAreaM2: 24.8,
-            totalEdgeM: 68,
-            partsCount: 42,
-            facadesCount: 14,
-            status: 'in_progress',
-            stageProgress: {
-              queue: { status: 'done' },
-              cutting: { status: 'in_progress' }
-            }
-          },
-          {
-            id: 'ord-102',
-            orderNumber: 'ПР-24/082',
-            clientName: 'Дизайнер Смирнова А.',
-            projectName: 'Шкаф-купе в спальню (Egger Дуб)',
-            createdAt: '2026-08-17',
-            deadlineDate: '2026-08-27',
-            currentStage: 'edging',
-            priority: 'normal',
-            totalAreaM2: 38.2,
-            totalEdgeM: 112,
-            partsCount: 56,
-            facadesCount: 0,
-            status: 'in_progress',
-            stageProgress: {
-              queue: { status: 'done' },
-              cutting: { status: 'done' },
-              edging: { status: 'in_progress' }
-            }
-          },
-          {
-            id: 'ord-103',
-            orderNumber: 'ПР-24/083',
-            clientName: 'ИП Григорьев (Салон)',
-            projectName: 'Гардеробная система Квадро',
-            createdAt: '2026-08-19',
-            deadlineDate: '2026-08-29',
-            currentStage: 'cnc',
-            priority: 'high',
-            totalAreaM2: 19.4,
-            totalEdgeM: 45,
-            partsCount: 28,
-            facadesCount: 6,
-            status: 'in_progress',
-            stageProgress: {
-              queue: { status: 'done' },
-              cutting: { status: 'done' },
-              edging: { status: 'done' },
-              cnc: { status: 'in_progress' }
-            }
-          },
-          {
-            id: 'ord-104',
-            orderNumber: 'ПР-24/084',
-            clientName: 'Салон «Мебель Стиль»',
-            projectName: 'Тумба под ТВ + навесные полки',
-            createdAt: '2026-08-19',
-            deadlineDate: '2026-08-30',
-            currentStage: 'queue',
-            priority: 'normal',
-            totalAreaM2: 12.0,
-            totalEdgeM: 32,
-            partsCount: 18,
-            facadesCount: 4,
-            status: 'planned',
-            stageProgress: {
-              queue: { status: 'in_progress' }
-            }
-          },
-          {
-            id: 'ord-105',
-            orderNumber: 'ПР-24/085',
-            clientName: 'Дизайнер Волков Д.',
-            projectName: 'Остров кухонный со скрытой фурнитурой',
-            createdAt: '2026-08-16',
-            deadlineDate: '2026-08-24',
-            currentStage: 'assembly',
-            priority: 'urgent',
-            totalAreaM2: 15.6,
-            totalEdgeM: 48,
-            partsCount: 22,
-            facadesCount: 8,
-            status: 'in_progress',
-            stageProgress: {
-              queue: { status: 'done' },
-              cutting: { status: 'done' },
-              edging: { status: 'done' },
-              cnc: { status: 'done' },
-              assembly: { status: 'in_progress' }
-            }
-          }
-        ];
-
         const defaultEmployees: ERPEmployee[] = [
           {
             id: 'emp-1',
@@ -337,8 +236,22 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
           }
         ];
 
-        setOrders(defaultOrders);
         setEmployees(defaultEmployees);
+
+        // Fetch real orders from Bitrix24 or Projects via ERP API
+        try {
+          const ordersRes = await fetch(`/api/erp/${comp.id}/orders`);
+          if (ordersRes.ok) {
+            const ordersData = await ordersRes.json();
+            if (ordersData.orders) {
+              setOrders(ordersData.orders);
+              setOrderSource(ordersData.orderSource || 'projects');
+            }
+          }
+        } catch (ordErr) {
+          console.warn("Failed to load real ERP orders:", ordErr);
+        }
+
         setIsLoading(false);
 
       } catch (e) {
@@ -350,6 +263,38 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
 
     loadCompanyData();
   }, [aliasOrId]);
+
+  const handleSyncOrders = async () => {
+    if (!company?.id) return;
+    setIsSyncingOrders(true);
+    setSyncStatusText('Синхронизация с Bitrix24...');
+    try {
+      const res = await fetch(`/api/erp/${company.id}/orders`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.orders) {
+          setOrders(data.orders);
+          setOrderSource(data.orderSource || 'projects');
+          const count = data.orders.length;
+          setSyncStatusText(
+            data.orderSource === 'bitrix24'
+              ? `Синхронизировано: ${count} сделок из CRM`
+              : `Загружено: ${count} заказов из проектов`
+          );
+        }
+      } else {
+        setSyncStatusText('Ошибка синхронизации');
+      }
+    } catch (e) {
+      console.error('Sync error:', e);
+      setSyncStatusText('Ошибка подключения');
+    } finally {
+      setIsSyncingOrders(false);
+      setTimeout(() => {
+        setSyncStatusText(null);
+      }, 4000);
+    }
+  };
 
   const handleSaveSettings = async (newSettings: ERPCompanySettings) => {
     setSettings(newSettings);
@@ -366,27 +311,67 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
             merge: true
           })
         });
+        // Reload orders after settings change (e.g. stage or source changed)
+        handleSyncOrders();
       } catch (e) {
         console.warn('Failed to persist ERP settings:', e);
       }
     }
   };
 
-  const handleUpdateOrderStatus = (orderId: string, nextStage: ProductionStageId) => {
+  const handleUpdateOrderStatus = async (orderId: string, nextStage: ProductionStageId) => {
+    const isCompleted = nextStage === 'ready';
+    const newStatus = isCompleted ? 'completed' : 'in_progress';
+    
+    // Instant UI update
     setOrders(prev => prev.map(o => {
       if (o.id === orderId) {
         return {
           ...o,
           currentStage: nextStage,
-          status: nextStage === 'ready' ? 'completed' : 'in_progress'
+          status: newStatus,
+          stageProgress: {
+            ...o.stageProgress,
+            [nextStage]: { status: isCompleted ? 'done' : 'in_progress' }
+          }
         };
       }
       return o;
     }));
+
+    // Server-side persistence and Bitrix24 CRM sync
+    if (company?.id) {
+      try {
+        await fetch(`/api/erp/${company.id}/orders/${orderId}/stage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            currentStage: nextStage,
+            status: newStatus,
+            stageProgress: {
+              [nextStage]: { status: isCompleted ? 'done' : 'in_progress' }
+            }
+          })
+        });
+      } catch (e) {
+        console.warn('Failed to persist order stage:', e);
+      }
+    }
   };
 
-  const handleUpdateOrder = (updated: ProductionOrder) => {
+  const handleUpdateOrder = async (updated: ProductionOrder) => {
     setOrders(prev => prev.map(o => o.id === updated.id ? updated : o));
+    if (company?.id) {
+      try {
+        await fetch(`/api/erp/${company.id}/orders/${updated.id}/stage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updated)
+        });
+      } catch (e) {
+        console.warn('Failed to persist order update:', e);
+      }
+    }
   };
 
   const handleAddEmployee = (emp: Partial<ERPEmployee>) => {
@@ -626,6 +611,27 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
             <h2 className="text-base font-black text-slate-900 hidden sm:block">
               {menuItems.find(m => m.id === activeSection)?.label}
             </h2>
+
+            {/* Sync Source Badge & Manual Sync Button */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleSyncOrders}
+                disabled={isSyncingOrders}
+                title={orderSource === 'bitrix24' ? 'Синхронизировать сделки из Bitrix24 CRM' : 'Обновить заказы из проектов'}
+                className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-60"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-blue-600 ${isSyncingOrders ? 'animate-spin' : ''}`} />
+                <span className="hidden md:inline">
+                  {isSyncingOrders ? 'Синхронизация...' : (orderSource === 'bitrix24' ? 'Bitrix24 CRM' : 'Проекты')}
+                </span>
+              </button>
+
+              {syncStatusText && (
+                <span className="text-[11px] font-medium text-blue-700 bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-200 animate-fade-in">
+                  {syncStatusText}
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-3">
