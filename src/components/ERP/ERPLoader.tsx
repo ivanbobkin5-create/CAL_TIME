@@ -22,7 +22,7 @@ interface ERPLoaderProps {
 export const ERPLoader: React.FC<ERPLoaderProps> = ({ 
   companyName, 
   onFinish,
-  minDurationMs = 2200 
+  minDurationMs = 400 
 }) => {
   const [progress, setProgress] = useState(0);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);

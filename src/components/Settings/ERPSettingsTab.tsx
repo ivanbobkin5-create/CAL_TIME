@@ -64,8 +64,9 @@ export const ERPSettingsTab: React.FC<ERPSettingsTabProps> = ({
   const [copied, setCopied] = useState(false);
   const [isTestingB24, setIsTestingB24] = useState(false);
 
-  const companyAlias = companyData?.landingPage?.alias || transliterate(companyData?.name || '') || companyData?.id || 'company';
-  const erpUrl = `${window.location.origin}/${companyAlias}/erp`;
+  const companySlug = companyData?.slug || companyData?.companySlug || (companyData?.name ? transliterate(companyData.name) : '') || companyData?.id || 'company';
+  const currentOrigin = typeof window !== "undefined" ? window.location.origin : "https://mebel-plan.ru";
+  const erpUrl = `${currentOrigin}/${companySlug}/erp`;
 
   // Extract ERP config with fallbacks
   const erpConfig = companyData?.erpConfig || companyData?.erpSettings || {
@@ -173,7 +174,7 @@ export const ERPSettingsTab: React.FC<ERPSettingsTabProps> = ({
             </button>
 
             <a
-              href={`/${companyAlias}/erp`}
+              href={`/${companySlug}/erp`}
               target="_blank"
               rel="noreferrer"
               className="px-6 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold text-sm shadow-lg shadow-indigo-600/40 transition-all flex items-center justify-center gap-2.5 whitespace-nowrap active:scale-95 border border-indigo-400/30"
@@ -507,71 +508,6 @@ export const ERPSettingsTab: React.FC<ERPSettingsTabProps> = ({
             </div>
           </div>
         )}
-      </section>
-
-      {/* 3. ERP Production Rates & Shift Defaults */}
-      <section className="space-y-6">
-        <div className="border-b border-gray-100 pb-4">
-          <h3 className="text-lg font-black text-gray-900 tracking-tight flex items-center gap-2">
-            <Sliders className="w-5 h-5 text-indigo-600" />
-            Базовые расценки сдельной оплаты в цехе
-          </h3>
-          <p className="text-xs text-gray-500 mt-0.5">
-            Используются для автоматического расчета зарплаты мастеров и операторов станков в ERP.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-          <div className="p-4 bg-gray-50 rounded-2xl border border-gray-200 space-y-1">
-            <span className="text-[11px] font-bold text-gray-500 uppercase">Раскрой (₽/м²)</span>
-            <input
-              type="number"
-              value={erpConfig.cuttingRatePerM2 || 65}
-              onChange={(e) => updateErpConfig('cuttingRatePerM2', parseFloat(e.target.value) || 0)}
-              className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl font-bold text-sm text-gray-800 outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-
-          <div className="p-4 bg-gray-50 rounded-2xl border border-gray-200 space-y-1">
-            <span className="text-[11px] font-bold text-gray-500 uppercase">Кромка (₽/м.п.)</span>
-            <input
-              type="number"
-              value={erpConfig.edgingRatePerM || 35}
-              onChange={(e) => updateErpConfig('edgingRatePerM', parseFloat(e.target.value) || 0)}
-              className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl font-bold text-sm text-gray-800 outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-
-          <div className="p-4 bg-gray-50 rounded-2xl border border-gray-200 space-y-1">
-            <span className="text-[11px] font-bold text-gray-500 uppercase">ЧПУ присадка (₽/отв)</span>
-            <input
-              type="number"
-              value={erpConfig.cncHoleRate || 8}
-              onChange={(e) => updateErpConfig('cncHoleRate', parseFloat(e.target.value) || 0)}
-              className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl font-bold text-sm text-gray-800 outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-
-          <div className="p-4 bg-gray-50 rounded-2xl border border-gray-200 space-y-1">
-            <span className="text-[11px] font-bold text-gray-500 uppercase">Сборка модуля (₽/шт)</span>
-            <input
-              type="number"
-              value={erpConfig.assemblyModuleRate || 350}
-              onChange={(e) => updateErpConfig('assemblyModuleRate', parseFloat(e.target.value) || 0)}
-              className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl font-bold text-sm text-gray-800 outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-
-          <div className="p-4 bg-gray-50 rounded-2xl border border-gray-200 space-y-1">
-            <span className="text-[11px] font-bold text-gray-500 uppercase">ОТК / Проверка (₽/заказ)</span>
-            <input
-              type="number"
-              value={erpConfig.qcRatePerOrder || 500}
-              onChange={(e) => updateErpConfig('qcRatePerOrder', parseFloat(e.target.value) || 0)}
-              className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl font-bold text-sm text-gray-800 outline-none focus:ring-2 focus:ring-indigo-500"
-            />
-          </div>
-        </div>
       </section>
 
       {/* Save Button */}

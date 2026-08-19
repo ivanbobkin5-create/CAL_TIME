@@ -38,13 +38,13 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
 
   const stages: { id: ProductionStageId; name: string; icon: any; color: string; badgeColor: string }[] = [
     { id: 'queue', name: 'Очередь запуска', icon: Clock, color: 'border-slate-300 bg-slate-50', badgeColor: 'bg-slate-200 text-slate-700' },
-    { id: 'cutting', name: '1. Раскрой', icon: Scissors, color: 'border-blue-300 bg-blue-50/50', badgeColor: 'bg-blue-100 text-blue-800' },
-    { id: 'edging', name: '2. Кромление', icon: Layers, color: 'border-indigo-300 bg-indigo-50/50', badgeColor: 'bg-indigo-100 text-indigo-800' },
-    { id: 'cnc', name: '3. Присадка ЧПУ', icon: Factory, color: 'border-purple-300 bg-purple-50/50', badgeColor: 'bg-purple-100 text-purple-800' },
-    { id: 'facades', name: '4. Фасады', icon: Wrench, color: 'border-amber-300 bg-amber-50/50', badgeColor: 'bg-amber-100 text-amber-800' },
-    { id: 'assembly', name: '5. Сборка', icon: Wrench, color: 'border-teal-300 bg-teal-50/50', badgeColor: 'bg-teal-100 text-teal-800' },
-    { id: 'qc', name: '6. Контроль ОТК', icon: CheckCircle2, color: 'border-emerald-300 bg-emerald-50/50', badgeColor: 'bg-emerald-100 text-emerald-800' },
-    { id: 'packing', name: '7. Упаковка', icon: Package, color: 'border-orange-300 bg-orange-50/50', badgeColor: 'bg-orange-100 text-orange-800' },
+    { id: 'cutting', name: 'Раскрой', icon: Scissors, color: 'border-blue-300 bg-blue-50/50', badgeColor: 'bg-blue-100 text-blue-800' },
+    { id: 'edging', name: 'Кромление', icon: Layers, color: 'border-indigo-300 bg-indigo-50/50', badgeColor: 'bg-indigo-100 text-indigo-800' },
+    { id: 'cnc', name: 'Присадка ЧПУ', icon: Factory, color: 'border-purple-300 bg-purple-50/50', badgeColor: 'bg-purple-100 text-purple-800' },
+    { id: 'facades', name: 'Фасады', icon: Wrench, color: 'border-amber-300 bg-amber-50/50', badgeColor: 'bg-amber-100 text-amber-800' },
+    { id: 'assembly', name: 'Сборка', icon: Wrench, color: 'border-teal-300 bg-teal-50/50', badgeColor: 'bg-teal-100 text-teal-800' },
+    { id: 'qc', name: 'Контроль ОТК', icon: CheckCircle2, color: 'border-emerald-300 bg-emerald-50/50', badgeColor: 'bg-emerald-100 text-emerald-800' },
+    { id: 'packing', name: 'Упаковка', icon: Package, color: 'border-orange-300 bg-orange-50/50', badgeColor: 'bg-orange-100 text-orange-800' },
     { id: 'ready', name: 'Готово к отгрузке', icon: CheckCircle2, color: 'border-green-400 bg-green-50/70', badgeColor: 'bg-green-100 text-green-800' }
   ];
 

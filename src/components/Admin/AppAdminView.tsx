@@ -91,7 +91,7 @@ async function deleteDoc(docRef: any) {
 }
 function query(colRef: any, ...constraints: any[]) { return colRef; }
 function where(field: string, op: string, value: any) { return {}; }
-import { cn } from '../../lib/utils';
+import { cn, transliterate } from '../../lib/utils';
 
 interface Company {
   id: string;
@@ -668,7 +668,7 @@ export const AppAdminView = () => {
                            <CompanyERPCheckbox company={company} updateLimit={updateLimit} />
                            {(company.erpAllowed !== undefined ? company.erpAllowed : company.erpEnabled) && (
                              <a
-                               href={`/${company.slug || company.id}/erp`}
+                               href={`/${company.slug || (company.name ? transliterate(company.name) : company.id)}/erp`}
                                target="_blank"
                                rel="noreferrer"
                                className="mt-1 text-[10px] text-blue-600 hover:underline flex items-center gap-1 font-bold"

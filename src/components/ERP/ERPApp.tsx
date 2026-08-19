@@ -48,7 +48,21 @@ interface ERPAppProps {
 export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [company, setCompany] = useState<any>(null);
-  const [authUser, setAuthUser] = useState<any>(null);
+  const [authUser, setAuthUser] = useState<any>(() => {
+    try {
+      const erpUserStr = localStorage.getItem(`erp_session_${aliasOrId}`);
+      if (erpUserStr) {
+        return JSON.parse(erpUserStr).user;
+      }
+      const globalUserStr = localStorage.getItem('currentUser');
+      if (globalUserStr) {
+        return JSON.parse(globalUserStr);
+      }
+    } catch (e) {
+      // ignore
+    }
+    return null;
+  });
   const [isAccessDenied, setIsAccessDenied] = useState(false);
   const [activeSection, setActiveSection] = useState<ERPSection>('dashboard');
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }));
@@ -119,7 +133,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
         setCompany(comp);
 
         // Check for active login session (either from Calculator or ERP login)
-        let parsedUser: any = null;
+        let parsedUser: any = authUser;
         try {
           const globalUserStr = localStorage.getItem('currentUser');
           const erpUserStr = localStorage.getItem(`erp_session_${comp.id || aliasOrId}`);
@@ -133,7 +147,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
 
           if (parsedUser) {
             const isSuperAdmin = parsedUser.email === 'lk.ivanbobkin@gmail.com' || parsedUser.role === 'superadmin' || parsedUser.isSuperAdmin;
-            const belongsToCompany = parsedUser.companyId === comp.id || isSuperAdmin;
+            const belongsToCompany = parsedUser.companyId === comp.id || isSuperAdmin || !comp.id;
             if (belongsToCompany) {
               setAuthUser(parsedUser);
             }
@@ -325,15 +339,38 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
 
         setOrders(defaultOrders);
         setEmployees(defaultEmployees);
+        setIsLoading(false);
 
       } catch (e) {
         console.error("Error loading ERP data:", e);
         setIsAccessDenied(true);
+        setIsLoading(false);
       }
     }
 
     loadCompanyData();
   }, [aliasOrId]);
+
+  const handleSaveSettings = async (newSettings: ERPCompanySettings) => {
+    setSettings(newSettings);
+    if (company?.id) {
+      try {
+        await fetch(`/api/db/doc/companies/${company.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            data: {
+              erpConfig: newSettings,
+              erpSettings: newSettings
+            },
+            merge: true
+          })
+        });
+      } catch (e) {
+        console.warn('Failed to persist ERP settings:', e);
+      }
+    }
+  };
 
   const handleUpdateOrderStatus = (orderId: string, nextStage: ProductionStageId) => {
     setOrders(prev => prev.map(o => {
@@ -384,11 +421,12 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
     }
   };
 
-  // 1. Loading Splash
+  // 1. Loading Splash (fast-through when ready)
   if (isLoading) {
     return (
       <ERPLoader 
         companyName={company?.name || "Мебельное производство"} 
+        minDurationMs={300}
         onFinish={() => setIsLoading(false)}
       />
     );
@@ -447,16 +485,16 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
     );
   }
 
-  // 4. Navigation items
+  // 4. Navigation items without numbering
   const menuItems: { id: ERPSection; label: string; icon: any; badge?: number }[] = [
-    { id: 'dashboard', label: '1. Дашборд', icon: LayoutDashboard },
-    { id: 'planning', label: '2. Планирование', icon: Calendar, badge: orders.filter(o => o.status === 'planned').length },
-    { id: 'schedule', label: '3. График работы', icon: CalendarDays },
-    { id: 'production', label: '4. Производство', icon: Factory, badge: orders.filter(o => o.status === 'in_progress').length },
-    { id: 'reports', label: '5. Отчеты', icon: BarChart3 },
-    { id: 'salaries', label: '6. Зарплаты', icon: DollarSign },
-    { id: 'employees', label: '7. Сотрудники', icon: Users, badge: employees.length },
-    { id: 'settings', label: '8. Настройки', icon: Settings }
+    { id: 'dashboard', label: 'Дашборд', icon: LayoutDashboard },
+    { id: 'planning', label: 'Планирование', icon: Calendar, badge: orders.filter(o => o.status === 'planned').length },
+    { id: 'schedule', label: 'График работы', icon: CalendarDays },
+    { id: 'production', label: 'Производство', icon: Factory, badge: orders.filter(o => o.status === 'in_progress').length },
+    { id: 'reports', label: 'Отчеты', icon: BarChart3 },
+    { id: 'salaries', label: 'Зарплаты', icon: DollarSign },
+    { id: 'employees', label: 'Сотрудники', icon: Users, badge: employees.length },
+    { id: 'settings', label: 'Настройки', icon: Settings }
   ];
 
   const userInitials = (authUser?.displayName || authUser?.email || 'MP')
@@ -683,7 +721,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
           {activeSection === 'settings' && (
             <ERPSettingsView 
               settings={settings} 
-              onSaveSettings={setSettings} 
+              onSaveSettings={handleSaveSettings} 
             />
           )}
         </div>
