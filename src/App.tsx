@@ -140,8 +140,10 @@ import { SpecificationPrintView } from "./components/Projects/SpecificationPrint
 import { CommercialProposalPrintView } from "./components/Projects/CommercialProposalPrintView";
 import { UserProfileView } from "./components/Profile/UserProfileView";
 import { PromotionsView } from "./components/Promotions/PromotionsView";
+import { B3DTestView } from "./components/B3DTest/B3DTestView";
 import {
   Menu,
+  FlaskConical,
   X,
   Calculator,
   Tag,
@@ -32921,6 +32923,7 @@ export default function App() {
     | "arrivals"
     | "ready_made"
     | "partner_orders"
+    | "b3d_test"
   >("calculator");
   const [isReadyMadeExpanded, setIsReadyMadeExpanded] = useState(false);
   const [selectedReadyMadeCategory, setSelectedReadyMadeCategory] = useState<string | null>(null);
@@ -37583,6 +37586,21 @@ export default function App() {
                   )}
                 </button>
               )}
+              <button
+                onClick={() => setActiveTab("b3d_test")}
+                className={cn(
+                  "w-full flex items-center rounded-lg transition-all border border-purple-200/80 my-0.5",
+                  isSidebarOpen ? "gap-2 px-2.5 py-1.5" : "justify-center py-1.5",
+                  activeTab === "b3d_test"
+                    ? "bg-purple-600 text-white shadow-md shadow-purple-200"
+                    : "text-purple-700 bg-purple-50/50 hover:bg-purple-100/80",
+                )}
+              >
+                <FlaskConical className="w-4 h-4 flex-shrink-0 text-purple-600" />
+                {isSidebarOpen && (
+                  <span className="text-[12px] font-bold">Тестирование b3d</span>
+                )}
+              </button>
               {isAppAdmin && (
                 <button
                   onClick={() => setShowAdminPanel(true)}
@@ -38488,6 +38506,8 @@ export default function App() {
               }}
               onLogout={handleLogout}
             />
+          ) : activeTab === "b3d_test" ? (
+            <B3DTestView />
           ) : null}
         </main>
         
