@@ -39,6 +39,7 @@ import { ERPReportsView } from './views/ERPReportsView';
 import { ERPSalariesView } from './views/ERPSalariesView';
 import { ERPEmployeesView } from './views/ERPEmployeesView';
 import { ERPSettingsView } from './views/ERPSettingsView';
+import { ERPLoginView } from './views/ERPLoginView';
 
 interface ERPAppProps {
   aliasOrId: string;
@@ -47,6 +48,7 @@ interface ERPAppProps {
 export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [company, setCompany] = useState<any>(null);
+  const [authUser, setAuthUser] = useState<any>(null);
   const [isAccessDenied, setIsAccessDenied] = useState(false);
   const [activeSection, setActiveSection] = useState<ERPSection>('dashboard');
   const [currentTime, setCurrentTime] = useState(new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }));
@@ -87,25 +89,76 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
   useEffect(() => {
     async function loadCompanyData() {
       try {
+        let comp: any = null;
         const res = await fetch(`/api/public/company/${aliasOrId}`);
-        if (!res.ok) {
+        if (res.ok) {
+          const data = await res.json();
+          comp = data.company;
+        } else {
+          // Direct document lookup fallback
+          try {
+            const docRes = await fetch(`/api/db/doc/companies/${aliasOrId}`);
+            if (docRes.ok) {
+              const docData = await docRes.json();
+              if (docData && docData.data) {
+                comp = typeof docData.data === 'string' ? JSON.parse(docData.data) : docData.data;
+                comp.id = docData.docId || aliasOrId;
+              }
+            }
+          } catch (docErr) {
+            console.warn('Fallback doc fetch failed:', docErr);
+          }
+        }
+
+        if (!comp) {
           setIsAccessDenied(true);
           setIsLoading(false);
           return;
         }
 
-        const data = await res.json();
-        const comp = data.company;
         setCompany(comp);
 
-        // Check if ERP is allowed / enabled by Superadmin
-        const erpAllowed = comp?.erpAllowed !== undefined ? !!comp.erpAllowed : !!comp?.erpEnabled;
-        const isProductionType = comp?.type === 'Производство' || comp?.type === 'Мебельное производство' || (comp?.type && comp.type.toLowerCase().includes('производств'));
+        // Check for active login session (either from Calculator or ERP login)
+        let parsedUser: any = null;
+        try {
+          const globalUserStr = localStorage.getItem('currentUser');
+          const erpUserStr = localStorage.getItem(`erp_session_${comp.id || aliasOrId}`);
 
-        if (!erpAllowed || !isProductionType) {
+          if (erpUserStr) {
+            const erpSession = JSON.parse(erpUserStr);
+            parsedUser = erpSession.user;
+          } else if (globalUserStr) {
+            parsedUser = JSON.parse(globalUserStr);
+          }
+
+          if (parsedUser) {
+            const isSuperAdmin = parsedUser.email === 'lk.ivanbobkin@gmail.com' || parsedUser.role === 'superadmin' || parsedUser.isSuperAdmin;
+            const belongsToCompany = parsedUser.companyId === comp.id || isSuperAdmin;
+            if (belongsToCompany) {
+              setAuthUser(parsedUser);
+            }
+          }
+        } catch (authCheckErr) {
+          console.warn('ERP auth check error:', authCheckErr);
+        }
+
+        // Check if ERP is allowed / enabled by Superadmin
+        const isSuperAdmin = parsedUser?.email === 'lk.ivanbobkin@gmail.com' || parsedUser?.role === 'superadmin' || parsedUser?.isSuperAdmin;
+        const erpAllowed = comp?.erpAllowed !== undefined ? !!comp.erpAllowed : (comp?.erpEnabled !== undefined ? !!comp.erpEnabled : false);
+
+        if (!erpAllowed && !isSuperAdmin) {
           setIsAccessDenied(true);
           setIsLoading(false);
           return;
+        }
+
+        // Apply company ERP config to state if present
+        const customErpConfig = comp.erpConfig || comp.erpSettings;
+        if (customErpConfig) {
+          setSettings(prev => ({
+            ...prev,
+            ...customErpConfig
+          }));
         }
 
         // Generate initial mock/real production orders from projects or default set
@@ -322,6 +375,15 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
     setEmployees(prev => prev.filter(e => e.id !== id));
   };
 
+  const handleLogout = () => {
+    setAuthUser(null);
+    try {
+      localStorage.removeItem(`erp_session_${company?.id || aliasOrId}`);
+    } catch (e) {
+      console.warn('Logout cleanup error:', e);
+    }
+  };
+
   // 1. Loading Splash
   if (isLoading) {
     return (
@@ -372,7 +434,20 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
     );
   }
 
-  // 3. Navigation items
+  // 3. User Authentication Gate (If opened via direct link without active session)
+  if (!authUser) {
+    return (
+      <ERPLoginView 
+        company={company} 
+        aliasOrId={aliasOrId} 
+        onSuccessLogin={(userData) => {
+          setAuthUser(userData);
+        }} 
+      />
+    );
+  }
+
+  // 4. Navigation items
   const menuItems: { id: ERPSection; label: string; icon: any; badge?: number }[] = [
     { id: 'dashboard', label: '1. Дашборд', icon: LayoutDashboard },
     { id: 'planning', label: '2. Планирование', icon: Calendar, badge: orders.filter(o => o.status === 'planned').length },
@@ -383,6 +458,19 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
     { id: 'employees', label: '7. Сотрудники', icon: Users, badge: employees.length },
     { id: 'settings', label: '8. Настройки', icon: Settings }
   ];
+
+  const userInitials = (authUser?.displayName || authUser?.email || 'MP')
+    .split(' ')
+    .map((n: string) => n[0])
+    .join('')
+    .substring(0, 2)
+    .toUpperCase();
+
+  const userRoleLabel = authUser?.email === 'lk.ivanbobkin@gmail.com' 
+    ? 'Суперадминистратор'
+    : authUser?.role === 'admin' || authUser?.role === 'owner'
+    ? 'Руководитель производства'
+    : (authUser?.role || 'Мастер смены');
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row text-slate-800 font-sans selection:bg-blue-600 selection:text-white">
@@ -439,7 +527,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
         </div>
 
         {/* Sidebar Footer */}
-        <div className="mt-8 pt-4 border-t border-slate-900 space-y-2">
+        <div className="mt-8 pt-4 border-t border-slate-900 space-y-2.5">
           <div className="flex items-center justify-between px-2 text-[11px] font-mono text-slate-400">
             <span className="flex items-center gap-1.5">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
@@ -448,13 +536,47 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
             <span>{currentTime}</span>
           </div>
 
-          <a
-            href="/"
-            className="w-full py-2.5 px-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-slate-300 text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer"
-          >
-            <ExternalLink className="w-3.5 h-3.5 text-slate-400" />
-            В мебельный калькулятор
-          </a>
+          <div className="p-3 bg-slate-900/90 rounded-2xl border border-slate-800/80 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-sm">
+                {userInitials}
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-white truncate">
+                  {authUser?.displayName || authUser?.email?.split('@')[0] || 'Сотрудник'}
+                </div>
+                <div className="text-[10px] text-indigo-400 font-medium truncate">
+                  {userRoleLabel}
+                </div>
+              </div>
+            </div>
+            <button
+              onClick={handleLogout}
+              title="Выйти из ERP"
+              className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-rose-400 transition-colors shrink-0 cursor-pointer"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-1.5">
+            <a
+              href={`/${aliasOrId}`}
+              target="_blank"
+              rel="noreferrer"
+              className="py-2 px-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-center"
+            >
+              <span>Витрина</span>
+              <ExternalLink className="w-3 h-3 text-slate-400" />
+            </a>
+            <a
+              href="/"
+              className="py-2 px-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-center"
+            >
+              <span>Калькулятор</span>
+              <ExternalLink className="w-3 h-3 text-slate-400" />
+            </a>
+          </div>
         </div>
       </aside>
 
@@ -478,12 +600,23 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
             {/* Operator Card */}
             <div className="flex items-center gap-2.5 pl-3 border-l border-slate-200">
               <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center font-bold text-xs shadow-sm">
-                МП
+                {userInitials}
               </div>
               <div className="hidden md:block text-left">
-                <div className="text-xs font-bold text-slate-900">Начальник цеха</div>
-                <div className="text-[10px] text-emerald-600 font-semibold">Мастер смены</div>
+                <div className="text-xs font-bold text-slate-900">
+                  {authUser?.displayName || authUser?.email?.split('@')[0] || 'Сотрудник цеха'}
+                </div>
+                <div className="text-[10px] text-emerald-600 font-semibold">
+                  {userRoleLabel}
+                </div>
               </div>
+              <button
+                onClick={handleLogout}
+                title="Выйти из аккаунта ERP"
+                className="ml-2 p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
             </div>
           </div>
         </header>

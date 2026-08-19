@@ -125,6 +125,7 @@ import { LandingPage } from "./components/Landing/LandingPage";
 import { LandingSettingsView } from "./components/Landing/LandingSettingsView";
 import { PublicLandingView } from "./components/Landing/PublicLandingView";
 import { ERPApp } from "./components/ERP/ERPApp";
+import { ERPSettingsTab } from "./components/Settings/ERPSettingsTab";
 import { Supplier, ProcurementSettings } from "./types";
 import { SuppliersSettings } from "./components/Admin/SuppliersSettings";
 import { ProcurementView } from "./components/Procurement/ProcurementView";
@@ -14585,9 +14586,10 @@ const SettingsView = ({
   setSpecificationConfig?: React.Dispatch<React.SetStateAction<any>>;
 }) => {
   const isProcurementAllowed = companyData?.procurementAllowed !== undefined ? !!companyData.procurementAllowed : !!companyData?.procurementEnabled;
+  const isErpActive = (companyData?.erpAllowed !== undefined ? !!companyData.erpAllowed : !!companyData?.erpEnabled);
   const [newCategory, setNewCategory] = useState("");
   const [activeSubTab, setActiveSubTab] = useState<
-    "general" | "services" | "production" | "account" | "facades" | "bitrix24" | "promotions" | "suppliers" | "specification" | "landing" | "catalog" | "mapping"
+    "general" | "services" | "production" | "erp" | "account" | "facades" | "bitrix24" | "promotions" | "suppliers" | "specification" | "landing" | "catalog" | "mapping"
   >("general");
   const [showBrandCoeffModal, setShowBrandCoeffModal] = useState(false);
   const isSalonOrDesigner = companyType === "Салон" || companyType === "Дизайнер" || companyData?.type === "Салон" || companyData?.type === "Дизайнер" || companyData?.type === "Дилер";
@@ -15025,6 +15027,7 @@ const SettingsView = ({
           { id: "general", label: "Общие", icon: SettingsIcon },
           { id: "services", label: "Услуги", icon: Truck },
           { id: "production", label: "Наценки", icon: Sliders },
+          ...(isErpActive ? [{ id: "erp", label: "ERP система", icon: Factory }] : []),
           { id: "promotions", label: "Акции", icon: Percent },
           { id: "landing", label: "Внешний сайт (Каталог)", icon: Globe },
           { id: "catalog", label: "Готовая мебель (Меню)", icon: Layers },
@@ -15050,6 +15053,18 @@ const SettingsView = ({
       </div>
 
       <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-8 space-y-12">
+        {activeSubTab === "erp" && (
+          <ERPSettingsTab
+            companyData={companyData}
+            setCompanyData={setCompanyData}
+            onSaveSettings={onSaveSettings}
+            showAlert={showAlert}
+            b24Categories={b24Categories}
+            b24Stages={b24Stages}
+            loadB24Categories={loadB24Categories}
+            loadB24Stages={loadB24Stages}
+          />
+        )}
         {activeSubTab === "mapping" && (
           <AccountingMappingSettings
             companyData={companyData}
@@ -16985,39 +17000,6 @@ const SettingsView = ({
 
         {activeSubTab === "production" && (
           <div className="space-y-12 animate-in fade-in duration-500">
-            {isProduction && (companyData?.erpAllowed || companyData?.erpEnabled) && (
-              <div className="p-6 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-3xl shadow-xl border border-indigo-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden">
-                <div className="absolute right-0 top-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-                <div className="flex items-center gap-4 relative z-10">
-                  <div className="w-14 h-14 rounded-2xl bg-indigo-600/30 border border-indigo-400/40 flex items-center justify-center text-indigo-300 shrink-0 shadow-inner">
-                    <Layers className="w-7 h-7" />
-                  </div>
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-black uppercase tracking-wider border border-emerald-500/30">
-                        ERP модуль активен
-                      </span>
-                    </div>
-                    <h3 className="text-xl font-black tracking-tight text-white mt-1">
-                      ERP система управления мебельным производством
-                    </h3>
-                    <p className="text-xs text-slate-300 mt-1 max-w-xl leading-relaxed">
-                      Управление цехами, планирование распила и кромления, график смен мастеров, сдельная зарплата и расчет себестоимости.
-                    </p>
-                  </div>
-                </div>
-                <a
-                  href={`/${companyData?.slug || companyData?.id}/erp`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="px-6 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold text-sm shadow-lg shadow-indigo-600/40 transition-all flex items-center gap-2.5 shrink-0 whitespace-nowrap active:scale-95 border border-indigo-400/30"
-                >
-                  <span>Открыть ERP систему</span>
-                  <ExternalLink className="w-4 h-4" />
-                </a>
-              </div>
-            )}
-
             {!isProduction && (
               <div className="p-6 bg-blue-50 border border-blue-100 rounded-3xl mb-8">
                 <div className="flex gap-4">

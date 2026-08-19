@@ -169,17 +169,9 @@ function transliterate(str: string): string {
   });
 
   // Public Catalog/Landing Page API
-  // In-memory cache for public company data
-  const publicCompanyCache = new Map<string, { data: any, timestamp: number }>();
-  const PUBLIC_CACHE_TTL = 60 * 1000;
-
   app.get("/api/public/company/:aliasOrId", async (req, res) => {
     try {
       const { aliasOrId } = req.params;
-      const cached = publicCompanyCache.get(aliasOrId);
-      if (cached && (Date.now() - cached.timestamp < PUBLIC_CACHE_TTL)) {
-        return res.json(cached.data);
-      }
       
       res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
       res.setHeader("Pragma", "no-cache");
@@ -251,9 +243,16 @@ function transliterate(str: string): string {
         allProducts = allProducts.filter(p => visibleCategories.includes(p.category));
       }
       
+      const isErpAllowed = companyData.erpAllowed !== undefined ? !!companyData.erpAllowed : (companyData.erpEnabled !== undefined ? !!companyData.erpEnabled : false);
+
       const responseData = {
         company: {
           id: companyId,
+          ...companyData,
+          erpAllowed: isErpAllowed,
+          erpEnabled: isErpAllowed,
+          erpConfig: companyData.erpConfig || companyData.erpSettings || null,
+          erpSettings: companyData.erpSettings || companyData.erpConfig || null,
           name: companyData.name || "",
           phone: companyData.phone || "",
           city: companyData.city || "",
@@ -265,7 +264,6 @@ function transliterate(str: string): string {
         prices: prices?.prices || {}
       };
       
-      publicCompanyCache.set(aliasOrId, { data: responseData, timestamp: Date.now() });
       res.json(responseData);
       
     } catch (e) {
