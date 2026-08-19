@@ -178,65 +178,43 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
           }));
         }
 
-        const defaultEmployees: ERPEmployee[] = [
-          {
-            id: 'emp-1',
-            name: 'Сергеев Виктор Николаевич',
-            role: 'Начальник цеха / Мастер смены',
-            department: 'management',
-            rateType: 'salary',
-            baseRate: 95000,
-            shiftType: '5/2',
-            status: 'active',
-            phone: '+7 (912) 345-67-89'
-          },
-          {
-            id: 'emp-2',
-            name: 'Иванов Алексей Петрович',
-            role: 'Оператор форматно-раскроечного станка',
-            department: 'cutting',
-            rateType: 'piecework',
-            baseRate: 55000,
-            shiftType: '2/2',
-            status: 'active',
-            phone: '+7 (922) 111-22-33'
-          },
-          {
-            id: 'emp-3',
-            name: 'Кузнецов Дмитрий Олегович',
-            role: 'Оператор кромкооблицовочного станка',
-            department: 'edging',
-            rateType: 'piecework',
-            baseRate: 50000,
-            shiftType: '2/2',
-            status: 'active',
-            phone: '+7 (922) 444-55-66'
-          },
-          {
-            id: 'emp-4',
-            name: 'Морозов Роман Игоревич',
-            role: 'Оператор обрабатывающего центра ЧПУ',
-            department: 'cnc',
-            rateType: 'piecework',
-            baseRate: 65000,
-            shiftType: '2/2',
-            status: 'active',
-            phone: '+7 (922) 777-88-99'
-          },
-          {
-            id: 'emp-5',
-            name: 'Павлов Михаил Сергеевич',
-            role: 'Мастер контрольной сборки и ОТК',
-            department: 'assembly',
-            rateType: 'piecework',
-            baseRate: 55000,
-            shiftType: '2/2',
-            status: 'active',
-            phone: '+7 (922) 000-11-22'
+        // Fetch real company employees from ERP API
+        let loadedEmployees: ERPEmployee[] = [];
+        try {
+          const empRes = await fetch(`/api/erp/${comp.id}/employees`);
+          if (empRes.ok) {
+            const empData = await empRes.json();
+            if (Array.isArray(empData.employees) && empData.employees.length > 0) {
+              loadedEmployees = empData.employees;
+            }
           }
-        ];
+        } catch (empErr) {
+          console.warn('Failed to fetch company employees:', empErr);
+        }
 
-        setEmployees(defaultEmployees);
+        if (loadedEmployees.length === 0) {
+          // If no employees found, add current logged-in user as company manager
+          const currentUserName = parsedUser?.displayName || parsedUser?.name || parsedUser?.email?.split('@')[0] || 'Руководитель цеха';
+          loadedEmployees = [
+            {
+              id: parsedUser?.id || 'emp-user-1',
+              userId: parsedUser?.id,
+              name: currentUserName,
+              role: 'Начальник цеха',
+              productionRole: 'Начальник цеха',
+              isProductionEmployee: true,
+              department: 'management',
+              rateType: 'salary',
+              baseRate: 100000,
+              shiftType: '5/2',
+              status: 'active',
+              email: parsedUser?.email || '',
+              isOwner: true
+            }
+          ];
+        }
+
+        setEmployees(loadedEmployees);
 
         // Fetch real orders from Bitrix24 or Projects via ERP API
         try {
@@ -374,27 +352,48 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
     }
   };
 
+  const saveEmployeesToBackend = async (newEmps: ERPEmployee[]) => {
+    setEmployees(newEmps);
+    if (company?.id) {
+      try {
+        await fetch(`/api/erp/${company.id}/employees`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ employees: newEmps })
+        });
+      } catch (e) {
+        console.warn('Failed to persist employees to backend:', e);
+      }
+    }
+  };
+
   const handleAddEmployee = (emp: Partial<ERPEmployee>) => {
+    const roleVal = emp.productionRole || emp.role || 'Распиловщик';
     const newEmp: ERPEmployee = {
       id: `emp-${Date.now()}`,
       name: emp.name || 'Новый сотрудник',
-      role: emp.role || 'Оператор',
+      role: roleVal,
+      productionRole: roleVal,
+      isProductionEmployee: emp.isProductionEmployee !== false,
       department: emp.department || 'cutting',
       rateType: emp.rateType || 'piecework',
-      baseRate: emp.baseRate || 50000,
+      baseRate: emp.baseRate || 55000,
       shiftType: emp.shiftType || '2/2',
       status: emp.status || 'active',
-      phone: emp.phone || ''
+      phone: emp.phone || '',
+      email: emp.email || ''
     };
-    setEmployees(prev => [...prev, newEmp]);
+    saveEmployeesToBackend([...employees, newEmp]);
   };
 
   const handleUpdateEmployee = (updated: ERPEmployee) => {
-    setEmployees(prev => prev.map(e => e.id === updated.id ? updated : e));
+    const updatedList = employees.map(e => e.id === updated.id ? updated : e);
+    saveEmployeesToBackend(updatedList);
   };
 
   const handleDeleteEmployee = (id: string) => {
-    setEmployees(prev => prev.filter(e => e.id !== id));
+    const updatedList = employees.filter(e => e.id !== id);
+    saveEmployeesToBackend(updatedList);
   };
 
   const handleLogout = () => {
@@ -552,11 +551,11 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
         {/* Sidebar Footer */}
         <div className="mt-8 pt-4 border-t border-slate-900 space-y-2.5">
           <div className="flex items-center justify-between px-2 text-[11px] font-mono text-slate-400">
-            <span className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              Цех онлайн
+            <span className="flex items-center gap-1.5 truncate">
+              <Clock className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+              <span>Смена: {settings?.defaultShiftDurationHours || 12} ч ({settings?.workDayStart || '08:00'}–{settings?.workDayEnd || '20:00'})</span>
             </span>
-            <span>{currentTime}</span>
+            <span className="shrink-0 pl-1">{currentTime}</span>
           </div>
 
           <div className="p-3 bg-slate-900/90 rounded-2xl border border-slate-800/80 flex items-center justify-between gap-2">
@@ -566,7 +565,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
               </div>
               <div className="min-w-0">
                 <div className="text-xs font-bold text-white truncate">
-                  {authUser?.displayName || authUser?.email?.split('@')[0] || 'Сотрудник'}
+                  {authUser?.displayName || authUser?.name || authUser?.email?.split('@')[0] || 'Сотрудник'}
                 </div>
                 <div className="text-[10px] text-indigo-400 font-medium truncate">
                   {userRoleLabel}
@@ -594,6 +593,8 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
             </a>
             <a
               href="/"
+              target="_blank"
+              rel="noreferrer"
               className="py-2 px-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-center"
             >
               <span>Калькулятор</span>
@@ -638,7 +639,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
             {/* Shift Badge */}
             <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-700">
               <Clock className="w-3.5 h-3.5 text-blue-600" />
-              <span>Дневная смена: 08:00 - 20:00</span>
+              <span>Длительность смены: {settings?.defaultShiftDurationHours || 12} ч ({settings?.workDayStart || '08:00'} - {settings?.workDayEnd || '20:00'})</span>
             </div>
 
             {/* Operator Card */}
@@ -648,7 +649,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
               </div>
               <div className="hidden md:block text-left">
                 <div className="text-xs font-bold text-slate-900">
-                  {authUser?.displayName || authUser?.email?.split('@')[0] || 'Сотрудник цеха'}
+                  {authUser?.displayName || authUser?.name || authUser?.email?.split('@')[0] || 'Сотрудник'}
                 </div>
                 <div className="text-[10px] text-emerald-600 font-semibold">
                   {userRoleLabel}

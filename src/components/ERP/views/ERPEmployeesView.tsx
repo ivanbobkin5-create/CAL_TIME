@@ -13,7 +13,8 @@ import {
   UserCheck, 
   X,
   ShieldCheck,
-  Check
+  Check,
+  UserX
 } from 'lucide-react';
 import { ERPEmployee } from '../types';
 
@@ -24,6 +25,18 @@ interface ERPEmployeesViewProps {
   onDeleteEmployee: (id: string) => void;
 }
 
+export const PREDEFINED_ROLES = [
+  'Распиловщик',
+  'Оператор ЧПУ',
+  'Оператор кромкооблицовочного станка',
+  'Помощник оператора',
+  'Упаковщик',
+  'Комплектовщик',
+  'Кладовщик',
+  'Помощник начальника цеха',
+  'Начальник цеха'
+];
+
 export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
   employees,
   onAddEmployee,
@@ -32,36 +45,107 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
 }) => {
   const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
-  const [newEmployee, setNewEmployee] = useState<Partial<ERPEmployee>>({
+  const [editingEmployee, setEditingEmployee] = useState<ERPEmployee | null>(null);
+
+  const [formEmployee, setFormEmployee] = useState<Partial<ERPEmployee>>({
     name: '',
-    role: 'Оператор станка',
+    role: 'Распиловщик',
+    productionRole: 'Распиловщик',
+    isProductionEmployee: true,
     department: 'cutting',
     rateType: 'piecework',
-    baseRate: 50000,
+    baseRate: 55000,
     shiftType: '2/2',
     status: 'active'
   });
 
+  const [isCustomRole, setIsCustomRole] = useState(false);
+  const [customRoleText, setCustomRoleText] = useState('');
+
   const filtered = employees.filter(e => 
     e.name.toLowerCase().includes(search.toLowerCase()) ||
-    e.role.toLowerCase().includes(search.toLowerCase()) ||
+    (e.role && e.role.toLowerCase().includes(search.toLowerCase())) ||
+    (e.productionRole && e.productionRole.toLowerCase().includes(search.toLowerCase())) ||
     (e.phone && e.phone.includes(search))
   );
 
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newEmployee.name?.trim()) return;
-    onAddEmployee(newEmployee);
-    setShowAddModal(false);
-    setNewEmployee({
+  const openAddModal = () => {
+    setEditingEmployee(null);
+    setFormEmployee({
       name: '',
-      role: 'Оператор станка',
+      role: 'Распиловщик',
+      productionRole: 'Распиловщик',
+      isProductionEmployee: true,
       department: 'cutting',
       rateType: 'piecework',
-      baseRate: 50000,
+      baseRate: 55000,
       shiftType: '2/2',
       status: 'active'
     });
+    setIsCustomRole(false);
+    setCustomRoleText('');
+    setShowAddModal(true);
+  };
+
+  const openEditModal = (emp: ERPEmployee) => {
+    setEditingEmployee(emp);
+    const roleVal = emp.productionRole || emp.role || 'Распиловщик';
+    const isPredefined = PREDEFINED_ROLES.includes(roleVal);
+
+    setFormEmployee({
+      ...emp,
+      productionRole: roleVal,
+      isProductionEmployee: emp.isProductionEmployee !== undefined ? emp.isProductionEmployee : true
+    });
+
+    if (!isPredefined && roleVal) {
+      setIsCustomRole(true);
+      setCustomRoleText(roleVal);
+    } else {
+      setIsCustomRole(false);
+      setCustomRoleText('');
+    }
+
+    setShowAddModal(true);
+  };
+
+  const handleRoleSelectChange = (val: string) => {
+    if (val === 'CUSTOM') {
+      setIsCustomRole(true);
+      setFormEmployee(prev => ({ ...prev, productionRole: customRoleText || 'Новая должность' }));
+    } else {
+      setIsCustomRole(false);
+      setFormEmployee(prev => ({ ...prev, productionRole: val, role: val }));
+    }
+  };
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formEmployee.name?.trim()) return;
+
+    const finalRole = isCustomRole ? (customRoleText.trim() || 'Сотрудник цеха') : (formEmployee.productionRole || 'Распиловщик');
+
+    const payload: Partial<ERPEmployee> = {
+      ...formEmployee,
+      role: finalRole,
+      productionRole: finalRole
+    };
+
+    if (editingEmployee) {
+      onUpdateEmployee({ ...editingEmployee, ...payload } as ERPEmployee);
+    } else {
+      onAddEmployee(payload);
+    }
+
+    setShowAddModal(false);
+  };
+
+  const toggleProductionStatus = (emp: ERPEmployee) => {
+    const updated = {
+      ...emp,
+      isProductionEmployee: !emp.isProductionEmployee
+    };
+    onUpdateEmployee(updated);
   };
 
   return (
@@ -70,11 +154,14 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
       <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-xs font-bold text-blue-600 uppercase tracking-wider mb-1">
-            <Users className="w-4 h-4" /> Производственный персонал
+            <Users className="w-4 h-4" /> Персонал компании и цеха
           </div>
           <h2 className="text-xl md:text-2xl font-black text-slate-900">
-            Сотрудники и мастера цеха
+            Сотрудники Мебельного Калькулятора
           </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            Начальник цеха или администратор может назначать должности производственного персонала и определять статус доступа к цеху.
+          </p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -82,7 +169,7 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Поиск мастера..."
+              placeholder="Поиск сотрудника..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
@@ -90,90 +177,123 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
           </div>
 
           <button
-            onClick={() => setShowAddModal(true)}
+            onClick={openAddModal}
             className="px-4 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md shadow-blue-200 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
           >
-            <Plus className="w-4 h-4" /> Добавить мастера
+            <Plus className="w-4 h-4" /> Добавить сотрудника
           </button>
         </div>
       </div>
 
       {/* Employees Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {filtered.map((emp) => (
-          <div
-            key={emp.id}
-            className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-all flex flex-col justify-between"
-          >
-            <div>
-              <div className="flex items-start justify-between gap-3 mb-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center font-black text-sm shadow-md shadow-blue-200">
-                    {emp.name.substring(0, 2).toUpperCase()}
+        {filtered.map((emp) => {
+          const isProd = emp.isProductionEmployee !== false;
+
+          return (
+            <div
+              key={emp.id}
+              className={`bg-white rounded-3xl p-5 border transition-all flex flex-col justify-between ${
+                isProd ? 'border-slate-200/80 shadow-sm hover:shadow-md' : 'border-slate-200 opacity-75 bg-slate-50/50'
+              }`}
+            >
+              <div>
+                <div className="flex items-start justify-between gap-3 mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white flex items-center justify-center font-black text-sm shadow-md shadow-blue-200 shrink-0">
+                      {(emp.name || 'С').substring(0, 2).toUpperCase()}
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-slate-900 text-sm">{emp.name}</h3>
+                      <p className="text-xs text-blue-600 font-semibold mt-0.5">
+                        {emp.productionRole || emp.role || 'Сотрудник'}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-bold text-slate-900 text-sm">{emp.name}</h3>
-                    <p className="text-xs text-slate-500 font-medium">{emp.role}</p>
-                  </div>
+
+                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase shrink-0 ${
+                    isProd ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'
+                  }`}>
+                    {isProd ? 'Производство' : 'Офис / Ограничен'}
+                  </span>
                 </div>
 
-                <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
-                  emp.status === 'active' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'
-                }`}>
-                  {emp.status === 'active' ? 'В штате' : 'Не активен'}
-                </span>
+                {/* Info tags */}
+                <div className="space-y-2 py-3 border-y border-slate-100 text-xs">
+                  <div className="flex items-center justify-between text-slate-600">
+                    <span className="text-slate-400">Сотрудник цеха:</span>
+                    <button
+                      onClick={() => toggleProductionStatus(emp)}
+                      className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                        isProd ? 'bg-emerald-100 text-emerald-800 hover:bg-emerald-200' : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
+                      }`}
+                    >
+                      {isProd ? <UserCheck className="w-3.5 h-3.5" /> : <UserX className="w-3.5 h-3.5" />}
+                      <span>{isProd ? 'Да (в цехе)' : 'Нет'}</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between text-slate-600">
+                    <span className="text-slate-400">Участок:</span>
+                    <span className="font-bold text-slate-800">
+                      {emp.department === 'cutting' ? 'Раскрой' : emp.department === 'edging' ? 'Кромление' : emp.department === 'cnc' ? 'Присадка ЧПУ' : emp.department === 'assembly' ? 'Сборка' : emp.department === 'packing' ? 'Упаковка' : emp.department === 'warehouse' ? 'Склад' : 'Администрация'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-600">
+                    <span className="text-slate-400">График:</span>
+                    <span className="font-mono font-bold text-slate-800">{emp.shiftType || '2/2'}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-600">
+                    <span className="text-slate-400">Оплата:</span>
+                    <span className="font-bold text-indigo-600">
+                      {emp.rateType === 'piecework' ? 'Сдельная от выработки' : `${(emp.baseRate || 55000)?.toLocaleString('ru-RU')} ₽ / мес`}
+                    </span>
+                  </div>
+                  {emp.email && (
+                    <div className="flex items-center justify-between text-slate-600">
+                      <span className="text-slate-400">Email:</span>
+                      <span className="font-medium text-slate-800 truncate max-w-[160px]">{emp.email}</span>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {/* Info tags */}
-              <div className="space-y-2 py-3 border-y border-slate-100 text-xs">
-                <div className="flex items-center justify-between text-slate-600">
-                  <span className="text-slate-400">Участок:</span>
-                  <span className="font-bold text-slate-800">
-                    {emp.department === 'cutting' ? 'Раскрой' : emp.department === 'edging' ? 'Кромление' : emp.department === 'cnc' ? 'Присадка ЧПУ' : emp.department === 'assembly' ? 'Сборка' : 'Цех'}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-slate-600">
-                  <span className="text-slate-400">График:</span>
-                  <span className="font-mono font-bold text-slate-800">{emp.shiftType || '2/2'}</span>
-                </div>
-                <div className="flex items-center justify-between text-slate-600">
-                  <span className="text-slate-400">Оплата:</span>
-                  <span className="font-bold text-indigo-600">
-                    {emp.rateType === 'piecework' ? 'Сдельная от выработки' : `${emp.baseRate?.toLocaleString('ru-RU')} ₽ / мес`}
-                  </span>
-                </div>
-                {emp.phone && (
-                  <div className="flex items-center justify-between text-slate-600">
-                    <span className="text-slate-400">Телефон:</span>
-                    <span className="font-medium text-slate-800">{emp.phone}</span>
-                  </div>
+              {/* Bottom Card Actions */}
+              <div className="mt-4 pt-2 flex items-center justify-between">
+                <button
+                  onClick={() => openEditModal(emp)}
+                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                >
+                  <Edit2 className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Редактировать</span>
+                </button>
+
+                {!emp.isOwner && (
+                  <button
+                    onClick={() => onDeleteEmployee(emp.id)}
+                    className="p-2 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                    title="Удалить из списка"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
                 )}
               </div>
             </div>
-
-            {/* Bottom Card Actions */}
-            <div className="mt-4 pt-2 flex items-center justify-end gap-2">
-              <button
-                onClick={() => onDeleteEmployee(emp.id)}
-                className="p-2 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
-                title="Удалить"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
-      {/* Add Employee Modal */}
+      {/* Add / Edit Employee Modal */}
       {showAddModal && (
         <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-5">
-              <h3 className="text-lg font-black text-slate-900">Добавить мастера в цех</h3>
+              <h3 className="text-lg font-black text-slate-900">
+                {editingEmployee ? 'Редактировать сотрудника' : 'Добавить сотрудника в ERP'}
+              </h3>
               <button
                 onClick={() => setShowAddModal(false)}
-                className="p-2 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200"
+                className="p-2 rounded-xl bg-slate-100 text-slate-500 hover:bg-slate-200 cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
@@ -181,34 +301,70 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
 
             <form onSubmit={handleSave} className="space-y-4">
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">ФИО мастера *</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">ФИО сотрудника *</label>
                 <input
                   type="text"
                   required
                   placeholder="Иванов Сергей Петрович"
-                  value={newEmployee.name || ''}
-                  onChange={(e) => setNewEmployee({ ...newEmployee, name: e.target.value })}
+                  value={formEmployee.name || ''}
+                  onChange={(e) => setFormEmployee({ ...formEmployee, name: e.target.value })}
                   className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
                 />
               </div>
 
+              {/* Is Production Employee Checkbox */}
+              <div className="p-3 bg-blue-50/60 rounded-2xl border border-blue-100 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-slate-900">Сотрудник производства</div>
+                  <div className="text-[11px] text-slate-500">Доступ к ERP канбану и участкам цеха</div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={formEmployee.isProductionEmployee !== false}
+                  onChange={(e) => setFormEmployee({ ...formEmployee, isProductionEmployee: e.target.checked })}
+                  className="w-5 h-5 rounded-lg text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                />
+              </div>
+
+              {/* Position Selection */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Должность в цехе *</label>
+                <select
+                  value={isCustomRole ? 'CUSTOM' : (formEmployee.productionRole || PREDEFINED_ROLES[0])}
+                  onChange={(e) => handleRoleSelectChange(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  {PREDEFINED_ROLES.map((roleName) => (
+                    <option key={roleName} value={roleName}>
+                      {roleName}
+                    </option>
+                  ))}
+                  <option value="CUSTOM">+ Добавить новую должность...</option>
+                </select>
+
+                {isCustomRole && (
+                  <div className="mt-2">
+                    <input
+                      type="text"
+                      required
+                      placeholder="Введите название новой должности"
+                      value={customRoleText}
+                      onChange={(e) => {
+                        setCustomRoleText(e.target.value);
+                        setFormEmployee(prev => ({ ...prev, productionRole: e.target.value, role: e.target.value }));
+                      }}
+                      className="w-full px-3.5 py-2.5 rounded-2xl bg-white border border-blue-300 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Должность</label>
-                  <input
-                    type="text"
-                    placeholder="Распиловщик"
-                    value={newEmployee.role || ''}
-                    onChange={(e) => setNewEmployee({ ...newEmployee, role: e.target.value })}
-                    className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Участок</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Участок цеха</label>
                   <select
-                    value={newEmployee.department || 'cutting'}
-                    onChange={(e) => setNewEmployee({ ...newEmployee, department: e.target.value as any })}
+                    value={formEmployee.department || 'cutting'}
+                    onChange={(e) => setFormEmployee({ ...formEmployee, department: e.target.value as any })}
                     className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="cutting">Раскрой</option>
@@ -216,7 +372,22 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
                     <option value="cnc">Присадка ЧПУ</option>
                     <option value="facades">Фасады</option>
                     <option value="assembly">Сборка</option>
-                    <option value="management">Мастер цеха</option>
+                    <option value="packing">Упаковка</option>
+                    <option value="warehouse">Склад</option>
+                    <option value="management">Администрация цеха</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">График работы</label>
+                  <select
+                    value={formEmployee.shiftType || '2/2'}
+                    onChange={(e) => setFormEmployee({ ...formEmployee, shiftType: e.target.value as any })}
+                    className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="2/2">2 через 2</option>
+                    <option value="5/2">5 через 2</option>
+                    <option value="flexible">Гибкий график</option>
                   </select>
                 </div>
               </div>
@@ -225,54 +396,51 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">Тип оплаты</label>
                   <select
-                    value={newEmployee.rateType || 'piecework'}
-                    onChange={(e) => setNewEmployee({ ...newEmployee, rateType: e.target.value as any })}
+                    value={formEmployee.rateType || 'piecework'}
+                    onChange={(e) => setFormEmployee({ ...formEmployee, rateType: e.target.value as any })}
                     className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="piecework">Сдельная</option>
-                    <option value="salary">Оклад</option>
-                    <option value="hourly">Почасовая</option>
+                    <option value="piecework">Сдельная от выработки</option>
+                    <option value="salary">Фиксированный оклад</option>
+                    <option value="hourly">Почасовая ставка</option>
                   </select>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">График</label>
-                  <select
-                    value={newEmployee.shiftType || '2/2'}
-                    onChange={(e) => setNewEmployee({ ...newEmployee, shiftType: e.target.value as any })}
-                    className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="2/2">2 через 2</option>
-                    <option value="5/2">5 через 2</option>
-                    <option value="flexible">Гибкий</option>
-                  </select>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Базовая ставка (₽)</label>
+                  <input
+                    type="number"
+                    value={formEmployee.baseRate || 55000}
+                    onChange={(e) => setFormEmployee({ ...formEmployee, baseRate: Number(e.target.value) })}
+                    className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                  />
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Телефон</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Телефон / Связь</label>
                 <input
                   type="text"
                   placeholder="+7 (999) 000-00-00"
-                  value={newEmployee.phone || ''}
-                  onChange={(e) => setNewEmployee({ ...newEmployee, phone: e.target.value })}
+                  value={formEmployee.phone || ''}
+                  onChange={(e) => setFormEmployee({ ...formEmployee, phone: e.target.value })}
                   className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
                 />
               </div>
 
-              <div className="pt-3 flex items-center justify-end gap-3">
+              <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs"
+                  className="px-4 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
                 >
                   Отмена
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md shadow-blue-200"
+                  className="px-5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md shadow-blue-200 cursor-pointer"
                 >
-                  Сохранить мастера
+                  {editingEmployee ? 'Сохранить изменения' : 'Добавить сотрудника'}
                 </button>
               </div>
             </form>

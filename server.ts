@@ -1585,6 +1585,221 @@ function transliterate(str: string): string {
     }
   });
 
+  // --- ERP Employees API ---
+  app.get("/api/erp/:companyId/employees", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const companyDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } }));
+      if (!companyDoc) return res.status(404).json({ error: "Компания не найдена" });
+      const companyData = JSON.parse(companyDoc.data);
+
+      // 1. Fetch all users associated with this company
+      const allUserDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+        where: { collection: "users" }
+      }));
+
+      // 2. Fetch specific company sub-collections if any
+      const companyUserDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+        where: {
+          OR: [
+            { collection: `companies/${companyId}/users` },
+            { collection: `companies/${companyId}/employees` }
+          ]
+        }
+      }));
+
+      // 3. Fetch ERP employee overrides/settings
+      const erpEmpDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+        where: { collection: `companies/${companyId}/erp_employees` }
+      }));
+      const erpEmpMap: Record<string, any> = {};
+      for (const d of erpEmpDocs) {
+        try {
+          erpEmpMap[d.docId] = JSON.parse(d.data);
+        } catch (e) {}
+      }
+
+      const employeesMap: Map<string, any> = new Map();
+
+      // Helper to determine production department by role
+      const getDepartmentForRole = (roleName: string) => {
+        const r = (roleName || '').toLowerCase();
+        if (r.includes('распил') || r.includes('раскрой')) return 'cutting';
+        if (r.includes('кромк')) return 'edging';
+        if (r.includes('чпу') || r.includes('присад')) return 'cnc';
+        if (r.includes('фасад') || r.includes('покрас')) return 'facades';
+        if (r.includes('упаковк')) return 'packing';
+        if (r.includes('склад') || r.includes('кладовщ') || r.includes('комплект')) return 'warehouse';
+        if (r.includes('сборк') || r.includes('отк')) return 'assembly';
+        if (r.includes('начальник') || r.includes('руковод') || r.includes('мастер')) return 'management';
+        return 'cutting';
+      };
+
+      // Add Company Owner / SuperAdmin if known
+      if (companyData.ownerId || companyData.ownerEmail) {
+        const ownerId = companyData.ownerId || `owner_${companyId}`;
+        const ownerOverride = erpEmpMap[ownerId] || {};
+        employeesMap.set(ownerId, {
+          id: ownerId,
+          userId: ownerId,
+          name: ownerOverride.name || companyData.ownerName || companyData.contactPerson || companyData.ownerEmail?.split('@')[0] || "Руководитель компании",
+          email: companyData.ownerEmail || "",
+          phone: ownerOverride.phone || companyData.phone || "",
+          role: ownerOverride.role || "Начальник цеха",
+          productionRole: ownerOverride.productionRole || "Начальник цеха",
+          isProductionEmployee: ownerOverride.isProductionEmployee !== undefined ? ownerOverride.isProductionEmployee : true,
+          department: ownerOverride.department || "management",
+          rateType: ownerOverride.rateType || "salary",
+          baseRate: ownerOverride.baseRate !== undefined ? ownerOverride.baseRate : 100000,
+          shiftType: ownerOverride.shiftType || "5/2",
+          status: ownerOverride.status || "active",
+          isOwner: true
+        });
+      }
+
+      // Check all users belonging to company
+      for (const uDoc of allUserDocs) {
+        try {
+          const uData = JSON.parse(uDoc.data);
+          if (uData.companyId === companyId || uData.companySlug === companyId || uData.companyAlias === companyId) {
+            const uid = uDoc.docId;
+            const override = erpEmpMap[uid] || {};
+            const prodRole = override.productionRole || uData.productionRole || (uData.role === 'admin' ? 'Начальник цеха' : (uData.position || 'Оператор станка'));
+            
+            employeesMap.set(uid, {
+              id: uid,
+              userId: uid,
+              name: override.name || uData.name || uData.displayName || (uData.email ? uData.email.split('@')[0] : 'Сотрудник'),
+              email: uData.email || override.email || '',
+              phone: override.phone || uData.phone || '',
+              role: prodRole,
+              productionRole: prodRole,
+              isProductionEmployee: override.isProductionEmployee !== undefined ? override.isProductionEmployee : (uData.isProductionEmployee !== undefined ? uData.isProductionEmployee : true),
+              department: override.department || getDepartmentForRole(prodRole),
+              rateType: override.rateType || uData.rateType || 'piecework',
+              baseRate: override.baseRate !== undefined ? override.baseRate : (uData.baseRate || 55000),
+              shiftType: override.shiftType || uData.shiftType || '2/2',
+              status: override.status || uData.status || 'active',
+              isOwner: uData.role === 'admin' || uData.isOwner
+            });
+          }
+        } catch (e) {}
+      }
+
+      // Check company-specific user documents
+      for (const cuDoc of companyUserDocs) {
+        try {
+          const cuData = JSON.parse(cuDoc.data);
+          const uid = cuDoc.docId;
+          const override = erpEmpMap[uid] || {};
+          const prodRole = override.productionRole || cuData.productionRole || cuData.position || cuData.role || 'Оператор станка';
+
+          if (!employeesMap.has(uid)) {
+            employeesMap.set(uid, {
+              id: uid,
+              userId: uid,
+              name: override.name || cuData.name || cuData.displayName || cuData.email?.split('@')[0] || 'Сотрудник цеха',
+              email: cuData.email || override.email || '',
+              phone: override.phone || cuData.phone || '',
+              role: prodRole,
+              productionRole: prodRole,
+              isProductionEmployee: override.isProductionEmployee !== undefined ? override.isProductionEmployee : (cuData.isProductionEmployee !== undefined ? cuData.isProductionEmployee : true),
+              department: override.department || getDepartmentForRole(prodRole),
+              rateType: override.rateType || cuData.rateType || 'piecework',
+              baseRate: override.baseRate !== undefined ? override.baseRate : (cuData.baseRate || 55000),
+              shiftType: override.shiftType || cuData.shiftType || '2/2',
+              status: override.status || cuData.status || 'active'
+            });
+          }
+        } catch (e) {}
+      }
+
+      // If any ERP employees were created locally via ERP
+      for (const erpId of Object.keys(erpEmpMap)) {
+        if (!employeesMap.has(erpId)) {
+          const emp = erpEmpMap[erpId];
+          employeesMap.set(erpId, {
+            id: erpId,
+            userId: erpId,
+            name: emp.name || 'Сотрудник',
+            email: emp.email || '',
+            phone: emp.phone || '',
+            role: emp.productionRole || emp.role || 'Распиловщик',
+            productionRole: emp.productionRole || emp.role || 'Распиловщик',
+            isProductionEmployee: emp.isProductionEmployee !== undefined ? emp.isProductionEmployee : true,
+            department: emp.department || getDepartmentForRole(emp.productionRole || emp.role),
+            rateType: emp.rateType || 'piecework',
+            baseRate: emp.baseRate || 55000,
+            shiftType: emp.shiftType || '2/2',
+            status: emp.status || 'active'
+          });
+        }
+      }
+
+      const employees = Array.from(employeesMap.values());
+
+      res.json({
+        success: true,
+        employees,
+        totalCount: employees.length
+      });
+    } catch (e: any) {
+      console.error("Error fetching ERP employees:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/erp/:companyId/employees/:employeeId", async (req, res) => {
+    try {
+      const { companyId, employeeId } = req.params;
+      const empData = req.body;
+
+      const docPath = `companies/${companyId}/erp_employees/${employeeId}`;
+      const existingDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
+      const existing = existingDoc ? JSON.parse(existingDoc.data) : {};
+
+      const updated = {
+        ...existing,
+        ...empData,
+        id: employeeId,
+        updatedAt: new Date().toISOString()
+      };
+
+      await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+        where: { path: docPath },
+        create: {
+          path: docPath,
+          collection: `companies/${companyId}/erp_employees`,
+          docId: employeeId,
+          data: JSON.stringify(updated)
+        },
+        update: {
+          data: JSON.stringify(updated)
+        }
+      }));
+
+      // Also sync back to user document if it exists in users collection
+      const userDocPath = `users/${employeeId}`;
+      const userDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: userDocPath } }));
+      if (userDoc) {
+        try {
+          const uObj = JSON.parse(userDoc.data);
+          uObj.productionRole = updated.productionRole;
+          uObj.isProductionEmployee = updated.isProductionEmployee;
+          await dbQueryWithRetry(() => prisma.dbDocument.update({
+            where: { path: userDocPath },
+            data: { data: JSON.stringify(uObj) }
+          }));
+        } catch (e) {}
+      }
+
+      res.json({ success: true, employee: updated });
+    } catch (e: any) {
+      console.error("Error updating ERP employee:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   // Environment determination
   const isDev = process.env.NODE_ENV === "development";
   const distPath = path.join(process.cwd(), 'dist');

@@ -68,9 +68,12 @@ export interface ProductionOrder {
 
 export interface ERPEmployee {
   id: string;
+  userId?: string;
   name: string;
   role: string;
-  department: 'cutting' | 'edging' | 'cnc' | 'facades' | 'assembly' | 'qc' | 'management';
+  productionRole?: string;
+  isProductionEmployee?: boolean;
+  department: 'cutting' | 'edging' | 'cnc' | 'facades' | 'assembly' | 'qc' | 'management' | 'packing' | 'warehouse' | string;
   phone?: string;
   email?: string;
   rateType: 'hourly' | 'piecework' | 'salary' | 'mixed';
@@ -81,11 +84,12 @@ export interface ERPEmployee {
     cncPerOperation?: number;
     assemblyPerModule?: number;
   };
-  shiftType: '2/2' | '5/2' | 'flexible' | 'night';
+  shiftType: '2/2' | '5/2' | 'flexible' | 'night' | string;
   status: 'active' | 'vacation' | 'sick' | 'inactive';
   avatarUrl?: string;
   assignedMachines?: string[];
   hireDate?: string;
+  isOwner?: boolean;
 }
 
 export interface WorkShift {
