@@ -124,6 +124,7 @@ import { AppAdminView } from "./components/Admin/AppAdminView";
 import { LandingPage } from "./components/Landing/LandingPage";
 import { LandingSettingsView } from "./components/Landing/LandingSettingsView";
 import { PublicLandingView } from "./components/Landing/PublicLandingView";
+import { ERPApp } from "./components/ERP/ERPApp";
 import { Supplier, ProcurementSettings } from "./types";
 import { SuppliersSettings } from "./components/Admin/SuppliersSettings";
 import { ProcurementView } from "./components/Procurement/ProcurementView";
@@ -222,6 +223,7 @@ import {
   Loader2,
   ArrowLeftRight,
   AlertCircle,
+  ExternalLink,
 } from "lucide-react";
 
 // --- START OF OFFLINE CACHE AND SYNC ENGINE ---
@@ -16983,6 +16985,39 @@ const SettingsView = ({
 
         {activeSubTab === "production" && (
           <div className="space-y-12 animate-in fade-in duration-500">
+            {isProduction && (companyData?.erpAllowed || companyData?.erpEnabled) && (
+              <div className="p-6 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-3xl shadow-xl border border-indigo-500/30 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 relative overflow-hidden">
+                <div className="absolute right-0 top-0 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+                <div className="flex items-center gap-4 relative z-10">
+                  <div className="w-14 h-14 rounded-2xl bg-indigo-600/30 border border-indigo-400/40 flex items-center justify-center text-indigo-300 shrink-0 shadow-inner">
+                    <Layers className="w-7 h-7" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-black uppercase tracking-wider border border-emerald-500/30">
+                        ERP модуль активен
+                      </span>
+                    </div>
+                    <h3 className="text-xl font-black tracking-tight text-white mt-1">
+                      ERP система управления мебельным производством
+                    </h3>
+                    <p className="text-xs text-slate-300 mt-1 max-w-xl leading-relaxed">
+                      Управление цехами, планирование распила и кромления, график смен мастеров, сдельная зарплата и расчет себестоимости.
+                    </p>
+                  </div>
+                </div>
+                <a
+                  href={`/${companyData?.slug || companyData?.id}/erp`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-6 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl font-bold text-sm shadow-lg shadow-indigo-600/40 transition-all flex items-center gap-2.5 shrink-0 whitespace-nowrap active:scale-95 border border-indigo-400/30"
+                >
+                  <span>Открыть ERP систему</span>
+                  <ExternalLink className="w-4 h-4" />
+                </a>
+              </div>
+            )}
+
             {!isProduction && (
               <div className="p-6 bg-blue-50 border border-blue-100 rounded-3xl mb-8">
                 <div className="flex gap-4">
@@ -36592,12 +36627,18 @@ export default function App() {
     const rawParts = currentPath.split("/c/")[1].split("/").filter(Boolean);
     const aliasOrId = rawParts[0];
     const subPath = rawParts.slice(1).join("/");
+    if (subPath === "erp" || subPath.startsWith("erp/")) {
+      return <ERPApp aliasOrId={aliasOrId} />;
+    }
     return <PublicLandingView aliasOrId={aliasOrId} initialSubPath={subPath} />;
   }
 
   // Handle custom domain at root OR any sub-path
   if (hostMappedAlias) {
     let subPath = currentPath === "/" ? "" : currentPath.substring(1);
+    if (subPath === "erp" || subPath.startsWith("erp/")) {
+      return <ERPApp aliasOrId={hostMappedAlias.companySlug} />;
+    }
     if (!subPath) {
       subPath = hostMappedAlias.storefrontAlias;
     } else if (!subPath.startsWith(hostMappedAlias.storefrontAlias)) {
@@ -36606,7 +36647,7 @@ export default function App() {
     return <PublicLandingView aliasOrId={hostMappedAlias.companySlug} initialSubPath={subPath} />;
   }
 
-  // Handle direct custom slug routes (e.g. /mebelfaktura, /mebelfaktura/moduli, /mebelfaktura/catalog)
+  // Handle direct custom slug routes (e.g. /mebelfaktura, /mebelfaktura/moduli, /mebelfaktura/catalog, /mebelfaktura/erp)
   const pathSegments = currentPath.split("/").filter(Boolean);
   const reservedSystemRoutes = [
     "", "login", "register", "admin", "dashboard", "api", "assets", "static", "favicon.ico", "c",
@@ -36619,6 +36660,9 @@ export default function App() {
   if (pathSegments.length > 0 && !reservedSystemRoutes.includes(pathSegments[0].toLowerCase())) {
     const aliasOrId = pathSegments[0];
     const subPath = pathSegments.slice(1).join("/");
+    if (subPath === "erp" || subPath.startsWith("erp/")) {
+      return <ERPApp aliasOrId={aliasOrId} />;
+    }
     return <PublicLandingView aliasOrId={aliasOrId} initialSubPath={subPath} />;
   }
 

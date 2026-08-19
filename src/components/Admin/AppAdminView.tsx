@@ -110,6 +110,9 @@ interface Company {
   manufacturerId?: string;
   procurementEnabled?: boolean;
   procurementAllowed?: boolean;
+  erpAllowed?: boolean;
+  erpEnabled?: boolean;
+  slug?: string;
   crmPipelineId?: string;
   crmStageId?: string;
 }
@@ -169,6 +172,24 @@ const CompanyProcurementCheckbox = ({ company, updateLimit }: { company: any, up
                 className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
             />
             <span className="text-[10px] font-black uppercase text-gray-500">Снабжение</span>
+        </label>
+    );
+};
+
+const CompanyERPCheckbox = ({ company, updateLimit }: { company: any, updateLimit: any }) => {
+    const isAllowed = company.erpAllowed !== undefined ? !!company.erpAllowed : !!company.erpEnabled;
+    return (
+        <label className="flex items-center gap-2 cursor-pointer">
+            <input
+                type="checkbox"
+                checked={isAllowed}
+                onChange={(e) => {
+                    updateLimit(company.id, 'erpAllowed', !!e.target.checked);
+                    updateLimit(company.id, 'erpEnabled', !!e.target.checked);
+                }}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span className="text-[10px] font-black uppercase text-indigo-600 font-bold">ERP Система</span>
         </label>
     );
 };
@@ -639,6 +660,21 @@ export const AppAdminView = () => {
                                   className="w-full border rounded p-1"
                                 />
                             </div>
+                           )}
+                        </div>
+                        <div className="w-px h-8 bg-gray-200"></div>
+                        <div className="px-3">
+                           <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">ERP Производство</label>
+                           <CompanyERPCheckbox company={company} updateLimit={updateLimit} />
+                           {(company.erpAllowed !== undefined ? company.erpAllowed : company.erpEnabled) && (
+                             <a
+                               href={`/${company.slug || company.id}/erp`}
+                               target="_blank"
+                               rel="noreferrer"
+                               className="mt-1 text-[10px] text-blue-600 hover:underline flex items-center gap-1 font-bold"
+                             >
+                               Открыть ERP ↗
+                             </a>
                            )}
                         </div>
                       </div>
