@@ -28,6 +28,13 @@ export interface ProductionStage {
   department: string;
 }
 
+export interface ERPNoteRule {
+  id: string;
+  pattern: string;       // Например "4-8-36" или "паз"
+  instruction: string;   // Например "Данной детали требуется паз, см. чертеж"
+  color?: string;        // 'amber' | 'blue' | 'purple' | 'emerald' | 'rose'
+}
+
 export interface ProductionOrder {
   id: string;
   orderNumber: string;
@@ -55,6 +62,43 @@ export interface ProductionOrder {
   bitrixStageName?: string;
   bitrixUrl?: string;
   projectId?: string;
+  
+  // Specification / Birka Data attached to order
+  birkaData?: {
+    fileName: string;
+    fileHash?: string;
+    uploadedAt?: string;
+    details: Array<{
+      id: string;
+      labelNumber: string; // № детали / Позиция
+      orderNumber?: string;
+      name: string;
+      length: number;
+      width: number;
+      thickness: number;
+      material: string;
+      quantity: number;
+      edgeL1?: string;
+      edgeL2?: string;
+      edgeW1?: string;
+      edgeW2?: string;
+      notes?: string;
+      barcode?: string;
+    }>;
+    materialGroups?: Array<{
+      materialName: string;
+      totalQuantity: number;
+      totalAreaM2: number;
+      estimatedSheets?: number;
+      edgesSummary: Record<string, number>;
+    }>;
+    allEdges?: Array<{ name: string; totalMeters: number; count: number }>;
+  };
+
+  // Scanning progress per stage and material:
+  // { [stageId]: { [materialName]: { scannedPartIds: string[], isCompleted?: boolean } } }
+  stageScanningProgress?: Record<string, Record<string, { scannedPartIds: string[]; isCompleted?: boolean }>>;
+
   stageProgress: {
     [key in ProductionStageId]?: {
       status: 'pending' | 'in_progress' | 'done';
@@ -141,6 +185,7 @@ export interface ERPCompanySettings {
   workDayEnd: string;
   defaultShiftDurationHours: number;
   departments: { id: string; name: string; headName?: string }[];
+  enabledStages?: ProductionStageId[];
   cuttingRatePerM2: number;
   edgingRatePerM: number;
   cncHoleRate: number;
@@ -148,4 +193,5 @@ export interface ERPCompanySettings {
   qcRatePerOrder: number;
   autoScheduleOrders: boolean;
   notificationTelegramEnabled?: boolean;
+  noteRules?: ERPNoteRule[];
 }

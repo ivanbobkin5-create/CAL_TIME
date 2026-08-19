@@ -1822,6 +1822,64 @@ function transliterate(str: string): string {
     }
   });
 
+  app.post("/api/erp/:companyId/employees", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const { employees } = req.body;
+      if (!Array.isArray(employees)) {
+        return res.status(400).json({ error: "employees must be an array" });
+      }
+
+      for (const emp of employees) {
+        if (!emp.id) continue;
+        const docPath = `companies/${companyId}/erp_employees/${emp.id}`;
+        const existingDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
+        const existing = existingDoc ? JSON.parse(existingDoc.data) : {};
+
+        const updated = {
+          ...existing,
+          ...emp,
+          id: emp.id,
+          updatedAt: new Date().toISOString()
+        };
+
+        await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+          where: { path: docPath },
+          create: {
+            path: docPath,
+            collection: `companies/${companyId}/erp_employees`,
+            docId: emp.id,
+            data: JSON.stringify(updated)
+          },
+          update: {
+            data: JSON.stringify(updated)
+          }
+        }));
+
+        // Also sync back to user document if it exists in users collection
+        const userDocPath = `users/${emp.id}`;
+        const userDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: userDocPath } }));
+        if (userDoc) {
+          try {
+            const uObj = JSON.parse(userDoc.data);
+            if (updated.name) uObj.name = updated.name;
+            if (updated.productionRole) uObj.productionRole = updated.productionRole;
+            if (updated.isProductionEmployee !== undefined) uObj.isProductionEmployee = updated.isProductionEmployee;
+            await dbQueryWithRetry(() => prisma.dbDocument.update({
+              where: { path: userDocPath },
+              data: { data: JSON.stringify(uObj) }
+            }));
+          } catch (e) {}
+        }
+      }
+
+      res.json({ success: true, count: employees.length });
+    } catch (e: any) {
+      console.error("Error saving ERP employees:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   app.post("/api/erp/:companyId/employees/:employeeId", async (req, res) => {
     try {
       const { companyId, employeeId } = req.params;

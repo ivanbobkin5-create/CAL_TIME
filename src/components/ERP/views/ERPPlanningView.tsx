@@ -17,6 +17,7 @@ import {
   Check
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPEmployee } from '../types';
+import { formatDeadlineDate } from '../utils';
 
 interface ERPPlanningViewProps {
   orders: ProductionOrder[];
@@ -207,7 +208,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                     <div className="text-right">
                       <div className="text-xs font-bold text-slate-900 flex items-center gap-1.5 justify-end">
                         <Clock className="w-3.5 h-3.5 text-slate-400" />
-                        Дедлайн: {order.deadlineDate}
+                        Дедлайн: {formatDeadlineDate(order.deadlineDate)}
                       </div>
                       <div className="text-[11px] text-blue-600 font-medium mt-0.5">
                         Стадия: {order.currentStage === 'cutting' ? 'Раскрой' : order.currentStage === 'edging' ? 'Кромление' : order.currentStage === 'cnc' ? 'Присадка' : order.currentStage === 'assembly' ? 'Сборка' : 'В очереди'}

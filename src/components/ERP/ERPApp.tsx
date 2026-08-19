@@ -747,6 +747,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
             <ERPProductionView 
               orders={orders} 
               employees={employees}
+              settings={settings}
               onUpdateOrderStatus={handleUpdateOrderStatus}
               onSelectOrder={() => {}}
             />

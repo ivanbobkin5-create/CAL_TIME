@@ -22,6 +22,7 @@ import { formatPhoneNumber } from "./lib/utils";
 
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
+import { smartDecodeFile } from "./utils/fileEncodingDetector";
 
 const switchLayout = (text: string) => {
   if (!text) return ["", "", ""];
@@ -1857,44 +1858,40 @@ const ProductionView = ({
   const [activePhoto, setActivePhoto] = useState<string | null>(null);
   const [activeProductsView, setActiveProductsView] = useState<'all' | 'moderation'>('all');
 
-  const ProductionGallery = () => (
-    <AnimatePresence>
-      {activePhoto && (
-        <motion.div 
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4"
-          onClick={() => setActivePhoto(null)}
-        >
-          <motion.div 
-            initial={{ scale: 0.9, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.9, opacity: 0 }}
-            className="relative max-w-4xl w-full aspect-video"
-            onClick={e => e.stopPropagation()}
-          >
-            <img 
-              src={activePhoto} 
-              alt="Production" 
-              className="w-full h-full object-contain rounded-2xl shadow-2xl"
-              referrerPolicy="no-referrer"
-            />
-            <button 
-              onClick={() => setActivePhoto(null)}
-              className="absolute -top-12 right-0 p-2 text-white/50 hover:text-white transition-colors"
-            >
-              <X className="w-8 h-8" />
-            </button>
-          </motion.div>
-        </motion.div>
-      )}
-    </AnimatePresence>
-  );
-
   return (
     <div className="p-6 max-w-6xl mx-auto space-y-8">
-      <ProductionGallery />
+      <AnimatePresence>
+        {activePhoto && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex items-center justify-center p-4"
+            onClick={() => setActivePhoto(null)}
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              className="relative max-w-4xl w-full aspect-video"
+              onClick={e => e.stopPropagation()}
+            >
+              <img 
+                src={activePhoto} 
+                alt="Production" 
+                className="w-full h-full object-contain rounded-2xl shadow-2xl"
+                referrerPolicy="no-referrer"
+              />
+              <button 
+                onClick={() => setActivePhoto(null)}
+                className="absolute -top-12 right-0 p-2 text-white/50 hover:text-white transition-colors"
+              >
+                <X className="w-8 h-8" />
+              </button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-gray-800">Производство</h2>
         <p className="text-sm text-gray-500">
@@ -31912,6 +31909,21 @@ export default function App() {
   const [customFittingQuantities, setCustomFittingQuantities] = useState<Record<string, number>>({});
   const [removedFittings, setRemovedFittings] = useState<Record<string, boolean>>({});
   const [selectedProductForDetail, setSelectedProductForDetail] = useState<any>(null);
+  const [modal, setModal] = useState<{
+    isOpen: boolean;
+    type: "alert" | "confirm" | "prompt";
+    title: string;
+    message: string;
+    value?: string;
+    onConfirm?: (value?: string) => void;
+    onCancel?: () => void;
+  }>({
+    isOpen: false,
+    type: "alert",
+    title: "",
+    message: "",
+  });
+
   const showAlert = useCallback((title: string, message: string) => {
     setModal({ isOpen: true, type: "alert", title, message });
   }, []);
@@ -31937,33 +31949,6 @@ export default function App() {
       message,
       value: defaultValue,
       onConfirm: (val) => onConfirm(val || ""),
-    });
-  };
-
-  const getAvailableThicknessesForBrand = (brandName: string) => {
-    const allThicknesses = ["0.4", "0.8", "1.0", "2.0"];
-    const config = productionFormat === "contract" && productionSettings?.production
-      ? productionSettings.production
-      : ownProductionConfig;
-
-    if (!brandName) {
-      return allThicknesses.filter(t => config?.edgeThicknesses?.[t]);
-    }
-
-    const edgeBrands = LDSP_TO_EDGE_BRANDS[brandName] || [];
-
-    return allThicknesses.filter(t => {
-      if (!config?.edgeThicknesses?.[t]) return false;
-
-      if (edgeBrands.length === 0) {
-        const mKey = `${brandName}:${t}`;
-        return !config?.edgeNotAvailable?.[mKey];
-      } else {
-        return edgeBrands.some(eb => {
-          const mKey = `${brandName}:${eb}:${t}`;
-          return !config?.edgeNotAvailable?.[mKey];
-        });
-      }
     });
   };
 
@@ -32140,6 +32125,33 @@ export default function App() {
         },
       },
     });
+
+  const getAvailableThicknessesForBrand = (brandName: string) => {
+    const allThicknesses = ["0.4", "0.8", "1.0", "2.0"];
+    const config = productionFormat === "contract" && productionSettings?.production
+      ? productionSettings.production
+      : ownProductionConfig;
+
+    if (!brandName) {
+      return allThicknesses.filter(t => config?.edgeThicknesses?.[t]);
+    }
+
+    const edgeBrands = LDSP_TO_EDGE_BRANDS[brandName] || [];
+
+    return allThicknesses.filter(t => {
+      if (!config?.edgeThicknesses?.[t]) return false;
+
+      if (edgeBrands.length === 0) {
+        const mKey = `${brandName}:${t}`;
+        return !config?.edgeNotAvailable?.[mKey];
+      } else {
+        return edgeBrands.some(eb => {
+          const mKey = `${brandName}:${eb}:${t}`;
+          return !config?.edgeNotAvailable?.[mKey];
+        });
+      }
+    });
+  };
 
   const lastSavedProductionConfigRef = useRef<string | null>(null);
 
@@ -33426,22 +33438,6 @@ export default function App() {
     importHardware: true,
   });
 
-  // Custom Modal State
-  const [modal, setModal] = useState<{
-    isOpen: boolean;
-    type: "alert" | "confirm" | "prompt";
-    title: string;
-    message: string;
-    value?: string;
-    onConfirm?: (value?: string) => void;
-    onCancel?: () => void;
-  }>({
-    isOpen: false,
-    type: "alert",
-    title: "",
-    message: "",
-  });
-
   const [allCompanies, setAllCompanies] = useState<any[]>([]);
   const [salonsUsingMe, setSalonsUsingMe] = useState<any[]>([]);
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
@@ -34532,7 +34528,7 @@ export default function App() {
     const isExcel = file.name.match(/\.xlsx?$/i) || file.type.includes("spreadsheet") || file.type.includes("excel");
 
     const reader = new FileReader();
-    reader.onload = (e) => {
+    reader.onload = async (e) => {
       const buffer = e.target?.result as ArrayBuffer;
 
       if (isExcel) {
@@ -34555,15 +34551,8 @@ export default function App() {
           showAlert("Ошибка чтения", "Не удалось прочитать Excel файл: " + (err?.message || err));
         }
       } else {
-        let decodedText = "";
-        try {
-          const decoder = new TextDecoder("utf-8", { fatal: true });
-          decodedText = decoder.decode(buffer);
-        } catch (err) {
-          console.log("UTF-8 decoding failed, falling back to Windows-1251");
-          const cp1251Decoder = new TextDecoder("windows-1251");
-          decodedText = cp1251Decoder.decode(buffer);
-        }
+        const decodedResult = await smartDecodeFile(buffer);
+        const decodedText = decodedResult.text;
 
         let delimiter = "";
         const firstLines = decodedText.split("\n").slice(0, 5);
@@ -37598,7 +37587,7 @@ export default function App() {
               >
                 <FlaskConical className="w-4 h-4 flex-shrink-0 text-purple-600" />
                 {isSidebarOpen && (
-                  <span className="text-[12px] font-bold">Тестирование b3d</span>
+                  <span className="text-[12px] font-bold">Бирки (.bir) и b3d</span>
                 )}
               </button>
               {isAppAdmin && (

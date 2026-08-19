@@ -18,6 +18,7 @@ import {
   PlayCircle
 } from 'lucide-react';
 import { ProductionOrder, ERPEmployee, WorkShift, ERPSection } from '../types';
+import { formatDeadlineDate } from '../utils';
 
 interface ERPDashboardViewProps {
   orders: ProductionOrder[];
@@ -203,7 +204,7 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
                       </div>
                       <div className="text-[11px] text-slate-500 flex items-center gap-1 justify-end mt-0.5">
                         <Clock className="w-3 h-3 text-red-500" />
-                        Срок: {order.deadlineDate}
+                        Срок: {formatDeadlineDate(order.deadlineDate)}
                       </div>
                     </div>
                   </div>
