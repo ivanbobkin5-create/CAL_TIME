@@ -32481,6 +32481,13 @@ export default function App() {
         if (genData.readyMadeConfig) {
           setCompanyData((prev: any) => ({ ...prev, readyMadeConfig: genData.readyMadeConfig }));
         }
+        if (genData.erpConfig || genData.erpSettings) {
+          setCompanyData((prev: any) => ({
+            ...prev,
+            erpConfig: genData.erpConfig || genData.erpSettings,
+            erpSettings: genData.erpConfig || genData.erpSettings,
+          }));
+        }
       }
 
       if (priceData) {
@@ -35938,6 +35945,28 @@ export default function App() {
         companyData.type === "Мебельное производство" ||
         productionFormat === "own";
 
+      const currentErpConfig = overrides?.erpConfig || companyData.erpConfig || companyData.erpSettings || {
+        orderSource: 'projects',
+        bitrix24CategoryId: companyData?.bitrix24?.categoryId || '0',
+        bitrix24StageId: companyData?.bitrix24?.stageId || '',
+        bitrix24DoneStageId: '',
+        projectStartStatus: 'in_progress',
+        workDayStart: '08:00',
+        workDayEnd: '20:00',
+        cuttingRatePerM2: 65,
+        edgingRatePerM: 35,
+        cncHoleRate: 8,
+        assemblyModuleRate: 350,
+        qcRatePerOrder: 500,
+      };
+
+      const currentBitrix24 = companyData.bitrix24 || {
+        webhookUrl: currentErpConfig.bitrix24WebhookUrl || '',
+        categoryId: currentErpConfig.bitrix24CategoryId || '0',
+        stageId: currentErpConfig.bitrix24StageId || '',
+        doneStageId: currentErpConfig.bitrix24DoneStageId || '',
+      };
+
       const savePromises = [
         setDoc(
           doc(db, "companies", companyData.id, "settings", "general"),
@@ -35965,6 +35994,8 @@ export default function App() {
             specificationConfig,
             landingPage: companyData.landingPage || null,
             readyMadeConfig: companyData?.readyMadeConfig || null,
+            erpConfig: currentErpConfig,
+            erpSettings: currentErpConfig,
           },
           { merge: true },
         ),
@@ -35977,13 +36008,20 @@ export default function App() {
           { merge: true },
         ),
         setDoc(
+          doc(db, "companies", companyData.id, "settings", "erp"),
+          currentErpConfig,
+          { merge: true },
+        ),
+        setDoc(
           doc(db, "companies", companyData.id),
           {
             name: companyInfo?.name || companyData.name || "",
             phone: companyInfo?.phone || companyData.phone || "",
             city: companyInfo?.city || companyData.city || "",
-            bitrix24: companyData.bitrix24 || null,
+            bitrix24: currentBitrix24,
             landingPage: companyData.landingPage || null,
+            erpConfig: currentErpConfig,
+            erpSettings: currentErpConfig,
           },
           { merge: true },
         ),

@@ -84,6 +84,16 @@ export const ERPSettingsTab: React.FC<ERPSettingsTabProps> = ({
     qcRatePerOrder: 500,
   };
 
+  useEffect(() => {
+    if (companyData && (!companyData.erpConfig || !companyData.erpSettings)) {
+      setCompanyData((prev: any) => ({
+        ...prev,
+        erpConfig,
+        erpSettings: erpConfig
+      }));
+    }
+  }, []);
+
   const updateErpConfig = (field: string, value: any) => {
     const updated = {
       ...erpConfig,
@@ -92,7 +102,13 @@ export const ERPSettingsTab: React.FC<ERPSettingsTabProps> = ({
     setCompanyData((prev: any) => ({
       ...prev,
       erpConfig: updated,
-      erpSettings: updated
+      erpSettings: updated,
+      bitrix24: {
+        ...(prev?.bitrix24 || {}),
+        ...(field === 'bitrix24CategoryId' ? { categoryId: value } : {}),
+        ...(field === 'bitrix24StageId' ? { stageId: value } : {}),
+        ...(field === 'bitrix24DoneStageId' ? { doneStageId: value } : {}),
+      }
     }));
   };
 
@@ -515,7 +531,11 @@ export const ERPSettingsTab: React.FC<ERPSettingsTabProps> = ({
         <button
           type="button"
           onClick={async () => {
-            await onSaveSettings(false);
+            const finalErpConfig = {
+              ...erpConfig,
+              bitrix24WebhookUrl: companyData?.bitrix24?.webhookUrl || erpConfig.bitrix24WebhookUrl || ''
+            };
+            await onSaveSettings(false, { erpConfig: finalErpConfig });
             showAlert("Успех", "Настройки ERP системы успешно сохранены!");
           }}
           className="px-8 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-2xl shadow-xl shadow-indigo-200 transition-all flex items-center gap-2 active:scale-95 text-sm"
