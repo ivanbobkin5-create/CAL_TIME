@@ -62,12 +62,17 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
   const [isCustomRole, setIsCustomRole] = useState(false);
   const [customRoleText, setCustomRoleText] = useState('');
 
-  const filtered = employees.filter(e => 
-    e.name.toLowerCase().includes(search.toLowerCase()) ||
-    (e.role && e.role.toLowerCase().includes(search.toLowerCase())) ||
-    (e.productionRole && e.productionRole.toLowerCase().includes(search.toLowerCase())) ||
-    (e.phone && e.phone.includes(search))
-  );
+  const filtered = employees.filter(e => {
+    if (e.email?.toLowerCase() === 'lk.ivanbobkin@gmail.com' || (e as any).isSuperAdmin || e.role === 'superadmin' || e.productionRole === 'superadmin') {
+      return false;
+    }
+    return (
+      e.name.toLowerCase().includes(search.toLowerCase()) ||
+      (e.role && e.role.toLowerCase().includes(search.toLowerCase())) ||
+      (e.productionRole && e.productionRole.toLowerCase().includes(search.toLowerCase())) ||
+      (e.phone && e.phone.includes(search))
+    );
+  });
 
   const openAddModal = () => {
     setEditingEmployee(null);

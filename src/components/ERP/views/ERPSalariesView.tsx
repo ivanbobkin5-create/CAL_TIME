@@ -27,8 +27,25 @@ export const ERPSalariesView: React.FC<ERPSalariesViewProps> = ({
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().substring(0, 7));
   const [search, setSearch] = useState('');
 
+  // Filter for production employees only (excluding superadmin and non-production employees)
+  const productionEmployees = employees.filter(emp => {
+    if (emp.isProductionEmployee === false) return false;
+    if (emp.email?.toLowerCase() === 'lk.ivanbobkin@gmail.com' || (emp as any).isSuperAdmin || emp.role === 'superadmin' || emp.productionRole === 'superadmin') {
+      return false;
+    }
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      return (
+        emp.name.toLowerCase().includes(q) ||
+        (emp.role && emp.role.toLowerCase().includes(q)) ||
+        (emp.productionRole && emp.productionRole.toLowerCase().includes(q))
+      );
+    }
+    return true;
+  });
+
   // Example salary calculations based on employee rates
-  const calculatedSalaries = employees.map(emp => {
+  const calculatedSalaries = productionEmployees.map(emp => {
     let piecework = 0;
     let base = emp.baseRate || 45000;
     
@@ -98,7 +115,7 @@ export const ERPSalariesView: React.FC<ERPSalariesViewProps> = ({
           <div className="text-3xl font-black text-slate-900 mb-1">
             {totalPayroll.toLocaleString('ru-RU')} <span className="text-base font-bold text-slate-400">₽</span>
           </div>
-          <div className="text-xs text-slate-500 font-medium">Сотрудников к выплате: {employees.length} чел.</div>
+          <div className="text-xs text-slate-500 font-medium">Сотрудников цеха к выплате: {productionEmployees.length} чел.</div>
         </div>
 
         <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm">
@@ -112,9 +129,9 @@ export const ERPSalariesView: React.FC<ERPSalariesViewProps> = ({
         </div>
 
         <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm">
-          <div className="text-xs font-bold text-slate-400 uppercase mb-2">Средняя ЗП мастера</div>
+          <div className="text-xs font-bold text-slate-400 uppercase mb-2">Средняя ЗП мастера цеха</div>
           <div className="text-3xl font-black text-emerald-600 mb-1">
-            {employees.length > 0 ? Math.round(totalPayroll / employees.length).toLocaleString('ru-RU') : 0} <span className="text-base font-bold text-slate-400">₽</span>
+            {productionEmployees.length > 0 ? Math.round(totalPayroll / productionEmployees.length).toLocaleString('ru-RU') : 0} <span className="text-base font-bold text-slate-400">₽</span>
           </div>
           <div className="text-xs text-slate-500 font-medium">Без учета налоговых вычетов</div>
         </div>

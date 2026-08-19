@@ -192,26 +192,50 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
           console.warn('Failed to fetch company employees:', empErr);
         }
 
+        loadedEmployees = loadedEmployees.filter(e => 
+          e.email?.toLowerCase() !== 'lk.ivanbobkin@gmail.com' && 
+          !(e as any).isSuperAdmin && 
+          e.role !== 'superadmin' && 
+          e.productionRole !== 'superadmin'
+        );
+
         if (loadedEmployees.length === 0) {
-          // If no employees found, add current logged-in user as company manager
-          const currentUserName = parsedUser?.displayName || parsedUser?.name || parsedUser?.email?.split('@')[0] || 'Руководитель цеха';
-          loadedEmployees = [
-            {
-              id: parsedUser?.id || 'emp-user-1',
-              userId: parsedUser?.id,
-              name: currentUserName,
-              role: 'Начальник цеха',
-              productionRole: 'Начальник цеха',
-              isProductionEmployee: true,
-              department: 'management',
-              rateType: 'salary',
-              baseRate: 100000,
-              shiftType: '5/2',
-              status: 'active',
-              email: parsedUser?.email || '',
-              isOwner: true
-            }
-          ];
+          const isCurrentSuperAdmin = parsedUser?.email?.toLowerCase() === 'lk.ivanbobkin@gmail.com' || parsedUser?.isSuperAdmin;
+          if (isCurrentSuperAdmin) {
+            loadedEmployees = [
+              {
+                id: 'emp-master-1',
+                name: 'Иванов Сергей (Начальник цеха)',
+                role: 'Начальник цеха',
+                productionRole: 'Начальник цеха',
+                isProductionEmployee: true,
+                department: 'management',
+                rateType: 'salary',
+                baseRate: 95000,
+                shiftType: '5/2',
+                status: 'active'
+              }
+            ];
+          } else {
+            const currentUserName = parsedUser?.displayName || parsedUser?.name || parsedUser?.email?.split('@')[0] || 'Руководитель цеха';
+            loadedEmployees = [
+              {
+                id: parsedUser?.id || 'emp-user-1',
+                userId: parsedUser?.id,
+                name: currentUserName,
+                role: 'Начальник цеха',
+                productionRole: 'Начальник цеха',
+                isProductionEmployee: true,
+                department: 'management',
+                rateType: 'salary',
+                baseRate: 100000,
+                shiftType: '5/2',
+                status: 'active',
+                email: parsedUser?.email || '',
+                isOwner: true
+              }
+            ];
+          }
         }
 
         setEmployees(loadedEmployees);
@@ -481,18 +505,43 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
     { id: 'settings', label: 'Настройки', icon: Settings }
   ];
 
-  const userInitials = (authUser?.displayName || authUser?.email || 'MP')
+  // Match current logged in user in employees list or user profile
+  const matchedEmp = employees.find(e => 
+    (e.email && authUser?.email && e.email.toLowerCase() === authUser.email.toLowerCase()) ||
+    (e.id && authUser?.id && e.id === authUser.id) ||
+    (e.userId && authUser?.id && e.userId === authUser.id)
+  );
+
+  const rawName = matchedEmp?.name 
+    || authUser?.displayName 
+    || authUser?.name 
+    || authUser?.fullName;
+
+  // Clean up display name if it's identical to email or email prefix
+  const displayUserName = (rawName && !rawName.includes('@') && rawName !== authUser?.email?.split('@')[0])
+    ? rawName
+    : (matchedEmp?.name || company?.ownerName || company?.contactPerson || authUser?.displayName || authUser?.email?.split('@')[0] || 'Сотрудник цеха');
+
+  const rawRole = matchedEmp?.productionRole || matchedEmp?.role || authUser?.productionRole || authUser?.position || authUser?.role;
+  let displayUserRole = 'Сотрудник цеха';
+
+  if (rawRole === 'admin' || rawRole === 'owner' || authUser?.role === 'admin' || authUser?.role === 'owner') {
+    displayUserRole = matchedEmp?.productionRole || 'Начальник цеха';
+  } else if (rawRole === 'employee' || rawRole === 'user') {
+    displayUserRole = matchedEmp?.productionRole || 'Сотрудник цеха';
+  } else if (authUser?.email === 'lk.ivanbobkin@gmail.com' && !matchedEmp?.productionRole) {
+    displayUserRole = 'Руководитель производства';
+  } else if (rawRole) {
+    displayUserRole = rawRole;
+  }
+
+  const userInitials = displayUserName
     .split(' ')
+    .filter(Boolean)
     .map((n: string) => n[0])
     .join('')
     .substring(0, 2)
-    .toUpperCase();
-
-  const userRoleLabel = authUser?.email === 'lk.ivanbobkin@gmail.com' 
-    ? 'Суперадминистратор'
-    : authUser?.role === 'admin' || authUser?.role === 'owner'
-    ? 'Руководитель производства'
-    : (authUser?.role || 'Мастер смены');
+    .toUpperCase() || 'СП';
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row text-slate-800 font-sans selection:bg-blue-600 selection:text-white">
@@ -565,10 +614,10 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
               </div>
               <div className="min-w-0">
                 <div className="text-xs font-bold text-white truncate">
-                  {authUser?.displayName || authUser?.name || authUser?.email?.split('@')[0] || 'Сотрудник'}
+                  {displayUserName}
                 </div>
                 <div className="text-[10px] text-indigo-400 font-medium truncate">
-                  {userRoleLabel}
+                  {displayUserRole}
                 </div>
               </div>
             </div>
@@ -649,10 +698,10 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
               </div>
               <div className="hidden md:block text-left">
                 <div className="text-xs font-bold text-slate-900">
-                  {authUser?.displayName || authUser?.name || authUser?.email?.split('@')[0] || 'Сотрудник'}
+                  {displayUserName}
                 </div>
                 <div className="text-[10px] text-emerald-600 font-semibold">
-                  {userRoleLabel}
+                  {displayUserRole}
                 </div>
               </div>
               <button

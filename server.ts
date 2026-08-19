@@ -1305,14 +1305,38 @@ function transliterate(str: string): string {
       let orders: any[] = [];
 
       if (orderSource === 'bitrix24' && webhookUrl) {
-        const categoryId = erpConfig.bitrix24CategoryId || companyData.bitrix24?.categoryId || "0";
-        const startStageId = erpConfig.bitrix24StageId || companyData.bitrix24?.stageId || "";
-        const doneStageId = erpConfig.bitrix24DoneStageId || "";
+        const categoryId = (erpConfig.bitrix24CategoryId !== undefined && erpConfig.bitrix24CategoryId !== "")
+          ? String(erpConfig.bitrix24CategoryId)
+          : (companyData.bitrix24?.categoryId !== undefined && companyData.bitrix24?.categoryId !== null
+              ? String(companyData.bitrix24.categoryId)
+              : "0");
+
+        const startStageId = erpConfig.bitrix24StageId 
+          || companyData.bitrix24?.stageId 
+          || companyData.bitrix24?.startStageId 
+          || "";
+
+        const doneStageId = erpConfig.bitrix24DoneStageId 
+          || companyData.bitrix24?.doneStageId 
+          || companyData.bitrix24?.finalStageId 
+          || companyData.bitrix24?.procurementFinalStageId 
+          || "";
+
+        const isSameStage = (st1: string, st2: string, catId: string) => {
+          if (!st1 || !st2) return false;
+          const s1 = String(st1).trim().toUpperCase();
+          const s2 = String(st2).trim().toUpperCase();
+          if (s1 === s2) return true;
+          if (`C${catId}:${s1}` === s2 || s1 === `C${catId}:${s2}`) return true;
+          const s1Clean = s1.startsWith(`C${catId}:`) ? s1.substring(`C${catId}:`.length) : s1;
+          const s2Clean = s2.startsWith(`C${catId}:`) ? s2.substring(`C${catId}:`.length) : s2;
+          return s1Clean === s2Clean;
+        };
 
         // 1. Fetch pipeline stages to know sequence and human-readable names
         let stagesList: any[] = [];
         try {
-          if (categoryId === "0" || categoryId === 0 || !categoryId) {
+          if (categoryId === "0" || !categoryId) {
             const stRes = await fetch(`${webhookUrl}/crm.status.list`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -1334,20 +1358,35 @@ function transliterate(str: string): string {
         }
 
         // Determine allowed stage IDs range
-        const stageIdsInOrder = stagesList.map((s: any) => s.STATUS_ID || s.ID || s.id);
+        const stageIdsInOrder = stagesList.map((s: any) => String(s.STATUS_ID || s.ID || s.id || ''));
         let allowedStageIds: Set<string> | null = null;
         
+        let startIndex = -1;
         if (startStageId && stageIdsInOrder.length > 0) {
-          const startIndex = stageIdsInOrder.indexOf(startStageId);
-          let endIndex = doneStageId ? stageIdsInOrder.indexOf(doneStageId) : stageIdsInOrder.length - 1;
-          if (endIndex < 0) endIndex = stageIdsInOrder.length - 1;
-          
-          if (startIndex >= 0) {
-            const minIdx = Math.min(startIndex, endIndex);
-            const maxIdx = Math.max(startIndex, endIndex);
-            const slice = stageIdsInOrder.slice(minIdx, maxIdx + 1);
-            allowedStageIds = new Set(slice);
+          startIndex = stageIdsInOrder.findIndex((s: string) => isSameStage(s, startStageId, categoryId));
+        }
+
+        let endIndex = -1;
+        if (doneStageId && stageIdsInOrder.length > 0) {
+          endIndex = stageIdsInOrder.findIndex((s: string) => isSameStage(s, doneStageId, categoryId));
+        }
+
+        if (startIndex >= 0) {
+          let calcEnd = endIndex;
+          if (calcEnd < 0) {
+            for (let i = stageIdsInOrder.length - 1; i >= startIndex; i--) {
+              const upperS = stageIdsInOrder[i].toUpperCase();
+              if (!upperS.includes("WON") && !upperS.includes("LOSE") && !upperS.includes("APOLOGY")) {
+                calcEnd = i;
+                break;
+              }
+            }
+            if (calcEnd < startIndex) calcEnd = stageIdsInOrder.length - 1;
           }
+          const minIdx = Math.min(startIndex, calcEnd);
+          const maxIdx = Math.max(startIndex, calcEnd);
+          const slice = stageIdsInOrder.slice(minIdx, maxIdx + 1);
+          allowedStageIds = new Set(slice);
         }
 
         // 2. Fetch Deals from Bitrix24
@@ -1366,7 +1405,7 @@ function transliterate(str: string): string {
               "ID", "TITLE", "STAGE_ID", "CATEGORY_ID", "OPPORTUNITY", 
               "CURRENCY_ID", "DATE_CREATE", "CLOSEDATE", "DATE_MODIFY",
               "COMMENTS", "ASSIGNED_BY_NAME", "CONTACT_ID", "COMPANY_ID",
-              "BEGINDATE", "PROBABILITY"
+              "BEGINDATE", "PROBABILITY", "CLOSED"
             ]
           })
         });
@@ -1381,18 +1420,42 @@ function transliterate(str: string): string {
         } catch (_) {}
 
         for (const deal of rawDeals) {
-          const dealStageId = deal.STAGE_ID;
-          
-          if (allowedStageIds && !allowedStageIds.has(dealStageId)) {
+          const dealCategory = String(deal.CATEGORY_ID ?? "0");
+          if (dealCategory !== categoryId) {
             continue;
-          } else if (!allowedStageIds && startStageId && dealStageId !== startStageId) {
+          }
+
+          const dealStageId = String(deal.STAGE_ID || "");
+          const upperStage = dealStageId.toUpperCase();
+          const isClosedInB24 = deal.CLOSED === "Y" || upperStage.includes("WON") || upperStage.includes("LOSE") || upperStage.includes("APOLOGY");
+
+          if (allowedStageIds && allowedStageIds.size > 0) {
+            const isInAllowed = Array.from(allowedStageIds).some(allowed => isSameStage(allowed, dealStageId, categoryId));
+            if (!isInAllowed) {
+              continue;
+            }
+          } else if (startStageId) {
+            if (!isSameStage(dealStageId, startStageId, categoryId)) {
+              continue;
+            }
+          } else {
+            if (isClosedInB24) {
+              continue;
+            }
+          }
+
+          if (isClosedInB24 && doneStageId) {
+            if (!isSameStage(dealStageId, doneStageId, categoryId)) {
+              continue;
+            }
+          } else if (isClosedInB24 && !doneStageId && !allowedStageIds) {
             continue;
           }
 
           const orderId = `b24_${deal.ID}`;
           const local = localErpOrdersMap[orderId] || {};
 
-          const matchingStage = stagesList.find((s: any) => (s.STATUS_ID || s.ID || s.id) === dealStageId);
+          const matchingStage = stagesList.find((s: any) => isSameStage(String(s.STATUS_ID || s.ID || s.id), dealStageId, categoryId));
           const stageName = matchingStage ? (matchingStage.NAME || matchingStage.name) : dealStageId;
 
           const opp = Number(deal.OPPORTUNITY) || 0;
@@ -1635,8 +1698,14 @@ function transliterate(str: string): string {
         return 'cutting';
       };
 
-      // Add Company Owner / SuperAdmin if known
-      if (companyData.ownerId || companyData.ownerEmail) {
+      const isSuperAdminEmail = (e?: string) => {
+        if (!e) return false;
+        const em = e.toLowerCase().trim();
+        return em === 'lk.ivanbobkin@gmail.com' || em === 'superadmin';
+      };
+
+      // Add Company Owner if known and not superadmin
+      if ((companyData.ownerId || companyData.ownerEmail) && !isSuperAdminEmail(companyData.ownerEmail)) {
         const ownerId = companyData.ownerId || `owner_${companyId}`;
         const ownerOverride = erpEmpMap[ownerId] || {};
         employeesMap.set(ownerId, {
@@ -1736,7 +1805,11 @@ function transliterate(str: string): string {
         }
       }
 
-      const employees = Array.from(employeesMap.values());
+      const employees = Array.from(employeesMap.values()).filter(e => {
+        if (isSuperAdminEmail(e.email)) return false;
+        if (e.isSuperAdmin || e.role === 'superadmin' || e.productionRole === 'superadmin') return false;
+        return true;
+      });
 
       res.json({
         success: true,
