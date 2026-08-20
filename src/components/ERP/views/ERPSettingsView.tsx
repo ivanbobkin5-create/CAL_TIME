@@ -314,6 +314,153 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
           </div>
         </div>
 
+        {/* Target Production Volumes & Equipment Section */}
+        <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-6">
+          <div>
+            <h3 className="font-bold text-slate-900 text-base mb-1">Плановые объемы выработки и оборудование</h3>
+            <p className="text-xs text-slate-400">
+              Целевые показатели цеха за месяц и станочный парк для формирования сводных аналитических отчетов
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-2">
+                <Scissors className="w-4 h-4 text-blue-600" />
+                План выработки ЛДСП (м²/месяц)
+              </label>
+              <input
+                type="number"
+                value={formData.targetMonthlyM2 ?? 1000}
+                onChange={(e) => setFormData({ ...formData, targetMonthlyM2: Number(e.target.value) })}
+                className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-black text-slate-900 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+            </div>
+
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-2">
+                <Layers className="w-4 h-4 text-indigo-600" />
+                План кромкооблицовки (п.м./месяц)
+              </label>
+              <input
+                type="number"
+                value={formData.targetMonthlyEdgeM ?? 5000}
+                onChange={(e) => setFormData({ ...formData, targetMonthlyEdgeM: Number(e.target.value) })}
+                className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-black text-slate-900 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+            </div>
+
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+              <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-2">
+                <Factory className="w-4 h-4 text-purple-600" />
+                План изготовления деталей (шт./месяц)
+              </label>
+              <input
+                type="number"
+                value={formData.targetMonthlyParts ?? 3000}
+                onChange={(e) => setFormData({ ...formData, targetMonthlyParts: Number(e.target.value) })}
+                className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-black text-slate-900 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+            </div>
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="font-bold text-xs text-slate-800 uppercase tracking-wider">Оборудование цеха (Станки)</h4>
+              <button
+                type="button"
+                onClick={() => {
+                  const currentEq = formData.equipmentList || [
+                    { id: 'eq-1', department: 'cutting', name: 'Форматно-раскроечный Altendorf F45', status: 'working' },
+                    { id: 'eq-2', department: 'edging', name: 'Кромкооблицовочный станок Brandt KTD 720', status: 'working' },
+                    { id: 'eq-3', department: 'cnc', name: 'Обрабатывающий центр ЧПУ Homag Centateq', status: 'working' }
+                  ];
+                  const newEq = [
+                    ...currentEq,
+                    { id: `eq-${Date.now()}`, department: 'cutting', name: 'Новый станок / Оборудование', status: 'working' as const }
+                  ];
+                  setFormData({ ...formData, equipmentList: newEq });
+                }}
+                className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" /> Добавить станок
+              </button>
+            </div>
+
+            <div className="space-y-2">
+              {(formData.equipmentList && formData.equipmentList.length > 0 ? formData.equipmentList : [
+                { id: 'eq-1', department: 'cutting', name: 'Форматно-раскроечный Altendorf F45', status: 'working' as const },
+                { id: 'eq-2', department: 'edging', name: 'Кромкооблицовочный станок Brandt KTD 720', status: 'working' as const },
+                { id: 'eq-3', department: 'cnc', name: 'Обрабатывающий центр ЧПУ Homag Centateq', status: 'working' as const }
+              ]).map((eq, eIdx) => (
+                <div key={eq.id} className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col md:flex-row items-center gap-3">
+                  <div className="w-full md:w-1/3">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Участок</label>
+                    <select
+                      value={eq.department}
+                      onChange={(e) => {
+                        const list = [...(formData.equipmentList || [])];
+                        if (list[eIdx]) list[eIdx].department = e.target.value;
+                        setFormData({ ...formData, equipmentList: list });
+                      }}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-bold text-slate-900 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                    >
+                      <option value="cutting">Раскрой (ЛДСП)</option>
+                      <option value="edging">Кромкооблицовка</option>
+                      <option value="cnc">Присадка и ЧПУ</option>
+                      <option value="facades">Фасады</option>
+                      <option value="assembly">Сборка</option>
+                    </select>
+                  </div>
+
+                  <div className="w-full md:flex-1">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Модель и марка оборудования</label>
+                    <input
+                      type="text"
+                      value={eq.name}
+                      onChange={(e) => {
+                        const list = [...(formData.equipmentList || [])];
+                        if (list[eIdx]) list[eIdx].name = e.target.value;
+                        setFormData({ ...formData, equipmentList: list });
+                      }}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-bold text-slate-900 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                    />
+                  </div>
+
+                  <div className="w-full md:w-36">
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Статус</label>
+                    <select
+                      value={eq.status}
+                      onChange={(e) => {
+                        const list = [...(formData.equipmentList || [])];
+                        if (list[eIdx]) list[eIdx].status = e.target.value as any;
+                        setFormData({ ...formData, equipmentList: list });
+                      }}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-bold text-slate-900 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
+                    >
+                      <option value="working">Работает</option>
+                      <option value="maintenance">Обслуживание</option>
+                      <option value="idle">Простой</option>
+                    </select>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const list = (formData.equipmentList || []).filter((_, i) => i !== eIdx);
+                      setFormData({ ...formData, equipmentList: list });
+                    }}
+                    className="self-end md:self-center p-2 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 transition-colors cursor-pointer mt-2 md:mt-4"
+                    title="Удалить оборудование"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
         {/* Work Shifts & Timings */}
         <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm">
           <h3 className="font-bold text-slate-900 text-base mb-1">Режим работы и смены</h3>

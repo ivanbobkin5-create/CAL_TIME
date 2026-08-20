@@ -43,6 +43,7 @@ interface ERPOrderWorkspaceViewProps {
   onBack: () => void;
   onUpdateOrder: (updatedOrder: ProductionOrder) => void;
   onUpdateOrderStatus: (orderId: string, nextStage: ProductionStageId) => void;
+  sourceSection?: string;
 }
 
 // Audio synthesizer for sound effects
@@ -87,7 +88,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   onToggleSidebar,
   onBack,
   onUpdateOrder,
-  onUpdateOrderStatus
+  onUpdateOrderStatus,
+  sourceSection
 }) => {
   const [activeTab, setActiveTab] = useState<'scanner' | 'card'>('scanner');
   const [activeStageId, setActiveStageId] = useState<ProductionStageId>(order.currentStage || 'cutting');
@@ -582,7 +584,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
               : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
           }`}
         >
-          <QrCode className="w-4 h-4" /> Физический сканер QR / Выполнение стадии
+          <QrCode className="w-4 h-4" /> Сканер QR / Выполнение стадии
           {isAllStageMaterialsCompleted && (
             <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
           )}
@@ -600,59 +602,81 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
         </button>
       </div>
 
-      {/* TAB 1: PHYSICAL QR SCANNER & STAGE EXECUTION */}
+      {/* TAB 1: QR SCANNER & STAGE EXECUTION */}
       {activeTab === 'scanner' && (
         <div className="space-y-6">
-          {/* Top Bar: Select Production Stage for Scanning */}
-          <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold shrink-0">
-                <Scan className="w-5 h-5" />
+          {/* Top Bar: Select Production Stage for Scanning (Shown for Planning / Manager, hidden or focused for craftsmen on production station) */}
+          {sourceSection !== 'production' ? (
+            <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold shrink-0">
+                  <Scan className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-sm">
+                    Сканирование деталей на участке
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Выберите рабочий участок и материал. Сканируйте QR/штрихкод с бирки сканером.
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-black text-slate-900 text-sm">
-                  Сканирование деталей на участке
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Выберите рабочий участок и материал. Сканируйте QR/штрихкод с бирки сканером.
-                </p>
-              </div>
-            </div>
 
-            {/* Stage Selector Pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full">
-              {(['cutting', 'edging', 'cnc', 'facades', 'assembly', 'qc', 'packing'] as ProductionStageId[]).map(stId => {
-                const isEdgingSkipped = stId === 'edging' && !orderRequiresEdging(order);
-                return (
-                  <button
-                    key={stId}
-                    onClick={() => {
-                      setActiveStageId(stId);
-                      if (isEdgingSkipped) {
-                        setScanErrorMsg('Внимание: В данном заказе нет обработки кромкой (0 м. кромки). Этап кромкооблицовки автоматически пропущен.');
-                      } else {
-                        setScanErrorMsg(null);
-                      }
-                    }}
-                    className={`px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
-                      activeStageId === stId
-                        ? 'bg-indigo-600 text-white shadow-sm'
-                        : isEdgingSkipped
-                        ? 'bg-slate-100 text-slate-400 border border-dashed border-slate-300'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                    }`}
-                  >
-                    <span>{stageNames[stId]}</span>
-                    {isEdgingSkipped && (
-                      <span className="text-[9px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded font-normal">
-                        Пропущен (0м)
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+              {/* Stage Selector Pills (Filtered by enabledStages) */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full">
+                {(['cutting', 'edging', 'cnc', 'facades', 'assembly', 'qc', 'packing'] as ProductionStageId[])
+                  .filter(stId => !settings?.enabledStages || settings.enabledStages.length === 0 || settings.enabledStages.includes(stId))
+                  .map(stId => {
+                    const isEdgingSkipped = stId === 'edging' && !orderRequiresEdging(order);
+                    return (
+                      <button
+                        key={stId}
+                        onClick={() => {
+                          setActiveStageId(stId);
+                          if (isEdgingSkipped) {
+                            setScanErrorMsg('Внимание: В данном заказе нет обработки кромкой (0 м. кромки). Этап кромкооблицовки автоматически пропущен.');
+                          } else {
+                            setScanErrorMsg(null);
+                          }
+                        }}
+                        className={`px-3 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all cursor-pointer flex items-center gap-1.5 ${
+                          activeStageId === stId
+                            ? 'bg-indigo-600 text-white shadow-sm'
+                            : isEdgingSkipped
+                            ? 'bg-slate-100 text-slate-400 border border-dashed border-slate-300'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        }`}
+                      >
+                        <span>{stageNames[stId]}</span>
+                        {isEdgingSkipped && (
+                          <span className="text-[9px] bg-slate-200 text-slate-500 px-1.5 py-0.5 rounded font-normal">
+                            Пропущен (0м)
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-sm flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold shrink-0">
+                  <Scan className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Текущий рабочий участок</div>
+                  <h3 className="font-black text-slate-900 text-sm">
+                    {stageNames[activeStageId] || activeStageId}
+                  </h3>
+                </div>
+              </div>
+              <div className="px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-xl text-xs font-bold border border-indigo-100 flex items-center gap-1.5">
+                <Check className="w-4 h-4 text-indigo-600" />
+                <span>Режим выполнения участка</span>
+              </div>
+            </div>
+          )}
 
           {/* Quick Action: Start Cutting if Order is in Queue */}
           {order.currentStage === 'queue' && (
@@ -826,6 +850,37 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                       onClick={() => {
                         const nextSt = getNextRequiredStage(order, activeStageId);
                         if (nextSt) {
+                          const todayStr = new Date().toLocaleDateString('ru-RU');
+                          const stageProgress = order.stageScanningProgress?.[activeStageId] || {};
+                          let completedPartsOnStage = 0;
+                          Object.values(stageProgress).forEach((m: any) => {
+                            completedPartsOnStage += (m.scannedPartIds?.length || 0);
+                          });
+                          if (completedPartsOnStage === 0) completedPartsOnStage = order.partsCount || 1;
+
+                          const newLog = {
+                            id: `log-${Date.now()}`,
+                            orderId: order.id,
+                            orderNumber: order.orderNumber,
+                            employeeId: order.responsibleEmployeeId || 'emp-current',
+                            employeeName: order.responsibleEmployeeName || 'Иван Иванов (Мастер цеха)',
+                            stageId: activeStageId,
+                            startTime: todayStr,
+                            endTime: todayStr,
+                            scannedPartsCount: completedPartsOnStage,
+                            scannedAreaM2: order.totalAreaM2 || 0,
+                            scannedEdgeM: activeStageId === 'edging' ? order.totalEdgeM : 0,
+                            status: 'completed' as const
+                          };
+
+                          const updatedLogs = [...(order.workLogs || []), newLog];
+
+                          onUpdateOrder({
+                            ...order,
+                            currentStage: nextSt,
+                            workLogs: updatedLogs
+                          });
+
                           onUpdateOrderStatus(order.id, nextSt);
                           setActiveStageId(nextSt);
                           playSoundEffect('success');

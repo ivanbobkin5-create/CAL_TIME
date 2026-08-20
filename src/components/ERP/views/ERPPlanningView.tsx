@@ -292,21 +292,20 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                       <span>B24</span>
                     </a>
 
+                    {/* Fixed Width Title Container */}
+                    <div className="w-[240px] sm:w-[300px] md:w-[360px] lg:w-[400px] shrink-0 min-w-0">
+                      <div className="font-extrabold text-slate-900 text-sm leading-tight line-clamp-2" title={isDuplicateName || !projectNameClean ? clientNameClean : `${clientNameClean} • ${projectNameClean}`}>
+                        {clientNameClean || 'Заказ без названия'}
+                        {!isDuplicateName && projectNameClean && (
+                          <span className="text-slate-500 font-semibold text-xs ml-1.5">
+                            • {projectNameClean}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
                     <div className="min-w-0 space-y-1 flex-1">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-extrabold text-slate-900 text-sm max-w-[200px] sm:max-w-[320px] lg:max-w-[420px] truncate" title={clientNameClean || 'Заказ без клиента'}>
-                          {clientNameClean || 'Заказ без названия'}
-                        </span>
-
-                        {!isDuplicateName && projectNameClean && (
-                          <>
-                            <span className="text-xs text-slate-400">•</span>
-                            <span className="text-xs text-slate-600 font-semibold max-w-[180px] sm:max-w-[260px] truncate" title={projectNameClean}>
-                              {projectNameClean}
-                            </span>
-                          </>
-                        )}
-
                         <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase border shrink-0 ${priorityStyles}`}>
                           {order.priority === 'urgent' ? 'Срочно' : order.priority === 'high' ? 'Высокий' : 'Обычный'}
                         </span>

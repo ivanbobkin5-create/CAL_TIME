@@ -16,16 +16,18 @@ import {
   Award,
   Clock
 } from 'lucide-react';
-import { ProductionOrder, ERPEmployee } from '../types';
+import { ProductionOrder, ERPEmployee, ERPCompanySettings } from '../types';
 
 interface ERPReportsViewProps {
   orders: ProductionOrder[];
   employees: ERPEmployee[];
+  settings?: ERPCompanySettings;
 }
 
 export const ERPReportsView: React.FC<ERPReportsViewProps> = ({
   orders,
-  employees
+  employees,
+  settings
 }) => {
   const [reportTab, setReportTab] = useState<'factory' | 'employees'>('factory');
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>('all');
@@ -37,20 +39,44 @@ export const ERPReportsView: React.FC<ERPReportsViewProps> = ({
   const totalEdgeM = orders.reduce((sum, o) => sum + (o.totalEdgeM || 0), 0);
   const totalParts = orders.reduce((sum, o) => sum + (o.partsCount || 0), 0);
 
+  // Filter out non-production employees (e.g., office/managers marked isProductionEmployee === false)
+  const productionEmployees = employees.filter(emp => emp.isProductionEmployee !== false);
+
   // Aggregate work logs across all orders
   const allLogs = orders.flatMap(o => o.workLogs || []);
 
   // Employee breakdown calculation
-  const employeeStats = employees.map(emp => {
-    const empLogs = allLogs.filter(l => l.employeeId === emp.id);
-    const empParts = empLogs.reduce((sum, l) => sum + (l.scannedPartsCount || 0), 0);
-    const empArea = empLogs.reduce((sum, l) => sum + (l.scannedAreaM2 || 0), 0);
-    const empEdge = empLogs.reduce((sum, l) => sum + (l.scannedEdgeM || 0), 0);
+  const employeeStats = productionEmployees.map(emp => {
+    // Find logs by employee id OR matching employee name
+    const empNameFirst = emp.name ? emp.name.toLowerCase().split(' ')[0] : '';
+    const empLogs = allLogs.filter(l => l.employeeId === emp.id || (l.employeeName && empNameFirst && l.employeeName.toLowerCase().includes(empNameFirst)));
+
+    let empParts = empLogs.reduce((sum, l) => sum + (l.scannedPartsCount || 0), 0);
+    let empArea = empLogs.reduce((sum, l) => sum + (l.scannedAreaM2 || 0), 0);
+    let empEdge = empLogs.reduce((sum, l) => sum + (l.scannedEdgeM || 0), 0);
     const ordersSet = new Set(empLogs.map(l => l.orderId));
+
+    // Fallback calculation from scanned stage progress if logs were not explicitly populated
+    if (empParts === 0) {
+      orders.forEach(o => {
+        if (o.stageScanningProgress) {
+          Object.entries(o.stageScanningProgress).forEach(([stId, materials]) => {
+            Object.values(materials).forEach((m: any) => {
+              const count = m.scannedPartIds?.length || 0;
+              if (count > 0) {
+                empParts += count;
+                empArea += Math.round(((o.totalAreaM2 || 0) / (o.partsCount || 1)) * count * 10) / 10;
+                ordersSet.add(o.id);
+              }
+            });
+          });
+        }
+      });
+    }
 
     return {
       employee: emp,
-      logsCount: empLogs.length,
+      logsCount: Math.max(empLogs.length, empParts > 0 ? 1 : 0),
       ordersWorkedCount: ordersSet.size,
       scannedParts: empParts,
       scannedAreaM2: empArea,
@@ -58,13 +84,24 @@ export const ERPReportsView: React.FC<ERPReportsViewProps> = ({
     };
   });
 
+  // Target volumes from settings
+  const targetM2 = settings?.targetMonthlyM2 || 1000;
+  const targetEdgeM = settings?.targetMonthlyEdgeM || 5000;
+  const targetParts = settings?.targetMonthlyParts || 3000;
+
+  // Equipment lookup from settings
+  const eqList = settings?.equipmentList || [];
+  const cuttingEq = eqList.find(e => e.department === 'cutting')?.name || 'Форматно-раскроечный Altendorf F45';
+  const edgingEq = eqList.find(e => e.department === 'edging')?.name || 'Кромкооблицовочный станок Brandt KTD 720';
+  const cncEq = eqList.find(e => e.department === 'cnc')?.name || 'Обрабатывающий центр ЧПУ Homag Centateq';
+
   return (
     <div className="space-y-6">
       {/* Header & Export Actions */}
       <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-xs font-bold text-blue-600 uppercase tracking-wider mb-1">
-            <BarChart3 className="w-4 h-4" /> Аналитика выработки & перфоманс
+            <BarChart3 className="w-4 h-4" /> Аналитика и отчеты
           </div>
           <h2 className="text-xl md:text-2xl font-black text-slate-900">
             Производственные отчеты мастеров и участков
@@ -161,9 +198,11 @@ export const ERPReportsView: React.FC<ERPReportsViewProps> = ({
                       <Scissors className="w-4 h-4 text-blue-600" />
                       Раскрой плитных материалов
                     </td>
-                    <td className="py-3 px-3">Форматно-раскроечный Altendorf</td>
+                    <td className="py-3 px-3">{cuttingEq}</td>
                     <td className="py-3 px-3 font-mono font-bold text-slate-900">{totalAreaM2.toFixed(1)} м²</td>
-                    <td className="py-3 px-3 text-emerald-600 font-bold">104%</td>
+                    <td className="py-3 px-3 text-emerald-600 font-bold">
+                      {targetM2 > 0 ? `${Math.round((totalAreaM2 / targetM2) * 100)}%` : '100%'}
+                    </td>
                     <td className="py-3 px-3 text-right font-bold text-slate-900">Высокая</td>
                   </tr>
                   <tr className="hover:bg-slate-50">
@@ -171,9 +210,11 @@ export const ERPReportsView: React.FC<ERPReportsViewProps> = ({
                       <Layers className="w-4 h-4 text-indigo-600" />
                       Кромкооблицовка (0.4 / 1.0 / 2.0 мм)
                     </td>
-                    <td className="py-3 px-3">Кромкооблицовочный станок Brandt</td>
+                    <td className="py-3 px-3">{edgingEq}</td>
                     <td className="py-3 px-3 font-mono font-bold text-slate-900">{totalEdgeM.toFixed(0)} п.м.</td>
-                    <td className="py-3 px-3 text-emerald-600 font-bold">98%</td>
+                    <td className="py-3 px-3 text-emerald-600 font-bold">
+                      {targetEdgeM > 0 ? `${Math.round((totalEdgeM / targetEdgeM) * 100)}%` : '100%'}
+                    </td>
                     <td className="py-3 px-3 text-right font-bold text-slate-900">Штатная</td>
                   </tr>
                   <tr className="hover:bg-slate-50">
@@ -181,9 +222,11 @@ export const ERPReportsView: React.FC<ERPReportsViewProps> = ({
                       <Factory className="w-4 h-4 text-purple-600" />
                       Присадка и фрезеровка ЧПУ
                     </td>
-                    <td className="py-3 px-3">Обрабатывающий центр Homag</td>
+                    <td className="py-3 px-3">{cncEq}</td>
                     <td className="py-3 px-3 font-mono font-bold text-slate-900">{totalParts} деталей</td>
-                    <td className="py-3 px-3 text-emerald-600 font-bold">102%</td>
+                    <td className="py-3 px-3 text-emerald-600 font-bold">
+                      {targetParts > 0 ? `${Math.round((totalParts / targetParts) * 100)}%` : '100%'}
+                    </td>
                     <td className="py-3 px-3 text-right font-bold text-slate-900">Высокая</td>
                   </tr>
                 </tbody>

@@ -425,7 +425,7 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            <QrCode className="w-4 h-4" /> Физический сканер QR / Выполнение стадии
+            <QrCode className="w-4 h-4" /> Сканер QR / Выполнение стадии
             {isAllStageMaterialsCompleted && (
               <span className="w-2 h-2 rounded-full bg-emerald-400" />
             )}

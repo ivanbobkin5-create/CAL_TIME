@@ -14,6 +14,7 @@ import {
   ShieldAlert, 
   CheckCircle2, 
   ChevronRight, 
+  ChevronLeft,
   Clock, 
   Search, 
   ExternalLink,
@@ -673,7 +674,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
     { id: 'planning', label: 'Планирование', icon: Calendar, badge: orders.filter(o => o.status === 'planned').length },
     { id: 'schedule', label: 'График работы', icon: CalendarDays },
     { id: 'production', label: 'Производство', icon: Factory, badge: orders.filter(o => o.status === 'in_progress').length },
-    { id: 'reports', label: 'Отчеты', icon: BarChart3 },
+    { id: 'reports', label: 'Аналитика и отчеты', icon: BarChart3 },
     { id: 'salaries', label: 'Зарплаты', icon: DollarSign },
     { id: 'employees', label: 'Сотрудники', icon: Users, badge: employees.length },
     { id: 'settings', label: 'Настройки', icon: Settings }
@@ -722,19 +723,31 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
       {/* Left Sidebar */}
       <aside className={`${isSidebarCollapsed ? 'w-full md:w-20 p-3' : 'w-full md:w-64 p-4 md:p-6'} bg-slate-950 text-white flex flex-col justify-between border-r border-slate-800/80 shrink-0 z-20 transition-all duration-300`}>
         <div>
-          {/* Logo & Company Title */}
-          <div className="flex items-center gap-3 mb-8 px-2">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center font-bold text-white shadow-lg shadow-blue-500/20 border border-blue-400/30">
-              <Factory className="w-6 h-6" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5 text-[10px] font-mono tracking-widest text-blue-400 uppercase font-bold">
-                <Cpu className="w-3 h-3" /> ERP ПРОИЗВОДСТВО
+          {/* Logo & Company Title with Toggle */}
+          <div className={`flex items-center ${isSidebarCollapsed ? 'flex-col gap-3 justify-center' : 'justify-between'} mb-6 px-1`}>
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center font-bold text-white shadow-lg shadow-blue-500/20 border border-blue-400/30 shrink-0">
+                <Factory className="w-5 h-5 shrink-0" />
               </div>
-              <h1 className="text-sm font-black text-white truncate">
-                {company?.name || "Мебельный цех"}
-              </h1>
+              {!isSidebarCollapsed && (
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 text-[10px] font-mono tracking-widest text-blue-400 uppercase font-bold">
+                    <Cpu className="w-3 h-3" /> ERP ПРОИЗВОДСТВО
+                  </div>
+                  <h1 className="text-sm font-black text-white truncate">
+                    {company?.name || "Мебельный цех"}
+                  </h1>
+                </div>
+              )}
             </div>
+
+            <button
+              onClick={() => setIsSidebarCollapsed(prev => !prev)}
+              title={isSidebarCollapsed ? "Развернуть меню" : "Свернуть меню"}
+              className="p-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer shrink-0"
+            >
+              {isSidebarCollapsed ? <ChevronRight className="w-4 h-4" /> : <ChevronLeft className="w-4 h-4" />}
+            </button>
           </div>
 
           {/* Navigation Menu */}
@@ -750,16 +763,19 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
                     setSelectedOrderForWorkspace(null);
                     setActiveSection(item.id);
                   }}
-                  title={isSidebarCollapsed ? item.label : undefined}
-                  className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center py-3 px-2' : 'justify-between px-3.5 py-3'} rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                  title={item.label}
+                  className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center p-3' : 'justify-between px-3.5 py-3'} rounded-2xl text-xs font-bold transition-all cursor-pointer ${
                     isActive 
                       ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' 
                       : 'text-slate-400 hover:text-slate-100 hover:bg-slate-900'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                  <div className={`flex items-center ${isSidebarCollapsed ? 'justify-center' : 'gap-3'} relative`}>
+                    <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
                     {!isSidebarCollapsed && <span>{item.label}</span>}
+                    {isSidebarCollapsed && item.badge !== undefined && item.badge > 0 && (
+                      <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-blue-500 border-2 border-slate-950" />
+                    )}
                   </div>
 
                   {!isSidebarCollapsed && item.badge !== undefined && item.badge > 0 && (
@@ -777,57 +793,68 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
 
         {/* Sidebar Footer */}
         <div className="mt-8 pt-4 border-t border-slate-900 space-y-2.5">
-          <div className="flex items-center justify-between px-2 text-[11px] font-mono text-slate-400">
-            <span className="flex items-center gap-1.5 truncate">
-              <Clock className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-              <span>Смена: {settings?.defaultShiftDurationHours || 12} ч ({settings?.workDayStart || '08:00'}–{settings?.workDayEnd || '20:00'})</span>
-            </span>
-            <span className="shrink-0 pl-1">{currentTime}</span>
-          </div>
+          {!isSidebarCollapsed && (
+            <div className="flex items-center justify-between px-2 text-[11px] font-mono text-slate-400">
+              <span className="flex items-center gap-1.5 truncate">
+                <Clock className="w-3.5 h-3.5 text-blue-400 shrink-0" />
+                <span>Смена: {settings?.defaultShiftDurationHours || 12} ч ({settings?.workDayStart || '08:00'}–{settings?.workDayEnd || '20:00'})</span>
+              </span>
+              <span className="shrink-0 pl-1">{currentTime}</span>
+            </div>
+          )}
 
-          <div className="p-3 bg-slate-900/90 rounded-2xl border border-slate-800/80 flex items-center justify-between gap-2">
+          <div className={`p-2.5 bg-slate-900/90 rounded-2xl border border-slate-800/80 flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between gap-2'}`}>
             <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-sm">
+              <div 
+                className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 text-white flex items-center justify-center font-bold text-xs shrink-0 shadow-sm"
+                title={`${displayUserName} (${displayUserRole})`}
+              >
                 {userInitials}
               </div>
-              <div className="min-w-0">
-                <div className="text-xs font-bold text-white truncate">
-                  {displayUserName}
+              {!isSidebarCollapsed && (
+                <div className="min-w-0">
+                  <div className="text-xs font-bold text-white truncate">
+                    {displayUserName}
+                  </div>
+                  <div className="text-[10px] text-indigo-400 font-medium truncate">
+                    {displayUserRole}
+                  </div>
                 </div>
-                <div className="text-[10px] text-indigo-400 font-medium truncate">
-                  {displayUserRole}
-                </div>
-              </div>
+              )}
             </div>
-            <button
-              onClick={handleLogout}
-              title="Выйти из ERP"
-              className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-rose-400 transition-colors shrink-0 cursor-pointer"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+            {!isSidebarCollapsed && (
+              <button
+                onClick={handleLogout}
+                title="Выйти из ERP"
+                className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-rose-400 transition-colors shrink-0 cursor-pointer"
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            )}
           </div>
 
-          <div className="grid grid-cols-2 gap-1.5">
-            <a
-              href={`/${aliasOrId}`}
-              target="_blank"
-              rel="noreferrer"
-              className="py-2 px-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-center"
-            >
-              <span>Витрина</span>
-              <ExternalLink className="w-3 h-3 text-slate-400" />
-            </a>
-            <a
-              href="/"
-              target="_blank"
-              rel="noreferrer"
-              className="py-2 px-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-center"
-            >
-              <span>Калькулятор</span>
-              <ExternalLink className="w-3 h-3 text-slate-400" />
-            </a>
-          </div>
+          {!isSidebarCollapsed && (
+            <div className="grid grid-cols-2 gap-1.5">
+              <a
+                href={`/${aliasOrId}`}
+                target="_blank"
+                rel="noreferrer"
+                className="py-2 px-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-center"
+              >
+                <span>Витрина</span>
+                <ExternalLink className="w-3 h-3 text-slate-400" />
+              </a>
+              <a
+                href="/"
+                target="_blank"
+                rel="noreferrer"
+                className="py-2 px-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-center"
+              >
+                <span>Калькулятор</span>
+                <ExternalLink className="w-3 h-3 text-slate-400" />
+              </a>
+            </div>
+          )}
         </div>
       </aside>
 
@@ -934,6 +961,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
               onBack={() => setSelectedOrderForWorkspace(null)}
               onUpdateOrder={(updated) => handleUpdateOrder(updated)}
               onUpdateOrderStatus={(orderId, nextStage) => handleUpdateOrderStatus(orderId, nextStage)}
+              sourceSection={activeSection}
             />
           ) : (
             <>
@@ -979,6 +1007,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
                 <ERPReportsView 
                   orders={orders} 
                   employees={employees} 
+                  settings={settings}
                 />
               )}
 

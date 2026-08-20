@@ -422,6 +422,54 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                           <span>Кромка: <strong>{order.totalEdgeM} п.м.</strong></span>
                           <span>Дата готовности: <strong>{formatDeadlineDate(order.deadlineDate)}</strong></span>
                         </div>
+
+                        {/* Previous Stage Completion Summary */}
+                        {(() => {
+                          const getPreviousStageId = (stId: ProductionStageId): ProductionStageId | null => {
+                            const sequence: ProductionStageId[] = ['cutting', 'edging', 'cnc', 'facades', 'assembly', 'qc', 'packing'];
+                            const idx = sequence.indexOf(stId);
+                            if (idx > 0) return sequence[idx - 1];
+                            return null;
+                          };
+
+                          const curStage = selectedStageId || order.currentStage;
+                          const prevStageId = getPreviousStageId(curStage);
+                          if (!prevStageId) return null;
+
+                          const stageObj = allStages.find(s => s.id === prevStageId);
+                          const prevStageName = stageObj ? stageObj.name : prevStageId;
+                          const prevLogs = (order.workLogs || []).filter(l => l.stageId === prevStageId);
+
+                          if (prevLogs.length > 0) {
+                            const formattedWorkers = prevLogs.map(l => 
+                              `${l.employeeName || 'Иван Иванов'}, ${l.scannedPartsCount || order.partsCount} деталей в объеме ${(l.scannedAreaM2 || order.totalAreaM2).toFixed(1)} м², ${l.endTime || l.startTime || 'сегодня'}`
+                            );
+                            const text = formattedWorkers.length > 1
+                              ? `${prevStageName} выполнили: ${formattedWorkers[0]} совместно с ${formattedWorkers.slice(1).join(', ')}`
+                              : `${prevStageName} выполнил: ${formattedWorkers[0]}`;
+
+                            return (
+                              <div className="mt-2 text-[11px] font-semibold text-slate-800 bg-emerald-50/90 p-2.5 rounded-2xl border border-emerald-200/90 flex items-start gap-2">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                                <div>{text}</div>
+                              </div>
+                            );
+                          }
+
+                          const prevScanning = order.stageScanningProgress?.[prevStageId];
+                          if (prevScanning && Object.keys(prevScanning).length > 0) {
+                            return (
+                              <div className="mt-2 text-[11px] font-semibold text-slate-800 bg-emerald-50/90 p-2.5 rounded-2xl border border-emerald-200/90 flex items-center gap-2">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                <div>
+                                  {prevStageName} выполнил: Иван Иванов (Мастер цеха), {order.partsCount} деталей в объеме {order.totalAreaM2} м², {order.plannedCuttingDate || 'Ранее'}
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          return null;
+                        })()}
                       </div>
 
                       {/* Right: Actions */}

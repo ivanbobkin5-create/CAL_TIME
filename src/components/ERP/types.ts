@@ -197,13 +197,13 @@ export interface WorkShift {
 
 export interface MachineEquipment {
   id: string;
-  name: string;
-  model: string;
-  type: 'cutting' | 'edging' | 'cnc' | 'pressing' | 'painting' | 'other';
-  department: string;
+  department: string; // cutting, edging, cnc, etc.
+  name: string; // e.g., "Altendorf F45"
   status: 'working' | 'maintenance' | 'idle' | 'broken';
-  productivityPerHour: string;
-  assignedEmployees: string[];
+  model?: string;
+  type?: 'cutting' | 'edging' | 'cnc' | 'pressing' | 'painting' | 'other' | string;
+  productivityPerHour?: string;
+  assignedEmployees?: string[];
   lastServiceDate?: string;
   nextServiceDate?: string;
 }
@@ -240,6 +240,12 @@ export interface ERPCompanySettings {
   notificationTelegramEnabled?: boolean;
   noteRules?: ERPNoteRule[];
   showAdditionalWorksOnUpload?: boolean; // Показывать блок доп. работ при подгрузке бирок
+  
+  // Плановые объемы выработки (для отчетов и аналитики)
+  targetMonthlyM2?: number;          // Плановая выработка ЛДСП м²/мес
+  targetMonthlyEdgeM?: number;      // Плановая кромкооблицовка п.м./мес
+  targetMonthlyParts?: number;      // Плановое количество деталей шт./мес
+  equipmentList?: MachineEquipment[]; // Оборудование участков
 }
 
 export interface SalaryAdjustment {
