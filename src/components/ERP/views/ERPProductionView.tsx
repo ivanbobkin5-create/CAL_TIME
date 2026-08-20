@@ -17,10 +17,15 @@ import {
   X,
   Play,
   Check,
-  ExternalLink
+  ExternalLink,
+  ArrowLeft,
+  Calendar,
+  Box,
+  Flame,
+  UserCheck
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPEmployee, ERPCompanySettings } from '../types';
-import { formatDeadlineDate } from '../utils';
+import { formatDeadlineDate, getNextRequiredStage } from '../utils';
 import { ERPOrderDetailsModal } from './ERPOrderDetailsModal';
 
 interface ERPProductionViewProps {
@@ -41,46 +46,49 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
   onSelectOrder
 }) => {
   const [search, setSearch] = useState('');
+  const [selectedStageId, setSelectedStageId] = useState<ProductionStageId | null>(null);
+  const [stageTabFilter, setStageTabFilter] = useState<'all' | 'overdue' | 'today' | 'tomorrow' | 'future'>('all');
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<ProductionOrder | null>(null);
 
-  const allStages: { id: ProductionStageId; name: string; icon: any; color: string; badgeColor: string }[] = [
-    { id: 'queue', name: 'Очередь запуска', icon: Clock, color: 'border-slate-300 bg-slate-50', badgeColor: 'bg-slate-200 text-slate-700' },
-    { id: 'cutting', name: 'Раскрой', icon: Scissors, color: 'border-blue-300 bg-blue-50/50', badgeColor: 'bg-blue-100 text-blue-800' },
-    { id: 'edging', name: 'Кромление', icon: Layers, color: 'border-indigo-300 bg-indigo-50/50', badgeColor: 'bg-indigo-100 text-indigo-800' },
-    { id: 'cnc', name: 'Присадка ЧПУ', icon: Factory, color: 'border-purple-300 bg-purple-50/50', badgeColor: 'bg-purple-100 text-purple-800' },
-    { id: 'facades', name: 'Фасады', icon: Wrench, color: 'border-amber-300 bg-amber-50/50', badgeColor: 'bg-amber-100 text-amber-800' },
-    { id: 'assembly', name: 'Сборка', icon: Wrench, color: 'border-teal-300 bg-teal-50/50', badgeColor: 'bg-teal-100 text-teal-800' },
-    { id: 'qc', name: 'Контроль ОТК', icon: CheckCircle2, color: 'border-emerald-300 bg-emerald-50/50', badgeColor: 'bg-emerald-100 text-emerald-800' },
-    { id: 'packing', name: 'Упаковка', icon: Package, color: 'border-orange-300 bg-orange-50/50', badgeColor: 'bg-orange-100 text-orange-800' },
-    { id: 'ready', name: 'Готово к отгрузке', icon: CheckCircle2, color: 'border-green-400 bg-green-50/70', badgeColor: 'bg-green-100 text-green-800' }
+  const allStages: { id: ProductionStageId; name: string; icon: any; color: string; badgeColor: string; bgGradient: string }[] = [
+    { id: 'cutting', name: 'Участок раскроя (Распил)', icon: Scissors, color: 'text-blue-600 border-blue-200 bg-blue-50', badgeColor: 'bg-blue-600 text-white', bgGradient: 'from-blue-50/50 to-white' },
+    { id: 'edging', name: 'Участок кромкооблицовки', icon: Layers, color: 'text-indigo-600 border-indigo-200 bg-indigo-50', badgeColor: 'bg-indigo-600 text-white', bgGradient: 'from-indigo-50/50 to-white' },
+    { id: 'cnc', name: 'Участок присадки / ЧПУ', icon: Factory, color: 'text-purple-600 border-purple-200 bg-purple-50', badgeColor: 'bg-purple-600 text-white', bgGradient: 'from-purple-50/50 to-white' },
+    { id: 'facades', name: 'Фасадный участок / Покраска', icon: Wrench, color: 'text-amber-600 border-amber-200 bg-amber-50', badgeColor: 'bg-amber-600 text-white', bgGradient: 'from-amber-50/50 to-white' },
+    { id: 'assembly', name: 'Участок сборки', icon: Wrench, color: 'text-teal-600 border-teal-200 bg-teal-50', badgeColor: 'bg-teal-600 text-white', bgGradient: 'from-teal-50/50 to-white' },
+    { id: 'kitting', name: 'Участок комплектовки', icon: Box, color: 'text-cyan-600 border-cyan-200 bg-cyan-50', badgeColor: 'bg-cyan-600 text-white', bgGradient: 'from-cyan-50/50 to-white' },
+    { id: 'qc', name: 'Контроль ОТК', icon: CheckCircle2, color: 'text-emerald-600 border-emerald-200 bg-emerald-50', badgeColor: 'bg-emerald-600 text-white', bgGradient: 'from-emerald-50/50 to-white' },
+    { id: 'packing', name: 'Упаковка и склад', icon: Package, color: 'text-orange-600 border-orange-200 bg-orange-50', badgeColor: 'bg-orange-600 text-white', bgGradient: 'from-orange-50/50 to-white' }
   ];
 
   const enabledStageIds = settings?.enabledStages || allStages.map(s => s.id);
   const stages = allStages.filter(s => enabledStageIds.includes(s.id));
 
-  const filteredOrders = orders.filter(o => 
-    o.orderNumber.toLowerCase().includes(search.toLowerCase()) ||
-    o.clientName.toLowerCase().includes(search.toLowerCase()) ||
-    o.projectName.toLowerCase().includes(search.toLowerCase())
+  // Date categorization helpers
+  const todayStr = new Date().toISOString().split('T')[0];
+  const tomorrowObj = new Date();
+  tomorrowObj.setDate(tomorrowObj.getDate() + 1);
+  const tomorrowStr = tomorrowObj.toISOString().split('T')[0];
+
+  const getOrderDateCategory = (order: ProductionOrder): 'overdue' | 'today' | 'tomorrow' | 'future' => {
+    const planned = order.plannedCuttingDate || order.plannedStartDate;
+    if (!planned) return 'today';
+    if (planned < todayStr) return 'overdue';
+    if (planned === todayStr) return 'today';
+    if (planned === tomorrowStr) return 'tomorrow';
+    return 'future';
+  };
+
+  // Filter orders in production (must be ready or in progress)
+  const productionOrders = orders.filter(o => 
+    (o.isReadyForProduction || o.status === 'in_progress' || o.currentStage !== 'queue') &&
+    (o.orderNumber.toLowerCase().includes(search.toLowerCase()) ||
+     o.clientName.toLowerCase().includes(search.toLowerCase()) ||
+     o.projectName.toLowerCase().includes(search.toLowerCase()))
   );
 
-  const handleNextStage = (order: ProductionOrder, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const currentIndex = stages.findIndex(s => s.id === order.currentStage);
-    if (currentIndex < stages.length - 1) {
-      const nextStage = stages[currentIndex + 1].id;
-      onUpdateOrderStatus(order.id, nextStage);
-    }
-  };
-
-  const handlePrevStage = (order: ProductionOrder, e: React.MouseEvent) => {
-    e.stopPropagation();
-    const currentIndex = stages.findIndex(s => s.id === order.currentStage);
-    if (currentIndex > 0) {
-      const prevStage = stages[currentIndex - 1].id;
-      onUpdateOrderStatus(order.id, prevStage);
-    }
-  };
+  // Stage details view
+  const activeStage = stages.find(s => s.id === selectedStageId);
 
   return (
     <div className="space-y-6">
@@ -88,19 +96,34 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
       <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 text-xs font-bold text-blue-600 uppercase tracking-wider mb-1">
-            <Factory className="w-4 h-4" /> Производственный конвейер
+            <Factory className="w-4 h-4" /> Производственные участки
           </div>
           <h2 className="text-xl md:text-2xl font-black text-slate-900">
-            Канбан технологических стадий
+            {selectedStageId ? activeStage?.name : 'Панель оператора участков цеха'}
           </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            {selectedStageId 
+              ? 'Список заказов на участке с возможностью взятия в работу и распределения выработки'
+              : 'Крупные карточки участков с раскладкой по просроченным, сегодняшним и будущим заказам'}
+          </p>
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="relative min-w-[280px]">
+          {selectedStageId && (
+            <button
+              onClick={() => setSelectedStageId(null)}
+              className="px-4 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-all flex items-center gap-2 cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>Все участки</span>
+            </button>
+          )}
+
+          <div className="relative min-w-[260px]">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
-              placeholder="Поиск по номеру заказа, клиенту..."
+              placeholder="Поиск по номеру, клиенту..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
@@ -109,119 +132,321 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
         </div>
       </div>
 
-      {/* Kanban Board Container with horizontal scroll */}
-      <div className="overflow-x-auto pb-4">
-        <div className="flex gap-4 min-w-[1900px]">
-          {stages.map((stage, sIdx) => {
+      {/* VIEW MODE 1: Large Department Cards Grid (When no stage selected) */}
+      {!selectedStageId ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          {stages.map((stage) => {
             const Icon = stage.icon;
-            const stageOrders = filteredOrders.filter(o => o.currentStage === stage.id);
-            const totalStageArea = stageOrders.reduce((sum, o) => sum + (o.totalAreaM2 || 0), 0);
+            const stageOrders = productionOrders.filter(o => o.currentStage === stage.id);
+
+            const overdueOrders = stageOrders.filter(o => getOrderDateCategory(o) === 'overdue');
+            const todayOrders = stageOrders.filter(o => getOrderDateCategory(o) === 'today');
+            const tomorrowOrders = stageOrders.filter(o => getOrderDateCategory(o) === 'tomorrow');
+            const futureOrders = stageOrders.filter(o => getOrderDateCategory(o) === 'future');
+
+            const totalArea = stageOrders.reduce((sum, o) => sum + (o.totalAreaM2 || 0), 0);
+            const totalParts = stageOrders.reduce((sum, o) => sum + (o.partsCount || 0), 0);
 
             return (
-              <div 
+              <div
                 key={stage.id}
-                className="w-72 bg-slate-100/80 rounded-3xl p-4 border border-slate-200/80 flex flex-col max-h-[calc(100vh-250px)]"
+                onClick={() => {
+                  setSelectedStageId(stage.id);
+                  setStageTabFilter('all');
+                }}
+                className={`bg-gradient-to-br ${stage.bgGradient} rounded-3xl p-6 border border-slate-200/90 hover:border-blue-400 hover:shadow-lg transition-all cursor-pointer flex flex-col justify-between group space-y-5`}
               >
-                {/* Column Header */}
-                <div className="flex items-center justify-between mb-3 px-1">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-xl bg-white flex items-center justify-center text-slate-700 shadow-sm">
-                      <Icon className="w-4 h-4" />
+                {/* Header */}
+                <div>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className={`w-11 h-11 rounded-2xl flex items-center justify-center border font-bold ${stage.color}`}>
+                      <Icon className="w-6 h-6" />
                     </div>
-                    <span className="font-bold text-xs text-slate-900">{stage.name}</span>
+                    <span className={`px-3 py-1 rounded-full text-xs font-black font-mono shadow-sm ${stage.badgeColor}`}>
+                      {stageOrders.length} заказов
+                    </span>
                   </div>
-                  <span className={`px-2 py-0.5 rounded-lg text-xs font-black font-mono ${stage.badgeColor}`}>
-                    {stageOrders.length}
-                  </span>
+
+                  <h3 className="font-black text-slate-900 text-base group-hover:text-blue-600 transition-colors">
+                    {stage.name}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1 font-semibold">
+                    Общий объем: <strong className="text-slate-800">{totalArea.toFixed(1)} м²</strong> ({totalParts} деталей)
+                  </p>
                 </div>
 
-                {/* Stage Summary Sub-text */}
-                <div className="text-[11px] font-semibold text-slate-400 px-1 mb-3">
-                  {totalStageArea > 0 ? `${totalStageArea.toFixed(1)} м² деталей` : 'Нет заказов'}
+                {/* 4 Status Counters Tiles (Просрочено / На сегодня / На завтра / Будущие) */}
+                <div className="grid grid-cols-2 gap-2.5">
+                  {/* Overdue */}
+                  <div className={`p-3 rounded-2xl border flex flex-col justify-between ${
+                    overdueOrders.length > 0 ? 'bg-red-50 border-red-200 text-red-900' : 'bg-slate-50/80 border-slate-100 text-slate-400'
+                  }`}>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1">
+                      <Flame className="w-3 h-3 text-red-500" /> Просрочено
+                    </span>
+                    <span className="text-xl font-black font-mono mt-1">
+                      {overdueOrders.length}
+                    </span>
+                  </div>
+
+                  {/* Today */}
+                  <div className={`p-3 rounded-2xl border flex flex-col justify-between ${
+                    todayOrders.length > 0 ? 'bg-amber-50 border-amber-200 text-amber-900' : 'bg-slate-50/80 border-slate-100 text-slate-400'
+                  }`}>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1">
+                      <Calendar className="w-3 h-3 text-amber-500" /> На сегодня
+                    </span>
+                    <span className="text-xl font-black font-mono mt-1">
+                      {todayOrders.length}
+                    </span>
+                  </div>
+
+                  {/* Tomorrow */}
+                  <div className={`p-3 rounded-2xl border flex flex-col justify-between ${
+                    tomorrowOrders.length > 0 ? 'bg-blue-50 border-blue-200 text-blue-900' : 'bg-slate-50/80 border-slate-100 text-slate-400'
+                  }`}>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1">
+                      <Clock className="w-3 h-3 text-blue-500" /> На завтра
+                    </span>
+                    <span className="text-xl font-black font-mono mt-1">
+                      {tomorrowOrders.length}
+                    </span>
+                  </div>
+
+                  {/* Future */}
+                  <div className={`p-3 rounded-2xl border flex flex-col justify-between ${
+                    futureOrders.length > 0 ? 'bg-slate-100 border-slate-200 text-slate-800' : 'bg-slate-50/80 border-slate-100 text-slate-400'
+                  }`}>
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider flex items-center gap-1">
+                      ⏳ Будущие
+                    </span>
+                    <span className="text-xl font-black font-mono mt-1">
+                      {futureOrders.length}
+                    </span>
+                  </div>
                 </div>
 
-                {/* Cards Column */}
-                <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-                  {stageOrders.map((order) => (
-                    <div
-                      key={order.id}
-                      onClick={() => {
-                        setSelectedOrderDetails(order);
-                        onSelectOrder(order);
-                      }}
-                      className="p-4 rounded-2xl bg-white border border-slate-200/80 hover:border-blue-400 hover:shadow-md transition-all cursor-pointer group flex flex-col justify-between"
-                    >
-                      <div>
-                        {/* Order Number & Priority */}
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="font-mono font-black text-slate-900 text-xs bg-slate-50 px-2 py-1 rounded-lg border border-slate-100">
-                            {order.orderNumber}
-                          </span>
-                          <span className={`px-2 py-0.5 rounded-md text-[9px] font-bold uppercase ${
-                            order.priority === 'urgent' ? 'bg-red-100 text-red-700' :
-                            order.priority === 'high' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600'
-                          }`}>
-                            {order.priority === 'urgent' ? 'Срочно' : order.priority === 'high' ? 'Высокий' : 'Обычный'}
-                          </span>
-                        </div>
-
-                        {/* Client & Project */}
-                        <h4 className="font-bold text-slate-900 text-xs truncate mb-1">
-                          {order.clientName}
-                        </h4>
-                        <p className="text-[11px] text-slate-500 truncate mb-2">
-                          {order.projectName}
-                        </p>
-
-                        {/* Bitrix24 Deal info badge if present */}
-                        {order.bitrixStageName && (
-                          <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg bg-blue-50/80 border border-blue-100/80 text-[10px] text-blue-700 font-semibold mb-2.5">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0" />
-                            <span className="truncate">CRM: {order.bitrixStageName}</span>
-                          </div>
-                        )}
-
-                        {/* Deadline info */}
-                        <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-100 mb-3">
-                          <Clock className="w-3.5 h-3.5 text-red-500 shrink-0" />
-                          <span>Дедлайн: <strong className="text-slate-900">{formatDeadlineDate(order.deadlineDate)}</strong></span>
-                        </div>
-                      </div>
-
-                      {/* Card Bottom Quick Stage Mover Buttons */}
-                      <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                        <button
-                          disabled={sIdx === 0}
-                          onClick={(e) => handlePrevStage(order, e)}
-                          className="p-1.5 rounded-lg bg-slate-50 hover:bg-slate-200 text-slate-600 disabled:opacity-30 disabled:pointer-events-none transition-colors"
-                          title="Вернуть на предыдущую стадию"
-                        >
-                          <ChevronLeft className="w-3.5 h-3.5" />
-                        </button>
-
-                        <span className="text-[10px] font-bold text-blue-600 group-hover:underline">
-                          Открыть карту
-                        </span>
-
-                        <button
-                          disabled={sIdx === stages.length - 1}
-                          onClick={(e) => handleNextStage(order, e)}
-                          className="p-1.5 rounded-lg bg-blue-50 hover:bg-blue-600 hover:text-white text-blue-600 disabled:opacity-30 disabled:pointer-events-none transition-colors"
-                          title="Перевести на следующую стадию"
-                        >
-                          <ChevronRight className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                {/* Bottom CTA */}
+                <div className="pt-3 border-t border-slate-200/60 flex items-center justify-between text-xs font-bold text-blue-600 group-hover:underline">
+                  <span>Перейти к заказам участка</span>
+                  <ChevronRight className="w-4 h-4" />
                 </div>
               </div>
             );
           })}
         </div>
-      </div>
+      ) : (
+        /* VIEW MODE 2: Selected Stage Orders List */
+        <div className="space-y-4">
+          {/* Stage Filter Tabs */}
+          <div className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-sm flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => setStageTabFilter('all')}
+                className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                  stageTabFilter === 'all' ? 'bg-slate-900 text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                Все заказы участка
+              </button>
+              <button
+                onClick={() => setStageTabFilter('overdue')}
+                className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  stageTabFilter === 'overdue' ? 'bg-red-600 text-white shadow-sm' : 'bg-red-50 text-red-700 hover:bg-red-100 border border-red-200'
+                }`}
+              >
+                <span>🚨 Просроченные</span>
+              </button>
+              <button
+                onClick={() => setStageTabFilter('today')}
+                className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  stageTabFilter === 'today' ? 'bg-amber-600 text-white shadow-sm' : 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200'
+                }`}
+              >
+                <span>📅 На сегодня</span>
+              </button>
+              <button
+                onClick={() => setStageTabFilter('tomorrow')}
+                className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  stageTabFilter === 'tomorrow' ? 'bg-blue-600 text-white shadow-sm' : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
+                }`}
+              >
+                <span>🌅 На завтра</span>
+              </button>
+              <button
+                onClick={() => setStageTabFilter('future')}
+                className={`px-4 py-2 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                  stageTabFilter === 'future' ? 'bg-slate-800 text-white shadow-sm' : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                }`}
+              >
+                ⏳ Будущие
+              </button>
+            </div>
 
-      {/* Tech Card & Scanner Modal */}
+            <div className="text-xs text-slate-500 font-semibold">
+              Участок: <strong className="text-slate-900 font-bold">{activeStage?.name}</strong>
+            </div>
+          </div>
+
+          {/* Orders Cards List */}
+          {(() => {
+            const stageOrders = productionOrders.filter(o => o.currentStage === selectedStageId);
+            const filteredByTab = stageOrders.filter(o => {
+              if (stageTabFilter === 'all') return true;
+              return getOrderDateCategory(o) === stageTabFilter;
+            });
+
+            if (filteredByTab.length === 0) {
+              return (
+                <div className="py-12 text-center bg-white rounded-3xl border border-dashed border-slate-200 p-8">
+                  <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-2" />
+                  <p className="text-sm font-bold text-slate-700">Заказы в выбранной категории отсутствуют</p>
+                  <p className="text-xs text-slate-400 mt-1">Все задачи этого типа выполнены или нет новых поступлений</p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="space-y-3">
+                {filteredByTab.map((order) => {
+                  const dateCat = getOrderDateCategory(order);
+                  const dateBadgeStyles = {
+                    overdue: 'bg-red-100 text-red-800 border-red-300',
+                    today: 'bg-amber-100 text-amber-900 border-amber-300',
+                    tomorrow: 'bg-blue-100 text-blue-800 border-blue-300',
+                    future: 'bg-slate-100 text-slate-700 border-slate-300'
+                  }[dateCat];
+
+                  const dateCatText = {
+                    overdue: '🚨 Просрочен',
+                    today: '📅 На сегодня',
+                    tomorrow: '🌅 На завтра',
+                    future: '⏳ Будущие'
+                  }[dateCat];
+
+                  const works = order.additionalWorks;
+                  const activeLogs = order.workLogs?.filter(l => l.stageId === selectedStageId) || [];
+
+                  const clientNameClean = (order.clientName || '').trim();
+                  const projectNameClean = (order.projectName || '').trim();
+                  const isDuplicateName = projectNameClean.toLowerCase() === clientNameClean.toLowerCase() ||
+                    (projectNameClean && clientNameClean.toLowerCase().includes(projectNameClean.toLowerCase())) ||
+                    (clientNameClean && projectNameClean.toLowerCase().includes(clientNameClean.toLowerCase()));
+
+                  return (
+                    <div
+                      key={order.id}
+                      onClick={() => onSelectOrder(order)}
+                      className="bg-white rounded-3xl p-5 border border-slate-200/90 hover:border-blue-400 transition-all shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4 cursor-pointer"
+                    >
+                      {/* Left: Info */}
+                      <div className="space-y-2 min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-mono font-black text-slate-900 text-sm bg-slate-100 px-3 py-1 rounded-xl border border-slate-200 shrink-0">
+                            {order.orderNumber}
+                          </span>
+
+                          <a
+                            href={order.bitrixUrl || (order.bitrixDealId ? `https://b24.ru/crm/deal/details/${order.bitrixDealId}/` : '#')}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!order.bitrixUrl && !order.bitrixDealId) {
+                                e.preventDefault();
+                                const val = prompt('Введите URL или ID сделки в Битрикс24:', order.bitrixDealId || '');
+                                if (val) {
+                                  const url = val.startsWith('http') ? val : `https://b24.ru/crm/deal/details/${val}/`;
+                                  onUpdateOrder({
+                                    ...order,
+                                    bitrixUrl: url,
+                                    bitrixDealId: val
+                                  });
+                                  window.open(url, '_blank');
+                                }
+                              }
+                            }}
+                            className="px-2.5 py-1 rounded-xl bg-cyan-500 hover:bg-cyan-600 text-white font-extrabold text-[11px] shadow-xs transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+                            title="Открыть сделку в Битрикс24"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                            <span>B24</span>
+                          </a>
+
+                          <span className="font-extrabold text-slate-900 text-sm max-w-[220px] sm:max-w-[360px] truncate" title={clientNameClean || 'Заказ без названия'}>
+                            {clientNameClean || 'Заказ без названия'}
+                          </span>
+
+                          {!isDuplicateName && projectNameClean && (
+                            <>
+                              <span className="text-xs text-slate-400">•</span>
+                              <span className="text-xs text-slate-600 font-semibold max-w-[200px] truncate" title={projectNameClean}>
+                                {projectNameClean}
+                              </span>
+                            </>
+                          )}
+                          
+                          <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-extrabold border shrink-0 ${dateBadgeStyles}`}>
+                            {dateCatText} ({order.plannedCuttingDate || 'Не указана'})
+                          </span>
+                        </div>
+
+                        {/* Additional Works Pills if present */}
+                        {works && (works.countertopCutting || works.wallPanelCutting || works.barCutting || works.plinthCutting) && (
+                          <div className="flex items-center gap-2 flex-wrap text-[11px] font-bold text-amber-800 bg-amber-50/80 px-3 py-1.5 rounded-xl border border-amber-200">
+                            <Box className="w-3.5 h-3.5 text-amber-600" />
+                            <span>Доп. работы:</span>
+                            {works.countertopCutting && <span> Столешница (распил{works.countertopEdging ? ', кромка' : ''}{works.countertopRadius ? ', радиус' : ''})</span>}
+                            {works.wallPanelCutting && <span> Стеновая панель</span>}
+                            {works.barCutting && <span> Штанга ({works.barCount || 1} шт.)</span>}
+                            {works.plinthCutting && <span> Цоколь ({works.plinthLength || 1} м.)</span>}
+                          </div>
+                        )}
+
+                        {/* Work logs output summary */}
+                        {activeLogs.length > 0 && (
+                          <div className="flex items-center gap-2 text-[11px] font-medium text-slate-600 bg-slate-50 px-3 py-1 rounded-xl border border-slate-100">
+                            <UserCheck className="w-3.5 h-3.5 text-blue-600" />
+                            <span>История смен:</span>
+                            {activeLogs.map(l => (
+                              <span key={l.id} className="font-bold text-slate-800">
+                                {l.employeeName}: {l.scannedPartsCount} дет. ({l.scannedAreaM2.toFixed(1)} м²)
+                              </span>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="text-xs text-slate-500 flex items-center gap-4 flex-wrap">
+                          <span>Площадь: <strong>{order.totalAreaM2} м²</strong></span>
+                          <span>Деталей: <strong>{order.partsCount} шт.</strong></span>
+                          <span>Кромка: <strong>{order.totalEdgeM} п.м.</strong></span>
+                          <span>Дата готовности: <strong>{formatDeadlineDate(order.deadlineDate)}</strong></span>
+                        </div>
+                      </div>
+
+                      {/* Right: Actions */}
+                      <div className="flex items-center gap-3 shrink-0 justify-end">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onSelectOrder(order);
+                          }}
+                          className="px-5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs shadow-md shadow-blue-600/20 transition-all flex items-center gap-2 cursor-pointer"
+                        >
+                          <Play className="w-4 h-4 fill-current" />
+                          <span>Взять в работу (Сканировать)</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
+      {/* Order Details Modal */}
       {selectedOrderDetails && (
         <ERPOrderDetailsModal
           order={selectedOrderDetails}
@@ -229,9 +454,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
           onClose={() => setSelectedOrderDetails(null)}
           onUpdateOrder={(updated) => {
             setSelectedOrderDetails(updated);
-            if (onUpdateOrder) {
-              onUpdateOrder(updated);
-            }
+            if (onUpdateOrder) onUpdateOrder(updated);
           }}
           onUpdateOrderStatus={(orderId, nextStage) => {
             onUpdateOrderStatus(orderId, nextStage);
@@ -240,9 +463,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
               currentStage: nextStage
             };
             setSelectedOrderDetails(updated);
-            if (onUpdateOrder) {
-              onUpdateOrder(updated);
-            }
+            if (onUpdateOrder) onUpdateOrder(updated);
           }}
         />
       )}

@@ -37575,21 +37575,6 @@ export default function App() {
                   )}
                 </button>
               )}
-              <button
-                onClick={() => setActiveTab("b3d_test")}
-                className={cn(
-                  "w-full flex items-center rounded-lg transition-all border border-purple-200/80 my-0.5",
-                  isSidebarOpen ? "gap-2 px-2.5 py-1.5" : "justify-center py-1.5",
-                  activeTab === "b3d_test"
-                    ? "bg-purple-600 text-white shadow-md shadow-purple-200"
-                    : "text-purple-700 bg-purple-50/50 hover:bg-purple-100/80",
-                )}
-              >
-                <FlaskConical className="w-4 h-4 flex-shrink-0 text-purple-600" />
-                {isSidebarOpen && (
-                  <span className="text-[12px] font-bold">Бирки (.bir) и b3d</span>
-                )}
-              </button>
               {isAppAdmin && (
                 <button
                   onClick={() => setShowAdminPanel(true)}

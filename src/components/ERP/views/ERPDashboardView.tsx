@@ -173,7 +173,7 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
               <div className="py-8 text-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
                 <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
                 <p className="text-sm font-bold text-slate-700">Все срочные заказы выполнены</p>
-                <p className="text-xs text-slate-400 mt-0.5">В цехе нет заказов с критическим дедлайном</p>
+                <p className="text-xs text-slate-400 mt-0.5">В цехе нет заказов с критической датой готовности</p>
               </div>
             ) : (
               <div className="space-y-3">
@@ -193,7 +193,14 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
                           </span>
                         </div>
                         <p className="text-xs text-slate-600 font-medium truncate mt-0.5">
-                          {order.clientName} • {order.projectName}
+                          {(() => {
+                            const c = (order.clientName || '').trim();
+                            const p = (order.projectName || '').trim();
+                            if (!c && !p) return 'Заказ без названия';
+                            if (!p || c.toLowerCase() === p.toLowerCase() || c.toLowerCase().includes(p.toLowerCase())) return c || p;
+                            if (!c || p.toLowerCase().includes(c.toLowerCase())) return p;
+                            return `${c} • ${p}`;
+                          })()}
                         </p>
                       </div>
                     </div>

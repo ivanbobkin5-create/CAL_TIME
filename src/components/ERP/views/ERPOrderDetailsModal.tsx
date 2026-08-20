@@ -345,6 +345,7 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
     cnc: 'Участок присадки ЧПУ',
     facades: 'Фасадный участок',
     assembly: 'Участок сборки',
+    kitting: 'Участок комплектовки',
     qc: 'Контроль ОТК',
     packing: 'Участок упаковки',
     ready: 'Готово к отгрузке'
@@ -356,7 +357,8 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
     edging: 'cnc',
     cnc: 'facades',
     facades: 'assembly',
-    assembly: 'qc',
+    assembly: 'kitting',
+    kitting: 'qc',
     qc: 'packing',
     packing: 'ready',
     ready: null

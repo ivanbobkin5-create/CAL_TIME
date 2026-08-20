@@ -1459,10 +1459,10 @@ function transliterate(str: string): string {
           const stageName = matchingStage ? (matchingStage.NAME || matchingStage.name) : dealStageId;
 
           const opp = Number(deal.OPPORTUNITY) || 0;
-          const estArea = local.totalAreaM2 !== undefined ? local.totalAreaM2 : Math.max(6, Math.round((opp > 0 ? (opp / 9500) : 16.5) * 10) / 10);
-          const estEdge = local.totalEdgeM !== undefined ? local.totalEdgeM : Math.round(estArea * 2.8);
-          const estParts = local.partsCount !== undefined ? local.partsCount : Math.round(estArea * 1.8);
-          const estFacades = local.facadesCount !== undefined ? local.facadesCount : Math.round(estArea * 0.35);
+          const estArea = local.totalAreaM2 !== undefined ? local.totalAreaM2 : (local.birkaData ? local.birkaData.totalAreaM2 : 0);
+          const estEdge = local.totalEdgeM !== undefined ? local.totalEdgeM : (local.birkaData ? local.birkaData.totalEdgeMeters : 0);
+          const estParts = local.partsCount !== undefined ? local.partsCount : (local.birkaData ? local.birkaData.totalPartsCount : 0);
+          const estFacades = local.facadesCount !== undefined ? local.facadesCount : 0;
 
           const dealLink = portalBase ? `${portalBase}/crm/deal/details/${deal.ID}/` : undefined;
 
@@ -1488,6 +1488,8 @@ function transliterate(str: string): string {
             comments: deal.COMMENTS || local.comments || "",
             responsibleEmployeeId: local.responsibleEmployeeId,
             responsibleEmployeeName: local.responsibleEmployeeName,
+            birkaData: local.birkaData || null,
+            stageScanningProgress: local.stageScanningProgress || {},
             stageProgress: local.stageProgress || {
               queue: { status: 'in_progress' }
             }
@@ -1530,9 +1532,9 @@ function transliterate(str: string): string {
               }
             }
 
-            const finalArea = local.totalAreaM2 !== undefined ? local.totalAreaM2 : Math.max(5, Math.round(calcArea * 10) / 10);
-            const finalEdge = local.totalEdgeM !== undefined ? local.totalEdgeM : Math.round(finalArea * 2.5);
-            const finalParts = local.partsCount !== undefined ? local.partsCount : Math.max(12, calcParts);
+            const finalArea = local.totalAreaM2 !== undefined ? local.totalAreaM2 : (local.birkaData ? local.birkaData.totalAreaM2 : (calcArea > 0 ? Math.round(calcArea * 10) / 10 : 0));
+            const finalEdge = local.totalEdgeM !== undefined ? local.totalEdgeM : (local.birkaData ? local.birkaData.totalEdgeMeters : 0);
+            const finalParts = local.partsCount !== undefined ? local.partsCount : (local.birkaData ? local.birkaData.totalPartsCount : (calcParts > 0 ? calcParts : 0));
             const finalFacades = local.facadesCount !== undefined ? local.facadesCount : calcFacades;
 
             orders.push({
@@ -1554,6 +1556,8 @@ function transliterate(str: string): string {
               comments: project.clientInfo?.comment || local.comments || "",
               responsibleEmployeeId: local.responsibleEmployeeId,
               responsibleEmployeeName: local.responsibleEmployeeName,
+              birkaData: local.birkaData || null,
+              stageScanningProgress: local.stageScanningProgress || {},
               stageProgress: local.stageProgress || {
                 queue: { status: 'in_progress' }
               }
@@ -1578,7 +1582,7 @@ function transliterate(str: string): string {
   app.post("/api/erp/:companyId/orders/:orderId/stage", async (req, res) => {
     try {
       const { companyId, orderId } = req.params;
-      const { currentStage, stageProgress, status, responsibleEmployeeId, responsibleEmployeeName, comments, priority, totalAreaM2, totalEdgeM, partsCount, facadesCount } = req.body;
+      const { currentStage, stageProgress, status, responsibleEmployeeId, responsibleEmployeeName, comments, priority, totalAreaM2, totalEdgeM, partsCount, facadesCount, birkaData, stageScanningProgress } = req.body;
 
       const companyDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } }));
       if (!companyDoc) return res.status(404).json({ error: "Компания не найдена" });
@@ -1603,6 +1607,8 @@ function transliterate(str: string): string {
         totalEdgeM: totalEdgeM !== undefined ? totalEdgeM : existingData.totalEdgeM,
         partsCount: partsCount !== undefined ? partsCount : existingData.partsCount,
         facadesCount: facadesCount !== undefined ? facadesCount : existingData.facadesCount,
+        birkaData: birkaData !== undefined ? birkaData : existingData.birkaData,
+        stageScanningProgress: stageScanningProgress !== undefined ? stageScanningProgress : existingData.stageScanningProgress,
         updatedAt: new Date().toISOString()
       };
 

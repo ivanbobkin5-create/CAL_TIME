@@ -169,8 +169,8 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
-          <div className="relative min-w-[240px]">
+        <div className="flex items-center gap-3 flex-wrap sm:flex-nowrap w-full md:w-auto">
+          <div className="relative w-full sm:w-[220px]">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -183,7 +183,7 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
 
           <button
             onClick={openAddModal}
-            className="px-4 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md shadow-blue-200 transition-all flex items-center gap-1.5 cursor-pointer shrink-0"
+            className="w-full sm:w-auto px-4 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md shadow-blue-200 transition-all flex items-center justify-center gap-1.5 cursor-pointer shrink-0 whitespace-nowrap"
           >
             <Plus className="w-4 h-4" /> Добавить сотрудника
           </button>
@@ -422,15 +422,42 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
                 </div>
               </div>
 
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Телефон / Связь</label>
+                  <input
+                    type="text"
+                    placeholder="+7 (999) 000-00-00"
+                    value={formEmployee.phone || ''}
+                    onChange={(e) => setFormEmployee({ ...formEmployee, phone: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Email для входа</label>
+                  <input
+                    type="email"
+                    placeholder="master@company.ru"
+                    value={formEmployee.email || ''}
+                    onChange={(e) => setFormEmployee({ ...formEmployee, email: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                  />
+                </div>
+              </div>
+
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Телефон / Связь</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Пароль авторизации в Мебельном калькуляторе / ERP</label>
                 <input
                   type="text"
-                  placeholder="+7 (999) 000-00-00"
-                  value={formEmployee.phone || ''}
-                  onChange={(e) => setFormEmployee({ ...formEmployee, phone: e.target.value })}
+                  placeholder="Придумайте пароль или оставьте пустые если не нужен"
+                  value={formEmployee.tempPassword || formEmployee.password || ''}
+                  onChange={(e) => setFormEmployee({ ...formEmployee, tempPassword: e.target.value, password: e.target.value })}
                   className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
                 />
+                <p className="text-[11px] text-slate-500 mt-1 font-medium">
+                  С этими учетными данными (Email и Пароль) сотрудник может входить как в ERP цеха, так и в основной сервис Мебельного калькулятора.
+                </p>
               </div>
 
               <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-100">

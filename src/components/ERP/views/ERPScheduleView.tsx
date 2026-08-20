@@ -33,13 +33,16 @@ export const ERPScheduleView: React.FC<ERPScheduleViewProps> = ({
   const departmentsList = [
     { id: 'all', name: 'Все участки' },
     { id: 'cutting', name: 'Раскрой' },
-    { id: 'edging', name: 'Кромкооблицовка' },
+    { id: 'edging', name: 'Кромкооблицовки' },
     { id: 'cnc', name: 'Присадка ЧПУ' },
     { id: 'facades', name: 'Фасады' },
-    { id: 'assembly', name: 'Сборка и ОТК' }
+    { id: 'assembly', name: 'Сборка' },
+    { id: 'kitting', name: 'Комплектовка' }
   ];
 
   const filteredEmployees = employees.filter(e => {
+    // Filter out non-production employees
+    if (e.isProductionEmployee === false) return false;
     if (selectedDepartment === 'all') return true;
     return e.department === selectedDepartment;
   });

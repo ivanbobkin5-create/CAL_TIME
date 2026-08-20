@@ -56,6 +56,29 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
       </div>
 
       <form onSubmit={handleSave} className="space-y-6">
+        {/* Additional Works Settings Section */}
+        <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm">
+          <h3 className="font-bold text-slate-900 text-base mb-1">Дополнительные производственные работы</h3>
+          <p className="text-xs text-slate-400 mb-4">Настройка отображения блока специфических работ (столешница, стеновая панель, нарезка штанги/трубы, нарезка цоколя) при загрузке спецификации бирок</p>
+
+          <label className="flex items-center gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-200 cursor-pointer hover:bg-slate-100/80 transition-colors">
+            <input
+              type="checkbox"
+              checked={formData.showAdditionalWorksOnUpload ?? true}
+              onChange={(e) => setFormData({ ...formData, showAdditionalWorksOnUpload: e.target.checked })}
+              className="w-5 h-5 rounded-lg border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+            />
+            <div>
+              <div className="font-bold text-xs text-slate-900">
+                Показывать блок "Дополнительные работы" в планировании и при загрузке бирок
+              </div>
+              <div className="text-[11px] text-slate-500 mt-0.5">
+                Позволяет технологу при подгрузке `.bir` сразу отмечать распил/кромление/радиус столешницы, распил стеновой панели, нарезку штанги и цоколя.
+              </div>
+            </div>
+          </label>
+        </div>
+
         {/* Piecework Tariffs Section */}
         <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm">
           <h3 className="font-bold text-slate-900 text-base mb-1">Тарифы сдельной выработки мастеров</h3>
@@ -140,11 +163,12 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
               { id: 'cnc', label: 'Участок присадки ЧПУ' },
               { id: 'facades', label: 'Фасадный участок' },
               { id: 'assembly', label: 'Участок сборки' },
+              { id: 'kitting', label: 'Участок комплектовки' },
               { id: 'qc', label: 'Контроль ОТК' },
               { id: 'packing', label: 'Участок упаковки' },
               { id: 'ready', label: 'Готово к отгрузке' }
             ].map(st => {
-              const enabledList = formData.enabledStages || ['queue', 'cutting', 'edging', 'cnc', 'facades', 'assembly', 'qc', 'packing', 'ready'];
+              const enabledList = formData.enabledStages || ['queue', 'cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing', 'ready'];
               const isChecked = enabledList.includes(st.id as any);
 
               const toggleStage = () => {

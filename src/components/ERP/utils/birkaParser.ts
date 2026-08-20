@@ -338,12 +338,31 @@ export function buildMaterialGroups(details: BirkaDetail[]): {
       });
     });
 
-    // Estimate sheet count:
-    // Standard sheet area: 2.80 * 2.07 = 5.796 m2 (or 2.44 * 1.83 = 4.46 m2)
-    // Usable factor ~ 0.82
-    const isHdf = matName.toLowerCase().includes('хдф') || matName.toLowerCase().includes('двп') || matName.toLowerCase().includes('3мм');
-    const stdSheetArea = isHdf ? 4.46 : 5.80; // m2
-    const usableSheetArea = stdSheetArea * 0.82;
+    // Estimate sheet count based on material brand & size database:
+    // EGGER / Egger / Kronospan: 2800 x 2070 mm = 5.796 m2
+    // Nordeco / Lamarty: 2750 x 1830 mm = 5.0325 m2
+    // Uvadrev: 2440 x 1830 mm = 4.465 m2
+    // Evosoft / AGT / Evogloss / Arkopa: 2800 x 1220 mm = 3.416 m2
+    // Tabletop / Столешница: 3050 x 600 mm = 1.83 m2
+    // HDF / ХДФ / ДВП / 3мм: 2800 x 2070 mm = 5.796 m2 or 2440 x 1830 mm = 4.465 m2
+    const lowerMat = matName.toLowerCase();
+    let sheetAreaM2 = 5.80; // Standard fallback (2800 x 2070)
+
+    if (lowerMat.includes('evosoft') || lowerMat.includes('эвософт') || lowerMat.includes('agt') || lowerMat.includes('evogloss') || lowerMat.includes('arkopa') || lowerMat.includes('1220')) {
+      sheetAreaM2 = 3.416; // 2800 x 1220
+    } else if (lowerMat.includes('nordeco') || lowerMat.includes('нордеко') || lowerMat.includes('lamarty') || lowerMat.includes('ламарти') || lowerMat.includes('белый фон') || lowerMat.includes('2750')) {
+      sheetAreaM2 = 5.0325; // 2750 x 1830
+    } else if (lowerMat.includes('uvadrev') || lowerMat.includes('увадрев') || lowerMat.includes('2440')) {
+      sheetAreaM2 = 4.465; // 2440 x 1830
+    } else if (lowerMat.includes('столешниц') || lowerMat.includes('скинали') || lowerMat.includes('стеновая')) {
+      sheetAreaM2 = 1.83; // 3050 x 600
+    } else if (lowerMat.includes('хдф') || lowerMat.includes('двп') || lowerMat.includes('оргалит') || lowerMat.includes('3мм')) {
+      sheetAreaM2 = 4.465;
+    } else if (lowerMat.includes('egger') || lowerMat.includes('эггер') || lowerMat.includes('гикори') || lowerMat.includes('галифакс') || lowerMat.includes('kronospan') || lowerMat.includes('кроношпан')) {
+      sheetAreaM2 = 5.796; // 2800 x 2070
+    }
+
+    const usableSheetArea = sheetAreaM2 * 0.82; // 0.82 usable nesting efficiency
     const estimatedSheets = Math.ceil(totalAreaM2 / usableSheetArea) || 1;
 
     grandTotalAreaM2 += totalAreaM2;

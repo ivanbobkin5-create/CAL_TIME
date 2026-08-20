@@ -15,6 +15,7 @@ export type ProductionStageId =
   | 'cnc'
   | 'facades'
   | 'assembly'
+  | 'kitting'
   | 'qc'
   | 'packing'
   | 'ready';
@@ -35,6 +36,40 @@ export interface ERPNoteRule {
   color?: string;        // 'amber' | 'blue' | 'purple' | 'emerald' | 'rose'
 }
 
+export interface AdditionalWorks {
+  countertopCutting?: boolean; // Распил столешницы
+  countertopEdging?: boolean;  // Кромление столешницы
+  countertopRadius?: boolean;  // Радиус столешницы
+  countertopNotes?: string;
+
+  wallPanelCutting?: boolean;  // Распил стеновой панели
+  wallPanelEdging?: boolean;   // Кромление стеновой панели
+  wallPanelNotes?: string;
+
+  barCutting?: boolean;        // Нарезка штанги (труба)
+  barCount?: number;
+  barNotes?: string;
+
+  plinthCutting?: boolean;     // Нарезка цоколя
+  plinthLength?: number;
+  plinthNotes?: string;
+}
+
+export interface EmployeeWorkLog {
+  id: string;
+  orderId: string;
+  orderNumber: string;
+  employeeId: string;
+  employeeName: string;
+  stageId: ProductionStageId;
+  startTime: string;
+  endTime?: string;
+  scannedPartsCount: number;
+  scannedAreaM2: number;
+  scannedEdgeM?: number;
+  status: 'in_progress' | 'paused' | 'completed';
+}
+
 export interface ProductionOrder {
   id: string;
   orderNumber: string;
@@ -44,6 +79,8 @@ export interface ProductionOrder {
   createdAt: string;
   deadlineDate: string;
   plannedStartDate?: string;
+  plannedCuttingDate?: string; // Выбранный день распила YYYY-MM-DD
+  isReadyForProduction?: boolean; // Отметка "Готов к началу" в планировании
   currentStage: ProductionStageId;
   priority: 'low' | 'normal' | 'high' | 'urgent';
   totalAreaM2: number;
@@ -63,6 +100,12 @@ export interface ProductionOrder {
   bitrixUrl?: string;
   projectId?: string;
   
+  // Дополнительные работы (столешница, стеновая, штанга, цоколь)
+  additionalWorks?: AdditionalWorks;
+
+  // Журнал выработки сотрудников (сессии работы для отчетов)
+  workLogs?: EmployeeWorkLog[];
+
   // Specification / Birka Data attached to order
   birkaData?: {
     fileName: string;
@@ -120,6 +163,8 @@ export interface ERPEmployee {
   department: 'cutting' | 'edging' | 'cnc' | 'facades' | 'assembly' | 'qc' | 'management' | 'packing' | 'warehouse' | string;
   phone?: string;
   email?: string;
+  password?: string;
+  tempPassword?: string;
   rateType: 'hourly' | 'piecework' | 'salary' | 'mixed';
   baseRate: number; // руб в час или базовая ставка
   pieceworkRates?: {
@@ -194,4 +239,16 @@ export interface ERPCompanySettings {
   autoScheduleOrders: boolean;
   notificationTelegramEnabled?: boolean;
   noteRules?: ERPNoteRule[];
+  showAdditionalWorksOnUpload?: boolean; // Показывать блок доп. работ при подгрузке бирок
+}
+
+export interface SalaryAdjustment {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  type: 'bonus' | 'penalty'; // 'bonus' (Премия) or 'penalty' (Штраф)
+  amount: number;
+  reason: string; // Примечание (за что)
+  date: string; // YYYY-MM-DD
+  createdBy?: string;
 }

@@ -19,7 +19,8 @@ import {
   ExternalLink,
   Cpu,
   RefreshCw,
-  Bell
+  Bell,
+  AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -28,7 +29,8 @@ import {
   ERPEmployee, 
   WorkShift, 
   ERPCompanySettings,
-  ProductionStageId 
+  ProductionStageId,
+  SalaryAdjustment 
 } from './types';
 import { ERPLoader } from './ERPLoader';
 import { ERPDashboardView } from './views/ERPDashboardView';
@@ -40,6 +42,7 @@ import { ERPSalariesView } from './views/ERPSalariesView';
 import { ERPEmployeesView } from './views/ERPEmployeesView';
 import { ERPSettingsView } from './views/ERPSettingsView';
 import { ERPLoginView } from './views/ERPLoginView';
+import { ERPOrderWorkspaceView } from './views/ERPOrderWorkspaceView';
 
 interface ERPAppProps {
   aliasOrId: string;
@@ -74,6 +77,41 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
   const [isSyncingOrders, setIsSyncingOrders] = useState(false);
   const [syncStatusText, setSyncStatusText] = useState<string | null>(null);
   const [orderSource, setOrderSource] = useState<string>('projects');
+  const [selectedOrderForWorkspace, setSelectedOrderForWorkspace] = useState<ProductionOrder | null>(null);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // Helper to load order state from localStorage
+  const loadLocalOrdersCache = (compId: string): Record<string, Partial<ProductionOrder>> => {
+    try {
+      const str = localStorage.getItem(`erp_orders_cache_${compId}`);
+      if (str) return JSON.parse(str);
+    } catch (e) {}
+    return {};
+  };
+
+  // Helper to save order state into localStorage
+  const saveLocalOrdersCache = (compId: string, ordersList: ProductionOrder[]) => {
+    try {
+      const map: Record<string, Partial<ProductionOrder>> = {};
+      ordersList.forEach(o => {
+        map[o.id] = {
+          currentStage: o.currentStage,
+          status: o.status,
+          birkaData: o.birkaData,
+          stageScanningProgress: o.stageScanningProgress,
+          totalAreaM2: o.totalAreaM2,
+          totalEdgeM: o.totalEdgeM,
+          partsCount: o.partsCount,
+          stageProgress: o.stageProgress,
+          plannedCuttingDate: o.plannedCuttingDate,
+          isReadyForProduction: o.isReadyForProduction,
+          additionalWorks: o.additionalWorks,
+          workLogs: o.workLogs
+        };
+      });
+      localStorage.setItem(`erp_orders_cache_${compId}`, JSON.stringify(map));
+    } catch (e) {}
+  };
   const [settings, setSettings] = useState<ERPCompanySettings>({
     erpEnabled: true,
     workDayStart: '08:00',
@@ -94,6 +132,27 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
     autoScheduleOrders: true
   });
 
+  const [salaryAdjustments, setSalaryAdjustments] = useState<SalaryAdjustment[]>([
+    {
+      id: 'adj-1',
+      employeeId: 'emp-1',
+      employeeName: 'Иванов Иван',
+      type: 'bonus',
+      amount: 3000,
+      reason: 'Премия за аккуратный раскрой без брака',
+      date: new Date().toISOString().split('T')[0],
+      createdBy: 'Начальник цеха'
+    }
+  ]);
+
+  // Shift & Timer State
+  const [isShiftActive, setIsShiftActive] = useState<boolean>(false);
+  const [shiftStartTime, setShiftStartTime] = useState<number | null>(null);
+  const [shiftElapsedSeconds, setShiftElapsedSeconds] = useState<number>(0);
+  const [isOvertimeApproved, setIsOvertimeApproved] = useState<boolean>(false);
+  const [showShiftWarningModal, setShowShiftWarningModal] = useState<boolean>(false);
+  const [shiftWarningMessage, setShiftWarningMessage] = useState<string>('');
+
   // Clock updater
   useEffect(() => {
     const timer = setInterval(() => {
@@ -101,6 +160,29 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
     }, 10000);
     return () => clearInterval(timer);
   }, []);
+
+  // Shift Timer interval
+  useEffect(() => {
+    let interval: any = null;
+    if (isShiftActive && shiftStartTime) {
+      interval = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - shiftStartTime) / 1000);
+        setShiftElapsedSeconds(elapsed);
+      }, 1000);
+    } else {
+      setShiftElapsedSeconds(0);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isShiftActive, shiftStartTime]);
+
+  const formatShiftTimer = (seconds: number) => {
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  };
 
   // Fetch Company & ERP Data
   useEffect(() => {
@@ -246,7 +328,24 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
           if (ordersRes.ok) {
             const ordersData = await ordersRes.json();
             if (ordersData.orders) {
-              setOrders(ordersData.orders);
+              const localCache = loadLocalOrdersCache(comp.id);
+              const merged = ordersData.orders.map((o: ProductionOrder) => {
+                const cached = localCache[o.id];
+                if (!cached) return o;
+                return {
+                  ...o,
+                  currentStage: cached.currentStage || o.currentStage,
+                  status: cached.status || o.status,
+                  birkaData: cached.birkaData !== undefined ? cached.birkaData : o.birkaData,
+                  stageScanningProgress: cached.stageScanningProgress || o.stageScanningProgress,
+                  totalAreaM2: cached.totalAreaM2 !== undefined ? cached.totalAreaM2 : o.totalAreaM2,
+                  totalEdgeM: cached.totalEdgeM !== undefined ? cached.totalEdgeM : o.totalEdgeM,
+                  partsCount: cached.partsCount !== undefined ? cached.partsCount : o.partsCount,
+                  stageProgress: cached.stageProgress || o.stageProgress
+                };
+              });
+              setOrders(merged);
+              saveLocalOrdersCache(comp.id, merged);
               setOrderSource(ordersData.orderSource || 'projects');
             }
           }
@@ -275,9 +374,30 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
       if (res.ok) {
         const data = await res.json();
         if (data.orders) {
-          setOrders(data.orders);
+          const localCache = loadLocalOrdersCache(company.id);
+          const merged = data.orders.map((o: ProductionOrder) => {
+            const cached = localCache[o.id];
+            if (!cached) return o;
+            return {
+              ...o,
+              currentStage: cached.currentStage || o.currentStage,
+              status: cached.status || o.status,
+              birkaData: cached.birkaData !== undefined ? cached.birkaData : o.birkaData,
+              stageScanningProgress: cached.stageScanningProgress || o.stageScanningProgress,
+              totalAreaM2: cached.totalAreaM2 !== undefined ? cached.totalAreaM2 : o.totalAreaM2,
+              totalEdgeM: cached.totalEdgeM !== undefined ? cached.totalEdgeM : o.totalEdgeM,
+              partsCount: cached.partsCount !== undefined ? cached.partsCount : o.partsCount,
+              stageProgress: cached.stageProgress || o.stageProgress,
+              plannedCuttingDate: cached.plannedCuttingDate !== undefined ? cached.plannedCuttingDate : o.plannedCuttingDate,
+              isReadyForProduction: cached.isReadyForProduction !== undefined ? cached.isReadyForProduction : o.isReadyForProduction,
+              additionalWorks: cached.additionalWorks !== undefined ? cached.additionalWorks : o.additionalWorks,
+              workLogs: cached.workLogs !== undefined ? cached.workLogs : o.workLogs
+            };
+          });
+          setOrders(merged);
+          saveLocalOrdersCache(company.id, merged);
           setOrderSource(data.orderSource || 'projects');
-          const count = data.orders.length;
+          const count = merged.length;
           setSyncStatusText(
             data.orderSource === 'bitrix24'
               ? `Синхронизировано: ${count} сделок из CRM`
@@ -323,23 +443,40 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
 
   const handleUpdateOrderStatus = async (orderId: string, nextStage: ProductionStageId) => {
     const isCompleted = nextStage === 'ready';
-    const newStatus = isCompleted ? 'completed' : 'in_progress';
+    const newStatus: ProductionOrder['status'] = isCompleted ? 'completed' : 'in_progress';
     
     // Instant UI update
-    setOrders(prev => prev.map(o => {
-      if (o.id === orderId) {
-        return {
-          ...o,
-          currentStage: nextStage,
-          status: newStatus,
-          stageProgress: {
-            ...o.stageProgress,
-            [nextStage]: { status: isCompleted ? 'done' : 'in_progress' }
-          }
-        };
+    let updatedOrderObj: ProductionOrder | null = null;
+    setOrders(prev => {
+      const nextList = prev.map(o => {
+        if (o.id === orderId) {
+          const updated = {
+            ...o,
+            currentStage: nextStage,
+            status: newStatus,
+            stageProgress: {
+              ...o.stageProgress,
+              [nextStage]: { status: isCompleted ? 'done' : 'in_progress' }
+            }
+          };
+          updatedOrderObj = updated;
+          return updated;
+        }
+        return o;
+      });
+      if (company?.id) {
+        saveLocalOrdersCache(company.id, nextList);
       }
-      return o;
-    }));
+      return nextList;
+    });
+
+    if (selectedOrderForWorkspace && selectedOrderForWorkspace.id === orderId) {
+      setSelectedOrderForWorkspace(prev => prev ? {
+        ...prev,
+        currentStage: nextStage,
+        status: newStatus
+      } : null);
+    }
 
     // Server-side persistence and Bitrix24 CRM sync
     if (company?.id) {
@@ -362,7 +499,18 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
   };
 
   const handleUpdateOrder = async (updated: ProductionOrder) => {
-    setOrders(prev => prev.map(o => o.id === updated.id ? updated : o));
+    setOrders(prev => {
+      const nextList = prev.map(o => o.id === updated.id ? updated : o);
+      if (company?.id) {
+        saveLocalOrdersCache(company.id, nextList);
+      }
+      return nextList;
+    });
+
+    if (selectedOrderForWorkspace && selectedOrderForWorkspace.id === updated.id) {
+      setSelectedOrderForWorkspace(updated);
+    }
+
     if (company?.id) {
       try {
         await fetch(`/api/erp/${company.id}/orders/${updated.id}/stage`, {
@@ -374,6 +522,32 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
         console.warn('Failed to persist order update:', e);
       }
     }
+  };
+
+  const handleStartShift = () => {
+    const activeEmp = matchedEmp || employees[0];
+    const todayStr = new Date().toISOString().split('T')[0];
+    
+    // Check if employee is scheduled for today
+    const isInSchedule = shifts.some(s => 
+      s.date === todayStr && 
+      (s.employeeIds.includes(activeEmp?.id || '') || s.masterEmployeeId === activeEmp?.id)
+    );
+
+    if (!isInSchedule) {
+      setShiftWarningMessage("На сегодня вас нет в графике работы, но ваша смена учтена, можно приступать к работе.");
+      setShowShiftWarningModal(true);
+    }
+
+    setIsShiftActive(true);
+    setShiftStartTime(Date.now());
+    setIsOvertimeApproved(false);
+  };
+
+  const handleEndShift = () => {
+    setIsShiftActive(false);
+    setShiftStartTime(null);
+    setIsOvertimeApproved(false);
   };
 
   const saveEmployeesToBackend = async (newEmps: ERPEmployee[]) => {
@@ -546,7 +720,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row text-slate-800 font-sans selection:bg-blue-600 selection:text-white">
       {/* Left Sidebar */}
-      <aside className="w-full md:w-64 bg-slate-950 text-white p-4 md:p-6 flex flex-col justify-between border-r border-slate-800/80 shrink-0 z-20">
+      <aside className={`${isSidebarCollapsed ? 'w-full md:w-20 p-3' : 'w-full md:w-64 p-4 md:p-6'} bg-slate-950 text-white flex flex-col justify-between border-r border-slate-800/80 shrink-0 z-20 transition-all duration-300`}>
         <div>
           {/* Logo & Company Title */}
           <div className="flex items-center gap-3 mb-8 px-2">
@@ -567,24 +741,28 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
           <nav className="space-y-1.5">
             {menuItems.map((item) => {
               const Icon = item.icon;
-              const isActive = activeSection === item.id;
+              const isActive = activeSection === item.id && !selectedOrderForWorkspace;
 
               return (
                 <button
                   key={item.id}
-                  onClick={() => setActiveSection(item.id)}
-                  className={`w-full flex items-center justify-between px-3.5 py-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                  onClick={() => {
+                    setSelectedOrderForWorkspace(null);
+                    setActiveSection(item.id);
+                  }}
+                  title={isSidebarCollapsed ? item.label : undefined}
+                  className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center py-3 px-2' : 'justify-between px-3.5 py-3'} rounded-2xl text-xs font-bold transition-all cursor-pointer ${
                     isActive 
                       ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/30' 
                       : 'text-slate-400 hover:text-slate-100 hover:bg-slate-900'
                   }`}
                 >
                   <div className="flex items-center gap-3">
-                    <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                    <span>{item.label}</span>
+                    <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                    {!isSidebarCollapsed && <span>{item.label}</span>}
                   </div>
 
-                  {item.badge !== undefined && item.badge > 0 && (
+                  {!isSidebarCollapsed && item.badge !== undefined && item.badge > 0 && (
                     <span className={`px-2 py-0.5 rounded-lg text-[10px] font-mono font-black ${
                       isActive ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-300'
                     }`}>
@@ -685,10 +863,40 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Shift Badge */}
-            <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-semibold text-slate-700">
-              <Clock className="w-3.5 h-3.5 text-blue-600" />
-              <span>Длительность смены: {settings?.defaultShiftDurationHours || 12} ч ({settings?.workDayStart || '08:00'} - {settings?.workDayEnd || '20:00'})</span>
+            {/* Shift Timer & Control */}
+            <div className="flex items-center gap-2">
+              {!isShiftActive ? (
+                <button
+                  onClick={handleStartShift}
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Clock className="w-4 h-4" />
+                  <span>Начать смену</span>
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <div className="px-3 py-1.5 rounded-xl bg-slate-900 text-emerald-400 font-mono font-black text-xs flex items-center gap-1.5 border border-slate-800 shadow-inner">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>На работе: {formatShiftTimer(shiftElapsedSeconds)}</span>
+                  </div>
+
+                  {new Date().getHours() >= 20 && !isOvertimeApproved && (
+                    <button
+                      onClick={() => setIsOvertimeApproved(true)}
+                      className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Работаю сверхурочно</span>
+                    </button>
+                  )}
+
+                  <button
+                    onClick={handleEndShift}
+                    className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-all cursor-pointer"
+                  >
+                    Завершить смену
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* Operator Card */}
@@ -717,72 +925,114 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
 
         {/* Dynamic Section View */}
         <div className="p-4 md:p-8 max-w-7xl w-full mx-auto space-y-6">
-          {activeSection === 'dashboard' && (
-            <ERPDashboardView 
-              orders={orders} 
-              employees={employees} 
-              shifts={shifts}
-              onNavigateSection={setActiveSection}
-              onSelectOrder={(order) => setActiveSection('production')}
-            />
-          )}
-
-          {activeSection === 'planning' && (
-            <ERPPlanningView 
-              orders={orders} 
-              employees={employees}
-              onUpdateOrder={handleUpdateOrder}
-              onSelectOrder={(order) => setActiveSection('production')}
-            />
-          )}
-
-          {activeSection === 'schedule' && (
-            <ERPScheduleView 
-              employees={employees} 
-              shifts={shifts} 
-            />
-          )}
-
-          {activeSection === 'production' && (
-            <ERPProductionView 
-              orders={orders} 
-              employees={employees}
+          {selectedOrderForWorkspace ? (
+            <ERPOrderWorkspaceView 
+              order={selectedOrderForWorkspace}
               settings={settings}
-              onUpdateOrderStatus={handleUpdateOrderStatus}
-              onSelectOrder={() => {}}
+              isSidebarCollapsed={isSidebarCollapsed}
+              onToggleSidebar={() => setIsSidebarCollapsed(prev => !prev)}
+              onBack={() => setSelectedOrderForWorkspace(null)}
+              onUpdateOrder={(updated) => handleUpdateOrder(updated)}
+              onUpdateOrderStatus={(orderId, nextStage) => handleUpdateOrderStatus(orderId, nextStage)}
             />
-          )}
+          ) : (
+            <>
+              {activeSection === 'dashboard' && (
+                <ERPDashboardView 
+                  orders={orders} 
+                  employees={employees} 
+                  shifts={shifts}
+                  onNavigateSection={setActiveSection}
+                  onSelectOrder={(order) => setSelectedOrderForWorkspace(order)}
+                />
+              )}
 
-          {activeSection === 'reports' && (
-            <ERPReportsView 
-              orders={orders} 
-              employees={employees} 
-            />
-          )}
+              {activeSection === 'planning' && (
+                <ERPPlanningView 
+                  orders={orders} 
+                  employees={employees}
+                  settings={settings}
+                  onUpdateOrder={handleUpdateOrder}
+                  onSelectOrder={(order) => setSelectedOrderForWorkspace(order)}
+                />
+              )}
 
-          {activeSection === 'salaries' && (
-            <ERPSalariesView 
-              employees={employees} 
-            />
-          )}
+              {activeSection === 'schedule' && (
+                <ERPScheduleView 
+                  employees={employees} 
+                  shifts={shifts} 
+                />
+              )}
 
-          {activeSection === 'employees' && (
-            <ERPEmployeesView 
-              employees={employees} 
-              onAddEmployee={handleAddEmployee}
-              onUpdateEmployee={handleUpdateEmployee}
-              onDeleteEmployee={handleDeleteEmployee}
-            />
-          )}
+              {activeSection === 'production' && (
+                <ERPProductionView 
+                  orders={orders} 
+                  employees={employees}
+                  settings={settings}
+                  onUpdateOrderStatus={handleUpdateOrderStatus}
+                  onUpdateOrder={handleUpdateOrder}
+                  onSelectOrder={(order) => setSelectedOrderForWorkspace(order)}
+                />
+              )}
 
-          {activeSection === 'settings' && (
-            <ERPSettingsView 
-              settings={settings} 
-              onSaveSettings={handleSaveSettings} 
-            />
+              {activeSection === 'reports' && (
+                <ERPReportsView 
+                  orders={orders} 
+                  employees={employees} 
+                />
+              )}
+
+              {activeSection === 'salaries' && (
+                <ERPSalariesView 
+                  employees={employees} 
+                  currentEmployee={matchedEmp}
+                  salaryAdjustments={salaryAdjustments}
+                  onAddAdjustment={(adj) => setSalaryAdjustments(prev => [adj, ...prev])}
+                />
+              )}
+
+              {activeSection === 'employees' && (
+                <ERPEmployeesView 
+                  employees={employees} 
+                  onAddEmployee={handleAddEmployee}
+                  onUpdateEmployee={handleUpdateEmployee}
+                  onDeleteEmployee={handleDeleteEmployee}
+                />
+              )}
+
+              {activeSection === 'settings' && (
+                <ERPSettingsView 
+                  settings={settings} 
+                  onSaveSettings={handleSaveSettings} 
+                />
+              )}
+            </>
           )}
         </div>
       </main>
+
+      {/* Warning Modal when starting shift not in schedule */}
+      {showShiftWarningModal && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 text-center space-y-4 animate-in zoom-in-95 duration-200">
+            <div className="w-14 h-14 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center mx-auto shadow-inner border border-amber-200">
+              <AlertCircle className="w-8 h-8" />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-slate-900">Уведомление по графику работы</h3>
+              <p className="text-xs text-amber-950 mt-3 leading-relaxed font-bold bg-amber-50/80 p-4 rounded-2xl border border-amber-200/80">
+                {shiftWarningMessage}
+              </p>
+            </div>
+            <button
+              onClick={() => setShowShiftWarningModal(false)}
+              className="w-full py-3 px-4 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs shadow-lg shadow-slate-900/20 transition-all cursor-pointer"
+            >
+              Приступить к работе
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
