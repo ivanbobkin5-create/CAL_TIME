@@ -64,8 +64,27 @@ export const computeSimpleHash = (uint8: Uint8Array): string => {
   return (h >>> 0).toString(16).toUpperCase().padStart(8, '0');
 };
 
+// Default recognized aliases for each Birka parameter
+export const DEFAULT_BIRKA_COLUMN_MAPPING: Record<string, string[]> = {
+  pos: ['№ дет', 'номер дет', 'деталь №', 'деталь номер', 'поз', 'позиц', '№ бирк', 'бирк', '№ п/п', 'п/п', 'код дет', 'part_no', 'part no', 'item_no', 'label', 'позиция'],
+  name: ['наименов', 'название', 'наим', 'деталь', 'part', 'name', 'элемент', 'изделие'],
+  orderNumber: ['зак', 'order', 'проект', 'сделка', 'номер заказа', 'заказ №'],
+  length: ['длин', 'длина', 'length', 'l', 'размер х', 'размер x', 'габарит х', 'габарит x', 'x', 'l, мм', 'длина, мм'],
+  width: ['шир', 'ширина', 'width', 'w', 'размер y', 'габарит y', 'y', 'w, мм', 'ширина, мм'],
+  thickness: ['толщ', 'толщина', 'thick', 't', 'z', 'глубин', 'h', 'толщина, мм'],
+  material: ['матер', 'материал', 'mat', 'плита', 'лдсп', 'мдф', 'хдф'],
+  quantity: ['кол', 'количество', 'qty', 'count', 'шт', 'кол-во', 'к-во'],
+  edgeL1: ['кромка л1', 'кромка1', 'длина 1', 'l1', 'кромка д1', 'край 1', 'edge1', 'кромка l1'],
+  edgeL2: ['кромка л2', 'кромка2', 'длина 2', 'l2', 'кромка д2', 'край 2', 'edge2', 'кромка l2'],
+  edgeW1: ['кромка ш1', 'кромка3', 'ширина 1', 'w1', 'кромка w1', 'край 3', 'edge3'],
+  edgeW2: ['кромка ш2', 'кромка4', 'ширина 2', 'w2', 'кромка w2', 'край 4', 'edge4'],
+  notes: ['примеч', 'паз', 'присад', 'note', 'коммент', 'инфо', 'обработка', 'чпу'],
+  barcode: ['штрих', 'код', 'barcode', 'qr', 'штрихкод']
+};
+
 // Parse text content from .bir / .brx / .txt / .csv / .tsv file
-export function parseBirFileText(text: string): BirkaDetail[] {
+export function parseBirFileText(text: string, customMapping?: Record<string, string[]>): BirkaDetail[] {
+  const mapping = { ...DEFAULT_BIRKA_COLUMN_MAPPING, ...(customMapping || {}) };
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   if (lines.length === 0) return [];
 
@@ -84,14 +103,14 @@ export function parseBirFileText(text: string): BirkaDetail[] {
     // Column index finders with exclusion support
     const findIndex = (keywords: string[], excludeKeywords: string[] = []) => 
       headers.findIndex(h => 
-        keywords.some(k => h.includes(k)) && !excludeKeywords.some(ek => h.includes(ek))
+        keywords.some(k => h.includes(k.toLowerCase())) && !excludeKeywords.some(ek => h.includes(ek.toLowerCase()))
       );
 
     // Order index first (Заказ / Order / Проект)
-    const orderIdx = findIndex(['зак', 'order', 'проект']);
+    const orderIdx = findIndex(mapping.orderNumber || ['зак', 'order', 'проект']);
 
     // Part number index (№ детали / Позиция) - prioritized
-    let posIdx = findIndex(['№ дет', 'номер дет', 'деталь №', 'деталь номер', 'поз', 'позиц', '№ бирк', 'бирк', '№ п/п', 'п/п', 'код дет', 'part_no', 'part no', 'item_no', 'label']);
+    let posIdx = findIndex(mapping.pos || ['№ дет', 'поз', 'позиц', '№ бирк', 'код дет', 'part_no', 'item_no', 'label']);
     if (posIdx === -1) {
       posIdx = findIndex(['№', 'номер', 'pos', 'id'], ['зак', 'order', 'проект', 'издел', 'наим', 'назв', 'имя', 'длин', 'шир', 'толщ', 'кол']);
     }
@@ -101,26 +120,26 @@ export function parseBirFileText(text: string): BirkaDetail[] {
     }
 
     // Name index
-    let nameIdx = findIndex(['наименов', 'название', 'наим'], ['№', 'номер', 'поз', 'код', 'id']);
+    let nameIdx = findIndex(mapping.name || ['наименов', 'название', 'наим', 'деталь', 'part', 'name'], ['№', 'номер', 'поз', 'код', 'id']);
     if (nameIdx === -1) {
       nameIdx = findIndex(['деталь', 'part', 'name'], ['№', 'номер', 'поз', 'код', 'id', 'матер', 'кромк']);
     }
 
-    const lenIdx = findIndex(['длин', 'длина', 'length', 'l', 'размер х', 'размер x', 'габарит х', 'x']);
-    const widIdx = findIndex(['шир', 'ширина', 'width', 'w', 'размер y', 'габарит y', 'y']);
-    const thkIdx = findIndex(['толщ', 'толщина', 'thick', 't', 'z', 'глубин']);
-    const matIdx = findIndex(['матер', 'материал', 'mat'], ['кромк']);
-    const qtyIdx = findIndex(['кол', 'количество', 'qty', 'count', 'шт']);
+    const lenIdx = findIndex(mapping.length || ['длин', 'длина', 'length', 'l', 'размер х', 'размер x', 'габарит х', 'x']);
+    const widIdx = findIndex(mapping.width || ['шир', 'ширина', 'width', 'w', 'размер y', 'габарит y', 'y']);
+    const thkIdx = findIndex(mapping.thickness || ['толщ', 'толщина', 'thick', 't', 'z', 'глубин']);
+    const matIdx = findIndex(mapping.material || ['матер', 'материал', 'mat'], ['кромк']);
+    const qtyIdx = findIndex(mapping.quantity || ['кол', 'количество', 'qty', 'count', 'шт']);
     
     // Edges
-    const edgeL1Idx = findIndex(['кромка л1', 'кромка1', 'длина 1', 'l1', 'кромка д1', 'край 1']);
-    const edgeL2Idx = findIndex(['кромка л2', 'кромка2', 'длина 2', 'l2', 'кромка д2']);
-    const edgeW1Idx = findIndex(['кромка ш1', 'кромка3', 'ширина 1', 'w1', 'кромка ш1']);
-    const edgeW2Idx = findIndex(['кромка ш2', 'кромка4', 'ширина 2', 'w2', 'кромка ш2']);
+    const edgeL1Idx = findIndex(mapping.edgeL1 || ['кромка л1', 'кромка1', 'длина 1', 'l1', 'кромка д1', 'край 1']);
+    const edgeL2Idx = findIndex(mapping.edgeL2 || ['кромка л2', 'кромка2', 'длина 2', 'l2', 'кромка д2']);
+    const edgeW1Idx = findIndex(mapping.edgeW1 || ['кромка ш1', 'кромка3', 'ширина 1', 'w1', 'кромка ш1']);
+    const edgeW2Idx = findIndex(mapping.edgeW2 || ['кромка ш2', 'кромка4', 'ширина 2', 'w2', 'кромка ш2']);
     const generalEdgeIdx = findIndex(['кромк', 'облиц', 'edge'], ['л1', 'л2', 'ш1', 'ш2', 'l1', 'l2', 'w1', 'w2']);
 
-    const noteIdx = findIndex(['примеч', 'паз', 'присад', 'note', 'коммент', 'инфо']);
-    const barcodeIdx = findIndex(['штрих', 'код', 'barcode', 'qr']);
+    const noteIdx = findIndex(mapping.notes || ['примеч', 'паз', 'присад', 'note', 'коммент', 'инфо']);
+    const barcodeIdx = findIndex(mapping.barcode || ['штрих', 'код', 'barcode', 'qr']);
 
     for (let i = headerLineIndex + 1; i < lines.length; i++) {
       const cols = lines[i].split(delimiter).map(c => c.trim().replace(/^["']|["']$/g, ''));
@@ -397,7 +416,11 @@ export function buildMaterialGroups(details: BirkaDetail[]): {
 }
 
 // Master Async Birka File Parser
-export async function parseBirkaFile(file: File): Promise<BirkaParseResult> {
+export async function parseBirkaFile(
+  file: File, 
+  customMapping?: Record<string, string[]>,
+  encodingPreference?: string
+): Promise<BirkaParseResult> {
   const arrayBuf = await file.arrayBuffer();
   const uint8 = new Uint8Array(arrayBuf);
   const fileHash = computeSimpleHash(uint8);
@@ -406,8 +429,19 @@ export async function parseBirkaFile(file: File): Promise<BirkaParseResult> {
   let encodingUsed = 'UTF-8';
   let formatDetected = 'Спецификация деталей';
 
+  // Check if explicit encoding preference provided
+  if (encodingPreference && encodingPreference !== 'auto') {
+    try {
+      const decoder = new TextDecoder(encodingPreference);
+      rawText = decoder.decode(uint8);
+      encodingUsed = encodingPreference.toUpperCase();
+    } catch {
+      // Fallback to smart detection
+    }
+  }
+
   // Check if ZIP archive
-  if (file.name.toLowerCase().endsWith('.zip') || (uint8[0] === 0x50 && uint8[1] === 0x4b)) {
+  if (!rawText && (file.name.toLowerCase().endsWith('.zip') || (uint8[0] === 0x50 && uint8[1] === 0x4b))) {
     try {
       const zip = await JSZip.loadAsync(file);
       formatDetected = 'Архив (.zip с бирками)';
@@ -438,7 +472,7 @@ export async function parseBirkaFile(file: File): Promise<BirkaParseResult> {
     if (file.name.toLowerCase().endsWith('.bir')) formatDetected = 'Базис-Бирка (.bir)';
   }
 
-  const details = parseBirFileText(rawText);
+  const details = parseBirFileText(rawText, customMapping);
   const { groups, allEdges, totalAreaM2, totalEdgeMeters } = buildMaterialGroups(details);
 
   return {

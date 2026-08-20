@@ -14,12 +14,17 @@ import {
   X,
   ShieldCheck,
   Check,
-  UserX
+  UserX,
+  QrCode,
+  Printer
 } from 'lucide-react';
 import { ERPEmployee } from '../types';
+import { EmployeeBadgeModal } from '../components/EmployeeBadgeModal';
 
 interface ERPEmployeesViewProps {
   employees: ERPEmployee[];
+  companyName?: string;
+  companyId?: string;
   onAddEmployee: (emp: Partial<ERPEmployee>) => void;
   onUpdateEmployee: (emp: ERPEmployee) => void;
   onDeleteEmployee: (id: string) => void;
@@ -39,6 +44,8 @@ export const PREDEFINED_ROLES = [
 
 export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
   employees,
+  companyName = 'Мебельное производство',
+  companyId = '',
   onAddEmployee,
   onUpdateEmployee,
   onDeleteEmployee
@@ -46,6 +53,7 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
   const [search, setSearch] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<ERPEmployee | null>(null);
+  const [selectedEmployeeForBadge, setSelectedEmployeeForBadge] = useState<ERPEmployee | null>(null);
 
   const [formEmployee, setFormEmployee] = useState<Partial<ERPEmployee>>({
     name: '',
@@ -264,29 +272,55 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
               </div>
 
               {/* Bottom Card Actions */}
-              <div className="mt-4 pt-2 flex items-center justify-between">
+              <div className="mt-4 pt-3 flex items-center justify-between border-t border-slate-100 gap-2">
                 <button
-                  onClick={() => openEditModal(emp)}
-                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
+                  onClick={() => setSelectedEmployeeForBadge(emp)}
+                  className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-indigo-200/60"
+                  title="Открыть карточку и распечатать QR-бейдж"
                 >
-                  <Edit2 className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Редактировать</span>
+                  <QrCode className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>QR-бейдж</span>
                 </button>
 
-                {!emp.isOwner && (
+                <div className="flex items-center gap-1">
                   <button
-                    onClick={() => onDeleteEmployee(emp.id)}
-                    className="p-2 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
-                    title="Удалить из списка"
+                    onClick={() => openEditModal(emp)}
+                    className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer"
                   >
-                    <Trash2 className="w-4 h-4" />
+                    <Edit2 className="w-3.5 h-3.5 text-blue-600" />
+                    <span>Редактировать</span>
                   </button>
-                )}
+
+                  {!emp.isOwner && (
+                    <button
+                      onClick={() => onDeleteEmployee(emp.id)}
+                      className="p-2 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                      title="Удалить из списка"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           );
         })}
       </div>
+
+      {/* Employee Badge Modal */}
+      {selectedEmployeeForBadge && (
+        <EmployeeBadgeModal
+          isOpen={!!selectedEmployeeForBadge}
+          onClose={() => setSelectedEmployeeForBadge(null)}
+          employee={selectedEmployeeForBadge}
+          companyName={companyName}
+          companyId={companyId}
+          onUpdateEmployee={(updated) => {
+            onUpdateEmployee(updated);
+            setSelectedEmployeeForBadge(updated);
+          }}
+        />
+      )}
 
       {/* Add / Edit Employee Modal */}
       {showAddModal && (

@@ -133,18 +133,47 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
     autoScheduleOrders: true
   });
 
-  const [salaryAdjustments, setSalaryAdjustments] = useState<SalaryAdjustment[]>([
-    {
-      id: 'adj-1',
-      employeeId: 'emp-1',
-      employeeName: 'Иванов Иван',
-      type: 'bonus',
-      amount: 3000,
-      reason: 'Премия за аккуратный раскрой без брака',
-      date: new Date().toISOString().split('T')[0],
-      createdBy: 'Начальник цеха'
+  const [salaryAdjustments, setSalaryAdjustments] = useState<SalaryAdjustment[]>(() => {
+    try {
+      const saved = localStorage.getItem('erp_salary_adjustments_v1');
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.warn('Failed to load salary adjustments', e);
     }
-  ]);
+    return [
+      {
+        id: 'adj-1',
+        employeeId: 'emp-1',
+        employeeName: 'Иванов Иван',
+        type: 'bonus',
+        amount: 3000,
+        reason: 'Премия за аккуратный раскрой без брака',
+        date: new Date().toISOString().split('T')[0],
+        createdBy: 'Начальник цеха'
+      }
+    ];
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('erp_salary_adjustments_v1', JSON.stringify(salaryAdjustments));
+    } catch (e) {
+      console.warn('Failed to save salary adjustments', e);
+    }
+  }, [salaryAdjustments]);
+
+  // Handlers for adjustments
+  const handleAddAdjustment = (adj: SalaryAdjustment) => {
+    setSalaryAdjustments(prev => [adj, ...prev]);
+  };
+
+  const handleEditAdjustment = (updatedAdj: SalaryAdjustment) => {
+    setSalaryAdjustments(prev => prev.map(a => a.id === updatedAdj.id ? updatedAdj : a));
+  };
+
+  const handleDeleteAdjustment = (adjId: string) => {
+    setSalaryAdjustments(prev => prev.filter(a => a.id !== adjId));
+  };
 
   // Shift & Timer State
   const [isShiftActive, setIsShiftActive] = useState<boolean>(false);
@@ -242,6 +271,12 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
           console.warn('ERP auth check error:', authCheckErr);
         }
 
+        if (!parsedUser) {
+          // If not logged in, stop loading immediately to display login screen instantly
+          setIsLoading(false);
+          return;
+        }
+
         // Check if ERP is allowed / enabled by Superadmin
         const isSuperAdmin = parsedUser?.email === 'lk.ivanbobkin@gmail.com' || parsedUser?.role === 'superadmin' || parsedUser?.isSuperAdmin;
         const erpAllowed = comp?.erpAllowed !== undefined ? !!comp.erpAllowed : (comp?.erpEnabled !== undefined ? !!comp.erpEnabled : false);
@@ -261,73 +296,71 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
           }));
         }
 
-        // Fetch real company employees from ERP API
-        let loadedEmployees: ERPEmployee[] = [];
+        // Fetch real company employees and orders in parallel for maximum speed
         try {
-          const empRes = await fetch(`/api/erp/${comp.id}/employees`);
-          if (empRes.ok) {
-            const empData = await empRes.json();
+          const [empRes, ordersRes] = await Promise.allSettled([
+            fetch(`/api/erp/${comp.id}/employees`),
+            fetch(`/api/erp/${comp.id}/orders`)
+          ]);
+
+          let loadedEmployees: ERPEmployee[] = [];
+          if (empRes.status === 'fulfilled' && empRes.value.ok) {
+            const empData = await empRes.value.json();
             if (Array.isArray(empData.employees) && empData.employees.length > 0) {
               loadedEmployees = empData.employees;
             }
           }
-        } catch (empErr) {
-          console.warn('Failed to fetch company employees:', empErr);
-        }
 
-        loadedEmployees = loadedEmployees.filter(e => 
-          e.email?.toLowerCase() !== 'lk.ivanbobkin@gmail.com' && 
-          !(e as any).isSuperAdmin && 
-          e.role !== 'superadmin' && 
-          e.productionRole !== 'superadmin'
-        );
+          loadedEmployees = loadedEmployees.filter(e => 
+            e.email?.toLowerCase() !== 'lk.ivanbobkin@gmail.com' && 
+            !(e as any).isSuperAdmin && 
+            e.role !== 'superadmin' && 
+            e.productionRole !== 'superadmin'
+          );
 
-        if (loadedEmployees.length === 0) {
-          const isCurrentSuperAdmin = parsedUser?.email?.toLowerCase() === 'lk.ivanbobkin@gmail.com' || parsedUser?.isSuperAdmin;
-          if (isCurrentSuperAdmin) {
-            loadedEmployees = [
-              {
-                id: 'emp-master-1',
-                name: 'Иванов Сергей (Начальник цеха)',
-                role: 'Начальник цеха',
-                productionRole: 'Начальник цеха',
-                isProductionEmployee: true,
-                department: 'management',
-                rateType: 'salary',
-                baseRate: 95000,
-                shiftType: '5/2',
-                status: 'active'
-              }
-            ];
-          } else {
-            const currentUserName = parsedUser?.displayName || parsedUser?.name || parsedUser?.email?.split('@')[0] || 'Руководитель цеха';
-            loadedEmployees = [
-              {
-                id: parsedUser?.id || 'emp-user-1',
-                userId: parsedUser?.id,
-                name: currentUserName,
-                role: 'Начальник цеха',
-                productionRole: 'Начальник цеха',
-                isProductionEmployee: true,
-                department: 'management',
-                rateType: 'salary',
-                baseRate: 100000,
-                shiftType: '5/2',
-                status: 'active',
-                email: parsedUser?.email || '',
-                isOwner: true
-              }
-            ];
+          if (loadedEmployees.length === 0) {
+            const isCurrentSuperAdmin = parsedUser?.email?.toLowerCase() === 'lk.ivanbobkin@gmail.com' || parsedUser?.isSuperAdmin;
+            if (isCurrentSuperAdmin) {
+              loadedEmployees = [
+                {
+                  id: 'emp-master-1',
+                  name: 'Иванов Сергей (Начальник цеха)',
+                  role: 'Начальник цеха',
+                  productionRole: 'Начальник цеха',
+                  isProductionEmployee: true,
+                  department: 'management',
+                  rateType: 'salary',
+                  baseRate: 95000,
+                  shiftType: '5/2',
+                  status: 'active'
+                }
+              ];
+            } else {
+              const currentUserName = parsedUser?.displayName || parsedUser?.name || parsedUser?.email?.split('@')[0] || 'Руководитель цеха';
+              loadedEmployees = [
+                {
+                  id: parsedUser?.id || 'emp-user-1',
+                  userId: parsedUser?.id,
+                  name: currentUserName,
+                  role: 'Начальник цеха',
+                  productionRole: 'Начальник цеха',
+                  isProductionEmployee: true,
+                  department: 'management',
+                  rateType: 'salary',
+                  baseRate: 100000,
+                  shiftType: '5/2',
+                  status: 'active',
+                  email: parsedUser?.email || '',
+                  isOwner: true
+                }
+              ];
+            }
           }
-        }
 
-        setEmployees(loadedEmployees);
+          setEmployees(loadedEmployees);
 
-        // Fetch real orders from Bitrix24 or Projects via ERP API
-        try {
-          const ordersRes = await fetch(`/api/erp/${comp.id}/orders`);
-          if (ordersRes.ok) {
-            const ordersData = await ordersRes.json();
+          if (ordersRes.status === 'fulfilled' && ordersRes.value.ok) {
+            const ordersData = await ordersRes.value.json();
             if (ordersData.orders) {
               const localCache = loadLocalOrdersCache(comp.id);
               const merged = ordersData.orders.map((o: ProductionOrder) => {
@@ -350,8 +383,8 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
               setOrderSource(ordersData.orderSource || 'projects');
             }
           }
-        } catch (ordErr) {
-          console.warn("Failed to load real ERP orders:", ordErr);
+        } catch (fetchErr) {
+          console.warn("ERP parallel load error:", fetchErr);
         }
 
         setIsLoading(false);
@@ -793,16 +826,6 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
 
         {/* Sidebar Footer */}
         <div className="mt-8 pt-4 border-t border-slate-900 space-y-2.5">
-          {!isSidebarCollapsed && (
-            <div className="flex items-center justify-between px-2 text-[11px] font-mono text-slate-400">
-              <span className="flex items-center gap-1.5 truncate">
-                <Clock className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                <span>Смена: {settings?.defaultShiftDurationHours || 12} ч ({settings?.workDayStart || '08:00'}–{settings?.workDayEnd || '20:00'})</span>
-              </span>
-              <span className="shrink-0 pl-1">{currentTime}</span>
-            </div>
-          )}
-
           <div className={`p-2.5 bg-slate-900/90 rounded-2xl border border-slate-800/80 flex items-center ${isSidebarCollapsed ? 'justify-center' : 'justify-between gap-2'}`}>
             <div className="flex items-center gap-2.5 min-w-0">
               <div 
@@ -956,6 +979,10 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
             <ERPOrderWorkspaceView 
               order={selectedOrderForWorkspace}
               settings={settings}
+              currentUser={matchedEmp || authUser}
+              isShiftActive={isShiftActive}
+              onStartShift={handleStartShift}
+              onLogout={handleLogout}
               isSidebarCollapsed={isSidebarCollapsed}
               onToggleSidebar={() => setIsSidebarCollapsed(prev => !prev)}
               onBack={() => setSelectedOrderForWorkspace(null)}
@@ -1016,13 +1043,17 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
                   employees={employees} 
                   currentEmployee={matchedEmp}
                   salaryAdjustments={salaryAdjustments}
-                  onAddAdjustment={(adj) => setSalaryAdjustments(prev => [adj, ...prev])}
+                  onAddAdjustment={handleAddAdjustment}
+                  onEditAdjustment={handleEditAdjustment}
+                  onDeleteAdjustment={handleDeleteAdjustment}
                 />
               )}
 
               {activeSection === 'employees' && (
                 <ERPEmployeesView 
                   employees={employees} 
+                  companyName={company?.name}
+                  companyId={company?.id || aliasOrId}
                   onAddEmployee={handleAddEmployee}
                   onUpdateEmployee={handleUpdateEmployee}
                   onDeleteEmployee={handleDeleteEmployee}

@@ -1,6 +1,6 @@
 {
   "name": "Мебельный калькулятор",
-  "description": "Профессиональный калькулятор для мебельщиков",
-  "requestFramePermissions": [],
+  "description": "Профессиональный калькулятор для мебельщиков и производственная ERP система",
+  "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

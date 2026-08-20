@@ -22,11 +22,13 @@ import {
   Calendar,
   Box,
   Flame,
-  UserCheck
+  UserCheck,
+  Camera
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPEmployee, ERPCompanySettings } from '../types';
 import { formatDeadlineDate, getNextRequiredStage } from '../utils';
 import { ERPOrderDetailsModal } from './ERPOrderDetailsModal';
+import { MobileCameraScannerModal } from '../components/MobileCameraScannerModal';
 
 interface ERPProductionViewProps {
   orders: ProductionOrder[];
@@ -49,6 +51,8 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
   const [selectedStageId, setSelectedStageId] = useState<ProductionStageId | null>(null);
   const [stageTabFilter, setStageTabFilter] = useState<'all' | 'overdue' | 'today' | 'tomorrow' | 'future'>('all');
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<ProductionOrder | null>(null);
+  const [showCameraScannerModal, setShowCameraScannerModal] = useState<boolean>(false);
+  const [cameraScanFeedback, setCameraScanFeedback] = useState<string | null>(null);
 
   const allStages: { id: ProductionStageId; name: string; icon: any; color: string; badgeColor: string; bgGradient: string }[] = [
     { id: 'cutting', name: 'Участок раскроя (Распил)', icon: Scissors, color: 'text-blue-600 border-blue-200 bg-blue-50', badgeColor: 'bg-blue-600 text-white', bgGradient: 'from-blue-50/50 to-white' },
@@ -90,6 +94,26 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
   // Stage details view
   const activeStage = stages.find(s => s.id === selectedStageId);
 
+  const handleCameraScanOrder = (scannedCode: string) => {
+    const cleanCode = scannedCode.trim().toLowerCase();
+    const foundOrder = orders.find(o => {
+      if (o.id.toLowerCase() === cleanCode) return true;
+      if (o.orderNumber.toLowerCase() === cleanCode) return true;
+      if (o.orderNumber.toLowerCase().replace(/[^0-9a-zа-я]/g, '') === cleanCode.replace(/[^0-9a-zа-я]/g, '')) return true;
+      if (cleanCode.includes(o.orderNumber.toLowerCase())) return true;
+      if (o.orderNumber.toLowerCase().includes(cleanCode)) return true;
+      return false;
+    });
+
+    if (foundOrder) {
+      setShowCameraScannerModal(false);
+      onSelectOrder(foundOrder);
+    } else {
+      setCameraScanFeedback(`Заказ с кодом "${scannedCode}" не найден в системе`);
+      setTimeout(() => setCameraScanFeedback(null), 4000);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Top Header & Search */}
@@ -108,7 +132,16 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => setShowCameraScannerModal(true)}
+            className="px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs flex items-center gap-2 shadow-md shadow-indigo-200 transition-all cursor-pointer"
+            title="Сканировать бирку или QR-код заказа камерой телефона"
+          >
+            <Camera className="w-4 h-4" />
+            <span>Сканер камерой</span>
+          </button>
+
           {selectedStageId && (
             <button
               onClick={() => setSelectedStageId(null)}
@@ -119,7 +152,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
             </button>
           )}
 
-          <div className="relative min-w-[260px]">
+          <div className="relative min-w-[240px]">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -131,6 +164,13 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
           </div>
         </div>
       </div>
+
+      {cameraScanFeedback && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+          <span>{cameraScanFeedback}</span>
+        </div>
+      )}
 
       {/* VIEW MODE 1: Large Department Cards Grid (When no stage selected) */}
       {!selectedStageId ? (
@@ -515,6 +555,15 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
           }}
         />
       )}
+
+      {/* Mobile Camera Scanner Modal */}
+      <MobileCameraScannerModal
+        isOpen={showCameraScannerModal}
+        onClose={() => setShowCameraScannerModal(false)}
+        onScan={handleCameraScanOrder}
+        title="Сканирование заказа камерой"
+        subtitle="Наведите камеру на QR-код или штрихкод бланка / бирки заказа"
+      />
     </div>
   );
 };

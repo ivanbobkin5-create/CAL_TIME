@@ -806,8 +806,47 @@ export function PublicLandingView({ aliasOrId, initialSubPath }: PublicLandingVi
             </div>
 
             <div className="space-y-1.5">
-              <h3 className="font-bold text-gray-900 text-sm uppercase tracking-wider mb-2">Разделы товаров</h3>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-bold text-gray-900 text-sm uppercase tracking-wider">Разделы каталога</h3>
+                {selectedCategory && (
+                  <button 
+                    onClick={() => {
+                      setSelectedCategory("");
+                      setSelectedBrands([]);
+                      updateUrlSubpath("", aliasOrId, generalSettings?.landingPage?.alias || "");
+                    }}
+                    className="text-[10px] text-blue-600 font-bold hover:underline"
+                  >
+                    Показать все
+                  </button>
+                )}
+              </div>
               <div className="flex flex-wrap md:flex-col gap-1.5">
+                <button
+                  onClick={() => {
+                    setSelectedCategory("");
+                    setSelectedBrands([]);
+                    updateUrlSubpath("", aliasOrId, generalSettings?.landingPage?.alias || "");
+                  }}
+                  className={`px-3 py-2.5 rounded-xl text-left font-bold text-xs transition-all flex items-center justify-between gap-2 whitespace-nowrap md:whitespace-normal w-full border ${
+                    selectedCategory === ""
+                      ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/10 hover:bg-blue-700"
+                      : "bg-white text-gray-600 hover:text-gray-900 hover:bg-gray-50 border-gray-100"
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className={`flex-shrink-0 p-1 rounded-lg ${selectedCategory === "" ? "bg-white/15 text-white" : "bg-gray-50 text-gray-400"}`}>
+                      <Grid className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="truncate">Все категории</span>
+                  </div>
+                  <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-black ${
+                    selectedCategory === "" ? "bg-white/20 text-white" : "bg-gray-100 text-gray-500"
+                  }`}>
+                    {products.length}
+                  </span>
+                </button>
+
                 {categories.map(cat => (
                   <button
                     key={cat}
@@ -861,7 +900,12 @@ export function PublicLandingView({ aliasOrId, initialSubPath }: PublicLandingVi
 
             {availableBrands.length > 0 && (
               <div className="space-y-1.5 pt-2 border-t border-gray-50">
-                <h3 className="font-bold text-gray-900 text-sm uppercase tracking-wider mb-2">Бренды</h3>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="font-bold text-gray-900 text-sm uppercase tracking-wider">
+                    {selectedCategory ? `Бренды (${selectedCategory})` : "Бренды"}
+                  </h3>
+                  <span className="text-[10px] text-gray-400 font-bold">{availableBrands.length}</span>
+                </div>
                 <div className="flex flex-wrap gap-1.5">
                   {availableBrands.map(brand => {
                     const isSelected = selectedBrands.includes(brand);
@@ -903,7 +947,7 @@ export function PublicLandingView({ aliasOrId, initialSubPath }: PublicLandingVi
         </aside>
 
         {/* Right Side: Products Grid & Welcome Text */}
-        <section className="flex-1 min-w-0 space-y-8">
+        <section className="flex-1 min-w-0 space-y-6">
           {displayWelcome && (
             <div className="bg-blue-50/50 border border-blue-100/50 p-6 rounded-3xl text-sm text-blue-900 leading-relaxed space-y-2">
               <div className="font-black flex items-center gap-1.5 uppercase text-xs tracking-wider text-blue-800">
@@ -915,52 +959,6 @@ export function PublicLandingView({ aliasOrId, initialSubPath }: PublicLandingVi
 
           {/* Grid Container */}
           <div>
-            {/* Horizontal Category Slider for Quick Navigation */}
-            <div className="mb-6 bg-white p-3.5 rounded-2xl border border-gray-100 shadow-sm overflow-hidden select-none">
-              <span className="text-[10px] uppercase font-black text-gray-400 tracking-wider block mb-2.5 px-1">Быстрый переход по разделам:</span>
-              <div className="flex items-center gap-2 overflow-x-auto pb-1.5 scrollbar-thin scrollbar-thumb-gray-200 scrollbar-track-transparent">
-                <button
-                  onClick={() => {
-                    setSelectedCategory("");
-                    setSelectedBrands([]);
-                    updateUrlSubpath("", aliasOrId, generalSettings?.landingPage?.alias || "");
-                  }}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap border ${
-                    selectedCategory === ""
-                      ? "bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-500/10"
-                      : "bg-gray-50 text-gray-600 border-gray-100 hover:bg-gray-100 hover:text-gray-900"
-                  }`}
-                >
-                  <Grid className="w-3.5 h-3.5" />
-                  <span>Все категории</span>
-                  <span className={`px-1.5 py-0.5 rounded text-[9px] font-black leading-none ${selectedCategory === "" ? "bg-white/20 text-white" : "bg-gray-200/80 text-gray-500"}`}>
-                    {products.length}
-                  </span>
-                </button>
-
-                {categories.map(cat => (
-                  <button
-                    key={cat}
-                    onClick={() => {
-                      setSelectedCategory(cat);
-                      setSelectedBrands([]);
-                      updateUrlSubpath(cat, aliasOrId, generalSettings?.landingPage?.alias || "");
-                    }}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap border ${
-                      selectedCategory === cat
-                        ? "bg-blue-600 text-white border-blue-600 shadow-sm shadow-blue-500/10"
-                        : "bg-gray-50 text-gray-600 border-gray-100 hover:bg-gray-100 hover:text-gray-900"
-                    }`}
-                  >
-                    {getCategoryIcon(cat, "w-3.5 h-3.5")}
-                    <span>{cat}</span>
-                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-black leading-none ${selectedCategory === cat ? "bg-white/20 text-white" : "bg-gray-200/80 text-gray-500"}`}>
-                      {products.filter(p => p.category === cat).length}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
 
             <div className="flex items-center justify-between gap-4 mb-6">
               <h3 className="text-xl font-black text-gray-900 tracking-tight">
@@ -1126,9 +1124,17 @@ export function PublicLandingView({ aliasOrId, initialSubPath }: PublicLandingVi
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 grid grid-cols-1 md:grid-cols-3 gap-8">
           <div className="space-y-3">
             <div className="flex items-center gap-3 text-white">
-              <div className="w-10 h-10 rounded-xl bg-blue-600 flex items-center justify-center font-black text-lg">
-                {company.name ? company.name[0].toUpperCase() : "C"}
-              </div>
+              {generalSettings?.specificationConfig?.companyLogo ? (
+                <img 
+                  src={generalSettings.specificationConfig.companyLogo} 
+                  alt={company.name} 
+                  className="w-10 h-10 rounded-xl object-contain bg-white shadow-sm border border-gray-700"
+                />
+              ) : (
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 flex items-center justify-center text-white font-black text-lg shadow-md shadow-blue-500/20">
+                  {company.name ? company.name[0].toUpperCase() : "C"}
+                </div>
+              )}
               <span className="font-black text-lg tracking-tight">{company.name}</span>
             </div>
             <p className="text-xs leading-relaxed text-gray-500">

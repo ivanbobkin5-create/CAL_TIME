@@ -94,6 +94,9 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
 
   const [scanErrorMsg, setScanErrorMsg] = useState<string | null>(null);
   const scannerInputRef = useRef<HTMLInputElement | null>(null);
+  const barcodeBufferRef = useRef<string>('');
+  const lastKeyTimeRef = useRef<number>(0);
+  const bufferTimeoutRef = useRef<any>(null);
 
   // Available Note Rules from settings
   const noteRules: ERPNoteRule[] = settings?.noteRules || [
@@ -249,56 +252,83 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
 
   // Handle Scanning a Part
   const handleScanCode = (codeToScan: string) => {
+    // 1. Immediately reset input and buffer so subsequent scans never concatenate (no doubling)
+    setScanInput('');
+    barcodeBufferRef.current = '';
+    if (scannerInputRef.current) {
+      scannerInputRef.current.value = '';
+    }
+
     setScanErrorMsg(null);
     const cleanCode = codeToScan.trim().replace(/^#/, '');
-    if (!cleanCode) return;
-
-    if (!selectedMaterial) {
-      setScanErrorMsg('Выберите материал для сканирования');
-      playSoundEffect('error');
+    if (!cleanCode) {
+      scannerInputRef.current?.focus();
       return;
     }
 
-    // Find part matching labelNumber (№ детали) or id or barcode or name
-    const foundPart = currentMaterialDetails.find(d => 
+    let targetMaterial = selectedMaterial;
+    let targetDetails = currentMaterialDetails;
+
+    // Find part matching labelNumber (№ детали) or id or barcode or name in current material
+    let foundPart = currentMaterialDetails.find(d => 
       d.labelNumber.toLowerCase() === cleanCode.toLowerCase() ||
       d.id === cleanCode ||
       (d.barcode && d.barcode.toLowerCase() === cleanCode.toLowerCase()) ||
       d.name.toLowerCase() === cleanCode.toLowerCase()
     );
 
-    if (!foundPart) {
-      // Check if code exists in another material
-      const partInOtherMat = order.birkaData?.details.find(d => 
+    // If not found in current material, search other material groups
+    if (!foundPart && order.birkaData?.details) {
+      const partInOtherMat = order.birkaData.details.find(d => 
         d.labelNumber.toLowerCase() === cleanCode.toLowerCase() ||
-        (d.barcode && d.barcode.toLowerCase() === cleanCode.toLowerCase())
+        d.id === cleanCode ||
+        (d.barcode && d.barcode.toLowerCase() === cleanCode.toLowerCase()) ||
+        d.name.toLowerCase() === cleanCode.toLowerCase()
       );
 
       if (partInOtherMat) {
-        setScanErrorMsg(`Деталь №${cleanCode} относится к материалу: "${partInOtherMat.material}". Переключитесь на данный материал.`);
-      } else {
-        setScanErrorMsg(`Деталь с кодом/номером "${cleanCode}" не найдена в списке этого заказа`);
+        const matName = partInOtherMat.material || 'Без указания материала';
+        targetMaterial = matName;
+        setSelectedMaterial(matName);
+        foundPart = partInOtherMat;
+        targetDetails = order.birkaData.details.filter(d => (d.material || 'Без указания материала') === matName);
       }
+    }
+
+    if (!foundPart) {
+      setScanErrorMsg(`Деталь с кодом/номером "${cleanCode}" не найдена в списке этого заказа`);
       playSoundEffect('error');
+      setScanInput('');
+      if (scannerInputRef.current) {
+        scannerInputRef.current.value = '';
+        scannerInputRef.current.focus();
+      }
       return;
     }
 
+    const currentMatScannedIds = order.stageScanningProgress?.[currentStageId]?.[targetMaterial]?.scannedPartIds || [];
+
     // Check if already scanned
-    if (scannedPartIds.includes(foundPart.id)) {
+    if (currentMatScannedIds.includes(foundPart.id)) {
       setScanErrorMsg(`Деталь №${foundPart.labelNumber} ("${foundPart.name}") уже была просканирована ранее`);
       playSoundEffect('alert');
+      setScanInput('');
+      if (scannerInputRef.current) {
+        scannerInputRef.current.value = '';
+        scannerInputRef.current.focus();
+      }
       return;
     }
 
     // Mark as scanned
-    const newScannedIds = [...scannedPartIds, foundPart.id];
-    const isAllScanned = newScannedIds.length >= currentMaterialDetails.length;
+    const newScannedIds = [...currentMatScannedIds, foundPart.id];
+    const isAllScanned = newScannedIds.length >= targetDetails.length;
 
     const updatedStageScanning = { ...(order.stageScanningProgress || {}) };
     if (!updatedStageScanning[currentStageId]) {
       updatedStageScanning[currentStageId] = {};
     }
-    updatedStageScanning[currentStageId][selectedMaterial] = {
+    updatedStageScanning[currentStageId][targetMaterial] = {
       scannedPartIds: newScannedIds,
       isCompleted: isAllScanned
     };
@@ -323,8 +353,80 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
     }
 
     setScanInput('');
-    scannerInputRef.current?.focus();
+    if (scannerInputRef.current) {
+      scannerInputRef.current.value = '';
+      scannerInputRef.current.focus();
+    }
   };
+
+  // Global Barcode & QR Scanner Listener for Modal
+  useEffect(() => {
+    if (activeTab !== 'scanner') return;
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const activeEl = document.activeElement as HTMLElement | null;
+      const target = e.target as HTMLElement | null;
+      const isOtherInput = (target && (
+        (target.tagName === 'INPUT' && target !== scannerInputRef.current) ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable
+      )) || (activeEl && (
+        (activeEl.tagName === 'INPUT' && activeEl !== scannerInputRef.current) ||
+        activeEl.tagName === 'TEXTAREA' ||
+        activeEl.tagName === 'SELECT' ||
+        activeEl.isContentEditable
+      ));
+
+      if (isOtherInput) return;
+
+      if (e.key === 'Enter') {
+        const bufferedCode = barcodeBufferRef.current.trim() || scanInput.trim() || (scannerInputRef.current?.value || '').trim();
+        if (bufferedCode) {
+          e.preventDefault();
+          barcodeBufferRef.current = '';
+          handleScanCode(bufferedCode);
+        }
+        return;
+      }
+
+      if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        const now = Date.now();
+        if (now - lastKeyTimeRef.current > 1200 && document.activeElement !== scannerInputRef.current) {
+          barcodeBufferRef.current = '';
+        }
+        lastKeyTimeRef.current = now;
+
+        barcodeBufferRef.current += e.key;
+
+        if (document.activeElement !== scannerInputRef.current) {
+          setScanInput(barcodeBufferRef.current);
+          scannerInputRef.current?.focus();
+        }
+
+        if (bufferTimeoutRef.current) {
+          clearTimeout(bufferTimeoutRef.current);
+        }
+        bufferTimeoutRef.current = setTimeout(() => {
+          barcodeBufferRef.current = '';
+        }, 1500);
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown, true);
+      if (bufferTimeoutRef.current) clearTimeout(bufferTimeoutRef.current);
+    };
+  }, [
+    activeTab,
+    scanInput, 
+    selectedMaterial, 
+    currentMaterialDetails, 
+    order, 
+    currentStageId, 
+    scannedPartIds
+  ]);
 
   // Total stage completion status
   const allMaterialGroups = order.birkaData?.materialGroups || [];
@@ -348,7 +450,8 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
     kitting: 'Участок комплектовки',
     qc: 'Контроль ОТК',
     packing: 'Участок упаковки',
-    ready: 'Готово к отгрузке'
+    ready: 'Готово к отгрузке',
+    shipping: 'Отгрузка водителю'
   };
 
   const nextStageMap: Record<ProductionStageId, ProductionStageId | null> = {
@@ -361,7 +464,8 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
     kitting: 'qc',
     qc: 'packing',
     packing: 'ready',
-    ready: null
+    ready: 'shipping',
+    shipping: null
   };
 
   return (

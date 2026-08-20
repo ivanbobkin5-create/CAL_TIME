@@ -18,6 +18,7 @@ export type ProductionStageId =
   | 'kitting'
   | 'qc'
   | 'packing'
+  | 'shipping'
   | 'ready';
 
 export interface ProductionStage {
@@ -142,6 +143,15 @@ export interface ProductionOrder {
   // { [stageId]: { [materialName]: { scannedPartIds: string[], isCompleted?: boolean } } }
   stageScanningProgress?: Record<string, Record<string, { scannedPartIds: string[]; isCompleted?: boolean }>>;
 
+  // Packages formed in Packaging (Упаковка) & Kitting (Комплектация)
+  packages?: OrderPackage[];
+
+  // Shipping details
+  shippedAt?: string;
+  shippedByEmployeeId?: string;
+  shippedByEmployeeName?: string;
+  driverInfo?: DriverInfo;
+
   stageProgress: {
     [key in ProductionStageId]?: {
       status: 'pending' | 'in_progress' | 'done';
@@ -151,6 +161,54 @@ export interface ProductionOrder {
       durationMinutes?: number;
     };
   };
+}
+
+export interface OrderPackagePart {
+  detailId: string;
+  labelNumber: string;
+  name: string;
+  material?: string;
+  length?: number;
+  width?: number;
+  thickness?: number;
+  quantity?: number;
+}
+
+export interface OrderPackage {
+  id: string;
+  orderId: string;
+  orderNumber: string;
+  packageNumber: number; // 1, 2, 3...
+  name: string;          // e.g. "Место 1 (Корпус низ)", "Место 2 (Фурнитура Blum)"
+  type: 'details' | 'kitting' | 'custom';
+  code: string;          // Unique QR barcode code, e.g. "PKG-ORD123-M1-889"
+  parts: OrderPackagePart[];
+  customItemsNote?: string; // Для участка комплектовки: перечень комплектующих/фурнитуры
+  createdAt: string;     // ISO timestamp
+  createdByEmployeeId?: string;
+  createdByEmployeeName?: string;
+  isCompleted: boolean;
+  isShipped?: boolean;
+  shippedAt?: string;
+  shippedByEmployeeName?: string;
+}
+
+export interface DriverInfo {
+  driverName?: string;
+  carPlate?: string;
+  phone?: string;
+  note?: string;
+}
+
+export interface PackageLabelSettings {
+  widthMm: number;               // Default 120
+  heightMm: number;              // Default 75
+  preset?: '120x75' | '100x60' | '100x70' | '75x120' | '58x40' | '58x60' | 'custom';
+  showDetailsList?: boolean;     // Печатать список деталей
+  showEmployeeName?: boolean;    // Печатать ФИО упаковщика
+  showDateTime?: boolean;        // Печатать дату и время
+  showOrderQr?: boolean;         // Печатать QR-код места
+  fontSizeScale?: number;        // Масштаб шрифта 80%-120%
 }
 
 export interface ERPEmployee {
@@ -179,13 +237,25 @@ export interface ERPEmployee {
   assignedMachines?: string[];
   hireDate?: string;
   isOwner?: boolean;
+  badgeCode?: string; // Персональный токен QR-бейджа для быстрого входа
+  badgeIssuedAt?: string;
+}
+
+export type ShiftCellType = 'work_12' | 'work_8' | 'night_12' | 'day_off' | 'vacation' | 'sick';
+
+export interface EmployeeScheduleEntry {
+  employeeId: string;
+  date: string; // YYYY-MM-DD
+  type: ShiftCellType;
+  hours: number;
+  note?: string;
 }
 
 export interface WorkShift {
   id: string;
   date: string; // YYYY-MM-DD
   department: string;
-  shiftName: 'Дневная смена' | 'Ночная смена' | 'Смена 1' | 'Смена 2';
+  shiftName: 'Дневная смена' | 'Ночная смена' | 'Смена 1' | 'Смена 2' | string;
   masterEmployeeId: string;
   masterEmployeeName: string;
   employeeIds: string[];
@@ -246,6 +316,9 @@ export interface ERPCompanySettings {
   targetMonthlyEdgeM?: number;      // Плановая кромкооблицовка п.м./мес
   targetMonthlyParts?: number;      // Плановое количество деталей шт./мес
   equipmentList?: MachineEquipment[]; // Оборудование участков
+  birkaColumnMapping?: Record<string, string[]>; // Кастомный маппинг столбцов файла бирок
+  birkaEncodingPreference?: 'auto' | 'windows-1251' | 'utf-8' | 'cp866';
+  packageLabelSettings?: PackageLabelSettings; // Настройки размера и формата этикеток упаковок (по умолч. 120x75 мм)
 }
 
 export interface SalaryAdjustment {

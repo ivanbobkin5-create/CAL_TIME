@@ -29,17 +29,30 @@ import {
   Trash2,
   Package,
   Wrench,
-  Clock
+  Clock,
+  Camera,
+  Truck,
+  UserCheck,
+  UserX,
+  ShieldAlert
 } from 'lucide-react';
-import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule } from '../types';
+import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee } from '../types';
 import { parseBirkaFile, BirkaParseResult, BirkaDetail } from '../utils/birkaParser';
 import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage } from '../utils';
+import { MobileCameraScannerModal } from '../components/MobileCameraScannerModal';
+import { ERPPackagingTab } from '../components/ERPPackagingTab';
+import { ERPKittingTab } from '../components/ERPKittingTab';
+import { ERPShippingTab } from '../components/ERPShippingTab';
 
 interface ERPOrderWorkspaceViewProps {
   order: ProductionOrder;
   settings?: ERPCompanySettings;
+  currentUser?: ERPEmployee | any | null;
+  isShiftActive?: boolean;
+  onStartShift?: () => void;
+  onLogout?: () => void;
   isSidebarCollapsed: boolean;
-  onToggleSidebar: () => void;
+  onToggleSidebar?: () => void;
   onBack: () => void;
   onUpdateOrder: (updatedOrder: ProductionOrder) => void;
   onUpdateOrderStatus: (orderId: string, nextStage: ProductionStageId) => void;
@@ -84,6 +97,10 @@ const playSoundEffect = (type: 'success' | 'alert' | 'error' = 'success') => {
 export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   order,
   settings,
+  currentUser,
+  isShiftActive = false,
+  onStartShift,
+  onLogout,
   isSidebarCollapsed,
   onToggleSidebar,
   onBack,
@@ -91,7 +108,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   onUpdateOrderStatus,
   sourceSection
 }) => {
-  const [activeTab, setActiveTab] = useState<'scanner' | 'card'>('scanner');
+  const [activeTab, setActiveTab] = useState<'scanner' | 'packaging' | 'kitting' | 'shipping' | 'card'>('scanner');
   const [activeStageId, setActiveStageId] = useState<ProductionStageId>(order.currentStage || 'cutting');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -109,7 +126,14 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
 
   const [scanErrorMsg, setScanErrorMsg] = useState<string | null>(null);
   const [stageAutoChangedMsg, setStageAutoChangedMsg] = useState<string | null>(null);
+  const [showCameraScannerModal, setShowCameraScannerModal] = useState<boolean>(false);
+  const [showShiftRequiredModal, setShowShiftRequiredModal] = useState<boolean>(false);
+  const [isIdentityConfirmed, setIsIdentityConfirmed] = useState<boolean>(false);
+
   const scannerInputRef = useRef<HTMLInputElement | null>(null);
+  const barcodeBufferRef = useRef<string>('');
+  const lastKeyTimeRef = useRef<number>(0);
+  const bufferTimeoutRef = useRef<any>(null);
 
   // Available Note Rules from settings
   const noteRules: ERPNoteRule[] = settings?.noteRules || [
@@ -292,42 +316,78 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
 
   // Handle Scanning or Marking a Part
   const handleScanCode = (codeToScan: string) => {
-    setScanErrorMsg(null);
-    const cleanCode = codeToScan.trim().replace(/^#/, '');
-    if (!cleanCode) return;
+    // 1. Immediately reset input and buffer so subsequent scans never concatenate (no doubling/сдвойка)
+    setScanInput('');
+    barcodeBufferRef.current = '';
+    if (scannerInputRef.current) {
+      scannerInputRef.current.value = '';
+    }
 
-    if (!selectedMaterial) {
-      setScanErrorMsg('Выберите материал для сканирования');
-      playSoundEffect('error');
+    // 2. Protect scanning: If shift is not active, block scanning and prompt identity verification
+    if (!isShiftActive) {
+      setShowShiftRequiredModal(true);
+      setIsIdentityConfirmed(false);
+      playSoundEffect('alert');
       return;
     }
 
-    // Find part matching labelNumber (№ детали) or id or barcode or name
-    const foundPart = currentMaterialDetails.find(d => 
+    setScanErrorMsg(null);
+    const cleanCode = codeToScan.trim().replace(/^#/, '');
+    if (!cleanCode) {
+      scannerInputRef.current?.focus();
+      return;
+    }
+
+    let targetMaterial = selectedMaterial;
+    let targetDetails = currentMaterialDetails;
+
+    // Find part matching labelNumber (№ детали) or id or barcode or name in current material
+    let foundPart = currentMaterialDetails.find(d => 
       d.labelNumber.toLowerCase() === cleanCode.toLowerCase() ||
       d.id === cleanCode ||
       (d.barcode && d.barcode.toLowerCase() === cleanCode.toLowerCase()) ||
       d.name.toLowerCase() === cleanCode.toLowerCase()
     );
 
-    if (!foundPart) {
-      const partInOtherMat = order.birkaData?.details.find(d => 
+    // If not found in current material, check if part exists in another material group of this order
+    if (!foundPart && order.birkaData?.details) {
+      const partInOtherMat = order.birkaData.details.find(d => 
         d.labelNumber.toLowerCase() === cleanCode.toLowerCase() ||
-        (d.barcode && d.barcode.toLowerCase() === cleanCode.toLowerCase())
+        d.id === cleanCode ||
+        (d.barcode && d.barcode.toLowerCase() === cleanCode.toLowerCase()) ||
+        d.name.toLowerCase() === cleanCode.toLowerCase()
       );
 
       if (partInOtherMat) {
-        setScanErrorMsg(`Деталь №${cleanCode} относится к материалу: "${partInOtherMat.material}". Переключитесь на данный материал.`);
-      } else {
-        setScanErrorMsg(`Деталь с кодом/номером "${cleanCode}" не найдена в этом заказе`);
+        const matName = partInOtherMat.material || 'Без указания материала';
+        targetMaterial = matName;
+        setSelectedMaterial(matName);
+        foundPart = partInOtherMat;
+        targetDetails = order.birkaData.details.filter(d => (d.material || 'Без указания материала') === matName);
       }
+    }
+
+    if (!foundPart) {
+      setScanErrorMsg(`Деталь с кодом/номером "${cleanCode}" не найдена в этом заказе`);
       playSoundEffect('error');
+      setScanInput('');
+      if (scannerInputRef.current) {
+        scannerInputRef.current.value = '';
+        scannerInputRef.current.focus();
+      }
       return;
     }
 
-    if (scannedPartIds.includes(foundPart.id)) {
+    const currentMatScannedIds = order.stageScanningProgress?.[activeStageId]?.[targetMaterial]?.scannedPartIds || [];
+
+    if (currentMatScannedIds.includes(foundPart.id)) {
       setScanErrorMsg(`Деталь №${foundPart.labelNumber} ("${foundPart.name}") уже отсканирована`);
       playSoundEffect('alert');
+      setScanInput('');
+      if (scannerInputRef.current) {
+        scannerInputRef.current.value = '';
+        scannerInputRef.current.focus();
+      }
       return;
     }
 
@@ -344,14 +404,14 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     }
 
     // Mark detail as scanned
-    const newScannedIds = [...scannedPartIds, foundPart.id];
-    const isAllScanned = newScannedIds.length >= currentMaterialDetails.length;
+    const newScannedIds = [...currentMatScannedIds, foundPart.id];
+    const isAllScanned = newScannedIds.length >= targetDetails.length;
 
     const updatedStageScanning = { ...(order.stageScanningProgress || {}) };
     if (!updatedStageScanning[activeStageId]) {
       updatedStageScanning[activeStageId] = {};
     }
-    updatedStageScanning[activeStageId][selectedMaterial] = {
+    updatedStageScanning[activeStageId][targetMaterial] = {
       scannedPartIds: newScannedIds,
       isCompleted: isAllScanned
     };
@@ -383,8 +443,90 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     }
 
     setScanInput('');
-    scannerInputRef.current?.focus();
+    if (scannerInputRef.current) {
+      scannerInputRef.current.value = '';
+      scannerInputRef.current.focus();
+    }
   };
+
+  // Global Barcode & QR Scanner Listener (Capture keystrokes anywhere on the page without requiring cursor in input)
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // Do not intercept if camera scanner is active
+      if (showCameraScannerModal) {
+        return;
+      }
+
+      // Check if user is typing in another active input/textarea (like search query or custom field)
+      const activeEl = document.activeElement as HTMLElement | null;
+      const target = e.target as HTMLElement | null;
+      const isOtherInput = (target && (
+        (target.tagName === 'INPUT' && target !== scannerInputRef.current) ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable
+      )) || (activeEl && (
+        (activeEl.tagName === 'INPUT' && activeEl !== scannerInputRef.current) ||
+        activeEl.tagName === 'TEXTAREA' ||
+        activeEl.tagName === 'SELECT' ||
+        activeEl.isContentEditable
+      ));
+
+      if (isOtherInput) {
+        return;
+      }
+
+      // When Enter arrives (hardware scanners send Enter at end of transmission)
+      if (e.key === 'Enter') {
+        const bufferedCode = barcodeBufferRef.current.trim() || scanInput.trim() || (scannerInputRef.current?.value || '').trim();
+        if (bufferedCode) {
+          e.preventDefault();
+          barcodeBufferRef.current = '';
+          handleScanCode(bufferedCode);
+        }
+        return;
+      }
+
+      // Capture single printable characters
+      if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        const now = Date.now();
+        // If more than 1.2s passed and input was not focused, start fresh buffer
+        if (now - lastKeyTimeRef.current > 1200 && document.activeElement !== scannerInputRef.current) {
+          barcodeBufferRef.current = '';
+        }
+        lastKeyTimeRef.current = now;
+
+        barcodeBufferRef.current += e.key;
+
+        // If scannerInput is not focused, focus it and mirror the buffer
+        if (document.activeElement !== scannerInputRef.current) {
+          setScanInput(barcodeBufferRef.current);
+          scannerInputRef.current?.focus();
+        }
+
+        if (bufferTimeoutRef.current) {
+          clearTimeout(bufferTimeoutRef.current);
+        }
+        bufferTimeoutRef.current = setTimeout(() => {
+          barcodeBufferRef.current = '';
+        }, 1500);
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown, true);
+      if (bufferTimeoutRef.current) clearTimeout(bufferTimeoutRef.current);
+    };
+  }, [
+    showCameraScannerModal, 
+    scanInput, 
+    selectedMaterial, 
+    currentMaterialDetails, 
+    order, 
+    activeStageId, 
+    scannedPartIds
+  ]);
 
   // Toggle single detail scanned status manually
   const toggleDetailScanned = (detail: BirkaDetail) => {
@@ -465,7 +607,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     kitting: 'Участок комплектовки',
     qc: 'Контроль ОТК',
     packing: 'Участок упаковки',
-    ready: 'Готово к отгрузке'
+    ready: 'Готово к отгрузке',
+    shipping: 'Отгрузка водителю'
   };
 
   const nextStageMap: Record<ProductionStageId, ProductionStageId | null> = {
@@ -478,7 +621,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     kitting: 'qc',
     qc: 'packing',
     packing: 'ready',
-    ready: null
+    ready: 'shipping',
+    shipping: null
   };
 
   return (
@@ -492,24 +636,6 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
           >
             <ArrowLeft className="w-4 h-4 text-blue-400" />
             <span>Назад</span>
-          </button>
-
-          <button
-            onClick={onToggleSidebar}
-            title={isSidebarCollapsed ? "Развернуть левое меню" : "Свернуть левое меню для максимального удобства сканирования"}
-            className="px-3 py-2.5 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-bold flex items-center gap-2 transition-all cursor-pointer shrink-0 border border-slate-700"
-          >
-            {isSidebarCollapsed ? (
-              <>
-                <PanelLeftOpen className="w-4 h-4 text-indigo-400" />
-                <span className="hidden sm:inline">Развернуть меню</span>
-              </>
-            ) : (
-              <>
-                <PanelLeftClose className="w-4 h-4 text-indigo-400" />
-                <span className="hidden sm:inline">Свернуть меню</span>
-              </>
-            )}
           </button>
 
           <div className="min-w-0">
@@ -575,30 +701,87 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       )}
 
       {/* Workspace Main Tab Switcher Bar */}
-      <div className="bg-white rounded-2xl p-2 border border-slate-200/80 shadow-sm flex items-center gap-2">
+      <div className="bg-white rounded-2xl p-2 border border-slate-200/80 shadow-sm flex items-center gap-2 flex-wrap">
         <button
           onClick={() => setActiveTab('scanner')}
-          className={`flex-1 py-3 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+          className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer min-w-[140px] ${
             activeTab === 'scanner'
               ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
               : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
           }`}
         >
-          <QrCode className="w-4 h-4" /> Сканер QR / Выполнение стадии
+          <QrCode className="w-4 h-4" /> 
+          <span>Цех / Стадии</span>
           {isAllStageMaterialsCompleted && (
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400" />
+            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('packaging')}
+          className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer min-w-[140px] ${
+            activeTab === 'packaging'
+              ? 'bg-orange-600 text-white shadow-md shadow-orange-600/20'
+              : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <Package className="w-4 h-4" /> 
+          <span>Упаковка и этикетки</span>
+          {(order.packages?.filter(p => p.type === 'details').length || 0) > 0 && (
+            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
+              activeTab === 'packaging' ? 'bg-orange-800 text-white' : 'bg-orange-100 text-orange-800'
+            }`}>
+              {order.packages?.filter(p => p.type === 'details').length}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('kitting')}
+          className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer min-w-[140px] ${
+            activeTab === 'kitting'
+              ? 'bg-cyan-600 text-white shadow-md shadow-cyan-600/20'
+              : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <Box className="w-4 h-4" /> 
+          <span>Комплектация</span>
+          {(order.packages?.filter(p => p.type === 'kitting').length || 0) > 0 && (
+            <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono ${
+              activeTab === 'kitting' ? 'bg-cyan-800 text-white' : 'bg-cyan-100 text-cyan-800'
+            }`}>
+              {order.packages?.filter(p => p.type === 'kitting').length}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('shipping')}
+          className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer min-w-[140px] ${
+            activeTab === 'shipping'
+              ? 'bg-violet-600 text-white shadow-md shadow-violet-600/20'
+              : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <Truck className="w-4 h-4" /> 
+          <span>Отгрузка водителю</span>
+          {order.status === 'shipped' && (
+            <span className="px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px]">
+              Архив
+            </span>
           )}
         </button>
 
         <button
           onClick={() => setActiveTab('card')}
-          className={`flex-1 py-3 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+          className={`flex-1 py-2.5 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer min-w-[140px] ${
             activeTab === 'card'
               ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
               : 'bg-slate-50 text-slate-600 hover:bg-slate-100'
           }`}
         >
-          <FileText className="w-4 h-4" /> Маршрутная карта и спецификация бирок
+          <FileText className="w-4 h-4" /> 
+          <span>Маршрутная карта</span>
         </button>
       </div>
 
@@ -624,7 +807,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
 
               {/* Stage Selector Pills (Filtered by enabledStages) */}
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 max-w-full">
-                {(['cutting', 'edging', 'cnc', 'facades', 'assembly', 'qc', 'packing'] as ProductionStageId[])
+                {(['cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing', 'shipping'] as ProductionStageId[])
                   .filter(stId => !settings?.enabledStages || settings.enabledStages.length === 0 || settings.enabledStages.includes(stId))
                   .map(stId => {
                     const isEdgingSkipped = stId === 'edging' && !orderRequiresEdging(order);
@@ -633,6 +816,13 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                         key={stId}
                         onClick={() => {
                           setActiveStageId(stId);
+                          if (stId === 'packing') {
+                            setActiveTab('packaging');
+                          } else if (stId === 'kitting') {
+                            setActiveTab('kitting');
+                          } else if (stId === 'shipping') {
+                            setActiveTab('shipping');
+                          }
                           if (isEdgingSkipped) {
                             setScanErrorMsg('Внимание: В данном заказе нет обработки кромкой (0 м. кромки). Этап кромкооблицовки автоматически пропущен.');
                           } else {
@@ -809,7 +999,17 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                     <div className="flex items-center gap-2 text-xs font-bold text-indigo-400 uppercase tracking-wider">
                       <QrCode className="w-4 h-4" /> Поле сканера QR / Штрихкода
                     </div>
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Сканер готов к приему кодов" />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowCameraScannerModal(true)}
+                        className="px-2.5 py-1 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold flex items-center gap-1.5 transition-all shadow-md shadow-indigo-600/30 cursor-pointer"
+                        title="Включить сканирование камерой телефона"
+                      >
+                        <Camera className="w-3.5 h-3.5" /> Камера телефона
+                      </button>
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Сканер готов к приему кодов" />
+                    </div>
                   </div>
 
                   <form onSubmit={(e) => { e.preventDefault(); handleScanCode(scanInput); }}>
@@ -830,6 +1030,16 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                       </button>
                     </div>
                   </form>
+
+                  {/* Mobile Camera Big Launch Button */}
+                  <button
+                    type="button"
+                    onClick={() => setShowCameraScannerModal(true)}
+                    className="w-full py-3 px-4 rounded-2xl bg-gradient-to-r from-indigo-600/30 via-indigo-600/40 to-indigo-700/30 hover:from-indigo-600/50 hover:to-indigo-700/50 border border-indigo-500/40 text-indigo-200 hover:text-white text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
+                  >
+                    <Camera className="w-4 h-4 text-indigo-400" />
+                    <span>Сканировать камерой телефона (QR / Штрихкод)</span>
+                  </button>
 
                   <p className="text-[11px] text-slate-400 leading-relaxed">
                     Поддерживает сканирование номера позиции с бирки (например <code className="text-indigo-300 font-bold">12</code>, <code className="text-indigo-300 font-bold">#15</code> или штрихкод).
@@ -1224,6 +1434,41 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
         </div>
       )}
 
+      {/* TAB 2: PACKAGING & LABELS */}
+      {activeTab === 'packaging' && (
+        <ERPPackagingTab
+          order={order}
+          settings={settings}
+          currentUser={currentUser}
+          onUpdateOrder={onUpdateOrder}
+          onUpdateOrderStatus={onUpdateOrderStatus}
+          onOpenScannerModal={() => setShowCameraScannerModal(true)}
+        />
+      )}
+
+      {/* TAB 3: KITTING */}
+      {activeTab === 'kitting' && (
+        <ERPKittingTab
+          order={order}
+          settings={settings}
+          currentUser={currentUser}
+          onUpdateOrder={onUpdateOrder}
+          onUpdateOrderStatus={onUpdateOrderStatus}
+        />
+      )}
+
+      {/* TAB 4: SHIPPING & VEHICLE DISPATCH */}
+      {activeTab === 'shipping' && (
+        <ERPShippingTab
+          order={order}
+          settings={settings}
+          currentUser={currentUser}
+          onUpdateOrder={onUpdateOrder}
+          onUpdateOrderStatus={onUpdateOrderStatus}
+          onOpenScannerModal={() => setShowCameraScannerModal(true)}
+        />
+      )}
+
       {/* Operator Instruction Alert Modal */}
       {operatorInstructionAlert && (
         <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fade-in">
@@ -1250,6 +1495,120 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
             >
               Понятно, деталь отложена в отдельную стопку
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Camera Scanner Modal */}
+      <MobileCameraScannerModal
+        isOpen={showCameraScannerModal}
+        onClose={() => setShowCameraScannerModal(false)}
+        onScan={(code) => {
+          handleScanCode(code);
+        }}
+        title={`Сканер камеры (${order.orderNumber})`}
+        subtitle="Наведите камеру на QR-код или штрихкод бирки детали"
+      />
+
+      {/* SHIFT VALIDATION & OPERATOR CONFIRMATION MODAL */}
+      {showShiftRequiredModal && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-7 max-w-md w-full border border-slate-100 shadow-2xl space-y-6 text-center animate-fade-in">
+            <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-600 flex items-center justify-center mx-auto shadow-inner">
+              <Clock className="w-8 h-8" />
+            </div>
+
+            <div className="space-y-2">
+              <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-900 text-xs font-black uppercase tracking-wider">
+                🛑 Смена не начата
+              </span>
+              <h3 className="text-xl font-black text-slate-900">
+                Необходимо начать рабочую смену
+              </h3>
+              <p className="text-xs text-slate-500 leading-relaxed">
+                Для сканирования деталей и учета выработки на производственном участке требуется активная рабочая смена.
+              </p>
+            </div>
+
+            {/* Operator Identity Card */}
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-left space-y-3">
+              <div className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                Текущий пользователь системы:
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black text-base shadow-sm">
+                  {currentUser?.displayName?.[0] || currentUser?.name?.[0] || 'О'}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="text-sm font-black text-slate-900 truncate">
+                    {currentUser?.displayName || currentUser?.name || 'Оператор цеха'}
+                  </div>
+                  <div className="text-xs text-indigo-600 font-bold truncate">
+                    {currentUser?.productionRole || currentUser?.role || 'Сотрудник производства'}
+                  </div>
+                  {currentUser?.email && (
+                    <div className="text-[10px] text-slate-400 font-mono truncate">
+                      {currentUser.email}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Confirmation Question */}
+            <div className="bg-indigo-50/70 p-3.5 rounded-2xl border border-indigo-100 text-xs text-slate-700">
+              Вы действительно <strong>{currentUser?.displayName || currentUser?.name || 'этот сотрудник'}</strong>?
+            </div>
+
+            {/* Confirmation Action Buttons */}
+            {!isIdentityConfirmed ? (
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowShiftRequiredModal(false);
+                    onLogout?.();
+                  }}
+                  className="py-3 px-3 rounded-2xl bg-slate-100 hover:bg-rose-50 hover:text-rose-600 text-slate-700 font-bold text-xs transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <UserX className="w-4 h-4 text-rose-500" />
+                  <span>Нет, сменить</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsIdentityConfirmed(true)}
+                  className="py-3 px-3 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs transition-all shadow-md shadow-indigo-200 flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <UserCheck className="w-4 h-4" />
+                  <span>Да, это я</span>
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onStartShift?.();
+                    setShowShiftRequiredModal(false);
+                    setIsIdentityConfirmed(false);
+                    playSoundEffect('success');
+                  }}
+                  className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-sm transition-all shadow-lg shadow-emerald-600/30 flex items-center justify-center gap-2 cursor-pointer animate-pulse"
+                >
+                  <Play className="w-4 h-4 fill-white" />
+                  <span>Начать смену и продолжить работу</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsIdentityConfirmed(false)}
+                  className="text-xs text-slate-400 hover:text-slate-600 font-medium py-1 cursor-pointer"
+                >
+                  Назад к подтверждению
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}
