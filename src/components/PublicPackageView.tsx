@@ -120,7 +120,18 @@ export const PublicPackageView: React.FC<PublicPackageViewProps> = ({ packageCod
     setIsLoading(true);
     setErrorMsg(null);
     try {
-      const cleanCode = encodeURIComponent(packageCode.trim());
+      let rawCode = packageCode.trim();
+      if (rawCode.includes('/p/')) {
+        rawCode = rawCode.split('/p/').pop()?.split('?')[0] || rawCode;
+      } else if (rawCode.includes('/package/')) {
+        rawCode = rawCode.split('/package/').pop()?.split('?')[0] || rawCode;
+      } else if (rawCode.includes('/pkg/')) {
+        rawCode = rawCode.split('/pkg/').pop()?.split('?')[0] || rawCode;
+      } else if (rawCode.includes('/')) {
+        rawCode = rawCode.split('/').pop()?.split('?')[0] || rawCode;
+      }
+
+      const cleanCode = encodeURIComponent(rawCode.trim());
       const res = await fetch(`/api/public/package/${cleanCode}`);
       const data = await res.json();
 

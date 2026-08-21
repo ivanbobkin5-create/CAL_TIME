@@ -99,13 +99,30 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
   const activeStage = stages.find(s => s.id === selectedStageId);
 
   const handleCameraScanOrder = (scannedCode: string) => {
-    const cleanCode = scannedCode.trim().toLowerCase();
+    let rawCode = scannedCode.trim().toLowerCase();
+    if (rawCode.includes('/p/')) {
+      rawCode = rawCode.split('/p/').pop()?.split('?')[0] || rawCode;
+    } else if (rawCode.includes('/package/')) {
+      rawCode = rawCode.split('/package/').pop()?.split('?')[0] || rawCode;
+    } else if (rawCode.includes('/pkg/')) {
+      rawCode = rawCode.split('/pkg/').pop()?.split('?')[0] || rawCode;
+    } else if (rawCode.includes('/')) {
+      rawCode = rawCode.split('/').pop()?.split('?')[0] || rawCode;
+    }
+
+    const cleanCode = rawCode.trim().toLowerCase();
     const foundOrder = orders.find(o => {
       if (o.id.toLowerCase() === cleanCode) return true;
       if (o.orderNumber.toLowerCase() === cleanCode) return true;
       if (o.orderNumber.toLowerCase().replace(/[^0-9a-zа-я]/g, '') === cleanCode.replace(/[^0-9a-zа-я]/g, '')) return true;
       if (cleanCode.includes(o.orderNumber.toLowerCase())) return true;
       if (o.orderNumber.toLowerCase().includes(cleanCode)) return true;
+      if (o.packages && o.packages.some(p => 
+        p.code?.toLowerCase() === cleanCode || 
+        p.id?.toLowerCase() === cleanCode || 
+        `pkg-${o.orderNumber}-${p.packageNumber}`.toLowerCase() === cleanCode ||
+        `pkg-${o.orderNumber}-m${p.packageNumber}`.toLowerCase() === cleanCode
+      )) return true;
       return false;
     });
 

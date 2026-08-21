@@ -140,6 +140,17 @@ export interface ProductionOrder {
     allEdges?: Array<{ name: string; totalMeters: number; count: number }>;
   };
 
+  // Hardware / Kitting Specification Data attached to order (Комплектовочная ведомость)
+  hardwareData?: {
+    fileName: string;
+    fileHash?: string;
+    uploadedAt?: string;
+    items: OrderHardwareItem[];
+    totalItemsCount: number;
+    totalQuantity: number;
+    categoriesSummary?: Array<{ category: string; count: number; totalQuantity: number }>;
+  };
+
   // Scanning progress per stage and material:
   // { [stageId]: { [materialName]: { scannedPartIds: string[], isCompleted?: boolean } } }
   stageScanningProgress?: Record<string, Record<string, { scannedPartIds: string[]; isCompleted?: boolean }>>;
@@ -164,6 +175,26 @@ export interface ProductionOrder {
   };
 }
 
+export interface OrderHardwareItem {
+  id: string;
+  article?: string;           // Артикул / Код фурнитуры (e.g. "71B3550", "Blum 110°")
+  name: string;              // Наименование (e.g. "Петля CLIP top BLUMOTION 110°")
+  quantity: number;          // Общее количество по ведомости (e.g. 16)
+  unit?: string;             // Единица измерения (шт, компл, п.м., уп)
+  category?: string;         // Категория (Петли, Направляющие, Крепеж, Ручки, Опоры, Профиль, Подсветка, Разное)
+  packedQuantity: number;    // Уже упакованное количество по сформированным коробкам
+  notes?: string;            // Примечание (например, "для верхних шкафов", "с доводчиком")
+}
+
+export interface OrderPackageHardwareItem {
+  hardwareId?: string;
+  article?: string;
+  name: string;
+  quantity: number;
+  unit?: string;
+  category?: string;
+}
+
 export interface OrderPackagePart {
   detailId: string;
   labelNumber: string;
@@ -184,7 +215,8 @@ export interface OrderPackage {
   type: 'details' | 'kitting' | 'custom';
   code: string;          // Unique QR barcode code, e.g. "PKG-ORD123-M1-889"
   parts: OrderPackagePart[];
-  customItemsNote?: string; // Для участка комплектовки: перечень комплектующих/фурнитуры
+  hardwareItems?: OrderPackageHardwareItem[]; // Вложенная фурнитура и комплектующие в это место
+  customItemsNote?: string; // Для участка комплектовки: текстовый перечень комплектующих/фурнитуры
   createdAt: string;     // ISO timestamp
   createdByEmployeeId?: string;
   createdByEmployeeName?: string;
@@ -319,6 +351,7 @@ export interface ERPCompanySettings {
   equipmentList?: MachineEquipment[]; // Оборудование участков
   birkaColumnMapping?: Record<string, string[]>; // Кастомный маппинг столбцов файла бирок
   birkaEncodingPreference?: 'auto' | 'windows-1251' | 'utf-8' | 'cp866';
+  hardwareColumnMapping?: Record<string, string[]>; // Кастомный маппинг столбцов ведомости фурнитуры (наименование, артикул, количество, ед. изм., категория, примечания)
   packageLabelSettings?: PackageLabelSettings; // Настройки размера и формата этикеток упаковок (по умолч. 120x75 мм)
   
   // Сопоставление стадий ERP и Битрикс24

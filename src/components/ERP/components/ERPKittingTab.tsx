@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { 
   Box, 
   Plus, 
+  Minus, 
   Trash2, 
   Printer, 
   CheckCircle2, 
@@ -10,11 +11,27 @@ import {
   Sparkles, 
   Check, 
   Tag, 
-  FileText,
-  HelpCircle
+  FileText, 
+  HelpCircle, 
+  Upload, 
+  Search, 
+  AlertCircle, 
+  Layers, 
+  Info, 
+  CheckSquare, 
+  Square 
 } from 'lucide-react';
-import { ProductionOrder, OrderPackage, ERPCompanySettings, ERPEmployee, ProductionStageId } from '../types';
+import { 
+  ProductionOrder, 
+  OrderPackage, 
+  ERPCompanySettings, 
+  ERPEmployee, 
+  ProductionStageId, 
+  OrderHardwareItem, 
+  OrderPackageHardwareItem 
+} from '../types';
 import { PackageLabelPrintModal } from './PackageLabelPrintModal';
+import { parseHardwareFile } from '../utils/kittingParser';
 
 interface ERPKittingTabProps {
   order: ProductionOrder;
@@ -35,18 +52,37 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
   const kittingPackages = existingPackages.filter(p => p.type === 'kitting');
   const nextNumber = existingPackages.length + 1;
 
+  // Selected hardware items to be put into the current box being prepared
+  // Map of hardwareId -> quantity to put in this box
+  const [draftBoxItems, setDraftBoxItems] = useState<Record<string, number>>({});
   const [packageName, setPackageName] = useState<string>(`Место ${nextNumber} (Фурнитура)`);
-  const [itemsDescription, setItemsDescription] = useState<string>('');
+  const [customNotes, setCustomNotes] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [search, setSearch] = useState<string>('');
+
   const [selectedPrintPkg, setSelectedPrintPkg] = useState<OrderPackage | null>(null);
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
 
+  const hardwareData = order.hardwareData;
+  const hardwareItems = hardwareData?.items || [];
+  const categories = hardwareData?.categoriesSummary || [];
+
+  // Calculate packed quantities live from created packages if not yet synced
+  const totalHardwareUnits = hardwareData?.totalQuantity || hardwareItems.reduce((a, b) => a + b.quantity, 0);
+  const totalPackedUnits = hardwareItems.reduce((a, b) => a + (b.packedQuantity || 0), 0);
+  const packedPct = totalHardwareUnits > 0 ? Math.min(100, Math.round((totalPackedUnits / totalHardwareUnits) * 100)) : 0;
+  const allPacked = totalHardwareUnits > 0 && totalPackedUnits >= totalHardwareUnits;
+
+  // Quick preset templates for manual / standard boxes
   const quickPresets = [
     'Фурнитура (Blum)',
-    'Фурнитура (Hettich / Boyard)',
-    'Петли и доводчики',
+    'Фурнитура (Boyard / Hettich)',
+    'Петли и ответные планки',
     'Направляющие ящиков',
-    'Крепеж, конфирматы, уголки',
+    'Крепеж, конфирматы, стяжки',
     'Ручки мебельные и опоры',
     'Профиль Gola / Т-образный',
     'Стекло / Зеркала / Витраж',
@@ -54,10 +90,142 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
     'Инструкция и паспорт изделия'
   ];
 
-  const handleCreateKittingPackage = () => {
+  // Handle uploading Kitting file directly on this stage if missing or replacing
+  const handleUploadKittingFile = async (file: File) => {
+    setIsUploading(true);
+    setUploadError(null);
+    try {
+      const parsed = await parseHardwareFile(file, settings?.hardwareColumnMapping);
+      if (parsed.items.length === 0) {
+        setUploadError('В файле не найдено строк с фурнитурой или неподдерживаемый формат.');
+        setIsUploading(false);
+        return;
+      }
+
+      // Re-calculate already packed quantities if packages were already created earlier
+      const itemsWithPacked = parsed.items.map(item => {
+        let packed = 0;
+        kittingPackages.forEach(pkg => {
+          pkg.hardwareItems?.forEach(hi => {
+            if (hi.name.toLowerCase() === item.name.toLowerCase() || (hi.article && hi.article === item.article)) {
+              packed += hi.quantity;
+            }
+          });
+        });
+        return {
+          ...item,
+          packedQuantity: Math.min(item.quantity, packed)
+        };
+      });
+
+      onUpdateOrder({
+        ...order,
+        hardwareData: {
+          fileName: parsed.fileName,
+          uploadedAt: parsed.uploadedAt,
+          items: itemsWithPacked,
+          totalItemsCount: itemsWithPacked.length,
+          totalQuantity: parsed.totalQuantity,
+          categoriesSummary: parsed.categoriesSummary
+        }
+      });
+
+      setFeedbackMsg(`Комплектовочная ведомость "${parsed.fileName}" успешно загружена (${itemsWithPacked.length} поз.)!`);
+      setTimeout(() => setFeedbackMsg(null), 4000);
+    } catch (e: any) {
+      console.error(e);
+      setUploadError('Ошибка разбора ведомости: ' + (e?.message || 'проверьте файл'));
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  // Draft box items manipulation
+  const handleAddItemToDraft = (item: OrderHardwareItem, qtyToAdd: number) => {
+    const currentInDraft = draftBoxItems[item.id] || 0;
+    const remainingToPack = Math.max(0, item.quantity - (item.packedQuantity || 0));
+    const nextQty = Math.min(remainingToPack, currentInDraft + qtyToAdd);
+
+    if (nextQty <= 0) {
+      const copy = { ...draftBoxItems };
+      delete copy[item.id];
+      setDraftBoxItems(copy);
+    } else {
+      setDraftBoxItems({
+        ...draftBoxItems,
+        [item.id]: nextQty
+      });
+    }
+
+    // Auto update name suggestion if default
+    if (packageName.startsWith(`Место ${nextNumber}`)) {
+      const topCategory = item.category || 'Фурнитура';
+      setPackageName(`Место ${nextNumber} (${topCategory})`);
+    }
+  };
+
+  const handleSetAllRemainingToDraft = (item: OrderHardwareItem) => {
+    const remainingToPack = Math.max(0, item.quantity - (item.packedQuantity || 0));
+    if (remainingToPack > 0) {
+      setDraftBoxItems({
+        ...draftBoxItems,
+        [item.id]: remainingToPack
+      });
+    }
+  };
+
+  const handleSelectAllRemainingCategory = (categoryName?: string) => {
+    const newDraft = { ...draftBoxItems };
+    hardwareItems.forEach(item => {
+      if (!categoryName || categoryName === 'all' || (item.category || 'Разное / Крепеж') === categoryName) {
+        const rem = Math.max(0, item.quantity - (item.packedQuantity || 0));
+        if (rem > 0) {
+          newDraft[item.id] = rem;
+        }
+      }
+    });
+    setDraftBoxItems(newDraft);
+  };
+
+  const handleClearDraft = () => {
+    setDraftBoxItems({});
+    setPackageName(`Место ${nextNumber} (Фурнитура)`);
+    setCustomNotes('');
+  };
+
+  // Create Package from draft or manual description
+  const handleCreatePackage = () => {
     const cleanName = packageName.trim() || `Место ${nextNumber} (Фурнитура)`;
     const newPkgId = `pkg-kit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
     const uniqueCode = `PKG-${order.orderNumber}-KIT-${nextNumber}-${Date.now().toString().slice(-4)}`;
+
+    // Build structured hardware items list from draft
+    const packedItemsList: OrderPackageHardwareItem[] = [];
+    const formattedNotesLines: string[] = [];
+
+    let totalDraftUnits = 0;
+    Object.entries(draftBoxItems).forEach(([hwId, qty]) => {
+      if (qty <= 0) return;
+      const original = hardwareItems.find(h => h.id === hwId);
+      if (original) {
+        totalDraftUnits += qty;
+        packedItemsList.push({
+          hardwareId: original.id,
+          article: original.article,
+          name: original.name,
+          quantity: qty,
+          unit: original.unit || 'шт',
+          category: original.category
+        });
+        formattedNotesLines.push(`• ${original.name}${original.article ? ` [${original.article}]` : ''} — ${qty} ${original.unit || 'шт'}`);
+      }
+    });
+
+    if (customNotes.trim()) {
+      formattedNotesLines.push(`Примечание: ${customNotes.trim()}`);
+    }
+
+    const itemsSummary = formattedNotesLines.join('\n') || customNotes.trim() || 'Комплект мебельной фурнитуры и крепежа';
 
     const newPackage: OrderPackage = {
       id: newPkgId,
@@ -68,7 +236,8 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
       type: 'kitting',
       code: uniqueCode,
       parts: [],
-      customItemsNote: itemsDescription.trim() || 'Комплект мебельной фурнитуры и крепежа',
+      hardwareItems: packedItemsList.length > 0 ? packedItemsList : undefined,
+      customItemsNote: itemsSummary,
       createdAt: new Date().toISOString(),
       createdByEmployeeId: currentUser?.id,
       createdByEmployeeName: currentUser?.name || 'Мастер комплектовки',
@@ -77,22 +246,61 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
 
     const updatedPackages = [...existingPackages, newPackage];
 
+    // Update packed quantities in order.hardwareData.items
+    let updatedHardwareData = order.hardwareData;
+    if (updatedHardwareData && packedItemsList.length > 0) {
+      const updatedItems = updatedHardwareData.items.map(item => {
+        const inThisBox = draftBoxItems[item.id] || 0;
+        return {
+          ...item,
+          packedQuantity: Math.min(item.quantity, (item.packedQuantity || 0) + inThisBox)
+        };
+      });
+      updatedHardwareData = {
+        ...updatedHardwareData,
+        items: updatedItems
+      };
+    }
+
     onUpdateOrder({
       ...order,
-      packages: updatedPackages
+      packages: updatedPackages,
+      hardwareData: updatedHardwareData
     });
 
-    setItemsDescription('');
+    // Reset draft
+    setDraftBoxItems({});
+    setCustomNotes('');
     setPackageName(`Место ${updatedPackages.length + 1} (Фурнитура)`);
-    setFeedbackMsg(`Упаковка "${cleanName}" создана!`);
+    setFeedbackMsg(`Упаковка "${cleanName}" сформирована! Нажмите печать этикетки.`);
     setTimeout(() => setFeedbackMsg(null), 3500);
 
     setSelectedPrintPkg(newPackage);
     setShowPrintModal(true);
   };
 
-  const handleDeleteKittingPackage = (pkgId: string) => {
-    if (!window.confirm('Удалить эту упаковку комплектации?')) return;
+  // Delete Package and restore hardware packed quantities
+  const handleDeletePackage = (pkgId: string) => {
+    const pkgToDelete = existingPackages.find(p => p.id === pkgId);
+    if (!pkgToDelete) return;
+    if (!window.confirm(`Удалить упаковку "${pkgToDelete.name}"?`)) return;
+
+    // Restore packed quantities
+    let updatedHardwareData = order.hardwareData;
+    if (updatedHardwareData && pkgToDelete.hardwareItems && pkgToDelete.hardwareItems.length > 0) {
+      const restoredItems = updatedHardwareData.items.map(item => {
+        const found = pkgToDelete.hardwareItems?.find(hi => hi.hardwareId === item.id || hi.name.toLowerCase() === item.name.toLowerCase());
+        const qtyToSubtract = found ? found.quantity : 0;
+        return {
+          ...item,
+          packedQuantity: Math.max(0, (item.packedQuantity || 0) - qtyToSubtract)
+        };
+      });
+      updatedHardwareData = {
+        ...updatedHardwareData,
+        items: restoredItems
+      };
+    }
 
     const updatedPackages = existingPackages
       .filter(p => p.id !== pkgId)
@@ -100,7 +308,8 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
 
     onUpdateOrder({
       ...order,
-      packages: updatedPackages
+      packages: updatedPackages,
+      hardwareData: updatedHardwareData
     });
   };
 
@@ -110,9 +319,22 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
     setTimeout(() => setFeedbackMsg(null), 3500);
   };
 
+  // Filter hardware list
+  const filteredHardwareItems = hardwareItems.filter(item => {
+    const matchesCat = selectedCategory === 'all' || (item.category || 'Разное / Крепеж') === selectedCategory;
+    const matchesSearch = !search || 
+      item.name.toLowerCase().includes(search.toLowerCase()) || 
+      (item.article && item.article.toLowerCase().includes(search.toLowerCase())) ||
+      (item.notes && item.notes.toLowerCase().includes(search.toLowerCase()));
+    return matchesCat && matchesSearch;
+  });
+
+  const draftTotalUnits = Object.values(draftBoxItems).reduce((a, b) => a + b, 0);
+  const draftTotalPositions = Object.keys(draftBoxItems).length;
+
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* Header */}
+      {/* Header Bar */}
       <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div>
@@ -123,21 +345,55 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
               Комплектация фурнитуры, крепежа и нестандартных мест
             </h2>
             <p className="text-xs text-slate-500 mt-1">
-              Создавайте индивидуальные коробки с фурнитурой, печатайте наклейки с QR-кодами (120×75 мм) и прикрепляйте к упаковкам.
+              Формируйте коробки по комплектовочной ведомости, отмечайте уложенные позиции, печатайте термоэтикетки 120×75 мм с QR-кодами.
             </p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            {hardwareData && (
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5">
+                <div className="text-[10px] font-bold text-slate-500 uppercase">Прогресс комплектации</div>
+                <div className="text-xl font-black text-slate-900 font-mono flex items-center gap-2">
+                  <span>{packedPct}%</span>
+                  <span className="text-xs font-normal text-slate-500 font-sans">
+                    ({totalPackedUnits} из {totalHardwareUnits} ед.)
+                  </span>
+                </div>
+              </div>
+            )}
+
             <div className="bg-cyan-50 border border-cyan-200 rounded-2xl px-4 py-2.5">
-              <div className="text-[10px] font-bold text-cyan-700 uppercase">Сформировано мест комплектации</div>
+              <div className="text-[10px] font-bold text-cyan-700 uppercase">Сформировано коробок</div>
               <div className="text-xl font-black text-cyan-950 font-mono">
                 {kittingPackages.length} <span className="text-xs font-normal text-cyan-700">упак.</span>
               </div>
             </div>
           </div>
         </div>
+
+        {/* Progress Bar if hardware list exists */}
+        {hardwareData && totalHardwareUnits > 0 && (
+          <div className="mt-4 pt-4 border-t border-slate-100">
+            <div className="flex items-center justify-between text-xs mb-1.5">
+              <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                <FileText className="w-3.5 h-3.5 text-cyan-600" />
+                Ведомость: <strong className="text-slate-900">{hardwareData.fileName}</strong> ({hardwareItems.length} поз.)
+              </span>
+              <span className="font-mono font-bold text-cyan-700">
+                {totalPackedUnits} / {totalHardwareUnits} шт. упаковано
+              </span>
+            </div>
+            <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
+              <div 
+                className={`h-full transition-all duration-500 ${allPacked ? 'bg-emerald-500' : 'bg-cyan-600'}`}
+                style={{ width: `${packedPct}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
+      {/* Feedback & Error Alerts */}
       {feedbackMsg && (
         <div className="p-4 rounded-2xl bg-emerald-600 text-white text-xs font-bold flex items-center gap-2 shadow-md animate-fade-in">
           <CheckCircle2 className="w-5 h-5 shrink-0" />
@@ -145,20 +401,342 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
         </div>
       )}
 
-      {/* Main Grid: Creator + Created List */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Creator Form (5 cols) */}
-        <div className="lg:col-span-5 space-y-4">
-          <div className="bg-white rounded-3xl p-6 border-2 border-cyan-200 shadow-md space-y-4">
+      {uploadError && (
+        <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2 animate-fade-in">
+          <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+          <span>{uploadError}</span>
+        </div>
+      )}
+
+      {/* Fallback Notice when NO hardware manifest was uploaded during planning */}
+      {!hardwareData && (
+        <div className="p-6 rounded-3xl bg-amber-50/80 border-2 border-amber-200 shadow-sm space-y-4 animate-fade-in">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center shrink-0 shadow-md">
+              <AlertCircle className="w-6 h-6" />
+            </div>
+            <div className="space-y-1">
+              <h3 className="font-black text-amber-950 text-base">
+                Комплектовочная ведомость фурнитуры не загружена
+              </h3>
+              <p className="text-xs text-amber-900 font-medium leading-relaxed max-w-3xl">
+                На этапе планирования не был загружен файл комплектовочной ведомости, уточните у начальника производства где получить файл или если не требуется фурнитура просто завершите этап.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3 pt-2 border-t border-amber-200/60 flex-wrap">
+            <label className={`px-5 py-2.5 rounded-2xl bg-cyan-600 hover:bg-cyan-500 text-white font-black text-xs shadow-md shadow-cyan-600/20 transition-all flex items-center gap-2 cursor-pointer ${isUploading ? 'opacity-70 pointer-events-none' : ''}`}>
+              <Upload className="w-4 h-4" />
+              <span>{isUploading ? 'Обработка файла...' : '📂 Загрузить файл комплектовочной ведомости сейчас'}</span>
+              <input
+                type="file"
+                accept=".xlsx,.xls,.csv,.tsv,.txt"
+                className="hidden"
+                disabled={isUploading}
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleUploadKittingFile(f);
+                  e.target.value = '';
+                }}
+              />
+            </label>
+
+            <button
+              onClick={handleCompleteKitting}
+              className="px-5 py-2.5 rounded-2xl bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5"
+            >
+              <Check className="w-4 h-4 text-emerald-600" />
+              <span>Фурнитура не требуется — Завершить этап</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Main Grid: Interactive Hardware Specification (Left 7 cols) + Box Forming & Created Packages (Right 5 cols) */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        
+        {/* Left Column: Interactive Hardware Checklist */}
+        <div className="lg:col-span-7 space-y-4">
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 font-black text-slate-900 text-base">
+                <FileText className="w-5 h-5 text-cyan-600" />
+                <span>Спецификация фурнитуры и комплектующих</span>
+              </div>
+
+              {hardwareData && (
+                <div className="flex items-center gap-2">
+                  <label className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition-colors cursor-pointer flex items-center gap-1">
+                    <Upload className="w-3.5 h-3.5 text-cyan-600" />
+                    <span>Заменить файл</span>
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls,.csv,.tsv,.txt"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) handleUploadKittingFile(f);
+                        e.target.value = '';
+                      }}
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
+
+            {hardwareData && hardwareItems.length > 0 ? (
+              <div className="space-y-4">
+                {/* Search & Category Tabs */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="Поиск по названию, артикулу, бренду..."
+                        value={search}
+                        onChange={(e) => setSearch(e.target.value)}
+                        className="w-full pl-9 pr-3.5 py-2 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                      />
+                    </div>
+
+                    <button
+                      onClick={() => handleSelectAllRemainingCategory(selectedCategory)}
+                      className="px-3 py-2 rounded-2xl bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200 text-xs font-bold transition-colors cursor-pointer whitespace-nowrap shrink-0"
+                      title="Выбрать все оставшиеся позиции этой категории в текущую коробку"
+                    >
+                      + Выбрать все
+                    </button>
+                  </div>
+
+                  {/* Category Pills */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                    <button
+                      onClick={() => setSelectedCategory('all')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-colors cursor-pointer ${
+                        selectedCategory === 'all'
+                          ? 'bg-cyan-600 text-white shadow-xs'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      }`}
+                    >
+                      Все ({hardwareItems.length})
+                    </button>
+                    {categories.map(cat => (
+                      <button
+                        key={cat.category}
+                        onClick={() => setSelectedCategory(cat.category)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-colors cursor-pointer flex items-center gap-1.5 ${
+                          selectedCategory === cat.category
+                            ? 'bg-cyan-600 text-white shadow-xs'
+                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                        }`}
+                      >
+                        <span>{cat.category}</span>
+                        <span className={`text-[10px] px-1.5 py-0.2 rounded-md ${
+                          selectedCategory === cat.category ? 'bg-white/20 text-white font-black' : 'bg-slate-200 text-slate-700'
+                        }`}>
+                          {cat.count}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Items Interactive List */}
+                <div className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1">
+                  {filteredHardwareItems.length === 0 ? (
+                    <div className="p-8 text-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-2xl">
+                      Позиций не найдено по заданным фильтрам.
+                    </div>
+                  ) : (
+                    filteredHardwareItems.map(item => {
+                      const packed = item.packedQuantity || 0;
+                      const remaining = Math.max(0, item.quantity - packed);
+                      const inDraft = draftBoxItems[item.id] || 0;
+                      const isComplete = remaining === 0;
+
+                      return (
+                        <div
+                          key={item.id}
+                          className={`p-3.5 rounded-2xl border transition-all ${
+                            isComplete 
+                              ? 'bg-emerald-50/50 border-emerald-200/80 opacity-75'
+                              : inDraft > 0
+                              ? 'bg-cyan-50/80 border-cyan-300 ring-1 ring-cyan-400 shadow-xs'
+                              : 'bg-slate-50 hover:bg-white border-slate-200/80'
+                          }`}
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                            {/* Info */}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                {item.article && (
+                                  <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 text-slate-700 font-mono font-bold text-[10px]">
+                                    {item.article}
+                                  </span>
+                                )}
+                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                  {item.category || 'Фурнитура'}
+                                </span>
+                              </div>
+
+                              <div className={`font-black text-xs sm:text-sm mt-0.5 ${isComplete ? 'text-emerald-950 line-through' : 'text-slate-900'}`}>
+                                {item.name}
+                              </div>
+
+                              {item.notes && (
+                                <div className="text-[11px] text-slate-500 mt-0.5 italic">
+                                  {item.notes}
+                                </div>
+                              )}
+
+                              {/* Packed state summary */}
+                              <div className="flex items-center gap-3 text-[11px] mt-1.5">
+                                <span className="text-slate-500">
+                                  Требуется: <strong className="text-slate-900 font-mono">{item.quantity} {item.unit || 'шт'}</strong>
+                                </span>
+                                <span className="text-slate-500">
+                                  Упаковано: <strong className={`font-mono ${packed > 0 ? 'text-emerald-700' : 'text-slate-700'}`}>{packed}</strong>
+                                </span>
+                                {!isComplete && (
+                                  <span className="text-cyan-700 font-bold">
+                                    Остаток: <strong className="font-mono text-cyan-900">{remaining}</strong>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Packing Actions */}
+                            <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                              {isComplete ? (
+                                <div className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 text-xs font-bold flex items-center gap-1">
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>Упаковано</span>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1.5 bg-white p-1 rounded-2xl border border-slate-200 shadow-2xs">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAddItemToDraft(item, -1)}
+                                    disabled={inDraft <= 0}
+                                    className="w-7 h-7 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-30 flex items-center justify-center text-slate-700 transition-colors cursor-pointer"
+                                  >
+                                    <Minus className="w-3.5 h-3.5" />
+                                  </button>
+
+                                  <span className="w-9 text-center font-mono font-black text-xs text-slate-900">
+                                    {inDraft}
+                                  </span>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAddItemToDraft(item, 1)}
+                                    disabled={inDraft >= remaining}
+                                    className="w-7 h-7 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-30 flex items-center justify-center text-white transition-colors cursor-pointer"
+                                  >
+                                    <Plus className="w-3.5 h-3.5" />
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSetAllRemainingToDraft(item)}
+                                    className="px-2.5 py-1 rounded-xl bg-slate-100 hover:bg-cyan-100 text-cyan-800 text-[10px] font-bold transition-colors cursor-pointer ml-1"
+                                    title="Положить весь остаток в эту коробку"
+                                  >
+                                    Все ({remaining})
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            ) : (
+              /* If no manifest is uploaded yet, offer instant upload or text entry */
+              <div className="p-8 text-center border-2 border-dashed border-slate-200 rounded-2xl space-y-3">
+                <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+                  <FileText className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-slate-800 text-sm">Спецификация пока не подгружена</h4>
+                  <p className="text-xs text-slate-400 max-w-sm mx-auto mt-0.5">
+                    Загрузите файл комплектовочной ведомости (.xlsx, .xls, .csv, .txt) для автоматического формирования чек-листа фурнитуры.
+                  </p>
+                </div>
+
+                <label className="inline-flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs shadow-md transition-all cursor-pointer">
+                  <Upload className="w-4 h-4" />
+                  <span>Загрузить комплектовочную ведомость</span>
+                  <input
+                    type="file"
+                    accept=".xlsx,.xls,.csv,.tsv,.txt"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleUploadKittingFile(f);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Right Column: Box Forming (Top) + Formed Packages List (Bottom) */}
+        <div className="lg:col-span-5 space-y-6">
+          {/* Box Creator Box */}
+          <div className="bg-white rounded-3xl p-6 border-2 border-cyan-300 shadow-md space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2 font-black text-slate-900 text-base">
                 <Tag className="w-5 h-5 text-cyan-600" />
-                <span>Новое место комплектации</span>
+                <span>Формирование коробки</span>
               </div>
-              <span className="px-2.5 py-1 rounded-xl bg-cyan-100 text-cyan-800 text-xs font-black font-mono">
+              <span className="px-3 py-1 rounded-xl bg-cyan-100 text-cyan-800 text-xs font-black font-mono">
                 Место №{nextNumber}
               </span>
             </div>
+
+            {/* Selected Items in Draft Box Summary */}
+            {draftTotalPositions > 0 && (
+              <div className="p-3.5 rounded-2xl bg-cyan-50 border border-cyan-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-cyan-900 flex items-center gap-1.5">
+                    <CheckSquare className="w-4 h-4 text-cyan-600" />
+                    Вложено в эту коробку:
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleClearDraft}
+                    className="text-[11px] font-bold text-rose-600 hover:underline cursor-pointer"
+                  >
+                    Очистить
+                  </button>
+                </div>
+
+                <div className="text-xs font-mono font-black text-cyan-950">
+                  {draftTotalPositions} позиций ({draftTotalUnits} ед. фурнитуры)
+                </div>
+
+                <div className="max-h-28 overflow-y-auto space-y-1 text-[11px] text-slate-700 bg-white p-2 rounded-xl border border-cyan-100">
+                  {Object.entries(draftBoxItems).map(([id, qty]) => {
+                    const it = hardwareItems.find(h => h.id === id);
+                    if (!it) return null;
+                    return (
+                      <div key={id} className="flex items-center justify-between gap-2">
+                        <span className="truncate">{it.name}</span>
+                        <strong className="font-mono text-cyan-800 shrink-0">{qty} {it.unit || 'шт'}</strong>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Package Name */}
             <div>
@@ -169,7 +747,7 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
                 type="text"
                 value={packageName}
                 onChange={(e) => setPackageName(e.target.value)}
-                placeholder="например: Место 3 (Фурнитура Blum)"
+                placeholder="например: Место 2 (Фурнитура Blum)"
                 className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-slate-900 text-xs focus:ring-2 focus:ring-cyan-500 outline-none"
               />
             </div>
@@ -177,9 +755,9 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
             {/* Quick Presets */}
             <div>
               <label className="block text-[11px] font-bold text-slate-500 mb-1">
-                Быстрые шаблоны названий:
+                Быстрые шаблоны:
               </label>
-              <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+              <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto">
                 {quickPresets.map(preset => (
                   <button
                     key={preset}
@@ -193,92 +771,97 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
               </div>
             </div>
 
-            {/* Custom Notes / Items specification */}
+            {/* Custom Notes / Extra manual text */}
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                Состав вложенной фурнитуры / примечание
+                Дополнительное примечание к месту
               </label>
               <textarea
-                value={itemsDescription}
-                onChange={(e) => setItemsDescription(e.target.value)}
-                placeholder="Перечислите что входит в коробку (петли, направляющие, стяжки, конфирматы, ручки и т.д.). Этот список распечатается на термоэтикетке."
-                rows={4}
-                className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-medium text-slate-900 text-xs focus:ring-2 focus:ring-cyan-500 outline-none resize-none"
+                value={customNotes}
+                onChange={(e) => setCustomNotes(e.target.value)}
+                placeholder="Укажите особые примечания или ручной список, если ведомость не загружена..."
+                rows={2}
+                className="w-full px-3.5 py-2 rounded-2xl bg-slate-50 border border-slate-200 font-medium text-slate-900 text-xs focus:ring-2 focus:ring-cyan-500 outline-none resize-none"
               />
             </div>
 
             {/* Button Create and Print */}
             <button
-              onClick={handleCreateKittingPackage}
-              className="w-full py-3 rounded-2xl bg-cyan-600 hover:bg-cyan-500 text-white font-black text-xs shadow-md shadow-cyan-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+              onClick={handleCreatePackage}
+              className="w-full py-3.5 rounded-2xl bg-cyan-600 hover:bg-cyan-500 text-white font-black text-xs shadow-md shadow-cyan-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
               <Printer className="w-4 h-4" />
-              <span>Создать упаковку и распечатать этикетку</span>
+              <span>Запаковать в коробку №{nextNumber} и распечатать</span>
             </button>
           </div>
-        </div>
 
-        {/* Created Kitting Packages List (7 cols) */}
-        <div className="lg:col-span-7 space-y-4">
+          {/* Formed Packages List */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-4">
             <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
               <Box className="w-5 h-5 text-cyan-600" />
-              <span>Сформированные места комплектации ({kittingPackages.length})</span>
+              <span>Сформированные места ({kittingPackages.length})</span>
             </h3>
 
             {kittingPackages.length === 0 ? (
-              <div className="p-8 text-center text-slate-400 text-xs border-2 border-dashed border-slate-200 rounded-2xl">
-                Пока не сформировано ни одной коробки комплектации. Создайте упаковку в форме слева.
+              <div className="p-6 text-center text-slate-400 text-xs border border-dashed border-slate-200 rounded-2xl">
+                Пока не сформировано ни одной коробки. Выберите позиции в чек-листе слева и нажмите «Запаковать».
               </div>
             ) : (
               <div className="space-y-3">
                 {kittingPackages.map((pkg) => (
                   <div
                     key={pkg.id}
-                    className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+                    className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5"
                   >
-                    <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-cyan-600 text-white font-mono font-black text-sm flex items-center justify-center shrink-0">
-                        M{pkg.packageNumber}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className="w-9 h-9 rounded-2xl bg-cyan-600 text-white font-mono font-black text-xs flex items-center justify-center shrink-0">
+                          M{pkg.packageNumber}
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="font-black text-slate-900 text-xs sm:text-sm truncate">
+                            {pkg.name}
+                          </div>
+                          <div className="text-[10px] text-slate-500 font-mono mt-0.5">
+                            {pkg.code}
+                          </div>
+                        </div>
                       </div>
 
-                      <div>
-                        <div className="font-black text-slate-900 text-sm">
-                          {pkg.name}
-                        </div>
-                        <div className="text-[11px] text-slate-600 font-mono mt-0.5">
-                          {pkg.code}
-                        </div>
-                        {pkg.customItemsNote && (
-                          <div className="text-xs text-slate-700 mt-1 bg-white p-2 rounded-xl border border-slate-200/70">
-                            {pkg.customItemsNote}
-                          </div>
-                        )}
-                        <div className="text-[10px] text-slate-400 mt-1">
-                          Сформировал: {pkg.createdByEmployeeName || 'Комплектовщик'} • {pkg.createdAt ? new Date(pkg.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : ''}
-                        </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          onClick={() => {
+                            setSelectedPrintPkg(pkg);
+                            setShowPrintModal(true);
+                          }}
+                          className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-cyan-50 text-cyan-700 border border-slate-200 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer shadow-2xs"
+                          title="Печать термоэтикетки"
+                        >
+                          <Printer className="w-3.5 h-3.5" />
+                          <span>Печать</span>
+                        </button>
+
+                        <button
+                          onClick={() => handleDeletePackage(pkg.id)}
+                          className="p-1.5 rounded-xl bg-white hover:bg-rose-50 text-rose-500 border border-slate-200 transition-colors cursor-pointer"
+                          title="Удалить место (вернуть фурнитуру в остаток)"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 self-end sm:self-center">
-                      <button
-                        onClick={() => {
-                          setSelectedPrintPkg(pkg);
-                          setShowPrintModal(true);
-                        }}
-                        className="px-3 py-2 rounded-xl bg-white hover:bg-cyan-50 text-cyan-700 border border-slate-200 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-sm"
-                      >
-                        <Printer className="w-3.5 h-3.5" />
-                        <span>Печать этикетки</span>
-                      </button>
+                    {/* Content snippet */}
+                    {pkg.customItemsNote && (
+                      <div className="text-[11px] text-slate-700 bg-white p-2.5 rounded-xl border border-slate-200/80 font-mono whitespace-pre-line max-h-28 overflow-y-auto leading-relaxed">
+                        {pkg.customItemsNote}
+                      </div>
+                    )}
 
-                      <button
-                        onClick={() => handleDeleteKittingPackage(pkg.id)}
-                        className="p-2 rounded-xl bg-white hover:bg-rose-50 text-rose-500 border border-slate-200 transition-colors cursor-pointer"
-                        title="Удалить"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                    <div className="text-[10px] text-slate-400 flex items-center justify-between">
+                      <span>Сформировал: {pkg.createdByEmployeeName || 'Комплектовщик'}</span>
+                      <span>{pkg.createdAt ? new Date(pkg.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
                     </div>
                   </div>
                 ))}
@@ -288,11 +871,11 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
         </div>
       </div>
 
-      {/* Complete Button */}
+      {/* Complete Step Footer */}
       <div className="p-6 rounded-3xl bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xl">
         <div>
           <div className="text-xs font-bold text-cyan-400 uppercase tracking-wider mb-1">
-            Завершение комплектации
+            Завершение участка комплектации
           </div>
           <div className="text-sm text-slate-300 font-medium">
             Сформировано {kittingPackages.length} коробок/мест с фурнитурой и комплектующими

@@ -21,11 +21,15 @@ import {
   Settings,
   X,
   ArrowRight,
-  ExternalLink
+  ExternalLink,
+  PackageCheck,
+  Package
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPEmployee, ERPCompanySettings, AdditionalWorks } from '../types';
 import { formatDeadlineDate } from '../utils';
 import { parseBirkaFile } from '../utils/birkaParser';
+import { parseHardwareFile } from '../utils/hardwareParser';
+import { HardwareSpecificationModal } from '../components/HardwareSpecificationModal';
 
 interface ERPPlanningViewProps {
   orders: ProductionOrder[];
@@ -50,8 +54,10 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
   
   // Modals state
   const [viewingBirkaModalOrder, setViewingBirkaModalOrder] = useState<ProductionOrder | null>(null);
+  const [viewingHardwareModalOrder, setViewingHardwareModalOrder] = useState<ProductionOrder | null>(null);
   const [launchedModalOrder, setLaunchedModalOrder] = useState<{ order: ProductionOrder; plannedDate: string } | null>(null);
   const [birkaSearchQuery, setBirkaSearchQuery] = useState('');
+  const [hardwareSearchQuery, setHardwareSearchQuery] = useState('');
 
   const handleBirkaUploadForOrder = async (order: ProductionOrder, file: File) => {
     if (order.birkaData) {
@@ -62,7 +68,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
 
     setUploadingOrderId(order.id);
     try {
-      const parseRes = await parseBirkaFile(file);
+      const parseRes = await parseBirkaFile(file, settings?.birkaColumnMapping);
       if (parseRes.details.length === 0) {
         throw new Error('Файл не содержит деталей');
       }
@@ -85,6 +91,41 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
       onUpdateOrder(updatedOrder);
     } catch (err: any) {
       alert(err.message || 'Ошибка загрузки файла бирок');
+    } finally {
+      setUploadingOrderId(null);
+    }
+  };
+
+  const handleHardwareUploadForOrder = async (order: ProductionOrder, file: File) => {
+    if (order.hardwareData) {
+      if (!window.confirm(`К заказу ${order.orderNumber} уже прикреплена ведомость "${order.hardwareData.fileName}". Перезаписать спецификацию фурнитуры?`)) {
+        return;
+      }
+    }
+
+    setUploadingOrderId(order.id);
+    try {
+      const parseRes = await parseHardwareFile(file, settings?.hardwareColumnMapping);
+      if (parseRes.items.length === 0) {
+        throw new Error('В файле не найдено строк с фурнитурой или наименованиями');
+      }
+
+      const updatedOrder: ProductionOrder = {
+        ...order,
+        hardwareData: {
+          fileName: parseRes.fileName,
+          fileHash: parseRes.fileHash,
+          uploadedAt: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('ru-RU'),
+          items: parseRes.items,
+          totalItemsCount: parseRes.totalItemsCount,
+          totalQuantity: parseRes.totalQuantity,
+          categoriesSummary: parseRes.categoriesSummary
+        }
+      };
+
+      onUpdateOrder(updatedOrder);
+    } catch (err: any) {
+      alert(err.message || 'Ошибка загрузки ведомости фурнитуры');
     } finally {
       setUploadingOrderId(null);
     }
@@ -383,6 +424,26 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                         <span>Бирки не прикреплены</span>
                       </span>
                     )}
+
+                    {order.hardwareData ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setViewingHardwareModalOrder(order);
+                        }}
+                        className="inline-flex items-center gap-1.5 text-xs font-bold text-cyan-900 bg-cyan-50 hover:bg-cyan-100 px-3 py-1.5 rounded-xl border border-cyan-200 transition-colors cursor-pointer shadow-2xs max-w-[260px] truncate"
+                        title="Нажмите, чтобы просмотреть ведомость фурнитуры и комплектации"
+                      >
+                        <Package className="w-3.5 h-3.5 text-cyan-600 shrink-0" />
+                        <span className="truncate">Фурнитура: {order.hardwareData.totalItemsCount} поз. ({order.hardwareData.totalQuantity} шт.)</span>
+                      </button>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                        <Package className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span>Фурнитура не загружена</span>
+                      </span>
+                    )}
                   </div>
 
                   {/* Right: Date Picker, Upload & Launch Button */}
@@ -409,7 +470,10 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                     </div>
 
                     {/* Upload Birka File Button */}
-                    <label className="px-3.5 py-2.5 rounded-2xl bg-blue-50 hover:bg-blue-600 hover:text-white border border-blue-200 text-xs font-bold text-blue-700 shadow-2xs transition-all cursor-pointer flex items-center gap-1.5 shrink-0">
+                    <label 
+                      className="px-3.5 py-2.5 rounded-2xl bg-blue-50 hover:bg-blue-600 hover:text-white border border-blue-200 text-xs font-bold text-blue-700 shadow-2xs transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                      title="Загрузить файл раскроя и бирок (.bir, .csv, .tsv, .txt, .zip)"
+                    >
                       <Upload className="w-3.5 h-3.5" />
                       <span>{order.birkaData ? 'Заменить бирки' : '+ Файл бирок'}</span>
                       <input
@@ -419,6 +483,25 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           if (file) handleBirkaUploadForOrder(order, file);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+
+                    {/* Upload Hardware Specification Button */}
+                    <label 
+                      className="px-3.5 py-2.5 rounded-2xl bg-cyan-50 hover:bg-cyan-600 hover:text-white border border-cyan-200 text-xs font-bold text-cyan-700 shadow-2xs transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                      title="Загрузить ведомость фурнитуры / спецификацию комплектующих (.xlsx, .xls, .csv, .tsv, .xml, .txt)"
+                    >
+                      <PackageCheck className="w-3.5 h-3.5" />
+                      <span>{order.hardwareData ? 'Заменить фурнитуру' : '+ Ведомость фурнитуры'}</span>
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls,.csv,.tsv,.txt,.xml"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleHardwareUploadForOrder(order, file);
                           e.target.value = '';
                         }}
                       />
@@ -850,6 +933,19 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Hardware Specification Modal */}
+      {viewingHardwareModalOrder && (
+        <HardwareSpecificationModal
+          order={viewingHardwareModalOrder}
+          isOpen={!!viewingHardwareModalOrder}
+          onClose={() => setViewingHardwareModalOrder(null)}
+          onUpdateOrder={(updated) => {
+            onUpdateOrder(updated);
+            setViewingHardwareModalOrder(updated);
+          }}
+        />
       )}
     </div>
   );

@@ -443,7 +443,18 @@ function transliterate(str: string): string {
   // Public Package Digital Passport for Installers on-site (No login required)
   app.get("/api/public/package/:packageCode", async (req, res) => {
     try {
-      const packageCode = decodeURIComponent(req.params.packageCode || '').trim();
+      let rawInput = decodeURIComponent(req.params.packageCode || '').trim();
+      if (rawInput.includes('/p/')) {
+        rawInput = rawInput.split('/p/').pop()?.split('?')[0] || rawInput;
+      } else if (rawInput.includes('/package/')) {
+        rawInput = rawInput.split('/package/').pop()?.split('?')[0] || rawInput;
+      } else if (rawInput.includes('/pkg/')) {
+        rawInput = rawInput.split('/pkg/').pop()?.split('?')[0] || rawInput;
+      } else if (rawInput.includes('/')) {
+        rawInput = rawInput.split('/').pop()?.split('?')[0] || rawInput;
+      }
+
+      const packageCode = rawInput.trim();
       if (!packageCode) {
         return res.status(400).json({ success: false, error: "Код упаковки не указан" });
       }
@@ -454,9 +465,10 @@ function transliterate(str: string): string {
       // 1. Search across all erp_orders collections in DB
       const allOrderDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
         where: {
-          collection: {
-            endsWith: '/erp_orders'
-          }
+          OR: [
+            { collection: { contains: 'erp_orders' } },
+            { path: { contains: 'erp_orders' } }
+          ]
         }
       }));
 
@@ -465,6 +477,7 @@ function transliterate(str: string): string {
       let matchedCompanyId: string = "";
 
       const normalizedSearchCode = packageCode.toLowerCase().replace(/[^a-zа-я0-9_-]/gi, '');
+      const pureAlphanumericSearch = packageCode.toLowerCase().replace(/[^a-zа-я0-9]/gi, '');
 
       for (const doc of allOrderDocs) {
         try {
@@ -478,19 +491,24 @@ function transliterate(str: string): string {
             const fallbackCode = `pkg-${order.orderNumber}-${pkg.packageNumber}`.toLowerCase().replace(/[^a-zа-я0-9_-]/gi, '');
             const fallbackCodeM = `pkg-${order.orderNumber}-m${pkg.packageNumber}`.toLowerCase().replace(/[^a-zа-я0-9_-]/gi, '');
 
+            const purePCode = (pkg.code || '').toLowerCase().replace(/[^a-zа-я0-9]/gi, '');
+            const purePId = (pkg.id || '').toLowerCase().replace(/[^a-zа-я0-9]/gi, '');
+
             if (
               pCode === normalizedSearchCode ||
               pId === normalizedSearchCode ||
               fallbackCode === normalizedSearchCode ||
               fallbackCodeM === normalizedSearchCode ||
+              purePCode === pureAlphanumericSearch ||
+              purePId === pureAlphanumericSearch ||
               (pkg.code && pkg.code.toLowerCase() === packageCode.toLowerCase()) ||
               (pkg.id && pkg.id.toLowerCase() === packageCode.toLowerCase()) ||
-              (normalizedSearchCode && pCode.includes(normalizedSearchCode))
+              (normalizedSearchCode.length >= 4 && pCode.includes(normalizedSearchCode))
             ) {
               matchedOrder = order;
               matchedPackage = pkg;
-              const parts = doc.collection.split('/');
-              matchedCompanyId = parts[1] || '';
+              const parts = doc.collection ? doc.collection.split('/') : doc.path.split('/');
+              matchedCompanyId = parts[1] || parts[0] || '';
               break;
             }
           }
@@ -501,19 +519,21 @@ function transliterate(str: string): string {
 
       // If not matched directly, check if code format is e.g. PKG-1045-2 or contains orderNumber and packageNumber
       if (!matchedPackage) {
-        const match = packageCode.match(/PKG-([A-Za-z0-9_-]+?)-(?:M|KIT-)?(\d+)/i);
+        const match = packageCode.match(/(?:PKG-)?([A-Za-z0-9_-]+?)-(?:M|KIT-)?(\d+)/i);
         if (match) {
           const [, parsedOrderNum, parsedPkgNum] = match;
           for (const doc of allOrderDocs) {
             try {
               const order = JSON.parse(doc.data);
-              if (String(order.orderNumber).toLowerCase() === parsedOrderNum.toLowerCase()) {
-                const pkg = (order.packages || []).find((p: any) => String(p.packageNumber) === parsedPkgNum);
+              const cleanOrderNum = String(order.orderNumber || '').toLowerCase().replace(/[^a-zа-я0-9]/gi, '');
+              const cleanTargetOrderNum = parsedOrderNum.toLowerCase().replace(/[^a-zа-я0-9]/gi, '');
+              if (cleanOrderNum === cleanTargetOrderNum || String(order.orderNumber).toLowerCase() === parsedOrderNum.toLowerCase()) {
+                const pkg = (order.packages || []).find((p: any) => String(p.packageNumber) === parsedPkgNum || p.id === packageCode || p.code === packageCode);
                 if (pkg) {
                   matchedOrder = order;
                   matchedPackage = pkg;
-                  const parts = doc.collection.split('/');
-                  matchedCompanyId = parts[1] || '';
+                  const parts = doc.collection ? doc.collection.split('/') : doc.path.split('/');
+                  matchedCompanyId = parts[1] || parts[0] || '';
                   break;
                 }
               }
@@ -587,6 +607,8 @@ function transliterate(str: string): string {
         code: p.code,
         isCurrent: p.id === matchedPackage.id,
         partsCount: (p.parts || []).length,
+        hardwareItemsCount: (p.hardwareItems || []).length,
+        hardwareItems: p.hardwareItems || [],
         customItemsNote: p.customItemsNote || '',
         isShipped: p.isShipped || false,
         parts: (p.parts || []).map((pt: any) => {
@@ -631,6 +653,7 @@ function transliterate(str: string): string {
           name: matchedPackage.name,
           type: matchedPackage.type,
           code: matchedPackage.code,
+          hardwareItems: matchedPackage.hardwareItems || [],
           customItemsNote: matchedPackage.customItemsNote,
           createdAt: matchedPackage.createdAt,
           createdByEmployeeName: matchedPackage.createdByEmployeeName,
@@ -1802,6 +1825,7 @@ function transliterate(str: string): string {
 
       const updatedData = {
         ...existingData,
+        ...req.body,
         currentStage: currentStage || existingData.currentStage,
         stageProgress: stageProgress || existingData.stageProgress,
         status: status || existingData.status,
@@ -1815,6 +1839,8 @@ function transliterate(str: string): string {
         facadesCount: facadesCount !== undefined ? facadesCount : existingData.facadesCount,
         birkaData: birkaData !== undefined ? birkaData : existingData.birkaData,
         stageScanningProgress: stageScanningProgress !== undefined ? stageScanningProgress : existingData.stageScanningProgress,
+        packages: req.body.packages !== undefined ? req.body.packages : existingData.packages,
+        kittingSpecification: req.body.kittingSpecification !== undefined ? req.body.kittingSpecification : existingData.kittingSpecification,
         updatedAt: new Date().toISOString()
       };
 

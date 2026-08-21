@@ -35,6 +35,7 @@ import {
 } from 'lucide-react';
 import { ERPCompanySettings, MachineEquipment, PackageLabelSettings, ProductionStageId, ERPNoteRule } from '../types';
 import { DEFAULT_BIRKA_COLUMN_MAPPING } from '../utils/birkaParser';
+import { DEFAULT_HARDWARE_COLUMN_MAPPING } from '../utils/hardwareParser';
 
 interface ERPSettingsViewProps {
   settings: ERPCompanySettings;
@@ -169,11 +170,56 @@ const BIRKA_PARAM_DESCRIPTIONS: { key: string; label: string; erpTarget: string;
   }
 ];
 
+const HARDWARE_PARAM_DESCRIPTIONS: { key: string; label: string; erpTarget: string; desc: string; icon: string }[] = [
+  { 
+    key: 'name', 
+    label: 'Наименование фурнитуры / позиции', 
+    erpTarget: 'Название комплектующего (Hardware Name)', 
+    desc: 'Название позиции (например: "Петля Clip top Blumotion 110°", "Направляющие Tandem 500мм", "Конфирмат 7х50").',
+    icon: '📦' 
+  },
+  { 
+    key: 'article', 
+    label: 'Артикул / Код товара', 
+    erpTarget: 'Каталожный артикул / Код поставщика (Article)', 
+    desc: 'Уникальный артикул производителя или внутренний код номенклатуры.',
+    icon: '🏷️' 
+  },
+  { 
+    key: 'quantity', 
+    label: 'Количество (шт)', 
+    erpTarget: 'Общее количество единиц (Quantity)', 
+    desc: 'Число единиц фурнитуры или крепежа в спецификации заказа.',
+    icon: '🔢' 
+  },
+  { 
+    key: 'unit', 
+    label: 'Единица измерения', 
+    erpTarget: 'Ед. изм. (Unit)', 
+    desc: 'Единица отпуска (шт, компл, м, кг, упаковка). По умолчанию "шт".',
+    icon: '📐' 
+  },
+  { 
+    key: 'category', 
+    label: 'Категория / Группа', 
+    erpTarget: 'Группа фурнитуры (Category)', 
+    desc: 'Раздел ведомости (Петли, Направляющие, Подъемники, Крепеж, Метизы, Профиль).',
+    icon: '🗂️' 
+  },
+  { 
+    key: 'notes', 
+    label: 'Примечания / Модуль', 
+    erpTarget: 'Дополнительные сведения (Notes)', 
+    desc: 'Где используется или комментарий (например: "Верхние модули", "Фасад Кухни", "Цвет: Чёрный").',
+    icon: '💬' 
+  }
+];
+
 export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
   settings,
   onSaveSettings
 }) => {
-  const [activeTab, setActiveTab] = useState<'stages' | 'birka' | 'rules' | 'tariffs' | 'additional' | 'equipment' | 'labels' | 'shifts'>('stages');
+  const [activeTab, setActiveTab] = useState<'stages' | 'birka' | 'hardware' | 'rules' | 'tariffs' | 'additional' | 'equipment' | 'labels' | 'shifts'>('stages');
 
   const defaultStageIds = ALL_STAGES_CONFIG.map(s => s.id);
   const initialStagesOrder = (() => {
@@ -191,6 +237,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
       ? settings.equipmentList 
       : DEFAULT_EQUIPMENT_LIST,
     birkaColumnMapping: settings.birkaColumnMapping || DEFAULT_BIRKA_COLUMN_MAPPING,
+    hardwareColumnMapping: settings.hardwareColumnMapping || DEFAULT_HARDWARE_COLUMN_MAPPING,
     birkaEncodingPreference: settings.birkaEncodingPreference || 'auto',
     noteRules: settings.noteRules || [
       { id: 'rule-1', pattern: 'паз', instruction: 'Требуется фрезеровка паза 4 мм под заднюю стенку ХДФ', color: 'blue' },
@@ -281,6 +328,24 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
     setFormData(prev => ({
       ...prev,
       birkaColumnMapping: { ...DEFAULT_BIRKA_COLUMN_MAPPING }
+    }));
+  };
+
+  const handleUpdateHardwareMapping = (paramKey: string, valueStr: string) => {
+    const aliases = valueStr.split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+    setFormData(prev => ({
+      ...prev,
+      hardwareColumnMapping: {
+        ...(prev.hardwareColumnMapping || DEFAULT_HARDWARE_COLUMN_MAPPING),
+        [paramKey]: aliases
+      }
+    }));
+  };
+
+  const handleResetHardwareMapping = () => {
+    setFormData(prev => ({
+      ...prev,
+      hardwareColumnMapping: { ...DEFAULT_HARDWARE_COLUMN_MAPPING }
     }));
   };
 
@@ -385,6 +450,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
           {[
             { id: 'stages', label: 'Производственные участки', desc: 'Маршруты, цеха и этапы', icon: Factory, count: enabledStagesList.length },
             { id: 'birka', label: 'Парсер бирок', desc: 'Колонки Excel / Базис / bCAD', icon: Table },
+            { id: 'hardware', label: 'Парсер фурнитуры', desc: 'Колонки ведомости комплектации', icon: Box },
             { id: 'rules', label: 'Правила примечаний', desc: 'Авто-подсветка пазов и ЧПУ', icon: Sliders, count: formData.noteRules?.length },
             { id: 'tariffs', label: 'Тарифы и расценки', desc: 'Сдельная оплата за м², кромку', icon: Coins },
             { id: 'additional', label: 'Доп. работы', desc: 'Столешницы, цоколи, штанги', icon: Wrench },
@@ -686,6 +752,99 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                           onChange={(e) => handleUpdateBirkaMapping(param.key, e.target.value)}
                           placeholder="Например: наименование, название, деталь"
                           className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 font-mono text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {currentAliases.map((alias, aIdx) => (
+                            <span 
+                              key={aIdx}
+                              className="px-2 py-0.5 rounded-md bg-white border border-slate-200 text-slate-600 font-mono text-[10px]"
+                            >
+                              {alias}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: HARDWARE PARSER MAPPING */}
+      {activeTab === 'hardware' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Box className="w-5 h-5 text-cyan-600" />
+                  <h3 className="font-bold text-slate-900 text-base">
+                    Сопоставление колонок комплектовочной ведомости (Фурнитура)
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Настройте имена колонок для файлов Excel (.xlsx), CSV, TSV, XML и Базис-Спецификации, чтобы парсер автоматически находил названия фурнитуры, артикулы, количество и категории.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleResetHardwareMapping}
+                  className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] flex items-center gap-1 transition-colors cursor-pointer"
+                  title="Сбросить все синонимы на исходные"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" /> Сбросить настройки
+                </button>
+              </div>
+            </div>
+
+            <div className="p-4 bg-cyan-50/70 rounded-2xl border border-cyan-100 flex items-start gap-3 text-xs text-cyan-950">
+              <Info className="w-5 h-5 text-cyan-600 shrink-0 mt-0.5" />
+              <div className="leading-relaxed">
+                <strong>Автоопределение фурнитуры:</strong> При загрузке комплектовочной ведомости система анализирует заголовки таблицы и автоматически относит найденные позиции к категориям (Петли, Направляющие, Подъемники, Крепеж и т.д.). Введите синонимы через запятую, чтобы подстроить систему под специфические выгрузки вашей программы.
+              </div>
+            </div>
+
+            {/* Parameters Mapping Grid */}
+            <div className="space-y-3">
+              {HARDWARE_PARAM_DESCRIPTIONS.map((param) => {
+                const currentAliases = (formData.hardwareColumnMapping && formData.hardwareColumnMapping[param.key]) 
+                  ? formData.hardwareColumnMapping[param.key]
+                  : (DEFAULT_HARDWARE_COLUMN_MAPPING[param.key] || []);
+
+                return (
+                  <div 
+                    key={param.key} 
+                    className="p-4 bg-slate-50/90 rounded-2xl border border-slate-200 hover:border-slate-300 transition-colors"
+                  >
+                    <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-3">
+                      <div className="lg:w-1/3">
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">{param.icon}</span>
+                          <span className="font-bold text-xs text-slate-900">{param.label}</span>
+                        </div>
+                        <div className="text-[11px] font-semibold text-cyan-700 mt-1">
+                          Куда в ERP: {param.erpTarget}
+                        </div>
+                        <p className="text-[10px] text-slate-500 mt-1 leading-normal">
+                          {param.desc}
+                        </p>
+                      </div>
+
+                      <div className="lg:flex-1 space-y-1.5">
+                        <label className="block text-[10px] font-bold text-slate-600 uppercase">
+                          Распознаваемые имена колонок в файле (через запятую)
+                        </label>
+                        <input
+                          type="text"
+                          value={currentAliases.join(', ')}
+                          onChange={(e) => handleUpdateHardwareMapping(param.key, e.target.value)}
+                          placeholder="Например: наименование, номенклатура, товар"
+                          className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 font-mono text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-cyan-500 outline-none"
                         />
                         <div className="flex flex-wrap gap-1 mt-1">
                           {currentAliases.map((alias, aIdx) => (
