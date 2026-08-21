@@ -70,22 +70,48 @@ export const HARDWARE_CATEGORY_KEYWORDS: Record<string, string[]> = {
   ]
 };
 
-// Patterns to exclude sheet board materials if mixed specification is uploaded
-const EXCLUDED_MATERIALS_PATTERNS = [
+// Patterns to detect sheet board materials, edging, facades, countertops
+const SHEET_AND_FACADE_PATTERNS = [
+  /кромк/i,
   /лдсп/i,
-  /мдф/i,
+  /дсп/i,
   /хдф/i,
   /двп/i,
+  /мдф/i,
+  /фасад/i,
   /фанера/i,
   /столешниц/i,
-  /кромка/i,
-  /кромкооблицов/i,
-  /плита\s+\d+/i,
-  /\d+\s*[xх*]\s*\d+\s*[xх*]\s*\d+/i // Dimensions pattern like 2800x2070x16
+  /стеновая/i,
+  /плита/i,
+  /стекло/i,
+  /зеркало/i,
+  /профиль.*ал/i,
+  /аллюминий|алюминий/i
 ];
+
+export interface HardwareParseResult {
+  fileName: string;
+  fileSize: number;
+  uploadedAt: string;
+  items: OrderHardwareItem[];
+  detectedMaterials: OrderHardwareItem[]; // Найденные листовые материалы, фасады и кромка для выбора пользователем
+  totalItemsCount: number;
+  totalQuantity: number;
+  categoriesSummary: Array<{ category: string; count: number; totalQuantity: number }>;
+  rawTextPreview?: string;
+}
 
 export function detectCategoryByName(name: string, fallbackCategory: string = 'Разное / Крепеж'): string {
   const lower = name.toLowerCase();
+  if (/фасад/i.test(lower)) {
+    return 'Фасады и двери';
+  }
+  if (/кромк/i.test(lower)) {
+    return 'Кромка и облицовка';
+  }
+  if (/лдсп|дсп|хдф|двп|мдф|фанера|столешниц|стеновая/i.test(lower)) {
+    return 'Материалы и плиты';
+  }
   for (const [catName, keywords] of Object.entries(HARDWARE_CATEGORY_KEYWORDS)) {
     for (const kw of keywords) {
       if (lower.includes(kw)) {
@@ -96,13 +122,16 @@ export function detectCategoryByName(name: string, fallbackCategory: string = '�
   return fallbackCategory;
 }
 
-export function isExcludedSheetMaterial(name: string): boolean {
+export function isMaterialOrFacadeItem(name: string): boolean {
   const lower = name.toLowerCase();
-  // If it clearly mentions hardware parts (e.g. "стяжка для столешниц"), keep it
-  if (lower.includes('стяжк') || lower.includes('петл') || lower.includes('крепеж') || lower.includes('уголок')) {
+  if (lower.includes('стяжк') || lower.includes('петл') || lower.includes('крепеж') || lower.includes('уголок') || lower.includes('ручк')) {
     return false;
   }
-  return EXCLUDED_MATERIALS_PATTERNS.some(pat => pat.test(lower));
+  return SHEET_AND_FACADE_PATTERNS.some(pat => pat.test(lower));
+}
+
+export function isExcludedSheetMaterial(name: string): boolean {
+  return isMaterialOrFacadeItem(name);
 }
 
 /**
@@ -148,7 +177,7 @@ export async function parseHardwareFile(
 
   // 2. Process CSV, TSV, TXT, or DBF files
   if (rawItems.length === 0) {
-    const decoded = smartDecodeFile(uint8, fileName);
+    const decoded = await smartDecodeFile(uint8);
     rawTextPreview = decoded.text.slice(0, 1000);
 
     // Try CSV / TSV with PapaParse
@@ -167,7 +196,16 @@ export async function parseHardwareFile(
   }
 
   // Deduplicate and aggregate identical hardware items (same name & article)
-  const aggregatedMap = new Map<string, {
+  const aggregatedHardwareMap = new Map<string, {
+    article?: string;
+    name: string;
+    quantity: number;
+    unit: string;
+    category: string;
+    notes?: string;
+  }>();
+
+  const aggregatedMaterialsMap = new Map<string, {
     article?: string;
     name: string;
     quantity: number;
@@ -180,9 +218,7 @@ export async function parseHardwareFile(
     const cleanName = item.name.trim();
     if (!cleanName || cleanName.length < 2) continue;
 
-    // Filter out sheet materials if accidentally included
-    if (isExcludedSheetMaterial(cleanName)) continue;
-
+    const isMaterial = isMaterialOrFacadeItem(cleanName);
     const cleanArticle = (item.article || '').trim();
     const key = `${cleanArticle}:::${cleanName.toLowerCase()}`;
     const qty = Math.max(1, Number(item.quantity) || 1);
@@ -190,12 +226,14 @@ export async function parseHardwareFile(
     const category = item.category?.trim() || detectCategoryByName(cleanName);
     const notes = item.notes?.trim();
 
-    if (aggregatedMap.has(key)) {
-      const existing = aggregatedMap.get(key)!;
+    const targetMap = isMaterial ? aggregatedMaterialsMap : aggregatedHardwareMap;
+
+    if (targetMap.has(key)) {
+      const existing = targetMap.get(key)!;
       existing.quantity += qty;
       if (!existing.notes && notes) existing.notes = notes;
     } else {
-      aggregatedMap.set(key, {
+      targetMap.set(key, {
         article: cleanArticle || undefined,
         name: cleanName,
         quantity: qty,
@@ -206,9 +244,20 @@ export async function parseHardwareFile(
     }
   }
 
-  // Transform into final OrderHardwareItem array
-  const items: OrderHardwareItem[] = Array.from(aggregatedMap.values()).map((val, idx) => ({
+  // Transform into final OrderHardwareItem arrays
+  const items: OrderHardwareItem[] = Array.from(aggregatedHardwareMap.values()).map((val, idx) => ({
     id: `hw-${Date.now()}-${idx + 1}`,
+    article: val.article,
+    name: val.name,
+    quantity: val.quantity,
+    unit: val.unit,
+    category: val.category,
+    packedQuantity: 0,
+    notes: val.notes
+  }));
+
+  const detectedMaterials: OrderHardwareItem[] = Array.from(aggregatedMaterialsMap.values()).map((val, idx) => ({
+    id: `mat-${Date.now()}-${idx + 1}`,
     article: val.article,
     name: val.name,
     quantity: val.quantity,
@@ -244,6 +293,7 @@ export async function parseHardwareFile(
     fileSize,
     uploadedAt: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('ru-RU'),
     items,
+    detectedMaterials,
     totalItemsCount: items.length,
     totalQuantity,
     categoriesSummary,

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Settings, 
   Factory, 
@@ -14,7 +14,8 @@ import {
   Info,
   Printer,
   QrCode,
-  Package,
+  MapPin,
+  Map as MapIcon,
   Wrench,
   Box,
   Truck,
@@ -31,14 +32,17 @@ import {
   ArrowDown,
   ChevronUp,
   ChevronDown,
-  Sparkles
+  Sparkles,
+  Search,
+  Package
 } from 'lucide-react';
-import { ERPCompanySettings, MachineEquipment, PackageLabelSettings, ProductionStageId, ERPNoteRule } from '../types';
+import { ERPCompanySettings, MachineEquipment, PackageLabelSettings, ProductionStageId, ERPNoteRule, ProductionOrder } from '../types';
 import { DEFAULT_BIRKA_COLUMN_MAPPING } from '../utils/birkaParser';
 import { DEFAULT_HARDWARE_COLUMN_MAPPING } from '../utils/hardwareParser';
 
 interface ERPSettingsViewProps {
   settings: ERPCompanySettings;
+  orders?: ProductionOrder[];
   onSaveSettings: (settings: ERPCompanySettings) => void;
 }
 
@@ -217,9 +221,10 @@ const HARDWARE_PARAM_DESCRIPTIONS: { key: string; label: string; erpTarget: stri
 
 export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
   settings,
+  orders = [],
   onSaveSettings
 }) => {
-  const [activeTab, setActiveTab] = useState<'stages' | 'birka' | 'hardware' | 'rules' | 'tariffs' | 'additional' | 'equipment' | 'labels' | 'shifts'>('stages');
+  const [activeTab, setActiveTab] = useState<'stages' | 'birka' | 'hardware' | 'warehouse_cells' | 'rules' | 'tariffs' | 'additional' | 'equipment' | 'labels' | 'shifts'>('stages');
 
   const defaultStageIds = ALL_STAGES_CONFIG.map(s => s.id);
   const initialStagesOrder = (() => {
@@ -349,6 +354,98 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
     }));
   };
 
+  // --- WAREHOUSE CELLS MANAGEMENT ---
+  const [cellSearch, setCellSearch] = useState('');
+  const [cellCategoryFilter, setCellCategoryFilter] = useState('all');
+  const [newItemName, setNewItemName] = useState('');
+  const [newItemArticle, setNewItemArticle] = useState('');
+  const [newItemCategory, setNewItemCategory] = useState('Петли и доводчики');
+  const [newItemCell, setNewItemCell] = useState('');
+  const [showAddForm, setShowAddForm] = useState(false);
+
+  // Aggregate unique items from catalog + loaded order hardware items
+  const aggregatedWarehouseItems = useMemo<{ id: string; name: string; article?: string; category?: string; storageCell: string }[]>(() => {
+    const map = new Map<string, { id: string; name: string; article?: string; category?: string; storageCell: string }>();
+
+    // 1. Existing catalog in settings
+    (formData.warehouseItemsCatalog || []).forEach(it => {
+      const key = `${it.article || ''}:::${it.name.toLowerCase().trim()}`;
+      map.set(key, { ...it });
+    });
+
+    // 2. Scan all orders hardware items
+    orders.forEach(order => {
+      if (order.hardwareData?.items) {
+        order.hardwareData.items.forEach(hw => {
+          const key = `${hw.article || ''}:::${hw.name.toLowerCase().trim()}`;
+          const existingCell = formData.warehouseLocations?.[key] || '';
+          if (!map.has(key)) {
+            map.set(key, {
+              id: `wh-${key.replace(/[^a-z0-9]/gi, '_')}`,
+              name: hw.name,
+              article: hw.article,
+              category: hw.category || 'Разное / Крепеж',
+              storageCell: existingCell
+            });
+          } else {
+            // Keep cell if present
+            const curr = map.get(key)!;
+            if (!curr.storageCell && existingCell) {
+              curr.storageCell = existingCell;
+            }
+          }
+        });
+      }
+    });
+
+    return Array.from(map.values());
+  }, [formData.warehouseItemsCatalog, formData.warehouseLocations, orders]);
+
+  const handleUpdateItemCell = (itemKey: string, itemName: string, itemArticle: string | undefined, itemCategory: string | undefined, newCell: string) => {
+    const cleanCell = newCell.trim().toUpperCase();
+    const updatedLocations = {
+      ...(formData.warehouseLocations || {}),
+      [itemKey]: cleanCell
+    };
+
+    const existingCatalog = [...(formData.warehouseItemsCatalog || [])];
+    const catIndex = existingCatalog.findIndex(c => `${c.article || ''}:::${c.name.toLowerCase().trim()}` === itemKey);
+
+    if (catIndex >= 0) {
+      existingCatalog[catIndex] = {
+        ...existingCatalog[catIndex],
+        storageCell: cleanCell
+      };
+    } else {
+      existingCatalog.push({
+        id: `wh-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+        name: itemName,
+        article: itemArticle,
+        category: itemCategory || 'Разное / Крепеж',
+        storageCell: cleanCell
+      });
+    }
+
+    setFormData({
+      ...formData,
+      warehouseLocations: updatedLocations,
+      warehouseItemsCatalog: existingCatalog
+    });
+  };
+
+  const handleAddNewWarehouseItem = () => {
+    if (!newItemName.trim()) return;
+    const cleanName = newItemName.trim();
+    const cleanArticle = newItemArticle.trim() || undefined;
+    const key = `${cleanArticle || ''}:::${cleanName.toLowerCase()}`;
+    handleUpdateItemCell(key, cleanName, cleanArticle, newItemCategory, newItemCell);
+
+    setNewItemName('');
+    setNewItemArticle('');
+    setNewItemCell('');
+    setShowAddForm(false);
+  };
+
   const applyPreset = (preset: 'basis' | 'bcad' | 'k3' | 'excel') => {
     let mapping: Record<string, string[]> = { ...DEFAULT_BIRKA_COLUMN_MAPPING };
     if (preset === 'basis') {
@@ -451,6 +548,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
             { id: 'stages', label: 'Производственные участки', desc: 'Маршруты, цеха и этапы', icon: Factory, count: enabledStagesList.length },
             { id: 'birka', label: 'Парсер бирок', desc: 'Колонки Excel / Базис / bCAD', icon: Table },
             { id: 'hardware', label: 'Парсер фурнитуры', desc: 'Колонки ведомости комплектации', icon: Box },
+            { id: 'warehouse_cells', label: 'Ячейки хранения', desc: 'Адресное хранение склада', icon: MapPin },
             { id: 'rules', label: 'Правила примечаний', desc: 'Авто-подсветка пазов и ЧПУ', icon: Sliders, count: formData.noteRules?.length },
             { id: 'tariffs', label: 'Тарифы и расценки', desc: 'Сдельная оплата за м², кромку', icon: Coins },
             { id: 'additional', label: 'Доп. работы', desc: 'Столешницы, цоколи, штанги', icon: Wrench },
@@ -866,7 +964,259 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
         </div>
       )}
 
-      {/* TAB 3: NOTE RULES */}
+      {/* TAB 3: WAREHOUSE STORAGE CELLS */}
+      {activeTab === 'warehouse_cells' && (
+        <div className="space-y-6">
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-emerald-600" />
+                  <h3 className="font-bold text-slate-900 text-base">
+                    Справочник уникальной фурнитуры и ячейки хранения на складе
+                  </h3>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Адресное хранение. Укажите стеллаж, ящик или ячейку для позиций фурнитуры. На участке комплектовки сотрудник увидит точную подсказку 📍, где лежит деталь.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowAddForm(!showAddForm)}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center gap-1.5 cursor-pointer shrink-0 self-start sm:self-auto"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Добавить номенклатуру</span>
+              </button>
+            </div>
+
+            {/* Quick Stats Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200/80">
+                <div className="text-[10px] font-bold text-slate-400 uppercase">Всего наименований в базе</div>
+                <div className="text-xl font-black text-slate-900 font-mono mt-0.5">
+                  {aggregatedWarehouseItems.length} <span className="text-xs font-normal text-slate-500">поз.</span>
+                </div>
+              </div>
+              <div className="p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200/80">
+                <div className="text-[10px] font-bold text-emerald-800 uppercase">Закреплено за ячейками</div>
+                <div className="text-xl font-black text-emerald-950 font-mono mt-0.5">
+                  {aggregatedWarehouseItems.filter(i => !!i.storageCell).length} <span className="text-xs font-normal text-emerald-700">поз.</span>
+                </div>
+              </div>
+              <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200/80">
+                <div className="text-[10px] font-bold text-amber-800 uppercase">Без ячейки (требуют указания)</div>
+                <div className="text-xl font-black text-amber-950 font-mono mt-0.5">
+                  {aggregatedWarehouseItems.filter(i => !i.storageCell).length} <span className="text-xs font-normal text-amber-700">поз.</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Add New Item Modal / Collapsible Form */}
+            {showAddForm && (
+              <div className="p-5 rounded-2xl bg-emerald-50/80 border border-emerald-200 space-y-4 animate-fade-in">
+                <div className="font-bold text-xs text-emerald-950 flex items-center gap-2">
+                  <Plus className="w-4 h-4 text-emerald-600" />
+                  <span>Добавить новую позицию фурнитуры вручную</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                      Наименование товара *
+                    </label>
+                    <input
+                      type="text"
+                      value={newItemName}
+                      onChange={(e) => setNewItemName(e.target.value)}
+                      placeholder="например, Петля Blum Clip Top 110°"
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                      Артикул
+                    </label>
+                    <input
+                      type="text"
+                      value={newItemArticle}
+                      onChange={(e) => setNewItemArticle(e.target.value)}
+                      placeholder="например, 71T3550"
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-mono font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                      Категория
+                    </label>
+                    <select
+                      value={newItemCategory}
+                      onChange={(e) => setNewItemCategory(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="Петли и доводчики">Петли и доводчики</option>
+                      <option value="Направляющие и ящики">Направляющие и ящики</option>
+                      <option value="Подъемные механизмы">Подъемные механизмы</option>
+                      <option value="Крепеж и метизы">Крепеж и метизы</option>
+                      <option value="Ручки и крючки">Ручки и крючки</option>
+                      <option value="Опоры и стяжки">Опоры и стяжки</option>
+                      <option value="Разное / Крепеж">Разное / Крепеж</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                      Ячейка на складе
+                    </label>
+                    <input
+                      type="text"
+                      value={newItemCell}
+                      onChange={(e) => setNewItemCell(e.target.value)}
+                      placeholder="например, A-12, Стеллаж 3"
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-mono font-black text-xs text-emerald-900 outline-none focus:ring-2 focus:ring-emerald-500 uppercase"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddForm(false)}
+                    className="px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 transition-colors"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleAddNewWarehouseItem}
+                    disabled={!newItemName.trim()}
+                    className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-black text-xs shadow-sm transition-all"
+                  >
+                    Сохранить в каталог
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Filter and Search Bar */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={cellSearch}
+                  onChange={(e) => setCellSearch(e.target.value)}
+                  placeholder="Поиск номенклатуры по названию, артикулу или ячейке (A-12)..."
+                  className="w-full pl-9 pr-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 font-bold text-slate-800 text-xs focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+
+              <select
+                value={cellCategoryFilter}
+                onChange={(e) => setCellCategoryFilter(e.target.value)}
+                className="px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 font-bold text-slate-800 text-xs focus:ring-2 focus:ring-emerald-500 outline-none sm:w-60"
+              >
+                <option value="all">Все категории ({aggregatedWarehouseItems.length})</option>
+                <option value="unassigned">⚠️ Без назначенной ячейки</option>
+                <option value="Петли и доводчики">Петли и доводчики</option>
+                <option value="Направляющие и ящики">Направляющие и ящики</option>
+                <option value="Подъемные механизмы">Подъемные механизмы</option>
+                <option value="Крепеж и метизы">Крепеж и метизы</option>
+                <option value="Ручки и крючки">Ручки и крючки</option>
+                <option value="Опоры и стяжки">Опоры и стяжки</option>
+                <option value="Разное / Крепеж">Разное / Крепеж</option>
+              </select>
+            </div>
+
+            {/* Items Table */}
+            <div className="border border-slate-200/90 rounded-2xl overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-600 font-bold text-[10px] uppercase">
+                      <th className="py-3 px-4 w-12 text-center">№</th>
+                      <th className="py-3 px-4">Номенклатура / Категория</th>
+                      <th className="py-3 px-4 w-36">Артикул</th>
+                      <th className="py-3 px-4 w-60">Ячейка хранения склада 📍</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {aggregatedWarehouseItems.filter(item => {
+                      const matchesCategory = cellCategoryFilter === 'all' 
+                        || (cellCategoryFilter === 'unassigned' && !item.storageCell)
+                        || item.category === cellCategoryFilter;
+                      
+                      const query = cellSearch.toLowerCase().trim();
+                      const matchesSearch = !query 
+                        || item.name.toLowerCase().includes(query)
+                        || (item.article && item.article.toLowerCase().includes(query))
+                        || (item.storageCell && item.storageCell.toLowerCase().includes(query));
+
+                      return matchesCategory && matchesSearch;
+                    }).map((item, idx) => {
+                      const itemKey = `${item.article || ''}:::${item.name.toLowerCase().trim()}`;
+                      
+                      return (
+                        <tr key={item.id || idx} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="py-3 px-4 font-mono font-bold text-slate-400 text-center text-[11px]">
+                            {idx + 1}
+                          </td>
+
+                          <td className="py-3 px-4">
+                            <div className="font-bold text-slate-900 text-xs">{item.name}</div>
+                            <div className="text-[10px] text-slate-500 font-medium mt-0.5">
+                              {item.category || 'Разное / Крепеж'}
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-4 font-mono font-bold text-slate-700">
+                            {item.article ? (
+                              <span className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200">
+                                {item.article}
+                              </span>
+                            ) : (
+                              <span className="text-slate-300 font-normal italic">—</span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-4">
+                            <div className="relative flex items-center gap-1.5">
+                              <MapPin className={`w-4 h-4 shrink-0 ${item.storageCell ? 'text-emerald-600' : 'text-slate-300'}`} />
+                              <input
+                                type="text"
+                                value={item.storageCell}
+                                onChange={(e) => {
+                                  handleUpdateItemCell(
+                                    itemKey,
+                                    item.name,
+                                    item.article,
+                                    item.category,
+                                    e.target.value
+                                  );
+                                }}
+                                placeholder="например: A-12"
+                                className={`w-full px-3 py-1.5 rounded-xl border font-mono font-black text-xs uppercase outline-none focus:ring-2 focus:ring-emerald-500 transition-all ${
+                                  item.storageCell 
+                                    ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950 font-bold' 
+                                    : 'bg-white border-slate-200 text-slate-800'
+                                }`}
+                              />
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: NOTE RULES */}
       {activeTab === 'rules' && (
         <div className="space-y-6">
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-6">

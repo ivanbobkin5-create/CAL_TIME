@@ -354,6 +354,10 @@ export interface ERPCompanySettings {
   hardwareColumnMapping?: Record<string, string[]>; // Кастомный маппинг столбцов ведомости фурнитуры (наименование, артикул, количество, ед. изм., категория, примечания)
   packageLabelSettings?: PackageLabelSettings; // Настройки размера и формата этикеток упаковок (по умолч. 120x75 мм)
   
+  // Адресное хранение ячеек склада для фурнитуры
+  warehouseLocations?: Record<string, string>; // { [itemArticleOrNameLower]: "A-12" }
+  warehouseItemsCatalog?: Array<{ id: string; name: string; article?: string; category?: string; storageCell: string; updatedAt?: string }>;
+
   // Сопоставление стадий ERP и Битрикс24
   bitrix24StageMapping?: Record<string, string>;
   bitrix24RestoreAction?: 'do_nothing' | 'restore_to_stage';

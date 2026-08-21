@@ -19,7 +19,8 @@ import {
   Layers, 
   Info, 
   CheckSquare, 
-  Square 
+  Square,
+  MapPin 
 } from 'lucide-react';
 import { 
   ProductionOrder, 
@@ -195,10 +196,6 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
 
   // Create Package from draft or manual description
   const handleCreatePackage = () => {
-    const cleanName = packageName.trim() || `Место ${nextNumber} (Фурнитура)`;
-    const newPkgId = `pkg-kit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
-    const uniqueCode = `PKG-${order.orderNumber}-KIT-${nextNumber}-${Date.now().toString().slice(-4)}`;
-
     // Build structured hardware items list from draft
     const packedItemsList: OrderPackageHardwareItem[] = [];
     const formattedNotesLines: string[] = [];
@@ -224,6 +221,16 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
     if (customNotes.trim()) {
       formattedNotesLines.push(`Примечание: ${customNotes.trim()}`);
     }
+
+    if (packedItemsList.length === 0 && !customNotes.trim()) {
+      setUploadError('Нельзя создать пустое место! Отметьте позиции фурнитуры кнопками "+" для укладки в коробку.');
+      setTimeout(() => setUploadError(null), 4000);
+      return;
+    }
+
+    const cleanName = packageName.trim() || `Место ${nextNumber} (Фурнитура)`;
+    const newPkgId = `pkg-kit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+    const uniqueCode = `PKG-${order.orderNumber}-KIT-${nextNumber}-${Date.now().toString().slice(-4)}`;
 
     const itemsSummary = formattedNotesLines.join('\n') || customNotes.trim() || 'Комплект мебельной фурнитуры и крепежа';
 
@@ -556,30 +563,42 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
                       const inDraft = draftBoxItems[item.id] || 0;
                       const isComplete = remaining === 0;
 
-                      return (
-                        <div
-                          key={item.id}
-                          className={`p-3.5 rounded-2xl border transition-all ${
-                            isComplete 
-                              ? 'bg-emerald-50/50 border-emerald-200/80 opacity-75'
-                              : inDraft > 0
-                              ? 'bg-cyan-50/80 border-cyan-300 ring-1 ring-cyan-400 shadow-xs'
-                              : 'bg-slate-50 hover:bg-white border-slate-200/80'
-                          }`}
-                        >
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                            {/* Info */}
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                {item.article && (
-                                  <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 text-slate-700 font-mono font-bold text-[10px]">
-                                    {item.article}
+                      return (() => {
+                        const itemKey = `${item.article || ''}:::${item.name.toLowerCase().trim()}`;
+                        const storageCell = settings?.warehouseLocations?.[itemKey] || 
+                          settings?.warehouseItemsCatalog?.find(c => `${c.article || ''}:::${c.name.toLowerCase().trim()}` === itemKey)?.storageCell;
+
+                        return (
+                          <div
+                            key={item.id}
+                            className={`p-3.5 rounded-2xl border transition-all ${
+                              isComplete 
+                                ? 'bg-emerald-50/50 border-emerald-200/80 opacity-75'
+                                : inDraft > 0
+                                ? 'bg-cyan-50/80 border-cyan-300 ring-1 ring-cyan-400 shadow-xs'
+                                : 'bg-slate-50 hover:bg-white border-slate-200/80'
+                            }`}
+                          >
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                              {/* Info */}
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {item.article && (
+                                    <span className="px-2 py-0.5 rounded-md bg-white border border-slate-200 text-slate-700 font-mono font-bold text-[10px]">
+                                      {item.article}
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                                    {item.category || 'Фурнитура'}
                                   </span>
-                                )}
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                                  {item.category || 'Фурнитура'}
-                                </span>
-                              </div>
+
+                                  {storageCell && (
+                                    <span className="px-2 py-0.5 rounded-md bg-emerald-100/90 text-emerald-950 border border-emerald-300/80 font-mono font-black text-[10px] flex items-center gap-1 shadow-2xs">
+                                      <MapPin className="w-3 h-3 text-emerald-700 shrink-0" />
+                                      <span>Ячейка {storageCell}</span>
+                                    </span>
+                                  )}
+                                </div>
 
                               <div className={`font-black text-xs sm:text-sm mt-0.5 ${isComplete ? 'text-emerald-950 line-through' : 'text-slate-900'}`}>
                                 {item.name}
@@ -652,7 +671,7 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
                           </div>
                         </div>
                       );
-                    })
+                    })()})
                   )}
                 </div>
               </div>

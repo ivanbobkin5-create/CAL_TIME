@@ -1393,6 +1393,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
               {activeSection === 'settings' && (
                 <ERPSettingsView 
                   settings={settings} 
+                  orders={orders}
                   onSaveSettings={handleSaveSettings} 
                 />
               )}

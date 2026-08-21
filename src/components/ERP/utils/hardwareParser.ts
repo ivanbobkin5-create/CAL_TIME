@@ -231,7 +231,7 @@ export async function parseHardwareFile(
     rawTextPreview = rows.slice(0, 8).map(r => r.join(' | ')).join('\n');
   } else {
     // Text / CSV / TSV / XML Decoding
-    const decoded = smartDecodeFile(uint8, fileName);
+    const decoded = await smartDecodeFile(uint8);
     rawTextPreview = decoded.text.substring(0, 1000);
 
     if (fileName.endsWith('.xml') || decoded.text.trim().startsWith('<?xml') || decoded.text.trim().startsWith('<')) {
