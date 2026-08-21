@@ -45,7 +45,68 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
   const totalEdgeInWork = activeOrders.reduce((sum, o) => sum + (o.totalEdgeM || 0), 0);
   const totalPartsInWork = activeOrders.reduce((sum, o) => sum + (o.partsCount || 0), 0);
 
-  const activeEmployeesCount = employees.filter(e => e.status === 'active').length;
+  // Filter out superadmins/non-production employees if applicable
+  const validEmployees = employees.filter(e => 
+    e.email?.toLowerCase() !== 'lk.ivanbobkin@gmail.com' &&
+    !(e as any).isSuperAdmin &&
+    e.role !== 'superadmin' &&
+    e.productionRole !== 'superadmin'
+  );
+
+  // Today's date YYYY-MM-DD
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  // Check schedule from localStorage if exists
+  let scheduledActiveEmployeesCount = 0;
+  let scheduledEmployeesToday: ERPEmployee[] = [];
+  try {
+    const savedSchedule = localStorage.getItem('erp_production_schedule_grid_v1');
+    if (savedSchedule) {
+      const parsedSchedule = JSON.parse(savedSchedule);
+      validEmployees.forEach(emp => {
+        const key = `${emp.id}_${todayStr}`;
+        const entry = parsedSchedule[key];
+        if (entry && (entry.type === 'work_12' || entry.type === 'work_8' || entry.type === 'night_12')) {
+          scheduledActiveEmployeesCount++;
+          scheduledEmployeesToday.push(emp);
+        }
+      });
+    }
+  } catch (e) {}
+
+  // Active production employees on shift
+  const activeEmployees = validEmployees.filter(e => e.status === 'active');
+  const activeShiftCount = scheduledActiveEmployeesCount > 0 
+    ? scheduledActiveEmployeesCount 
+    : (activeEmployees.length > 0 ? activeEmployees.length : 0);
+
+  // Shift Master
+  const masterEmployee = scheduledEmployeesToday.find(e => 
+    e.department === 'management' || 
+    e.role?.toLowerCase().includes('начальник') || 
+    e.role?.toLowerCase().includes('мастер')
+  ) || activeEmployees.find(e => 
+    e.department === 'management' || 
+    e.role?.toLowerCase().includes('начальник') || 
+    e.role?.toLowerCase().includes('мастер')
+  ) || (activeEmployees.length > 0 ? activeEmployees[0] : null);
+
+  // Calculate actual stage load based on real orders in progress
+  const stageStats = {
+    cutting: orders.filter(o => o.currentStage === 'cutting' && o.status === 'in_progress'),
+    edging: orders.filter(o => o.currentStage === 'edging' && o.status === 'in_progress'),
+    cnc: orders.filter(o => o.currentStage === 'cnc' && o.status === 'in_progress'),
+    facades: orders.filter(o => o.currentStage === 'facades' && o.status === 'in_progress'),
+    packaging: orders.filter(o => (o.currentStage === 'packing' || o.currentStage === 'assembly' || o.currentStage === 'kitting' || o.currentStage === 'qc') && o.status === 'in_progress')
+  };
+
+  const getStageLoadPercent = (count: number, capacity: number = 6) => {
+    if (count === 0) return 0;
+    return Math.min(100, Math.round((count / capacity) * 100));
+  };
+
+  // Today completed output in m2
+  const completedTodayM2 = completedOrders.reduce((sum, o) => sum + (o.totalAreaM2 || 0), 0);
 
   return (
     <div className="space-y-6">
@@ -61,7 +122,7 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
               Оперативная сводка цеха
             </h2>
             <p className="text-sm text-slate-300 max-w-xl leading-relaxed">
-              В работе <strong className="text-white font-bold">{activeOrders.length} заказов</strong> общей площадью {totalAreaInWork.toFixed(1)} м² деталей. Все производственные участки функционируют в штатном режиме.
+              В работе <strong className="text-white font-bold">{activeOrders.length} заказов</strong> общей площадью {totalAreaInWork.toFixed(1)} м² деталей.
             </p>
           </div>
 
@@ -95,7 +156,7 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
           <div className="text-3xl font-black text-slate-900 mb-1">{activeOrders.length}</div>
           <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-semibold">
             <TrendingUp className="w-3.5 h-3.5" />
-            <span>Готово за смену: {completedOrders.length}</span>
+            <span>Готово заказов: {completedOrders.length}</span>
           </div>
         </div>
 
@@ -125,7 +186,7 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
           <div className="text-3xl font-black text-slate-900 mb-1">{totalEdgeInWork.toFixed(0)} <span className="text-lg font-bold text-slate-400">п.м.</span></div>
           <div className="flex items-center gap-1.5 text-xs text-amber-600 font-semibold">
             <Clock className="w-3.5 h-3.5" />
-            <span>Норматив: ~4.2 часа</span>
+            <span>Объем кромки в заказах</span>
           </div>
         </div>
 
@@ -137,10 +198,10 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
               <Users className="w-5 h-5" />
             </div>
           </div>
-          <div className="text-3xl font-black text-slate-900 mb-1">{activeEmployeesCount} <span className="text-lg font-bold text-slate-400">мастеров</span></div>
+          <div className="text-3xl font-black text-slate-900 mb-1">{activeShiftCount} <span className="text-lg font-bold text-slate-400">чел.</span></div>
           <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-semibold">
             <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>Штат укомплектован</span>
+            <span>{activeShiftCount > 0 ? 'Смена укомплектована' : 'Смена не сформирована'}</span>
           </div>
         </div>
       </div>
@@ -222,16 +283,41 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
 
           {/* Department Pipeline Workload */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm">
-            <h3 className="font-bold text-slate-900 text-base mb-1">Загрузка технологических участков</h3>
+            <h3 className="font-bold text-slate-900 text-base mb-1">Загрузка участков</h3>
             <p className="text-xs text-slate-400 mb-6">Текущая загрузка станков и пропускная способность</p>
 
             <div className="space-y-4">
               {[
-                { name: '1. Участок раскроя (Форматно-раскроечный / ЧПУ раскрой)', load: 78, ordersCount: 5, color: 'bg-blue-600' },
-                { name: '2. Участок кромления (Кромкооблицовочный станок)', load: 64, ordersCount: 4, color: 'bg-indigo-600' },
-                { name: '3. Участок присадки (Сверлильно-присадочный центр ЧПУ)', load: 85, ordersCount: 6, color: 'bg-purple-600' },
-                { name: '4. Фасадный и покрасочный цех', load: 45, ordersCount: 2, color: 'bg-amber-600' },
-                { name: '5. Участок контрольной сборки и упаковки', load: 30, ordersCount: 3, color: 'bg-emerald-600' }
+                { 
+                  name: '1. Участок раскроя (Форматно-раскроечный / ЧПУ раскрой)', 
+                  ordersCount: stageStats.cutting.length,
+                  load: getStageLoadPercent(stageStats.cutting.length, 5), 
+                  color: 'bg-blue-600' 
+                },
+                { 
+                  name: '2. Участок кромления (Кромкооблицовочный станок)', 
+                  ordersCount: stageStats.edging.length,
+                  load: getStageLoadPercent(stageStats.edging.length, 5), 
+                  color: 'bg-indigo-600' 
+                },
+                { 
+                  name: '3. Участок присадки (Сверлильно-присадочный центр ЧПУ)', 
+                  ordersCount: stageStats.cnc.length,
+                  load: getStageLoadPercent(stageStats.cnc.length, 5), 
+                  color: 'bg-purple-600' 
+                },
+                { 
+                  name: '4. Фасадный и покрасочный цех', 
+                  ordersCount: stageStats.facades.length,
+                  load: getStageLoadPercent(stageStats.facades.length, 3), 
+                  color: 'bg-amber-600' 
+                },
+                { 
+                  name: '5. Участок контрольной сборки и упаковки', 
+                  ordersCount: stageStats.packaging.length,
+                  load: getStageLoadPercent(stageStats.packaging.length, 4), 
+                  color: 'bg-emerald-600' 
+                }
               ].map((dep, idx) => (
                 <div key={idx} className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100">
                   <div className="flex items-center justify-between text-xs font-bold text-slate-800 mb-2">
@@ -253,31 +339,39 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-slate-900 text-base">Текущая смена</h3>
-              <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                Активна
+              <span className={`px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1 ${
+                activeShiftCount > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'
+              }`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${activeShiftCount > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                {activeShiftCount > 0 ? 'Активна' : 'Не назначена'}
               </span>
             </div>
 
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 mb-4">
-              <div className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Мастер смены</div>
-              <div className="font-bold text-slate-900 text-sm">
-                {employees[0]?.name || "Иванов Сергей (Начальник производства)"}
+            {masterEmployee ? (
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 mb-4">
+                <div className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Мастер смены</div>
+                <div className="font-bold text-slate-900 text-sm">
+                  {masterEmployee.name}
+                </div>
+                <div className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
+                  <Clock className="w-3.5 h-3.5 text-slate-400" />
+                  08:00 — 20:00 (Дневная смена)
+                </div>
               </div>
-              <div className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-slate-400" />
-                08:00 — 20:00 (Дневная смена)
+            ) : (
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 mb-4 text-center">
+                <div className="text-xs text-slate-400 font-medium">Нет назначенных сотрудников на сегодня</div>
               </div>
-            </div>
+            )}
 
             <div className="space-y-2 mb-5">
               <div className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100">
                 <span className="text-slate-500">Мастеров на линии:</span>
-                <span className="font-bold text-slate-800">{activeEmployeesCount} чел.</span>
+                <span className="font-bold text-slate-800">{activeShiftCount} чел.</span>
               </div>
               <div className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100">
                 <span className="text-slate-500">Выработка за сегодня:</span>
-                <span className="font-bold text-emerald-600">38.4 м²</span>
+                <span className="font-bold text-emerald-600">{completedTodayM2.toFixed(1)} м²</span>
               </div>
               <div className="flex items-center justify-between text-xs py-1.5">
                 <span className="text-slate-500">Брак / Рекламации:</span>

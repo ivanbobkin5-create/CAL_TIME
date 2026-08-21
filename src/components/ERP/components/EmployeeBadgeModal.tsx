@@ -124,28 +124,46 @@ export const EmployeeBadgeModal: React.FC<EmployeeBadgeModalProps> = ({
       {/* Print styles */}
       <style>{`
         @media print {
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #fff !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
           body * {
-            visibility: hidden;
+            visibility: hidden !important;
           }
           #printable-employee-badge, #printable-employee-badge * {
-            visibility: visible;
+            visibility: visible !important;
           }
           #printable-employee-badge {
-            position: absolute;
-            left: 50%;
-            top: 50%;
-            transform: translate(-50%, -50%);
+            position: absolute !important;
+            left: 50% !important;
+            top: 20mm !important;
+            transform: translateX(-50%) !important;
             width: 85mm !important;
-            height: 120mm !important;
+            max-width: 85mm !important;
+            min-height: 130mm !important;
+            height: auto !important;
             box-shadow: none !important;
-            border: 1.5px solid #000 !important;
-            padding: 5mm !important;
-            margin: 0 !important;
-            background: white !important;
-            color: black !important;
+            border: 2px solid #0f172a !important;
+            border-radius: 6mm !important;
+            padding: 6mm !important;
+            margin: 0 auto !important;
+            background: #0f172a !important;
+            color: #ffffff !important;
+            box-sizing: border-box !important;
+            page-break-inside: avoid !important;
+            page-break-after: avoid !important;
+            overflow: visible !important;
           }
           .no-print {
             display: none !important;
+          }
+          @page {
+            size: auto;
+            margin: 0mm;
           }
         }
       `}</style>

@@ -269,32 +269,55 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
       {/* Global Print Styles for Perfect Thermal Label Output */}
       <style>{`
         @media print {
-          body * {
-            visibility: hidden;
-          }
-          #printable-package-label, #printable-package-label * {
-            visibility: visible;
-          }
-          #printable-package-label {
-            position: fixed;
-            left: 0;
-            top: 0;
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #fff !important;
             width: ${widthMm}mm !important;
             height: ${heightMm}mm !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          body * {
+            visibility: hidden !important;
+          }
+          #package-label-modal-backdrop, #package-label-modal-content {
+            background: transparent !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            border: none !important;
+            box-shadow: none !important;
+            position: static !important;
+          }
+          #printable-package-label, #printable-package-label * {
+            visibility: visible !important;
+          }
+          #printable-package-label {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: ${widthMm}mm !important;
+            height: ${heightMm}mm !important;
+            min-height: ${heightMm}mm !important;
             max-height: ${heightMm}mm !important;
             margin: 0 !important;
-            padding: 4mm !important;
-            border: 2px solid black !important;
+            padding: 3mm !important;
+            border: 2px solid #000 !important;
             border-radius: 0 !important;
             box-shadow: none !important;
-            background: white !important;
-            color: black !important;
+            background: #fff !important;
+            color: #000 !important;
             box-sizing: border-box !important;
-            page-break-after: always;
+            font-family: Arial, Helvetica, sans-serif !important;
+            -webkit-font-smoothing: antialiased !important;
+            text-rendering: optimizeLegibility !important;
+            page-break-after: avoid !important;
+            page-break-inside: avoid !important;
+            overflow: hidden !important;
           }
           @page {
             size: ${widthMm}mm ${heightMm}mm;
-            margin: 0;
+            margin: 0mm;
           }
         }
       `}</style>
