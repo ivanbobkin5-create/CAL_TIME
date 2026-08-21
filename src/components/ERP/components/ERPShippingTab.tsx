@@ -20,30 +20,38 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, OrderPackage, ERPCompanySettings, ERPEmployee, DriverInfo, ProductionStageId } from '../types';
 import { PackageLabelPrintModal } from './PackageLabelPrintModal';
+import { ShippingActPrintModal } from './ShippingActPrintModal';
+import { ShippingTTNPrintModal } from './ShippingTTNPrintModal';
+import { QuickAddDriverModal } from './QuickAddDriverModal';
 import { convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan } from '../utils';
 
 interface ERPShippingTabProps {
   order: ProductionOrder;
   settings?: ERPCompanySettings;
   currentUser?: ERPEmployee | null;
+  employees?: ERPEmployee[];
   onUpdateOrder: (updatedOrder: ProductionOrder) => void;
   onUpdateOrderStatus: (orderId: string, nextStage: ProductionStageId) => void;
   onOpenScannerModal?: () => void;
+  onAddEmployee?: (emp: Partial<ERPEmployee>) => void;
 }
 
 export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
   order,
   settings,
   currentUser,
+  employees = [],
   onUpdateOrder,
   onUpdateOrderStatus,
-  onOpenScannerModal
+  onOpenScannerModal,
+  onAddEmployee
 }) => {
   const allPackages = order.packages || [];
   const [scannedPackageIds, setScannedPackageIds] = useState<string[]>(() => {
     return allPackages.filter(p => p.isShipped).map(p => p.id);
   });
 
+  const [selectedDriverId, setSelectedDriverId] = useState<string>('');
   const [driverName, setDriverName] = useState<string>(order.driverInfo?.driverName || '');
   const [carPlate, setCarPlate] = useState<string>(order.driverInfo?.carPlate || '');
   const [driverPhone, setDriverPhone] = useState<string>(order.driverInfo?.phone || '');
@@ -53,6 +61,9 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
   const [feedbackMsg, setFeedbackMsg] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [selectedPrintPkg, setSelectedPrintPkg] = useState<OrderPackage | null>(null);
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
+  const [showActModal, setShowActModal] = useState<boolean>(false);
+  const [showTTNModal, setShowTTNModal] = useState<boolean>(false);
+  const [showQuickAddDriverModal, setShowQuickAddDriverModal] = useState<boolean>(false);
   const [expandedPkgId, setExpandedPkgId] = useState<string | null>(null);
 
   const scannerInputRef = useRef<HTMLInputElement | null>(null);
@@ -337,7 +348,7 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
               {onOpenScannerModal && (
                 <button
                   onClick={onOpenScannerModal}
-                  className="px-2.5 py-1 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                  className="md:hidden px-2.5 py-1 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
                 >
                   <Camera className="w-3.5 h-3.5" />
                   <span>Камера смартфона</span>
@@ -511,14 +522,60 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
         {/* Right Column: Driver & Dispatch Info Form (5 cols) */}
         <div className="lg:col-span-5 space-y-6">
           <div className="bg-white rounded-3xl p-6 border-2 border-violet-200 shadow-md space-y-4">
-            <div className="flex items-center gap-2 font-black text-slate-900 text-base pb-3 border-b border-slate-100">
-              <UserCheck className="w-5 h-5 text-violet-600" />
-              <span>Данные водителя и путевого листа</span>
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 font-black text-slate-900 text-base">
+                <UserCheck className="w-5 h-5 text-violet-600" />
+                <span>Данные водителя и путевого листа</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowQuickAddDriverModal(true)}
+                className="px-2.5 py-1 rounded-xl bg-violet-100 hover:bg-violet-200 text-violet-800 text-[11px] font-bold transition-all cursor-pointer"
+              >
+                + Добавить
+              </button>
             </div>
+
+            {/* Select Driver from Employees List */}
+            {employees.length > 0 && (
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Выбрать водителя из справочника сотрудников
+                </label>
+                <select
+                  value={selectedDriverId}
+                  onChange={(e) => {
+                    const empId = e.target.value;
+                    setSelectedDriverId(empId);
+                    if (empId === 'NEW') {
+                      setShowQuickAddDriverModal(true);
+                      return;
+                    }
+                    const emp = employees.find(m => m.id === empId);
+                    if (emp) {
+                      setDriverName(emp.name);
+                      setCarPlate(emp.carPlate || emp.carModel || carPlate);
+                      setDriverPhone(emp.phone || driverPhone);
+                    }
+                  }}
+                  className="w-full px-3.5 py-2.5 rounded-2xl bg-violet-50/70 border border-violet-200 font-bold text-violet-950 text-xs focus:ring-2 focus:ring-violet-500 outline-none"
+                >
+                  <option value="">-- Выберите водителя / курьера --</option>
+                  {employees
+                    .filter(e => e.status === 'active')
+                    .map(emp => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.name} ({emp.productionRole || emp.role || 'Сотрудник'}) {emp.employmentType === 'outsource' ? '[Аутсорс]' : ''} {emp.carPlate ? `[${emp.carPlate}]` : ''}
+                      </option>
+                    ))}
+                  <option value="NEW">+ Добавить нового водителя в базу...</option>
+                </select>
+              </div>
+            )}
 
             <div>
               <label className="block text-xs font-bold text-slate-700 mb-1">
-                ФИО Водителя / Экспедитора
+                ФИО Водителя / Экспедитора *
               </label>
               <input
                 type="text"
@@ -565,9 +622,33 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
                 value={shippingNote}
                 onChange={(e) => setShippingNote(e.target.value)}
                 placeholder="Адрес доставки, подъем на этаж, время прибытия или контакты клиента..."
-                rows={3}
+                rows={2}
                 className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-medium text-slate-900 text-xs focus:ring-2 focus:ring-violet-500 outline-none resize-none"
               />
+            </div>
+
+            {/* Print Documents Block */}
+            <div className="pt-2 border-t border-slate-100 space-y-2">
+              <div className="text-[10px] font-bold text-slate-400 uppercase">Печать документов на А4</div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowActModal(true)}
+                  className="px-3 py-2.5 rounded-2xl bg-violet-600 hover:bg-violet-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Акт приема (А4)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowTTNModal(true)}
+                  className="px-3 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                >
+                  <Printer className="w-3.5 h-3.5" />
+                  <span>Накладная ТТН</span>
+                </button>
+              </div>
             </div>
 
             {/* Client & Project summary */}
@@ -600,7 +681,7 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
         </div>
       </div>
 
-      {/* Print Modal */}
+      {/* Package Label Print Modal */}
       {selectedPrintPkg && (
         <PackageLabelPrintModal
           order={order}
@@ -614,6 +695,55 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
           }}
         />
       )}
+
+      {/* A4 Shipping Acceptance Act Print Modal */}
+      <ShippingActPrintModal
+        isOpen={showActModal}
+        onClose={() => setShowActModal(false)}
+        order={{
+          ...order,
+          driverInfo: {
+            driverName: driverName || order.driverInfo?.driverName || '',
+            carPlate: carPlate || order.driverInfo?.carPlate || '',
+            phone: driverPhone || order.driverInfo?.phone || '',
+            note: shippingNote
+          }
+        }}
+        settings={settings}
+      />
+
+      {/* A4 Transport Waybill (TTN) Print Modal */}
+      <ShippingTTNPrintModal
+        isOpen={showTTNModal}
+        onClose={() => setShowTTNModal(false)}
+        order={{
+          ...order,
+          driverInfo: {
+            driverName: driverName || order.driverInfo?.driverName || '',
+            carPlate: carPlate || order.driverInfo?.carPlate || '',
+            phone: driverPhone || order.driverInfo?.phone || '',
+            note: shippingNote
+          }
+        }}
+        settings={settings}
+      />
+
+      {/* Quick Add Driver Modal */}
+      <QuickAddDriverModal
+        isOpen={showQuickAddDriverModal}
+        onClose={() => setShowQuickAddDriverModal(false)}
+        onAddDriver={(newDriver) => {
+          if (onAddEmployee) {
+            onAddEmployee(newDriver);
+          }
+          if (newDriver.name) setDriverName(newDriver.name);
+          if (newDriver.carPlate || newDriver.carModel) {
+            setCarPlate(`${newDriver.carModel ? newDriver.carModel + ' ' : ''}${newDriver.carPlate || ''}`);
+          }
+          if (newDriver.phone) setDriverPhone(newDriver.phone);
+          showFeedback(`Водитель "${newDriver.name}" добавлен и сохранен в базе!`, 'success');
+        }}
+      />
     </div>
   );
 };

@@ -23,7 +23,8 @@ import {
   Box,
   Flame,
   UserCheck,
-  Camera
+  Camera,
+  Sparkles
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPEmployee, ERPCompanySettings } from '../types';
 import { formatDeadlineDate, getNextRequiredStage } from '../utils';
@@ -156,7 +157,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
         <div className="flex flex-wrap items-center gap-3">
           <button
             onClick={() => setShowCameraScannerModal(true)}
-            className="px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs flex items-center gap-2 shadow-md shadow-indigo-200 transition-all cursor-pointer"
+            className="md:hidden px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs flex items-center gap-2 shadow-md shadow-indigo-200 transition-all cursor-pointer"
             title="Сканировать бирку или QR-код заказа камерой телефона"
           >
             <Camera className="w-4 h-4" />
@@ -351,7 +352,14 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
 
           {/* Orders Cards List */}
           {(() => {
-            const stageOrders = productionOrders.filter(o => o.currentStage === selectedStageId);
+            const stageOrders = productionOrders.filter(o => {
+              if (o.currentStage === selectedStageId) return true;
+              if ((selectedStageId === 'packing' || selectedStageId === 'kitting') && 
+                  (o.currentStage === 'edging' || o.currentStage === 'cnc' || o.currentStage === 'cutting')) {
+                return true;
+              }
+              return false;
+            });
             const filteredByTab = stageOrders.filter(o => {
               if (stageTabFilter === 'all') return true;
               return getOrderDateCategory(o) === stageTabFilter;
@@ -450,6 +458,13 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                           <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-extrabold border shrink-0 ${dateBadgeStyles}`}>
                             {dateCatText} ({order.plannedCuttingDate || 'Не указана'})
                           </span>
+
+                          {order.currentStage !== selectedStageId && (
+                            <span className="px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-300 text-[10px] font-black uppercase flex items-center gap-1 shrink-0">
+                              <Sparkles className="w-3 h-3 text-indigo-600" />
+                              <span>⚡ Онлайн-упаковка</span>
+                            </span>
+                          )}
                         </div>
 
                         {/* Additional Works Pills if present */}

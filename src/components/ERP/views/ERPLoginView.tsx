@@ -541,7 +541,7 @@ export const ERPLoginView: React.FC<ERPLoginViewProps> = ({
                   type="button"
                   onClick={() => setShowCameraScanner(true)}
                   disabled={isLoading}
-                  className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                  className="md:hidden w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs shadow-lg shadow-indigo-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   <Camera className="w-4 h-4" />
                   <span>Сканировать бейдж камерой</span>

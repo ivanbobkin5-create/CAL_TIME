@@ -33,6 +33,7 @@ import {
 } from '../types';
 import { PackageLabelPrintModal } from './PackageLabelPrintModal';
 import { parseHardwareFile } from '../utils/kittingParser';
+import { arePrecedingStagesCompleted, getPackagingReadinessStats } from '../utils/stageReadiness';
 
 interface ERPKittingTabProps {
   order: ProductionOrder;
@@ -339,8 +340,44 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
   const draftTotalUnits = Object.values(draftBoxItems).reduce((a, b) => a + b, 0);
   const draftTotalPositions = Object.keys(draftBoxItems).length;
 
+  const isPreviousStagesCompleted = arePrecedingStagesCompleted(order, settings);
+  const readinessStats = getPackagingReadinessStats(order, settings);
+
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Online Kitting Mode Notice Banner */}
+      {!isPreviousStagesCompleted && (
+        <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white rounded-3xl p-5 border-2 border-indigo-400 shadow-xl space-y-3 relative overflow-hidden animate-fade-in">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
+            <div className="flex items-start gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-indigo-500/30 border border-indigo-400/50 flex items-center justify-center shrink-0 shadow-inner">
+                <Sparkles className="w-6 h-6 text-indigo-300 animate-spin-slow" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-black text-white text-base">
+                    Режим онлайн-комплектации активен
+                  </h3>
+                  <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 font-mono font-black text-[10px] uppercase tracking-wide">
+                    Кромление / Присадка в процессе
+                  </span>
+                </div>
+                <p className="text-xs text-indigo-200 mt-1 leading-relaxed">
+                  Вы можете укомплектовывать фурнитуру и покупные метизы параллельно в режиме онлайн, пока детали корпуса проходят кромление и присадку.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-indigo-950/80 border border-indigo-700/80 rounded-2xl px-4 py-2.5 shrink-0 text-center sm:text-right">
+              <div className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider">Обработано на станках</div>
+              <div className="text-xl font-black text-emerald-400 font-mono mt-0.5">
+                {readinessStats.readyCount} <span className="text-xs font-normal text-indigo-200">из {readinessStats.totalCount} дет.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header Bar */}
       <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">

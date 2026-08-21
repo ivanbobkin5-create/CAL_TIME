@@ -55,9 +55,26 @@ import { MobileCameraScannerModal } from './components/MobileCameraScannerModal'
 
 interface ERPAppProps {
   aliasOrId: string;
+  catalogProducts?: any[];
 }
 
-export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
+export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: propsCatalogProducts = [] }) => {
+  const [catalogProducts, setCatalogProducts] = useState<any[]>(propsCatalogProducts);
+
+  useEffect(() => {
+    if (propsCatalogProducts && propsCatalogProducts.length > 0) {
+      setCatalogProducts(propsCatalogProducts);
+    } else {
+      try {
+        const saved = localStorage.getItem('company_catalog_products') || localStorage.getItem('ownProducts');
+        if (saved) {
+          setCatalogProducts(JSON.parse(saved));
+        }
+      } catch (e) {
+        console.warn('Failed to load catalog products from localStorage', e);
+      }
+    }
+  }, [propsCatalogProducts]);
   const [isLoading, setIsLoading] = useState(true);
   const [company, setCompany] = useState<any>(null);
   const [authUser, setAuthUser] = useState<any>(() => {
@@ -896,6 +913,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
     return (
       <ERPLoader 
         companyName={company?.name || "Мебельное производство"} 
+        logoUrl={company?.logoUrl || (settings as any)?.companyLogoUrl || (settings as any)?.logoUrl}
         minDurationMs={450}
         isDataReady={isDataReady}
         onFinish={() => setIsLoading(false)}
@@ -1161,7 +1179,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
           {/* Quick Scanner Button */}
           <button
             onClick={() => setShowGlobalCameraScanner(true)}
-            className="p-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-600/30 flex items-center gap-1.5 text-xs font-bold transition-all cursor-pointer"
+            className="md:hidden p-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-600/30 flex items-center gap-1.5 text-xs font-bold transition-all cursor-pointer"
           >
             <Camera className="w-4 h-4" />
             <span className="text-[11px]">Сканер</span>
@@ -1394,6 +1412,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
                 <ERPSettingsView 
                   settings={settings} 
                   orders={orders}
+                  catalogProducts={catalogProducts}
                   onSaveSettings={handleSaveSettings} 
                 />
               )}

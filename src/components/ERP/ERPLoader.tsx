@@ -123,8 +123,8 @@ export const ERPLoader: React.FC<ERPLoaderProps> = ({
                   className="w-full h-full object-contain filter drop-shadow" 
                 />
               ) : (
-                <div className="text-xl font-black text-white tracking-wider font-mono">
-                  {companyName ? companyName.substring(0, 2).toUpperCase() : <Factory className="w-9 h-9 text-white" />}
+                <div className="flex items-center justify-center text-white">
+                  <Factory className="w-10 h-10 text-white drop-shadow-md stroke-[2]" />
                 </div>
               )}
             </motion.div>

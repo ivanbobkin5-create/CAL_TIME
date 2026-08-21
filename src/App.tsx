@@ -36660,7 +36660,7 @@ export default function App() {
     const aliasOrId = rawParts[0];
     const subPath = rawParts.slice(1).join("/");
     if (subPath === "erp" || subPath.startsWith("erp/")) {
-      return <ERPApp aliasOrId={aliasOrId} />;
+      return <ERPApp aliasOrId={aliasOrId} catalogProducts={catalogProducts} />;
     }
     return <PublicLandingView aliasOrId={aliasOrId} initialSubPath={subPath} />;
   }
@@ -36669,7 +36669,7 @@ export default function App() {
   if (hostMappedAlias) {
     let subPath = currentPath === "/" ? "" : currentPath.substring(1);
     if (subPath === "erp" || subPath.startsWith("erp/")) {
-      return <ERPApp aliasOrId={hostMappedAlias.companySlug} />;
+      return <ERPApp aliasOrId={hostMappedAlias.companySlug} catalogProducts={catalogProducts} />;
     }
     if (!subPath) {
       subPath = hostMappedAlias.storefrontAlias;
@@ -36693,7 +36693,7 @@ export default function App() {
     const aliasOrId = pathSegments[0];
     const subPath = pathSegments.slice(1).join("/");
     if (subPath === "erp" || subPath.startsWith("erp/")) {
-      return <ERPApp aliasOrId={aliasOrId} />;
+      return <ERPApp aliasOrId={aliasOrId} catalogProducts={catalogProducts} />;
     }
     return <PublicLandingView aliasOrId={aliasOrId} initialSubPath={subPath} />;
   }

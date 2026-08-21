@@ -21,15 +21,21 @@ import {
   AlertCircle,
   Play,
   RotateCcw,
-  Box
+  Box,
+  Eye,
+  Lock
 } from 'lucide-react';
-import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule } from '../types';
+import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee } from '../types';
 import { parseBirkaFile, BirkaParseResult, BirkaDetail } from '../utils/birkaParser';
-import { formatDeadlineDate } from '../utils';
+import { formatDeadlineDate, speakText } from '../utils';
+import { detailRequiresPrisadka } from '../utils/stageReadiness';
+import { FinishedPartNoticeModal } from '../components/FinishedPartNoticeModal';
+import { OrderClientPrivacyModal } from '../components/OrderClientPrivacyModal';
 
 interface ERPOrderDetailsModalProps {
   order: ProductionOrder;
   settings?: ERPCompanySettings;
+  currentUser?: ERPEmployee | null;
   onClose: () => void;
   onUpdateOrder: (updatedOrder: ProductionOrder) => void;
   onUpdateOrderStatus: (orderId: string, nextStage: ProductionStageId) => void;
@@ -73,6 +79,7 @@ const playSoundEffect = (type: 'success' | 'alert' | 'error' = 'success') => {
 export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
   order,
   settings,
+  currentUser,
   onClose,
   onUpdateOrder,
   onUpdateOrderStatus
@@ -80,6 +87,7 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
   const [activeTab, setActiveTab] = useState<'card' | 'scanner'>('card');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
 
   // Material & Scanning state
   const [selectedMaterial, setSelectedMaterial] = useState<string>('');
@@ -90,6 +98,13 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
     partName: string;
     instruction: string;
     color?: string;
+  } | null>(null);
+
+  const [finishedPartNotice, setFinishedPartNotice] = useState<{
+    isOpen: boolean;
+    labelNumber: string;
+    partName: string;
+    materialName?: string;
   } | null>(null);
 
   const [scanErrorMsg, setScanErrorMsg] = useState<string | null>(null);
@@ -338,6 +353,19 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
       stageScanningProgress: updatedStageScanning
     });
 
+    if (currentStageId === 'edging') {
+      const needsPrisadka = detailRequiresPrisadka(foundPart, settings);
+      if (!needsPrisadka) {
+        speakText('Готовая деталь');
+        setFinishedPartNotice({
+          isOpen: true,
+          labelNumber: foundPart.labelNumber,
+          partName: foundPart.name,
+          materialName: targetMaterial
+        });
+      }
+    }
+
     // Check for note rules matched
     const matchedRule = getMatchedNoteRule(foundPart.notes, foundPart.name);
     if (matchedRule) {
@@ -492,8 +520,19 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Клиент: <strong className="text-slate-800">{order.clientName}</strong> • Проект: <strong className="text-slate-800">{order.projectName}</strong>
+              <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
+                <span>Клиент: <strong className="text-slate-800">{order.clientName}</strong></span>
+                <span>•</span>
+                <span>Проект: <strong className="text-slate-800">{order.projectName}</strong></span>
+                <button
+                  type="button"
+                  onClick={() => setShowPrivacyModal(true)}
+                  className="px-2 py-0.5 rounded-lg bg-amber-100 hover:bg-amber-200 text-amber-900 text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer ml-1"
+                  title="Просмотр данных клиента и доставки (Битрикс24 / Сборка)"
+                >
+                  <Eye className="w-3 h-3 text-amber-700" />
+                  <span>Данные клиента</span>
+                </button>
               </p>
             </div>
           </div>
@@ -1081,6 +1120,26 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
         </div>
 
       </div>
+
+      {/* Finished Part Notice Modal */}
+      {finishedPartNotice?.isOpen && (
+        <FinishedPartNoticeModal
+          isOpen={finishedPartNotice.isOpen}
+          labelNumber={finishedPartNotice.labelNumber}
+          partName={finishedPartNotice.partName}
+          materialName={finishedPartNotice.materialName}
+          durationSeconds={settings?.finishedPartNoticeDuration ?? 5}
+          onClose={() => setFinishedPartNotice(null)}
+        />
+      )}
+
+      {/* Order Client Privacy & Delivery Data Modal */}
+      <OrderClientPrivacyModal
+        isOpen={showPrivacyModal}
+        onClose={() => setShowPrivacyModal(false)}
+        order={order}
+        currentUser={currentUser}
+      />
     </div>
   );
 };

@@ -21,6 +21,7 @@ import {
 import { ProductionOrder, OrderPackage, OrderPackagePart, ERPCompanySettings, ERPEmployee, ProductionStageId } from '../types';
 import { PackageLabelPrintModal } from './PackageLabelPrintModal';
 import { convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan } from '../utils';
+import { isDetailReadyForPackaging, arePrecedingStagesCompleted, getPackagingReadinessStats } from '../utils/stageReadiness';
 
 interface ERPPackagingTabProps {
   order: ProductionOrder;
@@ -69,8 +70,15 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
   // Detail IDs in the currently forming buffer
   const bufferDetailIds = new Set(currentBufferParts.map(p => p.detailId));
 
+  // Stage readiness calculations for Online Packaging
+  const isPreviousStagesCompleted = arePrecedingStagesCompleted(order, settings);
+  const readinessStats = getPackagingReadinessStats(order, settings);
+
   // Available unpacked details (not in existing packages & not in active buffer)
-  const unpackedDetails = allDetails.filter(d => !packedDetailIds.has(d.id) && !bufferDetailIds.has(d.id));
+  const rawUnpackedDetails = allDetails.filter(d => !packedDetailIds.has(d.id) && !bufferDetailIds.has(d.id));
+
+  // In online packaging mode, only show details that have completed preceding stages (raskroy, kromka, prisadka)
+  const unpackedDetails = rawUnpackedDetails.filter(d => isDetailReadyForPackaging(d, order, settings));
 
   // Materials list for filter
   const materialList = Array.from(new Set(allDetails.map(d => d.material || 'Без материала'))).filter(Boolean);
@@ -99,6 +107,11 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
 
   // Add detail to current active package
   const handleAddDetailToCurrentPackage = (detail: any) => {
+    if (!isDetailReadyForPackaging(detail, order, settings)) {
+      showFeedback(`Деталь №${detail.labelNumber} ("${detail.name}") еще проходит кромление/присадку на пред. этапе и пока не готова к упаковке!`, 'error');
+      return;
+    }
+
     if (packedDetailIds.has(detail.id)) {
       showFeedback(`Деталь №${detail.labelNumber} уже находится в другой упаковке!`, 'error');
       return;
@@ -303,8 +316,13 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
 
   // Complete Packaging Stage -> Transfer to shipping
   const handleCompletePackagingStage = () => {
-    if (!isAllDetailsPacked) {
-      showFeedback(`Невозможно завершить участок: еще не упаковано ${unpackedDetails.length} деталей!`, 'error');
+    if (!isPreviousStagesCompleted) {
+      showFeedback(`Нельзя завершить участок упаковки! Не все детали прошли предыдущие этапы (кромление/присадка). Обработано на пред. этапах: ${readinessStats.readyCount} из ${readinessStats.totalCount} деталей.`, 'error');
+      return;
+    }
+
+    if (!isAllDetailsPacked || rawUnpackedDetails.length > 0) {
+      showFeedback(`Невозможно завершить участок: еще не упаковано ${rawUnpackedDetails.length} деталей!`, 'error');
       return;
     }
 
@@ -314,6 +332,39 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
 
   return (
     <div className="space-y-6 animate-fade-in">
+      {/* Online Packaging Mode Notice Banner */}
+      {!isPreviousStagesCompleted && (
+        <div className="bg-gradient-to-r from-indigo-900 via-indigo-800 to-slate-900 text-white rounded-3xl p-5 border-2 border-indigo-400 shadow-xl space-y-3 relative overflow-hidden animate-fade-in">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
+            <div className="flex items-start gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-indigo-500/30 border border-indigo-400/50 flex items-center justify-center shrink-0 shadow-inner">
+                <Sparkles className="w-6 h-6 text-indigo-300 animate-spin-slow" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="font-black text-white text-base">
+                    Режим онлайн-упаковки активен
+                  </h3>
+                  <span className="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 font-mono font-black text-[10px] uppercase tracking-wide">
+                    Кромление / Присадка в процессе
+                  </span>
+                </div>
+                <p className="text-xs text-indigo-200 mt-1 leading-relaxed">
+                  Вы можете начать упаковку готовых деталей. Список доступных деталей пополняется автоматически в режиме онлайн по мере их сканирования и обработки на предыдущих этапах (кромка / присадка).
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-indigo-950/80 border border-indigo-700/80 rounded-2xl px-4 py-2.5 shrink-0 text-center sm:text-right">
+              <div className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider">Готово к упаковке</div>
+              <div className="text-xl font-black text-emerald-400 font-mono mt-0.5">
+                {readinessStats.readyCount} <span className="text-xs font-normal text-indigo-200">из {readinessStats.totalCount} дет.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Top Packaging Overview & Progress Card */}
       <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">

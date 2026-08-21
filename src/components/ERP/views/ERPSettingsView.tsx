@@ -39,10 +39,12 @@ import {
 import { ERPCompanySettings, MachineEquipment, PackageLabelSettings, ProductionStageId, ERPNoteRule, ProductionOrder } from '../types';
 import { DEFAULT_BIRKA_COLUMN_MAPPING } from '../utils/birkaParser';
 import { DEFAULT_HARDWARE_COLUMN_MAPPING } from '../utils/hardwareParser';
+import { WarehouseCatalogPickerModal } from '../components/WarehouseCatalogPickerModal';
 
 interface ERPSettingsViewProps {
   settings: ERPCompanySettings;
   orders?: ProductionOrder[];
+  catalogProducts?: any[];
   onSaveSettings: (settings: ERPCompanySettings) => void;
 }
 
@@ -222,6 +224,7 @@ const HARDWARE_PARAM_DESCRIPTIONS: { key: string; label: string; erpTarget: stri
 export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
   settings,
   orders = [],
+  catalogProducts = [],
   onSaveSettings
 }) => {
   const [activeTab, setActiveTab] = useState<'stages' | 'birka' | 'hardware' | 'warehouse_cells' | 'rules' | 'tariffs' | 'additional' | 'equipment' | 'labels' | 'shifts'>('stages');
@@ -554,6 +557,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
             { id: 'additional', label: 'Доп. работы', desc: 'Столешницы, цоколи, штанги', icon: Wrench },
             { id: 'equipment', label: 'Оборудование и план', desc: 'Станки и мощности смены', icon: Scissors, count: formData.equipmentList?.length },
             { id: 'labels', label: 'Маркировка мест', desc: 'Термоэтикетки и штрихкоды', icon: Package },
+            { id: 'bitrix_delivery', label: 'Битрикс24 и печать Акта', desc: 'Поля Битрикс, Акт и ТТН', icon: Truck },
             { id: 'shifts', label: 'Режим сменности', desc: 'График, часы и нормативы', icon: Clock }
           ].map(tab => {
             const Icon = tab.icon;
@@ -739,6 +743,49 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                   </div>
                 );
               })}
+            </div>
+
+            {/* Voice & Auto-dismiss Notification Settings Card */}
+            <div className="bg-gradient-to-r from-emerald-950 via-slate-900 to-teal-950 text-white rounded-3xl p-6 border-2 border-emerald-400/80 shadow-xl space-y-4">
+              <div className="flex items-start gap-3.5">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-500/30 border border-emerald-400/50 flex items-center justify-center shrink-0">
+                  <Sparkles className="w-5 h-5 text-emerald-300" />
+                </div>
+                <div>
+                  <h3 className="font-black text-white text-base">
+                    Голосовой ассистент и таймер готовой детали (Кромление)
+                  </h3>
+                  <p className="text-xs text-emerald-200 mt-1 leading-relaxed">
+                    На этапе кромления, если сканируемая деталь не требует присадки, ERP произнесет голосом <strong>«Готовая деталь»</strong> и порекомендует отложить её в отдельную пачку готовых деталей.
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-emerald-950/80 border border-emerald-800 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                  <div className="text-xs font-bold text-white">
+                    Время автоскрытия всплывающего сообщения
+                  </div>
+                  <div className="text-[11px] text-emerald-300">
+                    Укажите время в секундах, через которое окно готовой детали закроется автоматически (также мастер может нажать «Ок»)
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <input
+                    type="number"
+                    min={1}
+                    max={60}
+                    value={formData.finishedPartNoticeDuration ?? 5}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      finishedPartNoticeDuration: Math.max(1, parseInt(e.target.value, 10) || 5)
+                    })}
+                    className="w-20 px-3 py-2 rounded-xl bg-slate-900 border border-emerald-400 font-mono font-black text-center text-sm text-emerald-300 outline-none focus:ring-2 focus:ring-emerald-400"
+                  />
+                  <span className="text-xs font-bold text-emerald-200">сек.</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1012,93 +1059,17 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
               </div>
             </div>
 
-            {/* Add New Item Modal / Collapsible Form */}
-            {showAddForm && (
-              <div className="p-5 rounded-2xl bg-emerald-50/80 border border-emerald-200 space-y-4 animate-fade-in">
-                <div className="font-bold text-xs text-emerald-950 flex items-center gap-2">
-                  <Plus className="w-4 h-4 text-emerald-600" />
-                  <span>Добавить новую позицию фурнитуры вручную</span>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
-                      Наименование товара *
-                    </label>
-                    <input
-                      type="text"
-                      value={newItemName}
-                      onChange={(e) => setNewItemName(e.target.value)}
-                      placeholder="например, Петля Blum Clip Top 110°"
-                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
-                      Артикул
-                    </label>
-                    <input
-                      type="text"
-                      value={newItemArticle}
-                      onChange={(e) => setNewItemArticle(e.target.value)}
-                      placeholder="например, 71T3550"
-                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-mono font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
-                      Категория
-                    </label>
-                    <select
-                      value={newItemCategory}
-                      onChange={(e) => setNewItemCategory(e.target.value)}
-                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-emerald-500"
-                    >
-                      <option value="Петли и доводчики">Петли и доводчики</option>
-                      <option value="Направляющие и ящики">Направляющие и ящики</option>
-                      <option value="Подъемные механизмы">Подъемные механизмы</option>
-                      <option value="Крепеж и метизы">Крепеж и метизы</option>
-                      <option value="Ручки и крючки">Ручки и крючки</option>
-                      <option value="Опоры и стяжки">Опоры и стяжки</option>
-                      <option value="Разное / Крепеж">Разное / Крепеж</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
-                      Ячейка на складе
-                    </label>
-                    <input
-                      type="text"
-                      value={newItemCell}
-                      onChange={(e) => setNewItemCell(e.target.value)}
-                      placeholder="например, A-12, Стеллаж 3"
-                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-mono font-black text-xs text-emerald-900 outline-none focus:ring-2 focus:ring-emerald-500 uppercase"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center justify-end gap-2 pt-2">
-                  <button
-                    type="button"
-                    onClick={() => setShowAddForm(false)}
-                    className="px-4 py-2 rounded-xl bg-white border border-slate-200 text-slate-600 font-bold text-xs hover:bg-slate-50 transition-colors"
-                  >
-                    Отмена
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleAddNewWarehouseItem}
-                    disabled={!newItemName.trim()}
-                    className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white font-black text-xs shadow-sm transition-all"
-                  >
-                    Сохранить в каталог
-                  </button>
-                </div>
-              </div>
-            )}
+            {/* Add New Item Modal (Catalog & Manual Picker) */}
+            <WarehouseCatalogPickerModal
+              isOpen={showAddForm}
+              catalogProducts={catalogProducts}
+              warehouseLocations={formData.warehouseLocations || {}}
+              onClose={() => setShowAddForm(false)}
+              onAssignItemCell={(itemName, article, category, cell) => {
+                const itemKey = `${article || ''}:::${itemName.toLowerCase().trim()}`;
+                handleUpdateItemCell(itemKey, itemName, article, category, cell);
+              }}
+            />
 
             {/* Filter and Search Bar */}
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
@@ -1781,6 +1752,262 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                   </div>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB: BITRIX24 & DELIVERY ACT SETTINGS */}
+      {activeTab === 'bitrix_delivery' && (
+        <div className="space-y-6">
+          {/* Bitrix24 Custom Fields Mapping */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-4">
+            <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
+              <Truck className="w-5 h-5 text-violet-600" />
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">Идентификаторы полей Битрикс24 (Доставка и клиент)</h3>
+                <p className="text-xs text-slate-500">
+                  Укажите названия пользовательских полей сделки из Битрикс24 (например: UF_CRM_DELIVERY_ADDRESS)
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Поле "Адрес доставки"</label>
+                <input
+                  type="text"
+                  placeholder="UF_CRM_DELIVERY_ADDRESS"
+                  value={formData.bitrix24FieldMapping?.deliveryAddressField || ''}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    bitrix24FieldMapping: { ...(formData.bitrix24FieldMapping || {}), deliveryAddressField: e.target.value }
+                  })}
+                  className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-violet-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Поле "ФИО Заказчика"</label>
+                <input
+                  type="text"
+                  placeholder="UF_CRM_CLIENT_NAME"
+                  value={formData.bitrix24FieldMapping?.clientNameField || ''}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    bitrix24FieldMapping: { ...(formData.bitrix24FieldMapping || {}), clientNameField: e.target.value }
+                  })}
+                  className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-violet-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Поле "Телефон клиента"</label>
+                <input
+                  type="text"
+                  placeholder="UF_CRM_CLIENT_PHONE"
+                  value={formData.bitrix24FieldMapping?.clientPhoneField || ''}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    bitrix24FieldMapping: { ...(formData.bitrix24FieldMapping || {}), clientPhoneField: e.target.value }
+                  })}
+                  className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-violet-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Поле "Этаж"</label>
+                <input
+                  type="text"
+                  placeholder="UF_CRM_FLOOR"
+                  value={formData.bitrix24FieldMapping?.floorField || ''}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    bitrix24FieldMapping: { ...(formData.bitrix24FieldMapping || {}), floorField: e.target.value }
+                  })}
+                  className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-violet-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Поле "Наличие лифта"</label>
+                <input
+                  type="text"
+                  placeholder="UF_CRM_ELEVATOR"
+                  value={formData.bitrix24FieldMapping?.elevatorField || ''}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    bitrix24FieldMapping: { ...(formData.bitrix24FieldMapping || {}), elevatorField: e.target.value }
+                  })}
+                  className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-violet-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Поле "Стоимость доставки (₽)"</label>
+                <input
+                  type="text"
+                  placeholder="UF_CRM_DELIVERY_PRICE"
+                  value={formData.bitrix24FieldMapping?.deliveryPriceField || ''}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    bitrix24FieldMapping: { ...(formData.bitrix24FieldMapping || {}), deliveryPriceField: e.target.value }
+                  })}
+                  className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-violet-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Поле "Стоимость сборки (₽)"</label>
+                <input
+                  type="text"
+                  placeholder="UF_CRM_ASSEMBLY_PRICE"
+                  value={formData.bitrix24FieldMapping?.assemblyPriceField || ''}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    bitrix24FieldMapping: { ...(formData.bitrix24FieldMapping || {}), assemblyPriceField: e.target.value }
+                  })}
+                  className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-violet-500"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Поле "Комментарий по доставке"</label>
+                <input
+                  type="text"
+                  placeholder="UF_CRM_DELIVERY_COMMENT"
+                  value={formData.bitrix24FieldMapping?.deliveryCommentField || ''}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    bitrix24FieldMapping: { ...(formData.bitrix24FieldMapping || {}), deliveryCommentField: e.target.value }
+                  })}
+                  className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-violet-500"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Printable A4 Shipping Act Template */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-4">
+            <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
+              <Printer className="w-5 h-5 text-indigo-600" />
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">Шаблон Акта приема-передачи и ТТН (Печатная форма А4)</h3>
+                <p className="text-xs text-slate-500">Настройки текста, шапки и QR-кода для печатного документа</p>
+              </div>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Название компании в шапке</label>
+                  <input
+                    type="text"
+                    value={formData.shippingActTemplate?.companyTitle || ''}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      shippingActTemplate: { ...(formData.shippingActTemplate || {}), companyTitle: e.target.value }
+                    })}
+                    placeholder="ООО 'Мебельная фабрика'"
+                    className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-slate-900 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">ИНН / ОГРН</label>
+                  <input
+                    type="text"
+                    value={formData.shippingActTemplate?.companyInn || ''}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      shippingActTemplate: { ...(formData.shippingActTemplate || {}), companyInn: e.target.value }
+                    })}
+                    placeholder="7700000000 / 1234567890123"
+                    className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-slate-900 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Телефон диспетчерской</label>
+                  <input
+                    type="text"
+                    value={formData.shippingActTemplate?.companyPhone || ''}
+                    onChange={(e) => setFormData({
+                      ...formData,
+                      shippingActTemplate: { ...(formData.shippingActTemplate || {}), companyPhone: e.target.value }
+                    })}
+                    placeholder="+7 (495) 000-00-00"
+                    className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-slate-900 outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Заголовок Акта приема-передачи</label>
+                <input
+                  type="text"
+                  value={formData.shippingActTemplate?.actHeaderTitle || ''}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    shippingActTemplate: { ...(formData.shippingActTemplate || {}), actHeaderTitle: e.target.value }
+                  })}
+                  placeholder="АКТ ПРИЕМА-ПЕРЕДАЧИ ТОВАРА И КОМПЛЕКТАЦИИ"
+                  className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-slate-900 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">Текст условий приемки и гарантии в Акте</label>
+                <textarea
+                  rows={3}
+                  value={formData.shippingActTemplate?.actTermsText || ''}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    shippingActTemplate: { ...(formData.shippingActTemplate || {}), actTermsText: e.target.value }
+                  })}
+                  placeholder="Заказчик подтверждает, что доставленные упаковки осмотрены..."
+                  className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-medium text-slate-900 outline-none resize-none"
+                />
+              </div>
+
+              <div className="p-3 bg-violet-50/70 border border-violet-200 rounded-2xl flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-slate-900">Выводить QR-код для сборщика мебели</div>
+                  <div className="text-[11px] text-slate-500">
+                    Печатает на акте QR-код, сканируя который сборщик может открыть проект, схемы и детали
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={formData.shippingActTemplate?.showQrForAssembler !== false}
+                  onChange={(e) => setFormData({
+                    ...formData,
+                    shippingActTemplate: { ...(formData.shippingActTemplate || {}), showQrForAssembler: e.target.checked }
+                  })}
+                  className="w-5 h-5 rounded text-violet-600 border-slate-300 focus:ring-violet-500 cursor-pointer"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Voice Alert Duration Settings */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-3">
+            <h3 className="font-bold text-slate-900 text-base">Уведомление "Готовая деталь" на кромлении</h3>
+            <p className="text-xs text-slate-500">
+              Если деталь на этапе кромления не требует присадки, сотруднику выводится всплывающее сообщение и воспроизводится голос "Готовая деталь".
+            </p>
+            <div className="max-w-xs">
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Время автоскрытия сообщения (секунд)
+              </label>
+              <input
+                type="number"
+                min={1}
+                max={30}
+                value={formData.finishedPartNoticeDuration || 3}
+                onChange={(e) => setFormData({ ...formData, finishedPartNoticeDuration: Number(e.target.value) || 3 })}
+                className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-mono font-bold text-slate-900 text-xs focus:ring-2 focus:ring-violet-500 outline-none"
+              />
             </div>
           </div>
         </div>

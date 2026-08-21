@@ -37,6 +37,9 @@ export const PREDEFINED_ROLES = [
   'Помощник оператора',
   'Упаковщик',
   'Комплектовщик',
+  'Сборщик мебели',
+  'Водитель / Экспедитор',
+  'Замерщик',
   'Кладовщик',
   'Помощник начальника цеха',
   'Начальник цеха'
@@ -224,11 +227,21 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
                     </div>
                   </div>
 
-                  <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase shrink-0 ${
-                    isProd ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'
-                  }`}>
-                    {isProd ? 'Производство' : 'Офис / Ограничен'}
-                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
+                      emp.employmentType === 'outsource'
+                        ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                        : 'bg-blue-50 text-blue-800 border border-blue-200'
+                    }`}>
+                      {emp.employmentType === 'outsource' ? '🤝 Аутсорс' : '🏢 Штатный'}
+                    </span>
+
+                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase ${
+                      isProd ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-slate-100 text-slate-500 border border-slate-200'
+                    }`}>
+                      {isProd ? 'Цех' : 'Офис'}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Info tags */}
@@ -262,6 +275,14 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
                       {emp.rateType === 'piecework' ? 'Сдельная от выработки' : `${(emp.baseRate || 55000)?.toLocaleString('ru-RU')} ₽ / мес`}
                     </span>
                   </div>
+                  {(emp.carPlate || emp.carModel) && (
+                    <div className="flex items-center justify-between text-slate-600 bg-amber-50/60 p-1.5 rounded-xl border border-amber-200">
+                      <span className="text-amber-800 font-bold">🚗 Авто:</span>
+                      <span className="font-mono font-bold text-slate-900 text-[11px]">
+                        {emp.carModel ? `${emp.carModel} ` : ''}{emp.carPlate || ''}
+                      </span>
+                    </div>
+                  )}
                   {emp.email && (
                     <div className="flex items-center justify-between text-slate-600">
                       <span className="text-slate-400">Email:</span>
@@ -351,6 +372,33 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
                 />
               </div>
 
+              {/* Employment Type */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setFormEmployee({ ...formEmployee, employmentType: 'staff' })}
+                  className={`p-2.5 rounded-2xl border font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                    formEmployee.employmentType !== 'outsource'
+                      ? 'bg-blue-600 text-white border-blue-700 shadow-sm'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  <span>🏢 Штатный сотрудник</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setFormEmployee({ ...formEmployee, employmentType: 'outsource' })}
+                  className={`p-2.5 rounded-2xl border font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all ${
+                    formEmployee.employmentType === 'outsource'
+                      ? 'bg-amber-500 text-white border-amber-600 shadow-sm'
+                      : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  <span>🤝 Аутсорс / Наемный</span>
+                </button>
+              </div>
+
               {/* Is Production Employee Checkbox */}
               <div className="p-3 bg-blue-50/60 rounded-2xl border border-blue-100 flex items-center justify-between">
                 <div>
@@ -396,6 +444,30 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
                     />
                   </div>
                 )}
+              </div>
+
+              {/* Vehicle info for drivers/couriers */}
+              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Госномер ТС</label>
+                  <input
+                    type="text"
+                    placeholder="А 123 ВС 777"
+                    value={formEmployee.carPlate || ''}
+                    onChange={(e) => setFormEmployee({ ...formEmployee, carPlate: e.target.value.toUpperCase() })}
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-mono font-bold text-slate-900 outline-none uppercase"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">Марка / Авто</label>
+                  <input
+                    type="text"
+                    placeholder="ГАЗель Некст"
+                    value={formEmployee.carModel || ''}
+                    onChange={(e) => setFormEmployee({ ...formEmployee, carModel: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-900 outline-none"
+                  />
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">

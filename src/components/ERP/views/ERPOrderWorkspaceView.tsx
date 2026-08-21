@@ -37,7 +37,9 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee } from '../types';
 import { parseBirkaFile, BirkaParseResult, BirkaDetail } from '../utils/birkaParser';
-import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan } from '../utils';
+import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, speakText } from '../utils';
+import { detailRequiresPrisadka } from '../utils/stageReadiness';
+import { FinishedPartNoticeModal } from '../components/FinishedPartNoticeModal';
 import { MobileCameraScannerModal } from '../components/MobileCameraScannerModal';
 import { ERPPackagingTab } from '../components/ERPPackagingTab';
 import { ERPKittingTab } from '../components/ERPKittingTab';
@@ -48,6 +50,7 @@ interface ERPOrderWorkspaceViewProps {
   initialStageId?: ProductionStageId | null;
   settings?: ERPCompanySettings;
   currentUser?: ERPEmployee | any | null;
+  employees?: ERPEmployee[];
   isShiftActive?: boolean;
   onStartShift?: () => void;
   onLogout?: () => void;
@@ -56,6 +59,7 @@ interface ERPOrderWorkspaceViewProps {
   onBack: () => void;
   onUpdateOrder: (updatedOrder: ProductionOrder) => void;
   onUpdateOrderStatus: (orderId: string, nextStage: ProductionStageId) => void;
+  onAddEmployee?: (emp: Partial<ERPEmployee>) => void;
   sourceSection?: string;
 }
 
@@ -113,6 +117,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   initialStageId,
   settings,
   currentUser,
+  employees = [],
   isShiftActive = false,
   onStartShift,
   onLogout,
@@ -121,6 +126,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   onBack,
   onUpdateOrder,
   onUpdateOrderStatus,
+  onAddEmployee,
   sourceSection
 }) => {
   // Current active stage for this workstation (strict focus on current stage)
@@ -140,6 +146,13 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     partName: string;
     instruction: string;
     color?: string;
+  } | null>(null);
+
+  const [finishedPartNotice, setFinishedPartNotice] = useState<{
+    isOpen: boolean;
+    labelNumber: string;
+    partName: string;
+    materialName?: string;
   } | null>(null);
 
   const [scanErrorMsg, setScanErrorMsg] = useState<string | null>(null);
@@ -356,6 +369,20 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       stageScanningProgress: updatedStageScanning
     });
 
+    // Check if edging stage detail requires no drilling -> speak and show finished part alert
+    if (currentStage === 'edging') {
+      const needsPrisadka = detailRequiresPrisadka(foundPart, settings);
+      if (!needsPrisadka) {
+        speakText('Готовая деталь');
+        setFinishedPartNotice({
+          isOpen: true,
+          labelNumber: foundPart.labelNumber,
+          partName: foundPart.name,
+          materialName: targetMaterial
+        });
+      }
+    }
+
     const hasNoteText = !!foundPart.notes && foundPart.notes.trim().length > 0;
     const matchedRule = getMatchedNoteRule(foundPart.notes, foundPart.name);
 
@@ -470,6 +497,19 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     });
 
     if (!isScanned) {
+      if (currentStage === 'edging') {
+        const needsPrisadka = detailRequiresPrisadka(detail, settings);
+        if (!needsPrisadka) {
+          speakText('Готовая деталь');
+          setFinishedPartNotice({
+            isOpen: true,
+            labelNumber: detail.labelNumber,
+            partName: detail.name,
+            materialName: selectedMaterial
+          });
+        }
+      }
+
       const hasNoteText = !!detail.notes && detail.notes.trim().length > 0;
       const matchedRule = getMatchedNoteRule(detail.notes, detail.name);
 
@@ -673,9 +713,11 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
             order={order}
             settings={settings}
             currentUser={currentUser}
+            employees={employees}
             onUpdateOrder={onUpdateOrder}
             onUpdateOrderStatus={onUpdateOrderStatus}
             onOpenScannerModal={() => setShowCameraScannerModal(true)}
+            onAddEmployee={onAddEmployee}
           />
         </div>
       )}
@@ -788,7 +830,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                       <button
                         type="button"
                         onClick={() => setShowCameraScannerModal(true)}
-                        className="px-2.5 py-1 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold flex items-center gap-1.5 transition-all shadow-md shadow-indigo-600/30 cursor-pointer"
+                        className="md:hidden px-2.5 py-1 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold flex items-center gap-1.5 transition-all shadow-md shadow-indigo-600/30 cursor-pointer"
                         title="Включить сканирование камерой телефона"
                       >
                         <Camera className="w-3.5 h-3.5" /> Камера
@@ -1011,6 +1053,18 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
         title={`Сканирование камерой (${stageMeta.shortName})`}
         subtitle="Наведите камеру смартфона на QR-код или штрихкод бирки детали"
       />
+
+      {/* Finished Part Separate Pack Notice Modal */}
+      {finishedPartNotice?.isOpen && (
+        <FinishedPartNoticeModal
+          isOpen={finishedPartNotice.isOpen}
+          labelNumber={finishedPartNotice.labelNumber}
+          partName={finishedPartNotice.partName}
+          materialName={finishedPartNotice.materialName}
+          durationSeconds={settings?.finishedPartNoticeDuration ?? 5}
+          onClose={() => setFinishedPartNotice(null)}
+        />
+      )}
     </div>
   );
 };

@@ -119,4 +119,22 @@ export function normalizeBarcodeScan(code: string): string {
   return convertRuToEnLayout(clean);
 }
 
+/**
+ * Text-To-Speech assistant voice synthesizer (Web Speech API)
+ */
+export function speakText(text: string) {
+  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    try {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'ru-RU';
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      window.speechSynthesis.speak(utterance);
+    } catch (e) {
+      console.warn('Speech synthesis error:', e);
+    }
+  }
+}
+
 

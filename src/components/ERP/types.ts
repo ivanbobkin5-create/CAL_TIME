@@ -164,6 +164,27 @@ export interface ProductionOrder {
   shippedByEmployeeName?: string;
   driverInfo?: DriverInfo;
 
+  // Delivery & Client Data (masked for regular workers, visible to head/master)
+  deliveryData?: {
+    address?: string;
+    clientName?: string;
+    clientPhone?: string;
+    floor?: string;
+    hasElevator?: boolean | string;
+    deliveryPrice?: number;
+    comment?: string;
+    assemblyPrice?: number;
+  };
+
+  // Assembly Data
+  assemblyData?: {
+    assemblerEmployeeId?: string;
+    assemblerName?: string;
+    status?: 'pending' | 'in_progress' | 'completed';
+    notes?: string;
+    assemblyPrice?: number;
+  };
+
   stageProgress: {
     [key in ProductionStageId]?: {
       status: 'pending' | 'in_progress' | 'done';
@@ -251,11 +272,14 @@ export interface ERPEmployee {
   role: string;
   productionRole?: string;
   isProductionEmployee?: boolean;
+  employmentType?: 'staff' | 'outsource'; // 'Работник компании' или 'Аутсорс'
   department: 'cutting' | 'edging' | 'cnc' | 'facades' | 'assembly' | 'qc' | 'management' | 'packing' | 'warehouse' | string;
   phone?: string;
   email?: string;
   password?: string;
   tempPassword?: string;
+  carPlate?: string; // Госномер автомобиля для водителей
+  carModel?: string; // Марка / модель ТС
   rateType: 'hourly' | 'piecework' | 'salary' | 'mixed';
   baseRate: number; // руб в час или базовая ставка
   pieceworkRates?: {
@@ -358,10 +382,37 @@ export interface ERPCompanySettings {
   warehouseLocations?: Record<string, string>; // { [itemArticleOrNameLower]: "A-12" }
   warehouseItemsCatalog?: Array<{ id: string; name: string; article?: string; category?: string; storageCell: string; updatedAt?: string }>;
 
+  // Настройки уведомлений и ассистента сканирования
+  finishedPartNoticeDuration?: number; // Время автоскрытия сообщения "Готовая деталь" в секундах
+
   // Сопоставление стадий ERP и Битрикс24
   bitrix24StageMapping?: Record<string, string>;
   bitrix24RestoreAction?: 'do_nothing' | 'restore_to_stage';
   bitrix24RestoreStageId?: string;
+
+  // Идентификаторы пользовательских полей Битрикс24 (доставка, сборка, клиент)
+  bitrix24FieldMapping?: {
+    deliveryAddressField?: string;  // e.g. "UF_CRM_DELIVERY_ADDRESS"
+    clientNameField?: string;       // e.g. "UF_CRM_CLIENT_NAME"
+    clientPhoneField?: string;      // e.g. "UF_CRM_CLIENT_PHONE"
+    floorField?: string;            // e.g. "UF_CRM_FLOOR"
+    elevatorField?: string;         // e.g. "UF_CRM_ELEVATOR"
+    deliveryPriceField?: string;    // e.g. "UF_CRM_DELIVERY_PRICE"
+    deliveryCommentField?: string;  // e.g. "UF_CRM_DELIVERY_COMMENT"
+    assemblyPriceField?: string;    // e.g. "UF_CRM_ASSEMBLY_PRICE"
+  };
+
+  // Шаблон Акта приема-передачи и ТТН на А4
+  shippingActTemplate?: {
+    companyTitle?: string;
+    companyInn?: string;
+    companyPhone?: string;
+    actHeaderTitle?: string;
+    actTextIntro?: string;
+    actTermsText?: string;
+    customFooterNotes?: string;
+    showQrForAssembler?: boolean;
+  };
 }
 
 export interface SalaryAdjustment {
