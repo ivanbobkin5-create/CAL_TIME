@@ -24,17 +24,20 @@ import {
   Flame,
   UserCheck,
   Camera,
-  Sparkles
+  Sparkles,
+  Truck
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPEmployee, ERPCompanySettings } from '../types';
 import { formatDeadlineDate, getNextRequiredStage } from '../utils';
 import { ERPOrderDetailsModal } from './ERPOrderDetailsModal';
+import { ERPDispatchView } from './ERPDispatchView';
 import { MobileCameraScannerModal } from '../components/MobileCameraScannerModal';
 
 interface ERPProductionViewProps {
   orders: ProductionOrder[];
   employees: ERPEmployee[];
   settings?: ERPCompanySettings;
+  companyName?: string;
   onUpdateOrderStatus: (orderId: string, nextStage: ProductionStageId) => void;
   onUpdateOrder?: (updatedOrder: ProductionOrder) => void;
   onSelectOrder: (order: ProductionOrder, stageId?: ProductionStageId) => void;
@@ -44,6 +47,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
   orders,
   employees,
   settings,
+  companyName,
   onUpdateOrderStatus,
   onUpdateOrder,
   onSelectOrder
@@ -63,7 +67,8 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
     { id: 'assembly', name: 'Участок сборки', icon: Wrench, color: 'text-teal-600 border-teal-200 bg-teal-50', badgeColor: 'bg-teal-600 text-white', bgGradient: 'from-teal-50/50 to-white' },
     { id: 'kitting', name: 'Участок комплектовки', icon: Box, color: 'text-cyan-600 border-cyan-200 bg-cyan-50', badgeColor: 'bg-cyan-600 text-white', bgGradient: 'from-cyan-50/50 to-white' },
     { id: 'qc', name: 'Контроль ОТК', icon: CheckCircle2, color: 'text-emerald-600 border-emerald-200 bg-emerald-50', badgeColor: 'bg-emerald-600 text-white', bgGradient: 'from-emerald-50/50 to-white' },
-    { id: 'packing', name: 'Упаковка и склад', icon: Package, color: 'text-orange-600 border-orange-200 bg-orange-50', badgeColor: 'bg-orange-600 text-white', bgGradient: 'from-orange-50/50 to-white' }
+    { id: 'packing', name: 'Упаковка и склад', icon: Package, color: 'text-orange-600 border-orange-200 bg-orange-50', badgeColor: 'bg-orange-600 text-white', bgGradient: 'from-orange-50/50 to-white' },
+    { id: 'shipping', name: 'Участок отгрузки и доставки', icon: Truck, color: 'text-emerald-700 border-emerald-200 bg-emerald-50', badgeColor: 'bg-emerald-700 text-white', bgGradient: 'from-emerald-50/50 to-white' }
   ];
 
   const enabledStageIds = settings?.enabledStages || allStages.map(s => s.id);
@@ -297,6 +302,15 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
             );
           })}
         </div>
+      ) : selectedStageId === 'shipping' ? (
+        <ERPDispatchView 
+          orders={orders} 
+          employees={employees} 
+          settings={settings}
+          companyName={companyName}
+          onUpdateOrder={onUpdateOrder || (() => {})}
+          onSelectOrder={(order) => onSelectOrder(order, 'shipping')}
+        />
       ) : (
         /* VIEW MODE 2: Selected Stage Orders List */
         <div className="space-y-4">
