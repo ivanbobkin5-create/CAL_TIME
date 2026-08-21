@@ -19,6 +19,12 @@ export const FinishedPartNoticeModal: React.FC<FinishedPartNoticeModalProps> = (
   onClose
 }) => {
   const [remainingTime, setRemainingTime] = useState<number>(durationSeconds);
+  const onCloseRef = React.useRef(onClose);
+
+  // Keep onCloseRef current
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -35,14 +41,14 @@ export const FinishedPartNoticeModal: React.FC<FinishedPartNoticeModalProps> = (
 
       if (elapsedMs >= totalMs) {
         clearInterval(timer);
-        onClose();
+        onCloseRef.current();
       }
     }, intervalMs);
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Enter' || e.key === 'Escape' || e.key === ' ') {
         e.preventDefault();
-        onClose();
+        onCloseRef.current();
       }
     };
 
@@ -52,7 +58,7 @@ export const FinishedPartNoticeModal: React.FC<FinishedPartNoticeModalProps> = (
       clearInterval(timer);
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [isOpen, durationSeconds, onClose]);
+  }, [isOpen, durationSeconds, labelNumber]);
 
   if (!isOpen) return null;
 

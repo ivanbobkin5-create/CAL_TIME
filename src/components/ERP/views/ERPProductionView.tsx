@@ -550,7 +550,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
 
                           if (prevLogs.length > 0) {
                             const formattedWorkers = prevLogs.map(l => 
-                              `${l.employeeName || 'Иван Иванов'}, ${l.scannedPartsCount || order.partsCount} деталей в объеме ${(l.scannedAreaM2 || order.totalAreaM2).toFixed(1)} м², ${l.endTime || l.startTime || 'сегодня'}`
+                              `${l.employeeName || order.stageProgress?.[prevStageId]?.completedBy || order.responsibleEmployeeName || 'Сотрудник'}, ${l.scannedPartsCount || order.partsCount} деталей в объеме ${(l.scannedAreaM2 || order.totalAreaM2).toFixed(1)} м², ${l.endTime || l.startTime || 'сегодня'}`
                             );
                             const text = formattedWorkers.length > 1
                               ? `${prevStageName} выполнили: ${formattedWorkers[0]} совместно с ${formattedWorkers.slice(1).join(', ')}`
@@ -565,12 +565,24 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                           }
 
                           const prevScanning = order.stageScanningProgress?.[prevStageId];
+                          const completedByName = order.stageProgress?.[prevStageId]?.completedBy || order.responsibleEmployeeName || 'Сотрудник';
                           if (prevScanning && Object.keys(prevScanning).length > 0) {
                             return (
                               <div className="mt-2 text-[11px] font-semibold text-slate-800 bg-emerald-50/90 p-2.5 rounded-2xl border border-emerald-200/90 flex items-center gap-2">
                                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                                 <div>
-                                  {prevStageName} выполнил: Иван Иванов (Мастер цеха), {order.partsCount} деталей в объеме {order.totalAreaM2} м², {order.plannedCuttingDate || 'Ранее'}
+                                  {prevStageName} выполнил: {completedByName}, {order.partsCount} деталей в объеме {order.totalAreaM2} м², {order.plannedCuttingDate || 'Ранее'}
+                                </div>
+                              </div>
+                            );
+                          }
+
+                          if (order.stageProgress?.[prevStageId]?.status === 'done') {
+                            return (
+                              <div className="mt-2 text-[11px] font-semibold text-slate-800 bg-emerald-50/90 p-2.5 rounded-2xl border border-emerald-200/90 flex items-center gap-2">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                <div>
+                                  {prevStageName} выполнил: {completedByName}, {order.partsCount} деталей в объеме {order.totalAreaM2} м²
                                 </div>
                               </div>
                             );
