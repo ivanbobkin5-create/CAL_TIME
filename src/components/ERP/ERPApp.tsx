@@ -55,6 +55,7 @@ import { ERPArchiveView } from './views/ERPArchiveView';
 import { ERPLoginView } from './views/ERPLoginView';
 import { ERPOrderWorkspaceView } from './views/ERPOrderWorkspaceView';
 import { MobileCameraScannerModal } from './components/MobileCameraScannerModal';
+import { VoiceAssistantToggle } from './components/VoiceAssistantToggle';
 
 interface ERPAppProps {
   aliasOrId: string;
@@ -1240,6 +1241,9 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
 
         {/* Mobile Quick Action Buttons: Scan + Shift Timer */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* Voice Assistant Toggle on Mobile */}
+          <VoiceAssistantToggle variant="icon" className="!bg-slate-900 hover:!bg-slate-800 !text-slate-300 !border-slate-800" />
+
           {/* Quick Scanner Button */}
           <button
             onClick={() => setShowGlobalCameraScanner(true)}
@@ -1331,6 +1335,9 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
                 </div>
               )}
             </div>
+
+            {/* Voice Assistant Toggle */}
+            <VoiceAssistantToggle variant="pill" className="bg-white" />
 
             {/* Operator Card */}
             <div className="flex items-center gap-2.5 pl-3 border-l border-slate-200">

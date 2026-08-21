@@ -120,9 +120,37 @@ export function normalizeBarcodeScan(code: string): string {
 }
 
 /**
+ * Voice Assistant Mute controls
+ */
+export function isVoiceMuted(): boolean {
+  if (typeof window === 'undefined') return false;
+  return localStorage.getItem('erp_voice_disabled') === 'true';
+}
+
+export function setVoiceMuted(muted: boolean): void {
+  if (typeof window === 'undefined') return;
+  if (muted) {
+    localStorage.setItem('erp_voice_disabled', 'true');
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+  } else {
+    localStorage.removeItem('erp_voice_disabled');
+  }
+  window.dispatchEvent(new Event('erp_voice_toggle'));
+}
+
+export function toggleVoiceMuted(): boolean {
+  const newMuted = !isVoiceMuted();
+  setVoiceMuted(newMuted);
+  return newMuted;
+}
+
+/**
  * Text-To-Speech assistant voice synthesizer (Web Speech API)
  */
 export function speakText(text: string) {
+  if (isVoiceMuted()) return;
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     try {
       window.speechSynthesis.cancel();
