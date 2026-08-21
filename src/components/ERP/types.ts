@@ -3,6 +3,7 @@ export type ERPSection =
   | 'planning'
   | 'schedule'
   | 'production'
+  | 'archive'
   | 'reports'
   | 'salaries'
   | 'employees'

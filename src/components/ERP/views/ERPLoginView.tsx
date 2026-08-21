@@ -23,8 +23,10 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { MobileCameraScannerModal } from '../components/MobileCameraScannerModal';
 import { ERPEmployee } from '../types';
+import { convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan } from '../utils';
 
 interface ERPLoginViewProps {
+
   company: any;
   aliasOrId: string;
   onSuccessLogin: (userData: any, token: string) => void;
@@ -73,7 +75,7 @@ export const ERPLoginView: React.FC<ERPLoginViewProps> = ({
   // Process Scanned Badge Code
   const handleProcessBadgeCode = async (scannedCode: string) => {
     if (!scannedCode || !scannedCode.trim()) return;
-    const cleanCode = scannedCode.trim();
+    const cleanCode = normalizeBarcodeScan(scannedCode);
     setIsLoading(true);
     setErrorMsg(null);
 
@@ -175,10 +177,11 @@ export const ERPLoginView: React.FC<ERPLoginViewProps> = ({
         console.warn('LocalStorage error:', storageErr);
       }
 
+      // Swift login without long blocking wait
       setTimeout(() => {
         setIsLoading(false);
         onSuccessLogin(finalUserData, syntheticToken);
-      }, 700);
+      }, 150);
 
     } catch (err: any) {
       console.error('Badge login error:', err);
@@ -197,20 +200,20 @@ export const ERPLoginView: React.FC<ERPLoginViewProps> = ({
       if (isTyping) return;
 
       const now = Date.now();
-      if (now - lastKeyTimeRef.current > 150) {
+      if (now - lastKeyTimeRef.current > 250) {
         barcodeBufferRef.current = '';
       }
       lastKeyTimeRef.current = now;
 
       if (e.key === 'Enter') {
-        const fullBuffer = barcodeBufferRef.current.trim();
-        if (fullBuffer.length >= 3) {
+        const fullBuffer = normalizeBarcodeScan(barcodeBufferRef.current);
+        if (fullBuffer.length >= 2) {
           e.preventDefault();
           handleProcessBadgeCode(fullBuffer);
           barcodeBufferRef.current = '';
         }
-      } else if (e.key.length === 1) {
-        barcodeBufferRef.current += e.key;
+      } else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        barcodeBufferRef.current += convertRuCharToEn(e.key);
       }
     };
 
@@ -550,9 +553,14 @@ export const ERPLoginView: React.FC<ERPLoginViewProps> = ({
                     <input
                       name="badge_scanner_input"
                       type="text"
+                      lang="en"
+                      inputMode="text"
+                      autoCapitalize="characters"
+                      autoCorrect="off"
+                      spellCheck={false}
                       placeholder="Или введите код бейджа вручную (Enter)..."
                       value={manualBadgeInput}
-                      onChange={(e) => setManualBadgeInput(e.target.value)}
+                      onChange={(e) => setManualBadgeInput(convertRuToEnLayout(e.target.value))}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && manualBadgeInput.trim()) {
                           e.preventDefault();

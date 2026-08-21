@@ -268,17 +268,17 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
             return (
               <div
                 key={order.id}
-                className={`bg-white rounded-3xl p-5 md:p-6 border transition-all shadow-sm space-y-4 ${
+                className={`bg-white rounded-3xl p-5 md:p-6 border transition-all shadow-xs space-y-4 ${
                   order.isReadyForProduction 
-                    ? 'border-emerald-200 bg-gradient-to-r from-emerald-50/20 to-white' 
-                    : 'border-slate-200/90 hover:border-blue-300'
+                    ? 'border-emerald-300/80 bg-gradient-to-r from-emerald-50/25 via-white to-white' 
+                    : 'border-slate-200 hover:border-blue-300'
                 }`}
               >
-                {/* Top Row: Order Number, Client Name & Status Badges */}
+                {/* 1. Header Row: Order ID, B24, Client Name & Status Badges */}
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3.5">
                   <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
                     {/* Order Number Badge */}
-                    <div className="font-mono font-black text-slate-900 text-xs sm:text-sm bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 shrink-0">
+                    <div className="font-mono font-black text-slate-900 text-xs sm:text-sm bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200/90 shrink-0">
                       {displayNumber}
                     </div>
 
@@ -320,8 +320,15 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Badges: Priority & Planning Stage */}
+                  {/* Badges: Deadline + Priority + Status */}
                   <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                    {order.deadlineDate && (
+                      <span className="px-2.5 py-1 rounded-lg text-xs font-semibold text-slate-500 bg-slate-50 border border-slate-200 flex items-center gap-1 shrink-0">
+                        <Clock className="w-3 h-3 text-slate-400" />
+                        <span>Срок: {formatDeadlineDate(order.deadlineDate)}</span>
+                      </span>
+                    )}
+
                     <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border shrink-0 ${priorityStyles}`}>
                       {order.priority === 'urgent' ? 'Срочно' : order.priority === 'high' ? 'Высокий' : 'Обычный'}
                     </span>
@@ -332,29 +339,29 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                       </span>
                     ) : (
                       <span className="px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200 shrink-0">
-                        В очереди планирования
+                        В очереди
                       </span>
                     )}
                   </div>
                 </div>
 
-                {/* Middle Row: Metrics (Left) & Actions (Right) */}
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                  {/* Left: Specification Metrics & Birka status */}
-                  <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                {/* 2. Middle Row: Specification Metrics & Action Controls */}
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-center">
+                  {/* Left: Specification Metrics */}
+                  <div className="xl:col-span-7 flex items-center gap-2 sm:gap-3 flex-wrap">
                     <div className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs text-slate-600 flex items-center gap-1.5">
-                      <span className="text-slate-400">Площадь:</span>
-                      <strong className="text-slate-900 font-bold">{order.totalAreaM2 || 0} м²</strong>
+                      <span className="text-slate-400 font-medium">Площадь:</span>
+                      <strong className="text-slate-900 font-bold font-mono">{order.totalAreaM2 || 0} м²</strong>
                     </div>
 
                     <div className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs text-slate-600 flex items-center gap-1.5">
-                      <span className="text-slate-400">Кромка:</span>
-                      <strong className="text-slate-900 font-bold">{order.totalEdgeM || 0} п.м.</strong>
+                      <span className="text-slate-400 font-medium">Кромка:</span>
+                      <strong className="text-slate-900 font-bold font-mono">{order.totalEdgeM || 0} п.м.</strong>
                     </div>
 
                     <div className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs text-slate-600 flex items-center gap-1.5">
-                      <span className="text-slate-400">Деталей:</span>
-                      <strong className="text-slate-900 font-bold">{order.partsCount || 0} шт.</strong>
+                      <span className="text-slate-400 font-medium">Деталей:</span>
+                      <strong className="text-slate-900 font-bold font-mono">{order.partsCount || 0} шт.</strong>
                     </div>
 
                     {order.birkaData ? (
@@ -364,22 +371,22 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                           e.stopPropagation();
                           setViewingBirkaModalOrder(order);
                         }}
-                        className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-xl border border-emerald-200 transition-colors cursor-pointer shadow-xs max-w-[260px] truncate"
-                        title="Нажмите, чтобы просмотреть сводку бирок, детали и расход материалов"
+                        className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-xl border border-emerald-200 transition-colors cursor-pointer shadow-2xs max-w-[240px] truncate"
+                        title="Нажмите, чтобы просмотреть спецификацию бирок, детали и расход материалов"
                       >
                         <FileText className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                         <span className="truncate">Бирки: {order.birkaData.fileName}</span>
                       </button>
                     ) : (
                       <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200/90">
-                        <Upload className="w-3.5 h-3.5 text-amber-600" />
+                        <Upload className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                         <span>Бирки не прикреплены</span>
                       </span>
                     )}
                   </div>
 
-                  {/* Right: Date Picker, Upload & Ready Button */}
-                  <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap justify-between lg:justify-end shrink-0 pt-2 lg:pt-0">
+                  {/* Right: Date Picker, Upload & Launch Button */}
+                  <div className="xl:col-span-5 flex items-center gap-2 sm:gap-3 flex-wrap justify-start xl:justify-end">
                     {/* Planned Cutting Date */}
                     <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-2xl border border-slate-200">
                       <CalendarDays className="w-4 h-4 text-blue-600 shrink-0" />
@@ -402,7 +409,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                     </div>
 
                     {/* Upload Birka File Button */}
-                    <label className="px-3.5 py-2.5 rounded-2xl bg-blue-50 hover:bg-blue-600 hover:text-white border border-blue-200 text-xs font-bold text-blue-700 shadow-xs transition-all cursor-pointer flex items-center gap-1.5 shrink-0">
+                    <label className="px-3.5 py-2.5 rounded-2xl bg-blue-50 hover:bg-blue-600 hover:text-white border border-blue-200 text-xs font-bold text-blue-700 shadow-2xs transition-all cursor-pointer flex items-center gap-1.5 shrink-0">
                       <Upload className="w-3.5 h-3.5" />
                       <span>{order.birkaData ? 'Заменить бирки' : '+ Файл бирок'}</span>
                       <input
@@ -421,7 +428,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                     {!order.isReadyForProduction ? (
                       <button
                         onClick={(e) => handleLaunchToProduction(order, e)}
-                        className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center gap-2 cursor-pointer"
+                        className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center gap-2 cursor-pointer shrink-0"
                       >
                         <Play className="w-3.5 h-3.5 fill-current" />
                         <span>Готов к началу</span>
@@ -432,7 +439,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                           e.stopPropagation();
                           onSelectOrder(order);
                         }}
-                        className="px-4 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-md transition-all flex items-center gap-2 cursor-pointer"
+                        className="px-4 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-md transition-all flex items-center gap-2 cursor-pointer shrink-0"
                       >
                         <span>Открыть карту</span>
                       </button>

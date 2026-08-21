@@ -15,6 +15,7 @@ import {
 
 interface ERPLoaderProps {
   companyName: string;
+  logoUrl?: string;
   onFinish?: () => void;
   minDurationMs?: number;
   isDataReady?: boolean;
@@ -22,19 +23,20 @@ interface ERPLoaderProps {
 
 export const ERPLoader: React.FC<ERPLoaderProps> = ({ 
   companyName, 
+  logoUrl,
   onFinish,
-  minDurationMs = 500,
+  minDurationMs = 250,
   isDataReady = true
 }) => {
-  const [progress, setProgress] = useState(15);
+  const [progress, setProgress] = useState(25);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
 
   const steps = [
-    { title: "Инициализация ядра ERP Enterprise", desc: "Загрузка конфигурации цехов и участков" },
+    { title: "Инициализация ядра ERP", desc: "Загрузка конфигурации цехов и участков" },
     { title: "Синхронизация станков и линий", desc: "Раскрой, Кромление, Присадка ЧПУ, Сборка" },
     { title: "Загрузка очередей и графиков смен", desc: "Календарное планирование заказов" },
     { title: "Проверка прав доступа и профиля", desc: "Модули зарплат, отчетов и выработки" },
-    { title: "Готово к работе", desc: "Вход в панель управления производством..." }
+    { title: "Готово к работе", desc: "Вход в систему управления производством..." }
   ];
 
   useEffect(() => {
@@ -42,10 +44,10 @@ export const ERPLoader: React.FC<ERPLoaderProps> = ({
     const interval = setInterval(() => {
       setProgress((prev) => {
         if (!isDataReady) {
-          // Advance slowly up to 88% while waiting for backend
-          if (prev < 88) {
-            const next = prev + Math.floor(Math.random() * 8) + 4;
-            const bounded = Math.min(88, next);
+          // Advance steadily up to 90% while waiting for backend
+          if (prev < 90) {
+            const next = prev + Math.floor(Math.random() * 12) + 8;
+            const bounded = Math.min(90, next);
             const stepIdx = Math.min(steps.length - 2, Math.floor((bounded / 100) * steps.length));
             setCurrentStepIndex(stepIdx);
             return bounded;
@@ -54,24 +56,30 @@ export const ERPLoader: React.FC<ERPLoaderProps> = ({
         } else {
           // Data is ready, swiftly reach 100%
           if (prev < 100) {
-            const next = prev + 15;
+            const next = prev + 25;
             if (next >= 100) {
               setCurrentStepIndex(steps.length - 1);
               if (!timer) {
                 timer = setTimeout(() => {
                   if (onFinish) onFinish();
-                }, 250);
+                }, 80);
               }
               return 100;
             }
             const stepIdx = Math.min(steps.length - 1, Math.floor((next / 100) * steps.length));
             setCurrentStepIndex(stepIdx);
             return next;
+          } else {
+            if (!timer) {
+              timer = setTimeout(() => {
+                if (onFinish) onFinish();
+              }, 50);
+            }
           }
           return 100;
         }
       });
-    }, 45);
+    }, 25);
 
     return () => {
       clearInterval(interval);
@@ -87,22 +95,6 @@ export const ERPLoader: React.FC<ERPLoaderProps> = ({
       <div className="absolute -top-32 -right-32 w-96 h-96 bg-indigo-600/15 rounded-full blur-3xl pointer-events-none" />
       <div className="absolute -bottom-32 -left-32 w-96 h-96 bg-emerald-600/10 rounded-full blur-3xl pointer-events-none" />
 
-      {/* Top Industrial Badge */}
-      <motion.div 
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-        className="relative z-10 mb-8 flex items-center gap-3 px-4 py-1.5 rounded-full bg-slate-900/80 border border-slate-800 backdrop-blur-md text-[11px] font-mono tracking-widest text-slate-400 uppercase"
-      >
-        <span className="flex h-2 w-2 relative">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-        </span>
-        <span>ERP // INDUSTRIAL MANAGEMENT SYSTEM</span>
-        <span className="text-slate-600">|</span>
-        <span className="text-blue-400 font-bold">ENTERPRISE v2.4</span>
-      </motion.div>
-
       {/* Center Animated Logo Card */}
       <div className="relative z-10 flex flex-col items-center max-w-lg w-full px-6">
         <div className="relative mb-8">
@@ -117,14 +109,24 @@ export const ERPLoader: React.FC<ERPLoaderProps> = ({
             transition={{ duration: 12, repeat: Infinity, ease: "linear" }}
             className="absolute inset-2 rounded-2xl border border-indigo-500/40"
           />
-          {/* Inner core icon */}
+          {/* Inner core company logo */}
           <div className="absolute inset-0 flex items-center justify-center">
             <motion.div 
-              animate={{ scale: [1, 1.08, 1] }}
-              transition={{ duration: 2.5, repeat: Infinity, ease: "easeInOut" }}
-              className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-xl shadow-blue-500/25 border border-blue-400/40"
+              animate={{ scale: [1, 1.06, 1] }}
+              transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+              className="w-20 h-20 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-xl shadow-blue-500/25 border border-blue-400/40 overflow-hidden p-2"
             >
-              <Factory className="w-10 h-10 text-white" />
+              {logoUrl ? (
+                <img 
+                  src={logoUrl} 
+                  alt={companyName || "Логотип компании"} 
+                  className="w-full h-full object-contain filter drop-shadow" 
+                />
+              ) : (
+                <div className="text-xl font-black text-white tracking-wider font-mono">
+                  {companyName ? companyName.substring(0, 2).toUpperCase() : <Factory className="w-9 h-9 text-white" />}
+                </div>
+              )}
             </motion.div>
           </div>
         </div>
@@ -133,7 +135,7 @@ export const ERPLoader: React.FC<ERPLoaderProps> = ({
         <motion.div 
           initial={{ opacity: 0, y: 10 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
+          transition={{ duration: 0.3 }}
           className="text-center mb-8"
         >
           <div className="text-xs font-semibold tracking-wider text-blue-400 uppercase mb-1 flex items-center justify-center gap-1.5">
@@ -168,34 +170,18 @@ export const ERPLoader: React.FC<ERPLoaderProps> = ({
           </div>
 
           {/* Progress Bar */}
-          <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden p-0.5 border border-slate-800/80 mb-4">
+          <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden p-0.5 border border-slate-800/80">
             <motion.div 
-              className="h-full bg-gradient-to-r from-blue-600 via-indigo-500 to-emerald-400 rounded-full transition-all duration-150"
+              className="h-full bg-gradient-to-r from-blue-600 via-indigo-500 to-emerald-400 rounded-full transition-all duration-100"
               style={{ width: `${progress}%` }}
             />
-          </div>
-
-          {/* System Telemetry Chips */}
-          <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-800/80 text-[10px] font-mono text-slate-400">
-            <div className="flex items-center gap-1.5 bg-slate-950/60 py-1.5 px-2 rounded-lg border border-slate-800/50">
-              <Server className="w-3 h-3 text-emerald-400" />
-              <span className="truncate">База: Онлайн</span>
-            </div>
-            <div className="flex items-center gap-1.5 bg-slate-950/60 py-1.5 px-2 rounded-lg border border-slate-800/50">
-              <ShieldCheck className="w-3 h-3 text-blue-400" />
-              <span className="truncate">Шлюз: TLS 1.3</span>
-            </div>
-            <div className="flex items-center gap-1.5 bg-slate-950/60 py-1.5 px-2 rounded-lg border border-slate-800/50">
-              <Gauge className="w-3 h-3 text-indigo-400" />
-              <span className="truncate">Пинг: 18ms</span>
-            </div>
           </div>
         </div>
       </div>
 
       {/* Bottom Footer */}
-      <div className="absolute bottom-6 text-[11px] text-slate-600 font-mono text-center">
-        Платформа управления мебельным бизнесом © {new Date().getFullYear()}
+      <div className="absolute bottom-6 text-[11px] text-slate-500 font-mono text-center">
+        Система управления производством © {new Date().getFullYear()}
       </div>
     </div>
   );

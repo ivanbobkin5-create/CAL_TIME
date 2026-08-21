@@ -33,6 +33,8 @@ interface ERPScheduleViewProps {
   shifts?: WorkShift[];
   onAddShift?: (shift: Partial<WorkShift>) => void;
   onUpdateSchedule?: (entries: Record<string, EmployeeScheduleEntry>) => void;
+  entries?: Record<string, EmployeeScheduleEntry>;
+  companyId?: string;
 }
 
 type ViewMode = 'week' | 'two_weeks' | 'month';
@@ -120,7 +122,9 @@ export const ERPScheduleView: React.FC<ERPScheduleViewProps> = ({
   employees,
   shifts = [],
   onAddShift,
-  onUpdateSchedule
+  onUpdateSchedule,
+  entries,
+  companyId
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('two_weeks');
   const [currentDateOffset, setCurrentDateOffset] = useState<Date>(() => {
@@ -135,18 +139,25 @@ export const ERPScheduleView: React.FC<ERPScheduleViewProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   
   // Storage key for schedule entries
-  const storageKey = 'erp_production_schedule_grid_v1';
+  const storageKey = companyId ? `erp_schedule_entries_${companyId}` : 'erp_production_schedule_grid_v1';
   
   // Stored schedule entries: key = `empId_YYYY-MM-DD`
   const [scheduleEntries, setScheduleEntries] = useState<Record<string, EmployeeScheduleEntry>>(() => {
+    if (entries && Object.keys(entries).length > 0) return entries;
     try {
-      const saved = localStorage.getItem(storageKey);
+      const saved = localStorage.getItem(storageKey) || localStorage.getItem('erp_production_schedule_grid_v1');
       if (saved) return JSON.parse(saved);
     } catch (e) {
       console.warn('Failed to load schedule entries from storage', e);
     }
     return {};
   });
+
+  useEffect(() => {
+    if (entries && Object.keys(entries).length > 0) {
+      setScheduleEntries(entries);
+    }
+  }, [entries]);
 
   // Cell popover selector state
   const [activeCell, setActiveCell] = useState<{
@@ -171,7 +182,7 @@ export const ERPScheduleView: React.FC<ERPScheduleViewProps> = ({
     } catch (e) {
       console.warn('Failed to save schedule entries', e);
     }
-  }, [scheduleEntries, onUpdateSchedule]);
+  }, [scheduleEntries, onUpdateSchedule, storageKey]);
 
   // Close popover when clicking outside
   useEffect(() => {

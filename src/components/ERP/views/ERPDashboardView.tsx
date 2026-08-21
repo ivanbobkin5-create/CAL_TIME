@@ -17,13 +17,15 @@ import {
   ChevronRight,
   PlayCircle
 } from 'lucide-react';
-import { ProductionOrder, ERPEmployee, WorkShift, ERPSection } from '../types';
+import { ProductionOrder, ERPEmployee, WorkShift, ERPSection, ERPCompanySettings } from '../types';
 import { formatDeadlineDate } from '../utils';
 
 interface ERPDashboardViewProps {
   orders: ProductionOrder[];
   employees: ERPEmployee[];
   shifts: WorkShift[];
+  settings?: ERPCompanySettings;
+  companyId?: string;
   onNavigateSection: (section: ERPSection) => void;
   onSelectOrder: (order: ProductionOrder) => void;
   onCreateOrderModal?: () => void;
@@ -33,6 +35,8 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
   orders,
   employees,
   shifts,
+  settings,
+  companyId,
   onNavigateSection,
   onSelectOrder,
   onCreateOrderModal
@@ -50,23 +54,25 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
     e.email?.toLowerCase() !== 'lk.ivanbobkin@gmail.com' &&
     !(e as any).isSuperAdmin &&
     e.role !== 'superadmin' &&
-    e.productionRole !== 'superadmin'
+    e.productionRole !== 'superadmin' &&
+    e.status !== 'inactive'
   );
 
   // Today's date YYYY-MM-DD
   const todayStr = new Date().toISOString().split('T')[0];
 
-  // Check schedule from localStorage if exists
+  // Check schedule from localStorage or company schedule
   let scheduledActiveEmployeesCount = 0;
   let scheduledEmployeesToday: ERPEmployee[] = [];
   try {
-    const savedSchedule = localStorage.getItem('erp_production_schedule_grid_v1');
+    const storageKey = companyId ? `erp_schedule_entries_${companyId}` : 'erp_production_schedule_grid_v1';
+    const savedSchedule = localStorage.getItem(storageKey) || localStorage.getItem('erp_production_schedule_grid_v1');
     if (savedSchedule) {
       const parsedSchedule = JSON.parse(savedSchedule);
       validEmployees.forEach(emp => {
         const key = `${emp.id}_${todayStr}`;
         const entry = parsedSchedule[key];
-        if (entry && (entry.type === 'work_12' || entry.type === 'work_8' || entry.type === 'night_12')) {
+        if (entry && (entry.type === 'work_12' || entry.type === 'work_8' || entry.type === 'night_12' || entry.status === 'work')) {
           scheduledActiveEmployeesCount++;
           scheduledEmployeesToday.push(emp);
         }
@@ -74,22 +80,15 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
     }
   } catch (e) {}
 
-  // Active production employees on shift
-  const activeEmployees = validEmployees.filter(e => e.status === 'active');
-  const activeShiftCount = scheduledActiveEmployeesCount > 0 
-    ? scheduledActiveEmployeesCount 
-    : (activeEmployees.length > 0 ? activeEmployees.length : 0);
+  // Active production employees on shift today (0 if none scheduled/started)
+  const activeShiftCount = scheduledActiveEmployeesCount;
 
-  // Shift Master
+  // Shift Master (only if explicitly scheduled or active in management)
   const masterEmployee = scheduledEmployeesToday.find(e => 
     e.department === 'management' || 
     e.role?.toLowerCase().includes('начальник') || 
     e.role?.toLowerCase().includes('мастер')
-  ) || activeEmployees.find(e => 
-    e.department === 'management' || 
-    e.role?.toLowerCase().includes('начальник') || 
-    e.role?.toLowerCase().includes('мастер')
-  ) || (activeEmployees.length > 0 ? activeEmployees[0] : null);
+  ) || null;
 
   // Calculate actual stage load based on real orders in progress
   const stageStats = {
@@ -97,7 +96,10 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
     edging: orders.filter(o => o.currentStage === 'edging' && o.status === 'in_progress'),
     cnc: orders.filter(o => o.currentStage === 'cnc' && o.status === 'in_progress'),
     facades: orders.filter(o => o.currentStage === 'facades' && o.status === 'in_progress'),
-    packaging: orders.filter(o => (o.currentStage === 'packing' || o.currentStage === 'assembly' || o.currentStage === 'kitting' || o.currentStage === 'qc') && o.status === 'in_progress')
+    assembly: orders.filter(o => o.currentStage === 'assembly' && o.status === 'in_progress'),
+    kitting: orders.filter(o => o.currentStage === 'kitting' && o.status === 'in_progress'),
+    packing: orders.filter(o => o.currentStage === 'packing' && o.status === 'in_progress'),
+    shipping: orders.filter(o => o.currentStage === 'shipping' && o.status === 'in_progress')
   };
 
   const getStageLoadPercent = (count: number, capacity: number = 6) => {
@@ -313,9 +315,9 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
                   color: 'bg-amber-600' 
                 },
                 { 
-                  name: '5. Участок контрольной сборки и упаковки', 
-                  ordersCount: stageStats.packaging.length,
-                  load: getStageLoadPercent(stageStats.packaging.length, 4), 
+                  name: '5. Участок комплектовки, упаковки и склада', 
+                  ordersCount: stageStats.assembly.length + stageStats.kitting.length + stageStats.packing.length + stageStats.shipping.length,
+                  load: getStageLoadPercent(stageStats.assembly.length + stageStats.kitting.length + stageStats.packing.length + stageStats.shipping.length, 5), 
                   color: 'bg-emerald-600' 
                 }
               ].map((dep, idx) => (
@@ -366,7 +368,7 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
 
             <div className="space-y-2 mb-5">
               <div className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100">
-                <span className="text-slate-500">Мастеров на линии:</span>
+                <span className="text-slate-500">Сотрудников на смене:</span>
                 <span className="font-bold text-slate-800">{activeShiftCount} чел.</span>
               </div>
               <div className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100">

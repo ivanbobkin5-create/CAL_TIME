@@ -75,3 +75,48 @@ export function getNextRequiredStage(
   return null;
 }
 
+// Russian ЙЦУКЕН to English QWERTY key mapping dictionary
+const RU_TO_EN_MAP: Record<string, string> = {
+  'й': 'q', 'ц': 'w', 'у': 'e', 'к': 'r', 'е': 't', 'н': 'y', 'г': 'u', 'ш': 'i', 'щ': 'o', 'з': 'p', 'х': '[', 'ъ': ']',
+  'ф': 'a', 'ы': 's', 'в': 'd', 'а': 'f', 'п': 'g', 'р': 'h', 'о': 'j', 'л': 'k', 'д': 'l', 'ж': ';', 'э': "'",
+  'я': 'z', 'ч': 'x', 'с': 'c', 'м': 'v', 'и': 'b', 'т': 'n', 'ь': 'm', 'б': ',', 'ю': '.', 'ё': '`',
+  'Й': 'Q', 'Ц': 'W', 'У': 'E', 'К': 'R', 'Е': 'T', 'Н': 'Y', 'Г': 'U', 'Ш': 'I', 'Щ': 'O', 'З': 'P', 'Х': '{', 'Ъ': '}',
+  'Ф': 'A', 'Ы': 'S', 'В': 'D', 'А': 'F', 'П': 'G', 'Р': 'H', 'О': 'J', 'Л': 'K', 'Д': 'L', 'Ж': ':', 'Э': '"',
+  'Я': 'Z', 'Ч': 'X', 'С': 'C', 'М': 'V', 'И': 'B', 'Т': 'N', 'Ь': 'M', 'Б': '<', 'Ю': '>', 'Ё': '~',
+  '№': '#'
+};
+
+/**
+ * Converts a single character or key from Russian keyboard layout to English QWERTY.
+ */
+export function convertRuCharToEn(char: string): string {
+  if (!char) return '';
+  return RU_TO_EN_MAP[char] || char;
+}
+
+/**
+ * Converts an entire string from Russian keyboard layout to English QWERTY.
+ * Ensures that barcodes, badge QR codes (ERP_BADGE:..., PKG-..., etc.), and
+ * order codes scanned via hardware barcode/2D scanners or entered manually
+ * are always processed in English regardless of active OS input language.
+ */
+export function convertRuToEnLayout(text: string): string {
+  if (!text) return '';
+  let result = '';
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    result += RU_TO_EN_MAP[ch] || ch;
+  }
+  return result;
+}
+
+/**
+ * Normalizes scanned barcodes or QR text by trimming, cleaning and converting layout.
+ */
+export function normalizeBarcodeScan(code: string): string {
+  if (!code) return '';
+  const clean = code.trim();
+  return convertRuToEnLayout(clean);
+}
+
+

@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, OrderPackage, OrderPackagePart, ERPCompanySettings, ERPEmployee, ProductionStageId } from '../types';
 import { PackageLabelPrintModal } from './PackageLabelPrintModal';
+import { convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan } from '../utils';
 
 interface ERPPackagingTabProps {
   order: ProductionOrder;
@@ -156,13 +157,23 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
     const cleanCode = code.trim().replace(/^#/, '');
     if (!cleanCode) return;
 
-    // Find detail matching labelNumber or id or barcode or name
-    const found = allDetails.find(d => 
-      d.labelNumber.toLowerCase() === cleanCode.toLowerCase() ||
-      d.id === cleanCode ||
-      (d.barcode && d.barcode.toLowerCase() === cleanCode.toLowerCase()) ||
-      d.name.toLowerCase() === cleanCode.toLowerCase()
-    );
+    const enCode = normalizeBarcodeScan(cleanCode);
+
+    // Find detail matching labelNumber or id or barcode or name (or Latin normalized equivalent)
+    const found = allDetails.find(d => {
+      const dLabel = d.labelNumber.toLowerCase();
+      const dId = d.id.toLowerCase();
+      const dBarcode = (d.barcode || '').toLowerCase();
+      const dName = d.name.toLowerCase();
+      const targetLower = cleanCode.toLowerCase();
+      const enLower = enCode.toLowerCase();
+
+      return dLabel === targetLower || dLabel === enLower ||
+             dId === targetLower || dId === enLower ||
+             (dBarcode && (dBarcode === targetLower || dBarcode === enLower)) ||
+             dName === targetLower || dName === enLower ||
+             (cleanCode.length >= 4 && dBarcode.includes(enLower));
+    });
 
     if (!found) {
       showFeedback(`Деталь с кодом/номером "${cleanCode}" не найдена в заказе!`, 'error');
@@ -194,7 +205,8 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
       if (isOtherInput) return;
 
       if (e.key === 'Enter') {
-        const bufferedCode = barcodeBufferRef.current.trim() || scanInput.trim() || (scannerInputRef.current?.value || '').trim();
+        const rawCode = barcodeBufferRef.current.trim() || scanInput.trim() || (scannerInputRef.current?.value || '').trim();
+        const bufferedCode = normalizeBarcodeScan(rawCode);
         if (bufferedCode) {
           e.preventDefault();
           barcodeBufferRef.current = '';
@@ -209,7 +221,8 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
           barcodeBufferRef.current = '';
         }
         lastKeyTimeRef.current = now;
-        barcodeBufferRef.current += e.key;
+        const enChar = convertRuCharToEn(e.key);
+        barcodeBufferRef.current += enChar;
 
         if (document.activeElement !== scannerInputRef.current) {
           setScanInput(barcodeBufferRef.current);
@@ -451,8 +464,13 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                 <input
                   ref={scannerInputRef}
                   type="text"
+                  lang="en"
+                  inputMode="text"
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  spellCheck={false}
                   value={scanInput}
-                  onChange={(e) => setScanInput(e.target.value)}
+                  onChange={(e) => setScanInput(convertRuToEnLayout(e.target.value))}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
                       e.preventDefault();

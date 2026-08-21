@@ -1937,6 +1937,137 @@ function transliterate(str: string): string {
     }
   });
 
+  // --- ERP Active Shifts & Schedule API ---
+  app.get("/api/erp/:companyId/active-shift/:employeeId", async (req, res) => {
+    try {
+      const { companyId, employeeId } = req.params;
+      const docPath = `companies/${companyId}/active_shifts/${employeeId}`;
+      const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
+      if (!doc) {
+        return res.json({ success: true, activeShift: null });
+      }
+      const data = JSON.parse(doc.data);
+      // If shift is older than 24 hours, auto-expire it
+      if (data.startTime && (Date.now() - data.startTime) > 24 * 3600 * 1000) {
+        return res.json({ success: true, activeShift: null });
+      }
+      res.json({ success: true, activeShift: data });
+    } catch (e: any) {
+      console.error("Error fetching active shift:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/erp/:companyId/active-shift", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const { employeeId, employeeName, shiftStartTime, isShiftActive, date } = req.body;
+      if (!employeeId) return res.status(400).json({ error: "employeeId is required" });
+
+      const docPath = `companies/${companyId}/active_shifts/${employeeId}`;
+      const shiftData = {
+        employeeId,
+        employeeName,
+        shiftStartTime: shiftStartTime || Date.now(),
+        isShiftActive: isShiftActive !== false,
+        date: date || new Date().toISOString().split('T')[0],
+        updatedAt: new Date().toISOString()
+      };
+
+      await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+        where: { path: docPath },
+        create: {
+          path: docPath,
+          collection: `companies/${companyId}/active_shifts`,
+          docId: employeeId,
+          data: JSON.stringify(shiftData)
+        },
+        update: {
+          data: JSON.stringify(shiftData)
+        }
+      }));
+
+      res.json({ success: true, activeShift: shiftData });
+    } catch (e: any) {
+      console.error("Error saving active shift:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/erp/:companyId/end-shift", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const { employeeId, elapsedSeconds } = req.body;
+      if (!employeeId) return res.status(400).json({ error: "employeeId is required" });
+
+      const docPath = `companies/${companyId}/active_shifts/${employeeId}`;
+      await dbQueryWithRetry(() => prisma.dbDocument.delete({ where: { path: docPath } }).catch(() => null));
+
+      // Also append to shift logs history
+      const logId = `shift_log_${Date.now()}_${employeeId}`;
+      const logDocPath = `companies/${companyId}/shift_logs/${logId}`;
+      const logData = {
+        id: logId,
+        employeeId,
+        endedAt: new Date().toISOString(),
+        elapsedSeconds: elapsedSeconds || 0,
+        date: new Date().toISOString().split('T')[0]
+      };
+      await dbQueryWithRetry(() => prisma.dbDocument.create({
+        data: {
+          path: logDocPath,
+          collection: `companies/${companyId}/shift_logs`,
+          docId: logId,
+          data: JSON.stringify(logData)
+        }
+      }).catch(() => null));
+
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("Error ending shift:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.get("/api/erp/:companyId/schedule", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const docPath = `companies/${companyId}/erp_schedule/current`;
+      const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
+      if (!doc) {
+        return res.json({ success: true, entries: {} });
+      }
+      res.json({ success: true, entries: JSON.parse(doc.data) });
+    } catch (e: any) {
+      console.error("Error fetching schedule:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/erp/:companyId/schedule", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const { entries } = req.body;
+      const docPath = `companies/${companyId}/erp_schedule/current`;
+      await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+        where: { path: docPath },
+        create: {
+          path: docPath,
+          collection: `companies/${companyId}/erp_schedule`,
+          docId: "current",
+          data: JSON.stringify(entries || {})
+        },
+        update: {
+          data: JSON.stringify(entries || {})
+        }
+      }));
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("Error saving schedule:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   // Environment determination
   const isDev = process.env.NODE_ENV === "development";
   const distPath = path.join(process.cwd(), 'dist');

@@ -38,7 +38,7 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee } from '../types';
 import { parseBirkaFile, BirkaParseResult, BirkaDetail } from '../utils/birkaParser';
-import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage } from '../utils';
+import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan } from '../utils';
 import { MobileCameraScannerModal } from '../components/MobileCameraScannerModal';
 import { ERPPackagingTab } from '../components/ERPPackagingTab';
 import { ERPKittingTab } from '../components/ERPKittingTab';
@@ -338,25 +338,34 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       return;
     }
 
+    const enCode = normalizeBarcodeScan(cleanCode);
+
     let targetMaterial = selectedMaterial;
     let targetDetails = currentMaterialDetails;
 
-    // Find part matching labelNumber (№ детали) or id or barcode or name in current material
-    let foundPart = currentMaterialDetails.find(d => 
-      d.labelNumber.toLowerCase() === cleanCode.toLowerCase() ||
-      d.id === cleanCode ||
-      (d.barcode && d.barcode.toLowerCase() === cleanCode.toLowerCase()) ||
-      d.name.toLowerCase() === cleanCode.toLowerCase()
-    );
+    // Helper matcher function (matches against clean code, English layout normalized code, labelNumber, id, barcode, or name)
+    const matchesPart = (d: BirkaDetail) => {
+      const dLabel = d.labelNumber.toLowerCase();
+      const dId = d.id.toLowerCase();
+      const dBarcode = (d.barcode || '').toLowerCase();
+      const dName = d.name.toLowerCase();
+      const targetLower = cleanCode.toLowerCase();
+      const enLower = enCode.toLowerCase();
+
+      return dLabel === targetLower || dLabel === enLower ||
+             dId === targetLower || dId === enLower ||
+             (dBarcode && (dBarcode === targetLower || dBarcode === enLower)) ||
+             dName === targetLower || dName === enLower ||
+             (cleanCode.length >= 4 && dBarcode.includes(enLower)) ||
+             (cleanCode.length >= 4 && dId.includes(enLower));
+    };
+
+    // Find part matching in current material
+    let foundPart = currentMaterialDetails.find(matchesPart);
 
     // If not found in current material, check if part exists in another material group of this order
     if (!foundPart && order.birkaData?.details) {
-      const partInOtherMat = order.birkaData.details.find(d => 
-        d.labelNumber.toLowerCase() === cleanCode.toLowerCase() ||
-        d.id === cleanCode ||
-        (d.barcode && d.barcode.toLowerCase() === cleanCode.toLowerCase()) ||
-        d.name.toLowerCase() === cleanCode.toLowerCase()
-      );
+      const partInOtherMat = order.birkaData.details.find(matchesPart);
 
       if (partInOtherMat) {
         const matName = partInOtherMat.material || 'Без указания материала';
@@ -478,7 +487,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
 
       // When Enter arrives (hardware scanners send Enter at end of transmission)
       if (e.key === 'Enter') {
-        const bufferedCode = barcodeBufferRef.current.trim() || scanInput.trim() || (scannerInputRef.current?.value || '').trim();
+        const rawCode = barcodeBufferRef.current.trim() || scanInput.trim() || (scannerInputRef.current?.value || '').trim();
+        const bufferedCode = normalizeBarcodeScan(rawCode);
         if (bufferedCode) {
           e.preventDefault();
           barcodeBufferRef.current = '';
@@ -496,7 +506,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
         }
         lastKeyTimeRef.current = now;
 
-        barcodeBufferRef.current += e.key;
+        const enChar = convertRuCharToEn(e.key);
+        barcodeBufferRef.current += enChar;
 
         // If scannerInput is not focused, focus it and mirror the buffer
         if (document.activeElement !== scannerInputRef.current) {
@@ -1017,9 +1028,14 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                       <input
                         ref={scannerInputRef}
                         type="text"
+                        lang="en"
+                        inputMode="text"
+                        autoCapitalize="characters"
+                        autoCorrect="off"
+                        spellCheck={false}
                         placeholder="Отсканируйте код или введите № детали..."
                         value={scanInput}
-                        onChange={(e) => setScanInput(e.target.value)}
+                        onChange={(e) => setScanInput(convertRuToEnLayout(e.target.value))}
                         className="w-full pl-4 pr-12 py-3.5 rounded-2xl bg-slate-800 border border-slate-700 text-sm font-mono font-bold text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
                       />
                       <button

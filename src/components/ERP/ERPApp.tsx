@@ -26,7 +26,8 @@ import {
   Menu,
   X,
   QrCode,
-  Check
+  Check,
+  Archive
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -47,6 +48,7 @@ import { ERPReportsView } from './views/ERPReportsView';
 import { ERPSalariesView } from './views/ERPSalariesView';
 import { ERPEmployeesView } from './views/ERPEmployeesView';
 import { ERPSettingsView } from './views/ERPSettingsView';
+import { ERPArchiveView } from './views/ERPArchiveView';
 import { ERPLoginView } from './views/ERPLoginView';
 import { ERPOrderWorkspaceView } from './views/ERPOrderWorkspaceView';
 import { MobileCameraScannerModal } from './components/MobileCameraScannerModal';
@@ -81,6 +83,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
   const [orders, setOrders] = useState<ProductionOrder[]>([]);
   const [employees, setEmployees] = useState<ERPEmployee[]>([]);
   const [shifts, setShifts] = useState<WorkShift[]>([]);
+  const [scheduleEntries, setScheduleEntries] = useState<Record<string, any>>({});
   const [isSyncingOrders, setIsSyncingOrders] = useState(false);
   const [syncStatusText, setSyncStatusText] = useState<string | null>(null);
   const [orderSource, setOrderSource] = useState<string>('projects');
@@ -314,12 +317,51 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
         }));
       }
 
-      // Fetch employees and orders in parallel
+      // Fetch employees, orders, schedule and active shift in parallel
       try {
-        const [empRes, ordersRes] = await Promise.allSettled([
+        const currentEmpId = parsedUser?.id || 'emp-user-1';
+        const [empRes, ordersRes, scheduleRes, shiftRes] = await Promise.allSettled([
           fetch(`/api/erp/${comp.id}/employees`),
-          fetch(`/api/erp/${comp.id}/orders`)
+          fetch(`/api/erp/${comp.id}/orders`),
+          fetch(`/api/erp/${comp.id}/schedule`),
+          fetch(`/api/erp/${comp.id}/active-shift/${currentEmpId}`)
         ]);
+
+        // 1. Process schedule
+        if (scheduleRes.status === 'fulfilled' && scheduleRes.value.ok) {
+          const schData = await scheduleRes.value.json();
+          if (schData.entries && typeof schData.entries === 'object') {
+            setScheduleEntries(schData.entries);
+            try {
+              localStorage.setItem(`erp_schedule_entries_${comp.id}`, JSON.stringify(schData.entries));
+            } catch (e) {}
+          }
+        } else {
+          try {
+            const localSch = localStorage.getItem(`erp_schedule_entries_${comp.id}`);
+            if (localSch) setScheduleEntries(JSON.parse(localSch));
+          } catch (e) {}
+        }
+
+        // 2. Process active shift
+        if (shiftRes.status === 'fulfilled' && shiftRes.value.ok) {
+          const shiftData = await shiftRes.value.json();
+          if (shiftData.isShiftActive && shiftData.shiftStartTime) {
+            setIsShiftActive(true);
+            setShiftStartTime(shiftData.shiftStartTime);
+          }
+        } else {
+          try {
+            const localShift = localStorage.getItem(`erp_active_shift_${comp.id}_${currentEmpId}`);
+            if (localShift) {
+              const parsedShift = JSON.parse(localShift);
+              if (parsedShift.isShiftActive && parsedShift.shiftStartTime) {
+                setIsShiftActive(true);
+                setShiftStartTime(parsedShift.shiftStartTime);
+              }
+            }
+          } catch (e) {}
+        }
 
         let loadedEmployees: ERPEmployee[] = [];
         if (empRes.status === 'fulfilled' && empRes.value.ok) {
@@ -582,30 +624,93 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
     }
   };
 
-  const handleStartShift = () => {
+  const handleUpdateScheduleEntries = async (newEntries: Record<string, any>) => {
+    setScheduleEntries(newEntries);
+    const targetCompId = company?.id || aliasOrId;
+    if (targetCompId) {
+      try {
+        localStorage.setItem(`erp_schedule_entries_${targetCompId}`, JSON.stringify(newEntries));
+        await fetch(`/api/erp/${targetCompId}/schedule`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ entries: newEntries })
+        });
+      } catch (err) {
+        console.warn('Failed to persist schedule:', err);
+      }
+    }
+  };
+
+  const handleStartShift = async () => {
     const activeEmp = matchedEmp || employees[0];
     const todayStr = new Date().toISOString().split('T')[0];
-    
-    // Check if employee is scheduled for today
-    const isInSchedule = shifts.some(s => 
-      s.date === todayStr && 
-      (s.employeeIds.includes(activeEmp?.id || '') || s.masterEmployeeId === activeEmp?.id)
-    );
+    const empId = activeEmp?.id || authUser?.id || 'emp-user-1';
+    const now = Date.now();
 
-    if (!isInSchedule) {
-      setShiftWarningMessage("На сегодня вас нет в графике работы, но ваша смена учтена, можно приступать к работе.");
+    // Check if employee has an explicit day off in the schedule grid
+    const entry = scheduleEntries[`${empId}_${todayStr}`];
+    const isExplicitDayOff = entry && (entry.type === 'day_off' || entry.type === 'vacation' || entry.type === 'sick' || entry.status === 'off' || entry.status === 'vacation');
+    
+    // Only warn if they are explicitly marked as on leave/day off today
+    if (isExplicitDayOff) {
+      setShiftWarningMessage("На сегодня в графике стоит выходной день, но ваша смена зафиксирована, можно приступать к работе.");
       setShowShiftWarningModal(true);
     }
 
     setIsShiftActive(true);
-    setShiftStartTime(Date.now());
+    setShiftStartTime(now);
     setIsOvertimeApproved(false);
+
+    // Persist to backend and localStorage for cross-device consistency
+    const targetCompId = company?.id || aliasOrId;
+    if (targetCompId) {
+      try {
+        localStorage.setItem(`erp_active_shift_${targetCompId}_${empId}`, JSON.stringify({
+          isShiftActive: true,
+          shiftStartTime: now,
+          employeeId: empId,
+          employeeName: activeEmp?.name || displayUserName
+        }));
+
+        await fetch(`/api/erp/${targetCompId}/active-shift`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            employeeId: empId,
+            employeeName: activeEmp?.name || displayUserName,
+            shiftStartTime: now,
+            date: todayStr
+          })
+        });
+      } catch (err) {
+        console.warn('Failed to persist active shift:', err);
+      }
+    }
   };
 
-  const handleEndShift = () => {
+  const handleEndShift = async () => {
     setIsShiftActive(false);
     setShiftStartTime(null);
     setIsOvertimeApproved(false);
+
+    const activeEmp = matchedEmp || employees[0];
+    const empId = activeEmp?.id || authUser?.id || 'emp-user-1';
+    const targetCompId = company?.id || aliasOrId;
+
+    if (targetCompId) {
+      try {
+        localStorage.removeItem(`erp_active_shift_${targetCompId}_${empId}`);
+        await fetch(`/api/erp/${targetCompId}/end-shift`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            employeeId: empId
+          })
+        });
+      } catch (err) {
+        console.warn('Failed to end active shift:', err);
+      }
+    }
   };
 
   const saveEmployeesToBackend = async (newEmps: ERPEmployee[]) => {
@@ -764,6 +869,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
     { id: 'planning', label: 'Планирование', icon: Calendar, badge: orders.filter(o => o.status === 'planned').length },
     { id: 'schedule', label: 'График работы', icon: CalendarDays },
     { id: 'production', label: 'Производство', icon: Factory, badge: orders.filter(o => o.status === 'in_progress').length },
+    { id: 'archive', label: 'Архив заказов', icon: Archive, badge: orders.filter(o => o.status === 'completed' || o.status === 'shipped').length },
     { id: 'reports', label: 'Аналитика и отчеты', icon: BarChart3 },
     { id: 'salaries', label: 'Зарплаты', icon: DollarSign },
     { id: 'employees', label: 'Сотрудники', icon: Users, badge: employees.length },
@@ -1097,6 +1203,8 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
                   orders={orders} 
                   employees={employees} 
                   shifts={shifts}
+                  settings={settings}
+                  companyId={company?.id || aliasOrId}
                   onNavigateSection={setActiveSection}
                   onSelectOrder={(order) => setSelectedOrderForWorkspace(order)}
                 />
@@ -1116,6 +1224,9 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
                 <ERPScheduleView 
                   employees={employees} 
                   shifts={shifts} 
+                  entries={scheduleEntries}
+                  onUpdateSchedule={handleUpdateScheduleEntries}
+                  companyId={company?.id || aliasOrId}
                 />
               )}
 
@@ -1127,6 +1238,14 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
                   onUpdateOrderStatus={handleUpdateOrderStatus}
                   onUpdateOrder={handleUpdateOrder}
                   onSelectOrder={(order) => setSelectedOrderForWorkspace(order)}
+                />
+              )}
+
+              {activeSection === 'archive' && (
+                <ERPArchiveView 
+                  orders={orders} 
+                  onSelectOrder={(order) => setSelectedOrderForWorkspace(order)}
+                  onRestoreOrder={(orderId) => handleUpdateOrderStatus(orderId, 'queue')}
                 />
               )}
 

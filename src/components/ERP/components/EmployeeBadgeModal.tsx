@@ -94,7 +94,209 @@ export const EmployeeBadgeModal: React.FC<EmployeeBadgeModalProps> = ({
   };
 
   const handlePrint = () => {
-    window.print();
+    try {
+      const badgeEl = document.getElementById('printable-employee-badge');
+      if (!badgeEl) {
+        window.print();
+        return;
+      }
+
+      // Create a hidden printing iframe to avoid parent iframe/visibility clipping issues
+      const printIframe = document.createElement('iframe');
+      printIframe.style.position = 'fixed';
+      printIframe.style.right = '0';
+      printIframe.style.bottom = '0';
+      printIframe.style.width = '0';
+      printIframe.style.height = '0';
+      printIframe.style.border = '0';
+      document.body.appendChild(printIframe);
+
+      const frameDoc = printIframe.contentWindow?.document || printIframe.contentDocument;
+      if (frameDoc) {
+        frameDoc.open();
+        frameDoc.write(`
+          <!DOCTYPE html>
+          <html>
+            <head>
+              <meta charset="utf-8">
+              <title>Бейдж сотрудника - ${employee.name}</title>
+              <style>
+                @page {
+                  size: 85mm 135mm;
+                  margin: 0;
+                }
+                * {
+                  box-sizing: border-box;
+                  -webkit-print-color-adjust: exact !important;
+                  print-color-adjust: exact !important;
+                }
+                body {
+                  margin: 0;
+                  padding: 4mm;
+                  background: #ffffff;
+                  display: flex;
+                  justify-content: center;
+                  align-items: flex-start;
+                  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                }
+                .badge-card {
+                  width: 77mm;
+                  min-height: 125mm;
+                  background: #0f172a !important;
+                  color: #ffffff !important;
+                  border-radius: 5mm;
+                  padding: 4.5mm;
+                  border: 2px solid #1e293b;
+                  display: flex;
+                  flex-direction: column;
+                  align-items: center;
+                  text-align: center;
+                  position: relative;
+                  overflow: hidden;
+                }
+                .top-bar {
+                  width: 100%;
+                  height: 3px;
+                  background: linear-gradient(90deg, #3b82f6, #6366f1, #06b6d4);
+                  position: absolute;
+                  top: 0;
+                  left: 0;
+                }
+                .company-row {
+                  width: 100%;
+                  display: flex;
+                  justify-content: space-between;
+                  align-items: center;
+                  border-bottom: 1px solid rgba(255,255,255,0.15);
+                  padding-bottom: 2mm;
+                  margin-top: 1mm;
+                  margin-bottom: 3mm;
+                }
+                .company-name {
+                  font-size: 10px;
+                  font-weight: 900;
+                  text-transform: uppercase;
+                  color: #f1f5f9;
+                  letter-spacing: 0.5px;
+                }
+                .badge-tag {
+                  font-size: 8px;
+                  font-weight: 800;
+                  background: rgba(99, 102, 241, 0.3);
+                  color: #a5b4fc;
+                  padding: 1px 6px;
+                  border-radius: 10px;
+                  border: 1px solid rgba(99, 102, 241, 0.4);
+                }
+                .avatar {
+                  width: 18mm;
+                  height: 18mm;
+                  border-radius: 4mm;
+                  background: #3b82f6;
+                  color: #ffffff;
+                  display: flex;
+                  align-items: center;
+                  justify-content: center;
+                  font-size: 16px;
+                  font-weight: 900;
+                  margin-bottom: 2mm;
+                  border: 2px solid rgba(255,255,255,0.3);
+                }
+                .emp-name {
+                  font-size: 13px;
+                  font-weight: 900;
+                  color: #ffffff;
+                  text-transform: uppercase;
+                  line-height: 1.2;
+                  margin-bottom: 1mm;
+                }
+                .emp-role {
+                  font-size: 10px;
+                  font-weight: 700;
+                  color: #818cf8;
+                  margin-bottom: 0.5mm;
+                }
+                .emp-dept {
+                  font-size: 8.5px;
+                  color: #94a3b8;
+                  margin-bottom: 2.5mm;
+                }
+                .qr-box {
+                  background: #ffffff;
+                  padding: 2mm;
+                  border-radius: 3mm;
+                  margin-bottom: 2.5mm;
+                  display: flex;
+                  flex-direction: column;
+                  align-items: center;
+                }
+                .qr-img {
+                  width: 38mm;
+                  height: 38mm;
+                  object-fit: contain;
+                }
+                .qr-label {
+                  font-size: 7.5px;
+                  font-weight: 800;
+                  color: #334155;
+                  font-family: monospace;
+                  margin-top: 1mm;
+                }
+                .footer-row {
+                  width: 100%;
+                  display: flex;
+                  justify-content: space-between;
+                  align-items: center;
+                  border-top: 1px solid rgba(255,255,255,0.15);
+                  padding-top: 2mm;
+                  font-size: 8px;
+                  font-family: monospace;
+                  color: #94a3b8;
+                }
+              </style>
+            </head>
+            <body>
+              <div class="badge-card">
+                <div class="top-bar"></div>
+                <div class="company-row">
+                  <div class="company-name">${companyName || 'ПРОИЗВОДСТВО'}</div>
+                  <div class="badge-tag">ПРОПУСК</div>
+                </div>
+                <div class="avatar">
+                  ${employee.avatarUrl ? `<img src="${employee.avatarUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:4mm;" />` : (employee.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'СП')}
+                </div>
+                <div class="emp-name">${employee.name}</div>
+                <div class="emp-role">${roleTitle}</div>
+                <div class="emp-dept">${departmentTitle}</div>
+                <div class="qr-box">
+                  <img class="qr-img" src="${qrDataUrl}" alt="QR" />
+                  <div class="qr-label">КЛЮЧ БЫСТРОГО ВХОДА</div>
+                </div>
+                <div class="footer-row">
+                  <div>ID: <strong>${employee.id}</strong></div>
+                  <div style="color:#34d399;">✓ Авторизован</div>
+                </div>
+              </div>
+              <script>
+                window.onload = function() {
+                  window.focus();
+                  window.print();
+                  setTimeout(function() {
+                    window.frameElement?.parentNode?.removeChild(window.frameElement);
+                  }, 1000);
+                };
+              </script>
+            </body>
+          </html>
+        `);
+        frameDoc.close();
+      } else {
+        window.print();
+      }
+    } catch (e) {
+      console.warn('Print error fallback:', e);
+      window.print();
+    }
   };
 
   const handleCopyCode = () => {

@@ -15,6 +15,7 @@ import {
   ZoomIn,
   Sparkles
 } from 'lucide-react';
+import { normalizeBarcodeScan } from '../utils';
 
 interface MobileCameraScannerModalProps {
   isOpen: boolean;
@@ -74,7 +75,7 @@ export const MobileCameraScannerModal: React.FC<MobileCameraScannerModalProps> =
   };
 
   const handleDecodedCode = (decodedText: string) => {
-    const cleanText = decodedText.trim();
+    const cleanText = normalizeBarcodeScan(decodedText);
     if (!cleanText) return;
 
     const now = Date.now();
@@ -91,7 +92,7 @@ export const MobileCameraScannerModal: React.FC<MobileCameraScannerModalProps> =
     setLastScanned({ code: cleanText, timestamp: timeStr });
     setScannedHistory(prev => [cleanText, ...prev.slice(0, 9)]);
 
-    // Fire callback
+    // Fire callback with English-normalized text
     onScan(cleanText);
   };
 
@@ -118,35 +119,31 @@ export const MobileCameraScannerModal: React.FC<MobileCameraScannerModalProps> =
           Html5QrcodeSupportedFormats.EAN_13,
           Html5QrcodeSupportedFormats.CODE_39
         ],
-        verbose: false
+        verbose: false,
+        experimentalFeatures: {
+          useBarCodeDetectorIfSupported: true
+        }
       });
       scannerRef.current = html5QrCode;
 
       // Full-frame scanning box with high FPS for instant detection
       const config = {
-        fps: 25,
+        fps: 30,
         qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-          // Dynamic large recognition zone (85% of viewport)
-          const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
-          const w = Math.floor(viewfinderWidth * 0.88);
-          const h = Math.floor(viewfinderHeight * 0.75);
-          return { width: Math.max(240, w), height: Math.max(200, h) };
+          // Dynamic large recognition zone (90% of viewport)
+          const w = Math.floor(viewfinderWidth * 0.92);
+          const h = Math.floor(viewfinderHeight * 0.85);
+          return { width: Math.max(260, w), height: Math.max(220, h) };
         },
         aspectRatio: undefined,
         disableFlip: false
       };
 
-      const cameraConstraints: MediaTrackConstraints = {
-        facingMode: facingMode,
-        width: { ideal: 1920, min: 1280 },
-        height: { ideal: 1080, min: 720 },
-        advanced: [
-          { focusMode: 'continuous' } as any
-        ]
-      };
+      // Use standard camera configuration expected by html5-qrcode (exactly 1 key)
+      const cameraConfig = { facingMode: facingMode };
 
       await html5QrCode.start(
-        cameraConstraints,
+        cameraConfig,
         config,
         (decodedText) => {
           handleDecodedCode(decodedText);

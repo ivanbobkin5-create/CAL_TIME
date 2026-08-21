@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, OrderPackage, ERPCompanySettings, ERPEmployee, DriverInfo, ProductionStageId } from '../types';
 import { PackageLabelPrintModal } from './PackageLabelPrintModal';
+import { convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan } from '../utils';
 
 interface ERPShippingTabProps {
   order: ProductionOrder;
@@ -95,16 +96,30 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
     const clean = code.trim();
     if (!clean) return;
 
+    const enClean = normalizeBarcodeScan(clean);
+
     // Match by code, packageNumber (e.g. M1, 1), name, or partial QR payload
-    const foundPkg = allPackages.find(p => 
-      p.code.toLowerCase() === clean.toLowerCase() ||
-      p.id === clean ||
-      p.name.toLowerCase().includes(clean.toLowerCase()) ||
-      clean.toLowerCase().includes(p.code.toLowerCase()) ||
-      `m${p.packageNumber}` === clean.toLowerCase() ||
-      `место ${p.packageNumber}` === clean.toLowerCase() ||
-      String(p.packageNumber) === clean
-    );
+    const foundPkg = allPackages.find(p => {
+      const pCodeLower = p.code.toLowerCase();
+      const pIdLower = p.id.toLowerCase();
+      const pNameLower = p.name.toLowerCase();
+      const cleanLower = clean.toLowerCase();
+      const enLower = enClean.toLowerCase();
+
+      return pCodeLower === cleanLower ||
+             pCodeLower === enLower ||
+             pIdLower === cleanLower ||
+             pIdLower === enLower ||
+             pNameLower.includes(cleanLower) ||
+             pNameLower.includes(enLower) ||
+             cleanLower.includes(pCodeLower) ||
+             enLower.includes(pCodeLower) ||
+             `m${p.packageNumber}` === cleanLower ||
+             `m${p.packageNumber}` === enLower ||
+             `место ${p.packageNumber}` === cleanLower ||
+             `место ${p.packageNumber}` === enLower ||
+             String(p.packageNumber) === clean;
+    });
 
     if (!foundPkg) {
       showFeedback(`Упаковка с QR-кодом "${clean}" не найдена в этом заказе!`, 'error');
@@ -142,7 +157,8 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
       if (isOtherInput) return;
 
       if (e.key === 'Enter') {
-        const bufferedCode = barcodeBufferRef.current.trim() || scanInput.trim() || (scannerInputRef.current?.value || '').trim();
+        const rawCode = barcodeBufferRef.current.trim() || scanInput.trim() || (scannerInputRef.current?.value || '').trim();
+        const bufferedCode = normalizeBarcodeScan(rawCode);
         if (bufferedCode) {
           e.preventDefault();
           barcodeBufferRef.current = '';
@@ -157,7 +173,8 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
           barcodeBufferRef.current = '';
         }
         lastKeyTimeRef.current = now;
-        barcodeBufferRef.current += e.key;
+        const enChar = convertRuCharToEn(e.key);
+        barcodeBufferRef.current += enChar;
 
         if (document.activeElement !== scannerInputRef.current) {
           setScanInput(barcodeBufferRef.current);
@@ -332,8 +349,13 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
               <input
                 ref={scannerInputRef}
                 type="text"
+                lang="en"
+                inputMode="text"
+                autoCapitalize="characters"
+                autoCorrect="off"
+                spellCheck={false}
                 value={scanInput}
-                onChange={(e) => setScanInput(e.target.value)}
+                onChange={(e) => setScanInput(convertRuToEnLayout(e.target.value))}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
