@@ -41,6 +41,9 @@ import { DEFAULT_BIRKA_COLUMN_MAPPING } from '../utils/birkaParser';
 import { DEFAULT_HARDWARE_COLUMN_MAPPING } from '../utils/hardwareParser';
 import { WarehouseCatalogPickerModal } from '../components/WarehouseCatalogPickerModal';
 import { evaluateBirkaQrTemplate } from '../utils';
+import * as XLSX from 'xlsx';
+import Papa from 'papaparse';
+import { smartDecodeFile } from '../../../utils/fileEncodingDetector';
 
 interface ERPSettingsViewProps {
   settings: ERPCompanySettings;
@@ -256,6 +259,187 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
   }));
 
   const [isSaved, setIsSaved] = useState(false);
+
+  const [parsedColumns, setParsedColumns] = useState<string[]>([]);
+  const [parsedFirstRow, setParsedFirstRow] = useState<Record<string, any> | null>(null);
+  const [parseError, setParseError] = useState<string | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+
+  const normalizedSampleRow = useMemo(() => {
+    if (!parsedFirstRow) {
+      return {
+        orderNumber: '1042',
+        labelNumber: '12',
+        material: 'ЛДСП 16',
+        length: 700,
+        width: 500,
+        thickness: 16,
+        name: 'Боковина',
+        quantity: 1,
+        'Заказ': '1042',
+        '№ детали': '12',
+        'Материал': 'ЛДСП 16',
+        'Длина': '700',
+        'Ширина': '500',
+        'Толщина': '16',
+        'Количество': '1'
+      };
+    }
+
+    const row = parsedFirstRow;
+    const normalized: Record<string, any> = { ...row };
+    
+    // Define mapping rules matching evaluateBirkaQrTemplate switch-case
+    const maps = {
+      orderNumber: ['заказ', 'номер заказа', 'сделка', 'номер_заказа', 'зак', '№ заказа', '№заказа', 'ordernumber', 'order_number', 'order'],
+      labelNumber: ['позиция', 'поз', '№ детали', 'номер детали', 'деталь №', 'деталь', '№', '№детали', 'номер_детали', 'pos', 'position', 'id', 'labelnumber'],
+      name: ['наименование', 'название', 'имя', 'name', 'title', 'part'],
+      material: ['материал', 'плита', 'лдсп', 'мдф', 'хдф', 'мат', 'material', 'mat'],
+      length: ['длина', 'длин', 'l_мм', 'length', 'len', 'l'],
+      width: ['ширина', 'шир', 'w_мм', 'width', 'wid', 'w'],
+      thickness: ['толщина', 'толщ', 't_мм', 'thickness', 'thick', 't'],
+      quantity: ['количество', 'кол', 'шт', 'кол-во', 'к-во', 'quantity', 'qty', 'count'],
+      barcode: ['штрихкод', 'штрих', 'код', 'barcode']
+    };
+
+    Object.entries(row).forEach(([colName, val]) => {
+      const cleanCol = colName.trim().toLowerCase();
+      
+      // Find if this colName fits any mapping
+      Object.entries(maps).forEach(([fieldKey, aliases]) => {
+        if (aliases.includes(cleanCol)) {
+          normalized[fieldKey] = val;
+        }
+      });
+    });
+    
+    return normalized;
+  }, [parsedFirstRow]);
+
+  const handleSampleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setFileName(file.name);
+    setParseError(null);
+
+    try {
+      const arrayBuffer = await file.arrayBuffer();
+      const uint8 = new Uint8Array(arrayBuffer);
+
+      if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+        const workbook = XLSX.read(uint8, { type: 'array' });
+        const wsname = workbook.SheetNames[0];
+        const ws = workbook.Sheets[wsname];
+        const data = XLSX.utils.sheet_to_json<any[]>(ws, { header: 1 });
+        
+        if (data.length === 0) {
+          throw new Error('Файл пуст');
+        }
+
+        const headers = data[0].map((h: any) => String(h || '').trim()).filter(Boolean);
+        let firstDataRow: any[] | null = null;
+        for (let i = 1; i < data.length; i++) {
+          if (data[i] && data[i].some((cell: any) => cell !== null && cell !== undefined && cell !== '')) {
+            firstDataRow = data[i];
+            break;
+          }
+        }
+
+        if (!firstDataRow) {
+          throw new Error('Данные в файле не найдены (строки после заголовка пусты)');
+        }
+
+        const firstRowObj: Record<string, any> = {};
+        headers.forEach((h: string, idx: number) => {
+          firstRowObj[h] = firstDataRow[idx] !== undefined ? String(firstDataRow[idx]) : '';
+        });
+
+        setParsedColumns(headers);
+        setParsedFirstRow(firstRowObj);
+      } else {
+        const decoded = await smartDecodeFile(uint8);
+        const parsed = Papa.parse(decoded.text, {
+          skipEmptyLines: true,
+          header: false
+        });
+
+        if (!parsed.data || parsed.data.length === 0) {
+          throw new Error('Файл пуст или не содержит данных');
+        }
+
+        const rows = parsed.data as any[][];
+        const headers = rows[0].map((h: any) => String(h || '').trim()).filter(Boolean);
+        
+        let firstDataRow: any[] | null = null;
+        for (let i = 1; i < rows.length; i++) {
+          if (rows[i] && rows[i].some((cell: any) => cell !== null && cell !== undefined && cell !== '')) {
+            firstDataRow = rows[i];
+            break;
+          }
+        }
+
+        if (!firstDataRow) {
+          throw new Error('В файле не найдено строк с данными');
+        }
+
+        const firstRowObj: Record<string, any> = {};
+        headers.forEach((h: string, idx: number) => {
+          firstRowObj[h] = firstDataRow[idx] !== undefined ? String(firstDataRow[idx]) : '';
+        });
+
+        setParsedColumns(headers);
+        setParsedFirstRow(firstRowObj);
+      }
+    } catch (err: any) {
+      console.error(err);
+      setParseError(`Не удалось прочитать файл: ${err.message || 'неверный формат'}`);
+    }
+  };
+
+  const handleAddColumnToTemplate = (col: string) => {
+    const current = formData.birkaQrFormatTemplate ?? '{orderNumber}-{pos}';
+    setFormData({
+      ...formData,
+      birkaQrFormatTemplate: `${current}{${col}}`
+    });
+  };
+
+  const handleAddSeparatorToTemplate = (sep: string) => {
+    const current = formData.birkaQrFormatTemplate ?? '{orderNumber}-{pos}';
+    setFormData({
+      ...formData,
+      birkaQrFormatTemplate: `${current}${sep}`
+    });
+  };
+
+  const handleBackspaceTemplate = () => {
+    const current = formData.birkaQrFormatTemplate ?? '{orderNumber}-{pos}';
+    if (!current) return;
+    
+    if (current.endsWith('}')) {
+      const lastOpenIdx = current.lastIndexOf('{');
+      if (lastOpenIdx !== -1) {
+        setFormData({
+          ...formData,
+          birkaQrFormatTemplate: current.substring(0, lastOpenIdx)
+        });
+        return;
+      }
+    }
+    
+    setFormData({
+      ...formData,
+      birkaQrFormatTemplate: current.substring(0, current.length - 1)
+    });
+  };
+
+  const handleClearTemplate = () => {
+    setFormData({
+      ...formData,
+      birkaQrFormatTemplate: ''
+    });
+  };
 
   const handleToggleStage = (stageId: ProductionStageId) => {
     const currentEnabled = formData.enabledStages || defaultStageIds;
@@ -516,6 +700,10 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
       noteRules: (prev.noteRules || []).map(r => r.id === id ? { ...r, [field]: val } : r)
     }));
   };
+
+  const columnsToDisplay = parsedColumns.length > 0 
+    ? parsedColumns 
+    : ['Заказ', '№ детали', 'Материал', 'Длина', 'Ширина', 'Толщина', 'Количество'];
 
   const enabledStagesList = formData.enabledStages || ALL_STAGES_CONFIG.map(s => s.id);
 
@@ -865,7 +1053,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
             </div>
 
             {/* QR Code / Barcode Template Builder */}
-            <div className="p-5 bg-gradient-to-br from-indigo-950 via-slate-900 to-blue-950 text-white rounded-3xl border border-indigo-400/30 shadow-lg space-y-4">
+            <div className="p-6 bg-gradient-to-br from-indigo-950 via-slate-900 to-blue-950 text-white rounded-3xl border border-indigo-400/30 shadow-xl space-y-5">
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-center gap-2.5">
                   <div className="w-9 h-9 rounded-xl bg-indigo-500/20 border border-indigo-400/40 flex items-center justify-center shrink-0">
@@ -876,101 +1064,217 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                       Формат составного QR-кода / Штрихкода на бирке
                     </h4>
                     <p className="text-xs text-indigo-200 mt-0.5">
-                      Укажите из каких полей формируется QR-код при сканировании на станках или ручными сканерами.
+                      Укажите из каких полей формируется QR-код при сканировании деталей на участках.
                     </p>
                   </div>
                 </div>
 
                 <span className="px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-400/40 text-[11px] font-mono font-bold text-indigo-300 shrink-0">
-                  QR Template
+                  QR Template Builder
                 </span>
               </div>
 
-              {/* Template Input */}
-              <div className="space-y-2">
-                <label className="block text-[11px] font-bold text-indigo-200 uppercase tracking-wider">
-                  Шаблон кодирования QR (переменные: &#123;Заказ&#125;, &#123;№ детали&#125;, &#123;Длина&#125;, &#123;Ширина&#125;, &#123;Материал&#125;, &#123;Количество&#125; или латиницей: &#123;orderNumber&#125;, &#123;pos&#125;, &#123;length&#125;, &#123;width&#125;, &#123;material&#125;)
-                </label>
-                <input
-                  type="text"
-                  value={formData.birkaQrFormatTemplate ?? '{orderNumber}-{pos}'}
-                  onChange={(e) => setFormData({ ...formData, birkaQrFormatTemplate: e.target.value })}
-                  placeholder="Например: {Заказ}-{№ детали} или {Длина}x{Ширина}"
-                  className="w-full px-4 py-2.5 rounded-xl bg-slate-950/80 border border-indigo-400/50 font-mono text-sm font-bold text-indigo-200 focus:ring-2 focus:ring-indigo-400 outline-none"
-                />
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  💡 Вы можете писать названия колонок на русском языке из вашего файла бирок. Например: <code className="text-indigo-300 font-mono font-bold">{'{№ детали}'}</code>, <code className="text-indigo-300 font-mono font-bold">{'{Длина}'}</code>, <code className="text-indigo-300 font-mono font-bold">{'{Ширина}'}</code>, <code className="text-indigo-300 font-mono font-bold">{'{Материал}'}</code>. Система автоматически свяжет их!
-                </p>
-              </div>
-
-              {/* Quick Preset Buttons */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-slate-400 font-medium">Быстрые шаблоны:</span>
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{Заказ}-{№ детали}' })}
-                  className="px-2.5 py-1 rounded-lg bg-indigo-950 border border-indigo-700/60 hover:bg-indigo-800 text-indigo-200 font-mono text-xs transition-colors cursor-pointer"
-                >
-                  [Заказ]-[№ детали]
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{Заказ}_{№ детали}' })}
-                  className="px-2.5 py-1 rounded-lg bg-indigo-950 border border-indigo-700/60 hover:bg-indigo-800 text-indigo-200 font-mono text-xs transition-colors cursor-pointer"
-                >
-                  [Заказ]_[№ детали]
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{№ детали}' })}
-                  className="px-2.5 py-1 rounded-lg bg-indigo-950 border border-indigo-700/60 hover:bg-indigo-800 text-indigo-200 font-mono text-xs transition-colors cursor-pointer"
-                >
-                  [Только № детали]
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{Заказ}-{Материал}-{№ детали}' })}
-                  className="px-2.5 py-1 rounded-lg bg-indigo-950 border border-indigo-700/60 hover:bg-indigo-800 text-indigo-200 font-mono text-xs transition-colors cursor-pointer"
-                >
-                  [Заказ]-[Материал]-[№ детали]
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{Длина}x{Ширина}-{№ детали}' })}
-                  className="px-2.5 py-1 rounded-lg bg-indigo-950 border border-indigo-700/60 hover:bg-indigo-800 text-indigo-200 font-mono text-xs transition-colors cursor-pointer"
-                >
-                  [Длина]x[Ширина]-[№ детали]
-                </button>
-              </div>
-
-              {/* Live Preview Card */}
-              <div className="bg-slate-950/90 rounded-2xl border border-indigo-500/30 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                <div className="space-y-1">
-                  <div className="text-[10px] font-bold uppercase text-indigo-400 tracking-wider">
-                    Интерактивный пример результата сканирования бирки:
+              {/* Interactive File-based QR Code Constructor */}
+              <div className="space-y-4 bg-slate-900/60 p-5 rounded-2xl border border-indigo-500/20">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-indigo-500/10 pb-4">
+                  <div>
+                    <h5 className="text-xs font-black text-indigo-300 uppercase tracking-wider">
+                      Шаг 1: Загрузка файла-примера из вашей программы
+                    </h5>
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      Загрузите файл раскроя (CSV, TXT, XLS, XLSX) для автоматического извлечения колонок и данных первой строки
+                    </p>
                   </div>
-                  <div className="text-xs text-slate-300 font-medium">
-                    Заказ: <span className="font-bold text-white">1042</span> | Поз (№ детали): <span className="font-bold text-white">12</span> | Материал: <span className="font-bold text-white">ЛДСП 16</span> | Длина: <span className="font-bold text-white">700</span> | Ширина: <span className="font-bold text-white">500</span>
+
+                  <div className="relative">
+                    <input
+                      type="file"
+                      accept=".xlsx,.xls,.csv,.txt"
+                      onChange={handleSampleFileUpload}
+                      className="hidden"
+                      id="qr-sample-file-input"
+                    />
+                    <label
+                      htmlFor="qr-sample-file-input"
+                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black flex items-center gap-2 cursor-pointer transition-all shadow-sm"
+                    >
+                      <FileSpreadsheet className="w-4 h-4" />
+                      <span>{fileName ? 'Сменить файл' : 'Загрузить файл'}</span>
+                    </label>
                   </div>
                 </div>
 
-                <div className="bg-indigo-950/90 border-2 border-indigo-400/80 rounded-xl px-4 py-2 flex items-center gap-3 shrink-0">
-                  <QrCode className="w-6 h-6 text-indigo-300" />
-                  <div className="font-mono font-black text-sm text-emerald-300 tracking-wide">
-                    {evaluateBirkaQrTemplate(
-                      formData.birkaQrFormatTemplate || '{orderNumber}-{pos}',
-                      {
-                        orderNumber: '1042',
-                        labelNumber: '12',
-                        material: 'ЛДСП 16',
-                        length: 700,
-                        width: 500,
-                        thickness: 16,
-                        name: 'Боковина',
-                        quantity: 1
-                      },
-                      '1042'
-                    )}
+                {/* File Upload Status & Parsed Columns */}
+                <div className="space-y-3">
+                  {fileName ? (
+                    <div className="flex items-center justify-between bg-emerald-950/40 border border-emerald-500/30 p-3 rounded-xl">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        <div>
+                          <div className="text-xs font-bold text-white font-mono">{fileName}</div>
+                          <div className="text-[10px] text-emerald-300 font-medium">Файл успешно распознан! Найдено {parsedColumns.length} столбцов.</div>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFileName(null);
+                          setParsedColumns([]);
+                          setParsedFirstRow(null);
+                          setParseError(null);
+                        }}
+                        className="text-[10px] font-bold text-rose-400 hover:text-rose-300 underline cursor-pointer"
+                      >
+                        Сбросить файл
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="bg-slate-950/40 border border-slate-800 p-3 rounded-xl text-center">
+                      <p className="text-[11px] text-slate-400">
+                        💡 Нет загруженного файла. Ниже показаны стандартные столбцы-примеры. Загрузите файл из Базиса, чтобы использовать ваши реальные названия!
+                      </p>
+                    </div>
+                  )}
+
+                  {parseError && (
+                    <div className="p-3 bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs font-bold rounded-xl animate-bounce">
+                      ⚠️ {parseError}
+                    </div>
+                  )}
+
+                  {/* STEP 2: Interactive Column Badges */}
+                  <div className="space-y-2">
+                    <h5 className="text-xs font-black text-indigo-300 uppercase tracking-wider">
+                      Шаг 2: Нажмите на нужные столбцы для составления QR-кода
+                    </h5>
+                    <p className="text-[10px] text-slate-400">
+                      Кликая по кнопкам ниже, вы соберете формат штрихкода. Мы сразу покажем результат на основе первой строки.
+                    </p>
+
+                    <div className="flex flex-wrap gap-2.5 pt-1">
+                      {columnsToDisplay.map((col) => {
+                        const sampleValue = normalizedSampleRow[col] || normalizedSampleRow[col.toLowerCase()] || '';
+                        return (
+                          <button
+                            key={col}
+                            type="button"
+                            onClick={() => handleAddColumnToTemplate(col)}
+                            className="group px-3 py-2 rounded-xl bg-slate-950 hover:bg-indigo-950 border border-slate-800 hover:border-indigo-500/40 text-left transition-all cursor-pointer shadow-sm active:scale-95"
+                            title={`Нажмите, чтобы добавить {${col}}`}
+                          >
+                            <div className="text-xs font-bold text-indigo-200 group-hover:text-white transition-colors">
+                              {col}
+                            </div>
+                            <div className="text-[9px] text-slate-450 font-mono mt-0.5 truncate max-w-[120px]">
+                              {sampleValue ? `Знач: ${sampleValue}` : 'пусто'}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* STEP 3: Separators and helper controls */}
+                  <div className="bg-slate-950/40 p-3.5 rounded-xl border border-slate-800/80 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                        Разделители и инструменты:
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleClearTemplate}
+                        className="text-[10px] font-black text-rose-400 hover:text-rose-300 flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        ❌ Очистить всё
+                      </button>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Separator buttons */}
+                      {['-', '_', 'x', '/', '|'].map((sep) => (
+                        <button
+                          key={sep}
+                          type="button"
+                          onClick={() => handleAddSeparatorToTemplate(sep)}
+                          className="px-3 py-1.5 rounded-lg bg-indigo-950 border border-indigo-700/50 hover:bg-indigo-900 text-indigo-200 font-bold font-mono text-xs cursor-pointer active:scale-95 transition-all"
+                        >
+                          Вставить "{sep}"
+                        </button>
+                      ))}
+
+                      {/* Spacer or customized text helper */}
+                      <span className="text-slate-600">|</span>
+
+                      <button
+                        type="button"
+                        onClick={handleBackspaceTemplate}
+                        className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 font-bold text-xs cursor-pointer active:scale-95 transition-all flex items-center gap-1"
+                      >
+                        <span>← Стереть элемент</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* STEP 4: Manual Template Edit Input */}
+                <div className="space-y-2 pt-2 border-t border-indigo-500/10">
+                  <label className="block text-[11px] font-bold text-indigo-200 uppercase tracking-wider">
+                    Результирующий шаблон кодирования QR (можно править и вручную):
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.birkaQrFormatTemplate ?? '{orderNumber}-{pos}'}
+                    onChange={(e) => setFormData({ ...formData, birkaQrFormatTemplate: e.target.value })}
+                    placeholder="Например: {Заказ}-{№ детали} или {Длина}x{Ширина}"
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-indigo-400/50 font-mono text-sm font-bold text-indigo-250 focus:ring-2 focus:ring-indigo-400 outline-none"
+                  />
+                </div>
+
+                {/* STEP 5: Beautiful Real-time Preview */}
+                <div className="bg-gradient-to-r from-indigo-950 to-slate-950 rounded-2xl border-2 border-indigo-400/30 p-4.5 flex flex-col md:flex-row items-start md:items-center justify-between gap-5 shadow-inner">
+                  <div className="space-y-1.5">
+                    <div className="text-[10px] font-black uppercase text-emerald-400 tracking-widest flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                      Живой результат генерации QR по первой строке:
+                    </div>
+                    
+                    <div className="text-xs text-slate-300 font-medium leading-relaxed max-w-md">
+                      {fileName ? (
+                        <span>
+                          Данные из файла <strong className="text-white">{fileName}</strong>:
+                        </span>
+                      ) : (
+                        <span>Используются стандартные тестовые данные:</span>
+                      )}
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-[11px] text-indigo-200 bg-indigo-950/30 px-2 py-1.5 rounded-lg border border-indigo-800/30">
+                        {columnsToDisplay.slice(0, 5).map((col) => {
+                          const val = normalizedSampleRow[col] || normalizedSampleRow[col.toLowerCase()] || '';
+                          return (
+                            <span key={col} className="shrink-0">
+                              {col}: <strong className="text-white">{val}</strong>
+                            </span>
+                          );
+                        })}
+                        {columnsToDisplay.length > 5 && <span className="text-slate-500">...</span>}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Simulated Label with Real QR Evaluation */}
+                  <div className="bg-indigo-900/40 border border-indigo-400/40 rounded-2xl px-5 py-3.5 flex items-center gap-3.5 shrink-0 w-full md:w-auto justify-center md:justify-start">
+                    <div className="w-11 h-11 bg-white rounded-xl flex items-center justify-center shadow-md p-1 shrink-0">
+                      <QrCode className="w-9 h-9 text-slate-900" />
+                    </div>
+                    <div>
+                      <div className="text-[9px] font-black text-indigo-300 uppercase tracking-wider">Содержимое QR-кода:</div>
+                      <div className="font-mono font-black text-base text-emerald-300 tracking-wide break-all max-w-[200px]">
+                        {evaluateBirkaQrTemplate(
+                          formData.birkaQrFormatTemplate || '{orderNumber}-{pos}',
+                          normalizedSampleRow,
+                          normalizedSampleRow.orderNumber || '1042'
+                        ) || <span className="text-rose-400 font-medium text-xs">[пусто]</span>}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

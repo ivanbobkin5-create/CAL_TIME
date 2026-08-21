@@ -24,7 +24,8 @@ import {
   Moon,
   Coffee,
   HeartPulse,
-  Palmtree
+  Palmtree,
+  Trash2
 } from 'lucide-react';
 import { ERPEmployee, WorkShift, ShiftCellType, EmployeeScheduleEntry } from '../types';
 
@@ -137,6 +138,130 @@ export const ERPScheduleView: React.FC<ERPScheduleViewProps> = ({
 
   const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  const [activeTab, setActiveTab] = useState<'grid' | 'stats'>('grid');
+  const [shiftLogs, setShiftLogs] = useState<any[]>([]);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    return `${y}-${m}`;
+  });
+  const [selectedEmployeeForStats, setSelectedEmployeeForStats] = useState<ERPEmployee | null>(null);
+
+  // Manual shift log entry state
+  const [manualDate, setManualDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [manualHours, setManualHours] = useState<number>(12);
+  const [isSubmittingManual, setIsSubmittingManual] = useState(false);
+
+  const getEmployeePlannedHours = (empId: string, yearMonth: string) => {
+    let total = 0;
+    Object.keys(scheduleEntries).forEach(key => {
+      if (key.startsWith(`${empId}_`) && key.includes(`_${yearMonth}-`)) {
+        const entry = scheduleEntries[key];
+        total += entry?.hours || 0;
+      }
+    });
+    return total;
+  };
+
+  const getEmployeeActualHoursAndLogs = (empId: string, yearMonth: string) => {
+    const logs = shiftLogs.filter(log => {
+      if (log.employeeId !== empId) return false;
+      return log.date && log.date.startsWith(yearMonth);
+    });
+
+    const totalSeconds = logs.reduce((sum, log) => sum + (log.elapsedSeconds || 0), 0);
+    const totalHours = Number((totalSeconds / 3600).toFixed(1));
+
+    return { logs, totalHours, totalSeconds };
+  };
+
+  const fetchShiftLogs = async () => {
+    if (!companyId) return;
+    setIsLoadingLogs(true);
+    try {
+      const res = await fetch(`/api/erp/${companyId}/shift-logs`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.logs) {
+          setShiftLogs(data.logs);
+        }
+      }
+    } catch (e) {
+      console.warn("Failed to fetch shift logs:", e);
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'stats' || companyId) {
+      fetchShiftLogs();
+    }
+  }, [activeTab, companyId]);
+
+  const handleAddManualShift = async (empId: string) => {
+    if (!companyId || !empId) return;
+    setIsSubmittingManual(true);
+    try {
+      const res = await fetch(`/api/erp/${companyId}/shift-logs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeId: empId,
+          elapsedSeconds: manualHours * 3600,
+          date: manualDate,
+          endedAt: `${manualDate}T18:00:00.000Z`
+        })
+      });
+      if (res.ok) {
+        await fetchShiftLogs();
+        setManualDate(new Date().toISOString().split('T')[0]);
+        setManualHours(12);
+      }
+    } catch (e) {
+      console.warn("Error adding manual shift:", e);
+    } finally {
+      setIsSubmittingManual(false);
+    }
+  };
+
+  const handleDeleteShiftLog = async (logId: string) => {
+    if (!companyId) return;
+    if (!window.confirm("Вы уверены, что хотите удалить эту запись о смене?")) return;
+    try {
+      const res = await fetch(`/api/erp/${companyId}/shift-logs/${logId}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        await fetchShiftLogs();
+      }
+    } catch (e) {
+      console.warn("Error deleting shift log:", e);
+    }
+  };
+
+  const monthOptions = useMemo(() => {
+    const list = [];
+    const now = new Date();
+    for (let i = 0; i < 12; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const val = `${y}-${m}`;
+      const monthsRu = [
+        'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+        'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+      ];
+      list.push({
+        value: val,
+        label: `${monthsRu[d.getMonth()]} ${y}`
+      });
+    }
+    return list;
+  }, []);
   
   // Storage key for schedule entries
   const storageKey = companyId ? `erp_schedule_entries_${companyId}` : 'erp_production_schedule_grid_v1';
@@ -487,181 +612,212 @@ export const ERPScheduleView: React.FC<ERPScheduleViewProps> = ({
 
   return (
     <div className="space-y-6">
-      {/* Top Header Card */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col xl:flex-row xl:items-center justify-between gap-5">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 uppercase tracking-wider mb-1">
-            <CalendarRange className="w-4 h-4" /> Планирование смен и график работы цеха
-          </div>
-          <h2 className="text-xl md:text-2xl font-black text-slate-900 flex items-center gap-2">
-            График сменности мастеров
-          </h2>
-          <p className="text-xs text-slate-500 mt-1">
-            Кликните по любой ячейке сотрудника для назначения дневной (12ч/8ч) или ночной смены, отпуска или выходного
-          </p>
-        </div>
-
-        {/* View Mode & Period Navigation Controls */}
-        <div className="flex flex-wrap items-center gap-3">
-          {/* View Mode Switcher (Week / 2 Weeks / Month) */}
-          <div className="p-1 rounded-2xl bg-slate-100 border border-slate-200 flex items-center gap-1">
-            <button
-              onClick={() => setViewMode('week')}
-              className={`px-3 py-1.5 rounded-xl font-black text-xs transition-all cursor-pointer ${
-                viewMode === 'week' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              1 Неделя
-            </button>
-            <button
-              onClick={() => setViewMode('two_weeks')}
-              className={`px-3 py-1.5 rounded-xl font-black text-xs transition-all cursor-pointer ${
-                viewMode === 'two_weeks' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              2 Недели
-            </button>
-            <button
-              onClick={() => setViewMode('month')}
-              className={`px-3 py-1.5 rounded-xl font-black text-xs transition-all cursor-pointer ${
-                viewMode === 'month' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              Месяц
-            </button>
-          </div>
-
-          {/* Period Nav */}
-          <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-2xl border border-slate-200">
-            <button
-              onClick={handlePrevPeriod}
-              className="p-1.5 rounded-xl hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
-              title="Предыдущий период"
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
-            <span className="text-xs font-black text-slate-800 px-2 min-w-[140px] text-center">
-              {periodTitle}
-            </span>
-            <button
-              onClick={handleNextPeriod}
-              className="p-1.5 rounded-xl hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
-              title="Следующий период"
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-          </div>
-
-          <button
-            onClick={handleGoToday}
-            className="px-3.5 py-2 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition-all cursor-pointer"
-          >
-            Сегодня
-          </button>
-
-          <button
-            onClick={() => window.print()}
-            className="p-2 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer"
-            title="Печать табеля"
-          >
-            <Printer className="w-4 h-4" />
-          </button>
-        </div>
+      {/* Navigation Tabs */}
+      <div className="flex border-b border-slate-200 pb-px gap-2">
+        <button
+          onClick={() => setActiveTab('grid')}
+          className={`flex items-center gap-2 pb-3 px-4 text-xs font-black transition-all border-b-2 cursor-pointer ${
+            activeTab === 'grid' 
+              ? 'border-indigo-600 text-indigo-600' 
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <CalendarIcon className="w-4 h-4" />
+          <span>Планирование смен (Табель)</span>
+        </button>
+        <button
+          onClick={() => setActiveTab('stats')}
+          className={`flex items-center gap-2 pb-3 px-4 text-xs font-black transition-all border-b-2 cursor-pointer ${
+            activeTab === 'stats' 
+              ? 'border-indigo-600 text-indigo-600' 
+              : 'border-transparent text-slate-500 hover:text-slate-900'
+          }`}
+        >
+          <Clock className="w-4 h-4" />
+          <span>Учет часов, нормы и статистика</span>
+          <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold">
+            Новое
+          </span>
+        </button>
       </div>
 
-      {/* Summary Stat Badges & Quick Auto-fill Toolbar */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-sm flex items-center gap-3.5">
-          <div className="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-black">
-            <UserCheck className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-xl font-black text-slate-900">{onDutyTodayCount} чел</div>
-            <div className="text-[11px] font-semibold text-slate-500">На смене сегодня в цехе</div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-sm flex items-center gap-3.5">
-          <div className="w-11 h-11 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-black">
-            <Users className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-xl font-black text-slate-900">{totalEmployeesCount} мастеров</div>
-            <div className="text-[11px] font-semibold text-slate-500">В штате производства</div>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-sm flex items-center gap-3.5">
-          <div className="w-11 h-11 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-black">
-            <Clock className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="text-xl font-black text-slate-900">08:00 – 20:00</div>
-            <div className="text-[11px] font-semibold text-slate-500">Дневная смена (12ч)</div>
-          </div>
-        </div>
-
-        {/* Quick Batch Actions Dropdown / Tools */}
-        <div className="bg-slate-900 text-white rounded-3xl p-4 shadow-sm flex items-center justify-between gap-2">
-          <div>
-            <div className="text-xs font-black text-amber-400 flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5" /> Автозаполнение
+      {activeTab === 'grid' ? (
+        <>
+          {/* Top Header Card */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col xl:flex-row xl:items-center justify-between gap-5">
+            <div>
+              <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 uppercase tracking-wider mb-1">
+                <CalendarRange className="w-4 h-4" /> Планирование смен и график работы цеха
+              </div>
+              <h2 className="text-xl md:text-2xl font-black text-slate-900 flex items-center gap-2">
+                График сменности мастеров
+              </h2>
+              <p className="text-xs text-slate-500 mt-1">
+                Кликните по любой ячейке сотрудника для назначения дневной (12ч/8ч) или ночной смены, отпуска или выходного
+              </p>
             </div>
-            <div className="text-[11px] text-slate-300">Шаблоны графиков</div>
+
+            {/* View Mode & Period Navigation Controls */}
+            <div className="flex flex-wrap items-center gap-3">
+              {/* View Mode Switcher (Week / 2 Weeks / Month) */}
+              <div className="p-1 rounded-2xl bg-slate-100 border border-slate-200 flex items-center gap-1">
+                <button
+                  onClick={() => setViewMode('week')}
+                  className={`px-3 py-1.5 rounded-xl font-black text-xs transition-all cursor-pointer ${
+                    viewMode === 'week' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  1 Неделя
+                </button>
+                <button
+                  onClick={() => setViewMode('two_weeks')}
+                  className={`px-3 py-1.5 rounded-xl font-black text-xs transition-all cursor-pointer ${
+                    viewMode === 'two_weeks' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  2 Недели
+                </button>
+                <button
+                  onClick={() => setViewMode('month')}
+                  className={`px-3 py-1.5 rounded-xl font-black text-xs transition-all cursor-pointer ${
+                    viewMode === 'month' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Месяц
+                </button>
+              </div>
+
+              {/* Period Nav */}
+              <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-2xl border border-slate-200">
+                <button
+                  onClick={handlePrevPeriod}
+                  className="p-1.5 rounded-xl hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+                  title="Предыдущий период"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <span className="text-xs font-black text-slate-800 px-2 min-w-[140px] text-center">
+                  {periodTitle}
+                </span>
+                <button
+                  onClick={handleNextPeriod}
+                  className="p-1.5 rounded-xl hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+                  title="Следующий период"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+
+              <button
+                onClick={handleGoToday}
+                className="px-3.5 py-2 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition-all cursor-pointer"
+              >
+                Сегодня
+              </button>
+
+              <button
+                onClick={() => window.print()}
+                className="p-2 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer"
+                title="Печать табеля"
+              >
+                <Printer className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
-          <div className="flex items-center gap-1.5">
-            <button
-              onClick={() => handleAutoFillPattern('2/2')}
-              className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white transition-all cursor-pointer border border-slate-700"
-              title="Заполнить всех по графику 2/2"
-            >
-              2/2
-            </button>
-            <button
-              onClick={() => handleAutoFillPattern('5/2')}
-              className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white transition-all cursor-pointer border border-slate-700"
-              title="Заполнить всех по графику 5/2"
-            >
-              5/2
-            </button>
-            <button
-              onClick={() => handleAutoFillPattern('clear')}
-              className="px-2 py-1.5 rounded-xl bg-rose-950/60 hover:bg-rose-900 text-rose-300 text-xs font-bold transition-all cursor-pointer border border-rose-800/60"
-              title="Очистить график за период"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-            </button>
+          {/* Summary Stat Badges & Quick Auto-fill Toolbar */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-sm flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-black">
+                <UserCheck className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xl font-black text-slate-900">{onDutyTodayCount} чел</div>
+                <div className="text-[11px] font-semibold text-slate-500">На смене сегодня в цехе</div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-sm flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-black">
+                <Users className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xl font-black text-slate-900">{totalEmployeesCount} мастеров</div>
+                <div className="text-[11px] font-semibold text-slate-500">В штате производства</div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-sm flex items-center gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-black">
+                <Clock className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="text-xl font-black text-slate-900">08:00 – 20:00</div>
+                <div className="text-[11px] font-semibold text-slate-500">Дневная смена (12ч)</div>
+              </div>
+            </div>
+
+            {/* Quick Batch Actions Dropdown / Tools */}
+            <div className="bg-slate-900 text-white rounded-3xl p-4 shadow-sm flex items-center justify-between gap-2">
+              <div>
+                <div className="text-xs font-black text-amber-400 flex items-center gap-1">
+                  <Sparkles className="w-3.5 h-3.5" /> Автозаполнение
+                </div>
+                <div className="text-[11px] text-slate-300">Шаблоны графиков</div>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => handleAutoFillPattern('2/2')}
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white transition-all cursor-pointer border border-slate-700"
+                  title="Заполнить всех по графику 2/2"
+                >
+                  2/2
+                </button>
+                <button
+                  onClick={() => handleAutoFillPattern('5/2')}
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white transition-all cursor-pointer border border-slate-700"
+                  title="Заполнить всех по графику 5/2"
+                >
+                  5/2
+                </button>
+                <button
+                  onClick={() => handleAutoFillPattern('clear')}
+                  className="px-2 py-1.5 rounded-xl bg-rose-950/60 hover:bg-rose-900 text-rose-300 text-xs font-bold transition-all cursor-pointer border border-rose-800/60"
+                  title="Очистить график за период"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
 
-      {/* Filter & Search Bar */}
-      <div className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <Filter className="w-4 h-4 text-slate-400 shrink-0" />
-          <select
-            value={selectedDepartment}
-            onChange={(e) => setSelectedDepartment(e.target.value)}
-            className="w-full sm:w-auto px-3.5 py-2 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
-          >
-            {departmentsList.map(dep => (
-              <option key={dep.id} value={dep.id}>{dep.name}</option>
-            ))}
-          </select>
-        </div>
+          {/* Filter & Search Bar */}
+          <div className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <Filter className="w-4 h-4 text-slate-400 shrink-0" />
+              <select
+                value={selectedDepartment}
+                onChange={(e) => setSelectedDepartment(e.target.value)}
+                className="w-full sm:w-auto px-3.5 py-2 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+              >
+                {departmentsList.map(dep => (
+                  <option key={dep.id} value={dep.id}>{dep.name}</option>
+                ))}
+              </select>
+            </div>
 
-        <div className="relative w-full sm:w-72">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Поиск мастера по имени..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
-        </div>
-      </div>
+            <div className="relative w-full sm:w-72">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Поиск мастера по имени..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
 
       {/* Main Interactive Matrix Schedule Grid */}
       <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm overflow-hidden">
@@ -843,6 +999,373 @@ export const ERPScheduleView: React.FC<ERPScheduleViewProps> = ({
           ))}
         </div>
       </div>
+    </>
+  ) : (
+    <div className="space-y-6 animate-in fade-in duration-150">
+      {/* Stats Header / Control Panel */}
+      <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-5">
+        <div>
+          <div className="flex items-center gap-2 text-xs font-bold text-emerald-600 uppercase tracking-wider mb-1">
+            <Clock className="w-4 h-4" /> Аналитика выработки часов и соблюдение норм
+          </div>
+          <h2 className="text-xl md:text-2xl font-black text-slate-900">
+            Статистика смен и фактический учет
+          </h2>
+          <p className="text-xs text-slate-500 mt-1">
+            Сравнение запланированного по графику времени с фактически отработанными часами по хитбитам сотрудников
+          </p>
+        </div>
+
+        {/* Month selector dropdown */}
+        <div className="flex flex-wrap items-center gap-3">
+          <span className="text-xs font-black text-slate-700">Выберите период:</span>
+          <select
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="px-4 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer animate-none"
+          >
+            {monthOptions.map(opt => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {/* Quick summary metrics grid */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-black">
+            <Clock className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="text-2xl font-black text-slate-900">
+              {filteredEmployees.reduce((acc, emp) => {
+                const { totalHours } = getEmployeeActualHoursAndLogs(emp.id, selectedMonth);
+                return acc + totalHours;
+              }, 0).toFixed(1)}ч
+            </div>
+            <div className="text-[11px] font-semibold text-slate-500">Фактически отработано цехом за период</div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-black">
+            <CalendarRange className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="text-2xl font-black text-slate-900">
+              {filteredEmployees.reduce((acc, emp) => {
+                return acc + getEmployeePlannedHours(emp.id, selectedMonth);
+              }, 0)}ч
+            </div>
+            <div className="text-[11px] font-semibold text-slate-500">Запланировано часов по графику</div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm flex items-center gap-4">
+          <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-black">
+            <CheckCircle2 className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="text-2xl font-black text-slate-900">
+              {shiftLogs.filter(l => l.date && l.date.startsWith(selectedMonth)).length} смен
+            </div>
+            <div className="text-[11px] font-semibold text-slate-500">Всего закрытых смен сотрудников</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Filter & Search Bar */}
+      <div className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <Filter className="w-4 h-4 text-slate-400 shrink-0" />
+          <select
+            value={selectedDepartment}
+            onChange={(e) => setSelectedDepartment(e.target.value)}
+            className="w-full sm:w-auto px-3.5 py-2 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+          >
+            {departmentsList.map(dep => (
+              <option key={dep.id} value={dep.id}>{dep.name}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="relative w-full sm:w-72">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            placeholder="Поиск сотрудника..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-9 pr-4 py-2 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-850 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          />
+        </div>
+      </div>
+
+      {/* Employees stats list */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {filteredEmployees.length === 0 ? (
+          <div className="lg:col-span-2 text-center py-12 bg-white rounded-3xl border border-slate-200/80">
+            <Users className="w-12 h-12 text-slate-300 mx-auto mb-3" />
+            <div className="text-sm font-bold text-slate-700">Сотрудники не найдены</div>
+            <div className="text-xs text-slate-400 mt-1">Измените параметры фильтрации или поисковый запрос</div>
+          </div>
+        ) : (
+          filteredEmployees.map(emp => {
+            const planned = getEmployeePlannedHours(emp.id, selectedMonth);
+            const { logs, totalHours } = getEmployeeActualHoursAndLogs(emp.id, selectedMonth);
+            const percent = planned > 0 ? Math.min(100, Math.round((totalHours / planned) * 100)) : (totalHours > 0 ? 100 : 0);
+            
+            let barColor = 'bg-rose-500';
+            let textColor = 'text-rose-700';
+            let bgColor = 'bg-rose-50';
+            if (percent >= 90) {
+              barColor = 'bg-emerald-500';
+              textColor = 'text-emerald-700';
+              bgColor = 'bg-emerald-50';
+            } else if (percent >= 70) {
+              barColor = 'bg-amber-500';
+              textColor = 'text-amber-700';
+              bgColor = 'bg-amber-50';
+            }
+
+            const diff = Number((totalHours - planned).toFixed(1));
+
+            return (
+              <div key={emp.id} className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm flex flex-col justify-between space-y-4 hover:border-slate-300 transition-colors">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-700 flex items-center justify-center font-black text-sm shrink-0">
+                      {emp.name.split(' ').map(n => n[0]).slice(0, 2).join('')}
+                    </div>
+                    <div>
+                      <h3 className="font-bold text-slate-900 text-sm">{emp.name}</h3>
+                      <div className="text-xs text-slate-500 font-medium">
+                        {emp.role || emp.productionRole || 'Мастер'} • {departmentsList.find(d => d.id === emp.department)?.name.split(' ')[0] || 'Цех'}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className={`px-2.5 py-1.5 rounded-xl font-black text-xs ${bgColor} ${textColor} flex items-center gap-1 shrink-0`}>
+                    {percent}% нормы
+                  </div>
+                </div>
+
+                {/* Progress tracking */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-semibold text-slate-600">
+                    <span>Выработка нормы часов:</span>
+                    <span className="font-mono font-bold">
+                      {totalHours}ч / {planned}ч
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden">
+                    <div className={`h-full ${barColor} transition-all duration-300`} style={{ width: `${percent}%` }}></div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 pt-2 text-xs border-t border-slate-100">
+                  <div>
+                    <div className="text-slate-400 font-semibold text-[10px]">Отработано смен</div>
+                    <div className="font-mono font-black text-slate-800 mt-0.5">{logs.length} смен</div>
+                  </div>
+                  <div>
+                    <div className="text-slate-400 font-semibold text-[10px]">Баланс нормы</div>
+                    <div className={`font-mono font-black mt-0.5 ${diff >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      {diff >= 0 ? `+${diff}` : diff} ч
+                    </div>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setSelectedEmployeeForStats(emp);
+                    setManualDate(new Date().toISOString().split('T')[0]);
+                  }}
+                  className="w-full py-2.5 rounded-2xl bg-slate-50 hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                >
+                  <Clock className="w-4 h-4 text-slate-500" />
+                  <span>История смен и корректировка</span>
+                </button>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </div>
+  )}
+
+  {/* Shift History & Manual Adjustments Modal */}
+  {selectedEmployeeForStats && (() => {
+    const emp = selectedEmployeeForStats;
+    const { logs, totalHours } = getEmployeeActualHoursAndLogs(emp.id, selectedMonth);
+    const planned = getEmployeePlannedHours(emp.id, selectedMonth);
+    
+    return (
+      <div className="fixed inset-0 bg-slate-900/45 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-in fade-in duration-200">
+        <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
+          {/* Modal Header */}
+          <div className="p-6 bg-slate-900 text-white flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-black text-white">{emp.name}</h3>
+              <p className="text-xs text-slate-300 font-medium mt-1">
+                Смены и учет времени • {monthOptions.find(o => o.value === selectedMonth)?.label}
+              </p>
+            </div>
+            <button
+              onClick={() => setSelectedEmployeeForStats(null)}
+              className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-300 hover:text-white transition-colors cursor-pointer"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Modal Content - Scrollable */}
+          <div className="p-6 overflow-y-auto space-y-6 flex-1">
+            {/* Statistics Overview Card */}
+            <div className="grid grid-cols-3 gap-4 bg-slate-50 p-4 rounded-3xl border border-slate-100">
+              <div className="text-center">
+                <div className="text-[10px] text-slate-400 font-bold uppercase">План по графику</div>
+                <div className="text-lg font-mono font-black text-slate-800 mt-1">{planned}ч</div>
+              </div>
+              <div className="text-center border-x border-slate-200">
+                <div className="text-[10px] text-slate-400 font-bold uppercase">Отработано факт</div>
+                <div className="text-lg font-mono font-black text-indigo-600 mt-1">{totalHours}ч</div>
+              </div>
+              <div className="text-center">
+                <div className="text-[10px] text-slate-400 font-bold uppercase">Всего смен</div>
+                <div className="text-lg font-mono font-black text-emerald-600 mt-1">{logs.length}</div>
+              </div>
+            </div>
+
+            {/* Manual Add Form */}
+            <div className="bg-indigo-50/50 p-4.5 rounded-3xl border border-indigo-100/85 space-y-3">
+              <h4 className="text-xs font-black text-indigo-900 flex items-center gap-1.5">
+                <Plus className="w-4 h-4 text-indigo-600 shrink-0" /> Добавить или скорректировать смену вручную
+              </h4>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 mb-1">Дата смены</label>
+                  <input
+                    type="date"
+                    value={manualDate}
+                    onChange={(e) => setManualDate(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 mb-1">Отработано часов</label>
+                  <input
+                    type="number"
+                    min="1"
+                    max="24"
+                    value={manualHours}
+                    onChange={(e) => setManualHours(Number(e.target.value))}
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono"
+                  />
+                </div>
+                <div>
+                  <button
+                    onClick={() => handleAddManualShift(emp.id)}
+                    disabled={isSubmittingManual}
+                    className="w-full py-2.5 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black transition-all cursor-pointer shadow-sm disabled:opacity-50"
+                  >
+                    {isSubmittingManual ? 'Добавление...' : 'Записать смену'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Shift logs list */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">История отметок смен за месяц</h4>
+              {logs.length === 0 ? (
+                <div className="text-center py-8 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                  <Clock className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                  <p className="text-xs font-medium text-slate-500">Записей о сменах в этом месяце нет</p>
+                </div>
+              ) : (
+                <div className="divide-y divide-slate-100 max-h-[300px] overflow-y-auto pr-1">
+                  {logs.map((log: any) => {
+                    const shiftHours = Number((log.elapsedSeconds / 3600).toFixed(1));
+                    const formattedDate = new Date(log.date).toLocaleDateString('ru-RU', {
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric'
+                    });
+
+                    // Check planned hours for this day in the schedule grid
+                    const schedKey = `${emp.id}_${log.date}`;
+                    const daySched = scheduleEntries[schedKey];
+                    const plannedHoursForDay = daySched?.hours || 0;
+
+                    // Match or mismatch status
+                    const isMatch = plannedHoursForDay > 0 && Math.abs(shiftHours - plannedHoursForDay) <= 1;
+
+                    return (
+                      <div key={log.id} className="py-3 flex items-center justify-between gap-4 border-b border-slate-50 last:border-0">
+                        <div>
+                          <div className="text-xs font-bold text-slate-950">{formattedDate}</div>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[10px] font-mono text-slate-500">
+                              Факт: <strong className="text-indigo-600">{shiftHours}ч</strong>
+                            </span>
+                            <span className="text-[10px] text-slate-300">•</span>
+                            <span className="text-[10px] font-mono text-slate-500">
+                              План: <strong>{plannedHoursForDay}ч</strong>
+                            </span>
+                            {log.isManual && (
+                              <span className="text-[9px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.5 rounded-md">
+                                Корректировка
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                          {plannedHoursForDay === 0 ? (
+                            <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-xl">
+                              Вне графика
+                            </span>
+                          ) : isMatch ? (
+                            <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-xl flex items-center gap-1">
+                              <Check className="w-3 h-3" /> Соответствует
+                            </span>
+                          ) : (
+                            <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-1 rounded-xl">
+                              Несоответствие ({shiftHours < plannedHoursForDay ? `-${(plannedHoursForDay - shiftHours).toFixed(1)}ч` : `+${(shiftHours - plannedHoursForDay).toFixed(1)}ч`})
+                            </span>
+                          )}
+
+                          <button
+                            onClick={() => handleDeleteShiftLog(log.id)}
+                            className="p-1.5 rounded-xl hover:bg-rose-50 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                            title="Удалить запись"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Modal Footer */}
+          <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+            <button
+              onClick={() => setSelectedEmployeeForStats(null)}
+              className="px-5 py-2.5 rounded-2xl bg-white hover:bg-slate-100 border border-slate-200 text-xs font-bold text-slate-700 transition-all cursor-pointer"
+            >
+              Закрыть
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  })()}
 
       {/* Context Popover for Cell Selection */}
       {activeCell && (

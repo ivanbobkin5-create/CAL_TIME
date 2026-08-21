@@ -2644,6 +2644,67 @@ function transliterate(str: string): string {
     }
   });
 
+  app.get("/api/erp/:companyId/shift-logs", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+        where: { collection: `companies/${companyId}/shift_logs` }
+      }));
+      const logs = docs.map(d => {
+        try {
+          return JSON.parse(d.data);
+        } catch (e) {
+          return null;
+        }
+      }).filter(Boolean);
+      res.json({ success: true, logs });
+    } catch (e: any) {
+      console.error("Error fetching shift logs:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/erp/:companyId/shift-logs", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const { employeeId, elapsedSeconds, date, endedAt } = req.body;
+      const logId = `shift_log_${Date.now()}_${employeeId}`;
+      const logDocPath = `companies/${companyId}/shift_logs/${logId}`;
+      const logData = {
+        id: logId,
+        employeeId,
+        endedAt: endedAt || new Date().toISOString(),
+        elapsedSeconds: elapsedSeconds || 0,
+        date: date || new Date().toISOString().split('T')[0],
+        isManual: true
+      };
+      await dbQueryWithRetry(() => prisma.dbDocument.create({
+        data: {
+          path: logDocPath,
+          collection: `companies/${companyId}/shift_logs`,
+          docId: logId,
+          data: JSON.stringify(logData)
+        }
+      }));
+      res.json({ success: true, log: logData });
+    } catch (e: any) {
+      console.error("Error creating manual shift log:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.delete("/api/erp/:companyId/shift-logs/:logId", async (req, res) => {
+    try {
+      const { companyId, logId } = req.params;
+      const docPath = `companies/${companyId}/shift_logs/${logId}`;
+      await dbQueryWithRetry(() => prisma.dbDocument.delete({ where: { path: docPath } }).catch(() => null));
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("Error deleting shift log:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   app.post("/api/erp/:companyId/schedule", async (req, res) => {
     try {
       const { companyId } = req.params;
