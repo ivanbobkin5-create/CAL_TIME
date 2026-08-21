@@ -30,6 +30,7 @@ import { formatDeadlineDate } from '../utils';
 import { parseBirkaFile } from '../utils/birkaParser';
 import { parseHardwareFile } from '../utils/hardwareParser';
 import { HardwareSpecificationModal } from '../components/HardwareSpecificationModal';
+import { AssemblyFileModal } from '../components/AssemblyFileModal';
 
 interface ERPPlanningViewProps {
   orders: ProductionOrder[];
@@ -55,6 +56,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
   // Modals state
   const [viewingBirkaModalOrder, setViewingBirkaModalOrder] = useState<ProductionOrder | null>(null);
   const [viewingHardwareModalOrder, setViewingHardwareModalOrder] = useState<ProductionOrder | null>(null);
+  const [viewingAssemblyModalOrder, setViewingAssemblyModalOrder] = useState<ProductionOrder | null>(null);
   const [launchedModalOrder, setLaunchedModalOrder] = useState<{ order: ProductionOrder; plannedDate: string } | null>(null);
   const [birkaSearchQuery, setBirkaSearchQuery] = useState('');
   const [hardwareSearchQuery, setHardwareSearchQuery] = useState('');
@@ -475,14 +477,24 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                     )}
 
                     {order.assemblyFileData ? (
-                      <span 
-                        className="inline-flex items-center gap-1.5 text-xs font-bold text-purple-900 bg-purple-50 px-3 py-1.5 rounded-xl border border-purple-200 shadow-2xs max-w-[240px] truncate"
-                        title={`Файл Сборка: ${order.assemblyFileData.fileName} (${order.assemblyFileData.uploadedAt || ''})`}
+                      <button 
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setViewingAssemblyModalOrder(order);
+                        }}
+                        className="inline-flex items-center gap-1.5 text-xs font-bold text-purple-900 bg-purple-50 hover:bg-purple-100 px-3 py-1.5 rounded-xl border border-purple-200 transition-colors cursor-pointer shadow-2xs max-w-[240px] truncate"
+                        title={`Нажмите, чтобы просмотреть технический файл Сборка: ${order.assemblyFileData.fileName}`}
                       >
                         <Wrench className="w-3.5 h-3.5 text-purple-600 shrink-0" />
                         <span className="truncate">Сборка: {order.assemblyFileData.fileName}</span>
+                      </button>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200">
+                        <Wrench className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        <span>Сборка не загружена</span>
                       </span>
-                    ) : null}
+                    )}
                   </div>
 
                   {/* Right: Date Picker, Upload & Launch Button */}
@@ -1002,6 +1014,19 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
           onUpdateOrder={(updated) => {
             onUpdateOrder(updated);
             setViewingHardwareModalOrder(updated);
+          }}
+        />
+      )}
+
+      {/* Assembly File Modal */}
+      {viewingAssemblyModalOrder && (
+        <AssemblyFileModal
+          order={viewingAssemblyModalOrder}
+          isOpen={!!viewingAssemblyModalOrder}
+          onClose={() => setViewingAssemblyModalOrder(null)}
+          onUpdateOrder={(updated) => {
+            onUpdateOrder(updated);
+            setViewingAssemblyModalOrder(updated);
           }}
         />
       )}

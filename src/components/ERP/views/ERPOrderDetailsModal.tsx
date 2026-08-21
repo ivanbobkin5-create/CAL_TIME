@@ -23,14 +23,20 @@ import {
   RotateCcw,
   Box,
   Eye,
-  Lock
+  Lock,
+  Package,
+  PackageCheck,
+  Wrench
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee } from '../types';
 import { parseBirkaFile, BirkaParseResult, BirkaDetail } from '../utils/birkaParser';
+import { parseHardwareFile } from '../utils/hardwareParser';
 import { formatDeadlineDate, speakText } from '../utils';
 import { detailRequiresPrisadka } from '../utils/stageReadiness';
 import { FinishedPartNoticeModal } from '../components/FinishedPartNoticeModal';
 import { OrderClientPrivacyModal } from '../components/OrderClientPrivacyModal';
+import { HardwareSpecificationModal } from '../components/HardwareSpecificationModal';
+import { AssemblyFileModal } from '../components/AssemblyFileModal';
 
 interface ERPOrderDetailsModalProps {
   order: ProductionOrder;
@@ -88,6 +94,8 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  const [showHardwareModal, setShowHardwareModal] = useState(false);
+  const [showAssemblyModal, setShowAssemblyModal] = useState(false);
 
   // Material & Scanning state
   const [selectedMaterial, setSelectedMaterial] = useState<string>('');
@@ -190,6 +198,76 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
       playSoundEffect('error');
     } finally {
       setIsUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  // Upload Hardware File Handler
+  const handleHardwareUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    setUploadError(null);
+
+    try {
+      const parseRes = await parseHardwareFile(file, settings?.hardwareColumnMapping);
+      if (parseRes.items.length === 0) {
+        throw new Error('Файл не содержит строк с фурнитурой');
+      }
+
+      const updatedOrder: ProductionOrder = {
+        ...order,
+        hardwareData: {
+          fileName: parseRes.fileName,
+          fileHash: parseRes.fileHash,
+          uploadedAt: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('ru-RU'),
+          items: parseRes.items,
+          totalItemsCount: parseRes.totalItemsCount,
+          totalQuantity: parseRes.totalQuantity,
+          categoriesSummary: parseRes.categoriesSummary
+        }
+      };
+
+      onUpdateOrder(updatedOrder);
+      playSoundEffect('success');
+    } catch (err: any) {
+      setUploadError(err.message || 'Ошибка чтения файла фурнитуры');
+      playSoundEffect('error');
+    } finally {
+      setIsUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  // Upload Assembly File Handler
+  const handleAssemblyUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    setUploadError(null);
+
+    try {
+      const textContent = await file.text();
+      const updatedOrder: ProductionOrder = {
+        ...order,
+        assemblyFileData: {
+          fileName: file.name,
+          fileSize: file.size,
+          uploadedAt: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('ru-RU'),
+          fileContent: textContent.substring(0, 200000)
+        }
+      };
+
+      onUpdateOrder(updatedOrder);
+      playSoundEffect('success');
+    } catch (err: any) {
+      setUploadError(err.message || 'Ошибка прикрепления файла Сборки');
+      playSoundEffect('error');
+    } finally {
+      setIsUploading(false);
+      e.target.value = '';
     }
   };
 
@@ -516,8 +594,24 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
                 </span>
                 {order.birkaData && (
                   <span className="px-2.5 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 text-[11px] font-bold flex items-center gap-1">
-                    <Check className="w-3 h-3" /> Бирка загружена
+                    <Check className="w-3 h-3" /> Бирка
                   </span>
+                )}
+                {order.hardwareData && (
+                  <button 
+                    onClick={() => setShowHardwareModal(true)}
+                    className="px-2.5 py-0.5 rounded-lg bg-cyan-100 hover:bg-cyan-200 text-cyan-800 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Package className="w-3 h-3" /> Фурнитура ({order.hardwareData.totalItemsCount})
+                  </button>
+                )}
+                {order.assemblyFileData && (
+                  <button 
+                    onClick={() => setShowAssemblyModal(true)}
+                    className="px-2.5 py-0.5 rounded-lg bg-purple-100 hover:bg-purple-200 text-purple-800 text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Wrench className="w-3 h-3 text-purple-600" /> Сборка: {order.assemblyFileData.fileName}
+                  </button>
                 )}
               </div>
               <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
@@ -582,33 +676,127 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
           {activeTab === 'card' && (
             <div className="space-y-6">
               
-              {/* Birka Upload / Re-upload Banner */}
-              <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-                    <Upload className="w-5 h-5" />
+              {/* Attached Files & Specifications (Бирки, Фурнитура, Сборка) */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-400">
+                  Прикрепленные файлы и спецификации заказа
+                </h4>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {/* 1. Birka File Card */}
+                  <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-200/80 flex flex-col justify-between gap-3">
+                    <div className="flex items-start gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center shrink-0 mt-0.5">
+                        <FileText className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[10px] font-bold text-blue-600 uppercase tracking-wider">Файл Бирок / Раскроя</div>
+                        <h5 className="font-bold text-slate-900 text-xs truncate">
+                          {order.birkaData ? order.birkaData.fileName : 'Бирки не прикреплены'}
+                        </h5>
+                        <p className="text-[10px] text-slate-500 mt-0.5">
+                          {order.birkaData ? `Деталей: ${order.birkaData.details.length} шт.` : '.bir, .csv, .zip'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1 border-t border-slate-200/60">
+                      <label className="flex-1 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer text-center">
+                        <Upload className="w-3 h-3" />
+                        <span>{order.birkaData ? 'Заменить' : '+ Загрузить'}</span>
+                        <input
+                          type="file"
+                          accept=".bir,.brx,.csv,.tsv,.txt,.dbf,.zip"
+                          onChange={handleFileUpload}
+                          className="hidden"
+                          disabled={isUploading}
+                        />
+                      </label>
+                    </div>
                   </div>
-                  <div>
-                    <h4 className="font-bold text-slate-900 text-xs">
-                      {order.birkaData ? `Файл спецификации: ${order.birkaData.fileName}` : 'Загрузка файла бирок (.bir, .csv, .tsv, .dbf, .zip)'}
-                    </h4>
-                    <p className="text-[11px] text-slate-500">
-                      {order.birkaData ? `Загружен: ${order.birkaData.uploadedAt || 'Ранее'}. Содержит ${order.birkaData.details.length} деталей.` : 'Загрузите файл Базис-Бирки или CSV, чтобы привязать карту деталей и кромки'}
-                    </p>
+
+                  {/* 2. Hardware Specification Card */}
+                  <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-200/80 flex flex-col justify-between gap-3">
+                    <div className="flex items-start gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-cyan-100 text-cyan-700 flex items-center justify-center shrink-0 mt-0.5">
+                        <Package className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[10px] font-bold text-cyan-700 uppercase tracking-wider">Ведомость Фурнитуры</div>
+                        <h5 className="font-bold text-slate-900 text-xs truncate">
+                          {order.hardwareData ? order.hardwareData.fileName : 'Фурнитура не загружена'}
+                        </h5>
+                        <p className="text-[10px] text-slate-500 mt-0.5">
+                          {order.hardwareData ? `${order.hardwareData.totalItemsCount} поз. (${order.hardwareData.totalQuantity} шт)` : '.xlsx, .csv, .xml'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1 border-t border-slate-200/60">
+                      {order.hardwareData && (
+                        <button
+                          onClick={() => setShowHardwareModal(true)}
+                          className="px-2.5 py-1.5 rounded-xl bg-cyan-100 hover:bg-cyan-200 text-cyan-900 font-bold text-[11px] transition-all flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>Просмотр</span>
+                        </button>
+                      )}
+                      <label className="flex-1 px-3 py-1.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer text-center">
+                        <PackageCheck className="w-3 h-3" />
+                        <span>{order.hardwareData ? 'Заменить' : '+ Загрузить'}</span>
+                        <input
+                          type="file"
+                          accept=".xlsx,.xls,.csv,.tsv,.txt,.xml"
+                          onChange={handleHardwareUpload}
+                          className="hidden"
+                          disabled={isUploading}
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* 3. Assembly File Card */}
+                  <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-200/80 flex flex-col justify-between gap-3">
+                    <div className="flex items-start gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center shrink-0 mt-0.5">
+                        <Wrench className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[10px] font-bold text-purple-700 uppercase tracking-wider">Файл Сборка</div>
+                        <h5 className="font-bold text-slate-900 text-xs truncate">
+                          {order.assemblyFileData ? order.assemblyFileData.fileName : 'Сборка не загружена'}
+                        </h5>
+                        <p className="text-[10px] text-slate-500 mt-0.5">
+                          {order.assemblyFileData ? order.assemblyFileData.uploadedAt || 'Загружен' : '.sb, .csv, .pdf, .json, .txt'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1 border-t border-slate-200/60">
+                      {order.assemblyFileData && (
+                        <button
+                          onClick={() => setShowAssemblyModal(true)}
+                          className="px-2.5 py-1.5 rounded-xl bg-purple-100 hover:bg-purple-200 text-purple-900 font-bold text-[11px] transition-all flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <Eye className="w-3 h-3" />
+                          <span>Просмотр</span>
+                        </button>
+                      )}
+                      <label className="flex-1 px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer text-center">
+                        <Wrench className="w-3 h-3" />
+                        <span>{order.assemblyFileData ? 'Заменить' : '+ Загрузить'}</span>
+                        <input
+                          type="file"
+                          accept=".sb,.csv,.tsv,.txt,.pdf,.json,.xml,.xlsx,.xls"
+                          onChange={handleAssemblyUpload}
+                          className="hidden"
+                          disabled={isUploading}
+                        />
+                      </label>
+                    </div>
                   </div>
                 </div>
-
-                <label className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-sm transition-all flex items-center gap-2 cursor-pointer self-start md:self-auto shrink-0">
-                  <Upload className="w-4 h-4" />
-                  <span>{order.birkaData ? 'Заменить файл бирки' : 'Загрузить файл бирки'}</span>
-                  <input
-                    type="file"
-                    accept=".bir,.brx,.csv,.tsv,.txt,.dbf,.zip"
-                    onChange={handleFileUpload}
-                    className="hidden"
-                    disabled={isUploading}
-                  />
-                </label>
               </div>
 
               {uploadError && (
@@ -1140,6 +1328,30 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
         order={order}
         currentUser={currentUser}
       />
+
+      {/* Hardware Specification Modal */}
+      {showHardwareModal && (
+        <HardwareSpecificationModal
+          order={order}
+          isOpen={showHardwareModal}
+          onClose={() => setShowHardwareModal(false)}
+          onUpdateOrder={(updated) => {
+            onUpdateOrder(updated);
+          }}
+        />
+      )}
+
+      {/* Assembly File Modal */}
+      {showAssemblyModal && (
+        <AssemblyFileModal
+          order={order}
+          isOpen={showAssemblyModal}
+          onClose={() => setShowAssemblyModal(false)}
+          onUpdateOrder={(updated) => {
+            onUpdateOrder(updated);
+          }}
+        />
+      )}
     </div>
   );
 };
