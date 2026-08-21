@@ -2446,6 +2446,136 @@ function transliterate(str: string): string {
     }
   });
 
+  // ERP Copilot Gemini AI Route
+  app.post("/api/erp/:companyId/copilot", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const { prompt, history } = req.body;
+
+      if (!prompt) {
+        return res.status(400).json({ error: "Prompt is required" });
+      }
+
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        return res.status(400).json({
+          error: "Ключ GEMINI_API_KEY не настроен. Пожалуйста, добавьте его в секреты проекта в панели управления."
+        });
+      }
+
+      // Load company doc
+      const companyDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({
+        where: { path: `companies/${companyId}` }
+      }));
+
+      // Load active orders
+      const erpOrderDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+        where: { collection: `companies/${companyId}/erp_orders` }
+      }));
+
+      // Load employees
+      const employeeDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+        where: { collection: `companies/${companyId}/employees` }
+      }));
+
+      const companyData = companyDoc ? JSON.parse(companyDoc.data) : {};
+      const erpConfig = companyData.erpConfig || companyData.erpSettings || {};
+      const noteRules = erpConfig.noteRules || [];
+      const equipmentList = erpConfig.equipmentList || [];
+
+      // Parse and simplify orders list to stay within context/token limits cleanly
+      const ordersList = erpOrderDocs.map(d => {
+        try {
+          const order = JSON.parse(d.data);
+          return {
+            id: order.id,
+            number: order.orderNumber,
+            status: order.status === 'in_progress' ? 'В производстве' : (order.status === 'planned' ? 'Запланирован' : (order.status === 'completed' ? 'Готов' : order.status)),
+            currentStage: order.currentStage,
+            clientName: order.clientName,
+            createdAt: order.createdAt,
+            readyAt: order.readyAt,
+            partsCount: order.parts?.length || 0,
+            hardwareCount: order.hardwareList?.length || 0,
+            notes: order.notes || ""
+          };
+        } catch(e) { return null; }
+      }).filter(Boolean).slice(0, 30); // Max 30 recent orders for clean context size
+
+      // Parse employees
+      const employeesList = employeeDocs.map(d => {
+        try {
+          const emp = JSON.parse(d.data);
+          return {
+            name: emp.name,
+            role: emp.productionRole || emp.role || "Рабочий",
+            status: emp.status || "active"
+          };
+        } catch(e) { return null; }
+      }).filter(Boolean);
+
+      // Lazy import of GoogleGenAI to meet lazy initialization rules
+      const { GoogleGenAI } = require("@google/genai");
+      const ai = new GoogleGenAI({
+        apiKey: apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          }
+        }
+      });
+
+      // Construct rich system instruction grounding the model in this company's production environment
+      const systemInstruction = `Ты — Интерактивный ИИ Ассистент (Copilot) для мебельного и корпусного производства на предприятии "${companyData.name || 'Производство'}".
+Твоя роль — помогать начальнику цеха, технологам и мастерам управлять процессами, находить задержки, сверять спецификации и планировать работу.
+
+У тебя есть доступ к актуальным данным производства:
+1. СПИСОК ТЕКУЩИХ ЗАКАЗОВ В СИСТЕМЕ (до 30 недавних):
+${JSON.stringify(ordersList, null, 2)}
+
+2. СПИСОК ОБОРУДОВАНИЯ ЦЕХА:
+${JSON.stringify(equipmentList, null, 2)}
+
+3. ДЕЙСТВУЮЩИЕ ПРАВИЛА ТЕХНОЛОГИЧЕСКИХ ПРИМЕЧАНИЙ:
+${JSON.stringify(noteRules, null, 2)}
+
+4. СПИСОК СОТРУДНИКОВ:
+${JSON.stringify(employeesList, null, 2)}
+
+Отвечай максимально точно, профессионально, используя мебельную терминологию (кромление, присадка, раскрой, ЛДСП, МДФ, фурнитура). На вопросы, связанные с задержками или статистикой заказов, давай точные выкладки на основе предоставленных данных. Если данных не хватает, вежливо уточни у пользователя.
+Отвечай на русском языке. Используй форматирование Markdown (жирный текст, списки, таблицы) для наглядности. Пиши лаконично, структурированно, без лишней воды.`;
+
+      // Build contents array including history
+      const contents = [];
+      if (history && Array.isArray(history)) {
+        for (const msg of history) {
+          contents.push({
+            role: msg.role === 'user' ? 'user' : 'model',
+            parts: [{ text: msg.text }]
+          });
+        }
+      }
+      contents.push({
+        role: 'user',
+        parts: [{ text: prompt }]
+      });
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.7-flash",
+        contents: contents,
+        config: {
+          systemInstruction: systemInstruction,
+          temperature: 0.7,
+        }
+      });
+
+      res.json({ text: response.text });
+    } catch (e: any) {
+      console.error("Error in ERP Copilot Route:", e);
+      res.status(500).json({ error: String(e.message || e) });
+    }
+  });
+
   // Environment determination
   const isDev = process.env.NODE_ENV === "development";
   const distPath = path.join(process.cwd(), 'dist');

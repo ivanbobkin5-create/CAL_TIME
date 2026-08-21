@@ -8,6 +8,7 @@ export type ERPSection =
   | 'salaries'
   | 'employees'
   | 'residuals'
+  | 'copilot'
   | 'settings';
 
 export interface MaterialResidual {
@@ -447,6 +448,7 @@ export interface ERPCompanySettings {
     customFooterNotes?: string;
     showQrForAssembler?: boolean;
   };
+  copilotEnabled?: boolean; // Включен ли ИИ Ассистент в боковом меню
 }
 
 export interface SalaryAdjustment {
