@@ -285,6 +285,14 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
                       </span>
                     </div>
                   )}
+                  {emp.bitrixUserId && (
+                    <div className="flex items-center justify-between text-slate-600 bg-blue-50/60 p-1.5 rounded-xl border border-blue-200">
+                      <span className="text-blue-800 font-bold">🅱️ ID Битрикс24:</span>
+                      <span className="font-mono font-black text-blue-900 text-[11px]">
+                        {emp.bitrixUserId}
+                      </span>
+                    </div>
+                  )}
                   {emp.email && (
                     <div className="flex items-center justify-between text-slate-600">
                       <span className="text-slate-400">Email:</span>
@@ -563,6 +571,21 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
                   onChange={(e) => setFormEmployee({ ...formEmployee, phone: e.target.value })}
                   className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
                 />
+              </div>
+
+              {/* Bitrix24 User ID */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">ID пользователя Битрикс24</label>
+                <input
+                  type="text"
+                  placeholder="Например, 108"
+                  value={formEmployee.bitrixUserId || ''}
+                  onChange={(e) => setFormEmployee({ ...formEmployee, bitrixUserId: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                />
+                <p className="text-[11px] text-slate-500 mt-1 font-medium">
+                  Используется для закрытия задач в Битрикс24 от имени этого сотрудника при завершении этапов в ERP.
+                </p>
               </div>
 
               {/* Login Email & Password for Staff only */}

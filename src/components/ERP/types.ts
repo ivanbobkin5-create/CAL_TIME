@@ -8,7 +8,6 @@ export type ERPSection =
   | 'salaries'
   | 'employees'
   | 'residuals'
-  | 'copilot'
   | 'settings';
 
 export interface MaterialResidual {
@@ -330,6 +329,7 @@ export interface ERPEmployee {
   isOwner?: boolean;
   badgeCode?: string; // Персональный токен QR-бейджа для быстрого входа
   badgeIssuedAt?: string;
+  bitrixUserId?: string; // ID пользователя в Битрикс24
 }
 
 export type ShiftCellType = 'work_12' | 'work_8' | 'night_12' | 'day_off' | 'vacation' | 'sick';
@@ -448,7 +448,6 @@ export interface ERPCompanySettings {
     customFooterNotes?: string;
     showQrForAssembler?: boolean;
   };
-  copilotEnabled?: boolean; // Включен ли ИИ Ассистент в боковом меню
 }
 
 export interface SalaryAdjustment {

@@ -29,8 +29,7 @@ import {
   Check,
   Archive,
   Truck,
-  PackageCheck,
-  Sparkles
+  PackageCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -55,7 +54,6 @@ import { ERPSettingsView } from './views/ERPSettingsView';
 import { ERPArchiveView } from './views/ERPArchiveView';
 import { ERPLoginView } from './views/ERPLoginView';
 import { ERPOrderWorkspaceView } from './views/ERPOrderWorkspaceView';
-import { ERPCopilotView } from './views/ERPCopilotView';
 import { MobileCameraScannerModal } from './components/MobileCameraScannerModal';
 import { VoiceAssistantToggle } from './components/VoiceAssistantToggle';
 
@@ -652,12 +650,6 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
     }
   };
 
-  useEffect(() => {
-    if (settings.copilotEnabled === false && activeSection === 'copilot') {
-      setActiveSection('dashboard');
-    }
-  }, [settings.copilotEnabled, activeSection]);
-
   const handleUpdateOrderStatus = async (orderId: string, nextStage: ProductionStageId) => {
     const isCompleted = nextStage === 'ready';
     const newStatus: ProductionOrder['status'] = isCompleted ? 'completed' : 'in_progress';
@@ -704,8 +696,13 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
           body: JSON.stringify({
             currentStage: nextStage,
             status: newStatus,
+            completedByEmployeeId: matchedEmp?.id || '',
             stageProgress: {
-              [nextStage]: { status: isCompleted ? 'done' : 'in_progress' }
+              [nextStage]: { 
+                status: isCompleted ? 'done' : 'in_progress',
+                completedBy: displayUserName || undefined,
+                completedAt: isCompleted ? new Date().toISOString() : undefined
+              }
             }
           })
         });
@@ -1055,7 +1052,6 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
     { id: 'schedule', label: 'График работы', icon: CalendarDays },
     { id: 'production', label: 'Производство', icon: Factory, badge: orders.filter(o => o.status === 'in_progress' || o.currentStage === 'shipping').length },
     { id: 'archive', label: 'Архив заказов', icon: Archive, badge: orders.filter(o => o.status === 'completed' || o.status === 'shipped').length },
-    ...(settings.copilotEnabled !== false ? [{ id: 'copilot' as ERPSection, label: 'ИИ Copilot', icon: Sparkles }] : []),
     { id: 'reports', label: 'Аналитика и отчеты', icon: BarChart3 },
     { id: 'salaries', label: 'Зарплаты', icon: DollarSign },
     { id: 'employees', label: 'Сотрудники', icon: Users, badge: employees.length },
@@ -1492,16 +1488,6 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
                   orders={orders}
                   catalogProducts={catalogProducts}
                   onSaveSettings={handleSaveSettings} 
-                />
-              )}
-
-              {activeSection === 'copilot' && (
-                <ERPCopilotView 
-                  companyId={company?.id || aliasOrId}
-                  companyName={company?.name}
-                  settings={settings}
-                  orders={orders}
-                  employees={employees}
                 />
               )}
             </>

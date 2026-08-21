@@ -1899,6 +1899,166 @@ function transliterate(str: string): string {
             console.error("Failed to update Bitrix24 deal stage:", b24Err);
           }
         }
+
+        // --- Bitrix24 Task Automatic Closure ---
+        const { completedByEmployeeId } = req.body;
+        let b24UserId: string | undefined = undefined;
+        let b24EmployeeName = "";
+        
+        if (completedByEmployeeId) {
+          try {
+            const empDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({
+              where: { path: `companies/${companyId}/erp_employees/${completedByEmployeeId}` }
+            }));
+            if (empDoc) {
+              const empData = JSON.parse(empDoc.data);
+              b24UserId = empData.bitrixUserId;
+              b24EmployeeName = empData.name || "";
+            }
+          } catch (err) {
+            console.error("[ERP B24 SYNC] Error looking up employee for Bitrix24 User ID:", err);
+          }
+        }
+
+        // Determine what stage was completed.
+        const stageSeq = ['queue', 'cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing', 'shipping', 'ready'];
+        const currentIdx = stageSeq.indexOf(currentStage);
+        
+        let completedStages: string[] = [];
+        if (status === 'completed' || currentStage === 'ready') {
+          // If fully completed, close ALL active production tasks
+          completedStages = ['cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing', 'shipping'];
+        } else if (currentIdx > 1) {
+          // Close immediate previous stage that is now completed
+          completedStages = [stageSeq[currentIdx - 1]];
+        }
+
+        if (completedStages.length > 0) {
+          try {
+            const listUrl = `${webhookUrl}/tasks.task.list`;
+            const listRes = await fetch(listUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                filter: {
+                  UF_CRM_TASK: `D_${bitrixDealId}`
+                },
+                select: ['ID', 'TITLE', 'TAGS', 'STATUS']
+              })
+            });
+            const listData = await listRes.json();
+            const b24Tasks = listData.result?.tasks || [];
+            
+            const stageProfiles: Record<string, { tags: string[], keywords: string[] }> = {
+              cutting: {
+                tags: ['erp_cutting', 'cutting', 'распил', 'раскрой'],
+                keywords: ['распил', 'раскрой', 'пилить', 'раскроить']
+              },
+              edging: {
+                tags: ['erp_edging', 'edging', 'кромка', 'кромление'],
+                keywords: ['кромка', 'кромление', 'кромить', 'кромкооблицовка']
+              },
+              cnc: {
+                tags: ['erp_cnc', 'cnc', 'присадка', 'чпу'],
+                keywords: ['присадка', 'чпу', 'сверление', 'cnc']
+              },
+              facades: {
+                tags: ['erp_facades', 'facades', 'фасады'],
+                keywords: ['фасады', 'фасад']
+              },
+              assembly: {
+                tags: ['erp_assembly', 'assembly', 'сборка'],
+                keywords: ['сборка', 'собрать']
+              },
+              kitting: {
+                tags: ['erp_kitting', 'kitting', 'комплектация', 'фурнитура'],
+                keywords: ['комплектация', 'укомплектовать', 'фурнитура']
+              },
+              qc: {
+                tags: ['erp_qc', 'qc', 'отк', 'контроль'],
+                keywords: ['отк', 'контроль качества', 'проверка']
+              },
+              packing: {
+                tags: ['erp_packing', 'packing', 'упаковка'],
+                keywords: ['упаковка', 'упаковать']
+              },
+              shipping: {
+                tags: ['erp_shipping', 'shipping', 'отгрузка', 'доставка'],
+                keywords: ['отгрузка', 'доставка', 'доставить', 'отгрузить']
+              }
+            };
+            
+            for (const compStage of completedStages) {
+              const profile = stageProfiles[compStage];
+              if (!profile) continue;
+              
+              const matchedB24Tasks = b24Tasks.filter((t: any) => {
+                if (Number(t.status) === 5) return false;
+                
+                const titleLower = (t.title || '').toLowerCase();
+                const tags = Array.isArray(t.tags) ? t.tags.map((tg: any) => String(tg).toLowerCase()) : [];
+                
+                const matchesTag = profile.tags.some(pt => tags.includes(pt));
+                const matchesKeyword = profile.keywords.some(kw => titleLower.includes(kw));
+                
+                return matchesTag || matchesKeyword;
+              });
+              
+              for (const task of matchedB24Tasks) {
+                console.log(`[ERP B24 SYNC] Found matching task to complete: ID ${task.id} "${task.title}" for stage ${compStage}`);
+                
+                if (b24UserId) {
+                  try {
+                    await fetch(`${webhookUrl}/tasks.task.update`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        id: task.id,
+                        fields: {
+                          RESPONSIBLE_ID: b24UserId
+                        }
+                      })
+                    });
+                    console.log(`[ERP B24 SYNC] Assigned task ${task.id} to responsible Bitrix User ID ${b24UserId}`);
+                  } catch (updErr) {
+                    console.error(`[ERP B24 SYNC] Failed to assign task ${task.id} to user ${b24UserId}:`, updErr);
+                  }
+                }
+                
+                try {
+                  const workerName = b24EmployeeName || req.body.responsibleEmployeeName || "сотрудник ERP";
+                  await fetch(`${webhookUrl}/task.commentitem.add`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      taskId: task.id,
+                      fields: {
+                        POST_MESSAGE: `Этап "${compStage}" успешно завершен через ERP-систему исполнителем ${workerName}. Задача закрыта автоматически.`
+                      }
+                    })
+                  });
+                } catch (commentErr) {
+                  console.error(`[ERP B24 SYNC] Failed to comment on task ${task.id}:`, commentErr);
+                }
+                
+                try {
+                  await fetch(`${webhookUrl}/tasks.task.complete`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      id: task.id
+                    })
+                  });
+                  console.log(`[ERP B24 SYNC] Successfully completed Bitrix24 task ${task.id}`);
+                } catch (compErr) {
+                  console.error(`[ERP B24 SYNC] Failed to complete task ${task.id}:`, compErr);
+                }
+              }
+            }
+          } catch (taskSyncErr) {
+            console.error("[ERP B24 SYNC] General error during task synchronization:", taskSyncErr);
+          }
+        }
       }
 
       res.json({ success: true, updatedData });
@@ -1982,7 +2142,8 @@ function transliterate(str: string): string {
           baseRate: ownerOverride.baseRate !== undefined ? ownerOverride.baseRate : 100000,
           shiftType: ownerOverride.shiftType || "5/2",
           status: ownerOverride.status || "active",
-          isOwner: true
+          isOwner: true,
+          ...ownerOverride
         });
       }
 
@@ -2009,7 +2170,8 @@ function transliterate(str: string): string {
               baseRate: override.baseRate !== undefined ? override.baseRate : (uData.baseRate || 55000),
               shiftType: override.shiftType || uData.shiftType || '2/2',
               status: override.status || uData.status || 'active',
-              isOwner: uData.role === 'admin' || uData.isOwner
+              isOwner: uData.role === 'admin' || uData.isOwner,
+              ...override
             });
           }
         } catch (e) {}
@@ -2037,7 +2199,8 @@ function transliterate(str: string): string {
               rateType: override.rateType || cuData.rateType || 'piecework',
               baseRate: override.baseRate !== undefined ? override.baseRate : (cuData.baseRate || 55000),
               shiftType: override.shiftType || cuData.shiftType || '2/2',
-              status: override.status || cuData.status || 'active'
+              status: override.status || cuData.status || 'active',
+              ...override
             });
           }
         } catch (e) {}
@@ -2060,7 +2223,8 @@ function transliterate(str: string): string {
             rateType: emp.rateType || 'piecework',
             baseRate: emp.baseRate || 55000,
             shiftType: emp.shiftType || '2/2',
-            status: emp.status || 'active'
+            status: emp.status || 'active',
+            ...emp
           });
         }
       }
@@ -2446,135 +2610,7 @@ function transliterate(str: string): string {
     }
   });
 
-  // ERP Copilot Gemini AI Route
-  app.post("/api/erp/:companyId/copilot", async (req, res) => {
-    try {
-      const { companyId } = req.params;
-      const { prompt, history } = req.body;
 
-      if (!prompt) {
-        return res.status(400).json({ error: "Prompt is required" });
-      }
-
-      const apiKey = process.env.GEMINI_API_KEY;
-      if (!apiKey) {
-        return res.status(400).json({
-          error: "Ключ GEMINI_API_KEY не настроен. Пожалуйста, добавьте его в секреты проекта в панели управления."
-        });
-      }
-
-      // Load company doc
-      const companyDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({
-        where: { path: `companies/${companyId}` }
-      }));
-
-      // Load active orders
-      const erpOrderDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
-        where: { collection: `companies/${companyId}/erp_orders` }
-      }));
-
-      // Load employees
-      const employeeDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
-        where: { collection: `companies/${companyId}/employees` }
-      }));
-
-      const companyData = companyDoc ? JSON.parse(companyDoc.data) : {};
-      const erpConfig = companyData.erpConfig || companyData.erpSettings || {};
-      const noteRules = erpConfig.noteRules || [];
-      const equipmentList = erpConfig.equipmentList || [];
-
-      // Parse and simplify orders list to stay within context/token limits cleanly
-      const ordersList = erpOrderDocs.map(d => {
-        try {
-          const order = JSON.parse(d.data);
-          return {
-            id: order.id,
-            number: order.orderNumber,
-            status: order.status === 'in_progress' ? 'В производстве' : (order.status === 'planned' ? 'Запланирован' : (order.status === 'completed' ? 'Готов' : order.status)),
-            currentStage: order.currentStage,
-            clientName: order.clientName,
-            createdAt: order.createdAt,
-            readyAt: order.readyAt,
-            partsCount: order.parts?.length || 0,
-            hardwareCount: order.hardwareList?.length || 0,
-            notes: order.notes || ""
-          };
-        } catch(e) { return null; }
-      }).filter(Boolean).slice(0, 30); // Max 30 recent orders for clean context size
-
-      // Parse employees
-      const employeesList = employeeDocs.map(d => {
-        try {
-          const emp = JSON.parse(d.data);
-          return {
-            name: emp.name,
-            role: emp.productionRole || emp.role || "Рабочий",
-            status: emp.status || "active"
-          };
-        } catch(e) { return null; }
-      }).filter(Boolean);
-
-      // Lazy import of GoogleGenAI to meet lazy initialization rules
-      const { GoogleGenAI } = require("@google/genai");
-      const ai = new GoogleGenAI({
-        apiKey: apiKey,
-        httpOptions: {
-          headers: {
-            'User-Agent': 'aistudio-build',
-          }
-        }
-      });
-
-      // Construct rich system instruction grounding the model in this company's production environment
-      const systemInstruction = `Ты — Интерактивный ИИ Ассистент (Copilot) для мебельного и корпусного производства на предприятии "${companyData.name || 'Производство'}".
-Твоя роль — помогать начальнику цеха, технологам и мастерам управлять процессами, находить задержки, сверять спецификации и планировать работу.
-
-У тебя есть доступ к актуальным данным производства:
-1. СПИСОК ТЕКУЩИХ ЗАКАЗОВ В СИСТЕМЕ (до 30 недавних):
-${JSON.stringify(ordersList, null, 2)}
-
-2. СПИСОК ОБОРУДОВАНИЯ ЦЕХА:
-${JSON.stringify(equipmentList, null, 2)}
-
-3. ДЕЙСТВУЮЩИЕ ПРАВИЛА ТЕХНОЛОГИЧЕСКИХ ПРИМЕЧАНИЙ:
-${JSON.stringify(noteRules, null, 2)}
-
-4. СПИСОК СОТРУДНИКОВ:
-${JSON.stringify(employeesList, null, 2)}
-
-Отвечай максимально точно, профессионально, используя мебельную терминологию (кромление, присадка, раскрой, ЛДСП, МДФ, фурнитура). На вопросы, связанные с задержками или статистикой заказов, давай точные выкладки на основе предоставленных данных. Если данных не хватает, вежливо уточни у пользователя.
-Отвечай на русском языке. Используй форматирование Markdown (жирный текст, списки, таблицы) для наглядности. Пиши лаконично, структурированно, без лишней воды.`;
-
-      // Build contents array including history
-      const contents = [];
-      if (history && Array.isArray(history)) {
-        for (const msg of history) {
-          contents.push({
-            role: msg.role === 'user' ? 'user' : 'model',
-            parts: [{ text: msg.text }]
-          });
-        }
-      }
-      contents.push({
-        role: 'user',
-        parts: [{ text: prompt }]
-      });
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3.7-flash",
-        contents: contents,
-        config: {
-          systemInstruction: systemInstruction,
-          temperature: 0.7,
-        }
-      });
-
-      res.json({ text: response.text });
-    } catch (e: any) {
-      console.error("Error in ERP Copilot Route:", e);
-      res.status(500).json({ error: String(e.message || e) });
-    }
-  });
 
   // Environment determination
   const isDev = process.env.NODE_ENV === "development";

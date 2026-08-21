@@ -227,7 +227,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
   catalogProducts = [],
   onSaveSettings
 }) => {
-  const [activeTab, setActiveTab] = useState<'stages' | 'birka' | 'hardware' | 'warehouse_cells' | 'rules' | 'tariffs' | 'additional' | 'equipment' | 'labels' | 'shifts' | 'bitrix_delivery' | 'ai_copilot'>('stages');
+  const [activeTab, setActiveTab] = useState<'stages' | 'birka' | 'hardware' | 'warehouse_cells' | 'rules' | 'tariffs' | 'additional' | 'equipment' | 'labels' | 'shifts' | 'bitrix_delivery'>('stages');
 
   const defaultStageIds = ALL_STAGES_CONFIG.map(s => s.id);
   const initialStagesOrder = (() => {
@@ -558,8 +558,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
             { id: 'equipment', label: 'Оборудование и план', desc: 'Станки и мощности смены', icon: Scissors, count: formData.equipmentList?.length },
             { id: 'labels', label: 'Маркировка мест', desc: 'Термоэтикетки и штрихкоды', icon: Package },
             { id: 'bitrix_delivery', label: 'Битрикс24 и печать Акта', desc: 'Поля Битрикс, Акт и ТТН', icon: Truck },
-            { id: 'shifts', label: 'Режим сменности', desc: 'График, часы и нормативы', icon: Clock },
-            { id: 'ai_copilot', label: 'ИИ Ассистент Copilot', desc: 'Настройки ИИ-чата и модели', icon: Sparkles }
+            { id: 'shifts', label: 'Режим сменности', desc: 'График, часы и нормативы', icon: Clock }
           ].map(tab => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
@@ -2154,56 +2153,6 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                   onChange={(e) => setFormData({ ...formData, defaultShiftDurationHours: Number(e.target.value) })}
                   className="w-full px-3 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-slate-900 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
                 />
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* TAB 9: AI COPILOT */}
-      {activeTab === 'ai_copilot' && (
-        <div className="space-y-6">
-          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm">
-            <div className="flex items-center gap-3 mb-2">
-              <div className="p-2.5 rounded-2xl bg-indigo-50 text-indigo-600">
-                <Sparkles className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="font-bold text-slate-900 text-base">Интерактивный ИИ Ассистент Copilot</h3>
-                <p className="text-xs text-slate-400">Умный ИИ-помощник и аналитик мебельного производства на базе моделей Google Gemini</p>
-              </div>
-            </div>
-
-            <hr className="my-5 border-slate-100" />
-
-            <div className="space-y-6">
-              {/* Toggle switch */}
-              <div className="flex items-center justify-between p-4 bg-slate-50/55 rounded-2xl border border-slate-100">
-                <div className="space-y-0.5">
-                  <div className="text-xs font-bold text-slate-900">Показывать ИИ-помощника в боковом меню</div>
-                  <div className="text-[11px] text-slate-400">При выключении вкладка «ИИ Copilot» исчезнет из главного меню ERP</div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, copilotEnabled: formData.copilotEnabled === false ? true : false })}
-                  className={`w-12 h-6 rounded-full transition-colors relative outline-none cursor-pointer ${
-                    formData.copilotEnabled !== false ? 'bg-indigo-600' : 'bg-slate-200'
-                  }`}
-                >
-                  <span
-                    className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full transition-transform ${
-                      formData.copilotEnabled !== false ? 'translate-x-6' : 'translate-x-0'
-                    }`}
-                  />
-                </button>
-              </div>
-
-              {/* API Key Hint */}
-              <div className="p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100/50 flex gap-3 text-xs leading-relaxed text-indigo-950">
-                <Info className="w-4 h-4 text-indigo-600 shrink-0 mt-0.5" />
-                <div>
-                  Для работы ИИ-ассистента используется ключ <strong className="font-semibold text-indigo-900">GEMINI_API_KEY</strong>, настроенный разработчиком. Модель автоматически анализирует текущие заказы, спецификации деталей и помогает мастеру оптимизировать работу цеха.
-                </div>
               </div>
             </div>
           </div>
