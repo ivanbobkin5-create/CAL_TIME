@@ -27,7 +27,9 @@ import {
   X,
   QrCode,
   Check,
-  Archive
+  Archive,
+  Truck,
+  PackageCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -44,6 +46,7 @@ import { ERPDashboardView } from './views/ERPDashboardView';
 import { ERPPlanningView } from './views/ERPPlanningView';
 import { ERPScheduleView } from './views/ERPScheduleView';
 import { ERPProductionView } from './views/ERPProductionView';
+import { ERPDispatchView } from './views/ERPDispatchView';
 import { ERPReportsView } from './views/ERPReportsView';
 import { ERPSalariesView } from './views/ERPSalariesView';
 import { ERPEmployeesView } from './views/ERPEmployeesView';
@@ -982,6 +985,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
     { id: 'planning', label: 'Планирование', icon: Calendar, badge: orders.filter(o => o.status === 'planned').length },
     { id: 'schedule', label: 'График работы', icon: CalendarDays },
     { id: 'production', label: 'Производство', icon: Factory, badge: orders.filter(o => o.status === 'in_progress').length },
+    { id: 'dispatch', label: 'Отгрузка и Доставка', icon: Truck, badge: orders.filter(o => o.currentStage === 'shipping' || o.currentStage === 'ready' || o.status === 'shipped').length },
     { id: 'archive', label: 'Архив заказов', icon: Archive, badge: orders.filter(o => o.status === 'completed' || o.status === 'shipped').length },
     { id: 'reports', label: 'Аналитика и отчеты', icon: BarChart3 },
     { id: 'salaries', label: 'Зарплаты', icon: DollarSign },
@@ -1363,6 +1367,20 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
                   onSelectOrder={(order, stageId) => {
                     setSelectedOrderForWorkspace(order);
                     setWorkspaceStageId(stageId || order.currentStage || 'cutting');
+                  }}
+                />
+              )}
+
+              {activeSection === 'dispatch' && (
+                <ERPDispatchView 
+                  orders={orders} 
+                  employees={employees} 
+                  settings={settings}
+                  companyName={company?.name}
+                  onUpdateOrder={handleUpdateOrder}
+                  onSelectOrder={(order) => {
+                    setSelectedOrderForWorkspace(order);
+                    setWorkspaceStageId('shipping');
                   }}
                 />
               )}

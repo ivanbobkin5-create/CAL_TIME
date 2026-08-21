@@ -227,7 +227,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
   catalogProducts = [],
   onSaveSettings
 }) => {
-  const [activeTab, setActiveTab] = useState<'stages' | 'birka' | 'hardware' | 'warehouse_cells' | 'rules' | 'tariffs' | 'additional' | 'equipment' | 'labels' | 'shifts'>('stages');
+  const [activeTab, setActiveTab] = useState<'stages' | 'birka' | 'hardware' | 'warehouse_cells' | 'rules' | 'tariffs' | 'additional' | 'equipment' | 'labels' | 'shifts' | 'bitrix_delivery'>('stages');
 
   const defaultStageIds = ALL_STAGES_CONFIG.map(s => s.id);
   const initialStagesOrder = (() => {
@@ -674,19 +674,21 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                   >
                     <div>
                       {/* Top Header: Order Number, Title, and Toggle */}
-                      <div className="flex items-start justify-between gap-2 mb-3">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center border shrink-0 ${
+                      <div className="flex flex-wrap items-center justify-between gap-2 mb-3 pb-2.5 border-b border-slate-100">
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <div className={`w-8 h-8 rounded-xl flex items-center justify-center border shrink-0 ${
                             isEnabled ? stage.badgeBg : 'bg-slate-100 text-slate-400 border-slate-200'
                           }`}>
                             <Icon className="w-4 h-4" />
                           </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-1.5">
-                              <span className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10px] font-mono font-black text-slate-600">
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10px] font-mono font-black text-slate-600 shrink-0">
                                 #{orderIndex + 1}
                               </span>
-                              <div className="font-bold text-sm text-slate-900 truncate">{stage.name}</div>
+                              <div className="font-bold text-xs sm:text-sm text-slate-900 leading-snug break-words">
+                                {stage.name}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -694,7 +696,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                         <button
                           type="button"
                           onClick={() => handleToggleStage(stage.id)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 whitespace-nowrap ${
                             isEnabled
                               ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs'
                               : 'bg-slate-200 text-slate-600 hover:bg-slate-300'

@@ -3,11 +3,35 @@ export type ERPSection =
   | 'planning'
   | 'schedule'
   | 'production'
+  | 'dispatch'
   | 'archive'
   | 'reports'
   | 'salaries'
   | 'employees'
+  | 'residuals'
   | 'settings';
+
+export interface MaterialResidual {
+  id: string;
+  orderId?: string;
+  orderNumber?: string;
+  type: 'offcut' | 'edge'; // 'offcut' = обрезок плиты (ЛДСП/МДФ/ХДФ), 'edge' = остаток кромки
+  category: 'ЛДСП' | 'МДФ' | 'ХДФ' | 'Кромка' | 'Пластик' | 'Постформинг' | 'Другое' | string;
+  materialName: string;   // e.g. "ЛДСП 16мм Дуб Сонома", "Кромка ПВХ 2/19 Белый"
+  thicknessMm?: number;   // мм
+  lengthMm?: number;      // мм (для обрезка плиты)
+  widthMm?: number;       // мм (для обрезка плиты)
+  areaM2?: number;        // м² (для обрезка плиты)
+  lengthMeters?: number;  // м (для остатка кромки)
+  quantity: number;       // штук / бобин
+  addedAt: string;        // ISO / YYYY-MM-DD HH:mm
+  addedByEmployeeName?: string;
+  notes?: string;
+  storageCell?: string;   // Ячейка/место хранения (e.g. "Стеллаж А-1")
+  status: 'available' | 'used' | 'disposed'; // 'available' (В наличии), 'used' (Использован), 'disposed' (Утилизирован)
+  disposedAt?: string;
+  disposedByEmployeeName?: string;
+}
 
 export type ProductionStageId =
   | 'queue'

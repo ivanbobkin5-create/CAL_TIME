@@ -35,9 +35,11 @@ import {
   ShieldAlert,
   ArrowRight
 } from 'lucide-react';
-import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee } from '../types';
+import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee, MaterialResidual } from '../types';
 import { parseBirkaFile, BirkaParseResult, BirkaDetail } from '../utils/birkaParser';
 import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, speakText } from '../utils';
+import { CuttingOffcutsModal } from '../components/CuttingOffcutsModal';
+import { EdgingRemainsModal } from '../components/EdgingRemainsModal';
 import { detailRequiresPrisadka } from '../utils/stageReadiness';
 import { FinishedPartNoticeModal } from '../components/FinishedPartNoticeModal';
 import { MobileCameraScannerModal } from '../components/MobileCameraScannerModal';
@@ -60,6 +62,7 @@ interface ERPOrderWorkspaceViewProps {
   onUpdateOrder: (updatedOrder: ProductionOrder) => void;
   onUpdateOrderStatus: (orderId: string, nextStage: ProductionStageId) => void;
   onAddEmployee?: (emp: Partial<ERPEmployee>) => void;
+  onAddMaterialResiduals?: (residuals: MaterialResidual[]) => void;
   sourceSection?: string;
 }
 
@@ -127,6 +130,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   onUpdateOrder,
   onUpdateOrderStatus,
   onAddEmployee,
+  onAddMaterialResiduals,
   sourceSection
 }) => {
   // Current active stage for this workstation (strict focus on current stage)
@@ -136,6 +140,10 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
 
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+
+  // Modals for material residuals on stage completion
+  const [showOffcutsModal, setShowOffcutsModal] = useState<boolean>(false);
+  const [showEdgingRemainsModal, setShowEdgingRemainsModal] = useState<boolean>(false);
 
   // Material & Scanning state for cutting / edging / cnc / assembly
   const [selectedMaterial, setSelectedMaterial] = useState<string>('');
@@ -531,8 +539,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     }
   };
 
-  // Complete current stage & return user to production view
-  const handleCompleteCurrentStageAndExit = () => {
+  // Finalize stage completion logic
+  const finalizeStageCompletion = () => {
     const nextSt = getNextRequiredStage(order, currentStage);
     const todayStr = new Date().toLocaleDateString('ru-RU');
     const stageProgress = order.stageScanningProgress?.[currentStage] || {};
@@ -577,6 +585,35 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     playSoundEffect('success');
     // Exit back to production stations list
     onBack();
+  };
+
+  // Complete current stage & return user to production view
+  const handleCompleteCurrentStageAndExit = () => {
+    if (currentStage === 'cutting') {
+      setShowOffcutsModal(true);
+      return;
+    }
+    if (currentStage === 'edging') {
+      setShowEdgingRemainsModal(true);
+      return;
+    }
+    finalizeStageCompletion();
+  };
+
+  const handleOffcutsSubmitted = (offcuts: MaterialResidual[]) => {
+    if (offcuts.length > 0 && onAddMaterialResiduals) {
+      onAddMaterialResiduals(offcuts);
+    }
+    setShowOffcutsModal(false);
+    finalizeStageCompletion();
+  };
+
+  const handleEdgingRemainsSubmitted = (edges: MaterialResidual[]) => {
+    if (edges.length > 0 && onAddMaterialResiduals) {
+      onAddMaterialResiduals(edges);
+    }
+    setShowEdgingRemainsModal(false);
+    finalizeStageCompletion();
   };
 
   // Total stage completion status
@@ -1065,6 +1102,24 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
           onClose={() => setFinishedPartNotice(null)}
         />
       )}
+
+      {/* Cutting Stage Offcuts Prompt Modal */}
+      <CuttingOffcutsModal
+        isOpen={showOffcutsModal}
+        order={order}
+        currentUser={currentUser}
+        onClose={() => setShowOffcutsModal(false)}
+        onSubmit={handleOffcutsSubmitted}
+      />
+
+      {/* Edging Stage Edge Remains Prompt Modal */}
+      <EdgingRemainsModal
+        isOpen={showEdgingRemainsModal}
+        order={order}
+        currentUser={currentUser}
+        onClose={() => setShowEdgingRemainsModal(false)}
+        onSubmit={handleEdgingRemainsSubmitted}
+      />
     </div>
   );
 };

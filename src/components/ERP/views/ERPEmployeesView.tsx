@@ -294,14 +294,20 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
 
               {/* Bottom Card Actions */}
               <div className="mt-4 pt-3 flex items-center justify-between border-t border-slate-100 gap-2">
-                <button
-                  onClick={() => setSelectedEmployeeForBadge(emp)}
-                  className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-indigo-200/60"
-                  title="Открыть карточку и распечатать QR-бейдж"
-                >
-                  <QrCode className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>QR-бейдж</span>
-                </button>
+                {emp.employmentType === 'outsource' ? (
+                  <div className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200">
+                    🤝 Аутсорс (Аналитические данные)
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setSelectedEmployeeForBadge(emp)}
+                    className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-indigo-200/60"
+                    title="Открыть карточку и распечатать QR-бейдж"
+                  >
+                    <QrCode className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>QR-бейдж</span>
+                  </button>
+                )}
 
                 <div className="flex items-center gap-1">
                   <button
@@ -399,23 +405,35 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
                 </button>
               </div>
 
-              {/* Is Production Employee Checkbox */}
-              <div className="p-3 bg-blue-50/60 rounded-2xl border border-blue-100 flex items-center justify-between">
-                <div>
-                  <div className="text-xs font-bold text-slate-900">Сотрудник производства</div>
-                  <div className="text-[11px] text-slate-500">Доступ к ERP канбану и участкам цеха</div>
+              {/* Is Outsource Help Notice */}
+              {formEmployee.employmentType === 'outsource' ? (
+                <div className="p-3.5 bg-amber-50 rounded-2xl border border-amber-200 text-amber-950 text-xs space-y-1">
+                  <div className="font-bold text-amber-900 flex items-center gap-1.5">
+                    <span>💡 Аутсорс-исполнитель (аналитические данные)</span>
+                  </div>
+                  <p className="text-[11px] leading-relaxed text-amber-800">
+                    Используется исключительно для выбора при назначении отгрузки/доставки и сборки мебели. Не создается учетная запись (Email/Пароль), не требуется QR-бейдж и не добавляется в график смен цеха.
+                  </p>
                 </div>
-                <input
-                  type="checkbox"
-                  checked={formEmployee.isProductionEmployee !== false}
-                  onChange={(e) => setFormEmployee({ ...formEmployee, isProductionEmployee: e.target.checked })}
-                  className="w-5 h-5 rounded-lg text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
-                />
-              </div>
+              ) : (
+                /* Is Production Employee Checkbox for Staff */
+                <div className="p-3 bg-blue-50/60 rounded-2xl border border-blue-100 flex items-center justify-between">
+                  <div>
+                    <div className="text-xs font-bold text-slate-900">Сотрудник производства</div>
+                    <div className="text-[11px] text-slate-500">Доступ к ERP канбану и участкам цеха</div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={formEmployee.isProductionEmployee !== false}
+                    onChange={(e) => setFormEmployee({ ...formEmployee, isProductionEmployee: e.target.checked })}
+                    className="w-5 h-5 rounded-lg text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                  />
+                </div>
+              )}
 
               {/* Position Selection */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Должность в цехе *</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Должность / Роль *</label>
                 <select
                   value={isCustomRole ? 'CUSTOM' : (formEmployee.productionRole || PREDEFINED_ROLES[0])}
                   onChange={(e) => handleRoleSelectChange(e.target.value)}
@@ -470,101 +488,110 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Участок цеха</label>
-                  <select
-                    value={formEmployee.department || 'cutting'}
-                    onChange={(e) => setFormEmployee({ ...formEmployee, department: e.target.value as any })}
-                    className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="cutting">Раскрой</option>
-                    <option value="edging">Кромкооблицовка</option>
-                    <option value="cnc">Присадка ЧПУ</option>
-                    <option value="facades">Фасады</option>
-                    <option value="assembly">Сборка</option>
-                    <option value="packing">Упаковка</option>
-                    <option value="warehouse">Склад</option>
-                    <option value="management">Администрация цеха</option>
-                  </select>
-                </div>
+              {/* Staff-only fields: department, schedule, rate type, base rate */}
+              {formEmployee.employmentType !== 'outsource' && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Участок цеха</label>
+                      <select
+                        value={formEmployee.department || 'cutting'}
+                        onChange={(e) => setFormEmployee({ ...formEmployee, department: e.target.value as any })}
+                        className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="cutting">Раскрой</option>
+                        <option value="edging">Кромкооблицовка</option>
+                        <option value="cnc">Присадка ЧПУ</option>
+                        <option value="facades">Фасады</option>
+                        <option value="assembly">Сборка</option>
+                        <option value="packing">Упаковка</option>
+                        <option value="warehouse">Склад</option>
+                        <option value="management">Администрация цеха</option>
+                      </select>
+                    </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">График работы</label>
-                  <select
-                    value={formEmployee.shiftType || '2/2'}
-                    onChange={(e) => setFormEmployee({ ...formEmployee, shiftType: e.target.value as any })}
-                    className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="2/2">2 через 2</option>
-                    <option value="5/2">5 через 2</option>
-                    <option value="flexible">Гибкий график</option>
-                  </select>
-                </div>
-              </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">График работы</label>
+                      <select
+                        value={formEmployee.shiftType || '2/2'}
+                        onChange={(e) => setFormEmployee({ ...formEmployee, shiftType: e.target.value as any })}
+                        className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="2/2">2 через 2</option>
+                        <option value="5/2">5 через 2</option>
+                        <option value="flexible">Гибкий график</option>
+                      </select>
+                    </div>
+                  </div>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Тип оплаты</label>
-                  <select
-                    value={formEmployee.rateType || 'piecework'}
-                    onChange={(e) => setFormEmployee({ ...formEmployee, rateType: e.target.value as any })}
-                    className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="piecework">Сдельная от выработки</option>
-                    <option value="salary">Фиксированный оклад</option>
-                    <option value="hourly">Почасовая ставка</option>
-                  </select>
-                </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Тип оплаты</label>
+                      <select
+                        value={formEmployee.rateType || 'piecework'}
+                        onChange={(e) => setFormEmployee({ ...formEmployee, rateType: e.target.value as any })}
+                        className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        <option value="piecework">Сдельная от выработки</option>
+                        <option value="salary">Фиксированный оклад</option>
+                        <option value="hourly">Почасовая ставка</option>
+                      </select>
+                    </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Базовая ставка (₽)</label>
-                  <input
-                    type="number"
-                    value={formEmployee.baseRate || 55000}
-                    onChange={(e) => setFormEmployee({ ...formEmployee, baseRate: Number(e.target.value) })}
-                    className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-                  />
-                </div>
-              </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">Базовая ставка (₽)</label>
+                      <input
+                        type="number"
+                        value={formEmployee.baseRate || 55000}
+                        onChange={(e) => setFormEmployee({ ...formEmployee, baseRate: Number(e.target.value) })}
+                        className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Телефон / Связь</label>
-                  <input
-                    type="text"
-                    placeholder="+7 (999) 000-00-00"
-                    value={formEmployee.phone || ''}
-                    onChange={(e) => setFormEmployee({ ...formEmployee, phone: e.target.value })}
-                    className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Email для входа</label>
-                  <input
-                    type="email"
-                    placeholder="master@company.ru"
-                    value={formEmployee.email || ''}
-                    onChange={(e) => setFormEmployee({ ...formEmployee, email: e.target.value })}
-                    className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-                  />
-                </div>
-              </div>
-
+              {/* Phone input */}
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Пароль авторизации в Мебельном калькуляторе / ERP</label>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Телефон / Связь *</label>
                 <input
                   type="text"
-                  placeholder="Придумайте пароль или оставьте пустые если не нужен"
-                  value={formEmployee.tempPassword || formEmployee.password || ''}
-                  onChange={(e) => setFormEmployee({ ...formEmployee, tempPassword: e.target.value, password: e.target.value })}
+                  placeholder="+7 (999) 000-00-00"
+                  value={formEmployee.phone || ''}
+                  onChange={(e) => setFormEmployee({ ...formEmployee, phone: e.target.value })}
                   className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
                 />
-                <p className="text-[11px] text-slate-500 mt-1 font-medium">
-                  С этими учетными данными (Email и Пароль) сотрудник может входить как в ERP цеха, так и в основной сервис Мебельного калькулятора.
-                </p>
               </div>
+
+              {/* Login Email & Password for Staff only */}
+              {formEmployee.employmentType !== 'outsource' && (
+                <>
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Email для входа</label>
+                    <input
+                      type="email"
+                      placeholder="master@company.ru"
+                      value={formEmployee.email || ''}
+                      onChange={(e) => setFormEmployee({ ...formEmployee, email: e.target.value })}
+                      className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">Пароль авторизации в Мебельном калькуляторе / ERP</label>
+                    <input
+                      type="text"
+                      placeholder="Придумайте пароль или оставьте пустые если не нужен"
+                      value={formEmployee.tempPassword || formEmployee.password || ''}
+                      onChange={(e) => setFormEmployee({ ...formEmployee, tempPassword: e.target.value, password: e.target.value })}
+                      className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                    />
+                    <p className="text-[11px] text-slate-500 mt-1 font-medium">
+                      С этими учетными данными (Email и Пароль) сотрудник может входить как в ERP цеха, так и в основной сервис Мебельного калькулятора.
+                    </p>
+                  </div>
+                </>
+              )}
 
               <div className="pt-3 flex items-center justify-end gap-3 border-t border-slate-100">
                 <button

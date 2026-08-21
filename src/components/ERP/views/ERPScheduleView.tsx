@@ -209,10 +209,10 @@ export const ERPScheduleView: React.FC<ERPScheduleViewProps> = ({
     { id: 'packaging', name: 'Упаковка' }
   ];
 
-  // Filter for production employees
+  // Filter for production employees (excluding outsource personnel who do not work shift schedules)
   const filteredEmployees = useMemo(() => {
     return employees.filter(e => {
-      if (e.isProductionEmployee === false) return false;
+      if (e.isProductionEmployee === false || e.employmentType === 'outsource') return false;
       if (e.email?.toLowerCase() === 'lk.ivanbobkin@gmail.com' || (e as any).isSuperAdmin || e.role === 'superadmin' || e.productionRole === 'superadmin') {
         return false;
       }
