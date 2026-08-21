@@ -1508,6 +1508,57 @@ function transliterate(str: string): string {
     }
   });
 
+  // Global in-memory map to store active order presence for multi-user sync
+  interface ERPActiveWorker {
+    employeeId: string;
+    employeeName: string;
+    role?: string;
+    stageId?: string;
+    lastSeen: number;
+  }
+
+  const activeOrderWorkersMap = new Map<string, ERPActiveWorker[]>();
+
+  function cleanAndGetActiveWorkers(orderId: string): ERPActiveWorker[] {
+    const workers = activeOrderWorkersMap.get(orderId) || [];
+    const now = Date.now();
+    const active = workers.filter(w => now - w.lastSeen < 10000); // 10s timeout
+    if (active.length === 0) {
+      activeOrderWorkersMap.delete(orderId);
+    } else {
+      activeOrderWorkersMap.set(orderId, active);
+    }
+    return active;
+  }
+
+  // Presence Heartbeat endpoint for workers working with specific orders
+  app.post("/api/erp/:companyId/orders/:orderId/presence", (req, res) => {
+    const { orderId } = req.params;
+    const { employeeId, employeeName, role, stageId } = req.body;
+    if (!employeeName) return res.status(400).json({ error: "employeeName required" });
+
+    const workers = activeOrderWorkersMap.get(orderId) || [];
+    const now = Date.now();
+    
+    // Filter out previous record of this employee and any stale records
+    const filtered = workers.filter(w => 
+      w.employeeId !== employeeId && 
+      w.employeeName.trim().toLowerCase() !== employeeName.trim().toLowerCase() && 
+      (now - w.lastSeen < 10000)
+    );
+
+    filtered.push({
+      employeeId: employeeId || 'unknown',
+      employeeName: employeeName.trim(),
+      role: role || '',
+      stageId: stageId || '',
+      lastSeen: now
+    });
+
+    activeOrderWorkersMap.set(orderId, filtered);
+    res.json({ success: true, activeWorkers: filtered });
+  });
+
   // --- ERP System Orders & Stages API ---
   app.get("/api/erp/:companyId/orders", async (req, res) => {
     try {
@@ -1795,11 +1846,16 @@ function transliterate(str: string): string {
         }
       }
 
+      const enrichedOrders = orders.map(o => ({
+        ...o,
+        activeWorkers: cleanAndGetActiveWorkers(o.id)
+      }));
+
       res.json({
         success: true,
         orderSource,
-        orders,
-        totalCount: orders.length
+        orders: enrichedOrders,
+        totalCount: enrichedOrders.length
       });
 
     } catch (e: any) {
@@ -1901,162 +1957,164 @@ function transliterate(str: string): string {
         }
 
         // --- Bitrix24 Task Automatic Closure ---
-        const { completedByEmployeeId } = req.body;
-        let b24UserId: string | undefined = undefined;
-        let b24EmployeeName = "";
-        
-        if (completedByEmployeeId) {
-          try {
-            const empDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({
-              where: { path: `companies/${companyId}/erp_employees/${completedByEmployeeId}` }
-            }));
-            if (empDoc) {
-              const empData = JSON.parse(empDoc.data);
-              b24UserId = empData.bitrixUserId;
-              b24EmployeeName = empData.name || "";
-            }
-          } catch (err) {
-            console.error("[ERP B24 SYNC] Error looking up employee for Bitrix24 User ID:", err);
-          }
-        }
-
-        // Determine what stage was completed.
-        const stageSeq = ['queue', 'cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing', 'shipping', 'ready'];
-        const currentIdx = stageSeq.indexOf(currentStage);
-        
-        let completedStages: string[] = [];
-        if (status === 'completed' || currentStage === 'ready') {
-          // If fully completed, close ALL active production tasks
-          completedStages = ['cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing', 'shipping'];
-        } else if (currentIdx > 1) {
-          // Close immediate previous stage that is now completed
-          completedStages = [stageSeq[currentIdx - 1]];
-        }
-
-        if (completedStages.length > 0) {
-          try {
-            const listUrl = `${webhookUrl}/tasks.task.list`;
-            const listRes = await fetch(listUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                filter: {
-                  UF_CRM_TASK: `D_${bitrixDealId}`
-                },
-                select: ['ID', 'TITLE', 'TAGS', 'STATUS']
-              })
-            });
-            const listData = await listRes.json();
-            const b24Tasks = listData.result?.tasks || [];
-            
-            const stageProfiles: Record<string, { tags: string[], keywords: string[] }> = {
-              cutting: {
-                tags: ['erp_cutting', 'cutting', 'распил', 'раскрой'],
-                keywords: ['распил', 'раскрой', 'пилить', 'раскроить']
-              },
-              edging: {
-                tags: ['erp_edging', 'edging', 'кромка', 'кромление'],
-                keywords: ['кромка', 'кромление', 'кромить', 'кромкооблицовка']
-              },
-              cnc: {
-                tags: ['erp_cnc', 'cnc', 'присадка', 'чпу'],
-                keywords: ['присадка', 'чпу', 'сверление', 'cnc']
-              },
-              facades: {
-                tags: ['erp_facades', 'facades', 'фасады'],
-                keywords: ['фасады', 'фасад']
-              },
-              assembly: {
-                tags: ['erp_assembly', 'assembly', 'сборка'],
-                keywords: ['сборка', 'собрать']
-              },
-              kitting: {
-                tags: ['erp_kitting', 'kitting', 'комплектация', 'фурнитура'],
-                keywords: ['комплектация', 'укомплектовать', 'фурнитура']
-              },
-              qc: {
-                tags: ['erp_qc', 'qc', 'отк', 'контроль'],
-                keywords: ['отк', 'контроль качества', 'проверка']
-              },
-              packing: {
-                tags: ['erp_packing', 'packing', 'упаковка'],
-                keywords: ['упаковка', 'упаковать']
-              },
-              shipping: {
-                tags: ['erp_shipping', 'shipping', 'отгрузка', 'доставка'],
-                keywords: ['отгрузка', 'доставка', 'доставить', 'отгрузить']
+        if (erpConfig.bitrix24TaskClosureEnabled) {
+          const { completedByEmployeeId } = req.body;
+          let b24UserId: string | undefined = undefined;
+          let b24EmployeeName = "";
+          
+          if (completedByEmployeeId) {
+            try {
+              const empDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({
+                where: { path: `companies/${companyId}/erp_employees/${completedByEmployeeId}` }
+              }));
+              if (empDoc) {
+                const empData = JSON.parse(empDoc.data);
+                b24UserId = empData.bitrixUserId;
+                b24EmployeeName = empData.name || "";
               }
-            };
-            
-            for (const compStage of completedStages) {
-              const profile = stageProfiles[compStage];
-              if (!profile) continue;
-              
-              const matchedB24Tasks = b24Tasks.filter((t: any) => {
-                if (Number(t.status) === 5) return false;
-                
-                const titleLower = (t.title || '').toLowerCase();
-                const tags = Array.isArray(t.tags) ? t.tags.map((tg: any) => String(tg).toLowerCase()) : [];
-                
-                const matchesTag = profile.tags.some(pt => tags.includes(pt));
-                const matchesKeyword = profile.keywords.some(kw => titleLower.includes(kw));
-                
-                return matchesTag || matchesKeyword;
+            } catch (err) {
+              console.error("[ERP B24 SYNC] Error looking up employee for Bitrix24 User ID:", err);
+            }
+          }
+
+          // Determine what stage was completed.
+          const stageSeq = ['queue', 'cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing', 'shipping', 'ready'];
+          const currentIdx = stageSeq.indexOf(currentStage);
+          
+          let completedStages: string[] = [];
+          if (status === 'completed' || currentStage === 'ready') {
+            // If fully completed, close ALL active production tasks
+            completedStages = ['cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing', 'shipping'];
+          } else if (currentIdx > 1) {
+            // Close immediate previous stage that is now completed
+            completedStages = [stageSeq[currentIdx - 1]];
+          }
+
+          if (completedStages.length > 0) {
+            try {
+              const listUrl = `${webhookUrl}/tasks.task.list`;
+              const listRes = await fetch(listUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  filter: {
+                    UF_CRM_TASK: `D_${bitrixDealId}`
+                  },
+                  select: ['ID', 'TITLE', 'TAGS', 'STATUS']
+                })
               });
+              const listData = await listRes.json();
+              const b24Tasks = listData.result?.tasks || [];
               
-              for (const task of matchedB24Tasks) {
-                console.log(`[ERP B24 SYNC] Found matching task to complete: ID ${task.id} "${task.title}" for stage ${compStage}`);
+              const stageProfiles: Record<string, { tags: string[], keywords: string[] }> = {
+                cutting: {
+                  tags: ['erp_cutting', 'cutting', 'распил', 'раскрой'],
+                  keywords: ['распил', 'раскрой', 'пилить', 'раскроить']
+                },
+                edging: {
+                  tags: ['erp_edging', 'edging', 'кромка', 'кромление'],
+                  keywords: ['кромка', 'кромление', 'кромить', 'кромкооблицовка']
+                },
+                cnc: {
+                  tags: ['erp_cnc', 'cnc', 'присадка', 'чпу'],
+                  keywords: ['присадка', 'чпу', 'сверление', 'cnc']
+                },
+                facades: {
+                  tags: ['erp_facades', 'facades', 'фасады'],
+                  keywords: ['фасады', 'фасад']
+                },
+                assembly: {
+                  tags: ['erp_assembly', 'assembly', 'сборка'],
+                  keywords: ['сборка', 'собрать']
+                },
+                kitting: {
+                  tags: ['erp_kitting', 'kitting', 'комплектация', 'фурнитура'],
+                  keywords: ['комплектация', 'укомплектовать', 'фурнитура']
+                },
+                qc: {
+                  tags: ['erp_qc', 'qc', 'отк', 'контроль'],
+                  keywords: ['отк', 'контроль качества', 'проверка']
+                },
+                packing: {
+                  tags: ['erp_packing', 'packing', 'упаковка'],
+                  keywords: ['упаковка', 'упаковать']
+                },
+                shipping: {
+                  tags: ['erp_shipping', 'shipping', 'отгрузка', 'доставка'],
+                  keywords: ['отгрузка', 'доставка', 'доставить', 'отгрузить']
+                }
+              };
+              
+              for (const compStage of completedStages) {
+                const profile = stageProfiles[compStage];
+                if (!profile) continue;
                 
-                if (b24UserId) {
+                const matchedB24Tasks = b24Tasks.filter((t: any) => {
+                  if (Number(t.status) === 5) return false;
+                  
+                  const titleLower = (t.title || '').toLowerCase();
+                  const tags = Array.isArray(t.tags) ? t.tags.map((tg: any) => String(tg).toLowerCase()) : [];
+                  
+                  const matchesTag = profile.tags.some(pt => tags.includes(pt));
+                  const matchesKeyword = profile.keywords.some(kw => titleLower.includes(kw));
+                  
+                  return matchesTag || matchesKeyword;
+                });
+                
+                for (const task of matchedB24Tasks) {
+                  console.log(`[ERP B24 SYNC] Found matching task to complete: ID ${task.id} "${task.title}" for stage ${compStage}`);
+                  
+                  if (b24UserId) {
+                    try {
+                      await fetch(`${webhookUrl}/tasks.task.update`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          id: task.id,
+                          fields: {
+                            RESPONSIBLE_ID: b24UserId
+                          }
+                        })
+                      });
+                      console.log(`[ERP B24 SYNC] Assigned task ${task.id} to responsible Bitrix User ID ${b24UserId}`);
+                    } catch (updErr) {
+                      console.error(`[ERP B24 SYNC] Failed to assign task ${task.id} to user ${b24UserId}:`, updErr);
+                    }
+                  }
+                  
                   try {
-                    await fetch(`${webhookUrl}/tasks.task.update`, {
+                    const workerName = b24EmployeeName || req.body.responsibleEmployeeName || "сотрудник ERP";
+                    await fetch(`${webhookUrl}/task.commentitem.add`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({
-                        id: task.id,
+                        taskId: task.id,
                         fields: {
-                          RESPONSIBLE_ID: b24UserId
+                          POST_MESSAGE: `Этап "${compStage}" успешно завершен через ERP-систему исполнителем ${workerName}. Задача закрыта автоматически.`
                         }
                       })
                     });
-                    console.log(`[ERP B24 SYNC] Assigned task ${task.id} to responsible Bitrix User ID ${b24UserId}`);
-                  } catch (updErr) {
-                    console.error(`[ERP B24 SYNC] Failed to assign task ${task.id} to user ${b24UserId}:`, updErr);
+                  } catch (commentErr) {
+                    console.error(`[ERP B24 SYNC] Failed to comment on task ${task.id}:`, commentErr);
+                  }
+                  
+                  try {
+                    await fetch(`${webhookUrl}/tasks.task.complete`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({
+                        id: task.id
+                      })
+                    });
+                    console.log(`[ERP B24 SYNC] Successfully completed Bitrix24 task ${task.id}`);
+                  } catch (compErr) {
+                    console.error(`[ERP B24 SYNC] Failed to complete task ${task.id}:`, compErr);
                   }
                 }
-                
-                try {
-                  const workerName = b24EmployeeName || req.body.responsibleEmployeeName || "сотрудник ERP";
-                  await fetch(`${webhookUrl}/task.commentitem.add`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      taskId: task.id,
-                      fields: {
-                        POST_MESSAGE: `Этап "${compStage}" успешно завершен через ERP-систему исполнителем ${workerName}. Задача закрыта автоматически.`
-                      }
-                    })
-                  });
-                } catch (commentErr) {
-                  console.error(`[ERP B24 SYNC] Failed to comment on task ${task.id}:`, commentErr);
-                }
-                
-                try {
-                  await fetch(`${webhookUrl}/tasks.task.complete`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      id: task.id
-                    })
-                  });
-                  console.log(`[ERP B24 SYNC] Successfully completed Bitrix24 task ${task.id}`);
-                } catch (compErr) {
-                  console.error(`[ERP B24 SYNC] Failed to complete task ${task.id}:`, compErr);
-                }
               }
+            } catch (taskSyncErr) {
+              console.error("[ERP B24 SYNC] General error during task synchronization:", taskSyncErr);
             }
-          } catch (taskSyncErr) {
-            console.error("[ERP B24 SYNC] General error during task synchronization:", taskSyncErr);
           }
         }
       }

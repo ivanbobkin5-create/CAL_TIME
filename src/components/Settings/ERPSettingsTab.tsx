@@ -24,7 +24,9 @@ import {
   Workflow,
   Scissors,
   Box,
-  Package
+  Package,
+  CheckSquare,
+  Info
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -652,6 +654,76 @@ export const ERPSettingsTab: React.FC<ERPSettingsTabProps> = ({
                     </div>
                   )}
                 </label>
+              </div>
+            </div>
+
+            {/* Automatic Task Closure Block */}
+            <div className="mt-6 pt-6 border-t border-slate-200/80 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <CheckSquare className="w-5 h-5 text-blue-600" />
+                    <h4 className="text-sm font-bold text-slate-900">
+                      Автоматическое закрытие производственных задач в Битрикс24
+                    </h4>
+                  </div>
+                  <p className="text-xs text-slate-500 font-sans">
+                    Автоматически закрывать связанные технологические задачи в Сделке Битрикс24 при выполнении этапов в ERP.
+                  </p>
+                </div>
+                
+                <label className="relative inline-flex items-center cursor-pointer select-none shrink-0">
+                  <input
+                    type="checkbox"
+                    className="sr-only peer"
+                    checked={!!erpConfig.bitrix24TaskClosureEnabled}
+                    onChange={(e) => updateErpConfig('bitrix24TaskClosureEnabled', e.target.checked)}
+                  />
+                  <div className="w-11 h-6 bg-slate-200 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  <span className="ml-3 text-xs font-bold text-slate-700 font-sans">
+                    {erpConfig.bitrix24TaskClosureEnabled ? 'Включено' : 'Выключено'}
+                  </span>
+                </label>
+              </div>
+
+              {/* Instruction Guide Card */}
+              <div className="bg-blue-50/50 rounded-2xl border border-blue-100 p-5 space-y-3.5">
+                <div className="flex items-center gap-2 text-blue-900">
+                  <Info className="w-4 h-4 shrink-0 text-blue-600" />
+                  <span className="text-xs font-black uppercase tracking-wider font-sans">Инструкция по настройке и использованию</span>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-[11px] leading-relaxed text-slate-600 font-sans">
+                  <div className="space-y-1">
+                    <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-mono text-[10px] font-black">1</span>
+                      Свяжите сотрудников
+                    </div>
+                    <p className="pl-5 text-slate-500 font-sans">
+                      Перейдите во вкладку <b>«Сотрудники»</b> в ERP, отредактируйте профили рабочих и укажите их <b>ID пользователя в Битрикс24</b>. Это позволит системе закрывать задачи в CRM персонально от их лица.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-mono text-[10px] font-black">2</span>
+                      Маркируйте задачи в CRM
+                    </div>
+                    <p className="pl-5 text-slate-500 font-sans">
+                      При создании сделки добавляйте в неё технологические задачи. ERP найдет нужную задачу по <b>тегам</b> (например, <code className="bg-blue-100/60 px-1.5 py-0.5 rounded font-mono text-[9px] text-blue-800">erp_cutting</code>, <code className="bg-blue-100/60 px-1.5 py-0.5 rounded font-mono text-[9px] text-blue-800">erp_edging</code>) или по ключевым словам в названии (<i>распил, кромка, присадка, упаковка</i>).
+                    </p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="font-bold text-slate-800 flex items-center gap-1.5">
+                      <span className="w-4 h-4 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-mono text-[10px] font-black">3</span>
+                      Автоматический запуск
+                    </div>
+                    <p className="pl-5 text-slate-500 font-sans">
+                      Когда рабочий сканирует бирку детали или завершает этап в ERP, система обращается к API вашего Битрикс24, переназначает задачу на рабочего, пишет отчетный комментарий и мгновенно её завершает.
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

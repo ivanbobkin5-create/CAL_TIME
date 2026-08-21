@@ -40,6 +40,7 @@ import { ERPCompanySettings, MachineEquipment, PackageLabelSettings, ProductionS
 import { DEFAULT_BIRKA_COLUMN_MAPPING } from '../utils/birkaParser';
 import { DEFAULT_HARDWARE_COLUMN_MAPPING } from '../utils/hardwareParser';
 import { WarehouseCatalogPickerModal } from '../components/WarehouseCatalogPickerModal';
+import { evaluateBirkaQrTemplate } from '../utils';
 
 interface ERPSettingsViewProps {
   settings: ERPCompanySettings;
@@ -888,15 +889,18 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
               {/* Template Input */}
               <div className="space-y-2">
                 <label className="block text-[11px] font-bold text-indigo-200 uppercase tracking-wider">
-                  Шаблон кодирования QR (переменные: &#123;orderNumber&#125;, &#123;pos&#125;, &#123;material&#125;, &#123;length&#125;, &#123;width&#125;)
+                  Шаблон кодирования QR (переменные: &#123;Заказ&#125;, &#123;№ детали&#125;, &#123;Длина&#125;, &#123;Ширина&#125;, &#123;Материал&#125;, &#123;Количество&#125; или латиницей: &#123;orderNumber&#125;, &#123;pos&#125;, &#123;length&#125;, &#123;width&#125;, &#123;material&#125;)
                 </label>
                 <input
                   type="text"
                   value={formData.birkaQrFormatTemplate ?? '{orderNumber}-{pos}'}
                   onChange={(e) => setFormData({ ...formData, birkaQrFormatTemplate: e.target.value })}
-                  placeholder="Например: {orderNumber}-{pos} или {orderNumber}_{pos}"
+                  placeholder="Например: {Заказ}-{№ детали} или {Длина}x{Ширина}"
                   className="w-full px-4 py-2.5 rounded-xl bg-slate-950/80 border border-indigo-400/50 font-mono text-sm font-bold text-indigo-200 focus:ring-2 focus:ring-indigo-400 outline-none"
                 />
+                <p className="text-[11px] text-slate-400 leading-relaxed">
+                  💡 Вы можете писать названия колонок на русском языке из вашего файла бирок. Например: <code className="text-indigo-300 font-mono font-bold">{'{№ детали}'}</code>, <code className="text-indigo-300 font-mono font-bold">{'{Длина}'}</code>, <code className="text-indigo-300 font-mono font-bold">{'{Ширина}'}</code>, <code className="text-indigo-300 font-mono font-bold">{'{Материал}'}</code>. Система автоматически свяжет их!
+                </p>
               </div>
 
               {/* Quick Preset Buttons */}
@@ -904,38 +908,38 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                 <span className="text-xs text-slate-400 font-medium">Быстрые шаблоны:</span>
                 <button
                   type="button"
-                  onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{orderNumber}-{pos}' })}
+                  onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{Заказ}-{№ детали}' })}
                   className="px-2.5 py-1 rounded-lg bg-indigo-950 border border-indigo-700/60 hover:bg-indigo-800 text-indigo-200 font-mono text-xs transition-colors cursor-pointer"
                 >
-                  [Заказ]-[Позиция]
+                  [Заказ]-[№ детали]
                 </button>
                 <button
                   type="button"
-                  onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{orderNumber}_{pos}' })}
+                  onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{Заказ}_{№ детали}' })}
                   className="px-2.5 py-1 rounded-lg bg-indigo-950 border border-indigo-700/60 hover:bg-indigo-800 text-indigo-200 font-mono text-xs transition-colors cursor-pointer"
                 >
-                  [Заказ]_[Позиция]
+                  [Заказ]_[№ детали]
                 </button>
                 <button
                   type="button"
-                  onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{orderNumber}#{pos}' })}
+                  onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{№ детали}' })}
                   className="px-2.5 py-1 rounded-lg bg-indigo-950 border border-indigo-700/60 hover:bg-indigo-800 text-indigo-200 font-mono text-xs transition-colors cursor-pointer"
                 >
-                  [Заказ]#[Позиция]
+                  [Только № детали]
                 </button>
                 <button
                   type="button"
-                  onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{pos}' })}
+                  onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{Заказ}-{Материал}-{№ детали}' })}
                   className="px-2.5 py-1 rounded-lg bg-indigo-950 border border-indigo-700/60 hover:bg-indigo-800 text-indigo-200 font-mono text-xs transition-colors cursor-pointer"
                 >
-                  [Только Позиция]
+                  [Заказ]-[Материал]-[№ детали]
                 </button>
                 <button
                   type="button"
-                  onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{orderNumber}-{material}-{pos}' })}
+                  onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{Длина}x{Ширина}-{№ детали}' })}
                   className="px-2.5 py-1 rounded-lg bg-indigo-950 border border-indigo-700/60 hover:bg-indigo-800 text-indigo-200 font-mono text-xs transition-colors cursor-pointer"
                 >
-                  [Заказ]-[Материал]-[Позиция]
+                  [Длина]x[Ширина]-[№ детали]
                 </button>
               </div>
 
@@ -946,20 +950,27 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                     Интерактивный пример результата сканирования бирки:
                   </div>
                   <div className="text-xs text-slate-300 font-medium">
-                    Заказ: <span className="font-bold text-white">1042</span> | Поз: <span className="font-bold text-white">12</span> | Материал: <span className="font-bold text-white">ЛДСП 16</span> | Размер: <span className="font-bold text-white">700x500</span>
+                    Заказ: <span className="font-bold text-white">1042</span> | Поз (№ детали): <span className="font-bold text-white">12</span> | Материал: <span className="font-bold text-white">ЛДСП 16</span> | Длина: <span className="font-bold text-white">700</span> | Ширина: <span className="font-bold text-white">500</span>
                   </div>
                 </div>
 
                 <div className="bg-indigo-950/90 border-2 border-indigo-400/80 rounded-xl px-4 py-2 flex items-center gap-3 shrink-0">
                   <QrCode className="w-6 h-6 text-indigo-300" />
                   <div className="font-mono font-black text-sm text-emerald-300 tracking-wide">
-                    {(formData.birkaQrFormatTemplate || '{orderNumber}-{pos}')
-                      .replace('{orderNumber}', '1042')
-                      .replace('{pos}', '12')
-                      .replace('{material}', 'ЛДСП_16')
-                      .replace('{length}', '700')
-                      .replace('{width}', '500')
-                    }
+                    {evaluateBirkaQrTemplate(
+                      formData.birkaQrFormatTemplate || '{orderNumber}-{pos}',
+                      {
+                        orderNumber: '1042',
+                        labelNumber: '12',
+                        material: 'ЛДСП 16',
+                        length: 700,
+                        width: 500,
+                        thickness: 16,
+                        name: 'Боковина',
+                        quantity: 1
+                      },
+                      '1042'
+                    )}
                   </div>
                 </div>
               </div>
@@ -1864,6 +1875,87 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
       {/* TAB: BITRIX24 & DELIVERY ACT SETTINGS */}
       {activeTab === 'bitrix_delivery' && (
         <div className="space-y-6">
+          {/* Autoclose Tasks Settings Card */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-blue-50 text-blue-600 rounded-2xl">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">Автоматическое закрытие задач в Битрикс24</h3>
+                  <p className="text-xs text-slate-500">
+                    Автоматически закрывать задачи сделки и менять ответственного при завершении этапов производства в ERP
+                  </p>
+                </div>
+              </div>
+
+              {/* Toggle Switch */}
+              <button
+                type="button"
+                onClick={() => setFormData({
+                  ...formData,
+                  bitrix24TaskClosureEnabled: !formData.bitrix24TaskClosureEnabled
+                })}
+                className={`relative inline-flex h-7 w-12 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  formData.bitrix24TaskClosureEnabled ? 'bg-blue-600' : 'bg-slate-200'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-6 w-6 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                    formData.bitrix24TaskClosureEnabled ? 'translate-x-5' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Instruction Guide */}
+            <div className="p-4 bg-slate-50 border border-slate-200/60 rounded-2xl space-y-3.5">
+              <div className="flex items-center gap-2 text-xs font-black text-slate-800 uppercase tracking-wider">
+                <Info className="w-4 h-4 text-blue-600" />
+                Инструкция по настройке и использованию
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                <div className="space-y-3">
+                  <div className="flex gap-2.5">
+                    <div className="flex items-center justify-center w-5 h-5 rounded-lg bg-blue-100 font-bold text-[10px] text-blue-700 shrink-0">1</div>
+                    <p className="text-slate-600 font-medium">
+                      <strong className="text-slate-800 font-bold">Свяжите сотрудников:</strong> Перейдите в раздел <strong className="text-slate-800 font-bold">«Сотрудники»</strong> и для каждого мастера укажите его числовой <strong className="text-blue-700 font-bold">ID пользователя в Битрикс24</strong>. Это позволит назначать закрытые задачи лично на них для зачета KPI.
+                    </p>
+                  </div>
+
+                  <div className="flex gap-2.5">
+                    <div className="flex items-center justify-center w-5 h-5 rounded-lg bg-blue-100 font-bold text-[10px] text-blue-700 shrink-0">2</div>
+                    <p className="text-slate-600 font-medium">
+                      <strong className="text-slate-800 font-bold">Авто-комментарий:</strong> При закрытии задачи ERP сама добавит в задачу комментарий с именем мастера, временем завершения и списком готовых деталей.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="flex gap-2.5">
+                    <div className="flex items-center justify-center w-5 h-5 rounded-lg bg-blue-100 font-bold text-[10px] text-blue-700 shrink-0">3</div>
+                    <div className="text-slate-600 font-medium">
+                      <strong className="text-slate-800 font-bold">Как робот ищет задачу в сделке?</strong> 
+                      <p className="mt-1">Для сопоставления используется имя задачи или тег в Битрикс24:</p>
+                      <ul className="list-disc pl-4 mt-1 space-y-1 font-semibold text-slate-700">
+                        <li><strong className="text-slate-800">Распил:</strong> теги <code className="bg-white px-1 py-0.5 rounded border border-slate-200">cutting</code>, <code className="bg-white px-1 py-0.5 rounded border border-slate-200">распил</code> или слово <code className="text-blue-700 font-bold">"распил"</code> в названии.</li>
+                        <li><strong className="text-slate-800">Кромка:</strong> теги <code className="bg-white px-1 py-0.5 rounded border border-slate-200">edging</code>, <code className="bg-white px-1 py-0.5 rounded border border-slate-200">кромка</code> или слово <code className="text-blue-700 font-bold">"кромка"</code> в названии.</li>
+                        <li><strong className="text-slate-800">Сборка:</strong> теги <code className="bg-white px-1 py-0.5 rounded border border-slate-200">assembly</code>, <code className="bg-white px-1 py-0.5 rounded border border-slate-200">сборка</code> или слово <code className="text-blue-700 font-bold">"сборка"</code> в названии.</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2 text-[10.5px] text-slate-500 font-medium flex items-center gap-1.5 border-t border-slate-200/60">
+                <span className="inline-block w-2.5 h-2.5 rounded-full bg-blue-500 animate-pulse" />
+                В случае отключения опции сделки будут по-прежнему менять стадии в CRM, но задачи внутри сделок затрагиваться не будут.
+              </div>
+            </div>
+          </div>
+
           {/* Bitrix24 Custom Fields Mapping */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-4">
             <div className="flex items-center gap-2 pb-3 border-b border-slate-100">

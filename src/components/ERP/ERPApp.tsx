@@ -501,28 +501,8 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
         if (ordersRes.status === 'fulfilled' && ordersRes.value.ok) {
           const ordersData = await ordersRes.value.json();
           if (ordersData.orders) {
-            const localCache = loadLocalOrdersCache(comp.id);
-            const merged = ordersData.orders.map((o: ProductionOrder) => {
-              const cached = localCache[o.id];
-              if (!cached) return o;
-              return {
-                ...o,
-                currentStage: cached.currentStage || o.currentStage,
-                status: cached.status || o.status,
-                birkaData: cached.birkaData !== undefined ? cached.birkaData : o.birkaData,
-                stageScanningProgress: cached.stageScanningProgress || o.stageScanningProgress,
-                totalAreaM2: cached.totalAreaM2 !== undefined ? cached.totalAreaM2 : o.totalAreaM2,
-                totalEdgeM: cached.totalEdgeM !== undefined ? cached.totalEdgeM : o.totalEdgeM,
-                partsCount: cached.partsCount !== undefined ? cached.partsCount : o.partsCount,
-                stageProgress: cached.stageProgress || o.stageProgress,
-                plannedCuttingDate: cached.plannedCuttingDate !== undefined ? cached.plannedCuttingDate : o.plannedCuttingDate,
-                isReadyForProduction: cached.isReadyForProduction !== undefined ? cached.isReadyForProduction : o.isReadyForProduction,
-                additionalWorks: cached.additionalWorks !== undefined ? cached.additionalWorks : o.additionalWorks,
-                workLogs: cached.workLogs !== undefined ? cached.workLogs : o.workLogs
-              };
-            });
-            setOrders(merged);
-            saveLocalOrdersCache(comp.id, merged);
+            setOrders(ordersData.orders);
+            saveLocalOrdersCache(comp.id, ordersData.orders);
             setOrderSource(ordersData.orderSource || 'projects');
           }
         }
@@ -574,6 +554,47 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
     };
   }, [authUser, company, employees]);
 
+  // Real-time synchronization of orders (polls every 4 seconds when visible)
+  useEffect(() => {
+    if (!company?.id || !isDataReady) return;
+
+    let isSubscribed = true;
+
+    const poll = async () => {
+      // Avoid polling if tab is hidden to save bandwidth
+      if (document.hidden) return;
+
+      try {
+        const res = await fetch(`/api/erp/${company.id}/orders`);
+        if (res.ok && isSubscribed) {
+          const data = await res.json();
+          if (data.orders) {
+            setOrders(prev => {
+              if (JSON.stringify(prev) === JSON.stringify(data.orders)) return prev;
+              return data.orders;
+            });
+
+            setSelectedOrderForWorkspace(prev => {
+              if (!prev) return null;
+              const fresh = data.orders.find((o: any) => o.id === prev.id);
+              if (!fresh) return prev;
+              if (JSON.stringify(fresh) === JSON.stringify(prev)) return prev;
+              return fresh;
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("Real-time orders sync error:", err);
+      }
+    };
+
+    const interval = setInterval(poll, 4000);
+    return () => {
+      isSubscribed = false;
+      clearInterval(interval);
+    };
+  }, [company?.id, isDataReady]);
+
   const handleSyncOrders = async () => {
     if (!company?.id) return;
     setIsSyncingOrders(true);
@@ -583,30 +604,10 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
       if (res.ok) {
         const data = await res.json();
         if (data.orders) {
-          const localCache = loadLocalOrdersCache(company.id);
-          const merged = data.orders.map((o: ProductionOrder) => {
-            const cached = localCache[o.id];
-            if (!cached) return o;
-            return {
-              ...o,
-              currentStage: cached.currentStage || o.currentStage,
-              status: cached.status || o.status,
-              birkaData: cached.birkaData !== undefined ? cached.birkaData : o.birkaData,
-              stageScanningProgress: cached.stageScanningProgress || o.stageScanningProgress,
-              totalAreaM2: cached.totalAreaM2 !== undefined ? cached.totalAreaM2 : o.totalAreaM2,
-              totalEdgeM: cached.totalEdgeM !== undefined ? cached.totalEdgeM : o.totalEdgeM,
-              partsCount: cached.partsCount !== undefined ? cached.partsCount : o.partsCount,
-              stageProgress: cached.stageProgress || o.stageProgress,
-              plannedCuttingDate: cached.plannedCuttingDate !== undefined ? cached.plannedCuttingDate : o.plannedCuttingDate,
-              isReadyForProduction: cached.isReadyForProduction !== undefined ? cached.isReadyForProduction : o.isReadyForProduction,
-              additionalWorks: cached.additionalWorks !== undefined ? cached.additionalWorks : o.additionalWorks,
-              workLogs: cached.workLogs !== undefined ? cached.workLogs : o.workLogs
-            };
-          });
-          setOrders(merged);
-          saveLocalOrdersCache(company.id, merged);
+          setOrders(data.orders);
+          saveLocalOrdersCache(company.id, data.orders);
           setOrderSource(data.orderSource || 'projects');
-          const count = merged.length;
+          const count = data.orders.length;
           setSyncStatusText(
             data.orderSource === 'bitrix24'
               ? `Синхронизировано: ${count} сделок из CRM`
@@ -1372,7 +1373,11 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
               order={selectedOrderForWorkspace}
               initialStageId={workspaceStageId}
               settings={settings}
-              currentUser={matchedEmp || authUser}
+              currentUser={{
+                employeeId: matchedEmp?.id || authUser?.id || authUser?.uid || 'unknown',
+                employeeName: displayUserName,
+                role: displayUserRole
+              }}
               isShiftActive={isShiftActive}
               onStartShift={handleStartShift}
               onLogout={handleLogout}
@@ -1432,6 +1437,12 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
                   employees={employees} 
                   settings={settings}
                   companyName={company?.name}
+                  companyId={company?.id || aliasOrId}
+                  currentUser={{
+                    employeeId: matchedEmp?.id || authUser?.id || authUser?.uid || 'unknown',
+                    employeeName: displayUserName,
+                    role: displayUserRole
+                  }}
                   onUpdateOrderStatus={handleUpdateOrderStatus}
                   onUpdateOrder={handleUpdateOrder}
                   onSelectOrder={(order, stageId) => {

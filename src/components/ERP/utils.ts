@@ -165,4 +165,161 @@ export function speakText(text: string) {
   }
 }
 
+/**
+ * Evaluates the template for a given detail.
+ * Supports both standard English placeholders (e.g., {orderNumber}, {pos})
+ * and actual Russian column names (e.g., {Заказ}, {№ детали}, {Длина}, {Ширина}, {Материал}, {Количество})
+ */
+export function evaluateBirkaQrTemplate(template: string, detail: any, orderNumber: string): string {
+  const t = template || '{orderNumber}-{pos}';
+  
+  const getFieldVal = (placeholder: string): string => {
+    const key = placeholder.trim().toLowerCase();
+    switch (key) {
+      case 'ordernumber':
+      case 'order_number':
+      case 'order':
+      case 'заказ':
+      case 'номер заказа':
+      case 'сделка':
+      case 'номер_заказа':
+      case 'зак':
+      case '№ заказа':
+      case '№заказа':
+        return String(detail.orderNumber || orderNumber || '');
+        
+      case 'pos':
+      case 'position':
+      case 'id':
+      case 'labelnumber':
+      case 'позиция':
+      case 'поз':
+      case '№ детали':
+      case 'номер детали':
+      case 'деталь №':
+      case 'деталь':
+      case '№':
+      case '№детали':
+      case 'номер_детали':
+        return String(detail.labelNumber || '');
+        
+      case 'name':
+      case 'title':
+      case 'part':
+      case 'наименование':
+      case 'название':
+      case 'имя':
+        return String(detail.name || '');
+        
+      case 'material':
+      case 'mat':
+      case 'материал':
+      case 'плита':
+      case 'лдсп':
+      case 'мдф':
+      case 'хдф':
+      case 'мат':
+        return String(detail.material || '');
+        
+      case 'length':
+      case 'len':
+      case 'l':
+      case 'длина':
+      case 'длин':
+      case 'l_мм':
+        return String(detail.length || '');
+        
+      case 'width':
+      case 'wid':
+      case 'w':
+      case 'ширина':
+      case 'шир':
+      case 'w_мм':
+        return String(detail.width || '');
+        
+      case 'thickness':
+      case 'thick':
+      case 't':
+      case 'толщина':
+      case 'толщ':
+      case 't_мм':
+        return String(detail.thickness || '');
+        
+      case 'quantity':
+      case 'qty':
+      case 'count':
+      case 'количество':
+      case 'кол':
+      case 'шт':
+      case 'кол-во':
+      case 'к-во':
+        return String(detail.quantity || '');
+        
+      case 'barcode':
+      case 'штрихкод':
+      case 'штрих':
+      case 'код':
+        return String(detail.barcode || '');
+        
+      default:
+        // Try looking directly in detail keys
+        if (detail[placeholder] !== undefined) {
+          return String(detail[placeholder]);
+        }
+        // Try case-insensitive matching
+        const foundKey = Object.keys(detail).find(k => k.toLowerCase() === key);
+        if (foundKey) {
+          return String(detail[foundKey]);
+        }
+        return '';
+    }
+  };
 
+  // Replace {placeholder} with values
+  return t.replace(/\{([^{}]+)\}/g, (match, p1) => {
+    return getFieldVal(p1);
+  });
+}
+
+/**
+ * Checks if a scanned code matches a given detail using standard rules and custom QR template.
+ */
+export function matchDetailToScannedCode(
+  scannedCode: string, 
+  detail: any, 
+  template: string | undefined, 
+  orderNumber: string
+): boolean {
+  const cleanScan = scannedCode.trim().toLowerCase();
+  if (!cleanScan) return false;
+  
+  const enCode = normalizeBarcodeScan(scannedCode).toLowerCase();
+
+  // Helper for various detail values
+  const dLabel = (detail.labelNumber || '').toLowerCase();
+  const dId = (detail.id || '').toLowerCase();
+  const dBarcode = (detail.barcode || '').toLowerCase();
+  const dName = (detail.name || '').toLowerCase();
+
+  // Standard checks:
+  if (dLabel === cleanScan || dLabel === enCode) return true;
+  if (dId === cleanScan || dId === enCode) return true;
+  if (dBarcode && (dBarcode === cleanScan || dBarcode === enCode)) return true;
+  if (dName === cleanScan || dName === enCode) return true;
+
+  // Partial match for barcode or ID if scanning a 4+ digit substring
+  if (cleanScan.length >= 4 && dBarcode && (dBarcode.includes(cleanScan) || dBarcode.includes(enCode))) return true;
+  if (cleanScan.length >= 4 && dId && (dId.includes(cleanScan) || dId.includes(enCode))) return true;
+
+  // Template-based check:
+  if (template) {
+    const evaluated = evaluateBirkaQrTemplate(template, detail, orderNumber).trim().toLowerCase();
+    const evaluatedEn = normalizeBarcodeScan(evaluated).toLowerCase();
+    
+    if (evaluated === cleanScan || evaluated === enCode || evaluatedEn === cleanScan || evaluatedEn === enCode) {
+      return true;
+    }
+  }
+
+  return false;
+}

@@ -20,7 +20,7 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, OrderPackage, OrderPackagePart, ERPCompanySettings, ERPEmployee, ProductionStageId } from '../types';
 import { PackageLabelPrintModal } from './PackageLabelPrintModal';
-import { convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan } from '../utils';
+import { convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, matchDetailToScannedCode } from '../utils';
 import { isDetailReadyForPackaging, arePrecedingStagesCompleted, getPackagingReadinessStats } from '../utils/stageReadiness';
 
 interface ERPPackagingTabProps {
@@ -172,20 +172,12 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
 
     const enCode = normalizeBarcodeScan(cleanCode);
 
-    // Find detail matching labelNumber or id or barcode or name (or Latin normalized equivalent)
-    const found = allDetails.find(d => {
-      const dLabel = d.labelNumber.toLowerCase();
-      const dId = d.id.toLowerCase();
-      const dBarcode = (d.barcode || '').toLowerCase();
-      const dName = d.name.toLowerCase();
-      const targetLower = cleanCode.toLowerCase();
-      const enLower = enCode.toLowerCase();
+    const template = settings?.birkaQrFormatTemplate;
+    const orderNum = order.orderNumber || '';
 
-      return dLabel === targetLower || dLabel === enLower ||
-             dId === targetLower || dId === enLower ||
-             (dBarcode && (dBarcode === targetLower || dBarcode === enLower)) ||
-             dName === targetLower || dName === enLower ||
-             (cleanCode.length >= 4 && dBarcode.includes(enLower));
+    // Find detail matching using custom template & standard aliases
+    const found = allDetails.find(d => {
+      return matchDetailToScannedCode(cleanCode, d, template, orderNum);
     });
 
     if (!found) {

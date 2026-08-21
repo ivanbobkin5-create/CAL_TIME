@@ -38,6 +38,8 @@ interface ERPProductionViewProps {
   employees: ERPEmployee[];
   settings?: ERPCompanySettings;
   companyName?: string;
+  companyId?: string;
+  currentUser?: any;
   onUpdateOrderStatus: (orderId: string, nextStage: ProductionStageId) => void;
   onUpdateOrder?: (updatedOrder: ProductionOrder) => void;
   onSelectOrder: (order: ProductionOrder, stageId?: ProductionStageId) => void;
@@ -48,6 +50,8 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
   employees,
   settings,
   companyName,
+  companyId,
+  currentUser,
   onUpdateOrderStatus,
   onUpdateOrder,
   onSelectOrder
@@ -100,6 +104,16 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
      o.clientName.toLowerCase().includes(search.toLowerCase()) ||
      o.projectName.toLowerCase().includes(search.toLowerCase()))
   );
+
+  // Keep selectedOrderDetails in sync with polled/updated parent orders
+  React.useEffect(() => {
+    if (selectedOrderDetails) {
+      const updated = orders.find(o => o.id === selectedOrderDetails.id);
+      if (updated && JSON.stringify(updated) !== JSON.stringify(selectedOrderDetails)) {
+        setSelectedOrderDetails(updated);
+      }
+    }
+  }, [orders, selectedOrderDetails]);
 
   // Stage details view
   const activeStage = stages.find(s => s.id === selectedStageId);
@@ -593,6 +607,8 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
         <ERPOrderDetailsModal
           order={selectedOrderDetails}
           settings={settings}
+          currentUser={currentUser}
+          companyId={companyId}
           onClose={() => setSelectedOrderDetails(null)}
           onUpdateOrder={(updated) => {
             setSelectedOrderDetails(updated);

@@ -124,6 +124,7 @@ export interface ProductionOrder {
   bitrixStageName?: string;
   bitrixUrl?: string;
   projectId?: string;
+  activeWorkers?: any[];
   
   // Дополнительные работы (столешница, стеновая, штанга, цоколь)
   additionalWorks?: AdditionalWorks;
@@ -424,6 +425,7 @@ export interface ERPCompanySettings {
   bitrix24StageMapping?: Record<string, string>;
   bitrix24RestoreAction?: 'do_nothing' | 'restore_to_stage';
   bitrix24RestoreStageId?: string;
+  bitrix24TaskClosureEnabled?: boolean;
 
   // Идентификаторы пользовательских полей Битрикс24 (доставка, сборка, клиент)
   bitrix24FieldMapping?: {

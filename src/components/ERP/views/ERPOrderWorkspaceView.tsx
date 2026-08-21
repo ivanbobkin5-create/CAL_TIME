@@ -37,7 +37,7 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee, MaterialResidual } from '../types';
 import { parseBirkaFile, BirkaParseResult, BirkaDetail } from '../utils/birkaParser';
-import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, speakText } from '../utils';
+import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, speakText, matchDetailToScannedCode } from '../utils';
 import { CuttingOffcutsModal } from '../components/CuttingOffcutsModal';
 import { EdgingRemainsModal } from '../components/EdgingRemainsModal';
 import { detailRequiresPrisadka } from '../utils/stageReadiness';
@@ -133,6 +133,36 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   onAddMaterialResiduals,
   sourceSection
 }) => {
+  const empName = currentUser?.employeeName || currentUser?.name || currentUser?.displayName || 'Сотрудник';
+  const empId = currentUser?.employeeId || currentUser?.id || currentUser?.uid || 'unknown';
+  const empRole = currentUser?.role || currentUser?.productionRole || 'Сотрудник цеха';
+
+  // Real-time Presence Heartbeat
+  useEffect(() => {
+    if (!order?.id || !empName) return;
+
+    const sendHeartbeat = async () => {
+      try {
+        const compId = window.location.pathname.split('/')[2] || 'default';
+        await fetch(`/api/erp/${compId}/orders/${order.id}/presence`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            employeeId: empId,
+            employeeName: empName,
+            role: empRole,
+            stageId: initialStageId || order.currentStage || 'cutting'
+          })
+        });
+      } catch (e) {
+        console.warn("Workspace presence heartbeat failed:", e);
+      }
+    };
+
+    sendHeartbeat();
+    const interval = setInterval(sendHeartbeat, 3500);
+    return () => clearInterval(interval);
+  }, [order?.id, empName, empId, empRole, initialStageId, order.currentStage]);
   // Current active stage for this workstation (strict focus on current stage)
   const currentStage: ProductionStageId = initialStageId || order.currentStage || 'cutting';
   const stageMeta = STAGE_METADATA[currentStage] || STAGE_METADATA.cutting;
@@ -311,20 +341,11 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     let targetMaterial = selectedMaterial;
     let targetDetails = currentMaterialDetails;
 
-    const matchesPart = (d: BirkaDetail) => {
-      const dLabel = d.labelNumber.toLowerCase();
-      const dId = d.id.toLowerCase();
-      const dBarcode = (d.barcode || '').toLowerCase();
-      const dName = d.name.toLowerCase();
-      const targetLower = cleanCode.toLowerCase();
-      const enLower = enCode.toLowerCase();
+    const template = settings?.birkaQrFormatTemplate;
+    const orderNum = order.orderNumber || '';
 
-      return dLabel === targetLower || dLabel === enLower ||
-             dId === targetLower || dId === enLower ||
-             (dBarcode && (dBarcode === targetLower || dBarcode === enLower)) ||
-             dName === targetLower || dName === enLower ||
-             (cleanCode.length >= 4 && dBarcode.includes(enLower)) ||
-             (cleanCode.length >= 4 && dId.includes(enLower));
+    const matchesPart = (d: BirkaDetail) => {
+      return matchDetailToScannedCode(cleanCode, d, template, orderNum);
     };
 
     let foundPart = currentMaterialDetails.find(matchesPart);
@@ -657,7 +678,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
               )}
             </div>
 
-            <div className="text-xs text-slate-300 truncate">
+            <div className="text-xs text-slate-300">
               Клиент: <strong className="text-white font-bold">{order.clientName || 'Без названия'}</strong>
               {order.projectName && (
                 <> • Проект: <strong className="text-white font-bold">{order.projectName}</strong></>
@@ -666,6 +687,30 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                 <> • План сдачи: <strong className="text-amber-400">{order.plannedCuttingDate}</strong></>
               )}
             </div>
+
+            {/* Active workers indicator in workspace */}
+            {(() => {
+              const activeOthers = (order.activeWorkers || []).filter(w => 
+                w.employeeName.trim().toLowerCase() !== empName.trim().toLowerCase()
+              );
+              if (activeOthers.length === 0) return null;
+              return (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-950/80 border border-emerald-800 rounded-xl text-xs text-emerald-300 font-medium select-none animate-pulse mt-2 max-w-fit">
+                  <span className="relative flex h-2 w-2 shrink-0">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                  <span>Над заказом сейчас работают:</span>
+                  <div className="flex items-center gap-1.5 flex-wrap text-white">
+                    {activeOthers.map((w, idx) => (
+                      <span key={idx} className="font-extrabold text-emerald-100 bg-emerald-900/60 px-2 py-0.5 rounded-lg border border-emerald-800">
+                        {w.employeeName} {w.role ? `(${w.role})` : ''}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
 

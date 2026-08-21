@@ -31,7 +31,7 @@ import {
 import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee } from '../types';
 import { parseBirkaFile, BirkaParseResult, BirkaDetail } from '../utils/birkaParser';
 import { parseHardwareFile } from '../utils/hardwareParser';
-import { formatDeadlineDate, speakText } from '../utils';
+import { formatDeadlineDate, speakText, matchDetailToScannedCode } from '../utils';
 import { detailRequiresPrisadka } from '../utils/stageReadiness';
 import { FinishedPartNoticeModal } from '../components/FinishedPartNoticeModal';
 import { OrderClientPrivacyModal } from '../components/OrderClientPrivacyModal';
@@ -41,7 +41,8 @@ import { AssemblyFileModal } from '../components/AssemblyFileModal';
 interface ERPOrderDetailsModalProps {
   order: ProductionOrder;
   settings?: ERPCompanySettings;
-  currentUser?: ERPEmployee | null;
+  currentUser?: any;
+  companyId?: string;
   onClose: () => void;
   onUpdateOrder: (updatedOrder: ProductionOrder) => void;
   onUpdateOrderStatus: (orderId: string, nextStage: ProductionStageId) => void;
@@ -86,10 +87,46 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
   order,
   settings,
   currentUser,
+  companyId,
   onClose,
   onUpdateOrder,
   onUpdateOrderStatus
 }) => {
+  const employeeName = currentUser?.employeeName || currentUser?.name || currentUser?.displayName || 'Сотрудник';
+  const employeeId = currentUser?.employeeId || currentUser?.id || currentUser?.uid || 'unknown';
+  const employeeRole = currentUser?.role || currentUser?.productionRole || 'Сотрудник цеха';
+
+  // Real-time Presence Heartbeat
+  useEffect(() => {
+    if (!order?.id || !employeeName) return;
+
+    const sendHeartbeat = async () => {
+      try {
+        const compId = companyId || window.location.pathname.split('/')[2] || 'default';
+        await fetch(`/api/erp/${compId}/orders/${order.id}/presence`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            employeeId,
+            employeeName,
+            role: employeeRole,
+            stageId: order.currentStage || ''
+          })
+        });
+      } catch (e) {
+        console.warn("Presence heartbeat failed:", e);
+      }
+    };
+
+    // Send immediately on mount
+    sendHeartbeat();
+
+    // Repeat every 3.5 seconds
+    const interval = setInterval(sendHeartbeat, 3500);
+
+    return () => clearInterval(interval);
+  }, [order?.id, employeeName, employeeId, employeeRole, order.currentStage, companyId]);
+
   const [activeTab, setActiveTab] = useState<'card' | 'scanner'>('card');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -376,21 +413,18 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
     let targetMaterial = selectedMaterial;
     let targetDetails = currentMaterialDetails;
 
-    // Find part matching labelNumber (№ детали) or id or barcode or name in current material
+    // Find part matching using custom template & standard aliases
+    const template = settings?.birkaQrFormatTemplate;
+    const orderNum = order.orderNumber || '';
+
     let foundPart = currentMaterialDetails.find(d => 
-      d.labelNumber.toLowerCase() === cleanCode.toLowerCase() ||
-      d.id === cleanCode ||
-      (d.barcode && d.barcode.toLowerCase() === cleanCode.toLowerCase()) ||
-      d.name.toLowerCase() === cleanCode.toLowerCase()
+      matchDetailToScannedCode(cleanCode, d, template, orderNum)
     );
 
     // If not found in current material, search other material groups
     if (!foundPart && order.birkaData?.details) {
       const partInOtherMat = order.birkaData.details.find(d => 
-        d.labelNumber.toLowerCase() === cleanCode.toLowerCase() ||
-        d.id === cleanCode ||
-        (d.barcode && d.barcode.toLowerCase() === cleanCode.toLowerCase()) ||
-        d.name.toLowerCase() === cleanCode.toLowerCase()
+        matchDetailToScannedCode(cleanCode, d, template, orderNum)
       );
 
       if (partInOtherMat) {
@@ -628,7 +662,7 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
                   </button>
                 )}
               </div>
-              <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap">
+              <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-2 flex-wrap mb-1">
                 <span>Клиент: <strong className="text-slate-800">{order.clientName}</strong></span>
                 <span>•</span>
                 <span>Проект: <strong className="text-slate-800">{order.projectName}</strong></span>
@@ -642,6 +676,30 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
                   <span>Данные клиента</span>
                 </button>
               </p>
+
+              {/* Active workers indicator */}
+              {(() => {
+                const activeOthers = (order.activeWorkers || []).filter(w => 
+                  w.employeeName.trim().toLowerCase() !== employeeName.trim().toLowerCase()
+                );
+                if (activeOthers.length === 0) return null;
+                return (
+                  <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 border border-emerald-100 rounded-xl text-xs text-emerald-800 font-medium select-none animate-pulse mt-1 max-w-fit">
+                    <span className="relative flex h-2 w-2 shrink-0">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                    <span>С заказом сейчас работают:</span>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {activeOthers.map((w, idx) => (
+                        <span key={idx} className="font-bold text-emerald-900 bg-emerald-100/60 px-2 py-0.5 rounded-lg">
+                          {w.employeeName} {w.role ? `(${w.role})` : ''}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
