@@ -368,9 +368,13 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
           {(() => {
             const stageOrders = productionOrders.filter(o => {
               if (o.currentStage === selectedStageId) return true;
-              if ((selectedStageId === 'packing' || selectedStageId === 'kitting') && 
-                  (o.currentStage === 'edging' || o.currentStage === 'cnc' || o.currentStage === 'cutting')) {
-                return true;
+              
+              // Заказы на комплектовку и упаковку доступны только когда заказ уже начал этап кромления (edging) и далее
+              if (selectedStageId === 'kitting' || selectedStageId === 'packing') {
+                const startedEdgingStages: ProductionStageId[] = ['edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing'];
+                if (startedEdgingStages.includes(o.currentStage)) {
+                  return true;
+                }
               }
               return false;
             });

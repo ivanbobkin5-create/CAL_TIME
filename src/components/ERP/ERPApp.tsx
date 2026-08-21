@@ -1106,9 +1106,6 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
               </div>
               {!isSidebarCollapsed && (
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 text-[10px] font-mono tracking-widest text-blue-400 uppercase font-bold">
-                    <Cpu className="w-3 h-3" /> ERP ПРОИЗВОДСТВО
-                  </div>
                   <h1 className="text-sm font-black text-white truncate">
                     {company?.name || "Мебельный цех"}
                   </h1>
