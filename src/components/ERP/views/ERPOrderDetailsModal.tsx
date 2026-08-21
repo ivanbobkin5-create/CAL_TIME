@@ -249,14 +249,28 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
     setUploadError(null);
 
     try {
-      const textContent = await file.text();
+      const isPdfFile = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
+      let fileContent = '';
+
+      if (isPdfFile) {
+        fileContent = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      } else {
+        const textContent = await file.text();
+        fileContent = textContent.substring(0, 500000);
+      }
+
       const updatedOrder: ProductionOrder = {
         ...order,
         assemblyFileData: {
           fileName: file.name,
           fileSize: file.size,
           uploadedAt: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('ru-RU'),
-          fileContent: textContent.substring(0, 200000)
+          fileContent: fileContent
         }
       };
 

@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Wrench, X, Download, Upload, FileText, Trash2, Copy, Check, Search, Eye } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Wrench, X, Download, Upload, FileText, Trash2, Copy, Check, Search, Eye, File } from 'lucide-react';
 import { ProductionOrder } from '../types';
 
 interface AssemblyFileModalProps {
@@ -18,29 +18,91 @@ export const AssemblyFileModal: React.FC<AssemblyFileModalProps> = ({
   const [copied, setCopied] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isUploading, setIsUploading] = useState(false);
-
-  if (!isOpen) return null;
+  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
 
   const assemblyData = order.assemblyFileData;
+
+  // Generate local Blob URL for PDF preview to bypass browser iframe restrictions
+  useEffect(() => {
+    if (assemblyData?.fileContent && (assemblyData.fileName.toLowerCase().endsWith('.pdf') || assemblyData.fileContent.startsWith('data:application/pdf'))) {
+      try {
+        const content = assemblyData.fileContent;
+        if (content.startsWith('data:')) {
+          const parts = content.split(';base64,');
+          if (parts.length === 2) {
+            const contentType = parts[0].split(':')[1] || 'application/pdf';
+            const raw = window.atob(parts[1]);
+            const rawLength = raw.length;
+            const uInt8Array = new Uint8Array(rawLength);
+            for (let i = 0; i < rawLength; ++i) {
+              uInt8Array[i] = raw.charCodeAt(i);
+            }
+            const blob = new Blob([uInt8Array], { type: contentType });
+            const url = URL.createObjectURL(blob);
+            setPdfUrl(url);
+            return () => {
+              URL.revokeObjectURL(url);
+            };
+          }
+        }
+      } catch (e) {
+        console.error('Ошибка создания Blob URL для PDF:', e);
+      }
+    }
+    setPdfUrl(null);
+  }, [assemblyData?.fileContent, assemblyData?.fileName, isOpen]);
+
+  if (!isOpen) return null;
 
   const handleDownload = () => {
     if (!assemblyData?.fileContent) {
       alert('Содержимое файла не сохранено в памяти');
       return;
     }
-    const blob = new Blob([assemblyData.fileContent], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
+
+    const content = assemblyData.fileContent;
+    const isDataUrl = content.startsWith('data:');
+    let url = '';
+
+    if (isDataUrl) {
+      try {
+        const parts = content.split(';base64,');
+        const contentType = parts[0].split(':')[1];
+        const raw = window.atob(parts[1]);
+        const rawLength = raw.length;
+        const uInt8Array = new Uint8Array(rawLength);
+        for (let i = 0; i < rawLength; ++i) {
+          uInt8Array[i] = raw.charCodeAt(i);
+        }
+        const blob = new Blob([uInt8Array], { type: contentType });
+        url = URL.createObjectURL(blob);
+      } catch (e) {
+        url = content;
+      }
+    } else {
+      const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+      url = URL.createObjectURL(blob);
+    }
+
     const link = document.createElement('a');
     link.href = url;
-    link.download = assemblyData.fileName || `Assembly_${order.orderNumber}.sb`;
+    link.download = assemblyData.fileName || `Assembly_${order.orderNumber}`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+
+    if (url.startsWith('blob:')) {
+      URL.revokeObjectURL(url);
+    }
   };
 
   const handleCopyContent = () => {
     if (assemblyData?.fileContent) {
+      const isPdf = assemblyData.fileName.toLowerCase().endsWith('.pdf') || assemblyData.fileContent.startsWith('data:');
+      if (isPdf) {
+        alert('Невозможно скопировать двоичные данные PDF как текст.');
+        return;
+      }
       navigator.clipboard.writeText(assemblyData.fileContent);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
@@ -53,14 +115,28 @@ export const AssemblyFileModal: React.FC<AssemblyFileModalProps> = ({
 
     setIsUploading(true);
     try {
-      const textContent = await file.text();
+      const isPdfFile = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
+      let fileContent = '';
+
+      if (isPdfFile) {
+        fileContent = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      } else {
+        const textContent = await file.text();
+        fileContent = textContent.substring(0, 500000);
+      }
+
       const updatedOrder: ProductionOrder = {
         ...order,
         assemblyFileData: {
           fileName: file.name,
           fileSize: file.size,
           uploadedAt: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('ru-RU'),
-          fileContent: textContent.substring(0, 200000)
+          fileContent: fileContent
         }
       };
       onUpdateOrder(updatedOrder);
@@ -88,7 +164,8 @@ export const AssemblyFileModal: React.FC<AssemblyFileModalProps> = ({
     ? `${(assemblyData.fileSize / 1024).toFixed(1)} КБ` 
     : '—';
 
-  const lines = assemblyData?.fileContent ? assemblyData.fileContent.split('\n') : [];
+  const isPdf = assemblyData?.fileName?.toLowerCase().endsWith('.pdf') || assemblyData?.fileContent?.startsWith('data:application/pdf');
+  const lines = (!isPdf && assemblyData?.fileContent) ? assemblyData.fileContent.split('\n') : [];
   const filteredLines = lines.filter(line => 
     !searchQuery || line.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -130,7 +207,7 @@ export const AssemblyFileModal: React.FC<AssemblyFileModalProps> = ({
               <div>
                 <h4 className="text-base font-black text-slate-900">Файл Сборка еще не прикреплен</h4>
                 <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto">
-                  Прикрепите спецификацию сборки, чертеж или сборочные инструкции (.sb, .csv, .txt, .json, .pdf) к данному заказу.
+                  Прикрепите чертеж, спецификацию сборки или сборочные инструкции (.sb, .csv, .txt, .pdf) к данному заказу.
                 </p>
               </div>
 
@@ -179,7 +256,7 @@ export const AssemblyFileModal: React.FC<AssemblyFileModalProps> = ({
                     </button>
                   )}
 
-                  {assemblyData.fileContent && (
+                  {!isPdf && assemblyData.fileContent && (
                     <button
                       onClick={handleCopyContent}
                       className="px-4 py-2 rounded-xl bg-white hover:bg-slate-100 text-purple-900 font-bold text-xs border border-purple-200 transition-all flex items-center gap-1.5 cursor-pointer"
@@ -213,8 +290,28 @@ export const AssemblyFileModal: React.FC<AssemblyFileModalProps> = ({
                 </div>
               </div>
 
-              {/* Text File Preview Panel */}
-              {assemblyData.fileContent ? (
+              {/* Text / PDF File Preview Panel */}
+              {isPdf ? (
+                <div className="space-y-3">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <Eye className="w-4 h-4 text-purple-600" />
+                    Интерактивный просмотр чертежа PDF
+                  </h4>
+                  {pdfUrl ? (
+                    <div className="border border-slate-200 rounded-3xl overflow-hidden bg-slate-100 shadow-inner">
+                      <iframe 
+                        src={`${pdfUrl}#toolbar=1&navpanes=0&statusbar=0`}
+                        title="PDF Viewer"
+                        className="w-full h-[600px] border-none"
+                      />
+                    </div>
+                  ) : (
+                    <div className="p-10 bg-slate-50 rounded-2xl border border-slate-200 text-center text-xs text-slate-500">
+                      Генерируется предпросмотр документа PDF...
+                    </div>
+                  )}
+                </div>
+              ) : assemblyData.fileContent ? (
                 <div className="space-y-3">
                   <div className="flex items-center justify-between gap-3">
                     <h4 className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
@@ -251,7 +348,7 @@ export const AssemblyFileModal: React.FC<AssemblyFileModalProps> = ({
                 </div>
               ) : (
                 <div className="p-6 bg-slate-50 rounded-2xl border border-slate-200 text-center text-xs text-slate-500">
-                  Содержимое файла недоступно для предпросмотра (бинарный файл). Вы можете скачать его с помощью кнопки «Скачать файл».
+                  Содержимое файла недоступно для предпросмотра. Вы можете скачать его с помощью кнопки «Скачать файл».
                 </div>
               )}
             </>
