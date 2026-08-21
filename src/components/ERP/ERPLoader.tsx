@@ -17,44 +17,67 @@ interface ERPLoaderProps {
   companyName: string;
   onFinish?: () => void;
   minDurationMs?: number;
+  isDataReady?: boolean;
 }
 
 export const ERPLoader: React.FC<ERPLoaderProps> = ({ 
   companyName, 
   onFinish,
-  minDurationMs = 400 
+  minDurationMs = 500,
+  isDataReady = true
 }) => {
-  const [progress, setProgress] = useState(0);
+  const [progress, setProgress] = useState(15);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
 
   const steps = [
     { title: "Инициализация ядра ERP Enterprise", desc: "Загрузка конфигурации цехов и участков" },
     { title: "Синхронизация станков и линий", desc: "Раскрой, Кромление, Присадка ЧПУ, Сборка" },
     { title: "Загрузка очередей и графиков смен", desc: "Календарное планирование заказов" },
-    { title: "Проверка прав доступа и аналитики", desc: "Модули зарплат, отчетов и выработки" },
+    { title: "Проверка прав доступа и профиля", desc: "Модули зарплат, отчетов и выработки" },
     { title: "Готово к работе", desc: "Вход в панель управления производством..." }
   ];
 
   useEffect(() => {
-    const startTime = Date.now();
+    let timer: any = null;
     const interval = setInterval(() => {
-      const elapsed = Date.now() - startTime;
-      const pct = Math.min(100, Math.floor((elapsed / minDurationMs) * 100));
-      setProgress(pct);
+      setProgress((prev) => {
+        if (!isDataReady) {
+          // Advance slowly up to 88% while waiting for backend
+          if (prev < 88) {
+            const next = prev + Math.floor(Math.random() * 8) + 4;
+            const bounded = Math.min(88, next);
+            const stepIdx = Math.min(steps.length - 2, Math.floor((bounded / 100) * steps.length));
+            setCurrentStepIndex(stepIdx);
+            return bounded;
+          }
+          return prev;
+        } else {
+          // Data is ready, swiftly reach 100%
+          if (prev < 100) {
+            const next = prev + 15;
+            if (next >= 100) {
+              setCurrentStepIndex(steps.length - 1);
+              if (!timer) {
+                timer = setTimeout(() => {
+                  if (onFinish) onFinish();
+                }, 250);
+              }
+              return 100;
+            }
+            const stepIdx = Math.min(steps.length - 1, Math.floor((next / 100) * steps.length));
+            setCurrentStepIndex(stepIdx);
+            return next;
+          }
+          return 100;
+        }
+      });
+    }, 45);
 
-      const stepIdx = Math.min(steps.length - 1, Math.floor((pct / 100) * steps.length));
-      setCurrentStepIndex(stepIdx);
-
-      if (pct >= 100) {
-        clearInterval(interval);
-        setTimeout(() => {
-          if (onFinish) onFinish();
-        }, 300);
-      }
-    }, 40);
-
-    return () => clearInterval(interval);
-  }, [minDurationMs, onFinish]);
+    return () => {
+      clearInterval(interval);
+      if (timer) clearTimeout(timer);
+    };
+  }, [isDataReady, onFinish]);
 
   return (
     <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-slate-950 text-white overflow-hidden select-none">

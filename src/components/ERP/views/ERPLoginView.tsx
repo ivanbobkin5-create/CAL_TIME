@@ -10,14 +10,15 @@ import {
   AlertCircle, 
   Loader2, 
   ExternalLink,
-  Cpu,
   Layers,
   QrCode,
   Camera,
   Scan,
   Sparkles,
   CheckCircle2,
-  UserCheck
+  UserCheck,
+  HelpCircle,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { MobileCameraScannerModal } from '../components/MobileCameraScannerModal';
@@ -43,9 +44,10 @@ export const ERPLoginView: React.FC<ERPLoginViewProps> = ({
   const [successBadgeUser, setSuccessBadgeUser] = useState<ERPEmployee | null>(null);
   const [showCameraScanner, setShowCameraScanner] = useState(false);
   const [manualBadgeInput, setManualBadgeInput] = useState('');
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
 
   const companyName = company?.name || 'Мебельное производство';
-  const logoUrl = company?.landingPage?.logoUrl || (company?.photos && company.photos[0]);
+  const logoUrl = company?.logoUrl || company?.landingPage?.logoUrl || (company?.photos && company.photos[0]);
   const barcodeBufferRef = useRef<string>('');
   const lastKeyTimeRef = useRef<number>(0);
 
@@ -316,21 +318,7 @@ export const ERPLoginView: React.FC<ERPLoginViewProps> = ({
       </div>
 
       {/* Header Info */}
-      <header className="relative z-10 w-full max-w-6xl mx-auto px-6 py-6 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-indigo-400 shadow-md">
-            <Cpu className="w-5 h-5" />
-          </div>
-          <div>
-            <span className="text-sm font-bold text-white tracking-wide">
-              ERP MES Engine
-            </span>
-            <div className="text-[10px] text-slate-400 font-mono tracking-wider uppercase">
-              Production Suite v2.4
-            </div>
-          </div>
-        </div>
-
+      <header className="relative z-10 w-full max-w-6xl mx-auto px-6 py-6 flex items-center justify-end">
         <a
           href={`/${aliasOrId}`}
           className="text-xs font-semibold text-slate-400 hover:text-white transition-colors flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-slate-900 border border-transparent hover:border-slate-800"
@@ -353,27 +341,26 @@ export const ERPLoginView: React.FC<ERPLoginViewProps> = ({
 
           {/* Company Branding */}
           <div className="text-center mb-6">
-            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-blue-500/10 border border-indigo-500/30 text-indigo-400 mb-3 shadow-inner">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-indigo-500/20 to-blue-500/10 border border-indigo-500/30 text-indigo-400 mb-3 shadow-inner overflow-hidden">
               {logoUrl ? (
                 <img 
                   src={logoUrl} 
                   alt={companyName} 
-                  className="w-10 h-10 object-contain rounded-xl"
+                  className="w-12 h-12 object-contain rounded-xl"
                   referrerPolicy="no-referrer"
                 />
               ) : (
-                <Factory className="w-7 h-7 text-indigo-400" />
+                <Factory className="w-8 h-8 text-indigo-400" />
               )}
             </div>
 
-            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-300 text-[10px] font-bold tracking-wider uppercase mb-1.5">
-              <Layers className="w-3 h-3" />
-              <span>ERP Управление производством</span>
-            </div>
-
-            <h1 className="text-xl font-black tracking-tight text-white">
+            <h1 className="text-xl font-black tracking-tight text-white mb-1">
               {companyName}
             </h1>
+
+            <div className="text-xs font-medium text-slate-400 tracking-wide">
+              Управление производством
+            </div>
           </div>
 
           {/* Login Mode Tabs (Password vs QR-Badge) */}
@@ -472,9 +459,13 @@ export const ERPLoginView: React.FC<ERPLoginViewProps> = ({
                   <label className="block text-xs font-bold text-slate-300 tracking-wide">
                     Пароль доступа
                   </label>
-                  <span className="text-[10px] text-slate-500 font-medium">
-                    Пароль сотрудника
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotPasswordModal(true)}
+                    className="text-[11px] text-indigo-400 hover:text-indigo-300 transition-colors font-medium cursor-pointer"
+                  >
+                    Забыли пароль?
+                  </button>
                 </div>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-500">
@@ -514,7 +505,7 @@ export const ERPLoginView: React.FC<ERPLoginViewProps> = ({
                   </>
                 ) : (
                   <>
-                    <span>Войти в ERP систему</span>
+                    <span>Войти</span>
                     <ArrowRight className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
                   </>
                 )}
@@ -612,6 +603,45 @@ export const ERPLoginView: React.FC<ERPLoginViewProps> = ({
         </motion.div>
       </main>
 
+      {/* Forgot Password Modal Dialog */}
+      <AnimatePresence>
+        {showForgotPasswordModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 text-white text-center space-y-4 shadow-2xl relative"
+            >
+              <button
+                onClick={() => setShowForgotPasswordModal(false)}
+                className="absolute top-4 right-4 p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+
+              <div className="w-12 h-12 rounded-2xl bg-indigo-600/20 border border-indigo-500/30 flex items-center justify-center mx-auto text-indigo-400 shadow-md">
+                <HelpCircle className="w-6 h-6" />
+              </div>
+
+              <div>
+                <h3 className="text-base font-black text-white">Восстановление пароля</h3>
+                <p className="text-sm text-slate-300 mt-2 leading-relaxed">
+                  Обратитесь к администратору сервиса.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowForgotPasswordModal(false)}
+                className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-lg shadow-indigo-600/30 transition-all cursor-pointer"
+              >
+                Понятно
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Mobile Camera Scanner for QR Badge */}
       {showCameraScanner && (
         <MobileCameraScannerModal
@@ -628,7 +658,7 @@ export const ERPLoginView: React.FC<ERPLoginViewProps> = ({
 
       {/* Page Footer */}
       <footer className="relative z-10 w-full max-w-6xl mx-auto px-6 py-4 text-center text-xs text-slate-500">
-        <p>© {new Date().getFullYear()} {companyName} • Система планирования и диспетчеризации цехов</p>
+        <p>2026 {companyName.startsWith('ООО') || companyName.startsWith('ИП') ? companyName : `ООО "${companyName}"`} Система планирования и управления производством.</p>
       </footer>
     </div>
   );

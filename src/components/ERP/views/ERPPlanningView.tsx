@@ -241,28 +241,45 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
             const works = order.additionalWorks || {};
             const isWorksExpanded = expandedWorksOrderId === order.id;
 
-            // Clean title logic to prevent duplication
-            const clientNameClean = (order.clientName || '').trim();
-            const projectNameClean = (order.projectName || '').trim();
-            const isDuplicateName = projectNameClean.toLowerCase() === clientNameClean.toLowerCase() ||
-              (projectNameClean && clientNameClean.toLowerCase().includes(projectNameClean.toLowerCase())) ||
-              (clientNameClean && projectNameClean.toLowerCase().includes(clientNameClean.toLowerCase()));
+            // Extract clean order number and client name to prevent ugly duplication
+            let rawNumber = (order.orderNumber || '').trim();
+            let rawClient = (order.clientName || '').trim();
+            let rawProject = (order.projectName || '').trim();
+
+            let displayNumber = rawNumber;
+            let displayClient = rawClient;
+
+            const matchNum = rawNumber.match(/^([A-Za-z0-9\-_./]+)\s+(.+)$/);
+            if (matchNum) {
+              displayNumber = matchNum[1];
+              if (!displayClient || displayClient === rawNumber) {
+                displayClient = matchNum[2];
+              }
+            }
+
+            if (displayClient && displayNumber && displayClient.startsWith(displayNumber)) {
+              displayClient = displayClient.slice(displayNumber.length).replace(/^[\s\-–—.:]+/, '').trim();
+            }
+
+            if (!displayClient) {
+              displayClient = rawProject || 'Заказ без названия';
+            }
 
             return (
               <div
                 key={order.id}
-                className={`bg-white rounded-3xl p-5 border transition-all shadow-sm space-y-4 ${
+                className={`bg-white rounded-3xl p-5 md:p-6 border transition-all shadow-sm space-y-4 ${
                   order.isReadyForProduction 
                     ? 'border-emerald-200 bg-gradient-to-r from-emerald-50/20 to-white' 
                     : 'border-slate-200/90 hover:border-blue-300'
                 }`}
               >
-                {/* Main Row */}
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                  {/* Left: Info & Order Header */}
-                  <div className="flex items-start md:items-center gap-3 min-w-0 flex-1">
-                    <div className="font-mono font-black text-slate-900 text-sm bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 shrink-0">
-                      {order.orderNumber}
+                {/* Top Row: Order Number, Client Name & Status Badges */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3.5">
+                  <div className="flex items-center gap-2.5 min-w-0 flex-wrap">
+                    {/* Order Number Badge */}
+                    <div className="font-mono font-black text-slate-900 text-xs sm:text-sm bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200 shrink-0">
+                      {displayNumber}
                     </div>
 
                     {/* B24 Button */}
@@ -292,85 +309,100 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                       <span>B24</span>
                     </a>
 
-                    {/* Fixed Width Title Container */}
-                    <div className="w-[240px] sm:w-[300px] md:w-[360px] lg:w-[400px] shrink-0 min-w-0">
-                      <div className="font-extrabold text-slate-900 text-sm leading-tight line-clamp-2" title={isDuplicateName || !projectNameClean ? clientNameClean : `${clientNameClean} • ${projectNameClean}`}>
-                        {clientNameClean || 'Заказ без названия'}
-                        {!isDuplicateName && projectNameClean && (
-                          <span className="text-slate-500 font-semibold text-xs ml-1.5">
-                            • {projectNameClean}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="min-w-0 space-y-1 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase border shrink-0 ${priorityStyles}`}>
-                          {order.priority === 'urgent' ? 'Срочно' : order.priority === 'high' ? 'Высокий' : 'Обычный'}
+                    {/* Clean Client & Project Name */}
+                    <div className="font-extrabold text-slate-900 text-sm sm:text-base leading-snug truncate">
+                      {displayClient}
+                      {rawProject && rawProject.toLowerCase() !== displayClient.toLowerCase() && !displayClient.toLowerCase().includes(rawProject.toLowerCase()) && (
+                        <span className="text-slate-400 font-medium text-xs sm:text-sm ml-2">
+                          / {rawProject}
                         </span>
-
-                        {order.isReadyForProduction ? (
-                          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1 shrink-0">
-                            <Check className="w-3 h-3 text-emerald-600" /> Запущен в производство
-                          </span>
-                        ) : (
-                          <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-600 border border-slate-200 shrink-0">
-                            В очереди планирования
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="text-xs text-slate-500 flex items-center gap-3 flex-wrap">
-                        <span>Площадь: <strong>{order.totalAreaM2} м²</strong></span>
-                        <span>Кромка: <strong>{order.totalEdgeM} п.м.</strong></span>
-                        <span>Деталей: <strong>{order.partsCount} шт.</strong></span>
-
-                        {order.birkaData ? (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setViewingBirkaModalOrder(order);
-                            }}
-                            className="inline-flex items-center gap-1.5 text-[11px] font-extrabold text-emerald-800 bg-emerald-100 hover:bg-emerald-200 px-2.5 py-1 rounded-lg border border-emerald-300 transition-colors cursor-pointer shadow-xs max-w-[280px] truncate"
-                            title="Нажмите, чтобы просмотреть сводку бирок, детали и расход материалов"
-                          >
-                            <FileText className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                            <span className="truncate">Сводка бирок: {order.birkaData.fileName}</span>
-                          </button>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-amber-700 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                            <Upload className="w-3.5 h-3.5 text-amber-600" /> Бирки не прикреплены
-                          </span>
-                        )}
-                      </div>
+                      )}
                     </div>
                   </div>
 
-                  {/* Right: Date Picker, Birka Upload & Launch Button */}
-                  <div className="flex items-center gap-3 flex-wrap justify-between lg:justify-end shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
-                    {/* Planned Cutting Date Picker */}
-                    <div className="flex flex-col text-right">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase flex items-center gap-1 justify-end">
-                        <CalendarDays className="w-3 h-3 text-blue-600" />
-                        День распила:
-                      </label>
-                      <input
-                        type="date"
-                        value={order.plannedCuttingDate || ''}
-                        onChange={(e) => {
-                          onUpdateOrder({
-                            ...order,
-                            plannedCuttingDate: e.target.value
-                          });
+                  {/* Badges: Priority & Planning Stage */}
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                    <span className={`px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider border shrink-0 ${priorityStyles}`}>
+                      {order.priority === 'urgent' ? 'Срочно' : order.priority === 'high' ? 'Высокий' : 'Обычный'}
+                    </span>
+
+                    {order.isReadyForProduction ? (
+                      <span className="px-3 py-1 rounded-lg text-xs font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center gap-1.5 shrink-0">
+                        <Check className="w-3.5 h-3.5 text-emerald-600" /> Запущен в цех
+                      </span>
+                    ) : (
+                      <span className="px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200 shrink-0">
+                        В очереди планирования
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Middle Row: Metrics (Left) & Actions (Right) */}
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                  {/* Left: Specification Metrics & Birka status */}
+                  <div className="flex items-center gap-2 sm:gap-3 flex-wrap">
+                    <div className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs text-slate-600 flex items-center gap-1.5">
+                      <span className="text-slate-400">Площадь:</span>
+                      <strong className="text-slate-900 font-bold">{order.totalAreaM2 || 0} м²</strong>
+                    </div>
+
+                    <div className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs text-slate-600 flex items-center gap-1.5">
+                      <span className="text-slate-400">Кромка:</span>
+                      <strong className="text-slate-900 font-bold">{order.totalEdgeM || 0} п.м.</strong>
+                    </div>
+
+                    <div className="px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs text-slate-600 flex items-center gap-1.5">
+                      <span className="text-slate-400">Деталей:</span>
+                      <strong className="text-slate-900 font-bold">{order.partsCount || 0} шт.</strong>
+                    </div>
+
+                    {order.birkaData ? (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setViewingBirkaModalOrder(order);
                         }}
-                        className="mt-0.5 px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 font-bold text-slate-800 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
-                      />
+                        className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 px-3 py-1.5 rounded-xl border border-emerald-200 transition-colors cursor-pointer shadow-xs max-w-[260px] truncate"
+                        title="Нажмите, чтобы просмотреть сводку бирок, детали и расход материалов"
+                      >
+                        <FileText className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                        <span className="truncate">Бирки: {order.birkaData.fileName}</span>
+                      </button>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-amber-700 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200/90">
+                        <Upload className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Бирки не прикреплены</span>
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Right: Date Picker, Upload & Ready Button */}
+                  <div className="flex items-center gap-2.5 sm:gap-3 flex-wrap justify-between lg:justify-end shrink-0 pt-2 lg:pt-0">
+                    {/* Planned Cutting Date */}
+                    <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-2xl border border-slate-200">
+                      <CalendarDays className="w-4 h-4 text-blue-600 shrink-0" />
+                      <div className="flex flex-col">
+                        <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider leading-none">
+                          День распила
+                        </span>
+                        <input
+                          type="date"
+                          value={order.plannedCuttingDate || ''}
+                          onChange={(e) => {
+                            onUpdateOrder({
+                              ...order,
+                              plannedCuttingDate: e.target.value
+                            });
+                          }}
+                          className="bg-transparent font-bold text-slate-800 text-xs focus:outline-none cursor-pointer mt-0.5"
+                        />
+                      </div>
                     </div>
 
                     {/* Upload Birka File Button */}
-                    <label className="px-3.5 py-2.5 rounded-2xl bg-blue-50 hover:bg-blue-600 hover:text-white border border-blue-200 text-xs font-bold text-blue-700 shadow-sm transition-all cursor-pointer flex items-center gap-1.5 shrink-0">
+                    <label className="px-3.5 py-2.5 rounded-2xl bg-blue-50 hover:bg-blue-600 hover:text-white border border-blue-200 text-xs font-bold text-blue-700 shadow-xs transition-all cursor-pointer flex items-center gap-1.5 shrink-0">
                       <Upload className="w-3.5 h-3.5" />
                       <span>{order.birkaData ? 'Заменить бирки' : '+ Файл бирок'}</span>
                       <input

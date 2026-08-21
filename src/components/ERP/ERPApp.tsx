@@ -21,7 +21,12 @@ import {
   Cpu,
   RefreshCw,
   Bell,
-  AlertCircle
+  AlertCircle,
+  Camera,
+  Menu,
+  X,
+  QrCode,
+  Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -44,6 +49,7 @@ import { ERPEmployeesView } from './views/ERPEmployeesView';
 import { ERPSettingsView } from './views/ERPSettingsView';
 import { ERPLoginView } from './views/ERPLoginView';
 import { ERPOrderWorkspaceView } from './views/ERPOrderWorkspaceView';
+import { MobileCameraScannerModal } from './components/MobileCameraScannerModal';
 
 interface ERPAppProps {
   aliasOrId: string;
@@ -214,17 +220,23 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
-  // Fetch Company & ERP Data
-  useEffect(() => {
-    async function loadCompanyData() {
-      try {
-        let comp: any = null;
+  // Pre-cabinet Loading & Data Synchronization State
+  const [isDataReady, setIsDataReady] = useState<boolean>(false);
+  const [showMobileMenuDrawer, setShowMobileMenuDrawer] = useState<boolean>(false);
+  const [showMobileShiftModal, setShowMobileShiftModal] = useState<boolean>(false);
+  const [showGlobalCameraScanner, setShowGlobalCameraScanner] = useState<boolean>(false);
+
+  // Fetch Company & ERP Data with strict pre-cabinet synchronization
+  const loadAllERPData = async (userOverride?: any) => {
+    setIsDataReady(false);
+    try {
+      let comp: any = company;
+      if (!comp) {
         const res = await fetch(`/api/public/company/${aliasOrId}`);
         if (res.ok) {
           const data = await res.json();
           comp = data.company;
         } else {
-          // Direct document lookup fallback
           try {
             const docRes = await fetch(`/api/db/doc/companies/${aliasOrId}`);
             if (docRes.ok) {
@@ -238,17 +250,20 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
             console.warn('Fallback doc fetch failed:', docErr);
           }
         }
+      }
 
-        if (!comp) {
-          setIsAccessDenied(true);
-          setIsLoading(false);
-          return;
-        }
+      if (!comp) {
+        setIsAccessDenied(true);
+        setIsLoading(false);
+        setIsDataReady(true);
+        return;
+      }
 
-        setCompany(comp);
+      setCompany(comp);
 
-        // Check for active login session (either from Calculator or ERP login)
-        let parsedUser: any = authUser;
+      // Check active user
+      let parsedUser: any = userOverride || authUser;
+      if (!parsedUser) {
         try {
           const globalUserStr = localStorage.getItem('currentUser');
           const erpUserStr = localStorage.getItem(`erp_session_${comp.id || aliasOrId}`);
@@ -270,133 +285,142 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
         } catch (authCheckErr) {
           console.warn('ERP auth check error:', authCheckErr);
         }
+      }
 
-        if (!parsedUser) {
-          // If not logged in, stop loading immediately to display login screen instantly
-          setIsLoading(false);
-          return;
-        }
-
-        // Check if ERP is allowed / enabled by Superadmin
-        const isSuperAdmin = parsedUser?.email === 'lk.ivanbobkin@gmail.com' || parsedUser?.role === 'superadmin' || parsedUser?.isSuperAdmin;
-        const erpAllowed = comp?.erpAllowed !== undefined ? !!comp.erpAllowed : (comp?.erpEnabled !== undefined ? !!comp.erpEnabled : false);
-
-        if (!erpAllowed && !isSuperAdmin) {
-          setIsAccessDenied(true);
-          setIsLoading(false);
-          return;
-        }
-
-        // Apply company ERP config to state if present
-        const customErpConfig = comp.erpConfig || comp.erpSettings;
-        if (customErpConfig) {
-          setSettings(prev => ({
-            ...prev,
-            ...customErpConfig
-          }));
-        }
-
-        // Fetch real company employees and orders in parallel for maximum speed
-        try {
-          const [empRes, ordersRes] = await Promise.allSettled([
-            fetch(`/api/erp/${comp.id}/employees`),
-            fetch(`/api/erp/${comp.id}/orders`)
-          ]);
-
-          let loadedEmployees: ERPEmployee[] = [];
-          if (empRes.status === 'fulfilled' && empRes.value.ok) {
-            const empData = await empRes.value.json();
-            if (Array.isArray(empData.employees) && empData.employees.length > 0) {
-              loadedEmployees = empData.employees;
-            }
-          }
-
-          loadedEmployees = loadedEmployees.filter(e => 
-            e.email?.toLowerCase() !== 'lk.ivanbobkin@gmail.com' && 
-            !(e as any).isSuperAdmin && 
-            e.role !== 'superadmin' && 
-            e.productionRole !== 'superadmin'
-          );
-
-          if (loadedEmployees.length === 0) {
-            const isCurrentSuperAdmin = parsedUser?.email?.toLowerCase() === 'lk.ivanbobkin@gmail.com' || parsedUser?.isSuperAdmin;
-            if (isCurrentSuperAdmin) {
-              loadedEmployees = [
-                {
-                  id: 'emp-master-1',
-                  name: 'Иванов Сергей (Начальник цеха)',
-                  role: 'Начальник цеха',
-                  productionRole: 'Начальник цеха',
-                  isProductionEmployee: true,
-                  department: 'management',
-                  rateType: 'salary',
-                  baseRate: 95000,
-                  shiftType: '5/2',
-                  status: 'active'
-                }
-              ];
-            } else {
-              const currentUserName = parsedUser?.displayName || parsedUser?.name || parsedUser?.email?.split('@')[0] || 'Руководитель цеха';
-              loadedEmployees = [
-                {
-                  id: parsedUser?.id || 'emp-user-1',
-                  userId: parsedUser?.id,
-                  name: currentUserName,
-                  role: 'Начальник цеха',
-                  productionRole: 'Начальник цеха',
-                  isProductionEmployee: true,
-                  department: 'management',
-                  rateType: 'salary',
-                  baseRate: 100000,
-                  shiftType: '5/2',
-                  status: 'active',
-                  email: parsedUser?.email || '',
-                  isOwner: true
-                }
-              ];
-            }
-          }
-
-          setEmployees(loadedEmployees);
-
-          if (ordersRes.status === 'fulfilled' && ordersRes.value.ok) {
-            const ordersData = await ordersRes.value.json();
-            if (ordersData.orders) {
-              const localCache = loadLocalOrdersCache(comp.id);
-              const merged = ordersData.orders.map((o: ProductionOrder) => {
-                const cached = localCache[o.id];
-                if (!cached) return o;
-                return {
-                  ...o,
-                  currentStage: cached.currentStage || o.currentStage,
-                  status: cached.status || o.status,
-                  birkaData: cached.birkaData !== undefined ? cached.birkaData : o.birkaData,
-                  stageScanningProgress: cached.stageScanningProgress || o.stageScanningProgress,
-                  totalAreaM2: cached.totalAreaM2 !== undefined ? cached.totalAreaM2 : o.totalAreaM2,
-                  totalEdgeM: cached.totalEdgeM !== undefined ? cached.totalEdgeM : o.totalEdgeM,
-                  partsCount: cached.partsCount !== undefined ? cached.partsCount : o.partsCount,
-                  stageProgress: cached.stageProgress || o.stageProgress
-                };
-              });
-              setOrders(merged);
-              saveLocalOrdersCache(comp.id, merged);
-              setOrderSource(ordersData.orderSource || 'projects');
-            }
-          }
-        } catch (fetchErr) {
-          console.warn("ERP parallel load error:", fetchErr);
-        }
-
+      if (!parsedUser) {
+        // Not logged in -> show login screen
         setIsLoading(false);
+        setIsDataReady(true);
+        return;
+      }
 
-      } catch (e) {
-        console.error("Error loading ERP data:", e);
+      // Check access permission
+      const isSuperAdmin = parsedUser?.email === 'lk.ivanbobkin@gmail.com' || parsedUser?.role === 'superadmin' || parsedUser?.isSuperAdmin;
+      const erpAllowed = comp?.erpAllowed !== undefined ? !!comp.erpAllowed : (comp?.erpEnabled !== undefined ? !!comp.erpEnabled : false);
+
+      if (!erpAllowed && !isSuperAdmin) {
         setIsAccessDenied(true);
         setIsLoading(false);
+        setIsDataReady(true);
+        return;
       }
-    }
 
-    loadCompanyData();
+      // Apply settings
+      const customErpConfig = comp.erpConfig || comp.erpSettings;
+      if (customErpConfig) {
+        setSettings(prev => ({
+          ...prev,
+          ...customErpConfig
+        }));
+      }
+
+      // Fetch employees and orders in parallel
+      try {
+        const [empRes, ordersRes] = await Promise.allSettled([
+          fetch(`/api/erp/${comp.id}/employees`),
+          fetch(`/api/erp/${comp.id}/orders`)
+        ]);
+
+        let loadedEmployees: ERPEmployee[] = [];
+        if (empRes.status === 'fulfilled' && empRes.value.ok) {
+          const empData = await empRes.value.json();
+          if (Array.isArray(empData.employees) && empData.employees.length > 0) {
+            loadedEmployees = empData.employees;
+          }
+        }
+
+        loadedEmployees = loadedEmployees.filter(e => 
+          e.email?.toLowerCase() !== 'lk.ivanbobkin@gmail.com' && 
+          !(e as any).isSuperAdmin && 
+          e.role !== 'superadmin' && 
+          e.productionRole !== 'superadmin'
+        );
+
+        if (loadedEmployees.length === 0) {
+          const isCurrentSuperAdmin = parsedUser?.email?.toLowerCase() === 'lk.ivanbobkin@gmail.com' || parsedUser?.isSuperAdmin;
+          if (isCurrentSuperAdmin) {
+            loadedEmployees = [
+              {
+                id: 'emp-master-1',
+                name: 'Иванов Сергей (Начальник цеха)',
+                role: 'Начальник цеха',
+                productionRole: 'Начальник цеха',
+                isProductionEmployee: true,
+                department: 'management',
+                rateType: 'salary',
+                baseRate: 95000,
+                shiftType: '5/2',
+                status: 'active'
+              }
+            ];
+          } else {
+            const currentUserName = parsedUser?.displayName || parsedUser?.name || parsedUser?.email?.split('@')[0] || 'Руководитель цеха';
+            loadedEmployees = [
+              {
+                id: parsedUser?.id || 'emp-user-1',
+                userId: parsedUser?.id,
+                name: currentUserName,
+                role: 'Начальник цеха',
+                productionRole: 'Начальник цеха',
+                isProductionEmployee: true,
+                department: 'management',
+                rateType: 'salary',
+                baseRate: 100000,
+                shiftType: '5/2',
+                status: 'active',
+                email: parsedUser?.email || '',
+                isOwner: true
+              }
+            ];
+          }
+        }
+
+        setEmployees(loadedEmployees);
+
+        if (ordersRes.status === 'fulfilled' && ordersRes.value.ok) {
+          const ordersData = await ordersRes.value.json();
+          if (ordersData.orders) {
+            const localCache = loadLocalOrdersCache(comp.id);
+            const merged = ordersData.orders.map((o: ProductionOrder) => {
+              const cached = localCache[o.id];
+              if (!cached) return o;
+              return {
+                ...o,
+                currentStage: cached.currentStage || o.currentStage,
+                status: cached.status || o.status,
+                birkaData: cached.birkaData !== undefined ? cached.birkaData : o.birkaData,
+                stageScanningProgress: cached.stageScanningProgress || o.stageScanningProgress,
+                totalAreaM2: cached.totalAreaM2 !== undefined ? cached.totalAreaM2 : o.totalAreaM2,
+                totalEdgeM: cached.totalEdgeM !== undefined ? cached.totalEdgeM : o.totalEdgeM,
+                partsCount: cached.partsCount !== undefined ? cached.partsCount : o.partsCount,
+                stageProgress: cached.stageProgress || o.stageProgress,
+                plannedCuttingDate: cached.plannedCuttingDate !== undefined ? cached.plannedCuttingDate : o.plannedCuttingDate,
+                isReadyForProduction: cached.isReadyForProduction !== undefined ? cached.isReadyForProduction : o.isReadyForProduction,
+                additionalWorks: cached.additionalWorks !== undefined ? cached.additionalWorks : o.additionalWorks,
+                workLogs: cached.workLogs !== undefined ? cached.workLogs : o.workLogs
+              };
+            });
+            setOrders(merged);
+            saveLocalOrdersCache(comp.id, merged);
+            setOrderSource(ordersData.orderSource || 'projects');
+          }
+        }
+      } catch (fetchErr) {
+        console.warn("ERP parallel load error:", fetchErr);
+      }
+
+      setIsDataReady(true);
+
+    } catch (e) {
+      console.error("Error loading ERP data:", e);
+      setIsAccessDenied(true);
+      setIsLoading(false);
+      setIsDataReady(true);
+    }
+  };
+
+  useEffect(() => {
+    loadAllERPData();
   }, [aliasOrId]);
 
   const handleSyncOrders = async () => {
@@ -637,12 +661,43 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
     }
   };
 
-  // 1. Loading Splash (fast-through when ready)
+  const handleGlobalCameraScan = (code: string) => {
+    const clean = code.trim().toLowerCase();
+    
+    // Try to find matching order
+    const found = orders.find(o => 
+      o.id.toLowerCase() === clean ||
+      o.orderNumber?.toLowerCase() === clean ||
+      o.clientName?.toLowerCase().includes(clean) ||
+      (o.birkaData && (o.birkaData as any).parts && (o.birkaData as any).parts.some((p: any) => 
+        (p.barcode && p.barcode.toLowerCase() === clean) ||
+        (p.id && p.id.toLowerCase() === clean) ||
+        (p.name && p.name.toLowerCase().includes(clean))
+      ))
+    );
+
+    if (found) {
+      setSelectedOrderForWorkspace(found);
+      setShowGlobalCameraScanner(false);
+    } else {
+      const numMatch = clean.replace(/[^0-9]/g, '');
+      if (numMatch) {
+        const byNum = orders.find(o => o.orderNumber?.includes(numMatch));
+        if (byNum) {
+          setSelectedOrderForWorkspace(byNum);
+          setShowGlobalCameraScanner(false);
+        }
+      }
+    }
+  };
+
+  // 1. Loading Splash (Strict pre-cabinet synchronization)
   if (isLoading) {
     return (
       <ERPLoader 
         companyName={company?.name || "Мебельное производство"} 
-        minDurationMs={300}
+        minDurationMs={450}
+        isDataReady={isDataReady}
         onFinish={() => setIsLoading(false)}
       />
     );
@@ -696,6 +751,8 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
         aliasOrId={aliasOrId} 
         onSuccessLogin={(userData) => {
           setAuthUser(userData);
+          setIsLoading(true);
+          loadAllERPData(userData);
         }} 
       />
     );
@@ -752,9 +809,10 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
     .toUpperCase() || 'СП';
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row text-slate-800 font-sans selection:bg-blue-600 selection:text-white">
-      {/* Left Sidebar */}
-      <aside className={`${isSidebarCollapsed ? 'w-full md:w-20 p-3' : 'w-full md:w-64 p-4 md:p-6'} bg-slate-950 text-white flex flex-col justify-between border-r border-slate-800/80 shrink-0 z-20 transition-all duration-300`}>
+    <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row text-slate-800 font-sans selection:bg-blue-600 selection:text-white pb-20 md:pb-0">
+      
+      {/* DESKTOP Left Sidebar (Hidden on mobile screens < md) */}
+      <aside className={`hidden md:flex ${isSidebarCollapsed ? 'w-20 p-3' : 'w-64 p-4 md:p-6'} bg-slate-950 text-white flex-col justify-between border-r border-slate-800/80 shrink-0 z-20 transition-all duration-300`}>
         <div>
           {/* Logo & Company Title with Toggle */}
           <div className={`flex items-center ${isSidebarCollapsed ? 'flex-col gap-3 justify-center' : 'justify-between'} mb-6 px-1`}>
@@ -881,10 +939,52 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
         </div>
       </aside>
 
+      {/* MOBILE Top App Bar (Only on mobile screens < md) */}
+      <header className="flex md:hidden sticky top-0 z-30 bg-slate-950/95 backdrop-blur-xl border-b border-slate-800/80 px-4 py-3 items-center justify-between shadow-lg text-white">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center font-bold text-white shadow-md shadow-blue-500/20 shrink-0">
+            <Factory className="w-4 h-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-[9px] font-mono tracking-widest text-blue-400 uppercase font-black">
+              ERP ЦЕХ
+            </div>
+            <div className="text-xs font-black truncate text-white">
+              {company?.name || "Мебельный цех"}
+            </div>
+          </div>
+        </div>
+
+        {/* Mobile Quick Action Buttons: Scan + Shift Timer */}
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Quick Scanner Button */}
+          <button
+            onClick={() => setShowGlobalCameraScanner(true)}
+            className="p-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-600/30 flex items-center gap-1.5 text-xs font-bold transition-all cursor-pointer"
+          >
+            <Camera className="w-4 h-4" />
+            <span className="text-[11px]">Сканер</span>
+          </button>
+
+          {/* Shift Status Pill */}
+          <button
+            onClick={() => setShowMobileShiftModal(true)}
+            className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+              isShiftActive 
+                ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-400' 
+                : 'bg-slate-900 border-slate-800 text-slate-300'
+            }`}
+          >
+            <span className={`w-2 h-2 rounded-full ${isShiftActive ? 'bg-emerald-400 animate-ping' : 'bg-slate-500'}`} />
+            <span className="font-mono">{isShiftActive ? formatShiftTimer(shiftElapsedSeconds) : 'Смена'}</span>
+          </button>
+        </div>
+      </header>
+
       {/* Main Content Area */}
       <main className="flex-1 flex flex-col min-w-0 overflow-y-auto max-h-screen">
-        {/* Top Header Bar */}
-        <header className="bg-white/90 backdrop-blur-md sticky top-0 z-10 px-6 py-4 border-b border-slate-200/80 flex items-center justify-between gap-4">
+        {/* DESKTOP Top Header Bar (Hidden on mobile) */}
+        <header className="hidden md:flex bg-white/90 backdrop-blur-md sticky top-0 z-10 px-6 py-4 border-b border-slate-200/80 items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <h2 className="text-base font-black text-slate-900 hidden sm:block">
               {menuItems.find(m => m.id === activeSection)?.label}
@@ -973,8 +1073,8 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
           </div>
         </header>
 
-        {/* Dynamic Section View */}
-        <div className="p-4 md:p-8 max-w-7xl w-full mx-auto space-y-6">
+        {/* Dynamic Section View with Adaptive Padding */}
+        <div className="p-3.5 sm:p-4 md:p-8 max-w-7xl w-full mx-auto space-y-5">
           {selectedOrderForWorkspace ? (
             <ERPOrderWorkspaceView 
               order={selectedOrderForWorkspace}
@@ -1070,6 +1170,267 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
           )}
         </div>
       </main>
+
+      {/* MOBILE Fixed Bottom Navigation Bar (Visible only on < md) */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-xl border-t border-slate-800 text-white px-2 py-1.5 flex items-center justify-around shadow-2xl">
+        {/* 1. Production Stages (Primary Workshop Tool) */}
+        <button
+          onClick={() => {
+            setSelectedOrderForWorkspace(null);
+            setActiveSection('production');
+          }}
+          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer relative ${
+            activeSection === 'production' && !selectedOrderForWorkspace
+              ? 'text-blue-400 font-black'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <div className="relative">
+            <Factory className="w-5 h-5" />
+            {orders.filter(o => o.status === 'in_progress').length > 0 && (
+              <span className="absolute -top-1 -right-2 bg-blue-500 text-white text-[9px] font-black rounded-full px-1 py-0.2">
+                {orders.filter(o => o.status === 'in_progress').length}
+              </span>
+            )}
+          </div>
+          <span className="text-[10px] mt-1">Участки</span>
+        </button>
+
+        {/* 2. Planning / Orders List */}
+        <button
+          onClick={() => {
+            setSelectedOrderForWorkspace(null);
+            setActiveSection('planning');
+          }}
+          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer relative ${
+            activeSection === 'planning' && !selectedOrderForWorkspace
+              ? 'text-blue-400 font-black'
+              : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <div className="relative">
+            <Calendar className="w-5 h-5" />
+            {orders.filter(o => o.status === 'planned').length > 0 && (
+              <span className="absolute -top-1 -right-2 bg-amber-500 text-white text-[9px] font-black rounded-full px-1 py-0.2">
+                {orders.filter(o => o.status === 'planned').length}
+              </span>
+            )}
+          </div>
+          <span className="text-[10px] mt-1">Заказы</span>
+        </button>
+
+        {/* 3. Center Camera Scan Button */}
+        <button
+          onClick={() => setShowGlobalCameraScanner(true)}
+          className="w-12 h-12 -mt-5 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/40 border-2 border-slate-900 cursor-pointer active:scale-95 transition-transform"
+          title="Сканировать бирку детали или заказа"
+        >
+          <Camera className="w-6 h-6" />
+        </button>
+
+        {/* 4. Shift Management */}
+        <button
+          onClick={() => setShowMobileShiftModal(true)}
+          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer ${
+            isShiftActive ? 'text-emerald-400 font-bold' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Clock className="w-5 h-5" />
+          <span className="text-[10px] mt-1">{isShiftActive ? 'В смене' : 'Смена'}</span>
+        </button>
+
+        {/* 5. Menu Drawer Trigger */}
+        <button
+          onClick={() => setShowMobileMenuDrawer(true)}
+          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer ${
+            showMobileMenuDrawer ? 'text-blue-400 font-bold' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Menu className="w-5 h-5" />
+          <span className="text-[10px] mt-1">Меню</span>
+        </button>
+      </div>
+
+      {/* MOBILE Menu Drawer (Bottom Sheet) */}
+      <AnimatePresence>
+        {showMobileMenuDrawer && (
+          <div className="fixed inset-0 z-50 flex flex-col justify-end bg-slate-950/80 backdrop-blur-sm md:hidden">
+            <div 
+              className="absolute inset-0"
+              onClick={() => setShowMobileMenuDrawer(false)}
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className="relative z-10 bg-slate-900 border-t border-slate-800 rounded-t-3xl p-5 text-white max-h-[85vh] overflow-y-auto space-y-5 shadow-2xl"
+            >
+              {/* Header */}
+              <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-indigo-500 to-blue-600 text-white flex items-center justify-center font-bold text-sm shadow-md">
+                    {userInitials}
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-white">{displayUserName}</h4>
+                    <p className="text-[11px] text-indigo-400 font-semibold">{displayUserRole}</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowMobileMenuDrawer(false)}
+                  className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Navigation Grid */}
+              <div className="grid grid-cols-2 gap-2.5">
+                {menuItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeSection === item.id && !selectedOrderForWorkspace;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        setSelectedOrderForWorkspace(null);
+                        setActiveSection(item.id);
+                        setShowMobileMenuDrawer(false);
+                      }}
+                      className={`p-3.5 rounded-2xl border text-left flex items-center gap-3 transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-blue-600 border-blue-500 text-white shadow-lg'
+                          : 'bg-slate-950 border-slate-800/80 text-slate-300 hover:bg-slate-800'
+                      }`}
+                    >
+                      <Icon className="w-5 h-5 shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs font-bold truncate">{item.label}</div>
+                        {item.badge !== undefined && item.badge > 0 && (
+                          <span className="text-[10px] text-blue-300">{item.badge} в работе</span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Quick Links & Logout */}
+              <div className="pt-2 border-t border-slate-800 space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <a
+                    href={`/${aliasOrId}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="p-3 rounded-2xl bg-slate-950 border border-slate-800 text-slate-300 text-xs font-bold flex items-center justify-center gap-2"
+                  >
+                    <span>Витрина</span>
+                    <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+                  </a>
+                  <a
+                    href="/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="p-3 rounded-2xl bg-slate-950 border border-slate-800 text-slate-300 text-xs font-bold flex items-center justify-center gap-2"
+                  >
+                    <span>Калькулятор</span>
+                    <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
+                  </a>
+                </div>
+
+                <button
+                  onClick={() => {
+                    setShowMobileMenuDrawer(false);
+                    handleLogout();
+                  }}
+                  className="w-full p-3 rounded-2xl bg-rose-600/10 border border-rose-500/30 text-rose-400 hover:bg-rose-600 hover:text-white text-xs font-bold flex items-center justify-center gap-2 transition-all cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>Выйти из аккаунта</span>
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MOBILE Shift Management Modal */}
+      <AnimatePresence>
+        {showMobileShiftModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-slate-900 border border-slate-800 rounded-3xl max-w-sm w-full p-6 text-white text-center space-y-5 shadow-2xl"
+            >
+              <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-600 flex items-center justify-center mx-auto shadow-lg shadow-emerald-600/30">
+                <Clock className="w-7 h-7 text-white" />
+              </div>
+
+              <div>
+                <h3 className="text-lg font-black text-white">Учет рабочей смены</h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Сотрудник: <strong className="text-slate-200">{displayUserName}</strong>
+                </p>
+              </div>
+
+              {isShiftActive ? (
+                <div className="p-4 rounded-2xl bg-slate-950 border border-emerald-500/30 space-y-2">
+                  <div className="text-[11px] font-mono text-emerald-400 uppercase tracking-widest font-bold">
+                    🟢 СМЕНА АКТИВНА
+                  </div>
+                  <div className="text-2xl font-black font-mono text-white">
+                    {formatShiftTimer(shiftElapsedSeconds)}
+                  </div>
+                  <button
+                    onClick={() => {
+                      handleEndShift();
+                      setShowMobileShiftModal(false);
+                    }}
+                    className="w-full py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-lg transition-all cursor-pointer mt-2"
+                  >
+                    Завершить смену
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <p className="text-xs text-slate-400">
+                    Нажмите кнопку ниже, чтобы зафиксировать начало вашей производственной смены в журнале.
+                  </p>
+                  <button
+                    onClick={() => {
+                      handleStartShift();
+                      setShowMobileShiftModal(false);
+                    }}
+                    className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs shadow-lg shadow-emerald-600/30 transition-all cursor-pointer flex items-center justify-center gap-2"
+                  >
+                    <Clock className="w-4 h-4" />
+                    <span>Начать рабочую смену</span>
+                  </button>
+                </div>
+              )}
+
+              <button
+                onClick={() => setShowMobileShiftModal(false)}
+                className="w-full py-2.5 rounded-2xl bg-slate-800 text-slate-400 hover:text-white text-xs font-bold"
+              >
+                Закрыть
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Global Mobile Camera Scanner Modal */}
+      <MobileCameraScannerModal
+        isOpen={showGlobalCameraScanner}
+        onClose={() => setShowGlobalCameraScanner(false)}
+        onScan={handleGlobalCameraScan}
+        title="Сканирование в цехе"
+        subtitle="Наведите камеру на штрихкод детали или QR-код заказа"
+      />
 
       {/* Warning Modal when starting shift not in schedule */}
       {showShiftWarningModal && (

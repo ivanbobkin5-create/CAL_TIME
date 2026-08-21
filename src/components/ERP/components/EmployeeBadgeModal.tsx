@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import QRCode from 'qrcode';
 import { 
   X, 
@@ -37,24 +37,40 @@ export const EmployeeBadgeModal: React.FC<EmployeeBadgeModalProps> = ({
   const [isRegenerating, setIsRegenerating] = useState(false);
   const badgeCardRef = useRef<HTMLDivElement>(null);
 
-  // Generate badge code if missing or use existing
-  const currentBadgeCode = employee.badgeCode || `EMP_${employee.id}_${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
-  const fullQrPayload = `ERP_BADGE:${employee.id}:${companyId || 'company'}:${currentBadgeCode}`;
+  // Stable badge code calculation
+  const currentBadgeCode = useMemo(() => {
+    return employee.badgeCode || `EMP_${employee.id}`;
+  }, [employee.badgeCode, employee.id]);
+
+  const fullQrPayload = useMemo(() => {
+    return `ERP_BADGE:${employee.id}:${companyId || 'company'}:${currentBadgeCode}`;
+  }, [employee.id, companyId, currentBadgeCode]);
 
   useEffect(() => {
     if (!isOpen) return;
 
+    let isMounted = true;
     QRCode.toDataURL(fullQrPayload, {
-      width: 400,
+      width: 320,
       margin: 1,
       color: {
         dark: '#0f172a',
         light: '#ffffff'
       },
-      errorCorrectionLevel: 'H'
+      errorCorrectionLevel: 'M'
     })
-      .then((url) => setQrDataUrl(url))
-      .catch((err) => console.error('QR generation error:', err));
+      .then((url) => {
+        if (isMounted) {
+          setQrDataUrl(url);
+        }
+      })
+      .catch((err) => {
+        console.error('QR generation error:', err);
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, [isOpen, fullQrPayload]);
 
   if (!isOpen) return null;
