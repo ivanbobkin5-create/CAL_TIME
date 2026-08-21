@@ -126,6 +126,7 @@ import { LandingPage } from "./components/Landing/LandingPage";
 import { LandingSettingsView } from "./components/Landing/LandingSettingsView";
 import { PublicLandingView } from "./components/Landing/PublicLandingView";
 import { ERPApp } from "./components/ERP/ERPApp";
+import { PublicPackageView } from "./components/PublicPackageView";
 import { ERPSettingsTab } from "./components/Settings/ERPSettingsTab";
 import { Supplier, ProcurementSettings } from "./types";
 import { SuppliersSettings } from "./components/Admin/SuppliersSettings";
@@ -36633,8 +36634,27 @@ export default function App() {
     productionSettings,
   ]);
 
-  // Detect public customer landing page
+  // Detect public customer landing page or public package digital passport
   const currentPath = window.location.pathname;
+
+  // Public Package Passport for Installers (No login required)
+  if (currentPath.startsWith("/p/") || currentPath.startsWith("/package/") || currentPath.startsWith("/pkg/")) {
+    const rawCode = currentPath.replace(/^\/(?:p|package|pkg)\//, "").split("/")[0];
+    const packageCode = decodeURIComponent(rawCode || "");
+    if (packageCode) {
+      return <PublicPackageView packageCode={packageCode} />;
+    }
+  }
+
+  // Also support query param: ?p=PKG-... or ?pkg=PKG-... or ?package=PKG-...
+  if (typeof window !== "undefined" && window.location.search) {
+    const searchParams = new URLSearchParams(window.location.search);
+    const queryPkg = searchParams.get("p") || searchParams.get("pkg") || searchParams.get("package");
+    if (queryPkg) {
+      return <PublicPackageView packageCode={queryPkg} />;
+    }
+  }
+
   if (currentPath.startsWith("/c/")) {
     const rawParts = currentPath.split("/c/")[1].split("/").filter(Boolean);
     const aliasOrId = rawParts[0];

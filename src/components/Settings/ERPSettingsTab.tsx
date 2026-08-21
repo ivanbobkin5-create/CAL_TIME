@@ -18,7 +18,13 @@ import {
   ShieldCheck,
   RefreshCw,
   Sliders,
-  DollarSign
+  DollarSign,
+  RotateCcw,
+  Archive,
+  Workflow,
+  Scissors,
+  Box,
+  Package
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
@@ -32,6 +38,19 @@ interface ERPSettingsTabProps {
   loadB24Categories: (url: string, force?: boolean) => Promise<any>;
   loadB24Stages: (url: string, categoryId: string, force?: boolean) => Promise<any>;
 }
+
+const ERP_STAGES_FOR_MAPPING = [
+  { id: 'queue', name: 'Очередь / Планирование производства', icon: Clock, badgeBg: 'bg-slate-100 text-slate-700 border-slate-200' },
+  { id: 'cutting', name: 'Участок раскроя (Распил)', icon: Scissors, badgeBg: 'bg-blue-50 text-blue-700 border-blue-200' },
+  { id: 'edging', name: 'Участок кромкооблицовки', icon: Layers, badgeBg: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+  { id: 'cnc', name: 'Участок присадки / ЧПУ', icon: Cpu, badgeBg: 'bg-purple-50 text-purple-700 border-purple-200' },
+  { id: 'facades', name: 'Фасады / МДФ и покраска', icon: Sparkles, badgeBg: 'bg-amber-50 text-amber-700 border-amber-200' },
+  { id: 'assembly', name: 'Участок сборки корпусов', icon: Settings, badgeBg: 'bg-teal-50 text-teal-700 border-teal-200' },
+  { id: 'kitting', name: 'Комплектовка фурнитуры', icon: Box, badgeBg: 'bg-cyan-50 text-cyan-700 border-cyan-200' },
+  { id: 'qc', name: 'Контроль ОТК', icon: ShieldCheck, badgeBg: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  { id: 'packing', name: 'Упаковка и склад мест', icon: Package, badgeBg: 'bg-orange-50 text-orange-700 border-orange-200' },
+  { id: 'ready', name: 'Готово к отгрузке / Завершено', icon: CheckCircle2, badgeBg: 'bg-green-50 text-green-700 border-green-200' },
+];
 
 function transliterate(str: string): string {
   if (!str) return "";
@@ -469,6 +488,170 @@ export const ERPSettingsTab: React.FC<ERPSettingsTabProps> = ({
                 <span className="text-[10px] text-emerald-600 block">
                   При прохождении ОТК в ERP, сделка в Bitrix24 переместится на эту стадию.
                 </span>
+              </div>
+            </div>
+
+            {/* Stage-by-Stage Mapping Block */}
+            <div className="mt-8 pt-6 border-t border-slate-200/80 space-y-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Workflow className="w-5 h-5 text-indigo-600" />
+                  <h4 className="text-sm font-bold text-slate-900">
+                    Сопоставление стадий ERP и стадий сделок Битрикс24
+                  </h4>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Настройте автоматический перевод сделки в Битрикс24 при переходе заказа на конкретные участки производства (например, при смене с планирования на Распил, с Распила на Кромку и т.д.):
+                </p>
+              </div>
+
+              <div className="bg-slate-50/70 rounded-2xl border border-slate-200 p-4 divide-y divide-slate-200/60">
+                {ERP_STAGES_FOR_MAPPING.map((erpStage) => {
+                  const Icon = erpStage.icon;
+                  const currentMappedVal = erpConfig.bitrix24StageMapping?.[erpStage.id] || '';
+
+                  return (
+                    <div key={erpStage.id} className="py-3 first:pt-0 last:pb-0 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="flex items-center gap-2.5 min-w-0">
+                        <div className={`p-1.5 rounded-xl border ${erpStage.badgeBg} shrink-0`}>
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <div>
+                          <div className="text-xs font-bold text-slate-800">{erpStage.name}</div>
+                          <div className="text-[10px] text-slate-400">Стадия ERP: <span className="font-mono">{erpStage.id}</span></div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 sm:w-72 shrink-0">
+                        <ArrowRight className="w-3.5 h-3.5 text-slate-400 hidden sm:block shrink-0" />
+                        {b24Stages.length > 0 ? (
+                          <select
+                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-indigo-500 outline-none text-slate-800"
+                            value={currentMappedVal}
+                            onChange={(e) => {
+                              const newMapping = { ...(erpConfig.bitrix24StageMapping || {}) };
+                              if (e.target.value) {
+                                newMapping[erpStage.id] = e.target.value;
+                              } else {
+                                delete newMapping[erpStage.id];
+                              }
+                              updateErpConfig('bitrix24StageMapping', newMapping);
+                            }}
+                          >
+                            <option value="">-- Не менять стадию в Б24 --</option>
+                            {b24Stages.map((st) => (
+                              <option key={st.id} value={st.id}>
+                                {st.name} ({st.id})
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder="Код стадии Б24 (например: C1:CUTTING)"
+                            className="w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-indigo-500 outline-none"
+                            value={currentMappedVal}
+                            onChange={(e) => {
+                              const newMapping = { ...(erpConfig.bitrix24StageMapping || {}) };
+                              if (e.target.value) {
+                                newMapping[erpStage.id] = e.target.value;
+                              } else {
+                                delete newMapping[erpStage.id];
+                              }
+                              updateErpConfig('bitrix24StageMapping', newMapping);
+                            }}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Archive Restoration Action Block */}
+            <div className="mt-6 pt-6 border-t border-slate-200/80 space-y-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <RotateCcw className="w-5 h-5 text-amber-600" />
+                  <h4 className="text-sm font-bold text-slate-900">
+                    Действие при возврате заказа из архива в ERP
+                  </h4>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  Укажите, что делать со сделкой в Битрикс24, если заказ был возвращен из архива обратно в производство:
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <label className={`p-4 rounded-2xl border cursor-pointer transition-all flex items-start gap-3 ${
+                  (erpConfig.bitrix24RestoreAction || 'do_nothing') === 'do_nothing'
+                    ? 'bg-amber-50/50 border-amber-300 ring-1 ring-amber-300'
+                    : 'bg-white border-slate-200 hover:bg-slate-50'
+                }`}>
+                  <input
+                    type="radio"
+                    name="bitrix24RestoreAction"
+                    className="mt-0.5 text-amber-600 focus:ring-amber-500"
+                    checked={(erpConfig.bitrix24RestoreAction || 'do_nothing') === 'do_nothing'}
+                    onChange={() => updateErpConfig('bitrix24RestoreAction', 'do_nothing')}
+                  />
+                  <div>
+                    <div className="text-xs font-bold text-slate-900">Не трогать сделку в Битрикс24</div>
+                    <div className="text-[11px] text-slate-500 mt-0.5">
+                      Сделка в CRM останется в своей текущей стадии без автоматических перемещений.
+                    </div>
+                  </div>
+                </label>
+
+                <label className={`p-4 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between gap-3 ${
+                  erpConfig.bitrix24RestoreAction === 'restore_to_stage'
+                    ? 'bg-amber-50/50 border-amber-300 ring-1 ring-amber-300'
+                    : 'bg-white border-slate-200 hover:bg-slate-50'
+                }`}>
+                  <div className="flex items-start gap-3">
+                    <input
+                      type="radio"
+                      name="bitrix24RestoreAction"
+                      className="mt-0.5 text-amber-600 focus:ring-amber-500"
+                      checked={erpConfig.bitrix24RestoreAction === 'restore_to_stage'}
+                      onChange={() => updateErpConfig('bitrix24RestoreAction', 'restore_to_stage')}
+                    />
+                    <div>
+                      <div className="text-xs font-bold text-slate-900">Перевести сделку на стадию...</div>
+                      <div className="text-[11px] text-slate-500 mt-0.5">
+                        При возврате из архива переместить сделку в указанную стадию воронки.
+                      </div>
+                    </div>
+                  </div>
+
+                  {erpConfig.bitrix24RestoreAction === 'restore_to_stage' && (
+                    <div className="pl-6 pt-1">
+                      {b24Stages.length > 0 ? (
+                        <select
+                          className="w-full px-3 py-2 bg-white border border-amber-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-amber-500 outline-none text-slate-900"
+                          value={erpConfig.bitrix24RestoreStageId || ""}
+                          onChange={(e) => updateErpConfig('bitrix24RestoreStageId', e.target.value)}
+                        >
+                          <option value="">-- Выберите стадию для восстановления --</option>
+                          {b24Stages.map((st) => (
+                            <option key={st.id} value={st.id}>
+                              {st.name} ({st.id})
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          placeholder="ID стадии, например: C1:IN_PRODUCTION"
+                          className="w-full px-3 py-2 bg-white border border-amber-300 rounded-xl text-xs font-medium focus:ring-2 focus:ring-amber-500 outline-none"
+                          value={erpConfig.bitrix24RestoreStageId || ""}
+                          onChange={(e) => updateErpConfig('bitrix24RestoreStageId', e.target.value)}
+                        />
+                      )}
+                    </div>
+                  )}
+                </label>
               </div>
             </div>
           </div>

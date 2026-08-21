@@ -440,6 +440,212 @@ function transliterate(str: string): string {
     }
   });
 
+  // Public Package Digital Passport for Installers on-site (No login required)
+  app.get("/api/public/package/:packageCode", async (req, res) => {
+    try {
+      const packageCode = decodeURIComponent(req.params.packageCode || '').trim();
+      if (!packageCode) {
+        return res.status(400).json({ success: false, error: "Код упаковки не указан" });
+      }
+
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+      res.setHeader("Pragma", "no-cache");
+
+      // 1. Search across all erp_orders collections in DB
+      const allOrderDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+        where: {
+          collection: {
+            endsWith: '/erp_orders'
+          }
+        }
+      }));
+
+      let matchedOrder: any = null;
+      let matchedPackage: any = null;
+      let matchedCompanyId: string = "";
+
+      const normalizedSearchCode = packageCode.toLowerCase().replace(/[^a-zа-я0-9_-]/gi, '');
+
+      for (const doc of allOrderDocs) {
+        try {
+          const order = JSON.parse(doc.data);
+          const packages = order.packages || [];
+          if (!packages.length) continue;
+
+          for (const pkg of packages) {
+            const pCode = (pkg.code || '').toLowerCase().replace(/[^a-zа-я0-9_-]/gi, '');
+            const pId = (pkg.id || '').toLowerCase().replace(/[^a-zа-я0-9_-]/gi, '');
+            const fallbackCode = `pkg-${order.orderNumber}-${pkg.packageNumber}`.toLowerCase().replace(/[^a-zа-я0-9_-]/gi, '');
+            const fallbackCodeM = `pkg-${order.orderNumber}-m${pkg.packageNumber}`.toLowerCase().replace(/[^a-zа-я0-9_-]/gi, '');
+
+            if (
+              pCode === normalizedSearchCode ||
+              pId === normalizedSearchCode ||
+              fallbackCode === normalizedSearchCode ||
+              fallbackCodeM === normalizedSearchCode ||
+              (pkg.code && pkg.code.toLowerCase() === packageCode.toLowerCase()) ||
+              (pkg.id && pkg.id.toLowerCase() === packageCode.toLowerCase()) ||
+              (normalizedSearchCode && pCode.includes(normalizedSearchCode))
+            ) {
+              matchedOrder = order;
+              matchedPackage = pkg;
+              const parts = doc.collection.split('/');
+              matchedCompanyId = parts[1] || '';
+              break;
+            }
+          }
+
+          if (matchedPackage) break;
+        } catch (e) {}
+      }
+
+      // If not matched directly, check if code format is e.g. PKG-1045-2 or contains orderNumber and packageNumber
+      if (!matchedPackage) {
+        const match = packageCode.match(/PKG-([A-Za-z0-9_-]+?)-(?:M|KIT-)?(\d+)/i);
+        if (match) {
+          const [, parsedOrderNum, parsedPkgNum] = match;
+          for (const doc of allOrderDocs) {
+            try {
+              const order = JSON.parse(doc.data);
+              if (String(order.orderNumber).toLowerCase() === parsedOrderNum.toLowerCase()) {
+                const pkg = (order.packages || []).find((p: any) => String(p.packageNumber) === parsedPkgNum);
+                if (pkg) {
+                  matchedOrder = order;
+                  matchedPackage = pkg;
+                  const parts = doc.collection.split('/');
+                  matchedCompanyId = parts[1] || '';
+                  break;
+                }
+              }
+            } catch (e) {}
+          }
+        }
+      }
+
+      if (!matchedPackage || !matchedOrder) {
+        return res.status(404).json({ 
+          success: false, 
+          error: "Упаковка не найдена в базе данных. Проверьте QR-код или обратитесь на производство." 
+        });
+      }
+
+      // Get Company Name & Contact info if exists
+      let companyInfo: any = { name: "Мебельное производство" };
+      if (matchedCompanyId) {
+        const compDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({
+          where: { path: `companies/${matchedCompanyId}` }
+        }));
+        if (compDoc) {
+          try {
+            const comp = JSON.parse(compDoc.data);
+            companyInfo = {
+              id: matchedCompanyId,
+              name: comp.name || comp.companyName || "Мебельное производство",
+              phone: comp.phone || comp.contactPhone || comp.settings?.phone,
+              address: comp.address || comp.settings?.address,
+              logoUrl: comp.logoUrl || comp.settings?.logoUrl
+            };
+          } catch (e) {}
+        }
+      }
+
+      // Enrich parts with edge and details info from birkaData if available
+      const birkaDetailsMap = new Map<string, any>();
+      if (matchedOrder.birkaData?.details) {
+        for (const d of matchedOrder.birkaData.details) {
+          if (d.id) birkaDetailsMap.set(String(d.id), d);
+          if (d.labelNumber) birkaDetailsMap.set(String(d.labelNumber), d);
+        }
+      }
+
+      const enrichedParts = (matchedPackage.parts || []).map((part: any) => {
+        const birka = (part.detailId && birkaDetailsMap.get(String(part.detailId))) || 
+                      (part.labelNumber && birkaDetailsMap.get(String(part.labelNumber))) || {};
+        return {
+          detailId: part.detailId || birka.id || '',
+          labelNumber: part.labelNumber || birka.labelNumber || '',
+          name: part.name || birka.name || 'Деталь',
+          material: part.material || birka.material || '',
+          length: part.length ?? birka.length ?? 0,
+          width: part.width ?? birka.width ?? 0,
+          thickness: part.thickness ?? birka.thickness ?? 16,
+          quantity: part.quantity ?? birka.quantity ?? 1,
+          edgeL1: birka.edgeL1 || '',
+          edgeL2: birka.edgeL2 || '',
+          edgeW1: birka.edgeW1 || '',
+          edgeW2: birka.edgeW2 || '',
+          notes: birka.notes || ''
+        };
+      });
+
+      // Prepare all packages summary for installer to navigate across the entire order
+      const allPackagesSummary = (matchedOrder.packages || []).map((p: any) => ({
+        id: p.id,
+        packageNumber: p.packageNumber,
+        name: p.name,
+        type: p.type,
+        code: p.code,
+        isCurrent: p.id === matchedPackage.id,
+        partsCount: (p.parts || []).length,
+        customItemsNote: p.customItemsNote || '',
+        isShipped: p.isShipped || false,
+        parts: (p.parts || []).map((pt: any) => {
+          const b = (pt.detailId && birkaDetailsMap.get(String(pt.detailId))) || 
+                    (pt.labelNumber && birkaDetailsMap.get(String(pt.labelNumber))) || {};
+          return {
+            detailId: pt.detailId || b.id || '',
+            labelNumber: pt.labelNumber || b.labelNumber || '',
+            name: pt.name || b.name || 'Деталь',
+            material: pt.material || b.material || '',
+            length: pt.length ?? b.length ?? 0,
+            width: pt.width ?? b.width ?? 0,
+            thickness: pt.thickness ?? b.thickness ?? 16,
+            quantity: pt.quantity ?? b.quantity ?? 1,
+            edgeL1: b.edgeL1 || '',
+            edgeL2: b.edgeL2 || '',
+            edgeW1: b.edgeW1 || '',
+            edgeW2: b.edgeW2 || '',
+            notes: b.notes || ''
+          };
+        })
+      }));
+
+      // Return sanitized public passport
+      res.json({
+        success: true,
+        company: companyInfo,
+        order: {
+          id: matchedOrder.id,
+          orderNumber: matchedOrder.orderNumber,
+          clientName: matchedOrder.clientName,
+          projectName: matchedOrder.projectName,
+          salonName: matchedOrder.salonName,
+          deadlineDate: matchedOrder.deadlineDate,
+          totalPackagesCount: (matchedOrder.packages || []).length,
+          status: matchedOrder.status,
+          currentStage: matchedOrder.currentStage
+        },
+        package: {
+          id: matchedPackage.id,
+          packageNumber: matchedPackage.packageNumber,
+          name: matchedPackage.name,
+          type: matchedPackage.type,
+          code: matchedPackage.code,
+          customItemsNote: matchedPackage.customItemsNote,
+          createdAt: matchedPackage.createdAt,
+          createdByEmployeeName: matchedPackage.createdByEmployeeName,
+          isShipped: matchedPackage.isShipped,
+          parts: enrichedParts
+        },
+        allPackages: allPackagesSummary
+      });
+
+    } catch (e: any) {
+      console.error("Public package passport error:", e);
+      res.status(500).json({ success: false, error: "Ошибка сервера при получении данных упаковки" });
+    }
+  });
+
   app.get("/api/admin/setup-root", async (req, res) => {
     console.log("--- [ADMIN SETUP] Route hit! ---");
     try {
@@ -1625,10 +1831,32 @@ function transliterate(str: string): string {
         }
       }));
 
-      // If Bitrix24 order and reached 'ready' stage and doneStageId configured
-      if (orderId.startsWith('b24_') && webhookUrl && erpConfig.bitrix24DoneStageId) {
+      // Bitrix24 Synchronization with stage mapping and archive return options
+      if (orderId.startsWith('b24_') && webhookUrl) {
         const bitrixDealId = orderId.replace('b24_', '');
-        if (currentStage === 'ready' || status === 'completed') {
+        const isRestoredFromArchive = req.body.isRestoredFromArchive === true || (existingData.status === 'completed' && status === 'in_progress');
+        
+        let targetB24StageId: string | undefined = undefined;
+
+        if (isRestoredFromArchive) {
+          if (erpConfig.bitrix24RestoreAction === 'restore_to_stage' && erpConfig.bitrix24RestoreStageId) {
+            targetB24StageId = erpConfig.bitrix24RestoreStageId;
+          } else if (erpConfig.bitrix24RestoreAction === 'do_nothing') {
+            targetB24StageId = undefined; // explicitly do not touch deal in Bitrix24
+          }
+        }
+
+        // If not a restoration action or if restoration didn't specify a custom override
+        if (!isRestoredFromArchive || (erpConfig.bitrix24RestoreAction !== 'do_nothing' && !targetB24StageId)) {
+          const stageMapping = erpConfig.bitrix24StageMapping || {};
+          if (currentStage && stageMapping[currentStage]) {
+            targetB24StageId = stageMapping[currentStage];
+          } else if (currentStage === 'ready' || status === 'completed') {
+            targetB24StageId = erpConfig.bitrix24DoneStageId;
+          }
+        }
+
+        if (targetB24StageId) {
           try {
             await fetch(`${webhookUrl}/crm.deal.update`, {
               method: 'POST',
@@ -1636,11 +1864,11 @@ function transliterate(str: string): string {
               body: JSON.stringify({
                 id: bitrixDealId,
                 fields: {
-                  STAGE_ID: erpConfig.bitrix24DoneStageId
+                  STAGE_ID: targetB24StageId
                 }
               })
             });
-            console.log(`[ERP B24 SYNC] Deal ${bitrixDealId} moved to stage ${erpConfig.bitrix24DoneStageId}`);
+            console.log(`[ERP B24 SYNC] Deal ${bitrixDealId} moved to stage ${targetB24StageId} (ERP Stage: ${currentStage})`);
           } catch (b24Err) {
             console.error("Failed to update Bitrix24 deal stage:", b24Err);
           }
@@ -1941,17 +2169,54 @@ function transliterate(str: string): string {
   app.get("/api/erp/:companyId/active-shift/:employeeId", async (req, res) => {
     try {
       const { companyId, employeeId } = req.params;
-      const docPath = `companies/${companyId}/active_shifts/${employeeId}`;
-      const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
-      if (!doc) {
+      const queryUserId = String(req.query.userId || '').trim();
+      const queryEmail = String(req.query.email || '').trim().toLowerCase();
+
+      // 1. Check exact doc path first
+      let targetDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ 
+        where: { path: `companies/${companyId}/active_shifts/${employeeId}` } 
+      }));
+
+      // 2. If not found and queryUserId provided, check user path
+      if (!targetDoc && queryUserId) {
+        targetDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ 
+          where: { path: `companies/${companyId}/active_shifts/${queryUserId}` } 
+        }));
+      }
+
+      // 3. If still not found, search all active shifts for this company
+      if (!targetDoc) {
+        const allActiveShifts = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+          where: { collection: `companies/${companyId}/active_shifts` }
+        }));
+
+        for (const doc of allActiveShifts) {
+          try {
+            const parsed = JSON.parse(doc.data);
+            const matchesId = doc.docId === employeeId || parsed.employeeId === employeeId || parsed.userId === employeeId;
+            const matchesQueryUser = queryUserId && (doc.docId === queryUserId || parsed.userId === queryUserId || parsed.employeeId === queryUserId);
+            const matchesEmail = queryEmail && parsed.email && parsed.email.toLowerCase() === queryEmail;
+            const matchesEmailDirect = employeeId.includes('@') && parsed.email && parsed.email.toLowerCase() === employeeId.toLowerCase();
+
+            if (matchesId || matchesQueryUser || matchesEmail || matchesEmailDirect) {
+              targetDoc = doc;
+              break;
+            }
+          } catch (e) {}
+        }
+      }
+
+      if (!targetDoc) {
         return res.json({ success: true, activeShift: null });
       }
-      const data = JSON.parse(doc.data);
+
+      const data = JSON.parse(targetDoc.data);
       const start = Number(data.shiftStartTime || data.startTime || 0);
       // If shift is older than 24 hours, auto-expire it
       if (start && (Date.now() - start) > 24 * 3600 * 1000) {
         return res.json({ success: true, activeShift: null });
       }
+
       res.json({ 
         success: true, 
         activeShift: {
@@ -1969,12 +2234,14 @@ function transliterate(str: string): string {
   app.post("/api/erp/:companyId/active-shift", async (req, res) => {
     try {
       const { companyId } = req.params;
-      const { employeeId, employeeName, shiftStartTime, isShiftActive, date } = req.body;
+      const { employeeId, userId, email, employeeName, shiftStartTime, isShiftActive, date } = req.body;
       if (!employeeId) return res.status(400).json({ error: "employeeId is required" });
 
       const docPath = `companies/${companyId}/active_shifts/${employeeId}`;
       const shiftData = {
         employeeId,
+        userId: userId || null,
+        email: email || null,
         employeeName,
         shiftStartTime: shiftStartTime || Date.now(),
         isShiftActive: isShiftActive !== false,
@@ -1995,6 +2262,23 @@ function transliterate(str: string): string {
         }
       }));
 
+      // Also mirror to userId doc if different for instant primary key lookup
+      if (userId && userId !== employeeId) {
+        const userDocPath = `companies/${companyId}/active_shifts/${userId}`;
+        await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+          where: { path: userDocPath },
+          create: {
+            path: userDocPath,
+            collection: `companies/${companyId}/active_shifts`,
+            docId: userId,
+            data: JSON.stringify(shiftData)
+          },
+          update: {
+            data: JSON.stringify(shiftData)
+          }
+        })).catch(() => null);
+      }
+
       res.json({ success: true, activeShift: shiftData });
     } catch (e: any) {
       console.error("Error saving active shift:", e);
@@ -2005,11 +2289,29 @@ function transliterate(str: string): string {
   app.post("/api/erp/:companyId/end-shift", async (req, res) => {
     try {
       const { companyId } = req.params;
-      const { employeeId, elapsedSeconds } = req.body;
+      const { employeeId, userId, email, elapsedSeconds } = req.body;
       if (!employeeId) return res.status(400).json({ error: "employeeId is required" });
 
       const docPath = `companies/${companyId}/active_shifts/${employeeId}`;
       await dbQueryWithRetry(() => prisma.dbDocument.delete({ where: { path: docPath } }).catch(() => null));
+
+      if (userId) {
+        const userDocPath = `companies/${companyId}/active_shifts/${userId}`;
+        await dbQueryWithRetry(() => prisma.dbDocument.delete({ where: { path: userDocPath } }).catch(() => null));
+      }
+
+      // Also delete any matching active shift records in company collection
+      const allShifts = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+        where: { collection: `companies/${companyId}/active_shifts` }
+      }));
+      for (const d of allShifts) {
+        try {
+          const p = JSON.parse(d.data);
+          if (p.employeeId === employeeId || (userId && p.userId === userId) || (email && p.email && p.email.toLowerCase() === email.toLowerCase())) {
+            await dbQueryWithRetry(() => prisma.dbDocument.delete({ where: { path: d.path } }).catch(() => null));
+          }
+        } catch (e) {}
+      }
 
       // Also append to shift logs history
       const logId = `shift_log_${Date.now()}_${employeeId}`;

@@ -52,12 +52,12 @@ export function getNextRequiredStage(
   enabledStages?: ProductionStageId[]
 ): ProductionStageId | null {
   const hasEdge = orderRequiresEdging(order);
-  const stagesSequence: ProductionStageId[] = ['queue', 'cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing', 'ready'];
+  const defaultSequence: ProductionStageId[] = ['queue', 'cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing', 'ready'];
   
-  // Filter sequence by enabled stages
-  const activeSequence = enabledStages && enabledStages.length > 0
-    ? stagesSequence.filter(s => s === 'queue' || s === 'ready' || enabledStages.includes(s))
-    : stagesSequence;
+  // Build active sequence maintaining custom user order if configured
+  const activeSequence: ProductionStageId[] = (enabledStages && enabledStages.length > 0)
+    ? ['queue', ...enabledStages.filter(s => s !== 'queue' && s !== 'ready' && s !== 'shipping'), 'ready']
+    : defaultSequence;
 
   const currentIndex = activeSequence.indexOf(currentStage);
   if (currentIndex === -1) {

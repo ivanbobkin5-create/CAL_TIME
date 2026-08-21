@@ -407,32 +407,40 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
 
         const activeEmployeeKey = matchedCurrentEmployee?.id || parsedUser?.id || 'emp-user-1';
 
-        // 2. Fetch active shift using resolved employee key
+        // 2. Fetch active shift using resolved employee key, userId, and email for true multi-device sync
         try {
-          const shiftRes = await fetch(`/api/erp/${comp.id}/active-shift/${activeEmployeeKey}`);
+          const shiftParams = new URLSearchParams();
+          if (parsedUser?.id) shiftParams.set('userId', parsedUser.id);
+          if (parsedUser?.email) shiftParams.set('email', parsedUser.email);
+          if (matchedCurrentEmployee?.userId) shiftParams.set('userId', matchedCurrentEmployee.userId);
+          if (matchedCurrentEmployee?.email) shiftParams.set('email', matchedCurrentEmployee.email);
+
+          const shiftRes = await fetch(`/api/erp/${comp.id}/active-shift/${activeEmployeeKey}?${shiftParams.toString()}`);
           if (shiftRes.ok) {
             const shiftData = await shiftRes.json();
-            if (shiftData.activeShift && shiftData.activeShift.isShiftActive && shiftData.activeShift.shiftStartTime) {
+            const activeS = shiftData.activeShift || (shiftData.isShiftActive ? shiftData : null);
+            if (activeS && activeS.isShiftActive && activeS.shiftStartTime) {
               setIsShiftActive(true);
-              setShiftStartTime(Number(shiftData.activeShift.shiftStartTime));
+              setShiftStartTime(Number(activeS.shiftStartTime));
               try {
-                localStorage.setItem(`erp_active_shift_${comp.id}_${activeEmployeeKey}`, JSON.stringify(shiftData.activeShift));
-              } catch (e) {}
-            } else if (shiftData.isShiftActive && shiftData.shiftStartTime) {
-              setIsShiftActive(true);
-              setShiftStartTime(Number(shiftData.shiftStartTime));
-              try {
-                localStorage.setItem(`erp_active_shift_${comp.id}_${activeEmployeeKey}`, JSON.stringify(shiftData));
+                localStorage.setItem(`erp_active_shift_${comp.id}_${activeEmployeeKey}`, JSON.stringify(activeS));
               } catch (e) {}
             } else {
-              // Check local storage fallback
+              // Check local storage fallback only if valid
               const localShift = localStorage.getItem(`erp_active_shift_${comp.id}_${activeEmployeeKey}`);
               if (localShift) {
                 const parsedShift = JSON.parse(localShift);
-                if (parsedShift.isShiftActive && parsedShift.shiftStartTime) {
+                const start = Number(parsedShift.shiftStartTime || 0);
+                if (parsedShift.isShiftActive && start && (Date.now() - start < 24 * 3600 * 1000)) {
                   setIsShiftActive(true);
-                  setShiftStartTime(Number(parsedShift.shiftStartTime));
+                  setShiftStartTime(start);
+                } else {
+                  setIsShiftActive(false);
+                  setShiftStartTime(null);
                 }
+              } else {
+                setIsShiftActive(false);
+                setShiftStartTime(null);
               }
             }
           }
@@ -441,9 +449,10 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
           const localShift = localStorage.getItem(`erp_active_shift_${comp.id}_${activeEmployeeKey}`);
           if (localShift) {
             const parsedShift = JSON.parse(localShift);
-            if (parsedShift.isShiftActive && parsedShift.shiftStartTime) {
+            const start = Number(parsedShift.shiftStartTime || 0);
+            if (parsedShift.isShiftActive && start && (Date.now() - start < 24 * 3600 * 1000)) {
               setIsShiftActive(true);
-              setShiftStartTime(Number(parsedShift.shiftStartTime));
+              setShiftStartTime(start);
             }
           }
         }
@@ -670,10 +679,58 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
     }
   };
 
+  const handleRestoreOrderFromArchive = async (orderId: string) => {
+    const nextStage: ProductionStageId = 'queue';
+    const newStatus: ProductionOrder['status'] = 'in_progress';
+    
+    // Instant UI update
+    setOrders(prev => {
+      const nextList: ProductionOrder[] = prev.map(o => {
+        if (o.id === orderId) {
+          return {
+            ...o,
+            currentStage: nextStage,
+            status: newStatus,
+            stageProgress: {
+              ...o.stageProgress,
+              [nextStage]: { status: 'in_progress' as const }
+            }
+          };
+        }
+        return o;
+      });
+      if (company?.id) {
+        saveLocalOrdersCache(company.id, nextList);
+      }
+      return nextList;
+    });
+
+    if (company?.id) {
+      try {
+        await fetch(`/api/erp/${company.id}/orders/${orderId}/stage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            currentStage: nextStage,
+            status: newStatus,
+            isRestoredFromArchive: true,
+            stageProgress: {
+              [nextStage]: { status: 'in_progress' }
+            }
+          })
+        });
+      } catch (e) {
+        console.warn('Failed to restore order from archive:', e);
+      }
+    }
+  };
+
   const handleStartShift = async () => {
     const activeEmp = matchedEmp || employees[0];
     const todayStr = new Date().toISOString().split('T')[0];
     const empId = activeEmp?.id || authUser?.id || 'emp-user-1';
+    const userId = authUser?.id || activeEmp?.userId || null;
+    const userEmail = authUser?.email || activeEmp?.email || null;
     const now = Date.now();
 
     // Check if employee has an explicit day off in the schedule grid
@@ -698,6 +755,8 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
           isShiftActive: true,
           shiftStartTime: now,
           employeeId: empId,
+          userId,
+          email: userEmail,
           employeeName: activeEmp?.name || displayUserName
         }));
 
@@ -706,6 +765,8 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             employeeId: empId,
+            userId,
+            email: userEmail,
             employeeName: activeEmp?.name || displayUserName,
             shiftStartTime: now,
             date: todayStr
@@ -724,16 +785,21 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
 
     const activeEmp = matchedEmp || employees[0];
     const empId = activeEmp?.id || authUser?.id || 'emp-user-1';
+    const userId = authUser?.id || activeEmp?.userId || null;
+    const userEmail = authUser?.email || activeEmp?.email || null;
     const targetCompId = company?.id || aliasOrId;
 
     if (targetCompId) {
       try {
         localStorage.removeItem(`erp_active_shift_${targetCompId}_${empId}`);
+        if (userId) localStorage.removeItem(`erp_active_shift_${targetCompId}_${userId}`);
         await fetch(`/api/erp/${targetCompId}/end-shift`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            employeeId: empId
+            employeeId: empId,
+            userId,
+            email: userEmail
           })
         });
       } catch (err) {
@@ -1290,7 +1356,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
                     setSelectedOrderForWorkspace(order);
                     setWorkspaceStageId(order.currentStage || 'shipping');
                   }}
-                  onRestoreOrder={(orderId) => handleUpdateOrderStatus(orderId, 'queue')}
+                  onRestoreOrder={(orderId) => handleRestoreOrderFromArchive(orderId)}
                 />
               )}
 

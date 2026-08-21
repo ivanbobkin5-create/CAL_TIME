@@ -35,8 +35,11 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
   useEffect(() => {
     if (!isOpen || !pkg) return;
 
-    // Generate QR code data URL (encodes the package code for scanning at shipping)
-    const qrPayload = pkg.code || `PKG-${order.orderNumber}-${pkg.packageNumber}`;
+    // Generate QR code data URL (encodes the direct public package passport web URL for installers)
+    const packageCode = pkg.code || `PKG-${order.orderNumber}-${pkg.packageNumber}`;
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const qrPayload = `${origin}/p/${encodeURIComponent(packageCode)}`;
+
     QRCode.toDataURL(qrPayload, {
       width: 256,
       margin: 1,
@@ -122,7 +125,8 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
                   flex-direction: column;
                   justify-content: space-between;
                   border: 1.5mm solid #000000;
-                  background: #ffffff;
+                  background: #ffffff !important;
+                  color: #000000 !important;
                   overflow: hidden;
                   page-break-inside: avoid;
                   page-break-after: avoid;
@@ -131,25 +135,27 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
                   display: flex;
                   justify-content: space-between;
                   align-items: flex-start;
-                  border-bottom: 2px solid #000;
+                  border-bottom: 2px solid #000000;
                   padding-bottom: 4px;
                   margin-bottom: 4px;
+                  background: #ffffff !important;
                 }
                 .sub-box {
-                  background: #f1f5f9;
-                  border: 1px solid #cbd5e1;
+                  background: #ffffff !important;
+                  border: 1.5px solid #000000;
                   padding: 3px 6px;
-                  border-radius: 4px;
+                  border-radius: 2px;
                   margin-bottom: 4px;
                 }
                 .badge {
-                  background: #000;
-                  color: #fff;
+                  background: #ffffff !important;
+                  color: #000000 !important;
+                  border: 2px solid #000000;
                   padding: 2px 6px;
                   font-weight: 900;
                   font-family: monospace;
                   font-size: 13px;
-                  border-radius: 4px;
+                  border-radius: 2px;
                   display: inline-block;
                 }
                 .middle-row {
@@ -158,6 +164,7 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
                   flex: 1;
                   min-height: 0;
                   overflow: hidden;
+                  background: #ffffff !important;
                 }
                 .parts-list {
                   flex: 1;
@@ -165,24 +172,28 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
                   overflow: hidden;
                   font-size: 10.5px;
                   line-height: 1.25;
+                  color: #000000 !important;
+                  background: #ffffff !important;
                 }
                 .part-item {
                   display: flex;
                   justify-content: space-between;
-                  border-bottom: 1px dotted #94a3b8;
+                  border-bottom: 1px dotted #000000;
                   padding: 1.5px 0;
+                  color: #000000 !important;
                 }
                 .qr-col {
                   display: flex;
                   flex-direction: column;
                   align-items: center;
                   justify-content: center;
-                  border-left: 1px solid #cbd5e1;
+                  border-left: 1.5px solid #000000;
                   padding-left: 6px;
                   flex-shrink: 0;
+                  background: #ffffff !important;
                 }
                 .footer-row {
-                  border-top: 2px solid #000;
+                  border-top: 2px solid #000000;
                   padding-top: 3px;
                   margin-top: 3px;
                   display: flex;
@@ -190,6 +201,8 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
                   align-items: center;
                   font-size: 9.5px;
                   line-height: 1.2;
+                  color: #000000 !important;
+                  background: #ffffff !important;
                 }
               </style>
             </head>
@@ -198,23 +211,23 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
                 <div>
                   <div class="header-row">
                     <div>
-                      <div style="font-size: 9px; font-weight: 900; text-transform: uppercase; color: #475569; letter-spacing: 0.5px;">МЕБЕЛЬНОЕ ПРОИЗВОДСТВО</div>
-                      <div style="font-size: 15px; font-weight: 900; letter-spacing: -0.3px; margin-top: 1px;">ЗАКАЗ: ${order.orderNumber}</div>
-                      <div style="font-size: 10.5px; font-weight: 700; color: #1e293b; max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                      <div style="font-size: 9px; font-weight: 900; text-transform: uppercase; color: #000000; letter-spacing: 0.5px;">МЕБЕЛЬНОЕ ПРОИЗВОДСТВО</div>
+                      <div style="font-size: 15px; font-weight: 900; letter-spacing: -0.3px; margin-top: 1px; color: #000000;">ЗАКАЗ: ${order.orderNumber}</div>
+                      <div style="font-size: 10.5px; font-weight: 700; color: #000000; max-width: 250px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                         ${order.clientName || 'Заказчик'} ${order.projectName ? `• ${order.projectName}` : ''}
                       </div>
                     </div>
                     <div style="text-align: right;">
                       <div class="badge">МЕСТО ${pkg.packageNumber}${totalPackagesCount > 1 ? ` / ${totalPackagesCount}` : ''}</div>
-                      <div style="font-size: 9px; font-family: monospace; color: #475569; margin-top: 2px; font-weight: bold;">
+                      <div style="font-size: 9px; font-family: monospace; color: #000000; margin-top: 2px; font-weight: 900;">
                         ${pkg.type === 'kitting' ? 'КОМПЛЕКТАЦИЯ' : 'УПАКОВКА'}
                       </div>
                     </div>
                   </div>
 
                   <div class="sub-box">
-                    <div style="font-size: 8.5px; font-weight: bold; color: #64748b; text-transform: uppercase;">Наименование места:</div>
-                    <div style="font-size: 12px; font-weight: 900; color: #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                    <div style="font-size: 8.5px; font-weight: 900; color: #000000; text-transform: uppercase;">Наименование места:</div>
+                    <div style="font-size: 12px; font-weight: 900; color: #000000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
                       ${pkg.name || `Место №${pkg.packageNumber}`}
                     </div>
                   </div>
@@ -223,34 +236,34 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
                 <div class="middle-row">
                   <div class="parts-list">
                     ${pkg.type === 'kitting' ? `
-                      <div style="font-size: 8.5px; font-weight: bold; color: #64748b; text-transform: uppercase; margin-bottom: 2px;">Состав фурнитуры / комплекта:</div>
-                      <div style="font-size: 10px; font-weight: 600; background: #f8fafc; padding: 4px; border: 1px solid #e2e8f0; border-radius: 4px; max-height: 80px; overflow: hidden;">
+                      <div style="font-size: 8.5px; font-weight: 900; color: #000000; text-transform: uppercase; margin-bottom: 2px;">Состав фурнитуры / комплекта:</div>
+                      <div style="font-size: 10px; font-weight: 700; color: #000000; background: #ffffff; padding: 4px; border: 1px solid #000000; max-height: 80px; overflow: hidden;">
                         ${pkg.customItemsNote || 'Фурнитура, крепеж, комплектующие'}
                       </div>
                     ` : (showDetails && pkg.parts && pkg.parts.length > 0) ? `
-                      <div style="display: flex; justify-content: space-between; font-size: 9px; font-weight: bold; color: #475569; text-transform: uppercase; margin-bottom: 2px;">
+                      <div style="display: flex; justify-content: space-between; font-size: 9px; font-weight: 900; color: #000000; text-transform: uppercase; margin-bottom: 2px;">
                         <span>Вложенные детали:</span>
                         <span style="font-family: monospace; font-weight: 900;">${pkg.parts.length} шт.</span>
                       </div>
                       <div style="max-height: 85px; overflow: hidden;">
                         ${pkg.parts.slice(0, 5).map((p: any) => `
                           <div class="part-item">
-                            <span style="font-weight: 700; max-width: 170px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                            <span style="font-weight: 700; max-width: 170px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #000000;">
                               #${p.labelNumber} ${p.name}
                             </span>
-                            <span style="font-family: monospace; font-size: 9.5px; color: #475569; flex-shrink: 0;">
+                            <span style="font-family: monospace; font-size: 9.5px; color: #000000; font-weight: bold; flex-shrink: 0;">
                               ${p.length && p.width ? `${p.length}×${p.width}` : ''}
                             </span>
                           </div>
                         `).join('')}
                         ${pkg.parts.length > 5 ? `
-                          <div style="font-size: 9px; font-weight: bold; color: #64748b; font-style: italic; margin-top: 2px;">
+                          <div style="font-size: 9px; font-weight: 900; color: #000000; font-style: italic; margin-top: 2px;">
                             + еще ${pkg.parts.length - 5} дет. (всего ${pkg.parts.length} шт)
                           </div>
                         ` : ''}
                       </div>
                     ` : `
-                      <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #64748b; font-size: 11px; font-style: italic;">
+                      <div style="display: flex; align-items: center; justify-content: center; height: 100%; color: #000000; font-size: 11px; font-weight: bold; font-style: italic;">
                         ${pkg.parts?.length || 0} деталей упаковано
                       </div>
                     `}
@@ -258,8 +271,11 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
 
                   ${showQr && qrDataUrl ? `
                     <div class="qr-col">
-                      <img src="${qrDataUrl}" alt="QR" style="width: 70px; height: 70px; image-rendering: pixelated;" />
-                      <div style="font-size: 8.5px; font-family: monospace; font-weight: bold; margin-top: 2px; max-width: 75px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                      <img src="${qrDataUrl}" alt="QR" style="width: 68px; height: 68px; image-rendering: pixelated;" />
+                      <div style="font-size: 7.5px; font-weight: 900; color: #000000; margin-top: 1px; text-align: center; text-transform: uppercase;">
+                        Паспорт места
+                      </div>
+                      <div style="font-size: 7.5px; font-family: monospace; font-weight: 900; color: #000000; max-width: 75px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
                         ${pkg.code || `PKG-${order.orderNumber}-${pkg.packageNumber}`}
                       </div>
                     </div>
@@ -268,10 +284,10 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
 
                 <div class="footer-row">
                   <div>
-                    ${showEmployee ? `<div>Упаковщик: <strong style="font-weight: 900;">${pkg.createdByEmployeeName || 'Мастер цеха'}</strong></div>` : ''}
-                    ${showDateTime ? `<div style="color: #64748b; font-family: monospace;">Сформировано: ${formattedDate}</div>` : ''}
+                    ${showEmployee ? `<div>Упаковщик: <strong style="font-weight: 900; color: #000000;">${pkg.createdByEmployeeName || 'Мастер цеха'}</strong></div>` : ''}
+                    ${showDateTime ? `<div style="color: #000000; font-family: monospace; font-weight: 700;">Сформировано: ${formattedDate}</div>` : ''}
                   </div>
-                  <div style="text-align: right; font-family: monospace; font-weight: 900; font-size: 10px;">
+                  <div style="text-align: right; font-family: monospace; font-weight: 900; font-size: 10px; color: #000000;">
                     ERP-${order.orderNumber}-M${pkg.packageNumber}
                   </div>
                 </div>
@@ -361,43 +377,45 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
           <div
             ref={printContainerRef}
             id="printable-package-label"
-            className="bg-white text-black font-sans border-2 border-slate-900 rounded-lg p-3 shadow-md flex flex-col justify-between select-none relative box-border"
+            className="bg-white text-black font-sans border-2 border-black rounded-none p-3 shadow-sm flex flex-col justify-between select-none relative box-border"
             style={{
               width: `${widthMm * 3.78}px`, // ~3.78px per mm for 96DPI preview
               minHeight: `${heightMm * 3.78}px`,
               maxHeight: `${heightMm * 3.78}px`,
-              fontSize: `${(11 * fontScale) / 100}px`
+              fontSize: `${(11 * fontScale) / 100}px`,
+              backgroundColor: '#ffffff',
+              color: '#000000'
             }}
           >
             {/* Top Label Header */}
             <div>
-              <div className="flex items-start justify-between border-b-2 border-black pb-1.5 mb-1.5">
+              <div className="flex items-start justify-between border-b-2 border-black pb-1.5 mb-1.5 bg-white">
                 <div>
-                  <div className="text-[10px] font-mono font-black uppercase tracking-wider text-slate-700 leading-none">
+                  <div className="text-[10px] font-mono font-black uppercase tracking-wider text-black leading-none">
                     МЕБЕЛЬНОЕ ПРОИЗВОДСТВО
                   </div>
-                  <div className="text-sm font-black tracking-tight leading-tight mt-0.5">
+                  <div className="text-sm font-black tracking-tight leading-tight mt-0.5 text-black">
                     ЗАКАЗ: {order.orderNumber}
                   </div>
-                  <div className="text-[10px] font-bold text-slate-800 truncate max-w-[240px] leading-tight">
+                  <div className="text-[10px] font-bold text-black truncate max-w-[240px] leading-tight">
                     {order.clientName} {order.projectName ? `• ${order.projectName}` : ''}
                   </div>
                 </div>
 
                 {/* Big Package Badge */}
                 <div className="text-right">
-                  <div className="bg-black text-white px-2 py-0.5 rounded text-xs font-black font-mono inline-block">
+                  <div className="bg-white text-black border-2 border-black px-2 py-0.5 rounded-none text-xs font-black font-mono inline-block">
                     МЕСТО {pkg.packageNumber}{totalPackagesCount > 1 ? ` / ${totalPackagesCount}` : ''}
                   </div>
-                  <div className="text-[9px] font-mono text-slate-700 mt-0.5">
+                  <div className="text-[9px] font-mono text-black font-black mt-0.5">
                     {pkg.type === 'kitting' ? 'КОМПЛЕКТАЦИЯ' : 'УПАКОВКА'}
                   </div>
                 </div>
               </div>
 
               {/* Package Title */}
-              <div className="bg-slate-100 px-2 py-1 rounded border border-slate-300 mb-1.5">
-                <div className="text-[9px] font-bold text-slate-600 uppercase">Наименование места:</div>
+              <div className="bg-white px-2 py-1 rounded-none border-1.5 border-black mb-1.5">
+                <div className="text-[9px] font-black text-black uppercase">Наименование места:</div>
                 <div className="text-xs font-black text-black truncate leading-tight">
                   {pkg.name || `Место №${pkg.packageNumber}`}
                 </div>
@@ -405,42 +423,42 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
             </div>
 
             {/* Middle Section: Parts structure or Kitting items + QR Code */}
-            <div className="flex items-stretch gap-2 my-auto py-1 min-h-0 overflow-hidden">
+            <div className="flex items-stretch gap-2 my-auto py-1 min-h-0 overflow-hidden bg-white">
               {/* Parts / Specification breakdown */}
-              <div className="flex-1 min-w-0 pr-1 overflow-hidden">
+              <div className="flex-1 min-w-0 pr-1 overflow-hidden bg-white">
                 {pkg.type === 'kitting' ? (
                   <div className="h-full flex flex-col justify-center">
-                    <div className="text-[9px] font-bold text-slate-600 uppercase mb-0.5">Состав фурнитуры / комплекта:</div>
-                    <div className="text-[10px] font-medium text-slate-900 line-clamp-4 leading-snug whitespace-pre-wrap bg-slate-50 p-1 rounded border border-slate-200">
+                    <div className="text-[9px] font-black text-black uppercase mb-0.5">Состав фурнитуры / комплекта:</div>
+                    <div className="text-[10px] font-bold text-black line-clamp-4 leading-snug whitespace-pre-wrap bg-white p-1 rounded-none border border-black">
                       {pkg.customItemsNote || 'Фурнитура, крепеж, комплектующие'}
                     </div>
                   </div>
                 ) : showDetails && pkg.parts && pkg.parts.length > 0 ? (
                   <div>
-                    <div className="flex items-center justify-between text-[9px] font-bold text-slate-700 uppercase mb-0.5">
+                    <div className="flex items-center justify-between text-[9px] font-black text-black uppercase mb-0.5">
                       <span>Вложенные детали:</span>
                       <span className="font-mono font-black">{pkg.parts.length} шт.</span>
                     </div>
                     <div className="max-h-[95px] overflow-hidden space-y-0.5 text-[9.5px]">
                       {pkg.parts.slice(0, 5).map((p, idx) => (
-                        <div key={idx} className="flex items-center justify-between gap-1 leading-tight border-b border-dotted border-slate-300 pb-0.5">
-                          <span className="truncate max-w-[140px] font-semibold">
+                        <div key={idx} className="flex items-center justify-between gap-1 leading-tight border-b border-dotted border-black pb-0.5 text-black">
+                          <span className="truncate max-w-[140px] font-bold text-black">
                             #{p.labelNumber} {p.name}
                           </span>
-                          <span className="font-mono text-[9px] text-slate-600 shrink-0">
+                          <span className="font-mono text-[9px] text-black font-bold shrink-0">
                             {p.length && p.width ? `${p.length}×${p.width}` : ''}
                           </span>
                         </div>
                       ))}
                       {pkg.parts.length > 5 && (
-                        <div className="text-[8.5px] font-bold text-slate-600 italic">
+                        <div className="text-[8.5px] font-black text-black italic">
                           + еще {pkg.parts.length - 5} дет. (всего {pkg.parts.length} шт)
                         </div>
                       )}
                     </div>
                   </div>
                 ) : (
-                  <div className="flex items-center justify-center h-full text-slate-500 text-[10px] italic">
+                  <div className="flex items-center justify-center h-full text-black font-bold text-[10px] italic">
                     {pkg.parts?.length || 0} деталей упаковано
                   </div>
                 )}
@@ -448,14 +466,17 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
 
               {/* QR Code */}
               {showQr && qrDataUrl && (
-                <div className="flex flex-col items-center justify-center shrink-0 border-l border-slate-300 pl-2">
+                <div className="flex flex-col items-center justify-center shrink-0 border-l-1.5 border-black pl-2 bg-white">
                   <img
                     src={qrDataUrl}
                     alt="QR Code"
                     className="w-16 h-16 object-contain"
                     style={{ imageRendering: 'pixelated' }}
                   />
-                  <div className="text-[8px] font-mono font-bold text-center mt-0.5 max-w-[70px] truncate">
+                  <div className="text-[7.5px] font-black text-black text-center mt-0.5 uppercase">
+                    Паспорт места
+                  </div>
+                  <div className="text-[7.5px] font-mono font-black text-black text-center max-w-[70px] truncate">
                     {pkg.code}
                   </div>
                 </div>
@@ -463,22 +484,22 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
             </div>
 
             {/* Bottom Footer: Operator Name, Date/Time & Barcode Number */}
-            <div className="border-t-2 border-black pt-1 mt-1 flex items-center justify-between text-[8.5px] leading-tight">
+            <div className="border-t-2 border-black pt-1 mt-1 flex items-center justify-between text-[8.5px] leading-tight bg-white">
               <div>
                 {showEmployee && (
-                  <div className="font-bold truncate max-w-[170px]">
-                    Упаковщик: <span className="font-black">{pkg.createdByEmployeeName || 'Мастер цеха'}</span>
+                  <div className="font-black text-black truncate max-w-[170px]">
+                    Упаковщик: <span className="font-black text-black">{pkg.createdByEmployeeName || 'Мастер цеха'}</span>
                   </div>
                 )}
                 {showDateTime && (
-                  <div className="text-slate-600 font-mono">
+                  <div className="text-black font-mono font-bold">
                     Сформировано: {formattedDate}
                   </div>
                 )}
               </div>
 
-              <div className="text-right font-mono font-black text-[9px]">
-                ERP-{order.orderNumber}-M{pkg.packageNumber}
+              <div className="text-right font-mono font-black text-[9px] text-black">
+                ERP-{order.orderNumber}-M${pkg.packageNumber}
               </div>
             </div>
           </div>

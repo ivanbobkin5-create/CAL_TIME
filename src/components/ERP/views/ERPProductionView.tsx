@@ -66,7 +66,11 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
   ];
 
   const enabledStageIds = settings?.enabledStages || allStages.map(s => s.id);
-  const stages = allStages.filter(s => enabledStageIds.includes(s.id));
+  const stages = (settings?.enabledStages && settings.enabledStages.length > 0)
+    ? settings.enabledStages
+        .map(id => allStages.find(s => s.id === id))
+        .filter((s): s is typeof allStages[0] => !!s)
+    : allStages.filter(s => enabledStageIds.includes(s.id));
 
   // Date categorization helpers
   const todayStr = new Date().toISOString().split('T')[0];

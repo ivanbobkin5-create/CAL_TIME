@@ -27,6 +27,10 @@ import {
   ToggleLeft,
   ToggleRight,
   ArrowRight,
+  ArrowUp,
+  ArrowDown,
+  ChevronUp,
+  ChevronDown,
   Sparkles
 } from 'lucide-react';
 import { ERPCompanySettings, MachineEquipment, PackageLabelSettings, ProductionStageId, ERPNoteRule } from '../types';
@@ -171,9 +175,18 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'stages' | 'birka' | 'rules' | 'tariffs' | 'additional' | 'equipment' | 'labels' | 'shifts'>('stages');
 
+  const defaultStageIds = ALL_STAGES_CONFIG.map(s => s.id);
+  const initialStagesOrder = (() => {
+    const enabled = settings.enabledStages || defaultStageIds;
+    const remaining = defaultStageIds.filter(id => !enabled.includes(id));
+    return [...enabled, ...remaining];
+  })();
+
+  const [stagesOrder, setStagesOrder] = useState<ProductionStageId[]>(initialStagesOrder);
+
   const [formData, setFormData] = useState<ERPCompanySettings>(() => ({
     ...settings,
-    enabledStages: settings.enabledStages || ALL_STAGES_CONFIG.map(s => s.id),
+    enabledStages: settings.enabledStages || defaultStageIds,
     equipmentList: (settings.equipmentList && settings.equipmentList.length > 0) 
       ? settings.equipmentList 
       : DEFAULT_EQUIPMENT_LIST,
@@ -189,15 +202,34 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
   const [isSaved, setIsSaved] = useState(false);
 
   const handleToggleStage = (stageId: ProductionStageId) => {
-    const currentStages = formData.enabledStages || ALL_STAGES_CONFIG.map(s => s.id);
-    let nextStages: ProductionStageId[];
-    if (currentStages.includes(stageId)) {
-      if (currentStages.length <= 1) return;
-      nextStages = currentStages.filter(id => id !== stageId);
+    const currentEnabled = formData.enabledStages || defaultStageIds;
+    let nextEnabled: ProductionStageId[];
+    if (currentEnabled.includes(stageId)) {
+      if (currentEnabled.length <= 1) return;
+      nextEnabled = currentEnabled.filter(id => id !== stageId);
     } else {
-      nextStages = [...currentStages, stageId];
+      // Add stage while keeping the order defined in stagesOrder
+      nextEnabled = stagesOrder.filter(id => currentEnabled.includes(id) || id === stageId);
     }
-    setFormData({ ...formData, enabledStages: nextStages });
+    setFormData({ ...formData, enabledStages: nextEnabled });
+  };
+
+  const handleMoveStage = (stageId: ProductionStageId, direction: 'up' | 'down') => {
+    const currentIndex = stagesOrder.indexOf(stageId);
+    if (currentIndex === -1) return;
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+    if (targetIndex < 0 || targetIndex >= stagesOrder.length) return;
+
+    const newOrder = [...stagesOrder];
+    const temp = newOrder[currentIndex];
+    newOrder[currentIndex] = newOrder[targetIndex];
+    newOrder[targetIndex] = temp;
+    setStagesOrder(newOrder);
+
+    // Also update enabledStages preserving the new sequence
+    const currentEnabled = formData.enabledStages || defaultStageIds;
+    const updatedEnabled = newOrder.filter(id => currentEnabled.includes(id));
+    setFormData({ ...formData, enabledStages: updatedEnabled });
   };
 
   const handleSave = (e?: React.FormEvent) => {
@@ -415,7 +447,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                   </h3>
                 </div>
                 <p className="text-xs text-slate-500 mt-1">
-                  Включайте или отключайте участки, через которые проходят заказы на вашем производстве. Отключенные участки будут автоматически пропускаться в цепочке статусов и сканирования.
+                  Включайте или отключайте участки, а также настраивайте порядок (маршрут) движения заказов на производстве. Отключенные участки автоматически пропускаются в цепочке и сканировании.
                 </p>
               </div>
 
@@ -427,64 +459,80 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
             {/* Visual Process Flow */}
             <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 overflow-x-auto">
               <div className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">
-                Текущий маршрут движения деталей:
+                Текущий маршрут движения деталей ({enabledStagesList.length} этапов):
               </div>
               <div className="flex items-center gap-2 min-w-max">
-                {ALL_STAGES_CONFIG.filter(s => enabledStagesList.includes(s.id)).map((s, idx, arr) => {
-                  const Icon = s.icon;
-                  return (
-                    <React.Fragment key={s.id}>
-                      <div className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 text-xs font-bold ${s.badgeBg}`}>
-                        <Icon className="w-3.5 h-3.5" />
-                        <span>{s.name}</span>
-                      </div>
-                      {idx < arr.length - 1 && (
-                        <ArrowRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                      )}
-                    </React.Fragment>
-                  );
-                })}
+                {stagesOrder
+                  .map(id => ALL_STAGES_CONFIG.find(s => s.id === id))
+                  .filter((s): s is typeof ALL_STAGES_CONFIG[0] => !!s && enabledStagesList.includes(s.id))
+                  .map((s, idx, arr) => {
+                    const Icon = s.icon;
+                    return (
+                      <React.Fragment key={s.id}>
+                        <div className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 text-xs font-bold ${s.badgeBg}`}>
+                          <span className="w-4 h-4 rounded-full bg-white/70 text-slate-900 text-[10px] flex items-center justify-center font-mono font-black">
+                            {idx + 1}
+                          </span>
+                          <Icon className="w-3.5 h-3.5" />
+                          <span>{s.name}</span>
+                        </div>
+                        {idx < arr.length - 1 && (
+                          <ArrowRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
               </div>
             </div>
 
-            {/* Grid of all 9 Stages */}
+            {/* Grid of all Stages with Order controls and No ID / No Department */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 pt-2">
-              {ALL_STAGES_CONFIG.map((stage) => {
+              {stagesOrder.map((stageId, orderIndex) => {
+                const stage = ALL_STAGES_CONFIG.find(s => s.id === stageId);
+                if (!stage) return null;
                 const isEnabled = enabledStagesList.includes(stage.id);
                 const Icon = stage.icon;
+                const isFirst = orderIndex === 0;
+                const isLast = orderIndex === stagesOrder.length - 1;
+
                 return (
                   <div
                     key={stage.id}
                     className={`p-5 rounded-2xl border transition-all flex flex-col justify-between ${
                       isEnabled
                         ? 'bg-white border-slate-300 shadow-xs'
-                        : 'bg-slate-50/70 border-slate-200 opacity-60'
+                        : 'bg-slate-50/70 border-slate-200 opacity-65'
                     }`}
                   >
                     <div>
-                      <div className="flex items-start justify-between gap-3 mb-3">
-                        <div className="flex items-center gap-2.5">
-                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center border ${
+                      {/* Top Header: Order Number, Title, and Toggle */}
+                      <div className="flex items-start justify-between gap-2 mb-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center border shrink-0 ${
                             isEnabled ? stage.badgeBg : 'bg-slate-100 text-slate-400 border-slate-200'
                           }`}>
                             <Icon className="w-4 h-4" />
                           </div>
-                          <div>
-                            <div className="font-bold text-sm text-slate-900">{stage.name}</div>
-                            <div className="text-[10px] font-mono text-slate-400">ID: {stage.id}</div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10px] font-mono font-black text-slate-600">
+                                #{orderIndex + 1}
+                              </span>
+                              <div className="font-bold text-sm text-slate-900 truncate">{stage.name}</div>
+                            </div>
                           </div>
                         </div>
 
                         <button
                           type="button"
                           onClick={() => handleToggleStage(stage.id)}
-                          className={`px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 shrink-0 ${
                             isEnabled
-                              ? 'bg-emerald-500 text-white shadow-xs'
+                              ? 'bg-emerald-500 hover:bg-emerald-600 text-white shadow-xs'
                               : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
                           }`}
                         >
-                          {isEnabled ? <Check className="w-3.5 h-3.5" /> : null}
+                          {isEnabled ? <Check className="w-3.5 h-3.5 stroke-[3]" /> : null}
                           {isEnabled ? 'Включен' : 'Отключен'}
                         </button>
                       </div>
@@ -494,11 +542,35 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                       </p>
                     </div>
 
-                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                      <span>Цеховой отдел: <strong>{stage.department}</strong></span>
-                      <span className={`font-semibold ${isEnabled ? 'text-emerald-600' : 'text-slate-400'}`}>
-                        {isEnabled ? '● В работе' : '○ Пропуск'}
-                      </span>
+                    {/* Bottom Row: Reorder Sequence Buttons & Status */}
+                    <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-1">
+                        <span className="text-[11px] text-slate-400 mr-1">Порядок:</span>
+                        <button
+                          type="button"
+                          disabled={isFirst}
+                          onClick={() => handleMoveStage(stage.id, 'up')}
+                          title="Переместить этап раньше в технологической цепочке"
+                          className="p-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed text-slate-700 transition-colors cursor-pointer"
+                        >
+                          <ChevronUp className="w-4 h-4" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={isLast}
+                          onClick={() => handleMoveStage(stage.id, 'down')}
+                          title="Переместить этап позже в технологической цепочке"
+                          className="p-1 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-200 disabled:opacity-30 disabled:cursor-not-allowed text-slate-700 transition-colors cursor-pointer"
+                        >
+                          <ChevronDown className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-xs font-bold ${isEnabled ? 'text-emerald-600' : 'text-slate-400'}`}>
+                          {isEnabled ? '● В маршруте' : '○ Отключен'}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 );

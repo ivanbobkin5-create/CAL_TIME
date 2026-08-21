@@ -320,6 +320,11 @@ export interface ERPCompanySettings {
   birkaColumnMapping?: Record<string, string[]>; // Кастомный маппинг столбцов файла бирок
   birkaEncodingPreference?: 'auto' | 'windows-1251' | 'utf-8' | 'cp866';
   packageLabelSettings?: PackageLabelSettings; // Настройки размера и формата этикеток упаковок (по умолч. 120x75 мм)
+  
+  // Сопоставление стадий ERP и Битрикс24
+  bitrix24StageMapping?: Record<string, string>;
+  bitrix24RestoreAction?: 'do_nothing' | 'restore_to_stage';
+  bitrix24RestoreStageId?: string;
 }
 
 export interface SalaryAdjustment {
