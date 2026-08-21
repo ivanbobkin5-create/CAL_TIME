@@ -174,6 +174,16 @@ export interface ProductionOrder {
     categoriesSummary?: Array<{ category: string; count: number; totalQuantity: number }>;
   };
 
+  // Assembly File Data attached to order (Файл Сборка)
+  assemblyFileData?: {
+    fileName: string;
+    fileSize?: number;
+    uploadedAt?: string;
+    uploadedBy?: string;
+    fileContent?: string;
+    notes?: string;
+  };
+
   // Scanning progress per stage and material:
   // { [stageId]: { [materialName]: { scannedPartIds: string[], isCompleted?: boolean } } }
   stageScanningProgress?: Record<string, Record<string, { scannedPartIds: string[]; isCompleted?: boolean }>>;
@@ -398,6 +408,7 @@ export interface ERPCompanySettings {
   equipmentList?: MachineEquipment[]; // Оборудование участков
   birkaColumnMapping?: Record<string, string[]>; // Кастомный маппинг столбцов файла бирок
   birkaEncodingPreference?: 'auto' | 'windows-1251' | 'utf-8' | 'cp866';
+  birkaQrFormatTemplate?: string; // Шаблон кодирования QR-кодов на бирках ({orderNumber}-{pos}, {orderNumber}_{pos}, {pos}, и т.д.)
   hardwareColumnMapping?: Record<string, string[]>; // Кастомный маппинг столбцов ведомости фурнитуры (наименование, артикул, количество, ед. изм., категория, примечания)
   packageLabelSettings?: PackageLabelSettings; // Настройки размера и формата этикеток упаковок (по умолч. 120x75 мм)
   

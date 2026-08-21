@@ -450,8 +450,12 @@ const ERPDispatchWorkspaceModal: React.FC<ERPDispatchWorkspaceModalProps> = ({
     onClose();
   };
 
-  // Driver list from employees
-  const driverEmployees = employees.filter(e => e.department === 'warehouse' || e.role === 'driver' || e.employmentType === 'outsource' || e.productionRole?.toLowerCase().includes('водитель'));
+  // Driver list from employees (only employees with driver role/position)
+  const driverEmployees = employees.filter(e => 
+    e.role === 'driver' || 
+    e.productionRole?.toLowerCase().includes('водитель') || 
+    (e as any).position?.toLowerCase().includes('водитель')
+  );
 
   const totalPkgsCount = pkgs.length;
   const scannedCount = scannedCodes.length;

@@ -2198,19 +2198,23 @@ function transliterate(str: string): string {
       const queryUserId = String(req.query.userId || '').trim();
       const queryEmail = String(req.query.email || '').trim().toLowerCase();
 
-      // 1. Check exact doc path first
-      let targetDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ 
-        where: { path: `companies/${companyId}/active_shifts/${employeeId}` } 
-      }));
+      // Collect all search keys
+      const searchKeys = new Set<string>();
+      if (employeeId && employeeId !== 'undefined' && employeeId !== 'null') searchKeys.add(employeeId);
+      if (queryUserId && queryUserId !== 'undefined' && queryUserId !== 'null') searchKeys.add(queryUserId);
+      if (queryEmail && queryEmail !== 'undefined' && queryEmail !== 'null') searchKeys.add(queryEmail);
 
-      // 2. If not found and queryUserId provided, check user path
-      if (!targetDoc && queryUserId) {
+      let targetDoc: any = null;
+
+      // 1. Direct path lookups
+      for (const key of searchKeys) {
         targetDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ 
-          where: { path: `companies/${companyId}/active_shifts/${queryUserId}` } 
+          where: { path: `companies/${companyId}/active_shifts/${key}` } 
         }));
+        if (targetDoc) break;
       }
 
-      // 3. If still not found, search all active shifts for this company
+      // 2. Fallback search across all active shifts in this company
       if (!targetDoc) {
         const allActiveShifts = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
           where: { collection: `companies/${companyId}/active_shifts` }
@@ -2219,12 +2223,23 @@ function transliterate(str: string): string {
         for (const doc of allActiveShifts) {
           try {
             const parsed = JSON.parse(doc.data);
-            const matchesId = doc.docId === employeeId || parsed.employeeId === employeeId || parsed.userId === employeeId;
-            const matchesQueryUser = queryUserId && (doc.docId === queryUserId || parsed.userId === queryUserId || parsed.employeeId === queryUserId);
-            const matchesEmail = queryEmail && parsed.email && parsed.email.toLowerCase() === queryEmail;
-            const matchesEmailDirect = employeeId.includes('@') && parsed.email && parsed.email.toLowerCase() === employeeId.toLowerCase();
+            const docId = doc.docId;
+            const parsedEmpId = parsed.employeeId;
+            const parsedUserId = parsed.userId;
+            const parsedEmail = (parsed.email || '').toLowerCase();
 
-            if (matchesId || matchesQueryUser || matchesEmail || matchesEmailDirect) {
+            const matchesKey = Array.from(searchKeys).some(k => {
+              const lowerK = k.toLowerCase();
+              return (
+                docId === k ||
+                docId.toLowerCase() === lowerK ||
+                parsedEmpId === k ||
+                parsedUserId === k ||
+                (parsedEmail && parsedEmail === lowerK)
+              );
+            });
+
+            if (matchesKey) {
               targetDoc = doc;
               break;
             }
@@ -2263,11 +2278,11 @@ function transliterate(str: string): string {
       const { employeeId, userId, email, employeeName, shiftStartTime, isShiftActive, date } = req.body;
       if (!employeeId) return res.status(400).json({ error: "employeeId is required" });
 
-      const docPath = `companies/${companyId}/active_shifts/${employeeId}`;
+      const cleanEmail = (email || '').trim().toLowerCase();
       const shiftData = {
         employeeId,
         userId: userId || null,
-        email: email || null,
+        email: cleanEmail || null,
         employeeName,
         shiftStartTime: shiftStartTime || Date.now(),
         isShiftActive: isShiftActive !== false,
@@ -2275,6 +2290,8 @@ function transliterate(str: string): string {
         updatedAt: new Date().toISOString()
       };
 
+      // Primary document
+      const docPath = `companies/${companyId}/active_shifts/${employeeId}`;
       await dbQueryWithRetry(() => prisma.dbDocument.upsert({
         where: { path: docPath },
         create: {
@@ -2288,7 +2305,7 @@ function transliterate(str: string): string {
         }
       }));
 
-      // Also mirror to userId doc if different for instant primary key lookup
+      // Mirror to userId doc if provided and distinct
       if (userId && userId !== employeeId) {
         const userDocPath = `companies/${companyId}/active_shifts/${userId}`;
         await dbQueryWithRetry(() => prisma.dbDocument.upsert({
@@ -2297,6 +2314,23 @@ function transliterate(str: string): string {
             path: userDocPath,
             collection: `companies/${companyId}/active_shifts`,
             docId: userId,
+            data: JSON.stringify(shiftData)
+          },
+          update: {
+            data: JSON.stringify(shiftData)
+          }
+        })).catch(() => null);
+      }
+
+      // Mirror to email doc if provided and distinct
+      if (cleanEmail && cleanEmail !== employeeId && cleanEmail !== userId) {
+        const emailDocPath = `companies/${companyId}/active_shifts/${cleanEmail}`;
+        await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+          where: { path: emailDocPath },
+          create: {
+            path: emailDocPath,
+            collection: `companies/${companyId}/active_shifts`,
+            docId: cleanEmail,
             data: JSON.stringify(shiftData)
           },
           update: {
@@ -2316,24 +2350,32 @@ function transliterate(str: string): string {
     try {
       const { companyId } = req.params;
       const { employeeId, userId, email, elapsedSeconds } = req.body;
-      if (!employeeId) return res.status(400).json({ error: "employeeId is required" });
+      if (!employeeId && !userId && !email) return res.status(400).json({ error: "employeeId, userId or email required" });
 
-      const docPath = `companies/${companyId}/active_shifts/${employeeId}`;
-      await dbQueryWithRetry(() => prisma.dbDocument.delete({ where: { path: docPath } }).catch(() => null));
+      const cleanEmail = (email || '').trim().toLowerCase();
+      const keysToDelete = new Set<string>();
+      if (employeeId) keysToDelete.add(employeeId);
+      if (userId) keysToDelete.add(userId);
+      if (cleanEmail) keysToDelete.add(cleanEmail);
 
-      if (userId) {
-        const userDocPath = `companies/${companyId}/active_shifts/${userId}`;
-        await dbQueryWithRetry(() => prisma.dbDocument.delete({ where: { path: userDocPath } }).catch(() => null));
+      for (const key of keysToDelete) {
+        const docPath = `companies/${companyId}/active_shifts/${key}`;
+        await dbQueryWithRetry(() => prisma.dbDocument.delete({ where: { path: docPath } }).catch(() => null));
       }
 
-      // Also delete any matching active shift records in company collection
+      // Also scan and delete any doc in collection matching employeeId, userId, or email
       const allShifts = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
         where: { collection: `companies/${companyId}/active_shifts` }
       }));
       for (const d of allShifts) {
         try {
           const p = JSON.parse(d.data);
-          if (p.employeeId === employeeId || (userId && p.userId === userId) || (email && p.email && p.email.toLowerCase() === email.toLowerCase())) {
+          const matches = 
+            (employeeId && (p.employeeId === employeeId || d.docId === employeeId)) ||
+            (userId && (p.userId === userId || d.docId === userId)) ||
+            (cleanEmail && (p.email && p.email.toLowerCase() === cleanEmail || d.docId === cleanEmail));
+
+          if (matches) {
             await dbQueryWithRetry(() => prisma.dbDocument.delete({ where: { path: d.path } }).catch(() => null));
           }
         } catch (e) {}

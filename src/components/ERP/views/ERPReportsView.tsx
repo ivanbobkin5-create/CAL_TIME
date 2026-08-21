@@ -125,13 +125,13 @@ export const ERPReportsView: React.FC<ERPReportsViewProps> = ({
             const edge = Math.round(((ord.totalEdgeM || 0) / Math.max(ord.partsCount || 1, 1)) * count * 10) / 10;
             const holes = count * 6; // ~6 holes per part average
 
-            // Assign responsible employee for stage or fallback to main employee
+            // Assign responsible employee for stage or fallback to main employee name
             const empName = ord.responsibleEmployeeName || 'Оператор цеха';
-            const empObj = employees.find(e => e.name === empName) || employees[0];
+            const empObj = employees.find(e => e.name === empName);
 
             generatedAuditEvents.push({
               id: `evt-${ord.id}-${stId}-${matName}`,
-              employeeId: empObj?.id || 'emp-1',
+              employeeId: empObj?.id || 'unknown',
               employeeName: empObj?.name || empName,
               orderId: ord.id,
               orderNumber: ord.orderNumber,
@@ -154,10 +154,11 @@ export const ERPReportsView: React.FC<ERPReportsViewProps> = ({
     if (ord.packages && ord.packages.length > 0) {
       ord.packages.forEach(pkg => {
         if (pkg.isShipped) {
+          const shippedEmp = employees.find(e => e.id === ord.shippedByEmployeeId) || employees.find(e => e.name === ord.shippedByEmployeeName);
           generatedAuditEvents.push({
             id: `evt-pkg-${pkg.id}`,
-            employeeId: ord.shippedByEmployeeId || 'emp-1',
-            employeeName: ord.shippedByEmployeeName || ord.driverInfo?.driverName || 'Водитель-экспедитор',
+            employeeId: shippedEmp?.id || ord.shippedByEmployeeId || 'unknown',
+            employeeName: shippedEmp?.name || ord.shippedByEmployeeName || ord.driverInfo?.driverName || 'Водитель-экспедитор',
             orderId: ord.id,
             orderNumber: ord.orderNumber,
             stageId: 'shipping',
@@ -181,8 +182,8 @@ export const ERPReportsView: React.FC<ERPReportsViewProps> = ({
   const totalPackagesPacked = filteredOrders.reduce((sum, o) => sum + (o.packages?.length || 0), 0);
   const totalShippedOrders = filteredOrders.filter(o => o.status === 'shipped' || o.status === 'completed').length;
 
-  // Employee Specific Calculations
-  const productionEmployees = employees.filter(e => e.isProductionEmployee !== false);
+  // Employee Specific Calculations (exclude outsource employees from internal piecework report)
+  const productionEmployees = employees.filter(e => e.isProductionEmployee !== false && e.employmentType !== 'outsource');
 
   const employeeStats = productionEmployees.map(emp => {
     const empNameFirst = emp.name ? emp.name.toLowerCase().split(' ')[0] : '';

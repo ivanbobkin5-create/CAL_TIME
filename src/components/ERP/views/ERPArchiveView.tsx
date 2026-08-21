@@ -32,7 +32,7 @@ export const ERPArchiveView: React.FC<ERPArchiveViewProps> = ({
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
 
-  // All archived orders: status is completed/shipped or currentStage is ready/shipping
+  // All archived orders: status is strictly completed or shipped (when handed over to driver)
   const archivedOrders = useMemo(() => {
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0];
@@ -40,7 +40,7 @@ export const ERPArchiveView: React.FC<ERPArchiveViewProps> = ({
     const monthAgo = new Date(now.getTime() - 30 * 24 * 3600 * 1000).toISOString().split('T')[0];
 
     return orders.filter(o => {
-      const isArchived = o.status === 'completed' || o.status === 'shipped' || o.currentStage === 'ready';
+      const isArchived = o.status === 'completed' || o.status === 'shipped';
       if (!isArchived) return false;
 
       // Text search

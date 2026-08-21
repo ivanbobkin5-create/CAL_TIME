@@ -863,6 +863,108 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
               </select>
             </div>
 
+            {/* QR Code / Barcode Template Builder */}
+            <div className="p-5 bg-gradient-to-br from-indigo-950 via-slate-900 to-blue-950 text-white rounded-3xl border border-indigo-400/30 shadow-lg space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-500/20 border border-indigo-400/40 flex items-center justify-center shrink-0">
+                    <QrCode className="w-5 h-5 text-indigo-300" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-white text-sm">
+                      Формат составного QR-кода / Штрихкода на бирке
+                    </h4>
+                    <p className="text-xs text-indigo-200 mt-0.5">
+                      Укажите из каких полей формируется QR-код при сканировании на станках или ручными сканерами.
+                    </p>
+                  </div>
+                </div>
+
+                <span className="px-3 py-1 rounded-full bg-indigo-500/20 border border-indigo-400/40 text-[11px] font-mono font-bold text-indigo-300 shrink-0">
+                  QR Template
+                </span>
+              </div>
+
+              {/* Template Input */}
+              <div className="space-y-2">
+                <label className="block text-[11px] font-bold text-indigo-200 uppercase tracking-wider">
+                  Шаблон кодирования QR (переменные: &#123;orderNumber&#125;, &#123;pos&#125;, &#123;material&#125;, &#123;length&#125;, &#123;width&#125;)
+                </label>
+                <input
+                  type="text"
+                  value={formData.birkaQrFormatTemplate ?? '{orderNumber}-{pos}'}
+                  onChange={(e) => setFormData({ ...formData, birkaQrFormatTemplate: e.target.value })}
+                  placeholder="Например: {orderNumber}-{pos} или {orderNumber}_{pos}"
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-950/80 border border-indigo-400/50 font-mono text-sm font-bold text-indigo-200 focus:ring-2 focus:ring-indigo-400 outline-none"
+                />
+              </div>
+
+              {/* Quick Preset Buttons */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-xs text-slate-400 font-medium">Быстрые шаблоны:</span>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{orderNumber}-{pos}' })}
+                  className="px-2.5 py-1 rounded-lg bg-indigo-950 border border-indigo-700/60 hover:bg-indigo-800 text-indigo-200 font-mono text-xs transition-colors cursor-pointer"
+                >
+                  [Заказ]-[Позиция]
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{orderNumber}_{pos}' })}
+                  className="px-2.5 py-1 rounded-lg bg-indigo-950 border border-indigo-700/60 hover:bg-indigo-800 text-indigo-200 font-mono text-xs transition-colors cursor-pointer"
+                >
+                  [Заказ]_[Позиция]
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{orderNumber}#{pos}' })}
+                  className="px-2.5 py-1 rounded-lg bg-indigo-950 border border-indigo-700/60 hover:bg-indigo-800 text-indigo-200 font-mono text-xs transition-colors cursor-pointer"
+                >
+                  [Заказ]#[Позиция]
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{pos}' })}
+                  className="px-2.5 py-1 rounded-lg bg-indigo-950 border border-indigo-700/60 hover:bg-indigo-800 text-indigo-200 font-mono text-xs transition-colors cursor-pointer"
+                >
+                  [Только Позиция]
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{orderNumber}-{material}-{pos}' })}
+                  className="px-2.5 py-1 rounded-lg bg-indigo-950 border border-indigo-700/60 hover:bg-indigo-800 text-indigo-200 font-mono text-xs transition-colors cursor-pointer"
+                >
+                  [Заказ]-[Материал]-[Позиция]
+                </button>
+              </div>
+
+              {/* Live Preview Card */}
+              <div className="bg-slate-950/90 rounded-2xl border border-indigo-500/30 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="text-[10px] font-bold uppercase text-indigo-400 tracking-wider">
+                    Интерактивный пример результата сканирования бирки:
+                  </div>
+                  <div className="text-xs text-slate-300 font-medium">
+                    Заказ: <span className="font-bold text-white">1042</span> | Поз: <span className="font-bold text-white">12</span> | Материал: <span className="font-bold text-white">ЛДСП 16</span> | Размер: <span className="font-bold text-white">700x500</span>
+                  </div>
+                </div>
+
+                <div className="bg-indigo-950/90 border-2 border-indigo-400/80 rounded-xl px-4 py-2 flex items-center gap-3 shrink-0">
+                  <QrCode className="w-6 h-6 text-indigo-300" />
+                  <div className="font-mono font-black text-sm text-emerald-300 tracking-wide">
+                    {(formData.birkaQrFormatTemplate || '{orderNumber}-{pos}')
+                      .replace('{orderNumber}', '1042')
+                      .replace('{pos}', '12')
+                      .replace('{material}', 'ЛДСП_16')
+                      .replace('{length}', '700')
+                      .replace('{width}', '500')
+                    }
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Parameters Mapping Grid */}
             <div className="space-y-3">
               {BIRKA_PARAM_DESCRIPTIONS.map((param) => {

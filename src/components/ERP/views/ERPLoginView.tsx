@@ -281,6 +281,7 @@ export const ERPLoginView: React.FC<ERPLoginViewProps> = ({
 
       const finalUserData = {
         uid,
+        id: uid || userProfile?.id || userProfile?.uid,
         email: cleanEmail,
         displayName: userProfile?.displayName || userProfile?.name || cleanEmail.split('@')[0],
         role: userProfile?.role || (isSuperAdmin ? 'admin' : 'employee'),

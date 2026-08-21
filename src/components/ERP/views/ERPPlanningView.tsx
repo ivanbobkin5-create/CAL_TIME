@@ -131,6 +131,35 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
     }
   };
 
+  const handleAssemblyUploadForOrder = async (order: ProductionOrder, file: File) => {
+    if (order.assemblyFileData) {
+      if (!window.confirm(`К заказу ${order.orderNumber} уже прикреплен файл Сборка "${order.assemblyFileData.fileName}". Перезаписать файл Сборки?`)) {
+        return;
+      }
+    }
+
+    setUploadingOrderId(order.id);
+    try {
+      const textContent = await file.text();
+      const updatedOrder: ProductionOrder = {
+        ...order,
+        assemblyFileData: {
+          fileName: file.name,
+          fileSize: file.size,
+          uploadedAt: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('ru-RU'),
+          fileContent: textContent.substring(0, 100000)
+        }
+      };
+
+      onUpdateOrder(updatedOrder);
+      alert(`Файл Сборка "${file.name}" прикреплен к заказу ${order.orderNumber}`);
+    } catch (err: any) {
+      alert(err.message || 'Ошибка прикрепления файла Сборка');
+    } finally {
+      setUploadingOrderId(null);
+    }
+  };
+
   const handleLaunchToProduction = (order: ProductionOrder, e: React.MouseEvent) => {
     e.stopPropagation();
     const plannedDate = order.plannedCuttingDate || new Date().toISOString().split('T')[0];
@@ -444,6 +473,16 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                         <span>Фурнитура не загружена</span>
                       </span>
                     )}
+
+                    {order.assemblyFileData ? (
+                      <span 
+                        className="inline-flex items-center gap-1.5 text-xs font-bold text-purple-900 bg-purple-50 px-3 py-1.5 rounded-xl border border-purple-200 shadow-2xs max-w-[240px] truncate"
+                        title={`Файл Сборка: ${order.assemblyFileData.fileName} (${order.assemblyFileData.uploadedAt || ''})`}
+                      >
+                        <Wrench className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+                        <span className="truncate">Сборка: {order.assemblyFileData.fileName}</span>
+                      </span>
+                    ) : null}
                   </div>
 
                   {/* Right: Date Picker, Upload & Launch Button */}
@@ -502,6 +541,25 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           if (file) handleHardwareUploadForOrder(order, file);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+
+                    {/* Upload Assembly File Button */}
+                    <label 
+                      className="px-3.5 py-2.5 rounded-2xl bg-purple-50 hover:bg-purple-600 hover:text-white border border-purple-200 text-xs font-bold text-purple-700 shadow-2xs transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                      title="Загрузить файл Сборка (.sb, .csv, .txt, .pdf, .json, .xml)"
+                    >
+                      <Wrench className="w-3.5 h-3.5" />
+                      <span>{order.assemblyFileData ? 'Заменить Сборку' : '+ Файл Сборка'}</span>
+                      <input
+                        type="file"
+                        accept=".sb,.csv,.tsv,.txt,.pdf,.json,.xml,.xlsx,.xls"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleAssemblyUploadForOrder(order, file);
                           e.target.value = '';
                         }}
                       />

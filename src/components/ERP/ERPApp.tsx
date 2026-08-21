@@ -244,6 +244,82 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
     return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
+  // Helper to fetch and sync active shift across devices
+  const fetchAndApplyActiveShift = async (userOverride?: any, employeesOverride?: ERPEmployee[], companyOverride?: any) => {
+    const activeUser = userOverride || authUser;
+    const activeComp = companyOverride || company;
+    const empList = employeesOverride || employees;
+    const targetCompId = activeComp?.id || aliasOrId;
+
+    if (!activeUser || !targetCompId) return;
+
+    const uId = activeUser.id || activeUser.uid;
+    const uEmail = (activeUser.email || '').trim().toLowerCase();
+
+    const matched = empList.find(e => 
+      (uEmail && e.email && e.email.trim().toLowerCase() === uEmail) ||
+      (uId && (e.id === uId || e.userId === uId))
+    );
+
+    const activeKey = matched?.id || uId || uEmail || 'emp-user-1';
+
+    try {
+      const shiftParams = new URLSearchParams();
+      if (uId) shiftParams.set('userId', uId);
+      if (uEmail) shiftParams.set('email', uEmail);
+      if (matched?.userId) shiftParams.set('userId', matched.userId);
+      if (matched?.email) shiftParams.set('email', matched.email.trim().toLowerCase());
+
+      const shiftRes = await fetch(`/api/erp/${targetCompId}/active-shift/${activeKey}?${shiftParams.toString()}`);
+      if (shiftRes.ok) {
+        const shiftData = await shiftRes.json();
+        const activeS = shiftData.activeShift || (shiftData.isShiftActive ? shiftData : null);
+
+        if (activeS && activeS.isShiftActive && activeS.shiftStartTime) {
+          const start = Number(activeS.shiftStartTime);
+          setIsShiftActive(true);
+          setShiftStartTime(start);
+
+          try {
+            const shiftStr = JSON.stringify(activeS);
+            if (activeKey) localStorage.setItem(`erp_active_shift_${targetCompId}_${activeKey}`, shiftStr);
+            if (uId) localStorage.setItem(`erp_active_shift_${targetCompId}_${uId}`, shiftStr);
+            if (uEmail) localStorage.setItem(`erp_active_shift_${targetCompId}_${uEmail}`, shiftStr);
+          } catch (e) {}
+        } else {
+          setIsShiftActive(false);
+          setShiftStartTime(null);
+          try {
+            if (activeKey) localStorage.removeItem(`erp_active_shift_${targetCompId}_${activeKey}`);
+            if (uId) localStorage.removeItem(`erp_active_shift_${targetCompId}_${uId}`);
+            if (uEmail) localStorage.removeItem(`erp_active_shift_${targetCompId}_${uEmail}`);
+          } catch (e) {}
+        }
+      }
+    } catch (shiftErr) {
+      console.warn('Error fetching active shift:', shiftErr);
+      try {
+        const keys = [activeKey, uId, uEmail].filter(Boolean);
+        let found: any = null;
+        for (const k of keys) {
+          const localStr = localStorage.getItem(`erp_active_shift_${targetCompId}_${k}`);
+          if (localStr) {
+            const parsedShift = JSON.parse(localStr);
+            const start = Number(parsedShift.shiftStartTime || 0);
+            if (parsedShift.isShiftActive && start && (Date.now() - start < 24 * 3600 * 1000)) {
+              found = parsedShift;
+              break;
+            }
+          }
+        }
+        if (found) {
+          setIsShiftActive(true);
+          setShiftStartTime(Number(found.shiftStartTime));
+        }
+      } catch (e) {}
+    }
+  };
+
   // Pre-cabinet Loading & Data Synchronization State
   const [isDataReady, setIsDataReady] = useState<boolean>(false);
   const [showMobileMenuDrawer, setShowMobileMenuDrawer] = useState<boolean>(false);
@@ -418,64 +494,8 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
 
         setEmployees(loadedEmployees);
 
-        // Find employee id for active shift synchronization across PC and phone
-        const matchedCurrentEmployee = loadedEmployees.find(e => 
-          (e.email && parsedUser?.email && e.email.toLowerCase() === parsedUser.email.toLowerCase()) ||
-          (e.id && parsedUser?.id && e.id === parsedUser.id) ||
-          (e.userId && parsedUser?.id && e.userId === parsedUser.id)
-        );
-
-        const activeEmployeeKey = matchedCurrentEmployee?.id || parsedUser?.id || 'emp-user-1';
-
-        // 2. Fetch active shift using resolved employee key, userId, and email for true multi-device sync
-        try {
-          const shiftParams = new URLSearchParams();
-          if (parsedUser?.id) shiftParams.set('userId', parsedUser.id);
-          if (parsedUser?.email) shiftParams.set('email', parsedUser.email);
-          if (matchedCurrentEmployee?.userId) shiftParams.set('userId', matchedCurrentEmployee.userId);
-          if (matchedCurrentEmployee?.email) shiftParams.set('email', matchedCurrentEmployee.email);
-
-          const shiftRes = await fetch(`/api/erp/${comp.id}/active-shift/${activeEmployeeKey}?${shiftParams.toString()}`);
-          if (shiftRes.ok) {
-            const shiftData = await shiftRes.json();
-            const activeS = shiftData.activeShift || (shiftData.isShiftActive ? shiftData : null);
-            if (activeS && activeS.isShiftActive && activeS.shiftStartTime) {
-              setIsShiftActive(true);
-              setShiftStartTime(Number(activeS.shiftStartTime));
-              try {
-                localStorage.setItem(`erp_active_shift_${comp.id}_${activeEmployeeKey}`, JSON.stringify(activeS));
-              } catch (e) {}
-            } else {
-              // Check local storage fallback only if valid
-              const localShift = localStorage.getItem(`erp_active_shift_${comp.id}_${activeEmployeeKey}`);
-              if (localShift) {
-                const parsedShift = JSON.parse(localShift);
-                const start = Number(parsedShift.shiftStartTime || 0);
-                if (parsedShift.isShiftActive && start && (Date.now() - start < 24 * 3600 * 1000)) {
-                  setIsShiftActive(true);
-                  setShiftStartTime(start);
-                } else {
-                  setIsShiftActive(false);
-                  setShiftStartTime(null);
-                }
-              } else {
-                setIsShiftActive(false);
-                setShiftStartTime(null);
-              }
-            }
-          }
-        } catch (shiftErr) {
-          console.warn('Error fetching active shift:', shiftErr);
-          const localShift = localStorage.getItem(`erp_active_shift_${comp.id}_${activeEmployeeKey}`);
-          if (localShift) {
-            const parsedShift = JSON.parse(localShift);
-            const start = Number(parsedShift.shiftStartTime || 0);
-            if (parsedShift.isShiftActive && start && (Date.now() - start < 24 * 3600 * 1000)) {
-              setIsShiftActive(true);
-              setShiftStartTime(start);
-            }
-          }
-        }
+        // Fetch active shift using resolved user and employees for true multi-device sync
+        await fetchAndApplyActiveShift(parsedUser, loadedEmployees, comp);
 
         if (ordersRes.status === 'fulfilled' && ordersRes.value.ok) {
           const ordersData = await ordersRes.value.json();
@@ -522,6 +542,36 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
   useEffect(() => {
     loadAllERPData();
   }, [aliasOrId]);
+
+  // Periodic and tab visibility background sync for cross-device shift persistence
+  useEffect(() => {
+    if (!authUser || !company) return;
+
+    // Periodic sync every 15s to catch shifts started or ended on other devices
+    const interval = setInterval(() => {
+      fetchAndApplyActiveShift();
+    }, 15000);
+
+    // Instant sync when user switches tabs or returns to app on mobile/desktop
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchAndApplyActiveShift();
+      }
+    };
+
+    const handleFocus = () => {
+      fetchAndApplyActiveShift();
+    };
+
+    window.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [authUser, company, employees]);
 
   const handleSyncOrders = async () => {
     if (!company?.id) return;
@@ -748,9 +798,10 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
   const handleStartShift = async () => {
     const activeEmp = matchedEmp || employees[0];
     const todayStr = new Date().toISOString().split('T')[0];
-    const empId = activeEmp?.id || authUser?.id || 'emp-user-1';
-    const userId = authUser?.id || activeEmp?.userId || null;
-    const userEmail = authUser?.email || activeEmp?.email || null;
+    const userId = authUser?.id || authUser?.uid || activeEmp?.userId || null;
+    const userEmail = (authUser?.email || activeEmp?.email || '').trim().toLowerCase();
+    const empId = activeEmp?.id || userId || 'emp-user-1';
+    const empName = activeEmp?.name || displayUserName;
     const now = Date.now();
 
     // Check if employee has an explicit day off in the schedule grid
@@ -767,18 +818,24 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
     setShiftStartTime(now);
     setIsOvertimeApproved(false);
 
-    // Persist to backend and localStorage for cross-device consistency
+    // Persist to backend and localStorage under all matching identifiers for cross-device consistency
     const targetCompId = company?.id || aliasOrId;
     if (targetCompId) {
+      const shiftObj = {
+        isShiftActive: true,
+        shiftStartTime: now,
+        employeeId: empId,
+        userId,
+        email: userEmail,
+        employeeName: empName,
+        date: todayStr
+      };
+
       try {
-        localStorage.setItem(`erp_active_shift_${targetCompId}_${empId}`, JSON.stringify({
-          isShiftActive: true,
-          shiftStartTime: now,
-          employeeId: empId,
-          userId,
-          email: userEmail,
-          employeeName: activeEmp?.name || displayUserName
-        }));
+        const jsonStr = JSON.stringify(shiftObj);
+        if (empId) localStorage.setItem(`erp_active_shift_${targetCompId}_${empId}`, jsonStr);
+        if (userId) localStorage.setItem(`erp_active_shift_${targetCompId}_${userId}`, jsonStr);
+        if (userEmail) localStorage.setItem(`erp_active_shift_${targetCompId}_${userEmail}`, jsonStr);
 
         await fetch(`/api/erp/${targetCompId}/active-shift`, {
           method: 'POST',
@@ -787,7 +844,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
             employeeId: empId,
             userId,
             email: userEmail,
-            employeeName: activeEmp?.name || displayUserName,
+            employeeName: empName,
             shiftStartTime: now,
             date: todayStr
           })
@@ -804,22 +861,25 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
     setIsOvertimeApproved(false);
 
     const activeEmp = matchedEmp || employees[0];
-    const empId = activeEmp?.id || authUser?.id || 'emp-user-1';
-    const userId = authUser?.id || activeEmp?.userId || null;
-    const userEmail = authUser?.email || activeEmp?.email || null;
+    const userId = authUser?.id || authUser?.uid || activeEmp?.userId || null;
+    const userEmail = (authUser?.email || activeEmp?.email || '').trim().toLowerCase();
+    const empId = activeEmp?.id || userId || 'emp-user-1';
     const targetCompId = company?.id || aliasOrId;
 
     if (targetCompId) {
       try {
-        localStorage.removeItem(`erp_active_shift_${targetCompId}_${empId}`);
+        if (empId) localStorage.removeItem(`erp_active_shift_${targetCompId}_${empId}`);
         if (userId) localStorage.removeItem(`erp_active_shift_${targetCompId}_${userId}`);
+        if (userEmail) localStorage.removeItem(`erp_active_shift_${targetCompId}_${userEmail}`);
+
         await fetch(`/api/erp/${targetCompId}/end-shift`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             employeeId: empId,
             userId,
-            email: userEmail
+            email: userEmail,
+            elapsedSeconds: shiftElapsedSeconds
           })
         });
       } catch (err) {
@@ -993,10 +1053,11 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
   ];
 
   // Match current logged in user in employees list or user profile
+  const activeUserId = authUser?.id || authUser?.uid;
   const matchedEmp = employees.find(e => 
     (e.email && authUser?.email && e.email.toLowerCase() === authUser.email.toLowerCase()) ||
-    (e.id && authUser?.id && e.id === authUser.id) ||
-    (e.userId && authUser?.id && e.userId === authUser.id)
+    (e.id && activeUserId && e.id === activeUserId) ||
+    (e.userId && activeUserId && e.userId === activeUserId)
   );
 
   const rawName = matchedEmp?.name 
