@@ -1947,11 +1947,19 @@ function transliterate(str: string): string {
         return res.json({ success: true, activeShift: null });
       }
       const data = JSON.parse(doc.data);
+      const start = Number(data.shiftStartTime || data.startTime || 0);
       // If shift is older than 24 hours, auto-expire it
-      if (data.startTime && (Date.now() - data.startTime) > 24 * 3600 * 1000) {
+      if (start && (Date.now() - start) > 24 * 3600 * 1000) {
         return res.json({ success: true, activeShift: null });
       }
-      res.json({ success: true, activeShift: data });
+      res.json({ 
+        success: true, 
+        activeShift: {
+          ...data,
+          shiftStartTime: start,
+          isShiftActive: data.isShiftActive !== false
+        }
+      });
     } catch (e: any) {
       console.error("Error fetching active shift:", e);
       res.status(500).json({ error: String(e) });

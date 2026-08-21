@@ -36,7 +36,7 @@ interface ERPProductionViewProps {
   settings?: ERPCompanySettings;
   onUpdateOrderStatus: (orderId: string, nextStage: ProductionStageId) => void;
   onUpdateOrder?: (updatedOrder: ProductionOrder) => void;
-  onSelectOrder: (order: ProductionOrder) => void;
+  onSelectOrder: (order: ProductionOrder, stageId?: ProductionStageId) => void;
 }
 
 export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
@@ -376,7 +376,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                   return (
                     <div
                       key={order.id}
-                      onClick={() => onSelectOrder(order)}
+                      onClick={() => onSelectOrder(order, selectedStageId || order.currentStage)}
                       className="bg-white rounded-3xl p-5 border border-slate-200/90 hover:border-blue-400 transition-all shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4 cursor-pointer"
                     >
                       {/* Left: Info */}
@@ -517,7 +517,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
-                            onSelectOrder(order);
+                            onSelectOrder(order, selectedStageId || order.currentStage);
                           }}
                           className="px-5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs shadow-md shadow-blue-600/20 transition-all flex items-center gap-2 cursor-pointer"
                         >

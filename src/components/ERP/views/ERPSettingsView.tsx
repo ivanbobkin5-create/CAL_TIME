@@ -343,44 +343,64 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
         </button>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 border-b border-slate-200">
-        {[
-          { id: 'stages', label: 'Производственные участки', icon: Factory, count: enabledStagesList.length },
-          { id: 'birka', label: 'Парсер бирок', icon: Table },
-          { id: 'rules', label: 'Правила примечаний', icon: Sliders, count: formData.noteRules?.length },
-          { id: 'tariffs', label: 'Тарифы и расценки', icon: Coins },
-          { id: 'additional', label: 'Доп. работы', icon: Wrench },
-          { id: 'equipment', label: 'Оборудование и план', icon: Scissors, count: formData.equipmentList?.length },
-          { id: 'labels', label: 'Маркировка мест', icon: Package },
-          { id: 'shifts', label: 'Режим сменности', icon: Clock }
-        ].map(tab => {
-          const Icon = tab.icon;
-          const isActive = activeTab === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id as any)}
-              className={`px-4 py-2.5 rounded-2xl font-bold text-xs flex items-center gap-2 transition-all cursor-pointer whitespace-nowrap ${
-                isActive
-                  ? 'bg-blue-600 text-white shadow-md shadow-blue-200'
-                  : 'bg-white text-slate-700 hover:bg-slate-50 border border-slate-200'
-              }`}
-            >
-              <Icon className="w-4 h-4" />
-              <span>{tab.label}</span>
-              {tab.count !== undefined && (
-                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-mono ${
-                  isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
-                }`}>
-                  {tab.count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </div>
+      {/* Settings Layout: Left Sidebar for Sections + Right Content */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left Sections Sidebar (4 cols on lg, full width on mobile) */}
+        <div className="lg:col-span-4 bg-white rounded-3xl p-3 sm:p-4 border border-slate-200/80 shadow-sm space-y-1.5 lg:sticky lg:top-24">
+          <div className="text-[11px] font-black text-slate-400 uppercase tracking-wider px-3 py-2">
+            Разделы конфигурации
+          </div>
+          {[
+            { id: 'stages', label: 'Производственные участки', desc: 'Маршруты, цеха и этапы', icon: Factory, count: enabledStagesList.length },
+            { id: 'birka', label: 'Парсер бирок', desc: 'Колонки Excel / Базис / bCAD', icon: Table },
+            { id: 'rules', label: 'Правила примечаний', desc: 'Авто-подсветка пазов и ЧПУ', icon: Sliders, count: formData.noteRules?.length },
+            { id: 'tariffs', label: 'Тарифы и расценки', desc: 'Сдельная оплата за м², кромку', icon: Coins },
+            { id: 'additional', label: 'Доп. работы', desc: 'Столешницы, цоколи, штанги', icon: Wrench },
+            { id: 'equipment', label: 'Оборудование и план', desc: 'Станки и мощности смены', icon: Scissors, count: formData.equipmentList?.length },
+            { id: 'labels', label: 'Маркировка мест', desc: 'Термоэтикетки и штрихкоды', icon: Package },
+            { id: 'shifts', label: 'Режим сменности', desc: 'График, часы и нормативы', icon: Clock }
+          ].map(tab => {
+            const Icon = tab.icon;
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id as any)}
+                className={`w-full text-left p-3 rounded-2xl font-bold text-xs flex items-center justify-between gap-3 transition-all cursor-pointer ${
+                  isActive
+                    ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+                    : 'bg-white text-slate-700 hover:bg-slate-50 hover:text-slate-900 border border-transparent hover:border-slate-200'
+                }`}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${
+                    isActive ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'
+                  }`}>
+                    <Icon className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="truncate font-black">{tab.label}</div>
+                    <div className={`text-[10px] truncate ${isActive ? 'text-blue-100' : 'text-slate-400 font-normal'}`}>
+                      {tab.desc}
+                    </div>
+                  </div>
+                </div>
+
+                {tab.count !== undefined && (
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono shrink-0 ${
+                    isActive ? 'bg-white/20 text-white font-bold' : 'bg-slate-100 text-slate-600'
+                  }`}>
+                    {tab.count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Right Active Section Content Area (8 cols) */}
+        <div className="lg:col-span-8 space-y-6">
 
       {/* TAB 1: PRODUCTION STAGES */}
       {activeTab === 'stages' && (
@@ -1227,15 +1247,17 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
         </div>
       )}
 
-      {/* Bottom Save Bar */}
-      <div className="flex justify-end">
-        <button
-          onClick={() => handleSave()}
-          className="px-8 py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-lg shadow-blue-200 transition-all flex items-center gap-2 cursor-pointer"
-        >
-          {isSaved ? <CheckCircle2 className="w-5 h-5 text-emerald-300" /> : <Save className="w-5 h-5" />}
-          {isSaved ? 'Сохранено!' : 'Сохранить все настройки'}
-        </button>
+          {/* Bottom Save Bar inside content */}
+          <div className="flex justify-end pt-4">
+            <button
+              onClick={() => handleSave()}
+              className="px-8 py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-sm shadow-lg shadow-blue-200 transition-all flex items-center gap-2 cursor-pointer"
+            >
+              {isSaved ? <CheckCircle2 className="w-5 h-5 text-emerald-300" /> : <Save className="w-5 h-5" />}
+              {isSaved ? 'Сохранено!' : 'Сохранить все настройки'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

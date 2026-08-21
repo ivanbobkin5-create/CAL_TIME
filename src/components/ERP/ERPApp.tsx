@@ -88,6 +88,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
   const [syncStatusText, setSyncStatusText] = useState<string | null>(null);
   const [orderSource, setOrderSource] = useState<string>('projects');
   const [selectedOrderForWorkspace, setSelectedOrderForWorkspace] = useState<ProductionOrder | null>(null);
+  const [workspaceStageId, setWorkspaceStageId] = useState<ProductionStageId | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // Helper to load order state from localStorage
@@ -319,12 +320,10 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
 
       // Fetch employees, orders, schedule and active shift in parallel
       try {
-        const currentEmpId = parsedUser?.id || 'emp-user-1';
-        const [empRes, ordersRes, scheduleRes, shiftRes] = await Promise.allSettled([
+        const [empRes, ordersRes, scheduleRes] = await Promise.allSettled([
           fetch(`/api/erp/${comp.id}/employees`),
           fetch(`/api/erp/${comp.id}/orders`),
-          fetch(`/api/erp/${comp.id}/schedule`),
-          fetch(`/api/erp/${comp.id}/active-shift/${currentEmpId}`)
+          fetch(`/api/erp/${comp.id}/schedule`)
         ]);
 
         // 1. Process schedule
@@ -340,26 +339,6 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
           try {
             const localSch = localStorage.getItem(`erp_schedule_entries_${comp.id}`);
             if (localSch) setScheduleEntries(JSON.parse(localSch));
-          } catch (e) {}
-        }
-
-        // 2. Process active shift
-        if (shiftRes.status === 'fulfilled' && shiftRes.value.ok) {
-          const shiftData = await shiftRes.value.json();
-          if (shiftData.isShiftActive && shiftData.shiftStartTime) {
-            setIsShiftActive(true);
-            setShiftStartTime(shiftData.shiftStartTime);
-          }
-        } else {
-          try {
-            const localShift = localStorage.getItem(`erp_active_shift_${comp.id}_${currentEmpId}`);
-            if (localShift) {
-              const parsedShift = JSON.parse(localShift);
-              if (parsedShift.isShiftActive && parsedShift.shiftStartTime) {
-                setIsShiftActive(true);
-                setShiftStartTime(parsedShift.shiftStartTime);
-              }
-            }
           } catch (e) {}
         }
 
@@ -418,6 +397,56 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
         }
 
         setEmployees(loadedEmployees);
+
+        // Find employee id for active shift synchronization across PC and phone
+        const matchedCurrentEmployee = loadedEmployees.find(e => 
+          (e.email && parsedUser?.email && e.email.toLowerCase() === parsedUser.email.toLowerCase()) ||
+          (e.id && parsedUser?.id && e.id === parsedUser.id) ||
+          (e.userId && parsedUser?.id && e.userId === parsedUser.id)
+        );
+
+        const activeEmployeeKey = matchedCurrentEmployee?.id || parsedUser?.id || 'emp-user-1';
+
+        // 2. Fetch active shift using resolved employee key
+        try {
+          const shiftRes = await fetch(`/api/erp/${comp.id}/active-shift/${activeEmployeeKey}`);
+          if (shiftRes.ok) {
+            const shiftData = await shiftRes.json();
+            if (shiftData.activeShift && shiftData.activeShift.isShiftActive && shiftData.activeShift.shiftStartTime) {
+              setIsShiftActive(true);
+              setShiftStartTime(Number(shiftData.activeShift.shiftStartTime));
+              try {
+                localStorage.setItem(`erp_active_shift_${comp.id}_${activeEmployeeKey}`, JSON.stringify(shiftData.activeShift));
+              } catch (e) {}
+            } else if (shiftData.isShiftActive && shiftData.shiftStartTime) {
+              setIsShiftActive(true);
+              setShiftStartTime(Number(shiftData.shiftStartTime));
+              try {
+                localStorage.setItem(`erp_active_shift_${comp.id}_${activeEmployeeKey}`, JSON.stringify(shiftData));
+              } catch (e) {}
+            } else {
+              // Check local storage fallback
+              const localShift = localStorage.getItem(`erp_active_shift_${comp.id}_${activeEmployeeKey}`);
+              if (localShift) {
+                const parsedShift = JSON.parse(localShift);
+                if (parsedShift.isShiftActive && parsedShift.shiftStartTime) {
+                  setIsShiftActive(true);
+                  setShiftStartTime(Number(parsedShift.shiftStartTime));
+                }
+              }
+            }
+          }
+        } catch (shiftErr) {
+          console.warn('Error fetching active shift:', shiftErr);
+          const localShift = localStorage.getItem(`erp_active_shift_${comp.id}_${activeEmployeeKey}`);
+          if (localShift) {
+            const parsedShift = JSON.parse(localShift);
+            if (parsedShift.isShiftActive && parsedShift.shiftStartTime) {
+              setIsShiftActive(true);
+              setShiftStartTime(Number(parsedShift.shiftStartTime));
+            }
+          }
+        }
 
         if (ordersRes.status === 'fulfilled' && ordersRes.value.ok) {
           const ordersData = await ordersRes.value.json();
@@ -1184,6 +1213,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
           {selectedOrderForWorkspace ? (
             <ERPOrderWorkspaceView 
               order={selectedOrderForWorkspace}
+              initialStageId={workspaceStageId}
               settings={settings}
               currentUser={matchedEmp || authUser}
               isShiftActive={isShiftActive}
@@ -1191,7 +1221,10 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
               onLogout={handleLogout}
               isSidebarCollapsed={isSidebarCollapsed}
               onToggleSidebar={() => setIsSidebarCollapsed(prev => !prev)}
-              onBack={() => setSelectedOrderForWorkspace(null)}
+              onBack={() => {
+                setSelectedOrderForWorkspace(null);
+                setWorkspaceStageId(null);
+              }}
               onUpdateOrder={(updated) => handleUpdateOrder(updated)}
               onUpdateOrderStatus={(orderId, nextStage) => handleUpdateOrderStatus(orderId, nextStage)}
               sourceSection={activeSection}
@@ -1206,17 +1239,23 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
                   settings={settings}
                   companyId={company?.id || aliasOrId}
                   onNavigateSection={setActiveSection}
-                  onSelectOrder={(order) => setSelectedOrderForWorkspace(order)}
+                  onSelectOrder={(order) => {
+                    setSelectedOrderForWorkspace(order);
+                    setWorkspaceStageId(order.currentStage || 'cutting');
+                  }}
                 />
               )}
 
               {activeSection === 'planning' && (
                 <ERPPlanningView 
                   orders={orders} 
-                  employees={employees}
+                  employees={employees} 
                   settings={settings}
                   onUpdateOrder={handleUpdateOrder}
-                  onSelectOrder={(order) => setSelectedOrderForWorkspace(order)}
+                  onSelectOrder={(order) => {
+                    setSelectedOrderForWorkspace(order);
+                    setWorkspaceStageId(order.currentStage || 'cutting');
+                  }}
                 />
               )}
 
@@ -1233,18 +1272,24 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId }) => {
               {activeSection === 'production' && (
                 <ERPProductionView 
                   orders={orders} 
-                  employees={employees}
+                  employees={employees} 
                   settings={settings}
                   onUpdateOrderStatus={handleUpdateOrderStatus}
                   onUpdateOrder={handleUpdateOrder}
-                  onSelectOrder={(order) => setSelectedOrderForWorkspace(order)}
+                  onSelectOrder={(order, stageId) => {
+                    setSelectedOrderForWorkspace(order);
+                    setWorkspaceStageId(stageId || order.currentStage || 'cutting');
+                  }}
                 />
               )}
 
               {activeSection === 'archive' && (
                 <ERPArchiveView 
                   orders={orders} 
-                  onSelectOrder={(order) => setSelectedOrderForWorkspace(order)}
+                  onSelectOrder={(order) => {
+                    setSelectedOrderForWorkspace(order);
+                    setWorkspaceStageId(order.currentStage || 'shipping');
+                  }}
                   onRestoreOrder={(orderId) => handleUpdateOrderStatus(orderId, 'queue')}
                 />
               )}
