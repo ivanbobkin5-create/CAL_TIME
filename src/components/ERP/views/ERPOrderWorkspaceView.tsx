@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   FileText, 
   Upload, 
@@ -194,6 +194,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   } | null>(null);
 
   const [scanErrorMsg, setScanErrorMsg] = useState<string | null>(null);
+  const [scanSuccessMsg, setScanSuccessMsg] = useState<string | null>(null);
   const [showCameraScannerModal, setShowCameraScannerModal] = useState<boolean>(false);
   const [showShiftRequiredModal, setShowShiftRequiredModal] = useState<boolean>(false);
   const [isIdentityConfirmed, setIsIdentityConfirmed] = useState<boolean>(false);
@@ -294,6 +295,18 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
 
   // Stage scanning state for current active scanning stage
   const stageScanning = order.stageScanningProgress?.[currentStage] || {};
+
+  // All scanned part IDs across all materials for the current stage
+  const allScannedPartIds = useMemo(() => {
+    const ids = new Set<string>();
+    Object.values(stageScanning).forEach(matGroup => {
+      if (matGroup && Array.isArray(matGroup.scannedPartIds)) {
+        matGroup.scannedPartIds.forEach(id => ids.add(id));
+      }
+    });
+    return ids;
+  }, [stageScanning]);
+
   const currentMaterialScanning = stageScanning[selectedMaterial] || { scannedPartIds: [], isCompleted: false };
   const scannedPartIds = currentMaterialScanning.scannedPartIds || [];
 
@@ -321,15 +334,9 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       scannerInputRef.current.value = '';
     }
 
-    // Shift check
-    if (!isShiftActive) {
-      setShowShiftRequiredModal(true);
-      setIsIdentityConfirmed(false);
-      playSoundEffect('alert');
-      return;
-    }
-
     setScanErrorMsg(null);
+    setScanSuccessMsg(null);
+
     const cleanCode = cleanRawScannedString(codeToScan);
     if (!cleanCode) {
       scannerInputRef.current?.focus();
@@ -339,10 +346,6 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     const template = settings?.birkaQrFormatTemplate;
     const orderNum = order.orderNumber || '';
 
-    const matchesPart = (d: BirkaDetail) => {
-      return matchDetailToScannedCode(cleanCode, d, template, orderNum, settings?.birkaQrMatchingMode);
-    };
-
     const allOrderDetails = order.birkaData?.details || [];
 
     if (allOrderDetails.length === 0) {
@@ -351,11 +354,22 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       return;
     }
 
-    // Search across ALL details of the order first for maximum reliability
-    const foundPart = allOrderDetails.find(matchesPart);
+    // 1. Match against all details of the order
+    let foundPart = allOrderDetails.find((d: BirkaDetail) => {
+      return matchDetailToScannedCode(cleanCode, d, template, orderNum, settings?.birkaQrMatchingMode);
+    });
+
+    // 2. Fallback: split code into tokens (e.g. if code is "11-0626-11_20.02")
+    if (!foundPart) {
+      const tokens = cleanCode.split(/[_|/\\;:,\-\s]+/).map(t => t.trim()).filter(Boolean);
+      for (const tok of tokens) {
+        foundPart = allOrderDetails.find(d => matchDetailToScannedCode(tok, d, template, orderNum, settings?.birkaQrMatchingMode));
+        if (foundPart) break;
+      }
+    }
 
     if (!foundPart) {
-      setScanErrorMsg(`Деталь с кодом "${cleanCode}" не найдена в заказе №${order.orderNumber || ''}`);
+      setScanErrorMsg(`Код "${cleanCode}" не совпал ни с одной деталью в заказе`);
       playSoundEffect('error');
       return;
     }
@@ -376,14 +390,14 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     if (currentStage === 'edging' && !partNeedsEdge(foundPart)) {
       playSoundEffect('success');
       speakText('Деталь без кромки');
-      setScanErrorMsg(`ℹ️ Деталь №${foundPart.labelNumber} (${foundPart.name}) не требует кромления и не нуждается в обработке на этом участке.`);
+      setScanSuccessMsg(`ℹ️ Деталь №${foundPart.labelNumber} (${foundPart.name}) не требует кромления.`);
       return;
     }
 
     const currentMatScannedIds = order.stageScanningProgress?.[currentStage]?.[targetMaterial]?.scannedPartIds || [];
 
-    if (currentMatScannedIds.includes(foundPart.id)) {
-      setScanErrorMsg(`Деталь №${foundPart.labelNumber} ("${foundPart.name}") уже отсканирована на этом участке`);
+    if (currentMatScannedIds.includes(foundPart.id) || allScannedPartIds.has(foundPart.id)) {
+      setScanSuccessMsg(`Деталь №${foundPart.labelNumber} («${foundPart.name}») уже была отмечена ранее`);
       playSoundEffect('alert');
       return;
     }
@@ -409,6 +423,9 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       stageScanningProgress: updatedStageScanning
     });
 
+    setScanSuccessMsg(`✅ Деталь №${foundPart.labelNumber} «${foundPart.name}» успешно отмечена!`);
+    playSoundEffect('success');
+
     // Check if edging stage detail requires no drilling -> speak and show finished part alert
     if (currentStage === 'edging') {
       const needsPrisadka = detailRequiresPrisadka(foundPart, settings);
@@ -427,7 +444,6 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     const matchedRule = getMatchedNoteRule(foundPart.notes, foundPart.name);
 
     if (hasNoteText || matchedRule) {
-      playSoundEffect('alert');
       const instructionText = hasNoteText 
         ? `ПРИМЕЧАНИЕ К ДЕТАЛИ: "${foundPart.notes}". Обратите внимание на обработку!`
         : matchedRule?.instruction || 'Обратите внимание на инструкцию к этой детали';
@@ -438,8 +454,6 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
         instruction: instructionText,
         color: matchedRule?.color || 'rose'
       });
-    } else {
-      playSoundEffect('success');
     }
   };
 
@@ -472,8 +486,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
 
       if (e.key === 'Enter') {
         const rawCode = isScannerInput
-          ? (scanInput.trim() || (scannerInputRef.current?.value || '').trim())
-          : (barcodeBufferRef.current.trim() || scanInput.trim() || (scannerInputRef.current?.value || '').trim());
+          ? (scannerInputRef.current?.value || scanInput).trim()
+          : (barcodeBufferRef.current || scannerInputRef.current?.value || scanInput).trim();
         const bufferedCode = normalizeBarcodeScan(rawCode);
         if (bufferedCode) {
           e.preventDefault();
@@ -485,12 +499,11 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
 
       if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
         if (isScannerInput) {
-          // If manually typing inside the scanner input, let the browser handle it naturally!
           return;
         }
 
         const now = Date.now();
-        if (now - lastKeyTimeRef.current > 1200) {
+        if (now - lastKeyTimeRef.current > 1000) {
           barcodeBufferRef.current = '';
         }
         lastKeyTimeRef.current = now;
@@ -499,7 +512,6 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
         barcodeBufferRef.current += enChar;
 
         setScanInput(barcodeBufferRef.current);
-        scannerInputRef.current?.focus();
 
         if (bufferTimeoutRef.current) {
           clearTimeout(bufferTimeoutRef.current);
@@ -515,24 +527,30 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       window.removeEventListener('keydown', handleGlobalKeyDown, true);
       if (bufferTimeoutRef.current) clearTimeout(bufferTimeoutRef.current);
     };
-  }, [showCameraScannerModal, scanInput, selectedMaterial, currentMaterialDetails, order, currentStage]);
+  }, [showCameraScannerModal, scanInput, selectedMaterial, currentMaterialDetails, order, currentStage, allScannedPartIds]);
 
   // Toggle single detail scanned status manually
   const toggleDetailScanned = (detail: BirkaDetail) => {
-    const isScanned = scannedPartIds.includes(detail.id);
+    const mat = detail.material || selectedMaterial || 'Без указания материала';
+    const matScanning = stageScanning[mat] || { scannedPartIds: [], isCompleted: false };
+    const matScannedIds = matScanning.scannedPartIds || [];
+
+    const isScanned = allScannedPartIds.has(detail.id);
     let newScannedIds: string[] = [];
     if (isScanned) {
-      newScannedIds = scannedPartIds.filter(id => id !== detail.id);
+      newScannedIds = matScannedIds.filter(id => id !== detail.id);
     } else {
-      newScannedIds = [...scannedPartIds, detail.id];
+      newScannedIds = [...matScannedIds, detail.id];
     }
 
-    const isAllScanned = newScannedIds.length >= currentMaterialDetails.length;
+    const allMatDetails = order.birkaData?.details.filter(d => (d.material || 'Без указания материала') === mat) || [];
+    const isAllScanned = newScannedIds.length >= allMatDetails.length;
+
     const updatedStageScanning = { ...(order.stageScanningProgress || {}) };
     if (!updatedStageScanning[currentStage]) {
       updatedStageScanning[currentStage] = {};
     }
-    updatedStageScanning[currentStage][selectedMaterial] = {
+    updatedStageScanning[currentStage][mat] = {
       scannedPartIds: newScannedIds,
       isCompleted: isAllScanned
     };
@@ -544,6 +562,9 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     });
 
     if (!isScanned) {
+      setScanSuccessMsg(`✅ Деталь №${detail.labelNumber} «${detail.name}» отмечена`);
+      playSoundEffect('success');
+
       if (currentStage === 'edging') {
         const needsPrisadka = detailRequiresPrisadka(detail, settings);
         if (!needsPrisadka) {
@@ -552,7 +573,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
             isOpen: true,
             labelNumber: detail.labelNumber,
             partName: detail.name,
-            materialName: selectedMaterial
+            materialName: mat
           });
         }
       }
@@ -561,7 +582,6 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       const matchedRule = getMatchedNoteRule(detail.notes, detail.name);
 
       if (hasNoteText || matchedRule) {
-        playSoundEffect('alert');
         const instructionText = hasNoteText 
           ? `ПРИМЕЧАНИЕ К ДЕТАЛИ: "${detail.notes}". Обратите внимание на обработку!`
           : matchedRule?.instruction || 'Обратите внимание на инструкцию к этой детали';
@@ -572,9 +592,9 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
           instruction: instructionText,
           color: matchedRule?.color || 'rose'
         });
-      } else {
-        playSoundEffect('success');
       }
+    } else {
+      setScanSuccessMsg(`Деталь №${detail.labelNumber} снята с отметки`);
     }
   };
 
@@ -657,7 +677,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
 
   // Total stage completion status
   const allMaterialGroups = order.birkaData?.materialGroups || [];
-  const totalStageScannedParts = Object.values(stageScanning).reduce((sum: number, m: any) => sum + (m?.scannedPartIds?.length || 0), 0);
+  const totalStageScannedParts = allScannedPartIds.size;
   const totalOrderParts = currentStage === 'edging'
     ? (order.birkaData?.details.filter(partNeedsEdge).length || order.partsCount || 1)
     : (order.partsCount || order.birkaData?.details.length || 1);
@@ -878,8 +898,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                       }
 
                       const isSelected = selectedMaterial === matName;
-                      const matScan = order.stageScanningProgress?.[currentStage]?.[matName];
-                      const scannedCount = matScan?.scannedPartIds?.length || 0;
+                      const scannedCount = matDetails.filter(d => allScannedPartIds.has(d.id)).length;
                       const isComplete = matDetails.length > 0 && scannedCount >= matDetails.length;
 
                       return (
@@ -966,6 +985,14 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                   <p className="text-[11px] text-slate-400 leading-relaxed">
                     Поддерживает сканирование QR-кода бирки (например <code className="text-emerald-300 font-bold">{order.orderNumber || '00-0000-00'}_20.02</code>), штрихкода или номера позиции детали (<code className="text-indigo-300 font-bold">20.02</code>).
                   </p>
+
+                  {/* Scan Success Alert */}
+                  {scanSuccessMsg && (
+                    <div className="p-3.5 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 text-emerald-200 text-xs font-bold flex items-start gap-2.5 animate-fade-in">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                      <span>{scanSuccessMsg}</span>
+                    </div>
+                  )}
 
                   {/* Scan Error Alert */}
                   {scanErrorMsg && (
@@ -1076,7 +1103,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                                  (d.notes && d.notes.toLowerCase().includes(q));
                         })
                         .map((detail) => {
-                          const isScanned = scannedPartIds.includes(detail.id);
+                          const isScanned = allScannedPartIds.has(detail.id);
                           const matchedRule = getMatchedNoteRule(detail.notes, detail.name);
                           const birkaOrder = detail.orderNumber || order.orderNumber || '';
                           const expectedQr = detail.barcode || (birkaOrder ? `${birkaOrder}_${detail.labelNumber}` : detail.labelNumber);
