@@ -1761,6 +1761,9 @@ export const ERPApp: React.FC<ERPAppProps> = ({
                   orders={orders}
                   employees={employees}
                   catalogProducts={catalogProducts}
+                  companyName={company?.name}
+                  companyData={company}
+                  companyId={company?.id || aliasOrId}
                   onSaveSettings={handleSaveSettings} 
                 />
               )}

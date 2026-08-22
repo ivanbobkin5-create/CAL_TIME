@@ -462,6 +462,7 @@ export interface ERPCompanySettings {
   finishedPartNoticeDuration?: number; // Время автоскрытия сообщения "Готовая деталь" в секундах
 
   // Сопоставление стадий ERP и Битрикс24
+  bitrix24WebhookUrl?: string;
   bitrix24StageMapping?: Record<string, string>;
   bitrix24RestoreAction?: 'do_nothing' | 'restore_to_stage';
   bitrix24RestoreStageId?: string;

@@ -42,7 +42,12 @@ import {
   DollarSign,
   BarChart3,
   Users,
-  Archive
+  Archive,
+  RefreshCw,
+  Link2,
+  AlertCircle,
+  ListFilter,
+  Edit3
 } from 'lucide-react';
 import { ERPCompanySettings, MachineEquipment, PackageLabelSettings, ProductionStageId, ERPNoteRule, ProductionOrder, ERPEmployee } from '../types';
 import { DEFAULT_BIRKA_COLUMN_MAPPING } from '../utils/birkaParser';
@@ -58,6 +63,9 @@ interface ERPSettingsViewProps {
   orders?: ProductionOrder[];
   catalogProducts?: any[];
   employees?: ERPEmployee[];
+  companyName?: string;
+  companyData?: any;
+  companyId?: string;
   onSaveSettings: (settings: ERPCompanySettings) => void;
 }
 
@@ -239,6 +247,9 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
   orders = [],
   catalogProducts = [],
   employees = [],
+  companyName,
+  companyData,
+  companyId,
   onSaveSettings
 }) => {
   const [activeTab, setActiveTab] = useState<'stages' | 'birka' | 'hardware' | 'warehouse_cells' | 'rules' | 'tariffs' | 'additional' | 'equipment' | 'labels' | 'shifts' | 'bitrix_delivery'>('stages');
@@ -254,6 +265,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
 
   const [formData, setFormData] = useState<ERPCompanySettings>(() => ({
     ...settings,
+    bitrix24WebhookUrl: settings.bitrix24WebhookUrl || companyData?.bitrix24?.webhookUrl || companyData?.erpConfig?.bitrix24WebhookUrl || '',
     enabledStages: settings.enabledStages || defaultStageIds,
     equipmentList: (settings.equipmentList && settings.equipmentList.length > 0) 
       ? settings.equipmentList 
@@ -267,6 +279,107 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
       { id: 'rule-3', pattern: 'радиус', instruction: 'Криволинейный рез / радиусная обработка R=50', color: 'amber' }
     ]
   }));
+
+  // Bitrix24 Stage Auto-fetching State
+  const [b24Categories, setB24Categories] = useState<{ id: string; name: string }[]>([]);
+  const [b24Stages, setB24Stages] = useState<{ id: string; name: string; categoryId?: string; categoryName?: string }[]>([]);
+  const [selectedB24Category, setSelectedB24Category] = useState<string>('all');
+  const [isFetchingB24Stages, setIsFetchingB24Stages] = useState(false);
+  const [b24FetchStatus, setB24FetchStatus] = useState<string | null>(null);
+  const [manualStageInputMode, setManualStageInputMode] = useState<boolean>(false);
+
+  const activeWebhookUrl = useMemo(() => {
+    return formData.bitrix24WebhookUrl || companyData?.bitrix24?.webhookUrl || companyData?.erpConfig?.bitrix24WebhookUrl || '';
+  }, [formData.bitrix24WebhookUrl, companyData]);
+
+  const loadBitrix24Data = async (customUrl?: string) => {
+    const url = (customUrl !== undefined ? customUrl : activeWebhookUrl).trim();
+    if (!url) {
+      setB24FetchStatus('Вебхук Битрикс24 не указан. Укажите URL входящего вебхука.');
+      return;
+    }
+
+    setIsFetchingB24Stages(true);
+    setB24FetchStatus('Подключение к Битрикс24...');
+
+    try {
+      // 1. Fetch deal categories
+      const catRes = await fetch("/api/bitrix24/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          webhookUrl: url,
+          method: "crm.dealcategory.list",
+          params: {}
+        })
+      });
+
+      let categoryList: { id: string; name: string }[] = [{ id: "0", name: "Общее направление" }];
+      if (catRes.ok) {
+        const catData = await catRes.json();
+        if (catData.result && Array.isArray(catData.result)) {
+          catData.result.forEach((cat: any) => {
+            categoryList.push({ id: String(cat.ID), name: cat.NAME });
+          });
+        }
+      }
+      setB24Categories(categoryList);
+
+      // 2. Fetch stages for each category
+      const allFetchedStages: { id: string; name: string; categoryId: string; categoryName: string }[] = [];
+
+      for (const cat of categoryList) {
+        const entityId = cat.id === "0" ? "DEAL_STAGE" : `DEAL_STAGE_${cat.id}`;
+        const stRes = await fetch("/api/bitrix24/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            webhookUrl: url,
+            method: "crm.status.list",
+            params: { filter: { ENTITY_ID: entityId } }
+          })
+        });
+
+        if (stRes.ok) {
+          const stData = await stRes.json();
+          if (stData.result && Array.isArray(stData.result)) {
+            stData.result.forEach((st: any) => {
+              allFetchedStages.push({
+                id: String(st.STATUS_ID),
+                name: st.NAME,
+                categoryId: cat.id,
+                categoryName: cat.name
+              });
+            });
+          }
+        }
+      }
+
+      setB24Stages(allFetchedStages);
+      if (allFetchedStages.length > 0) {
+        setB24FetchStatus(`Успешно загружено ${allFetchedStages.length} стадий (${categoryList.length} напр.)`);
+      } else {
+        setB24FetchStatus('Стадии не найдены. Проверьте настройки вебхука');
+      }
+    } catch (err: any) {
+      console.error('Error loading B24 stages:', err);
+      setB24FetchStatus('Ошибка загрузки стадий: ' + (err.message || String(err)));
+    } finally {
+      setIsFetchingB24Stages(false);
+    }
+  };
+
+  // Auto-load stages when bitrix_delivery tab opens if URL exists and stages not loaded yet
+  React.useEffect(() => {
+    if (activeTab === 'bitrix_delivery' && activeWebhookUrl && b24Stages.length === 0 && !isFetchingB24Stages) {
+      loadBitrix24Data(activeWebhookUrl);
+    }
+  }, [activeTab, activeWebhookUrl]);
+
+  const filteredB24Stages = useMemo(() => {
+    if (selectedB24Category === 'all') return b24Stages;
+    return b24Stages.filter(s => s.categoryId === selectedB24Category);
+  }, [b24Stages, selectedB24Category]);
 
   const [isSaved, setIsSaved] = useState(false);
 
@@ -2412,11 +2525,100 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                   </p>
                 </div>
               </div>
+
+              <div className="flex items-center gap-2 self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setManualStageInputMode(!manualStageInputMode)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                    manualStageInputMode 
+                      ? 'bg-amber-100 text-amber-800 hover:bg-amber-200' 
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  {manualStageInputMode ? <Edit3 className="w-3.5 h-3.5" /> : <ListFilter className="w-3.5 h-3.5" />}
+                  {manualStageInputMode ? 'Режим: Ручной ввод ID' : 'Режим: Выбор из списка'}
+                </button>
+              </div>
+            </div>
+
+            {/* Webhook & Stage Loader Control Card */}
+            <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-3.5">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="flex-1 space-y-1">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Входящий вебхук Битрикс24:
+                  </label>
+                  <div className="relative flex items-center">
+                    <Link2 className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+                    <input
+                      type="text"
+                      placeholder="https://your-domain.bitrix24.ru/rest/1/webhook-key/"
+                      value={formData.bitrix24WebhookUrl || ''}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setFormData(prev => ({ ...prev, bitrix24WebhookUrl: val }));
+                      }}
+                      className="w-full pl-9 pr-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-mono font-medium text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-end gap-2">
+                  {b24Categories.length > 1 && (
+                    <div className="space-y-1">
+                      <label className="block text-xs font-bold text-slate-700">
+                        Воронка CRM:
+                      </label>
+                      <select
+                        value={selectedB24Category}
+                        onChange={(e) => setSelectedB24Category(e.target.value)}
+                        className="px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
+                      >
+                        <option value="all">Все направления ({b24Stages.length})</option>
+                        {b24Categories.map(cat => (
+                          <option key={cat.id} value={cat.id}>
+                            {cat.name} (ID: {cat.id})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => loadBitrix24Data(formData.bitrix24WebhookUrl)}
+                    disabled={isFetchingB24Stages}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white font-bold text-xs rounded-xl shadow-xs transition-all flex items-center gap-2 shrink-0"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isFetchingB24Stages ? 'animate-spin' : ''}`} />
+                    {isFetchingB24Stages ? 'Загрузка...' : 'Обновить стадии из Б24'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Status Message */}
+              {b24FetchStatus && (
+                <div className={`p-2.5 rounded-xl text-xs font-medium flex items-center gap-2 ${
+                  b24Stages.length > 0 
+                    ? 'bg-emerald-50 border border-emerald-200/80 text-emerald-800'
+                    : 'bg-amber-50 border border-amber-200/80 text-amber-800'
+                }`}>
+                  {b24Stages.length > 0 ? (
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                  )}
+                  <span>{b24FetchStatus}</span>
+                </div>
+              )}
             </div>
 
             <div className="space-y-4">
               <div className="text-xs font-bold text-slate-700">
-                Укажите ID стадий сделок Битрикс24 для каждого производственного участка (например: C1:PREPARATION, C1:EXECUTING, WON, C1:FINAL_INVOICE):
+                {manualStageInputMode 
+                  ? 'Введите ID стадий сделок Битрикс24 для каждого участка (например: C1:PREPARATION, C1:EXECUTING, WON, C1:FINAL_INVOICE):'
+                  : 'Выберите стадию сделки Битрикс24 из списка загруженных для каждого производственного участка:'}
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
@@ -2434,6 +2636,8 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                 ].map(stageItem => {
                   const Icon = stageItem.icon;
                   const currentVal = formData.bitrix24StageMapping?.[stageItem.id] || '';
+                  const showDropdown = !manualStageInputMode && (b24Stages.length > 0 || isFetchingB24Stages);
+
                   return (
                     <div key={stageItem.id} className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl flex flex-col gap-2">
                       <div className="flex items-center gap-2">
@@ -2442,24 +2646,53 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                         </div>
                         <span className="font-bold text-xs text-slate-800">{stageItem.name}</span>
                       </div>
+
                       <div className="flex items-center gap-2">
                         <span className="text-[11px] text-slate-500 shrink-0 font-medium">Стадия Б24:</span>
-                        <input
-                          type="text"
-                          placeholder="STAGE_ID (e.g. C1:EXECUTING)"
-                          value={currentVal}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setFormData(prev => ({
-                              ...prev,
-                              bitrix24StageMapping: {
-                                ...(prev.bitrix24StageMapping || {}),
-                                [stageItem.id]: val
-                              }
-                            }));
-                          }}
-                          className="w-full px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
-                        />
+                        
+                        {showDropdown ? (
+                          <select
+                            value={currentVal}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setFormData(prev => ({
+                                ...prev,
+                                bitrix24StageMapping: {
+                                  ...(prev.bitrix24StageMapping || {}),
+                                  [stageItem.id]: val
+                                }
+                              }));
+                            }}
+                            className="w-full px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 shadow-xs cursor-pointer truncate"
+                          >
+                            <option value="">-- Не менять стадию в Б24 --</option>
+                            {currentVal && !filteredB24Stages.some(s => s.id === currentVal) && (
+                              <option value={currentVal}>⚠️ {currentVal} (текущая)</option>
+                            )}
+                            {filteredB24Stages.map(st => (
+                              <option key={`${st.categoryId}-${st.id}`} value={st.id}>
+                                {st.name} [{st.id}] {b24Categories.length > 2 && st.categoryName ? `— ${st.categoryName}` : ''}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type="text"
+                            placeholder="STAGE_ID (e.g. C1:EXECUTING)"
+                            value={currentVal}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setFormData(prev => ({
+                                ...prev,
+                                bitrix24StageMapping: {
+                                  ...(prev.bitrix24StageMapping || {}),
+                                  [stageItem.id]: val
+                                }
+                              }));
+                            }}
+                            className="w-full px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                          />
+                        )}
                       </div>
                     </div>
                   );
@@ -2496,16 +2729,35 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                     <span className="font-medium text-slate-800">Перевести на указанную стадию</span>
                   </label>
                 </div>
+
                 {formData.bitrix24RestoreAction === 'restore_to_stage' && (
                   <div className="pt-2">
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">ID стадии Битрикс24 для возврата в работу:</label>
-                    <input
-                      type="text"
-                      placeholder="Например: C1:PREPARATION или C1:EXECUTING"
-                      value={formData.bitrix24RestoreStageId || ''}
-                      onChange={(e) => setFormData({ ...formData, bitrix24RestoreStageId: e.target.value })}
-                      className="w-full px-3.5 py-2 rounded-xl bg-white border border-amber-300 font-mono font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
-                    />
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Стадия Битрикс24 для возврата в работу:</label>
+                    {!manualStageInputMode && (b24Stages.length > 0 || isFetchingB24Stages) ? (
+                      <select
+                        value={formData.bitrix24RestoreStageId || ''}
+                        onChange={(e) => setFormData({ ...formData, bitrix24RestoreStageId: e.target.value })}
+                        className="w-full px-3.5 py-2 rounded-xl bg-white border border-amber-300 font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer truncate"
+                      >
+                        <option value="">-- Выберите стадию Битрикс24 --</option>
+                        {formData.bitrix24RestoreStageId && !filteredB24Stages.some(s => s.id === formData.bitrix24RestoreStageId) && (
+                          <option value={formData.bitrix24RestoreStageId}>⚠️ {formData.bitrix24RestoreStageId} (текущая)</option>
+                        )}
+                        {filteredB24Stages.map(st => (
+                          <option key={`restore-${st.categoryId}-${st.id}`} value={st.id}>
+                            {st.name} [{st.id}] {b24Categories.length > 2 && st.categoryName ? `— ${st.categoryName}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        placeholder="Например: C1:PREPARATION или C1:EXECUTING"
+                        value={formData.bitrix24RestoreStageId || ''}
+                        onChange={(e) => setFormData({ ...formData, bitrix24RestoreStageId: e.target.value })}
+                        className="w-full px-3.5 py-2 rounded-xl bg-white border border-amber-300 font-mono font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
+                      />
+                    )}
                   </div>
                 )}
               </div>
