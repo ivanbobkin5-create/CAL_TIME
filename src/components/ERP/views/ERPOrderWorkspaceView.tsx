@@ -951,7 +951,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                         spellCheck={false}
                         placeholder="Отсканируйте код или введите № детали..."
                         value={scanInput}
-                        onChange={(e) => setScanInput(convertRuToEnLayout(e.target.value))}
+                        onChange={(e) => setScanInput(e.target.value)}
                         className="w-full pl-4 pr-12 py-3.5 rounded-2xl bg-slate-800 border border-slate-700 text-sm font-mono font-bold text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 transition-all"
                       />
                       <button

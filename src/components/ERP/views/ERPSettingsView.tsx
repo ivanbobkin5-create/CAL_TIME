@@ -1535,6 +1535,27 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                           <button
                             type="button"
                             onClick={() => {
+                              setTestOrderNumber('11-0626-11');
+                              setTestPartNumber('20.02');
+                              setTestScanCode('11-0626-11_20.02');
+                            }}
+                            className="px-2 py-1 rounded bg-indigo-900/60 hover:bg-indigo-800 text-[10px] font-mono font-bold text-indigo-200 border border-indigo-700"
+                          >
+                            11-0626-11_20.02
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTestPartNumber('20.02');
+                              setTestScanCode('20.02');
+                            }}
+                            className="px-2 py-1 rounded bg-indigo-900/60 hover:bg-indigo-800 text-[10px] font-mono font-bold text-indigo-200 border border-indigo-700"
+                          >
+                            20.02
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
                               setTestOrderNumber('00-0000-00');
                               setTestPartNumber('00.00');
                               setTestScanCode('00-0000-00_00.00');

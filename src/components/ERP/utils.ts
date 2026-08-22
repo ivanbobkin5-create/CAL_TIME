@@ -287,22 +287,21 @@ export function evaluateBirkaQrTemplate(template: string, detail: any, orderNumb
 export function cleanRawScannedString(str: string): string {
   if (!str) return '';
   return String(str)
-    // Remove non-printable control chars
-    .replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
+    // Remove non-printable control chars & hidden UTF chars
+    .replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\uFEFF]/g, '')
     // Remove hardware scanner AIM code identifier prefix (e.g. ]Q1, ]d2, ]C1, ]e0)
     .replace(/^\][a-zA-Z0-9]{2,3}/, '')
     .trim()
-    // Remove leading hashes, №, words like "Поз.", "Деталь"
+    // Remove leading hashes, №, words like "Поз.", "Деталь", "Позиция", "Item", "Part"
     .replace(/^[#№\s]+/, '')
-    .replace(/^(поз\.?|дет\.?|позиция|деталь|номер|item|pos)\s*/i, '')
-    // Replace commas between digits with dot (e.g. 20,02 -> 20.02)
-    .replace(/(\d+),(\d+)/g, '$1.$2')
+    .replace(/^(поз\.?|дет\.?|позиция|деталь|номер|item|pos|part|поз|дет)\s*[:#№\-_\s]*/i, '')
+    // Replace commas, semicolons, and slashes between digits with dot (e.g. 20,02 -> 20.02, 20/02 -> 20.02)
+    .replace(/(\d+)[,;](\d+)/g, '$1.$2')
     .trim();
 }
 
 /**
  * Normalizes a part number by stripping extraneous symbols, leading hashes, and word prefixes.
- * Examples: "#00.00" -> "00.00", "Поз. 01.02" -> "01.02", "Деталь 00.00.00" -> "00.00.00"
  */
 export function normalizePartNumber(str: string): string {
   return cleanRawScannedString(str);
@@ -346,7 +345,6 @@ export function matchDetailToScannedCode(
   const cleanScan = cleanRawScannedString(rawScan);
   const lowerScan = cleanScan.toLowerCase();
   const enScan = cleanRawScannedString(convertRuToEnLayout(rawScan)).toLowerCase();
-  const ruScan = cleanRawScannedString(convertRuToEnLayout(rawScan)).toLowerCase();
 
   // Detail's own fields (safely check all aliases)
   const rawLabel = String(
@@ -367,6 +365,7 @@ export function matchDetailToScannedCode(
   const dId = String(detail.id || '').trim().toLowerCase();
   const dBarcode = cleanRawScannedString(String(detail.barcode || '')).toLowerCase();
   const dName = String(detail.name || '').trim().toLowerCase();
+  const dNotes = String(detail.notes || '').trim().toLowerCase();
 
   const cleanOrder = cleanRawScannedString(String(orderNumber || detail.orderNumber || ''));
   const lowerOrder = cleanOrder.toLowerCase();
@@ -385,7 +384,8 @@ export function matchDetailToScannedCode(
     lowerLabel === lowerScan || 
     lowerLabel === enScan || 
     enLabel === lowerScan || 
-    enLabel === enScan
+    enLabel === enScan ||
+    cleanLabel === cleanScan
   )) {
     return true;
   }
@@ -478,7 +478,7 @@ export function matchDetailToScannedCode(
   // ----------------------------------------------------
   // LEVEL 5: Intelligent Token & Delimiter Decomposition
   // Splits scanned composite string by _, |, /, \, ;, :, space, etc.
-  // e.g. "11-0626-11_20.02" -> tokens: ["11-0626-11", "20.02", "11", "0626", "20.02"]
+  // e.g. "11-0626-11_20.02" -> tokens: ["11-0626-11", "20.02", "20", "02"]
   // ----------------------------------------------------
   const splitTokens = (str: string) => {
     const directTokens = str.split(/[_|/\\;:,\t\n\s]+/).map(t => t.trim()).filter(Boolean);
@@ -510,7 +510,7 @@ export function matchDetailToScannedCode(
     }
   }
 
-  // Check extracted regex matches for pattern like "_20.02", "-20.02", "_00.00", "_00.00.00"
+  // Extract regex suffix match for pattern like "_20.02", "-20.02", "_00.00", "_00.00.00"
   const regexSuffixMatch = lowerScan.match(/[_|/\\:\-\s]+(\d+(?:[\.,_]\d+)+)$/);
   if (regexSuffixMatch && regexSuffixMatch[1]) {
     allTokens.push(regexSuffixMatch[1]);
@@ -548,6 +548,16 @@ export function matchDetailToScannedCode(
     for (const token of allTokens) {
       const cToken = cleanRawScannedString(token);
       if (cToken && (dName.includes(cToken) || dName.includes(` ${cToken}`))) {
+        return true;
+      }
+    }
+  }
+
+  // Check if detail name starts with or equals the scanned code or token
+  for (const token of allTokens) {
+    const cToken = cleanRawScannedString(token);
+    if (cToken && cToken.length >= 2) {
+      if (dName.startsWith(cToken) || dNotes.includes(cToken)) {
         return true;
       }
     }
