@@ -103,6 +103,50 @@ export const ERPReportsView: React.FC<ERPReportsViewProps> = ({
     earnedPrice?: number;
   }> = [];
 
+  // Parse explicit order workLogs into audit events first
+  orders.forEach(ord => {
+    (ord.workLogs || []).forEach(log => {
+      const stageNameMap: Record<string, string> = {
+        queue: 'Очередь запуска',
+        cutting: 'Распил ЛДСП/МДФ',
+        edging: 'Кромкооблицовка',
+        cnc: 'Присадка / ЧПУ',
+        facades: 'Фасадный участок',
+        assembly: 'Сборка корпусов',
+        kitting: 'Комплектовка',
+        qc: 'Контроль качества (ОТК)',
+        packing: 'Упаковка',
+        shipping: 'Отгрузка'
+      };
+
+      const matchedEmp = employees.find(e => e.id === log.employeeId || e.name === log.employeeName);
+      const empDisplayName = matchedEmp?.name || (log.employeeName && !log.employeeName.toLowerCase().includes('оператор') && !log.employeeName.toLowerCase().includes('сотрудник') ? log.employeeName : (ord.responsibleEmployeeName || log.employeeName || 'Оператор цеха'));
+
+      const stId = log.stageId as ProductionStageId;
+      const count = log.scannedPartsCount || (ord.partsCount || 1);
+      const area = log.scannedAreaM2 || Math.round(((ord.totalAreaM2 || 0) / Math.max(ord.partsCount || 1, 1)) * count * 10) / 10;
+      const edge = log.scannedEdgeM || Math.round(((ord.totalEdgeM || 0) / Math.max(ord.partsCount || 1, 1)) * count * 10) / 10;
+      const holes = count * 6;
+
+      generatedAuditEvents.push({
+        id: log.id || `log-${ord.id}-${stId}-${Math.random().toString(36).substr(2, 6)}`,
+        employeeId: matchedEmp?.id || log.employeeId || 'unknown',
+        employeeName: empDisplayName,
+        orderId: ord.id,
+        orderNumber: ord.orderNumber,
+        stageId: stId,
+        stageName: stageNameMap[stId] || stId,
+        timestamp: log.endTime || log.startTime || ord.createdAt || new Date().toISOString(),
+        actionDetail: `Выполнение этапа «${stageNameMap[stId] || stId}» (${count} дет.)`,
+        volumeText: stId === 'cutting' ? `${area} м²` : stId === 'edging' ? `${edge} п.м.` : stId === 'cnc' ? `${holes} отверст.` : `${count} детал.`,
+        volumeM2: area,
+        volumeMeters: edge,
+        volumeParts: count,
+        earnedPrice: stId === 'cutting' ? Math.round(area * cuttingRate) : stId === 'edging' ? Math.round(edge * edgingRate) : stId === 'cnc' ? Math.round(holes * cncRate) : stId === 'packing' ? Math.round((ord.packages?.length || 1) * packingRate) : Math.round(count * 50)
+      });
+    });
+  });
+
   // Parse order scanning progress into micro audit events
   orders.forEach(ord => {
     if (ord.stageScanningProgress) {

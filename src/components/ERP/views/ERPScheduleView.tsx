@@ -27,7 +27,7 @@ import {
   Palmtree,
   Trash2
 } from 'lucide-react';
-import { ERPEmployee, WorkShift, ShiftCellType, EmployeeScheduleEntry } from '../types';
+import { ERPEmployee, WorkShift, ShiftCellType, EmployeeScheduleEntry, ERPCompanySettings } from '../types';
 
 interface ERPScheduleViewProps {
   employees: ERPEmployee[];
@@ -36,6 +36,10 @@ interface ERPScheduleViewProps {
   onUpdateSchedule?: (entries: Record<string, EmployeeScheduleEntry>) => void;
   entries?: Record<string, EmployeeScheduleEntry>;
   companyId?: string;
+  companyName?: string;
+  currentUser?: ERPEmployee | null;
+  isUserForeman?: boolean;
+  settings?: ERPCompanySettings;
 }
 
 type ViewMode = 'week' | 'two_weeks' | 'month';
@@ -125,7 +129,11 @@ export const ERPScheduleView: React.FC<ERPScheduleViewProps> = ({
   onAddShift,
   onUpdateSchedule,
   entries,
-  companyId
+  companyId,
+  companyName = 'Мебельное производство',
+  currentUser,
+  isUserForeman = true,
+  settings
 }) => {
   const [viewMode, setViewMode] = useState<ViewMode>('two_weeks');
   const [currentDateOffset, setCurrentDateOffset] = useState<Date>(() => {
@@ -138,6 +146,16 @@ export const ERPScheduleView: React.FC<ERPScheduleViewProps> = ({
 
   const [selectedDepartment, setSelectedDepartment] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Print Configuration Modal State
+  const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
+  const [printPeriod, setPrintPeriod] = useState<'current_view' | 'week' | 'two_weeks' | 'month'>('current_view');
+  const [printDepartment, setPrintDepartment] = useState<string>('all');
+  const [printIncludeSummary, setPrintIncludeSummary] = useState<boolean>(true);
+  const [printIncludeSignatures, setPrintIncludeSignatures] = useState<boolean>(true);
+
+  const canSelfEdit = isUserForeman || settings?.scheduleCanSelfEdit !== false;
+  const showOtherEmployees = isUserForeman || settings?.scheduleShowOtherEmployees !== false;
 
   const [activeTab, setActiveTab] = useState<'grid' | 'stats'>('grid');
   const [shiftLogs, setShiftLogs] = useState<any[]>([]);
@@ -341,6 +359,9 @@ export const ERPScheduleView: React.FC<ERPScheduleViewProps> = ({
       if (e.email?.toLowerCase() === 'lk.ivanbobkin@gmail.com' || (e as any).isSuperAdmin || e.role === 'superadmin' || e.productionRole === 'superadmin') {
         return false;
       }
+      if (!showOtherEmployees && currentUser?.id && e.id !== currentUser.id) {
+        return false;
+      }
       if (selectedDepartment !== 'all' && e.department !== selectedDepartment) {
         return false;
       }
@@ -350,7 +371,7 @@ export const ERPScheduleView: React.FC<ERPScheduleViewProps> = ({
       }
       return true;
     });
-  }, [employees, selectedDepartment, searchQuery]);
+  }, [employees, selectedDepartment, searchQuery, showOtherEmployees, currentUser]);
 
   // Compute dates array based on viewMode and currentDateOffset
   const dateColumns = useMemo(() => {
@@ -404,6 +425,98 @@ export const ERPScheduleView: React.FC<ERPScheduleViewProps> = ({
 
     return dates;
   }, [viewMode, currentDateOffset]);
+
+  // Compute print dates based on printPeriod selection in modal
+  const printDates = useMemo(() => {
+    const dates: { dateStr: string; dateObj: Date; dayNum: number; dayOfWeek: string; isWeekend: boolean }[] = [];
+    const baseDate = new Date(currentDateOffset);
+    baseDate.setHours(0, 0, 0, 0);
+    const daysOfWeekRu = ['ВС', 'ПН', 'ВТ', 'СР', 'ЧТ', 'ПТ', 'СБ'];
+
+    let numDays = 7;
+    if (printPeriod === 'current_view') {
+      return dateColumns.map(d => ({
+        dateStr: d.dateStr,
+        dateObj: d.dateObj,
+        dayNum: d.dayNum,
+        dayOfWeek: d.dayOfWeek,
+        isWeekend: d.isWeekend
+      }));
+    } else if (printPeriod === 'week') {
+      numDays = 7;
+      const day = baseDate.getDay();
+      const diff = baseDate.getDate() - day + (day === 0 ? -6 : 1);
+      baseDate.setDate(diff);
+    } else if (printPeriod === 'two_weeks') {
+      numDays = 14;
+      const day = baseDate.getDay();
+      const diff = baseDate.getDate() - day + (day === 0 ? -6 : 1);
+      baseDate.setDate(diff);
+    } else if (printPeriod === 'month') {
+      baseDate.setDate(1);
+      const year = baseDate.getFullYear();
+      const month = baseDate.getMonth();
+      const lastDay = new Date(year, month + 1, 0).getDate();
+      numDays = lastDay;
+    }
+
+    for (let i = 0; i < numDays; i++) {
+      const cur = new Date(baseDate);
+      cur.setDate(baseDate.getDate() + i);
+      const yyyy = cur.getFullYear();
+      const mm = String(cur.getMonth() + 1).padStart(2, '0');
+      const dd = String(cur.getDate()).padStart(2, '0');
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+      const dayOfWeekIdx = cur.getDay();
+
+      dates.push({
+        dateStr,
+        dateObj: cur,
+        dayNum: cur.getDate(),
+        dayOfWeek: daysOfWeekRu[dayOfWeekIdx],
+        isWeekend: dayOfWeekIdx === 0 || dayOfWeekIdx === 6
+      });
+    }
+
+    return dates;
+  }, [printPeriod, currentDateOffset, dateColumns]);
+
+  const printEmployeesList = useMemo(() => {
+    return employees.filter(e => {
+      if (e.isProductionEmployee === false || e.employmentType === 'outsource') return false;
+      if (e.email?.toLowerCase() === 'lk.ivanbobkin@gmail.com' || (e as any).isSuperAdmin || e.role === 'superadmin' || e.productionRole === 'superadmin') {
+        return false;
+      }
+      if (!showOtherEmployees && currentUser?.id && e.id !== currentUser.id) {
+        return false;
+      }
+      if (printDepartment !== 'all' && e.department !== printDepartment) {
+        return false;
+      }
+      return true;
+    });
+  }, [employees, printDepartment, showOtherEmployees, currentUser]);
+
+  const printPeriodHeader = useMemo(() => {
+    if (printDates.length === 0) return '';
+    const first = printDates[0].dateObj;
+    const last = printDates[printDates.length - 1].dateObj;
+    const monthNames = [
+      'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+      'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
+    ];
+    if (printPeriod === 'month' || (first.getDate() === 1 && last.getDate() >= 28)) {
+      const monthTitles = [
+        'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+        'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+      ];
+      return `${monthTitles[first.getMonth()]} ${first.getFullYear()} г.`;
+    }
+    if (first.getMonth() === last.getMonth()) {
+      return `${first.getDate()} — ${last.getDate()} ${monthNames[first.getMonth()]} ${first.getFullYear()} г.`;
+    }
+    return `${first.getDate()} ${monthNames[first.getMonth()]} — ${last.getDate()} ${monthNames[last.getMonth()]} ${last.getFullYear()} г.`;
+  }, [printDates, printPeriod]);
 
   // Format header period title
   const periodTitle = useMemo(() => {
@@ -490,6 +603,9 @@ export const ERPScheduleView: React.FC<ERPScheduleViewProps> = ({
 
   // Quick cell click: cycle or open selector
   const handleCellClick = (e: React.MouseEvent, emp: ERPEmployee, dateItem: { dateStr: string; dayNum: number; dayOfWeek: string }) => {
+    if (!canSelfEdit && (!currentUser?.id || emp.id !== currentUser.id)) {
+      return;
+    }
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     
     // Position popover
@@ -635,9 +751,6 @@ export const ERPScheduleView: React.FC<ERPScheduleViewProps> = ({
         >
           <Clock className="w-4 h-4" />
           <span>Учет часов, нормы и статистика</span>
-          <span className="bg-emerald-100 text-emerald-800 text-[10px] px-2 py-0.5 rounded-full font-bold">
-            Новое
-          </span>
         </button>
       </div>
 
@@ -716,11 +829,12 @@ export const ERPScheduleView: React.FC<ERPScheduleViewProps> = ({
               </button>
 
               <button
-                onClick={() => window.print()}
-                className="p-2 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer"
-                title="Печать табеля"
+                onClick={() => setShowPrintModal(true)}
+                className="px-3 py-2 rounded-2xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm border border-blue-200/60"
+                title="Печать графика на лист А4"
               >
-                <Printer className="w-4 h-4" />
+                <Printer className="w-4 h-4 text-blue-600" />
+                <span>Печать А4</span>
               </button>
             </div>
           </div>
@@ -1367,7 +1481,443 @@ export const ERPScheduleView: React.FC<ERPScheduleViewProps> = ({
     );
   })()}
 
-      {/* Context Popover for Cell Selection */}
+      {/* Print Configuration & Preview Modal */}
+      {showPrintModal && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto no-print">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[92vh] flex flex-col border border-slate-200 animate-in fade-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                  <Printer className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    Печать графика работы (Лист А4 Альбомная)
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">
+                    Настройте период и параметры перед выводом на печать или сохранением в PDF
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPrintModal(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Controls */}
+            <div className="p-5 space-y-4 border-b border-slate-100 bg-slate-50/50">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                {/* 1. Period Selector */}
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                    Период для печати
+                  </label>
+                  <select
+                    value={printPeriod}
+                    onChange={(e) => setPrintPeriod(e.target.value as any)}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="current_view">Текущий вид ({viewMode === 'week' ? '1 неделя' : viewMode === 'two_weeks' ? '2 недели' : 'Месяц'})</option>
+                    <option value="week">1 неделя (7 дней)</option>
+                    <option value="two_weeks">2 недели (14 дней)</option>
+                    <option value="month">Календарный месяц (1–31 число)</option>
+                  </select>
+                </div>
+
+                {/* 2. Department Selector */}
+                <div>
+                  <label className="block text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-1">
+                    Участок производства
+                  </label>
+                  <select
+                    value={printDepartment}
+                    onChange={(e) => setPrintDepartment(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
+                  >
+                    {departmentsList.map(d => (
+                      <option key={d.id} value={d.id}>{d.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 3. Toggles */}
+                <div className="flex flex-col justify-center">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={printIncludeSummary}
+                      onChange={(e) => setPrintIncludeSummary(e.target.checked)}
+                      className="rounded text-blue-600 focus:ring-0 w-4 h-4 cursor-pointer"
+                    />
+                    <span>Итоги по сменам внизу</span>
+                  </label>
+                </div>
+
+                <div className="flex flex-col justify-center">
+                  <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={printIncludeSignatures}
+                      onChange={(e) => setPrintIncludeSignatures(e.target.checked)}
+                      className="rounded text-blue-600 focus:ring-0 w-4 h-4 cursor-pointer"
+                    />
+                    <span>Блок утверждения и подписей</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Live Preview Box */}
+            <div className="p-5 flex-1 overflow-y-auto bg-slate-200/50">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2 flex items-center justify-between">
+                <span>Предварительный просмотр документа:</span>
+                <span className="text-blue-600 font-mono">Формат: А4 Альбомная ({printDates.length} дней, {printEmployeesList.length} сотр.)</span>
+              </div>
+
+              <div className="bg-white p-5 rounded-2xl border border-slate-300 shadow-md font-sans text-slate-900 overflow-x-auto text-[11px]">
+                {/* Print Sheet Header */}
+                <div className="border-b-2 border-slate-900 pb-2 mb-3 flex items-start justify-between">
+                  <div>
+                    <div className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">
+                      {companyName}
+                    </div>
+                    <div className="text-sm font-black uppercase text-slate-900 tracking-tight">
+                      График сменности и табель выходов сотрудников
+                    </div>
+                    <div className="text-[11px] text-slate-600 font-semibold mt-0.5">
+                      Участок: <span className="font-bold text-slate-900">{departmentsList.find(d => d.id === printDepartment)?.name || 'Все участки'}</span>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-xs font-black text-slate-900 bg-slate-100 px-2 py-1 rounded border border-slate-300 inline-block">
+                      {printPeriodHeader}
+                    </div>
+                    <div className="text-[10px] text-slate-500 mt-1">
+                      Сформировано: {new Date().toLocaleDateString('ru-RU')}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Table Preview */}
+                <table className="w-full border-collapse border border-slate-800 text-[10px] text-center">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-900 font-bold">
+                      <th className="border border-slate-700 p-1 w-6">№</th>
+                      <th className="border border-slate-700 p-1 text-left min-w-[130px]">Сотрудник / Должность</th>
+                      {printDates.map(d => (
+                        <th key={d.dateStr} className={`border border-slate-700 p-1 ${d.isWeekend ? 'bg-slate-200 font-black' : ''}`}>
+                          <div>{d.dayNum}</div>
+                          <div className="text-[8px] font-normal text-slate-600">{d.dayOfWeek}</div>
+                        </th>
+                      ))}
+                      <th className="border border-slate-700 p-1 w-10 font-black">Смен</th>
+                      <th className="border border-slate-700 p-1 w-12 font-black">Часов</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {printEmployeesList.map((emp, idx) => {
+                      let empShifts = 0;
+                      let empHours = 0;
+
+                      return (
+                        <tr key={emp.id} className="hover:bg-slate-50">
+                          <td className="border border-slate-700 p-1 text-slate-500 font-mono">{idx + 1}</td>
+                          <td className="border border-slate-700 p-1 text-left font-bold text-slate-900 whitespace-nowrap">
+                            <div>{emp.name}</div>
+                            <div className="text-[8px] font-normal text-slate-500">{emp.productionRole || emp.role || 'Мастер'}</div>
+                          </td>
+                          {printDates.map(d => {
+                            const entry = getCellEntry(emp, d.dateStr);
+                            let label = '—';
+                            let bg = d.isWeekend ? 'bg-slate-100' : '';
+                            let textCol = 'text-slate-400';
+
+                            if (entry) {
+                              if (entry.type === 'work_12') {
+                                label = '12';
+                                bg = 'bg-emerald-50';
+                                textCol = 'text-emerald-900 font-black';
+                                empShifts++;
+                                empHours += entry.hours || 12;
+                              } else if (entry.type === 'work_8') {
+                                label = '8';
+                                bg = 'bg-blue-50';
+                                textCol = 'text-blue-900 font-black';
+                                empShifts++;
+                                empHours += entry.hours || 8;
+                              } else if (entry.type === 'night_12') {
+                                label = 'Н12';
+                                bg = 'bg-purple-50';
+                                textCol = 'text-purple-900 font-black';
+                                empShifts++;
+                                empHours += entry.hours || 12;
+                              } else if (entry.type === 'day_off') {
+                                label = 'В';
+                                textCol = 'text-slate-400';
+                              } else if (entry.type === 'vacation') {
+                                label = 'ОТП';
+                                bg = 'bg-amber-50';
+                                textCol = 'text-amber-900 font-bold';
+                              } else if (entry.type === 'sick') {
+                                label = 'Б';
+                                bg = 'bg-rose-50';
+                                textCol = 'text-rose-900 font-bold';
+                              }
+                            }
+
+                            return (
+                              <td key={d.dateStr} className={`border border-slate-700 p-1 ${bg} ${textCol}`}>
+                                {label}
+                              </td>
+                            );
+                          })}
+                          <td className="border border-slate-700 p-1 font-black text-slate-900">{empShifts}</td>
+                          <td className="border border-slate-700 p-1 font-black text-blue-900">{empHours}</td>
+                        </tr>
+                      );
+                    })}
+
+                    {/* Summary Row */}
+                    {printIncludeSummary && (
+                      <tr className="bg-slate-100 font-bold text-slate-900">
+                        <td colSpan={2} className="border border-slate-700 p-1 text-left font-black">
+                          На смене (чел):
+                        </td>
+                        {printDates.map(d => {
+                          const onDuty = printEmployeesList.filter(emp => {
+                            const entry = getCellEntry(emp, d.dateStr);
+                            return entry && (entry.type === 'work_12' || entry.type === 'work_8' || entry.type === 'night_12');
+                          }).length;
+                          return (
+                            <td key={d.dateStr} className="border border-slate-700 p-1 font-black">
+                              {onDuty || '—'}
+                            </td>
+                          );
+                        })}
+                        <td className="border border-slate-700 p-1 font-black">—</td>
+                        <td className="border border-slate-700 p-1 font-black">—</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+
+                {/* Signatures */}
+                {printIncludeSignatures && (
+                  <div className="mt-4 pt-3 border-t border-slate-400 grid grid-cols-2 gap-8 text-[9px] text-slate-700">
+                    <div>
+                      <div>Начальник производства: __________________ / __________________ /</div>
+                    </div>
+                    <div className="text-right">
+                      <div>Утвердил (Руководитель): __________________ / __________________ /</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="p-4 bg-white border-t border-slate-100 flex items-center justify-between">
+              <div className="text-xs text-slate-500 font-medium">
+                💡 Для печати выберите в диалоге браузера ориентацию <span className="font-bold text-slate-800">«Альбомная» (Landscape)</span>.
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowPrintModal(false)}
+                  className="px-4 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
+                >
+                  Отмена
+                </button>
+                <button
+                  onClick={() => {
+                    window.print();
+                  }}
+                  className="px-6 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-black text-xs flex items-center gap-2 shadow-lg shadow-blue-600/30 transition-all cursor-pointer"
+                >
+                  <Printer className="w-4 h-4" />
+                  <span>Распечатать / Сохранить в PDF</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* DEDICATED PRINT CONTAINER (Active only during window.print()) */}
+      <div id="erp-printable-schedule" className="hidden">
+        <div style={{ fontFamily: 'Arial, sans-serif', color: '#000', padding: '0px' }}>
+          {/* Header */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', borderBottom: '2px solid #000', paddingBottom: '6px', marginBottom: '8px' }}>
+            <div>
+              <div style={{ fontSize: '11px', textTransform: 'uppercase', fontWeight: 'bold', color: '#444' }}>
+                {companyName}
+              </div>
+              <div style={{ fontSize: '15px', fontWeight: '900', textTransform: 'uppercase' }}>
+                ГРАФИК СМЕННОСТИ И ТАБЕЛЬ ВЫХОДОВ СОТРУДНИКОВ
+              </div>
+              <div style={{ fontSize: '11px', marginTop: '2px' }}>
+                Подразделение: <b>{departmentsList.find(d => d.id === printDepartment)?.name || 'Все участки цеха'}</b>
+              </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+              <div style={{ fontSize: '12px', fontWeight: 'bold', border: '1px solid #000', padding: '2px 8px', display: 'inline-block' }}>
+                Период: {printPeriodHeader}
+              </div>
+              <div style={{ fontSize: '9px', color: '#666', marginTop: '3px' }}>
+                Дата печати: {new Date().toLocaleDateString('ru-RU')}
+              </div>
+            </div>
+          </div>
+
+          {/* Printable Table */}
+          <table style={{ width: '100%', borderCollapse: 'collapse', border: '1px solid #000', fontSize: printDates.length > 14 ? '8pt' : '9pt', textAlign: 'center' }}>
+            <thead>
+              <tr style={{ backgroundColor: '#f0f0f0', fontWeight: 'bold' }}>
+                <th style={{ border: '1px solid #000', padding: '3px', width: '22px' }}>№</th>
+                <th style={{ border: '1px solid #000', padding: '3px', textAlign: 'left', minWidth: '130px' }}>ФИО Сотрудника</th>
+                {printDates.map(d => (
+                  <th key={d.dateStr} style={{ border: '1px solid #000', padding: '2px', backgroundColor: d.isWeekend ? '#e2e8f0' : '#f8fafc' }}>
+                    <div>{d.dayNum}</div>
+                    <div style={{ fontSize: '7pt', fontWeight: 'normal', color: '#475569' }}>{d.dayOfWeek}</div>
+                  </th>
+                ))}
+                <th style={{ border: '1px solid #000', padding: '3px', width: '32px', fontWeight: 'bold' }}>Смен</th>
+                <th style={{ border: '1px solid #000', padding: '3px', width: '38px', fontWeight: 'bold' }}>Часов</th>
+              </tr>
+            </thead>
+            <tbody>
+              {printEmployeesList.map((emp, idx) => {
+                let shiftsCount = 0;
+                let hoursCount = 0;
+
+                return (
+                  <tr key={emp.id}>
+                    <td style={{ border: '1px solid #000', padding: '2px', color: '#666' }}>{idx + 1}</td>
+                    <td style={{ border: '1px solid #000', padding: '2px 4px', textAlign: 'left', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+                      {emp.name}
+                      <span style={{ fontSize: '7pt', fontWeight: 'normal', color: '#666', display: 'block' }}>
+                        {emp.productionRole || emp.role || 'Мастер'}
+                      </span>
+                    </td>
+                    {printDates.map(d => {
+                      const entry = getCellEntry(emp, d.dateStr);
+                      let text = '';
+                      let bg = d.isWeekend ? '#f1f5f9' : '#fff';
+                      let fw = 'normal';
+
+                      if (entry) {
+                        if (entry.type === 'work_12') {
+                          text = '12';
+                          fw = 'bold';
+                          shiftsCount++;
+                          hoursCount += entry.hours || 12;
+                        } else if (entry.type === 'work_8') {
+                          text = '8';
+                          fw = 'bold';
+                          shiftsCount++;
+                          hoursCount += entry.hours || 8;
+                        } else if (entry.type === 'night_12') {
+                          text = 'Н12';
+                          fw = 'bold';
+                          shiftsCount++;
+                          hoursCount += entry.hours || 12;
+                        } else if (entry.type === 'day_off') {
+                          text = 'В';
+                        } else if (entry.type === 'vacation') {
+                          text = 'ОТП';
+                          fw = 'bold';
+                        } else if (entry.type === 'sick') {
+                          text = 'Б';
+                          fw = 'bold';
+                        }
+                      }
+
+                      return (
+                        <td key={d.dateStr} style={{ border: '1px solid #000', padding: '2px', backgroundColor: bg, fontWeight: fw }}>
+                          {text}
+                        </td>
+                      );
+                    })}
+                    <td style={{ border: '1px solid #000', padding: '2px', fontWeight: 'bold' }}>{shiftsCount}</td>
+                    <td style={{ border: '1px solid #000', padding: '2px', fontWeight: 'bold' }}>{hoursCount}</td>
+                  </tr>
+                );
+              })}
+
+              {/* Summary Rows */}
+              {printIncludeSummary && (
+                <tr style={{ backgroundColor: '#f0f0f0', fontWeight: 'bold' }}>
+                  <td colSpan={2} style={{ border: '1px solid #000', padding: '3px', textAlign: 'left' }}>
+                    Человек на смене:
+                  </td>
+                  {printDates.map(d => {
+                    const onDuty = printEmployeesList.filter(emp => {
+                      const entry = getCellEntry(emp, d.dateStr);
+                      return entry && (entry.type === 'work_12' || entry.type === 'work_8' || entry.type === 'night_12');
+                    }).length;
+                    return (
+                      <td key={d.dateStr} style={{ border: '1px solid #000', padding: '2px', fontWeight: 'bold' }}>
+                        {onDuty || ''}
+                      </td>
+                    );
+                  })}
+                  <td style={{ border: '1px solid #000', padding: '2px' }}>—</td>
+                  <td style={{ border: '1px solid #000', padding: '2px' }}>—</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+
+          {/* Signatures */}
+          {printIncludeSignatures && (
+            <div style={{ marginTop: '16px', display: 'flex', justifyContent: 'space-between', fontSize: '9pt', color: '#000' }}>
+              <div>
+                Начальник производства: ________________________ / ________________________ /
+              </div>
+              <div>
+                Утвердил: Генеральный директор: ________________________ / ________________________ /
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <style>{`
+        @media print {
+          @page {
+            size: A4 landscape;
+            margin: 6mm 8mm 6mm 8mm;
+          }
+          body {
+            background: #fff !important;
+            color: #000 !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+          }
+          body * {
+            visibility: hidden !important;
+          }
+          #erp-printable-schedule, #erp-printable-schedule * {
+            visibility: visible !important;
+          }
+          #erp-printable-schedule {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+            width: 100% !important;
+            display: block !important;
+            background: #ffffff !important;
+            padding: 0 !important;
+            margin: 0 !important;
+          }
+          .no-print {
+            display: none !important;
+          }
+        }
+      `}</style>
       {activeCell && (
         <div
           ref={popoverRef}

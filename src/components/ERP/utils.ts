@@ -75,6 +75,24 @@ export function getNextRequiredStage(
   return null;
 }
 
+export function getStageNameRussian(stageId?: string | null): string {
+  if (!stageId) return 'Завершение';
+  const stageMap: Record<string, string> = {
+    queue: 'Очередь / Запуск',
+    cutting: 'Распил',
+    edging: 'Кромкооблицовка',
+    cnc: 'Присадка ЧПУ',
+    facades: 'Фасады',
+    assembly: 'Сборка',
+    kitting: 'Комплектовка',
+    qc: 'Контроль ОТК',
+    packing: 'Упаковка',
+    ready: 'Готово к отгрузке',
+    shipping: 'Отгрузка'
+  };
+  return stageMap[stageId] || stageId;
+}
+
 // Russian ЙЦУКЕН to English QWERTY key mapping dictionary
 const RU_TO_EN_MAP: Record<string, string> = {
   'й': 'q', 'ц': 'w', 'у': 'e', 'к': 'r', 'е': 't', 'н': 'y', 'г': 'u', 'ш': 'i', 'щ': 'o', 'з': 'p', 'х': '[', 'ъ': ']',

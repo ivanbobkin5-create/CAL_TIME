@@ -414,6 +414,25 @@ export interface ERPCompanySettings {
   facadesRatePerM2?: number;
   salariesSectionEnabled?: boolean;
   seeOnlyOwnSalary?: boolean;
+  
+  // Права доступа к разделам (RBAC)
+  dashboardAccessMode?: 'all' | 'none' | 'custom'; // Доступ к дашборду ('all' - всем, 'none' - только нач. цеха, 'custom' - выбранным)
+  dashboardAllowedEmployeeIds?: string[]; // Список разрешенных сотрудников при режиме 'custom'
+
+  planningSectionEnabled?: boolean; // Доступ к планированию
+  planningAllowedEmployeeIds?: string[]; // Индивидуальный список сотрудников с доступом к планированию
+
+  scheduleSectionEnabled?: boolean; // Доступ к графику работы
+  scheduleShowOtherEmployees?: boolean; // Показывать других сотрудников в графике
+  scheduleCanSelfEdit?: boolean; // Разрешить сотрудникам самостоятельно проставлять себе смены
+
+  residualsSectionEnabled?: boolean; // Доступ к разделу Склад остатков (деловые обрезки и кромка)
+  archiveSectionEnabled?: boolean; // Доступ к разделу Архив заказов
+  reportsSectionEnabled?: boolean; // Доступ к разделу Аналитика и отчеты
+  reportsViewScope?: 'all' | 'own_only'; // Объем аналитики: все производство или только за себя
+  employeesSectionEnabled?: boolean; // Доступ к разделу Сотрудники
+  settingsSectionEnabled?: boolean; // Доступ к настройкам для обычных сотрудников
+
   autoScheduleOrders: boolean;
   notificationTelegramEnabled?: boolean;
   noteRules?: ERPNoteRule[];

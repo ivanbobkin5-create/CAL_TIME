@@ -37,7 +37,7 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee, MaterialResidual } from '../types';
 import { parseBirkaFile, BirkaParseResult, BirkaDetail } from '../utils/birkaParser';
-import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, speakText, matchDetailToScannedCode, cleanRawScannedString } from '../utils';
+import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, getStageNameRussian, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, speakText, matchDetailToScannedCode, cleanRawScannedString } from '../utils';
 import { CuttingOffcutsModal } from '../components/CuttingOffcutsModal';
 import { EdgingRemainsModal } from '../components/EdgingRemainsModal';
 import { detailRequiresPrisadka } from '../utils/stageReadiness';
@@ -1186,7 +1186,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                           if (order.forcedStageCompletions) {
                             for (const [stgId, info] of Object.entries(order.forcedStageCompletions)) {
                               if (stgId !== currentStage && info.unscannedPartIds?.includes(detail.id)) {
-                                const stgShort = stages.find(s => s.id === stgId)?.name || stgId;
+                                const stgShort = getStageNameRussian(stgId);
                                 previousForcedInfo = {
                                   stageName: stgShort,
                                   employeeName: info.forcedByEmployeeName,
@@ -1366,7 +1366,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                 <span>Последствия принудительного завершения:</span>
               </div>
               <ul className="list-disc list-inside space-y-1 text-rose-800 text-[11.5px] leading-relaxed">
-                <li>Заказ будет передан на следующий этап (<strong>{getNextRequiredStage(order, currentStage) || 'Завершение'}</strong>).</li>
+                <li>Заказ будет передан на следующий этап: <strong>{getStageNameRussian(getNextRequiredStage(order, currentStage))}</strong>.</li>
                 <li>Все неотсканированные детали на следующем участке <strong>будут подсвечены красным цветом</strong>.</li>
                 <li>Будет указано ваше имя (<strong className="underline">{empName !== 'Сотрудник' ? empName : (order.responsibleEmployeeName || 'Оператор')}</strong>) как сотрудника, завершившего этап принудительно.</li>
               </ul>

@@ -1747,6 +1747,7 @@ function transliterate(str: string): string {
           const dealLink = portalBase ? `${portalBase}/crm/deal/details/${deal.ID}/` : undefined;
 
           orders.push({
+            ...local,
             id: orderId,
             orderNumber: deal.TITLE ? deal.TITLE : `Сделка #${deal.ID}`,
             clientName: deal.TITLE || `Клиент #${deal.ID}`,
@@ -1769,6 +1770,17 @@ function transliterate(str: string): string {
             responsibleEmployeeId: local.responsibleEmployeeId,
             responsibleEmployeeName: local.responsibleEmployeeName,
             birkaData: local.birkaData || null,
+            hardwareData: local.hardwareData || null,
+            assemblyFileData: local.assemblyFileData || null,
+            additionalWorks: local.additionalWorks || null,
+            packages: local.packages || [],
+            kittingSpecification: local.kittingSpecification || null,
+            forcedStageCompletions: local.forcedStageCompletions || {},
+            materialsNote: local.materialsNote || "",
+            plannedCuttingDate: local.plannedCuttingDate,
+            isReadyForProduction: local.isReadyForProduction,
+            plannedEndDate: local.plannedEndDate,
+            driverInfo: local.driverInfo,
             stageScanningProgress: local.stageScanningProgress || {},
             stageProgress: local.stageProgress || {
               queue: { status: 'in_progress' }
@@ -1818,6 +1830,7 @@ function transliterate(str: string): string {
             const finalFacades = local.facadesCount !== undefined ? local.facadesCount : calcFacades;
 
             orders.push({
+              ...local,
               id: orderId,
               orderNumber: `ПР-${pDoc.docId.substring(0, 6).toUpperCase()}`,
               clientName: project.clientInfo?.name || project.createdByName || 'Заказчик',
@@ -1837,6 +1850,17 @@ function transliterate(str: string): string {
               responsibleEmployeeId: local.responsibleEmployeeId,
               responsibleEmployeeName: local.responsibleEmployeeName,
               birkaData: local.birkaData || null,
+              hardwareData: local.hardwareData || null,
+              assemblyFileData: local.assemblyFileData || null,
+              additionalWorks: local.additionalWorks || null,
+              packages: local.packages || [],
+              kittingSpecification: local.kittingSpecification || null,
+              forcedStageCompletions: local.forcedStageCompletions || {},
+              materialsNote: local.materialsNote || "",
+              plannedCuttingDate: local.plannedCuttingDate,
+              isReadyForProduction: local.isReadyForProduction,
+              plannedEndDate: local.plannedEndDate,
+              driverInfo: local.driverInfo,
               stageScanningProgress: local.stageScanningProgress || {},
               stageProgress: local.stageProgress || {
                 queue: { status: 'in_progress' }
@@ -1894,6 +1918,13 @@ function transliterate(str: string): string {
         partsCount: partsCount !== undefined ? partsCount : existingData.partsCount,
         facadesCount: facadesCount !== undefined ? facadesCount : existingData.facadesCount,
         birkaData: birkaData !== undefined ? birkaData : existingData.birkaData,
+        hardwareData: req.body.hardwareData !== undefined ? req.body.hardwareData : existingData.hardwareData,
+        assemblyFileData: req.body.assemblyFileData !== undefined ? req.body.assemblyFileData : existingData.assemblyFileData,
+        additionalWorks: req.body.additionalWorks !== undefined ? req.body.additionalWorks : existingData.additionalWorks,
+        forcedStageCompletions: req.body.forcedStageCompletions !== undefined ? req.body.forcedStageCompletions : existingData.forcedStageCompletions,
+        materialsNote: req.body.materialsNote !== undefined ? req.body.materialsNote : existingData.materialsNote,
+        plannedCuttingDate: req.body.plannedCuttingDate !== undefined ? req.body.plannedCuttingDate : existingData.plannedCuttingDate,
+        isReadyForProduction: req.body.isReadyForProduction !== undefined ? req.body.isReadyForProduction : existingData.isReadyForProduction,
         stageScanningProgress: stageScanningProgress !== undefined ? stageScanningProgress : existingData.stageScanningProgress,
         packages: req.body.packages !== undefined ? req.body.packages : existingData.packages,
         kittingSpecification: req.body.kittingSpecification !== undefined ? req.body.kittingSpecification : existingData.kittingSpecification,
@@ -2725,6 +2756,66 @@ function transliterate(str: string): string {
       res.json({ success: true });
     } catch (e: any) {
       console.error("Error saving schedule:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  // Material Residuals Endpoints
+  app.get("/api/erp/:companyId/residuals", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+        where: { collection: `companies/${companyId}/erp_residuals` }
+      }));
+      const residuals = docs.map(d => {
+        try {
+          return JSON.parse(d.data);
+        } catch (e) {
+          return null;
+        }
+      }).filter(Boolean);
+      res.json({ success: true, residuals });
+    } catch (e: any) {
+      console.error("Error getting residuals:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/erp/:companyId/residuals", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const residual = req.body;
+      if (!residual || !residual.id) {
+        return res.status(400).json({ error: "Не указан id остатка" });
+      }
+      const docPath = `companies/${companyId}/erp_residuals/${residual.id}`;
+      await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+        where: { path: docPath },
+        create: {
+          path: docPath,
+          collection: `companies/${companyId}/erp_residuals`,
+          docId: residual.id,
+          data: JSON.stringify(residual)
+        },
+        update: {
+          data: JSON.stringify(residual)
+        }
+      }));
+      res.json({ success: true, residual });
+    } catch (e: any) {
+      console.error("Error saving residual:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.delete("/api/erp/:companyId/residuals/:residualId", async (req, res) => {
+    try {
+      const { companyId, residualId } = req.params;
+      const docPath = `companies/${companyId}/erp_residuals/${residualId}`;
+      await dbQueryWithRetry(() => prisma.dbDocument.delete({ where: { path: docPath } }).catch(() => null));
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("Error deleting residual:", e);
       res.status(500).json({ error: String(e) });
     }
   });

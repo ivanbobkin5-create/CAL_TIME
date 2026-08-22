@@ -39,7 +39,8 @@ import {
   WorkShift, 
   ERPCompanySettings,
   ProductionStageId,
-  SalaryAdjustment 
+  SalaryAdjustment,
+  MaterialResidual
 } from './types';
 import { ERPLoader } from './ERPLoader';
 import { ERPDashboardView } from './views/ERPDashboardView';
@@ -52,6 +53,7 @@ import { ERPSalariesView } from './views/ERPSalariesView';
 import { ERPEmployeesView } from './views/ERPEmployeesView';
 import { ERPSettingsView } from './views/ERPSettingsView';
 import { ERPArchiveView } from './views/ERPArchiveView';
+import { ERPMaterialResidualsView } from './views/ERPMaterialResidualsView';
 import { ERPLoginView } from './views/ERPLoginView';
 import { ERPOrderWorkspaceView } from './views/ERPOrderWorkspaceView';
 import { MobileCameraScannerModal } from './components/MobileCameraScannerModal';
@@ -222,6 +224,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
   const [shifts, setShifts] = useState<WorkShift[]>([]);
   const [shiftLogs, setShiftLogs] = useState<any[]>([]);
   const [scheduleEntries, setScheduleEntries] = useState<Record<string, any>>({});
+  const [residuals, setResiduals] = useState<MaterialResidual[]>([]);
   const [isSyncingOrders, setIsSyncingOrders] = useState(false);
   const [syncStatusText, setSyncStatusText] = useState<string | null>(null);
   const [orderSource, setOrderSource] = useState<string>('projects');
@@ -509,14 +512,23 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
         }));
       }
 
-      // Fetch employees, orders, schedule, shift-logs and active shift in parallel
+      // Fetch employees, orders, schedule, shift-logs, residuals and active shift in parallel
       try {
-        const [empRes, ordersRes, scheduleRes, shiftLogsRes] = await Promise.allSettled([
+        const [empRes, ordersRes, scheduleRes, shiftLogsRes, residualsRes] = await Promise.allSettled([
           fetch(`/api/erp/${comp.id}/employees`),
           fetch(`/api/erp/${comp.id}/orders`),
           fetch(`/api/erp/${comp.id}/schedule`),
-          fetch(`/api/erp/${comp.id}/shift-logs`)
+          fetch(`/api/erp/${comp.id}/shift-logs`),
+          fetch(`/api/erp/${comp.id}/residuals`)
         ]);
+
+        // Process residuals
+        if (residualsRes.status === 'fulfilled' && residualsRes.value.ok) {
+          const resData = await residualsRes.value.json();
+          if (resData.residuals && Array.isArray(resData.residuals)) {
+            setResiduals(resData.residuals);
+          }
+        }
 
         // Process shift-logs
         if (shiftLogsRes.status === 'fulfilled' && shiftLogsRes.value.ok) {
@@ -1051,6 +1063,64 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
     saveEmployeesToBackend(updatedList);
   };
 
+  const handleAddResidual = async (residual: MaterialResidual) => {
+    const compId = company?.id || aliasOrId;
+    setResiduals(prev => [residual, ...prev.filter(r => r.id !== residual.id)]);
+    if (compId) {
+      try {
+        const res = await fetch(`/api/erp/${compId}/residuals`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(residual)
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.residual) {
+            setResiduals(prev => [data.residual, ...prev.filter(r => r.id !== data.residual.id)]);
+          }
+        }
+      } catch (e) {
+        console.error("Error saving residual to backend:", e);
+      }
+    }
+  };
+
+  const handleUpdateResidual = async (residual: MaterialResidual) => {
+    const compId = company?.id || aliasOrId;
+    setResiduals(prev => prev.map(r => r.id === residual.id ? residual : r));
+    if (compId) {
+      try {
+        const res = await fetch(`/api/erp/${compId}/residuals`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(residual)
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.residual) {
+            setResiduals(prev => prev.map(r => r.id === data.residual.id ? data.residual : r));
+          }
+        }
+      } catch (e) {
+        console.error("Error updating residual on backend:", e);
+      }
+    }
+  };
+
+  const handleDeleteResidual = async (id: string) => {
+    const compId = company?.id || aliasOrId;
+    setResiduals(prev => prev.filter(r => r.id !== id));
+    if (compId) {
+      try {
+        await fetch(`/api/erp/${compId}/residuals/${id}`, {
+          method: 'DELETE'
+        });
+      } catch (e) {
+        console.error("Error deleting residual on backend:", e);
+      }
+    }
+  };
+
   const handleLogout = () => {
     setAuthUser(null);
     try {
@@ -1174,18 +1244,58 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
                         (matchedEmp as any).isSuperAdmin ||
                         matchedEmp.email === 'lk.ivanbobkin@gmail.com';
 
-  // 4. Navigation items without numbering
-  const menuItems: { id: ERPSection; label: string; icon: any; badge?: number }[] = [
+  const isSectionAllowed = (sec: ERPSection): boolean => {
+    if (isUserForeman) return true;
+    if (sec === 'production') return true; // Always accessible to workers
+    
+    const empId = matchedEmp?.id || '';
+
+    switch (sec) {
+      case 'dashboard':
+        if (settings.dashboardAccessMode === 'none') return false;
+        if (settings.dashboardAccessMode === 'custom') {
+          return (settings.dashboardAllowedEmployeeIds || []).includes(empId);
+        }
+        return true;
+      case 'planning':
+        if (settings.planningSectionEnabled === false) {
+          return (settings.planningAllowedEmployeeIds || []).includes(empId);
+        }
+        return true;
+      case 'schedule':
+        return settings.scheduleSectionEnabled !== false;
+      case 'residuals':
+        return settings.residualsSectionEnabled !== false;
+      case 'archive':
+        return settings.archiveSectionEnabled !== false;
+      case 'reports':
+        return settings.reportsSectionEnabled !== false;
+      case 'salaries':
+        return settings.salariesSectionEnabled !== false;
+      case 'employees':
+        return settings.employeesSectionEnabled !== false;
+      case 'settings':
+        return settings.settingsSectionEnabled === true;
+      default:
+        return true;
+    }
+  };
+
+  // 4. Navigation items with RBAC filtering
+  const allNavItems: { id: ERPSection; label: string; icon: any; badge?: number }[] = [
     { id: 'dashboard', label: 'Дашборд', icon: LayoutDashboard },
     { id: 'planning', label: 'Планирование', icon: Calendar, badge: orders.filter(o => o.status === 'planned').length },
     { id: 'schedule', label: 'График работы', icon: CalendarDays },
+    { id: 'residuals', label: 'Остатки материалов', icon: Layers, badge: residuals.filter(r => r.status === 'available').length },
     { id: 'production', label: 'Производство', icon: Factory, badge: orders.filter(o => o.status === 'in_progress' || o.currentStage === 'shipping').length },
     { id: 'archive', label: 'Архив заказов', icon: Archive, badge: orders.filter(o => o.status === 'completed' || o.status === 'shipped').length },
     { id: 'reports', label: 'Аналитика и отчеты', icon: BarChart3 },
-    ...(settings?.salariesSectionEnabled !== false || isUserForeman ? [{ id: 'salaries', label: 'Зарплаты', icon: DollarSign } as any] : []),
+    { id: 'salaries', label: 'Зарплаты', icon: DollarSign },
     { id: 'employees', label: 'Сотрудники', icon: Users, badge: employees.length },
     { id: 'settings', label: 'Настройки', icon: Settings }
   ];
+
+  const menuItems = allNavItems.filter(item => isSectionAllowed(item.id));
 
   const rawName = matchedEmp?.name 
     || authUser?.displayName 
@@ -1509,6 +1619,9 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
               }}
               onUpdateOrder={(updated) => handleUpdateOrder(updated)}
               onUpdateOrderStatus={(orderId, nextStage) => handleUpdateOrderStatus(orderId, nextStage)}
+              onAddMaterialResiduals={(resList) => {
+                resList.forEach(r => handleAddResidual(r));
+              }}
               sourceSection={activeSection}
             />
           ) : (
@@ -1548,6 +1661,22 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
                   entries={scheduleEntries}
                   onUpdateSchedule={handleUpdateScheduleEntries}
                   companyId={company?.id || aliasOrId}
+                  companyName={company?.name}
+                  currentUser={matchedEmp}
+                  isUserForeman={isUserForeman}
+                  settings={settings}
+                />
+              )}
+
+              {activeSection === 'residuals' && (
+                <ERPMaterialResidualsView
+                  residuals={residuals}
+                  onAddResidual={handleAddResidual}
+                  onUpdateResidual={handleUpdateResidual}
+                  onDeleteResidual={handleDeleteResidual}
+                  employees={employees}
+                  orders={orders}
+                  companyName={company?.name}
                 />
               )}
 
@@ -1620,6 +1749,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
                 <ERPSettingsView 
                   settings={settings} 
                   orders={orders}
+                  employees={employees}
                   catalogProducts={catalogProducts}
                   onSaveSettings={handleSaveSettings} 
                 />

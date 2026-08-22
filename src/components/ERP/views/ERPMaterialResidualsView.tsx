@@ -18,11 +18,14 @@ import {
   X,
   Sparkles
 } from 'lucide-react';
-import { MaterialResidual, ERPEmployee } from '../types';
+import { MaterialResidual, ERPEmployee, ProductionOrder } from '../types';
 
 interface ERPMaterialResidualsViewProps {
   residuals: MaterialResidual[];
   currentUser?: ERPEmployee | null;
+  employees?: ERPEmployee[];
+  orders?: ProductionOrder[];
+  companyName?: string;
   onAddResidual: (item: MaterialResidual) => void;
   onUpdateResidual: (item: MaterialResidual) => void;
   onDeleteResidual: (id: string) => void;
@@ -31,6 +34,9 @@ interface ERPMaterialResidualsViewProps {
 export const ERPMaterialResidualsView: React.FC<ERPMaterialResidualsViewProps> = ({
   residuals,
   currentUser,
+  employees = [],
+  orders = [],
+  companyName,
   onAddResidual,
   onUpdateResidual,
   onDeleteResidual

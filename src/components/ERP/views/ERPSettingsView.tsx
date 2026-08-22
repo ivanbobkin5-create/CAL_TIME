@@ -34,9 +34,17 @@ import {
   ChevronDown,
   Sparkles,
   Search,
-  Package
+  Package,
+  Workflow,
+  LayoutDashboard,
+  Calendar,
+  CalendarDays,
+  DollarSign,
+  BarChart3,
+  Users,
+  Archive
 } from 'lucide-react';
-import { ERPCompanySettings, MachineEquipment, PackageLabelSettings, ProductionStageId, ERPNoteRule, ProductionOrder } from '../types';
+import { ERPCompanySettings, MachineEquipment, PackageLabelSettings, ProductionStageId, ERPNoteRule, ProductionOrder, ERPEmployee } from '../types';
 import { DEFAULT_BIRKA_COLUMN_MAPPING } from '../utils/birkaParser';
 import { DEFAULT_HARDWARE_COLUMN_MAPPING } from '../utils/hardwareParser';
 import { WarehouseCatalogPickerModal } from '../components/WarehouseCatalogPickerModal';
@@ -49,6 +57,7 @@ interface ERPSettingsViewProps {
   settings: ERPCompanySettings;
   orders?: ProductionOrder[];
   catalogProducts?: any[];
+  employees?: ERPEmployee[];
   onSaveSettings: (settings: ERPCompanySettings) => void;
 }
 
@@ -229,6 +238,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
   settings,
   orders = [],
   catalogProducts = [],
+  employees = [],
   onSaveSettings
 }) => {
   const [activeTab, setActiveTab] = useState<'stages' | 'birka' | 'hardware' | 'warehouse_cells' | 'rules' | 'tariffs' | 'additional' | 'equipment' | 'labels' | 'shifts' | 'bitrix_delivery'>('stages');
@@ -2364,6 +2374,120 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
       {/* TAB: BITRIX24 & DELIVERY ACT SETTINGS */}
       {activeTab === 'bitrix_delivery' && (
         <div className="space-y-6">
+          {/* Bitrix24 Stage Mapping Configuration */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl">
+                  <Workflow className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base">Сопоставление стадий производства с Битрикс24 CRM</h3>
+                  <p className="text-xs text-slate-500">
+                    При завершении участков в цехе или сканировании последней детали ERP автоматически переводит сделку в Битрикс24 на соответствующую стадию
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div className="text-xs font-bold text-slate-700">
+                Укажите ID стадий сделок Битрикс24 для каждого производственного участка (например: C1:PREPARATION, C1:EXECUTING, WON, C1:FINAL_INVOICE):
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
+                {[
+                  { id: 'queue', name: 'Очередь / Планирование', icon: Clock, badgeBg: 'bg-slate-100 text-slate-700' },
+                  { id: 'cutting', name: 'Раскрой (ЛДСП/МДФ)', icon: Scissors, badgeBg: 'bg-blue-50 text-blue-700' },
+                  { id: 'edging', name: 'Кромкооблицовка', icon: Layers, badgeBg: 'bg-indigo-50 text-indigo-700' },
+                  { id: 'cnc', name: 'Присадка / ЧПУ', icon: Factory, badgeBg: 'bg-purple-50 text-purple-700' },
+                  { id: 'facades', name: 'Фасады и МДФ', icon: Wrench, badgeBg: 'bg-amber-50 text-amber-700' },
+                  { id: 'assembly', name: 'Сборка корпусов', icon: Wrench, badgeBg: 'bg-teal-50 text-teal-700' },
+                  { id: 'kitting', name: 'Комплектовка фурнитуры', icon: Box, badgeBg: 'bg-cyan-50 text-cyan-700' },
+                  { id: 'qc', name: 'Контроль ОТК', icon: CheckCircle2, badgeBg: 'bg-emerald-50 text-emerald-700' },
+                  { id: 'packing', name: 'Упаковка и склад мест', icon: Package, badgeBg: 'bg-orange-50 text-orange-700' },
+                  { id: 'ready', name: 'Готово / Завершено (Отгрузка)', icon: CheckCircle2, badgeBg: 'bg-green-50 text-green-700' },
+                ].map(stageItem => {
+                  const Icon = stageItem.icon;
+                  const currentVal = formData.bitrix24StageMapping?.[stageItem.id] || '';
+                  return (
+                    <div key={stageItem.id} className="p-3.5 bg-slate-50 border border-slate-200/80 rounded-2xl flex flex-col gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className={`p-1.5 rounded-lg ${stageItem.badgeBg}`}>
+                          <Icon className="w-4 h-4" />
+                        </div>
+                        <span className="font-bold text-xs text-slate-800">{stageItem.name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[11px] text-slate-500 shrink-0 font-medium">Стадия Б24:</span>
+                        <input
+                          type="text"
+                          placeholder="STAGE_ID (e.g. C1:EXECUTING)"
+                          value={currentVal}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setFormData(prev => ({
+                              ...prev,
+                              bitrix24StageMapping: {
+                                ...(prev.bitrix24StageMapping || {}),
+                                [stageItem.id]: val
+                              }
+                            }));
+                          }}
+                          className="w-full px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Action on returning order from archive */}
+              <div className="mt-4 p-4 bg-amber-50/70 border border-amber-200/80 rounded-2xl space-y-3">
+                <div className="flex items-center gap-2 text-xs font-bold text-amber-900">
+                  <RotateCcw className="w-4 h-4 text-amber-700" />
+                  Действие при возврате заказа из архива в производство
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <label className="flex items-center gap-2.5 p-2.5 bg-white rounded-xl border border-amber-200/70 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="bitrix24RestoreAction"
+                      value="do_nothing"
+                      checked={(formData.bitrix24RestoreAction || 'do_nothing') === 'do_nothing'}
+                      onChange={() => setFormData({ ...formData, bitrix24RestoreAction: 'do_nothing' })}
+                      className="text-amber-600 focus:ring-amber-500 cursor-pointer"
+                    />
+                    <span className="font-medium text-slate-800">Не менять стадию в Битрикс24</span>
+                  </label>
+                  <label className="flex items-center gap-2.5 p-2.5 bg-white rounded-xl border border-amber-200/70 cursor-pointer">
+                    <input
+                      type="radio"
+                      name="bitrix24RestoreAction"
+                      value="restore_to_stage"
+                      checked={formData.bitrix24RestoreAction === 'restore_to_stage'}
+                      onChange={() => setFormData({ ...formData, bitrix24RestoreAction: 'restore_to_stage' })}
+                      className="text-amber-600 focus:ring-amber-500 cursor-pointer"
+                    />
+                    <span className="font-medium text-slate-800">Перевести на указанную стадию</span>
+                  </label>
+                </div>
+                {formData.bitrix24RestoreAction === 'restore_to_stage' && (
+                  <div className="pt-2">
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">ID стадии Битрикс24 для возврата в работу:</label>
+                    <input
+                      type="text"
+                      placeholder="Например: C1:PREPARATION или C1:EXECUTING"
+                      value={formData.bitrix24RestoreStageId || ''}
+                      onChange={(e) => setFormData({ ...formData, bitrix24RestoreStageId: e.target.value })}
+                      className="w-full px-3.5 py-2 rounded-xl bg-white border border-amber-300 font-mono font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* Autoclose Tasks Settings Card */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
@@ -2698,9 +2822,10 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
         </div>
       )}
 
-      {/* TAB 8: SHIFTS */}
+      {/* TAB: SHIFTS & ACCESS CONTROL (RBAC) */}
       {activeTab === 'shifts' && (
         <div className="space-y-6">
+          {/* Work Hours and Timing */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm">
             <h3 className="font-bold text-slate-900 text-base mb-1">Режим работы цеха и смены</h3>
             <p className="text-xs text-slate-400 mb-6">График сменности и нормативы времени</p>
@@ -2736,38 +2861,338 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                 />
               </div>
             </div>
+          </div>
 
-            <div className="mt-8 pt-6 border-t border-slate-100 space-y-4">
-              <div>
-                <h4 className="font-bold text-slate-900 text-sm mb-1">Доступ к разделу зарплат и ведомости</h4>
-                <p className="text-[11px] text-slate-400">Настройки конфиденциальности финансовых начислений мастеров</p>
+          {/* GRANULAR RBAC ACCESS CONTROL */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-6">
+            <div>
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-indigo-600" />
+                <h3 className="font-bold text-slate-900 text-base">Права доступа сотрудников к разделам ERP</h3>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                Начальник цеха имеет полный доступ ко всем разделам. Здесь вы можете гибко настроить, какие модули и функции доступны обычным сотрудникам и мастерам.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              {/* 1. Dashboard */}
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                      <LayoutDashboard className="w-4 h-4 text-blue-600" /> Раздел «Дашборд»
+                    </div>
+                    <div className="text-[11px] text-slate-500">Сводные показатели, загрузка цеха и активные заказы</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={formData.dashboardAccessMode || 'all'}
+                      onChange={(e) => setFormData({ ...formData, dashboardAccessMode: e.target.value as any })}
+                      className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                    >
+                      <option value="all">Доступно всем сотрудникам</option>
+                      <option value="none">Только начальнику цеха</option>
+                      <option value="custom">Выбранным сотрудникам</option>
+                    </select>
+                  </div>
+                </div>
+
+                {formData.dashboardAccessMode === 'custom' && employees.length > 0 && (
+                  <div className="pt-2 border-t border-slate-200/60">
+                    <div className="text-[11px] font-bold text-slate-700 mb-2">Выберите сотрудников, которым разрешен Дашборд:</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                      {employees.map(emp => {
+                        const isChecked = (formData.dashboardAllowedEmployeeIds || []).includes(emp.id);
+                        return (
+                          <label key={emp.id} className="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-200 cursor-pointer text-xs">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                const current = formData.dashboardAllowedEmployeeIds || [];
+                                const updated = e.target.checked ? [...current, emp.id] : current.filter(id => id !== emp.id);
+                                setFormData({ ...formData, dashboardAllowedEmployeeIds: updated });
+                              }}
+                              className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+                            />
+                            <span className="truncate font-medium text-slate-800">{emp.name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
-                <label className="flex items-start gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-200 cursor-pointer select-none hover:bg-slate-100/55 transition-colors">
-                  <input
-                    type="checkbox"
-                    checked={formData.salariesSectionEnabled !== false}
-                    onChange={(e) => setFormData({ ...formData, salariesSectionEnabled: e.target.checked })}
-                    className="mt-0.5 w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 cursor-pointer"
-                  />
+              {/* 2. Planning */}
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div>
-                    <span className="block text-xs font-bold text-slate-900 mb-0.5">Показывать раздел «Зарплаты» мастерам</span>
-                    <span className="block text-[10px] text-slate-400 leading-normal">Если выключено, обычные сотрудники цеха не будут видеть вкладку начислений в меню.</span>
+                    <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                      <Calendar className="w-4 h-4 text-purple-600" /> Раздел «Планирование»
+                    </div>
+                    <div className="text-[11px] text-slate-500">Загрузка файлов раскроя, бирок, фурнитуры и запуск в работу</div>
                   </div>
-                </label>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={formData.planningSectionEnabled === false ? 'none' : (formData.planningAllowedEmployeeIds && formData.planningAllowedEmployeeIds.length > 0 ? 'custom' : 'all')}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'none') {
+                          setFormData({ ...formData, planningSectionEnabled: false, planningAllowedEmployeeIds: [] });
+                        } else if (val === 'all') {
+                          setFormData({ ...formData, planningSectionEnabled: true, planningAllowedEmployeeIds: [] });
+                        } else {
+                          setFormData({ ...formData, planningSectionEnabled: false, planningAllowedEmployeeIds: formData.planningAllowedEmployeeIds || [] });
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-purple-500 cursor-pointer"
+                    >
+                      <option value="all">Доступно всем сотрудникам</option>
+                      <option value="none">Только начальнику цеха</option>
+                      <option value="custom">Выбранным сотрудникам</option>
+                    </select>
+                  </div>
+                </div>
 
-                <label className="flex items-start gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-200 cursor-pointer select-none hover:bg-slate-100/55 transition-colors">
+                {formData.planningSectionEnabled === false && (
+                  <div className="pt-2 border-t border-slate-200/60">
+                    <div className="text-[11px] font-bold text-slate-700 mb-2">Разрешить доступ к планированию отдельным сотрудникам (например, технологу):</div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                      {employees.map(emp => {
+                        const isChecked = (formData.planningAllowedEmployeeIds || []).includes(emp.id);
+                        return (
+                          <label key={emp.id} className="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-200 cursor-pointer text-xs">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                const current = formData.planningAllowedEmployeeIds || [];
+                                const updated = e.target.checked ? [...current, emp.id] : current.filter(id => id !== emp.id);
+                                setFormData({ ...formData, planningAllowedEmployeeIds: updated });
+                              }}
+                              className="w-4 h-4 text-purple-600 rounded cursor-pointer"
+                            />
+                            <span className="truncate font-medium text-slate-800">{emp.name}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 3. Schedule */}
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-3">
+                <div>
+                  <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                    <CalendarDays className="w-4 h-4 text-emerald-600" /> Раздел «График работы»
+                  </div>
+                  <div className="text-[11px] text-slate-500">Управление сменностью, табель выходов и планирование графика</div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+                  <label className="flex items-start gap-2.5 p-3 bg-white rounded-xl border border-slate-200 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.scheduleSectionEnabled !== false}
+                      onChange={(e) => setFormData({ ...formData, scheduleSectionEnabled: e.target.checked })}
+                      className="mt-0.5 w-4 h-4 text-emerald-600 rounded cursor-pointer"
+                    />
+                    <div>
+                      <span className="block font-bold text-xs text-slate-900">Показывать раздел</span>
+                      <span className="block text-[10px] text-slate-400">Вкладка видна в меню</span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-2.5 p-3 bg-white rounded-xl border border-slate-200 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.scheduleShowOtherEmployees !== false}
+                      onChange={(e) => setFormData({ ...formData, scheduleShowOtherEmployees: e.target.checked })}
+                      className="mt-0.5 w-4 h-4 text-emerald-600 rounded cursor-pointer"
+                    />
+                    <div>
+                      <span className="block font-bold text-xs text-slate-900">Показывать других мастеров</span>
+                      <span className="block text-[10px] text-slate-400">Если выкл — видит только свои смены</span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-2.5 p-3 bg-white rounded-xl border border-slate-200 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.scheduleCanSelfEdit !== false}
+                      onChange={(e) => setFormData({ ...formData, scheduleCanSelfEdit: e.target.checked })}
+                      className="mt-0.5 w-4 h-4 text-emerald-600 rounded cursor-pointer"
+                    />
+                    <div>
+                      <span className="block font-bold text-xs text-slate-900">Сам проставляет смены</span>
+                      <span className="block text-[10px] text-slate-400">Может менять себе даты смен</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* 4. Production */}
+              <div className="p-4 bg-emerald-50/70 rounded-2xl border border-emerald-200/80 flex items-center justify-between">
+                <div>
+                  <div className="font-bold text-emerald-950 text-xs flex items-center gap-1.5">
+                    <Factory className="w-4 h-4 text-emerald-700" /> Раздел «Производство» (Цех и сканирование)
+                  </div>
+                  <div className="text-[11px] text-emerald-800">Основной рабочий терминал станков и рабочих мест мастеров</div>
+                </div>
+                <span className="px-3 py-1 bg-emerald-100 text-emerald-800 font-bold text-[11px] rounded-xl border border-emerald-300">
+                  Всегда доступно всем
+                </span>
+              </div>
+
+              {/* 5. Warehouse Residuals */}
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                    <Package className="w-4 h-4 text-amber-600" /> Раздел «Склад остатков» (Деловые обрезки и кромка)
+                  </div>
+                  <div className="text-[11px] text-slate-500">Учет сохраненных обрезков ЛДСП/МДФ и остатков бухт кромки</div>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
-                    checked={formData.seeOnlyOwnSalary !== false}
-                    onChange={(e) => setFormData({ ...formData, seeOnlyOwnSalary: e.target.checked })}
-                    className="mt-0.5 w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 cursor-pointer"
+                    checked={formData.residualsSectionEnabled !== false}
+                    onChange={(e) => setFormData({ ...formData, residualsSectionEnabled: e.target.checked })}
+                    className="w-4 h-4 text-amber-600 rounded cursor-pointer"
                   />
-                  <div>
-                    <span className="block text-xs font-bold text-slate-900 mb-0.5">Мастера видят только собственную ЗП</span>
-                    <span className="block text-[10px] text-slate-400 leading-normal">При включении мастера видят только свою карточку начислений и свою выработку. Начальник цеха по-прежнему видит всех.</span>
+                  <span className="text-xs font-bold text-slate-800">Доступно сотрудникам</span>
+                </label>
+              </div>
+
+              {/* 6. Orders Archive */}
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                    <Archive className="w-4 h-4 text-slate-600" /> Раздел «Архив заказов»
                   </div>
+                  <div className="text-[11px] text-slate-500">Просмотр завершенных и отгруженных заказов производства</div>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.archiveSectionEnabled !== false}
+                    onChange={(e) => setFormData({ ...formData, archiveSectionEnabled: e.target.checked })}
+                    className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+                  />
+                  <span className="text-xs font-bold text-slate-800">Доступно сотрудникам</span>
+                </label>
+              </div>
+
+              {/* 7. Reports & Analytics */}
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                      <BarChart3 className="w-4 h-4 text-blue-600" /> Раздел «Аналитика и отчеты»
+                    </div>
+                    <div className="text-[11px] text-slate-500">Графики выработки, статистика участков и производительность</div>
+                  </div>
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.reportsSectionEnabled !== false}
+                      onChange={(e) => setFormData({ ...formData, reportsSectionEnabled: e.target.checked })}
+                      className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+                    />
+                    <span className="text-xs font-bold text-slate-800">Показывать раздел</span>
+                  </label>
+                </div>
+
+                {formData.reportsSectionEnabled !== false && (
+                  <div className="pt-2 border-t border-slate-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <span className="text-xs font-medium text-slate-700">Объем аналитики для мастеров:</span>
+                    <select
+                      value={formData.reportsViewScope || 'all'}
+                      onChange={(e) => setFormData({ ...formData, reportsViewScope: e.target.value as any })}
+                      className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+                    >
+                      <option value="all">По всему производству целиком</option>
+                      <option value="own_only">Только личная выработка мастера (за себя)</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+
+              {/* 8. Salaries */}
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-3">
+                <div>
+                  <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                    <DollarSign className="w-4 h-4 text-emerald-600" /> Раздел «Зарплаты и начисления»
+                  </div>
+                  <div className="text-[11px] text-slate-500">Сдельная оплата, премии, штрафы и ведомости выплат</div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                  <label className="flex items-start gap-2.5 p-3 bg-white rounded-xl border border-slate-200 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.salariesSectionEnabled !== false}
+                      onChange={(e) => setFormData({ ...formData, salariesSectionEnabled: e.target.checked })}
+                      className="mt-0.5 w-4 h-4 text-emerald-600 rounded cursor-pointer"
+                    />
+                    <div>
+                      <span className="block font-bold text-xs text-slate-900">Показывать раздел мастерам</span>
+                      <span className="block text-[10px] text-slate-400">Вкладка зарплат доступна в меню</span>
+                    </div>
+                  </label>
+
+                  <label className="flex items-start gap-2.5 p-3 bg-white rounded-xl border border-slate-200 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.seeOnlyOwnSalary !== false}
+                      onChange={(e) => setFormData({ ...formData, seeOnlyOwnSalary: e.target.checked })}
+                      className="mt-0.5 w-4 h-4 text-emerald-600 rounded cursor-pointer"
+                    />
+                    <div>
+                      <span className="block font-bold text-xs text-slate-900">Видят только свою зарплату</span>
+                      <span className="block text-[10px] text-slate-400">Мастер не видит начисления коллег</span>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {/* 9. Employees List */}
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                    <Users className="w-4 h-4 text-indigo-600" /> Раздел «Сотрудники»
+                  </div>
+                  <div className="text-[11px] text-slate-500">Список штата, участки работы и контакты сотрудников</div>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.employeesSectionEnabled !== false}
+                    onChange={(e) => setFormData({ ...formData, employeesSectionEnabled: e.target.checked })}
+                    className="w-4 h-4 text-indigo-600 rounded cursor-pointer"
+                  />
+                  <span className="text-xs font-bold text-slate-800">Доступно сотрудникам</span>
+                </label>
+              </div>
+
+              {/* 10. Settings */}
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                    <Settings className="w-4 h-4 text-slate-600" /> Раздел «Настройки»
+                  </div>
+                  <div className="text-[11px] text-slate-500">Конфигурация участков, интеграций и тарифов производства</div>
+                </div>
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.settingsSectionEnabled === true}
+                    onChange={(e) => setFormData({ ...formData, settingsSectionEnabled: e.target.checked })}
+                    className="w-4 h-4 text-blue-600 rounded cursor-pointer"
+                  />
+                  <span className="text-xs font-bold text-slate-800">Разрешить доступ обычным сотрудникам</span>
                 </label>
               </div>
             </div>

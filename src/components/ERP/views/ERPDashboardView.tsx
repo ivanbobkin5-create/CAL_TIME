@@ -61,34 +61,41 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
   // Today's date YYYY-MM-DD
   const todayStr = new Date().toISOString().split('T')[0];
 
-  // Check schedule from localStorage or company schedule
-  let scheduledActiveEmployeesCount = 0;
-  let scheduledEmployeesToday: ERPEmployee[] = [];
-  try {
-    const storageKey = companyId ? `erp_schedule_entries_${companyId}` : 'erp_production_schedule_grid_v1';
-    const savedSchedule = localStorage.getItem(storageKey) || localStorage.getItem('erp_production_schedule_grid_v1');
-    if (savedSchedule) {
-      const parsedSchedule = JSON.parse(savedSchedule);
-      validEmployees.forEach(emp => {
-        const key = `${emp.id}_${todayStr}`;
-        const entry = parsedSchedule[key];
-        if (entry && (entry.type === 'work_12' || entry.type === 'work_8' || entry.type === 'night_12' || entry.status === 'work')) {
-          scheduledActiveEmployeesCount++;
-          scheduledEmployeesToday.push(emp);
-        }
-      });
-    }
-  } catch (e) {}
+  // Production Plan for Today: cutting m2, sheets estimate, edge meters
+  // Filter active orders that are in cutting or edging or scheduled for today
+  const todayDateStr = new Date().toISOString().split('T')[0];
+  const todayCuttingOrders = orders.filter(o => (o.currentStage === 'cutting' && o.status === 'in_progress') || (o.currentStage === 'queue' && o.status === 'in_progress'));
+  const todayCuttingM2 = todayCuttingOrders.reduce((sum, o) => sum + (o.totalAreaM2 || 0), 0);
+  const todayCuttingSheets = Math.ceil(todayCuttingM2 / 5.8) || (todayCuttingM2 > 0 ? 1 : 0);
 
-  // Active production employees on shift today (0 if none scheduled/started)
-  const activeShiftCount = scheduledActiveEmployeesCount;
+  const todayEdgingOrders = orders.filter(o => o.currentStage === 'edging' && o.status === 'in_progress');
+  const todayEdgingM = todayEdgingOrders.reduce((sum, o) => sum + (o.totalEdgeM || 0), 0);
 
-  // Shift Master (only if explicitly scheduled or active in management)
-  const masterEmployee = scheduledEmployeesToday.find(e => 
-    e.department === 'management' || 
-    e.role?.toLowerCase().includes('начальник') || 
-    e.role?.toLowerCase().includes('мастер')
-  ) || null;
+  // Current Month Production Pace Calculation
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+  const totalDaysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+  const currentDay = now.getDate();
+  const monthProgressPercent = Math.round((currentDay / totalDaysInMonth) * 100);
+
+  // Month target (estimated from settings or sum of active + completed orders this month)
+  const monthOrders = orders.filter(o => {
+    if (!o.createdAt) return true;
+    const d = new Date(o.createdAt);
+    return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
+  });
+  const monthCompletedArea = monthOrders.filter(o => o.status === 'completed' || o.status === 'shipped').reduce((sum, o) => sum + (o.totalAreaM2 || 0), 0);
+  const monthTotalTargetArea = Math.max(
+    (settings as any)?.customProductionMetrics?.monthlyTargetM2 || 0,
+    monthOrders.reduce((sum, o) => sum + (o.totalAreaM2 || 0), 0) || 500
+  );
+
+  const monthCompletedPercent = Math.min(100, Math.round((monthCompletedArea / Math.max(monthTotalTargetArea, 1)) * 100));
+  // Pace ratio: if completed percent matches or exceeds month elapsed time, pace is on track or ahead
+  const paceRatio = monthProgressPercent > 0 ? (monthCompletedPercent / monthProgressPercent) : 1;
+  const isPaceOnTrack = paceRatio >= 0.85;
+  const isPaceAhead = paceRatio >= 1.05;
 
   // Calculate actual stage load based on real orders in progress
   const stageStats = {
@@ -195,15 +202,19 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
         {/* Metric 4 */}
         <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm hover:shadow-md transition-shadow">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Сотрудники в смене</span>
-            <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
-              <Users className="w-5 h-5" />
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Темп месяца</span>
+            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center font-bold ${
+              isPaceAhead ? 'bg-emerald-50 text-emerald-600' : isPaceOnTrack ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'
+            }`}>
+              <TrendingUp className="w-5 h-5" />
             </div>
           </div>
-          <div className="text-3xl font-black text-slate-900 mb-1">{activeShiftCount} <span className="text-lg font-bold text-slate-400">чел.</span></div>
-          <div className="flex items-center gap-1.5 text-xs text-emerald-600 font-semibold">
-            <CheckCircle2 className="w-3.5 h-3.5" />
-            <span>{activeShiftCount > 0 ? 'Смена укомплектована' : 'Смена не сформирована'}</span>
+          <div className="text-3xl font-black text-slate-900 mb-1">{monthCompletedPercent}% <span className="text-sm font-bold text-slate-400">от плана</span></div>
+          <div className={`flex items-center gap-1.5 text-xs font-semibold ${
+            isPaceAhead ? 'text-emerald-600' : isPaceOnTrack ? 'text-blue-600' : 'text-amber-600'
+          }`}>
+            {isPaceAhead ? <CheckCircle2 className="w-3.5 h-3.5" /> : isPaceOnTrack ? <TrendingUp className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
+            <span>{isPaceAhead ? 'Опережение графика' : isPaceOnTrack ? 'В графике месяца' : 'Отставание от темпа'}</span>
           </div>
         </div>
       </div>
@@ -335,57 +346,93 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
           </div>
         </div>
 
-        {/* Right 1 Col: Active Shift & Quick Actions */}
+        {/* Right 1 Col: Production Plan for Today & Pace + Quick Actions */}
         <div className="space-y-6">
-          {/* Active Shift Card */}
-          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-slate-900 text-base">Текущая смена</h3>
-              <span className={`px-2.5 py-1 rounded-full text-xs font-bold flex items-center gap-1 ${
-                activeShiftCount > 0 ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'
-              }`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${activeShiftCount > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
-                {activeShiftCount > 0 ? 'Активна' : 'Не назначена'}
+          {/* Daily Production Plan & Pace Card */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">План на сегодня</h3>
+                <p className="text-xs text-slate-400">Текущий сменный объем по ключевым станкам</p>
+              </div>
+              <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-blue-50 text-blue-700">
+                Сегодня
               </span>
             </div>
 
-            {masterEmployee ? (
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 mb-4">
-                <div className="text-xs text-slate-400 font-bold uppercase tracking-wider mb-1">Мастер смены</div>
-                <div className="font-bold text-slate-900 text-sm">
-                  {masterEmployee.name}
+            {/* Cutting & Edging Plan Boxes */}
+            <div className="grid grid-cols-1 gap-3">
+              {/* Cutting Box */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-1.5">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                  <span className="flex items-center gap-1.5">
+                    <Scissors className="w-4 h-4 text-blue-600" />
+                    В распиле на сегодня:
+                  </span>
+                  <span className="font-mono font-black text-blue-700">
+                    ~{todayCuttingSheets} листов
+                  </span>
                 </div>
-                <div className="text-xs text-slate-500 mt-1 flex items-center gap-1.5">
-                  <Clock className="w-3.5 h-3.5 text-slate-400" />
-                  08:00 — 20:00 (Дневная смена)
+                <div className="text-xs text-slate-500 font-medium">
+                  Общая площадь: <strong className="text-slate-800">{todayCuttingM2.toFixed(1)} м²</strong> ({todayCuttingOrders.length} заказов)
                 </div>
               </div>
-            ) : (
-              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 mb-4 text-center">
-                <div className="text-xs text-slate-400 font-medium">Нет назначенных сотрудников на сегодня</div>
-              </div>
-            )}
 
-            <div className="space-y-2 mb-5">
-              <div className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100">
-                <span className="text-slate-500">Сотрудников на смене:</span>
-                <span className="font-bold text-slate-800">{activeShiftCount} чел.</span>
+              {/* Edging Box */}
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-1.5">
+                <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                  <span className="flex items-center gap-1.5">
+                    <Layers className="w-4 h-4 text-indigo-600" />
+                    В плане по кромке:
+                  </span>
+                  <span className="font-mono font-black text-indigo-700">
+                    {todayEdgingM.toFixed(0)} метров
+                  </span>
+                </div>
+                <div className="text-xs text-slate-500 font-medium">
+                  Заказов на участке: <strong className="text-slate-800">{todayEdgingOrders.length}</strong>
+                </div>
               </div>
-              <div className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100">
-                <span className="text-slate-500">Выработка за сегодня:</span>
-                <span className="font-bold text-emerald-600">{completedTodayM2.toFixed(1)} м²</span>
+            </div>
+
+            {/* Monthly Pace Progress Indicator */}
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-800 text-white space-y-3">
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-400 font-bold uppercase tracking-wider">Темп выполнения месяца</span>
+                <span className="font-mono font-bold text-emerald-400">{monthCompletedPercent}%</span>
               </div>
-              <div className="flex items-center justify-between text-xs py-1.5">
-                <span className="text-slate-500">Брак / Рекламации:</span>
-                <span className="font-bold text-slate-800">0 шт. (0%)</span>
+
+              <div className="w-full h-2.5 bg-slate-700 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    isPaceAhead ? 'bg-emerald-400' : isPaceOnTrack ? 'bg-blue-400' : 'bg-amber-400'
+                  }`}
+                  style={{ width: `${Math.max(monthCompletedPercent, 5)}%` }}
+                />
+              </div>
+
+              <div className="text-[11.5px] leading-relaxed">
+                {isPaceAhead ? (
+                  <span className="text-emerald-300 font-semibold">
+                    🚀 <strong>Отличный темп!</strong> Производство опережает календарный график (прошло {monthProgressPercent}% месяца, сдано {monthCompletedPercent}% объема).
+                  </span>
+                ) : isPaceOnTrack ? (
+                  <span className="text-blue-200 font-semibold">
+                    👍 <strong>В графике!</strong> Выполнение соответствует календарному темпу месяца ({monthCompletedArea.toFixed(0)} м² из {monthTotalTargetArea.toFixed(0)} м²).
+                  </span>
+                ) : (
+                  <span className="text-amber-300 font-semibold">
+                    ⚠️ <strong>Риск задержки:</strong> Темп сдачи ({monthCompletedPercent}%) отстает от календарного времени ({monthProgressPercent}% месяца). Рекомендуется усилить смены.
+                  </span>
+                )}
               </div>
             </div>
 
             <button
-              onClick={() => onNavigateSection('schedule')}
+              onClick={() => onNavigateSection('planning')}
               className="w-full py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
             >
-              <Calendar className="w-4 h-4" /> График смен и табель
+              <Calendar className="w-4 h-4" /> Открыть производственный план
             </button>
           </div>
 
