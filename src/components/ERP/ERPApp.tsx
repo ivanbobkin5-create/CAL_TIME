@@ -57,6 +57,122 @@ import { ERPOrderWorkspaceView } from './views/ERPOrderWorkspaceView';
 import { MobileCameraScannerModal } from './components/MobileCameraScannerModal';
 import { VoiceAssistantToggle } from './components/VoiceAssistantToggle';
 
+function isOrderEqual(o1: any, o2: any): boolean {
+  if (!o1 || !o2) return o1 === o2;
+  
+  if (
+    o1.id !== o2.id ||
+    o1.orderNumber !== o2.orderNumber ||
+    o1.clientName !== o2.clientName ||
+    o1.salonName !== o2.salonName ||
+    o1.projectName !== o2.projectName ||
+    o1.createdAt !== o2.createdAt ||
+    o1.deadlineDate !== o2.deadlineDate ||
+    o1.plannedStartDate !== o2.plannedStartDate ||
+    o1.plannedCuttingDate !== o2.plannedCuttingDate ||
+    o1.isReadyForProduction !== o2.isReadyForProduction ||
+    o1.currentStage !== o2.currentStage ||
+    o1.priority !== o2.priority ||
+    o1.totalAreaM2 !== o2.totalAreaM2 ||
+    o1.totalEdgeM !== o2.totalEdgeM ||
+    o1.partsCount !== o2.partsCount ||
+    o1.facadesCount !== o2.facadesCount ||
+    o1.status !== o2.status ||
+    o1.responsibleEmployeeId !== o2.responsibleEmployeeId ||
+    o1.responsibleEmployeeName !== o2.responsibleEmployeeName ||
+    o1.materialsNote !== o2.materialsNote ||
+    o1.comments !== o2.comments ||
+    o1.priceTotal !== o2.priceTotal ||
+    o1.costTotal !== o2.costTotal ||
+    o1.bitrixDealId !== o2.bitrixDealId ||
+    o1.bitrixStageId !== o2.bitrixStageId ||
+    o1.bitrixStageName !== o2.bitrixStageName ||
+    o1.projectId !== o2.projectId
+  ) {
+    return false;
+  }
+
+  // Active workers
+  const aw1 = o1.activeWorkers || [];
+  const aw2 = o2.activeWorkers || [];
+  if (aw1.length !== aw2.length) return false;
+  for (let i = 0; i < aw1.length; i++) {
+    if (aw1[i]?.employeeId !== aw2[i]?.employeeId || aw1[i]?.stageId !== aw2[i]?.stageId) return false;
+  }
+
+  // Work logs
+  const wl1 = o1.workLogs || [];
+  const wl2 = o2.workLogs || [];
+  if (wl1.length !== wl2.length) return false;
+
+  // Packages
+  const pk1 = o1.packages || [];
+  const pk2 = o2.packages || [];
+  if (pk1.length !== pk2.length) return false;
+  for (let i = 0; i < pk1.length; i++) {
+    if (
+      pk1[i]?.id !== pk2[i]?.id || 
+      pk1[i]?.isShipped !== pk2[i]?.isShipped || 
+      (pk1[i]?.partIds || []).length !== (pk2[i]?.partIds || []).length
+    ) return false;
+  }
+
+  // Stage progress
+  if (JSON.stringify(o1.stageProgress) !== JSON.stringify(o2.stageProgress)) return false;
+
+  // Stage scanning progress
+  if (JSON.stringify(o1.stageScanningProgress) !== JSON.stringify(o2.stageScanningProgress)) return false;
+
+  // Birka Data
+  const b1 = o1.birkaData;
+  const b2 = o2.birkaData;
+  if (!!b1 !== !!b2) return false;
+  if (b1 && b2) {
+    if (
+      b1.fileName !== b2.fileName ||
+      b1.fileHash !== b2.fileHash ||
+      b1.uploadedAt !== b2.uploadedAt ||
+      (b1.details || []).length !== (b2.details || []).length ||
+      (b1.materialGroups || []).length !== (b2.materialGroups || []).length
+    ) return false;
+  }
+
+  // Hardware Data
+  const h1 = o1.hardwareData;
+  const h2 = o2.hardwareData;
+  if (!!h1 !== !!h2) return false;
+  if (h1 && h2) {
+    if (
+      h1.fileName !== h2.fileName ||
+      h1.fileHash !== h2.fileHash ||
+      h1.uploadedAt !== h2.uploadedAt ||
+      (h1.items || []).length !== (h2.items || []).length
+    ) return false;
+  }
+
+  // Assembly File Data
+  const as1 = o1.assemblyFileData;
+  const as2 = o2.assemblyFileData;
+  if (!!as1 !== !!as2) return false;
+  if (as1 && as2) {
+    if (as1.fileName !== as2.fileName || as1.uploadedAt !== as2.uploadedAt) return false;
+  }
+
+  // Additional works
+  if (JSON.stringify(o1.additionalWorks) !== JSON.stringify(o2.additionalWorks)) return false;
+
+  return true;
+}
+
+function areOrdersEqual(arr1: any[], arr2: any[]): boolean {
+  if (!arr1 || !arr2) return arr1 === arr2;
+  if (arr1.length !== arr2.length) return false;
+  for (let i = 0; i < arr1.length; i++) {
+    if (!isOrderEqual(arr1[i], arr2[i])) return false;
+  }
+  return true;
+}
+
 interface ERPAppProps {
   aliasOrId: string;
   catalogProducts?: any[];
@@ -114,35 +230,12 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
 
   // Helper to load order state from localStorage
   const loadLocalOrdersCache = (compId: string): Record<string, Partial<ProductionOrder>> => {
-    try {
-      const str = localStorage.getItem(`erp_orders_cache_${compId}`);
-      if (str) return JSON.parse(str);
-    } catch (e) {}
-    return {};
+    return {}; // Disabled to reduce memory overhead and disable unneeded offline mode
   };
 
   // Helper to save order state into localStorage
   const saveLocalOrdersCache = (compId: string, ordersList: ProductionOrder[]) => {
-    try {
-      const map: Record<string, Partial<ProductionOrder>> = {};
-      ordersList.forEach(o => {
-        map[o.id] = {
-          currentStage: o.currentStage,
-          status: o.status,
-          birkaData: o.birkaData,
-          stageScanningProgress: o.stageScanningProgress,
-          totalAreaM2: o.totalAreaM2,
-          totalEdgeM: o.totalEdgeM,
-          partsCount: o.partsCount,
-          stageProgress: o.stageProgress,
-          plannedCuttingDate: o.plannedCuttingDate,
-          isReadyForProduction: o.isReadyForProduction,
-          additionalWorks: o.additionalWorks,
-          workLogs: o.workLogs
-        };
-      });
-      localStorage.setItem(`erp_orders_cache_${compId}`, JSON.stringify(map));
-    } catch (e) {}
+    // Disabled to reduce memory overhead and disable unneeded offline mode
   };
   const [settings, setSettings] = useState<ERPCompanySettings>({
     erpEnabled: true,
@@ -570,7 +663,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
           const data = await res.json();
           if (data.orders) {
             setOrders(prev => {
-              if (JSON.stringify(prev) === JSON.stringify(data.orders)) return prev;
+              if (areOrdersEqual(prev, data.orders)) return prev;
               return data.orders;
             });
 
@@ -578,7 +671,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
               if (!prev) return null;
               const fresh = data.orders.find((o: any) => o.id === prev.id);
               if (!fresh) return prev;
-              if (JSON.stringify(fresh) === JSON.stringify(prev)) return prev;
+              if (isOrderEqual(fresh, prev)) return prev;
               return fresh;
             });
           }

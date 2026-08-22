@@ -296,28 +296,90 @@ export function matchDetailToScannedCode(
   const enCode = normalizeBarcodeScan(scannedCode).toLowerCase();
 
   // Helper for various detail values
-  const dLabel = (detail.labelNumber || '').toLowerCase();
-  const dId = (detail.id || '').toLowerCase();
-  const dBarcode = (detail.barcode || '').toLowerCase();
-  const dName = (detail.name || '').toLowerCase();
+  const dLabel = (detail.labelNumber || '').toLowerCase().trim();
+  const dId = (detail.id || '').toLowerCase().trim();
+  const dBarcode = (detail.barcode || '').toLowerCase().trim();
+  const dName = (detail.name || '').toLowerCase().trim();
 
-  // Standard checks:
+  // 1. Exact matches on basic fields
   if (dLabel === cleanScan || dLabel === enCode) return true;
   if (dId === cleanScan || dId === enCode) return true;
   if (dBarcode && (dBarcode === cleanScan || dBarcode === enCode)) return true;
-  if (dName === cleanScan || dName === enCode) return true;
+  if (dName && (dName === cleanScan || dName === enCode)) return true;
 
-  // Partial match for barcode or ID if scanning a 4+ digit substring
-  if (cleanScan.length >= 4 && dBarcode && (dBarcode.includes(cleanScan) || dBarcode.includes(enCode))) return true;
-  if (cleanScan.length >= 4 && dId && (dId.includes(cleanScan) || dId.includes(enCode))) return true;
+  // 2. Alphanumeric only exact matches (removes dots, dashes, slashes, etc.)
+  // e.g., if labelNumber is "02.01" -> "0201", and scan is "02/01" -> "0201" or "02.01" -> "0201"
+  const makeAlphaNumeric = (str: string) => str.replace(/[^a-zA-Z0-9а-яА-Я]/g, '');
+  const dLabelAlpha = makeAlphaNumeric(dLabel);
+  const cleanScanAlpha = makeAlphaNumeric(cleanScan);
+  const enCodeAlpha = makeAlphaNumeric(enCode);
 
-  // Template-based check:
+  if (dLabelAlpha && (dLabelAlpha === cleanScanAlpha || dLabelAlpha === enCodeAlpha)) {
+    return true;
+  }
+
+  // 3. Template-based evaluation
   const activeTemplate = template || '{orderNumber}-{pos}';
   const evaluated = evaluateBirkaQrTemplate(activeTemplate, detail, orderNumber).trim().toLowerCase();
   const evaluatedEn = normalizeBarcodeScan(evaluated).toLowerCase();
-  
+
+  // Exact template match
   if (evaluated === cleanScan || evaluated === enCode || evaluatedEn === cleanScan || evaluatedEn === enCode) {
     return true;
+  }
+
+  // Alphanumeric template match
+  const evaluatedAlpha = makeAlphaNumeric(evaluated);
+  const evaluatedEnAlpha = makeAlphaNumeric(evaluatedEn);
+
+  if (evaluatedAlpha === cleanScanAlpha || evaluatedEnAlpha === enCodeAlpha) {
+    return true;
+  }
+
+  // 4. Substring containment:
+  // If the scanned code has multiple parameters (e.g. "1042-02.01;LDSP;16mm"),
+  // then the scanned code (cleanScan or enCode) should CONTAIN the evaluated template!
+  // Or, in alphanumeric space, cleanScanAlpha contains evaluatedAlpha!
+  if (evaluated.length >= 4 && (cleanScan.includes(evaluated) || enCode.includes(evaluatedEn))) {
+    return true;
+  }
+  if (evaluatedAlpha.length >= 4 && (cleanScanAlpha.includes(evaluatedAlpha) || enCodeAlpha.includes(evaluatedEnAlpha))) {
+    return true;
+  }
+
+  // Also vice-versa (e.g. if the user typed/scanned a subset of the template, e.g. "02.01" but template evaluates to "1042-02.01")
+  // But only if the scanned code is reasonably long/specific to avoid false positives (e.g. at least 3 chars)
+  if (cleanScan.length >= 3 && evaluated.includes(cleanScan)) {
+    return true;
+  }
+  if (enCode.length >= 3 && evaluatedEn.includes(enCode)) {
+    return true;
+  }
+  if (cleanScanAlpha.length >= 3 && evaluatedAlpha.includes(cleanScanAlpha)) {
+    return true;
+  }
+  if (enCodeAlpha.length >= 3 && evaluatedEnAlpha.includes(enCodeAlpha)) {
+    return true;
+  }
+
+  // 5. Special check for orderNumber and labelNumber separately inside scanned code:
+  // If the scanned QR code contains both the order number and the detail's label number as separate words or substrings,
+  // it is extremely likely to be our detail!
+  // e.g., if orderNumber is "1042" and labelNumber is "02.01", and QR code is "1042-02.01-LDSP" or "1042_02.01_BOCOVINA" or even "1042 02.01".
+  const cleanOrder = orderNumber.trim().toLowerCase();
+  if (cleanOrder && dLabel) {
+    const orderAlpha = makeAlphaNumeric(cleanOrder);
+    const labelAlpha = makeAlphaNumeric(dLabel);
+    
+    // Check if both order number and label number are present in the scanned code
+    if (orderAlpha.length >= 2 && labelAlpha.length >= 2) {
+      if (cleanScanAlpha.includes(orderAlpha) && cleanScanAlpha.includes(labelAlpha)) {
+        return true;
+      }
+      if (enCodeAlpha.includes(orderAlpha) && enCodeAlpha.includes(labelAlpha)) {
+        return true;
+      }
+    }
   }
 
   return false;

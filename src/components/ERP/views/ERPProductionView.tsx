@@ -109,7 +109,14 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
   React.useEffect(() => {
     if (selectedOrderDetails) {
       const updated = orders.find(o => o.id === selectedOrderDetails.id);
-      if (updated && JSON.stringify(updated) !== JSON.stringify(selectedOrderDetails)) {
+      if (updated && (
+        updated.currentStage !== selectedOrderDetails.currentStage ||
+        updated.status !== selectedOrderDetails.status ||
+        (updated.birkaData?.fileHash || updated.birkaData?.uploadedAt || '') !== (selectedOrderDetails.birkaData?.fileHash || selectedOrderDetails.birkaData?.uploadedAt || '') ||
+        JSON.stringify(updated.stageScanningProgress) !== JSON.stringify(selectedOrderDetails.stageScanningProgress) ||
+        (updated.packages || []).length !== (selectedOrderDetails.packages || []).length ||
+        (updated.workLogs || []).length !== (selectedOrderDetails.workLogs || []).length
+      )) {
         setSelectedOrderDetails(updated);
       }
     }
