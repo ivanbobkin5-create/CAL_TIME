@@ -220,6 +220,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
   const [orders, setOrders] = useState<ProductionOrder[]>([]);
   const [employees, setEmployees] = useState<ERPEmployee[]>([]);
   const [shifts, setShifts] = useState<WorkShift[]>([]);
+  const [shiftLogs, setShiftLogs] = useState<any[]>([]);
   const [scheduleEntries, setScheduleEntries] = useState<Record<string, any>>({});
   const [isSyncingOrders, setIsSyncingOrders] = useState(false);
   const [syncStatusText, setSyncStatusText] = useState<string | null>(null);
@@ -508,13 +509,22 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
         }));
       }
 
-      // Fetch employees, orders, schedule and active shift in parallel
+      // Fetch employees, orders, schedule, shift-logs and active shift in parallel
       try {
-        const [empRes, ordersRes, scheduleRes] = await Promise.allSettled([
+        const [empRes, ordersRes, scheduleRes, shiftLogsRes] = await Promise.allSettled([
           fetch(`/api/erp/${comp.id}/employees`),
           fetch(`/api/erp/${comp.id}/orders`),
-          fetch(`/api/erp/${comp.id}/schedule`)
+          fetch(`/api/erp/${comp.id}/schedule`),
+          fetch(`/api/erp/${comp.id}/shift-logs`)
         ]);
+
+        // Process shift-logs
+        if (shiftLogsRes.status === 'fulfilled' && shiftLogsRes.value.ok) {
+          const slData = await shiftLogsRes.value.json();
+          if (slData.logs && Array.isArray(slData.logs)) {
+            setShiftLogs(slData.logs);
+          }
+        }
 
         // 1. Process schedule
         if (scheduleRes.status === 'fulfilled' && scheduleRes.value.ok) {
@@ -982,6 +992,15 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
             elapsedSeconds: shiftElapsedSeconds
           })
         });
+
+        // Refetch shift logs to update salary data in real-time
+        const slRes = await fetch(`/api/erp/${targetCompId}/shift-logs`);
+        if (slRes.ok) {
+          const slData = await slRes.json();
+          if (slData.logs && Array.isArray(slData.logs)) {
+            setShiftLogs(slData.logs);
+          }
+        }
       } catch (err) {
         console.warn('Failed to end active shift:', err);
       }
@@ -1139,6 +1158,22 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
     );
   }
 
+  // Match current logged in user in employees list or user profile
+  const activeUserId = authUser?.id || authUser?.uid;
+  const matchedEmp = employees.find(e => 
+    (e.email && authUser?.email && e.email.toLowerCase() === authUser.email.toLowerCase()) ||
+    (e.id && activeUserId && e.id === activeUserId) ||
+    (e.userId && activeUserId && e.userId === activeUserId)
+  );
+
+  const isUserForeman = !matchedEmp || 
+                        matchedEmp.role === 'Начальник цеха' || 
+                        matchedEmp.productionRole === 'Начальник цеха' || 
+                        matchedEmp.department === 'management' ||
+                        matchedEmp.isOwner ||
+                        (matchedEmp as any).isSuperAdmin ||
+                        matchedEmp.email === 'lk.ivanbobkin@gmail.com';
+
   // 4. Navigation items without numbering
   const menuItems: { id: ERPSection; label: string; icon: any; badge?: number }[] = [
     { id: 'dashboard', label: 'Дашборд', icon: LayoutDashboard },
@@ -1147,18 +1182,10 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
     { id: 'production', label: 'Производство', icon: Factory, badge: orders.filter(o => o.status === 'in_progress' || o.currentStage === 'shipping').length },
     { id: 'archive', label: 'Архив заказов', icon: Archive, badge: orders.filter(o => o.status === 'completed' || o.status === 'shipped').length },
     { id: 'reports', label: 'Аналитика и отчеты', icon: BarChart3 },
-    { id: 'salaries', label: 'Зарплаты', icon: DollarSign },
+    ...(settings?.salariesSectionEnabled !== false || isUserForeman ? [{ id: 'salaries', label: 'Зарплаты', icon: DollarSign } as any] : []),
     { id: 'employees', label: 'Сотрудники', icon: Users, badge: employees.length },
     { id: 'settings', label: 'Настройки', icon: Settings }
   ];
-
-  // Match current logged in user in employees list or user profile
-  const activeUserId = authUser?.id || authUser?.uid;
-  const matchedEmp = employees.find(e => 
-    (e.email && authUser?.email && e.email.toLowerCase() === authUser.email.toLowerCase()) ||
-    (e.id && activeUserId && e.id === activeUserId) ||
-    (e.userId && activeUserId && e.userId === activeUserId)
-  );
 
   const rawName = matchedEmp?.name 
     || authUser?.displayName 
@@ -1572,6 +1599,9 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
                   onAddAdjustment={handleAddAdjustment}
                   onEditAdjustment={handleEditAdjustment}
                   onDeleteAdjustment={handleDeleteAdjustment}
+                  orders={orders}
+                  shiftLogs={shiftLogs}
+                  settings={settings}
                 />
               )}
 

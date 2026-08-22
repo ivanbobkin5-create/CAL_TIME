@@ -418,13 +418,13 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
     const orderNum = order.orderNumber || '';
 
     let foundPart = currentMaterialDetails.find(d => 
-      matchDetailToScannedCode(cleanCode, d, template, orderNum)
+      matchDetailToScannedCode(cleanCode, d, template, orderNum, settings?.birkaQrMatchingMode)
     );
 
     // If not found in current material, search other material groups
     if (!foundPart && order.birkaData?.details) {
       const partInOtherMat = order.birkaData.details.find(d => 
-        matchDetailToScannedCode(cleanCode, d, template, orderNum)
+        matchDetailToScannedCode(cleanCode, d, template, orderNum, settings?.birkaQrMatchingMode)
       );
 
       if (partInOtherMat) {

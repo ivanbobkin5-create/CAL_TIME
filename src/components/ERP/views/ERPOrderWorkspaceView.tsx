@@ -345,7 +345,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     const orderNum = order.orderNumber || '';
 
     const matchesPart = (d: BirkaDetail) => {
-      return matchDetailToScannedCode(cleanCode, d, template, orderNum);
+      return matchDetailToScannedCode(cleanCode, d, template, orderNum, settings?.birkaQrMatchingMode);
     };
 
     let foundPart = currentMaterialDetails.find(matchesPart);

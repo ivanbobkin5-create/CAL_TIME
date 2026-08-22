@@ -20,7 +20,9 @@ import {
   X,
   FileText,
   Pencil,
-  Trash2
+  Trash2,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { ERPEmployee, SalaryAdjustment } from '../types';
 
@@ -31,6 +33,9 @@ interface ERPSalariesViewProps {
   onAddAdjustment?: (adj: SalaryAdjustment) => void;
   onEditAdjustment?: (adj: SalaryAdjustment) => void;
   onDeleteAdjustment?: (adjId: string) => void;
+  orders?: any[];
+  shiftLogs?: any[];
+  settings?: any;
 }
 
 export const ERPSalariesView: React.FC<ERPSalariesViewProps> = ({
@@ -39,7 +44,10 @@ export const ERPSalariesView: React.FC<ERPSalariesViewProps> = ({
   salaryAdjustments = [],
   onAddAdjustment,
   onEditAdjustment,
-  onDeleteAdjustment
+  onDeleteAdjustment,
+  orders = [],
+  shiftLogs = [],
+  settings
 }) => {
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().substring(0, 7));
   const [search, setSearch] = useState('');
@@ -86,41 +94,138 @@ export const ERPSalariesView: React.FC<ERPSalariesViewProps> = ({
     );
   }
 
+  // State for row expansion to see salary details
+  const [expandedEmployeeId, setExpandedEmployeeId] = useState<string | null>(null);
+
   // Calculate salaries
   const calculatedSalaries = productionEmployees.map(emp => {
-    let piecework = 0;
-    let base = emp.baseRate || 45000;
-    
-    if (emp.department === 'cutting') {
-      piecework = Math.round(180 * 65);
-    } else if (emp.department === 'edging') {
-      piecework = Math.round(450 * 35);
-    } else if (emp.department === 'cnc') {
-      piecework = Math.round(1200 * 8);
-    } else if (emp.department === 'assembly') {
-      piecework = Math.round(42 * 350);
+    // 1. Calculate shift statistics for the selected month
+    const matchingShiftLogs = shiftLogs.filter(log => {
+      const isSameEmp = log.employeeId === emp.id || (log.email && log.email.trim().toLowerCase() === emp.email?.trim().toLowerCase());
+      const isSameMonth = log.date && log.date.startsWith(selectedMonth);
+      return isSameEmp && isSameMonth;
+    });
+
+    const actualShiftsCount = matchingShiftLogs.length;
+    const elapsedSecondsTotal = matchingShiftLogs.reduce((sum, log) => sum + (log.elapsedSeconds || 0), 0);
+    const hoursWorked = Math.round((elapsedSecondsTotal / 3600) * 10) / 10;
+
+    // 2. Base payment based on rateType
+    let basePay = 0;
+    let baseExplanation = '';
+    const rateTypeStr = emp.rateType as string;
+
+    if (rateTypeStr === 'salary') {
+      basePay = emp.baseRate || 55000;
+      baseExplanation = 'Фиксированный оклад';
+    } else if (rateTypeStr === 'hourly') {
+      basePay = Math.round(hoursWorked * (emp.baseRate || 350));
+      baseExplanation = `Почасовая ставка: ${hoursWorked} ч × ${emp.baseRate || 350} ₽/ч`;
+    } else if (rateTypeStr === 'shift') {
+      basePay = actualShiftsCount * (emp.baseRate || 3000);
+      baseExplanation = `Оплата за смены: ${actualShiftsCount} выходов × ${emp.baseRate || 3000} ₽/смена`;
+    } else {
+      // Piecework only
+      basePay = 0;
+      baseExplanation = 'Сдельная оплата (без оклада)';
     }
+
+    // 3. Piecework calculations from orders.workLogs
+    let pieceworkPay = 0;
+    const matchedWorkLogs: any[] = [];
+
+    orders.forEach(order => {
+      if (order.workLogs && Array.isArray(order.workLogs)) {
+        order.workLogs.forEach((log: any) => {
+          const isSameEmp = log.employeeId === emp.id || log.employeeName === emp.name;
+          const logDate = log.startTime || log.endTime || log.date || '';
+          const isSameMonth = logDate.startsWith(selectedMonth);
+
+          if (isSameEmp && isSameMonth) {
+            // Calculate rate for this operation
+            let rate = 0;
+            let amountEarned = 0;
+            let metricLabel = '';
+            let metricValue = 0;
+
+            if (log.stageId === 'cutting') {
+              rate = settings?.cuttingRatePerM2 || 65;
+              metricValue = log.scannedAreaM2 || order.totalAreaM2 || 0;
+              amountEarned = Math.round(metricValue * rate);
+              metricLabel = `${metricValue.toFixed(2)} м²`;
+            } else if (log.stageId === 'edging') {
+              rate = settings?.edgingRatePerM || 35;
+              metricValue = log.scannedEdgeM || order.totalEdgeM || 0;
+              amountEarned = Math.round(metricValue * rate);
+              metricLabel = `${metricValue.toFixed(2)} п.м.`;
+            } else if (log.stageId === 'cnc') {
+              rate = settings?.cncHoleRate || 8;
+              metricValue = log.scannedPartsCount || order.partsCount || 0;
+              // Let's assume average of 4 holes per part for CNC if not specified
+              const holes = metricValue * 4;
+              amountEarned = Math.round(holes * rate);
+              metricLabel = `${holes} отв. (${metricValue} дет.)`;
+            } else if (log.stageId === 'facades') {
+              rate = settings?.facadesRatePerM2 || 150;
+              metricValue = log.scannedAreaM2 || order.totalAreaM2 || 0;
+              amountEarned = Math.round(metricValue * rate);
+              metricLabel = `${metricValue.toFixed(2)} м² фасадов`;
+            } else if (log.stageId === 'assembly') {
+              rate = settings?.assemblyModuleRate || 350;
+              metricValue = log.scannedPartsCount || order.partsCount || 0;
+              amountEarned = Math.round(metricValue * rate);
+              metricLabel = `${metricValue} модулей`;
+            } else if (log.stageId === 'kitting') {
+              rate = settings?.kittingRatePerOrder || 200;
+              amountEarned = rate;
+              metricLabel = 'комплектация заказа';
+            } else if (log.stageId === 'qc') {
+              rate = settings?.qcRatePerOrder || 150;
+              amountEarned = rate;
+              metricLabel = 'контроль ОТК';
+            } else if (log.stageId === 'packing') {
+              rate = settings?.packingRatePerOrder || 150;
+              amountEarned = rate;
+              metricLabel = 'упаковка заказа';
+            } else if (log.stageId === 'shipping') {
+              rate = settings?.shippingRatePerFact || 300;
+              amountEarned = rate;
+              metricLabel = 'отгрузка заказа';
+            }
+
+            pieceworkPay += amountEarned;
+            matchedWorkLogs.push({
+              ...log,
+              rate,
+              metricLabel,
+              amountEarned
+            });
+          }
+        });
+      }
+    });
 
     // Calculate bonuses & penalties from adjustments list
     const empAdjustments = salaryAdjustments.filter(a => a.employeeId === emp.id || a.employeeName === emp.name);
     const bonusSum = empAdjustments.filter(a => a.type === 'bonus').reduce((sum, a) => sum + a.amount, 0);
     const penaltySum = empAdjustments.filter(a => a.type === 'penalty').reduce((sum, a) => sum + a.amount, 0);
 
-    const defaultBonus = emp.status === 'active' ? 5000 : 0;
-    const netBonus = defaultBonus + bonusSum - penaltySum;
-
-    const total = (emp.rateType === 'piecework' ? piecework : base) + netBonus;
+    const netBonus = bonusSum - penaltySum;
+    const total = basePay + pieceworkPay + netBonus;
 
     return {
       employee: emp,
-      base,
-      piecework,
+      base: basePay,
+      baseExplanation,
+      piecework: pieceworkPay,
+      pieceworkLogs: matchedWorkLogs,
+      actualShiftsCount,
       bonus: netBonus,
       bonusSum,
       penaltySum,
       total,
       adjustments: empAdjustments,
-      hoursWorked: 168,
+      hoursWorked,
       status: 'approved'
     };
   });
@@ -320,49 +425,156 @@ export const ERPSalariesView: React.FC<ERPSalariesViewProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs font-medium text-slate-700">
-              {calculatedSalaries.map(({ employee, piecework, bonus, total }) => (
-                <tr key={employee.id} className="hover:bg-slate-50">
-                  <td className="py-3 px-3 font-bold text-slate-900 flex items-center gap-2.5">
-                    <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs">
-                      {employee.name.substring(0, 2).toUpperCase()}
-                    </div>
-                    <div>
-                      <div>{employee.name}</div>
-                      <div className="text-[10px] text-slate-400 font-normal">{employee.role || employee.productionRole || 'Мастер'}</div>
-                    </div>
-                  </td>
-                  <td className="py-3 px-3">
-                    <span className="px-2.5 py-1 rounded-xl bg-slate-100 text-slate-700 text-[11px] font-bold">
-                      {employee.department === 'cutting' ? 'Раскрой' : employee.department === 'edging' ? 'Кромление' : employee.department === 'cnc' ? 'ЧПУ' : employee.department === 'assembly' ? 'Сборка' : employee.department === 'kitting' ? 'Комплектовка' : 'Цех'}
-                    </span>
-                  </td>
-                  <td className="py-3 px-3 text-slate-600 font-medium">
-                    {employee.rateType === 'piecework' ? 'Сдельная' : 'Оклад + Сдельная'}
-                  </td>
-                  <td className="py-3 px-3 font-mono font-bold text-indigo-600">
-                    {piecework.toLocaleString('ru-RU')} ₽
-                  </td>
-                  <td className="py-3 px-3 font-mono font-bold">
-                    <span className={bonus >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
-                      {bonus >= 0 ? `+${bonus.toLocaleString('ru-RU')}` : bonus.toLocaleString('ru-RU')} ₽
-                    </span>
-                  </td>
-                  <td className="py-3 px-3 text-right font-mono font-black text-slate-900 text-sm">
-                    {total.toLocaleString('ru-RU')} ₽
-                  </td>
-                  {isForeman && (
-                    <td className="py-3 px-3 text-center">
-                      <button
-                        onClick={() => handleOpenAdjModal(employee)}
-                        className="px-2.5 py-1 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-bold transition-all flex items-center gap-1 mx-auto cursor-pointer"
-                        title="Выписать премию или штраф сотруднику"
-                      >
-                        <Plus className="w-3.5 h-3.5" /> Премия / Штраф
-                      </button>
-                    </td>
-                  )}
-                </tr>
-              ))}
+              {calculatedSalaries.map(({ employee, base, baseExplanation, piecework, pieceworkLogs, actualShiftsCount, hoursWorked, bonus, total }) => {
+                const isExpanded = expandedEmployeeId === employee.id;
+                return (
+                  <React.Fragment key={employee.id}>
+                    <tr 
+                      className="hover:bg-slate-50/80 cursor-pointer transition-colors"
+                      onClick={() => setExpandedEmployeeId(isExpanded ? null : employee.id)}
+                    >
+                      <td className="py-3 px-3 font-bold text-slate-900 flex items-center gap-2">
+                        <span className="text-slate-400 shrink-0">
+                          {isExpanded ? <ChevronUp className="w-4 h-4 text-emerald-600" /> : <ChevronDown className="w-4 h-4" />}
+                        </span>
+                        <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs shrink-0">
+                          {employee.name.substring(0, 2).toUpperCase()}
+                        </div>
+                        <div>
+                          <div>{employee.name}</div>
+                          <div className="text-[10px] text-slate-400 font-normal">{employee.role || employee.productionRole || 'Мастер'}</div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-3">
+                        <span className="px-2.5 py-1 rounded-xl bg-slate-100 text-slate-700 text-[11px] font-bold">
+                          {employee.department === 'cutting' ? 'Раскрой' : employee.department === 'edging' ? 'Кромление' : employee.department === 'cnc' ? 'ЧПУ' : employee.department === 'assembly' ? 'Сборка' : employee.department === 'kitting' ? 'Комплектовка' : employee.department === 'facades' ? 'Фасады' : employee.department === 'packing' ? 'Упаковка' : employee.department === 'qc' ? 'ОТК' : employee.department === 'shipping' ? 'Отгрузка' : 'Цех'}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-slate-600 font-medium">
+                        {(employee.rateType as string) === 'piecework' ? 'Сдельная' : (employee.rateType as string) === 'salary' ? 'Фикс. оклад' : (employee.rateType as string) === 'hourly' ? 'Почасовая' : (employee.rateType as string) === 'shift' ? 'За смену' : 'Смешанная'}
+                      </td>
+                      <td className="py-3 px-3 font-mono font-bold text-indigo-600">
+                        {piecework.toLocaleString('ru-RU')} ₽
+                      </td>
+                      <td className="py-3 px-3 font-mono font-bold">
+                        <span className={bonus >= 0 ? 'text-emerald-600' : 'text-rose-600'}>
+                          {bonus >= 0 ? `+${bonus.toLocaleString('ru-RU')}` : bonus.toLocaleString('ru-RU')} ₽
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono font-black text-slate-900 text-sm">
+                        {total.toLocaleString('ru-RU')} ₽
+                      </td>
+                      {isForeman && (
+                        <td className="py-3 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                          <button
+                            onClick={() => handleOpenAdjModal(employee)}
+                            className="px-2.5 py-1 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-bold transition-all flex items-center gap-1 mx-auto cursor-pointer"
+                            title="Выписать премию или штраф сотруднику"
+                          >
+                            <Plus className="w-3.5 h-3.5" /> Премия / Штраф
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+
+                    {/* Detailed expandable card */}
+                    {isExpanded && (
+                      <tr className="bg-slate-50/50">
+                        <td colSpan={isForeman ? 7 : 6} className="p-4 border-l-4 border-emerald-500">
+                          <div className="space-y-4">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                                <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-wider mb-2">Отработанные смены и выходы</h4>
+                                <div className="space-y-1.5">
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-slate-500">Фактических выходов на смену:</span>
+                                    <span className="font-extrabold text-slate-900">{actualShiftsCount}</span>
+                                  </div>
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-slate-500">Фактически отработано по логам:</span>
+                                    <span className="font-mono font-bold text-slate-900">{hoursWorked} ч</span>
+                                  </div>
+                                  <div className="flex justify-between text-xs border-t border-slate-100 pt-1.5">
+                                    <span className="font-bold text-slate-700">Базовое начисление за время:</span>
+                                    <span className="font-extrabold text-slate-900">{base.toLocaleString('ru-RU')} ₽</span>
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 italic font-medium pt-1">
+                                    {baseExplanation}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                                <h4 className="text-[10px] font-black uppercase text-indigo-400 tracking-wider mb-2">Сводка сдельного объема</h4>
+                                <div className="space-y-1.5">
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-slate-500">Всего закрытых операций:</span>
+                                    <span className="font-extrabold text-indigo-900">{pieceworkLogs.length}</span>
+                                  </div>
+                                  <div className="flex justify-between text-xs border-t border-slate-100 pt-1.5">
+                                    <span className="font-bold text-indigo-600">Начислено по тарифам:</span>
+                                    <span className="font-extrabold text-indigo-600 text-sm">{piecework.toLocaleString('ru-RU')} ₽</span>
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 leading-relaxed pt-1">
+                                    Сдельная часть рассчитывается автоматически на основе выполненных сканирований деталей и бирок.
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                              <h4 className="text-xs font-bold text-slate-900 mb-3 flex items-center gap-2">
+                                <FileText className="w-4 h-4 text-slate-400" />
+                                Детализация закрытых сдельных работ (реальные сканирования)
+                              </h4>
+                              {pieceworkLogs.length === 0 ? (
+                                <div className="text-center py-5 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-xs text-slate-400">
+                                  Зарегистрированные сдельные работы за выбранный месяц отсутствуют.
+                                </div>
+                              ) : (
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-left text-[11px] border-collapse">
+                                    <thead>
+                                      <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase text-[10px]">
+                                        <th className="pb-2">Заказ / Деталь</th>
+                                        <th className="pb-2">Участок</th>
+                                        <th className="pb-2 text-right">Выработка</th>
+                                        <th className="pb-2 text-right">Тариф</th>
+                                        <th className="pb-2 text-right">Сумма</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-50">
+                                      {pieceworkLogs.map((log, i) => (
+                                        <tr key={i} className="hover:bg-slate-50/50">
+                                          <td className="py-2 text-slate-900 font-bold">
+                                            {log.orderNumber ? `Заказ №${log.orderNumber}` : `ID: ${log.orderId?.substring(0, 8)}...`}
+                                          </td>
+                                          <td className="py-2 text-slate-500 capitalize">
+                                            {log.stageId === 'cutting' ? 'Раскрой' : log.stageId === 'edging' ? 'Кромка' : log.stageId === 'cnc' ? 'Присадка / ЧПУ' : log.stageId === 'assembly' ? 'Сборка' : log.stageId === 'kitting' ? 'Комплектовка' : log.stageId === 'qc' ? 'ОТК (Контроль)' : log.stageId === 'packing' ? 'Упаковка' : log.stageId === 'shipping' ? 'Отгрузка' : log.stageId === 'facades' ? 'Фасады' : log.stageId}
+                                          </td>
+                                          <td className="py-2 text-right font-mono font-bold text-slate-700">
+                                            {log.metricLabel}
+                                          </td>
+                                          <td className="py-2 text-right font-mono text-slate-500">
+                                            {log.rate} ₽
+                                          </td>
+                                          <td className="py-2 text-right font-mono font-extrabold text-emerald-600">
+                                            +{log.amountEarned?.toLocaleString('ru-RU')} ₽
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>

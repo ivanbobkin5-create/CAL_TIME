@@ -1052,6 +1052,71 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
               </select>
             </div>
 
+            {/* Режим распознавания штрихкодов */}
+            <div className="p-6 bg-slate-900 text-white rounded-3xl border border-slate-800 shadow-xl space-y-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-400/30 flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-400" />
+                </div>
+                <div>
+                  <h4 className="font-bold text-white text-sm">
+                    Алгоритм распознавания QR-кодов
+                  </h4>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Выберите, как программа должна сопоставлять отсканированные коды с деталями в заказе.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, birkaQrMatchingMode: 'smart_contains' })}
+                  className={`p-4 rounded-2xl border text-left transition-all relative overflow-hidden flex flex-col gap-1.5 cursor-pointer ${
+                    (formData.birkaQrMatchingMode ?? 'smart_contains') === 'smart_contains'
+                      ? 'bg-emerald-950/40 border-emerald-500 text-white ring-2 ring-emerald-500/20'
+                      : 'bg-slate-950/55 border-slate-800 hover:border-slate-700 text-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs uppercase tracking-wider text-emerald-400">
+                      Вариант 3: «Умный» авто-поиск
+                    </span>
+                    {(formData.birkaQrMatchingMode ?? 'smart_contains') === 'smart_contains' && (
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
+                    )}
+                  </div>
+                  <span className="text-xs font-semibold text-white">Поиск по вхождению (Рекомендуемый)</span>
+                  <span className="text-[11px] text-slate-400 leading-relaxed mt-1">
+                    Программа не требует жесткого совпадения шаблонов. Она автоматически проверит, содержит ли QR-код номер заказа и номер детали в любом формате (с разделителями, префиксами и т.д.). Идеально подходит, если формат наклеек меняется.
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, birkaQrMatchingMode: 'template' })}
+                  className={`p-4 rounded-2xl border text-left transition-all relative overflow-hidden flex flex-col gap-1.5 cursor-pointer ${
+                    formData.birkaQrMatchingMode === 'template'
+                      ? 'bg-indigo-950/40 border-indigo-500 text-white ring-2 ring-indigo-500/20'
+                      : 'bg-slate-950/55 border-slate-800 hover:border-slate-700 text-slate-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-xs uppercase tracking-wider text-indigo-400">
+                      Строгий шаблон
+                    </span>
+                    {formData.birkaQrMatchingMode === 'template' && (
+                      <span className="w-2.5 h-2.5 rounded-full bg-indigo-400"></span>
+                    )}
+                  </div>
+                  <span className="text-xs font-semibold text-white">Точное соответствие шаблону текста</span>
+                  <span className="text-[11px] text-slate-400 leading-relaxed mt-1">
+                    Сравнение отсканированной строки строго с результатом генератора шаблона, указанного ниже (например, строго строка <code className="text-indigo-300">1042-02.01</code>). Любое отклонение вызовет ошибку сканирования.
+                  </span>
+                </button>
+              </div>
+            </div>
+
             {/* QR Code / Barcode Template Builder */}
             <div className="p-6 bg-gradient-to-br from-indigo-950 via-slate-900 to-blue-950 text-white rounded-3xl border border-indigo-400/30 shadow-xl space-y-5">
               <div className="flex items-start justify-between gap-4">
@@ -1750,13 +1815,65 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
 
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
                 <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-amber-600" />
-                  ОТК / Упаковка (₽ за заказ)
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                  Контроль качества ОТК (₽ за заказ)
                 </label>
                 <input
                   type="number"
-                  value={formData.qcRatePerOrder || 300}
+                  value={formData.qcRatePerOrder || 150}
                   onChange={(e) => setFormData({ ...formData, qcRatePerOrder: Number(e.target.value) })}
+                  className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-black text-slate-900 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-orange-600" />
+                  Упаковка заказа (₽ за заказ)
+                </label>
+                <input
+                  type="number"
+                  value={formData.packingRatePerOrder || 150}
+                  onChange={(e) => setFormData({ ...formData, packingRatePerOrder: Number(e.target.value) })}
+                  className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-black text-slate-900 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-cyan-600" />
+                  Комплектация фурнитуры (₽ за заказ)
+                </label>
+                <input
+                  type="number"
+                  value={formData.kittingRatePerOrder || 200}
+                  onChange={(e) => setFormData({ ...formData, kittingRatePerOrder: Number(e.target.value) })}
+                  className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-black text-slate-900 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-2">
+                  <Factory className="w-4 h-4 text-violet-600" />
+                  Отгрузка со склада (₽ за факт)
+                </label>
+                <input
+                  type="number"
+                  value={formData.shippingRatePerFact || 300}
+                  onChange={(e) => setFormData({ ...formData, shippingRatePerFact: Number(e.target.value) })}
+                  className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-black text-slate-900 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+                <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-2">
+                  <Wrench className="w-4 h-4 text-amber-600" />
+                  Фасады (₽ за м²)
+                </label>
+                <input
+                  type="number"
+                  value={formData.facadesRatePerM2 || 150}
+                  onChange={(e) => setFormData({ ...formData, facadesRatePerM2: Number(e.target.value) })}
                   className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-black text-slate-900 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>
@@ -2549,6 +2666,41 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                   onChange={(e) => setFormData({ ...formData, defaultShiftDurationHours: Number(e.target.value) })}
                   className="w-full px-3 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-slate-900 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
                 />
+              </div>
+            </div>
+
+            <div className="mt-8 pt-6 border-t border-slate-100 space-y-4">
+              <div>
+                <h4 className="font-bold text-slate-900 text-sm mb-1">Доступ к разделу зарплат и ведомости</h4>
+                <p className="text-[11px] text-slate-400">Настройки конфиденциальности финансовых начислений мастеров</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                <label className="flex items-start gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-200 cursor-pointer select-none hover:bg-slate-100/55 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={formData.salariesSectionEnabled !== false}
+                    onChange={(e) => setFormData({ ...formData, salariesSectionEnabled: e.target.checked })}
+                    className="mt-0.5 w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 cursor-pointer"
+                  />
+                  <div>
+                    <span className="block text-xs font-bold text-slate-900 mb-0.5">Показывать раздел «Зарплаты» мастерам</span>
+                    <span className="block text-[10px] text-slate-400 leading-normal">Если выключено, обычные сотрудники цеха не будут видеть вкладку начислений в меню.</span>
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-200 cursor-pointer select-none hover:bg-slate-100/55 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={formData.seeOnlyOwnSalary !== false}
+                    onChange={(e) => setFormData({ ...formData, seeOnlyOwnSalary: e.target.checked })}
+                    className="mt-0.5 w-4 h-4 text-blue-600 border-slate-300 rounded focus:ring-blue-500 cursor-pointer"
+                  />
+                  <div>
+                    <span className="block text-xs font-bold text-slate-900 mb-0.5">Мастера видят только собственную ЗП</span>
+                    <span className="block text-[10px] text-slate-400 leading-normal">При включении мастера видят только свою карточку начислений и свою выработку. Начальник цеха по-прежнему видит всех.</span>
+                  </div>
+                </label>
               </div>
             </div>
           </div>

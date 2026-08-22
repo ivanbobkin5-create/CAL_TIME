@@ -398,6 +398,12 @@ export interface ERPCompanySettings {
   cncHoleRate: number;
   assemblyModuleRate: number;
   qcRatePerOrder: number;
+  packingRatePerOrder?: number;
+  kittingRatePerOrder?: number;
+  shippingRatePerFact?: number;
+  facadesRatePerM2?: number;
+  salariesSectionEnabled?: boolean;
+  seeOnlyOwnSalary?: boolean;
   autoScheduleOrders: boolean;
   notificationTelegramEnabled?: boolean;
   noteRules?: ERPNoteRule[];
@@ -411,6 +417,7 @@ export interface ERPCompanySettings {
   birkaColumnMapping?: Record<string, string[]>; // Кастомный маппинг столбцов файла бирок
   birkaEncodingPreference?: 'auto' | 'windows-1251' | 'utf-8' | 'cp866';
   birkaQrFormatTemplate?: string; // Шаблон кодирования QR-кодов на бирках ({orderNumber}-{pos}, {orderNumber}_{pos}, {pos}, и т.д.)
+  birkaQrMatchingMode?: 'template' | 'smart_contains'; // Режим сопоставления деталей при сканировании (шаблон или умный поиск по вхождению)
   hardwareColumnMapping?: Record<string, string[]>; // Кастомный маппинг столбцов ведомости фурнитуры (наименование, артикул, количество, ед. изм., категория, примечания)
   packageLabelSettings?: PackageLabelSettings; // Настройки размера и формата этикеток упаковок (по умолч. 120x75 мм)
   

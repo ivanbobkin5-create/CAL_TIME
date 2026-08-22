@@ -35,6 +35,7 @@ export const EmployeeBadgeModal: React.FC<EmployeeBadgeModalProps> = ({
   const [qrDataUrl, setQrDataUrl] = useState<string>('');
   const [copied, setCopied] = useState(false);
   const [isRegenerating, setIsRegenerating] = useState(false);
+  const [badgeSize, setBadgeSize] = useState<'standard' | 'compact' | 'large'>('standard');
   const badgeCardRef = useRef<HTMLDivElement>(null);
 
   // Stable badge code calculation
@@ -51,13 +52,13 @@ export const EmployeeBadgeModal: React.FC<EmployeeBadgeModalProps> = ({
 
     let isMounted = true;
     QRCode.toDataURL(fullQrPayload, {
-      width: 320,
+      width: 400,
       margin: 1,
       color: {
-        dark: '#0f172a',
+        dark: '#000000',
         light: '#ffffff'
       },
-      errorCorrectionLevel: 'M'
+      errorCorrectionLevel: 'H'
     })
       .then((url) => {
         if (isMounted) {
@@ -95,13 +96,13 @@ export const EmployeeBadgeModal: React.FC<EmployeeBadgeModalProps> = ({
 
   const handlePrint = () => {
     try {
-      const badgeEl = document.getElementById('printable-employee-badge');
-      if (!badgeEl) {
-        window.print();
-        return;
-      }
+      // Dynamic sizes for the printed badge
+      const sizes = {
+        compact: { width: '60mm', height: '90mm', padding: '3mm', qrSize: '28mm', avatarSize: '13mm', nameSize: '11px', roleSize: '9px', deptSize: '8px', footerSize: '7px' },
+        standard: { width: '80mm', height: '120mm', padding: '5mm', qrSize: '38mm', avatarSize: '18mm', nameSize: '14px', roleSize: '11px', deptSize: '9px', footerSize: '8px' },
+        large: { width: '100mm', height: '150mm', padding: '7mm', qrSize: '48mm', avatarSize: '24mm', nameSize: '18px', roleSize: '14px', deptSize: '11px', footerSize: '10px' }
+      }[badgeSize];
 
-      // Create a hidden printing iframe to avoid parent iframe/visibility clipping issues
       const printIframe = document.createElement('iframe');
       printIframe.style.position = 'fixed';
       printIframe.style.right = '0';
@@ -122,7 +123,7 @@ export const EmployeeBadgeModal: React.FC<EmployeeBadgeModalProps> = ({
               <title>Бейдж сотрудника - ${employee.name}</title>
               <style>
                 @page {
-                  size: 85mm 135mm;
+                  size: ${sizes.width} ${sizes.height};
                   margin: 0;
                 }
                 * {
@@ -132,21 +133,20 @@ export const EmployeeBadgeModal: React.FC<EmployeeBadgeModalProps> = ({
                 }
                 body {
                   margin: 0;
-                  padding: 4mm;
+                  padding: 0;
                   background: #ffffff;
                   display: flex;
                   justify-content: center;
-                  align-items: flex-start;
+                  align-items: center;
                   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
                 }
                 .badge-card {
-                  width: 77mm;
-                  min-height: 125mm;
-                  background: #0f172a !important;
-                  color: #ffffff !important;
-                  border-radius: 5mm;
-                  padding: 4.5mm;
-                  border: 2px solid #1e293b;
+                  width: ${sizes.width};
+                  height: ${sizes.height};
+                  background: #ffffff !important;
+                  color: #000000 !important;
+                  padding: ${sizes.padding};
+                  border: 1px dashed #94a3b8;
                   display: flex;
                   flex-direction: column;
                   align-items: center;
@@ -157,7 +157,7 @@ export const EmployeeBadgeModal: React.FC<EmployeeBadgeModalProps> = ({
                 .top-bar {
                   width: 100%;
                   height: 3px;
-                  background: linear-gradient(90deg, #3b82f6, #6366f1, #06b6d4);
+                  background: #000000;
                   position: absolute;
                   top: 0;
                   left: 0;
@@ -167,7 +167,7 @@ export const EmployeeBadgeModal: React.FC<EmployeeBadgeModalProps> = ({
                   display: flex;
                   justify-content: space-between;
                   align-items: center;
-                  border-bottom: 1px solid rgba(255,255,255,0.15);
+                  border-bottom: 1.5px solid #000000;
                   padding-bottom: 2mm;
                   margin-top: 1mm;
                   margin-bottom: 3mm;
@@ -176,69 +176,68 @@ export const EmployeeBadgeModal: React.FC<EmployeeBadgeModalProps> = ({
                   font-size: 10px;
                   font-weight: 900;
                   text-transform: uppercase;
-                  color: #f1f5f9;
+                  color: #000000;
                   letter-spacing: 0.5px;
                 }
                 .badge-tag {
                   font-size: 8px;
                   font-weight: 800;
-                  background: rgba(99, 102, 241, 0.3);
-                  color: #a5b4fc;
+                  background: #000000;
+                  color: #ffffff;
                   padding: 1px 6px;
-                  border-radius: 10px;
-                  border: 1px solid rgba(99, 102, 241, 0.4);
+                  border-radius: 2px;
                 }
                 .avatar {
-                  width: 18mm;
-                  height: 18mm;
-                  border-radius: 4mm;
-                  background: #3b82f6;
-                  color: #ffffff;
+                  width: ${sizes.avatarSize};
+                  height: ${sizes.avatarSize};
+                  border-radius: 2px;
+                  background: #f1f5f9;
+                  color: #000000;
                   display: flex;
                   align-items: center;
                   justify-content: center;
-                  font-size: 16px;
+                  font-size: 14px;
                   font-weight: 900;
                   margin-bottom: 2mm;
-                  border: 2px solid rgba(255,255,255,0.3);
+                  border: 1.5px solid #000000;
                 }
                 .emp-name {
-                  font-size: 13px;
+                  font-size: ${sizes.nameSize};
                   font-weight: 900;
-                  color: #ffffff;
+                  color: #000000;
                   text-transform: uppercase;
                   line-height: 1.2;
                   margin-bottom: 1mm;
                 }
                 .emp-role {
-                  font-size: 10px;
+                  font-size: ${sizes.roleSize};
                   font-weight: 700;
-                  color: #818cf8;
+                  color: #000000;
                   margin-bottom: 0.5mm;
                 }
                 .emp-dept {
-                  font-size: 8.5px;
-                  color: #94a3b8;
+                  font-size: ${sizes.deptSize};
+                  color: #475569;
                   margin-bottom: 2.5mm;
                 }
                 .qr-box {
                   background: #ffffff;
-                  padding: 2mm;
-                  border-radius: 3mm;
+                  padding: 1mm;
+                  border: 1px solid #000000;
                   margin-bottom: 2.5mm;
                   display: flex;
                   flex-direction: column;
                   align-items: center;
                 }
                 .qr-img {
-                  width: 38mm;
-                  height: 38mm;
+                  width: ${sizes.qrSize};
+                  height: ${sizes.qrSize};
                   object-fit: contain;
                 }
                 .qr-label {
-                  font-size: 7.5px;
+                  font-size: 7px;
                   font-weight: 800;
-                  color: #334155;
+                  color: #000000;
                   font-family: monospace;
                   margin-top: 1mm;
                 }
@@ -247,11 +246,11 @@ export const EmployeeBadgeModal: React.FC<EmployeeBadgeModalProps> = ({
                   display: flex;
                   justify-content: space-between;
                   align-items: center;
-                  border-top: 1px solid rgba(255,255,255,0.15);
+                  border-top: 1.5px solid #000000;
                   padding-top: 2mm;
-                  font-size: 8px;
+                  font-size: ${sizes.footerSize};
                   font-family: monospace;
-                  color: #94a3b8;
+                  color: #000000;
                 }
               </style>
             </head>
@@ -263,7 +262,7 @@ export const EmployeeBadgeModal: React.FC<EmployeeBadgeModalProps> = ({
                   <div class="badge-tag">ПРОПУСК</div>
                 </div>
                 <div class="avatar">
-                  ${employee.avatarUrl ? `<img src="${employee.avatarUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:4mm;" />` : (employee.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'СП')}
+                  ${employee.avatarUrl ? `<img src="${employee.avatarUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:2px;" />` : (employee.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'СП')}
                 </div>
                 <div class="emp-name">${employee.name}</div>
                 <div class="emp-role">${roleTitle}</div>
@@ -274,7 +273,7 @@ export const EmployeeBadgeModal: React.FC<EmployeeBadgeModalProps> = ({
                 </div>
                 <div class="footer-row">
                   <div>ID: <strong>${employee.id}</strong></div>
-                  <div style="color:#34d399;">✓ Авторизован</div>
+                  <div>✓ Авторизован</div>
                 </div>
               </div>
               <script>
@@ -299,12 +298,6 @@ export const EmployeeBadgeModal: React.FC<EmployeeBadgeModalProps> = ({
     }
   };
 
-  const handleCopyCode = () => {
-    navigator.clipboard.writeText(fullQrPayload);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
   const departmentNames: Record<string, string> = {
     cutting: 'Участок раскроя',
     edging: 'Участок кромкооблицовки',
@@ -321,68 +314,29 @@ export const EmployeeBadgeModal: React.FC<EmployeeBadgeModalProps> = ({
   const departmentTitle = departmentNames[employee.department] || employee.department || 'Производственный цех';
   const roleTitle = employee.productionRole || employee.role || 'Сотрудник';
 
-  return (
-    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto animate-fade-in print:p-0 print:bg-white">
-      {/* Print styles */}
-      <style>{`
-        @media print {
-          html, body {
-            margin: 0 !important;
-            padding: 0 !important;
-            background: #fff !important;
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          body * {
-            visibility: hidden !important;
-          }
-          #printable-employee-badge, #printable-employee-badge * {
-            visibility: visible !important;
-          }
-          #printable-employee-badge {
-            position: absolute !important;
-            left: 50% !important;
-            top: 20mm !important;
-            transform: translateX(-50%) !important;
-            width: 85mm !important;
-            max-width: 85mm !important;
-            min-height: 130mm !important;
-            height: auto !important;
-            box-shadow: none !important;
-            border: 2px solid #0f172a !important;
-            border-radius: 6mm !important;
-            padding: 6mm !important;
-            margin: 0 auto !important;
-            background: #0f172a !important;
-            color: #ffffff !important;
-            box-sizing: border-box !important;
-            page-break-inside: avoid !important;
-            page-break-after: avoid !important;
-            overflow: visible !important;
-          }
-          .no-print {
-            display: none !important;
-          }
-          @page {
-            size: auto;
-            margin: 0mm;
-          }
-        }
-      `}</style>
+  // Preview dimensions for the modal
+  const previewSizes = {
+    compact: { width: '250px', padding: 'p-4', qrSize: 'w-28 h-28', avatarSize: 'w-12 h-12 text-sm', nameSize: 'text-xs', roleSize: 'text-[9px]', deptSize: 'text-[8px]', footerSize: 'text-[8px]' },
+    standard: { width: '310px', padding: 'p-5', qrSize: 'w-36 h-36', avatarSize: 'w-16 h-16 text-base', nameSize: 'text-sm', roleSize: 'text-[11px]', deptSize: 'text-[9px]', footerSize: 'text-[9px]' },
+    large: { width: '370px', padding: 'p-6', qrSize: 'w-44 h-44', avatarSize: 'w-20 h-20 text-lg', nameSize: 'text-base', roleSize: 'text-xs', deptSize: 'text-[10px]', footerSize: 'text-[10px]' }
+  }[badgeSize];
 
+  return (
+    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-50 flex items-center justify-center p-4 overflow-y-auto animate-fade-in print:bg-white print:p-0">
       <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl border border-slate-100 space-y-6 relative overflow-hidden print:border-none print:shadow-none print:p-0">
+        
         {/* Header */}
-        <div className="flex items-center justify-between no-print border-b border-slate-100 pb-4">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center border border-indigo-100">
               <QrCode className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-base font-black text-slate-900">
+              <h2 className="text-sm font-black text-slate-900">
                 Карточка сотрудника и QR-бейдж
               </h2>
-              <p className="text-xs text-slate-500">
-                Персональный бейдж для быстрого входа без логина и пароля
+              <p className="text-[11px] text-slate-500">
+                Экологичный белый фон для экономии чернил при печати
               </p>
             </div>
           </div>
@@ -395,100 +349,113 @@ export const EmployeeBadgeModal: React.FC<EmployeeBadgeModalProps> = ({
           </button>
         </div>
 
-        {/* Badge Card Container */}
-        <div className="flex flex-col items-center justify-center py-2">
+        {/* Configuration Controls (Size selection) */}
+        <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 space-y-3">
+          <label className="block text-xs font-bold text-slate-700">Размер печатного бейджа:</label>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { id: 'compact', label: 'Компактный', desc: '60 × 90 мм' },
+              { id: 'standard', label: 'Стандартный', desc: '80 × 120 мм' },
+              { id: 'large', label: 'Большой', desc: '100 × 150 мм' }
+            ].map(sz => (
+              <button
+                key={sz.id}
+                type="button"
+                onClick={() => setBadgeSize(sz.id as any)}
+                className={`p-2.5 rounded-xl border text-center transition-all cursor-pointer ${
+                  badgeSize === sz.id 
+                    ? 'bg-indigo-600 border-indigo-600 text-white font-bold' 
+                    : 'bg-white border-slate-200 text-slate-700 font-medium hover:bg-slate-100/50'
+                }`}
+              >
+                <div className="text-xs">{sz.label}</div>
+                <div className={`text-[9px] mt-0.5 ${badgeSize === sz.id ? 'text-indigo-200' : 'text-slate-400'}`}>{sz.desc}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Badge Card Container (White Ink-Saving design) */}
+        <div className="flex flex-col items-center justify-center py-1">
           <div
             id="printable-employee-badge"
             ref={badgeCardRef}
-            className="w-full max-w-[340px] bg-gradient-to-b from-slate-900 via-slate-900 to-slate-950 text-white rounded-3xl p-5 border-2 border-slate-800 shadow-2xl relative overflow-hidden flex flex-col items-center text-center select-none"
+            style={{ width: previewSizes.width }}
+            className={`bg-white text-slate-950 rounded-2xl ${previewSizes.padding} border border-slate-300 shadow-lg relative overflow-hidden flex flex-col items-center text-center select-none transition-all duration-300`}
           >
-            {/* Top Accent Strip */}
-            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-blue-500 via-indigo-500 to-cyan-400" />
-            
-            {/* Background subtle badge watermark */}
-            <div className="absolute -right-8 -bottom-8 opacity-5 text-white pointer-events-none">
-              <Factory className="w-48 h-48" />
-            </div>
+            {/* Top Black Accent Strip */}
+            <div className="absolute top-0 left-0 right-0 h-1 bg-slate-950" />
 
             {/* Company Title */}
-            <div className="w-full flex items-center justify-between border-b border-slate-800/80 pb-3 mb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-lg bg-indigo-600 flex items-center justify-center text-white text-[10px] font-black">
-                  ERP
-                </div>
-                <span className="text-[11px] font-black tracking-wide text-slate-200 uppercase truncate max-w-[170px]">
-                  {companyName}
-                </span>
-              </div>
-              <span className="text-[9px] font-mono font-bold bg-indigo-500/20 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-500/30">
+            <div className="w-full flex items-center justify-between border-b border-slate-950 pb-2.5 mb-2.5">
+              <span className="text-[10px] font-black tracking-wide text-slate-950 uppercase truncate max-w-[170px]">
+                {companyName}
+              </span>
+              <span className="text-[8px] font-black bg-slate-950 text-white px-1.5 py-0.5 rounded">
                 ПРОПУСК
               </span>
             </div>
 
             {/* Employee Photo / Avatar */}
             <div className="relative my-1">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-indigo-600 to-blue-500 text-white flex items-center justify-center text-xl font-black shadow-lg border-2 border-white/20">
+              <div className={`${previewSizes.avatarSize} rounded-md bg-slate-100 text-slate-950 flex items-center justify-center font-black border border-slate-950 overflow-hidden`}>
                 {employee.avatarUrl ? (
                   <img 
                     src={employee.avatarUrl} 
                     alt={employee.name} 
-                    className="w-full h-full object-cover rounded-2xl" 
+                    className="w-full h-full object-cover" 
                   />
                 ) : (
                   employee.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || 'СП'
                 )}
               </div>
-              <div className="absolute -bottom-1.5 -right-1.5 w-5 h-5 rounded-full bg-emerald-500 border-2 border-slate-900 flex items-center justify-center text-white" title="Активный сотрудник">
-                <Check className="w-3 h-3 stroke-[3]" />
-              </div>
             </div>
 
             {/* Employee Name & Position */}
-            <div className="mt-2.5 mb-3 w-full px-2">
-              <h3 className="text-base font-black text-white tracking-tight leading-tight uppercase">
+            <div className="mt-2 mb-2 w-full px-1">
+              <h3 className={`${previewSizes.nameSize} font-black text-slate-950 tracking-tight leading-tight uppercase`}>
                 {employee.name}
               </h3>
-              <div className="text-xs font-bold text-indigo-400 mt-0.5">
+              <div className={`${previewSizes.roleSize} font-bold text-slate-900 mt-0.5`}>
                 {roleTitle}
               </div>
-              <div className="text-[10px] text-slate-400 font-medium">
+              <div className={`${previewSizes.deptSize} text-slate-500 font-medium`}>
                 {departmentTitle}
               </div>
             </div>
 
             {/* QR Code Container */}
-            <div className="bg-white p-2.5 rounded-2xl shadow-inner border-2 border-slate-200 mb-3 flex flex-col items-center">
+            <div className="bg-white p-1.5 rounded-lg border border-slate-950 mb-2.5 flex flex-col items-center">
               {qrDataUrl ? (
                 <img 
                   src={qrDataUrl} 
                   alt={`QR бейдж ${employee.name}`} 
-                  className="w-40 h-40 object-contain rounded-lg"
+                  className={`${previewSizes.qrSize} object-contain rounded`}
                 />
               ) : (
-                <div className="w-40 h-40 flex items-center justify-center bg-slate-50 text-slate-400">
-                  <RefreshCw className="w-6 h-6 animate-spin" />
+                <div className={`${previewSizes.qrSize} flex items-center justify-center bg-slate-50 text-slate-400`}>
+                  <RefreshCw className="w-5 h-5 animate-spin" />
                 </div>
               )}
-              <div className="mt-1 text-[9px] font-mono font-bold text-slate-700 tracking-wider">
+              <div className="mt-0.5 text-[8px] font-mono font-bold text-slate-950 tracking-wider">
                 КЛЮЧ БЫСТРОГО ВХОДА
               </div>
             </div>
 
             {/* Badge Footer Info */}
-            <div className="w-full border-t border-slate-800/80 pt-2 flex items-center justify-between text-[9px] font-mono text-slate-400">
+            <div className="w-full border-t border-slate-950 pt-2 flex items-center justify-between text-[8px] font-mono text-slate-950">
               <div>
-                ID: <strong className="text-slate-200">{employee.id}</strong>
+                ID: <strong>{employee.id}</strong>
               </div>
-              <div className="flex items-center gap-1 text-emerald-400">
-                <ShieldCheck className="w-3 h-3" />
-                <span>Авторизован</span>
+              <div className="flex items-center gap-1 font-bold">
+                ✓ Авторизован
               </div>
             </div>
           </div>
         </div>
 
         {/* Action Buttons */}
-        <div className="no-print space-y-3 pt-2">
+        <div className="space-y-3 pt-2">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
             <button
               onClick={handlePrint}
@@ -508,13 +475,13 @@ export const EmployeeBadgeModal: React.FC<EmployeeBadgeModalProps> = ({
             </button>
           </div>
 
-          <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 text-xs text-slate-600 space-y-1.5">
-            <div className="font-bold text-slate-800 flex items-center gap-1.5">
-              <Sparkles className="w-4 h-4 text-amber-500" />
-              Как работает быстрый вход:
+          <div className="p-3.5 bg-indigo-50/60 rounded-2xl border border-indigo-100 text-xs text-indigo-950 space-y-1">
+            <div className="font-bold text-indigo-900 flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-indigo-600 animate-pulse" />
+              Оптимизация для экономии чернил:
             </div>
-            <p className="text-[11px] leading-relaxed text-slate-500">
-              Сотрудник прикладывает этот QR-код к аппаратному сканеру на входе в цех или нажимает «Вход по бейджу» на экране логина. Система мгновенно распознает сотрудника без ввода почты и пароля.
+            <p className="text-[11px] leading-relaxed text-indigo-900/80 font-medium">
+              Бейдж переведен на белый цвет с контрастной черной рамкой и черным шрифтом. Это экономит до 95% тонера/чернил при распечатке на стандартных принтерах, обеспечивая идеальное считывание QR-кода аппаратными сканерами.
             </p>
           </div>
         </div>

@@ -288,7 +288,8 @@ export function matchDetailToScannedCode(
   scannedCode: string, 
   detail: any, 
   template: string | undefined, 
-  orderNumber: string
+  orderNumber: string,
+  matchingMode?: 'template' | 'smart_contains'
 ): boolean {
   const cleanScan = scannedCode.trim().toLowerCase();
   if (!cleanScan) return false;
@@ -336,7 +337,13 @@ export function matchDetailToScannedCode(
     return true;
   }
 
-  // 4. Substring containment:
+  // If strict template matching mode is requested, stop here!
+  if (matchingMode === 'template') {
+    return false;
+  }
+
+  // 4. "Smart contains" mode (default or explicitly selected) - Option 3:
+  // Substring containment:
   // If the scanned code has multiple parameters (e.g. "1042-02.01;LDSP;16mm"),
   // then the scanned code (cleanScan or enCode) should CONTAIN the evaluated template!
   // Or, in alphanumeric space, cleanScanAlpha contains evaluatedAlpha!

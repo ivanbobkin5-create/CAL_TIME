@@ -177,7 +177,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
 
     // Find detail matching using custom template & standard aliases
     const found = allDetails.find(d => {
-      return matchDetailToScannedCode(cleanCode, d, template, orderNum);
+      return matchDetailToScannedCode(cleanCode, d, template, orderNum, settings?.birkaQrMatchingMode);
     });
 
     if (!found) {
