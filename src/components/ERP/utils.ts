@@ -363,83 +363,91 @@ export function matchDetailToScannedCode(
   const lowerPos = cleanPos.toLowerCase();
   const enPos = cleanRawScannedString(convertRuToEnLayout(rawPos)).toLowerCase();
 
-  if (!lowerPos && !detail.barcode && !detail.id) return false;
-
-  const cleanOrder = cleanRawScannedString(String(orderNumber || detail.orderNumber || '')).trim();
-  const lowerOrder = cleanOrder.toLowerCase();
-  const enOrder = cleanRawScannedString(convertRuToEnLayout(cleanOrder)).toLowerCase();
-
-  // 1. Direct match with position number (e.g. scan "20.02", pos "20.02")
-  if (lowerPos) {
-    if (lowerScan === lowerPos || enScan === lowerPos || lowerScan === enPos || enScan === enPos) {
-      return true;
-    }
-
-    // Direct match ignoring leading zeroes in segments (e.g. "20.02" vs "20.2")
-    const posSegs = getPartNumberSegments(lowerPos);
-    const scanSegs = getPartNumberSegments(lowerScan);
-    if (posSegs && scanSegs && posSegs.length === scanSegs.length && posSegs.length > 0) {
-      if (posSegs.every((v, i) => v === scanSegs[i])) {
-        return true;
-      }
-    }
-  }
-
-  // 2. Standard composite format: "{orderNumber}_{pos}" or "{orderNumber}-{pos}" or "{orderNumber}/{pos}"
-  if (lowerOrder && lowerPos) {
-    const expectedComposite = `${lowerOrder}_${lowerPos}`;
-    const expectedEnComposite = `${enOrder}_${enPos}`;
-
-    if (
-      lowerScan === expectedComposite || 
-      enScan === expectedComposite || 
-      lowerScan === expectedEnComposite || 
-      enScan === expectedEnComposite ||
-      lowerScan === `${lowerOrder}-${lowerPos}` ||
-      enScan === `${enOrder}-${enPos}` ||
-      lowerScan === `${lowerOrder}/${lowerPos}` ||
-      enScan === `${enOrder}/${enPos}`
-    ) {
-      return true;
-    }
-  }
-
-  // 3. Scan ends with "_{pos}" or "-{pos}" or "/{pos}" (e.g. "PREFIX_20.02" or "11-0626-11_20.02")
-  if (lowerPos) {
-    if (
-      lowerScan.endsWith(`_${lowerPos}`) || 
-      enScan.endsWith(`_${lowerPos}`) || 
-      lowerScan.endsWith(`_${enPos}`) ||
-      lowerScan.endsWith(`-${lowerPos}`) || 
-      enScan.endsWith(`-${lowerPos}`) ||
-      lowerScan.endsWith(`/${lowerPos}`) || 
-      enScan.endsWith(`/${lowerPos}`)
-    ) {
-      return true;
-    }
-
-    // 4. Token breakdown: scan string separated by _, -, /, \, |, space
-    const scanTokens = lowerScan.split(/[_|/\\;:,\-\s]+/).map(t => t.trim()).filter(Boolean);
-    const enTokens = enScan.split(/[_|/\\;:,\-\s]+/).map(t => t.trim()).filter(Boolean);
-    
-    if (scanTokens.includes(lowerPos) || scanTokens.includes(enPos) || enTokens.includes(lowerPos) || enTokens.includes(enPos)) {
-      return true;
-    }
-  }
-
-  // 5. Direct barcode matches if assigned in birka file
+  // Direct barcode match from birka file column
   if (detail.barcode) {
     const dBarcode = cleanRawScannedString(String(detail.barcode)).toLowerCase();
-    if (dBarcode && (dBarcode === lowerScan || dBarcode === enScan)) {
+    const dBarcodeEn = cleanRawScannedString(convertRuToEnLayout(String(detail.barcode))).toLowerCase();
+    if (dBarcode && (dBarcode === lowerScan || dBarcode === enScan || dBarcodeEn === lowerScan || dBarcodeEn === enScan)) {
       return true;
     }
   }
 
-  // 6. Direct ID matches
+  // Direct ID matches
   if (detail.id) {
     const dId = String(detail.id).trim().toLowerCase();
     if (dId && (dId === lowerScan || dId === enScan)) {
       return true;
+    }
+  }
+
+  if (!lowerPos) return false;
+
+  // 1. Direct match with position number (e.g. scan "20.02", pos "20.02")
+  if (lowerScan === lowerPos || enScan === lowerPos || lowerScan === enPos || enScan === enPos) {
+    return true;
+  }
+
+  // Direct match ignoring leading zeroes in segments (e.g. "20.02" vs "20.2" or "20,02")
+  const posSegs = getPartNumberSegments(lowerPos);
+  const scanSegs = getPartNumberSegments(lowerScan);
+  if (posSegs && scanSegs && posSegs.length === scanSegs.length && posSegs.length > 0) {
+    if (posSegs.every((v, i) => v === scanSegs[i])) {
+      return true;
+    }
+  }
+
+  // 2. Order Numbers: check BOTH detail.orderNumber (from Birka file!) AND orderNumber (from ERP order)
+  const orderCandidates = [
+    detail.orderNumber,
+    orderNumber
+  ].filter(Boolean).map(o => cleanRawScannedString(String(o)).trim().toLowerCase());
+
+  for (const ord of orderCandidates) {
+    if (!ord) continue;
+    const enOrd = cleanRawScannedString(convertRuToEnLayout(ord)).toLowerCase();
+
+    const expectedComposites = [
+      `${ord}_${lowerPos}`,
+      `${enOrd}_${enPos}`,
+      `${ord}-${lowerPos}`,
+      `${enOrd}-${enPos}`,
+      `${ord}/${lowerPos}`,
+      `${enOrd}/${enPos}`
+    ];
+
+    if (expectedComposites.some(exp => lowerScan === exp || enScan === exp)) {
+      return true;
+    }
+  }
+
+  // 3. Scan ends with "_{pos}" or "-{pos}" or "/{pos}" (e.g. "11-0626-11_20.02" ends with "_20.02")
+  if (
+    lowerScan.endsWith(`_${lowerPos}`) || 
+    enScan.endsWith(`_${lowerPos}`) || 
+    lowerScan.endsWith(`_${enPos}`) ||
+    lowerScan.endsWith(`-${lowerPos}`) || 
+    enScan.endsWith(`-${lowerPos}`) ||
+    lowerScan.endsWith(`/${lowerPos}`) || 
+    enScan.endsWith(`/${lowerPos}`)
+  ) {
+    return true;
+  }
+
+  // 4. Token breakdown: scan string separated by _, -, /, \, |, space
+  const scanTokens = lowerScan.split(/[_|/\\;:,\-\s]+/).map(t => t.trim()).filter(Boolean);
+  const enTokens = enScan.split(/[_|/\\;:,\-\s]+/).map(t => t.trim()).filter(Boolean);
+  
+  if (scanTokens.includes(lowerPos) || scanTokens.includes(enPos) || enTokens.includes(lowerPos) || enTokens.includes(enPos)) {
+    return true;
+  }
+
+  // Token numeric segments comparison (e.g. token "20.2" matches "20.02")
+  if (posSegs && posSegs.length > 0) {
+    for (const t of [...scanTokens, ...enTokens]) {
+      const tSegs = getPartNumberSegments(t);
+      if (tSegs && tSegs.length === posSegs.length && tSegs.every((v, i) => v === posSegs[i])) {
+        return true;
+      }
     }
   }
 

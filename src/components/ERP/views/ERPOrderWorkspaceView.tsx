@@ -1065,10 +1065,11 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                         .filter(d => {
                           if (!searchPartsQuery) return true;
                           const q = searchPartsQuery.toLowerCase();
-                          const orderNum = order.orderNumber || '';
-                          const fullQr = `${orderNum}_${d.labelNumber}`.toLowerCase();
+                          const birkaOrder = (d.orderNumber || order.orderNumber || '').toLowerCase();
+                          const fullQr = `${birkaOrder}_${d.labelNumber}`.toLowerCase();
                           return d.name.toLowerCase().includes(q) ||
                                  d.labelNumber.toLowerCase().includes(q) ||
+                                 (d.orderNumber && d.orderNumber.toLowerCase().includes(q)) ||
                                  d.id.toLowerCase().includes(q) ||
                                  fullQr.includes(q) ||
                                  (d.barcode && d.barcode.toLowerCase().includes(q)) ||
@@ -1077,8 +1078,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                         .map((detail) => {
                           const isScanned = scannedPartIds.includes(detail.id);
                           const matchedRule = getMatchedNoteRule(detail.notes, detail.name);
-                          const orderNum = order.orderNumber || '';
-                          const expectedQr = `${orderNum}_${detail.labelNumber}`;
+                          const birkaOrder = detail.orderNumber || order.orderNumber || '';
+                          const expectedQr = detail.barcode || (birkaOrder ? `${birkaOrder}_${detail.labelNumber}` : detail.labelNumber);
 
                           return (
                             <tr
