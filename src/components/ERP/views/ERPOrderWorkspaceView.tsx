@@ -37,7 +37,7 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee, MaterialResidual } from '../types';
 import { parseBirkaFile, BirkaParseResult, BirkaDetail } from '../utils/birkaParser';
-import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, speakText, matchDetailToScannedCode } from '../utils';
+import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, speakText, matchDetailToScannedCode, cleanRawScannedString } from '../utils';
 import { CuttingOffcutsModal } from '../components/CuttingOffcutsModal';
 import { EdgingRemainsModal } from '../components/EdgingRemainsModal';
 import { detailRequiresPrisadka } from '../utils/stageReadiness';
@@ -330,16 +330,11 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     }
 
     setScanErrorMsg(null);
-    const cleanCode = codeToScan.trim().replace(/^#/, '');
+    const cleanCode = cleanRawScannedString(codeToScan);
     if (!cleanCode) {
       scannerInputRef.current?.focus();
       return;
     }
-
-    const enCode = normalizeBarcodeScan(cleanCode);
-
-    let targetMaterial = selectedMaterial;
-    let targetDetails = currentMaterialDetails;
 
     const template = settings?.birkaQrFormatTemplate;
     const orderNum = order.orderNumber || '';
@@ -348,40 +343,56 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       return matchDetailToScannedCode(cleanCode, d, template, orderNum, settings?.birkaQrMatchingMode);
     };
 
-    let foundPart = currentMaterialDetails.find(matchesPart);
+    const allOrderDetails = order.birkaData?.details || [];
 
-    // If not found in active material, check other materials
-    if (!foundPart && order.birkaData?.details) {
-      const partInOtherMat = order.birkaData.details.find(matchesPart);
-      if (partInOtherMat) {
-        const matName = partInOtherMat.material || 'Без указания материала';
-        targetMaterial = matName;
-        setSelectedMaterial(matName);
-        foundPart = partInOtherMat;
-        targetDetails = order.birkaData.details.filter(d => (d.material || 'Без указания материала') === matName);
-        if (currentStage === 'edging') {
-          targetDetails = targetDetails.filter(d => partNeedsEdge(d));
-        }
-      }
+    if (allOrderDetails.length === 0) {
+      setScanErrorMsg(`В заказе отсутствуют детали спецификации бирок`);
+      playSoundEffect('error');
+      return;
     }
 
+    // Search across ALL details of the order first for maximum reliability
+    const foundPart = allOrderDetails.find(matchesPart);
+
     if (!foundPart) {
-      setScanErrorMsg(`Деталь с кодом/номером "${cleanCode}" не найдена в этом заказе`);
+      setScanErrorMsg(`Деталь с кодом "${cleanCode}" не найдена в заказе №${order.orderNumber || ''}`);
       playSoundEffect('error');
+      return;
+    }
+
+    const targetMaterial = foundPart.material || 'Без указания материала';
+
+    // Auto-switch material tab if needed
+    if (selectedMaterial !== targetMaterial) {
+      setSelectedMaterial(targetMaterial);
+    }
+
+    const targetMaterialDetails = allOrderDetails.filter(d => (d.material || 'Без указания материала') === targetMaterial);
+    const effectiveStageDetails = currentStage === 'edging' 
+      ? targetMaterialDetails.filter(partNeedsEdge) 
+      : targetMaterialDetails;
+
+    // Check if this part doesn't need edging on the edging stage
+    if (currentStage === 'edging' && !partNeedsEdge(foundPart)) {
+      playSoundEffect('success');
+      speakText('Деталь без кромки');
+      setScanErrorMsg(`ℹ️ Деталь №${foundPart.labelNumber} (${foundPart.name}) не требует кромления и не нуждается в обработке на этом участке.`);
       return;
     }
 
     const currentMatScannedIds = order.stageScanningProgress?.[currentStage]?.[targetMaterial]?.scannedPartIds || [];
 
     if (currentMatScannedIds.includes(foundPart.id)) {
-      setScanErrorMsg(`Деталь №${foundPart.labelNumber} ("${foundPart.name}") уже отсканирована на участке`);
+      setScanErrorMsg(`Деталь №${foundPart.labelNumber} ("${foundPart.name}") уже отсканирована на этом участке`);
       playSoundEffect('alert');
       return;
     }
 
     // Mark detail as scanned
     const newScannedIds = [...currentMatScannedIds, foundPart.id];
-    const isAllScanned = newScannedIds.length >= targetDetails.length;
+    const isAllScanned = effectiveStageDetails.length > 0 
+      ? effectiveStageDetails.every(d => newScannedIds.includes(d.id))
+      : newScannedIds.length >= targetMaterialDetails.length;
 
     const updatedStageScanning = { ...(order.stageScanningProgress || {}) };
     if (!updatedStageScanning[currentStage]) {
@@ -420,7 +431,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       const instructionText = hasNoteText 
         ? `ПРИМЕЧАНИЕ К ДЕТАЛИ: "${foundPart.notes}". Обратите внимание на обработку!`
         : matchedRule?.instruction || 'Обратите внимание на инструкцию к этой детали';
-      
+
       setOperatorInstructionAlert({
         labelNumber: foundPart.labelNumber,
         partName: foundPart.name,

@@ -31,7 +31,7 @@ import {
 import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee } from '../types';
 import { parseBirkaFile, BirkaParseResult, BirkaDetail } from '../utils/birkaParser';
 import { parseHardwareFile } from '../utils/hardwareParser';
-import { formatDeadlineDate, speakText, matchDetailToScannedCode, normalizeBarcodeScan } from '../utils';
+import { formatDeadlineDate, speakText, matchDetailToScannedCode, normalizeBarcodeScan, cleanRawScannedString } from '../utils';
 import { detailRequiresPrisadka } from '../utils/stageReadiness';
 import { FinishedPartNoticeModal } from '../components/FinishedPartNoticeModal';
 import { OrderClientPrivacyModal } from '../components/OrderClientPrivacyModal';
@@ -404,46 +404,54 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
     }
 
     setScanErrorMsg(null);
-    const cleanCode = codeToScan.trim().replace(/^#/, '');
+    const cleanCode = cleanRawScannedString(codeToScan);
     if (!cleanCode) {
       scannerInputRef.current?.focus();
       return;
     }
 
-    let targetMaterial = selectedMaterial;
-    let targetDetails = currentMaterialDetails;
-
-    // Find part matching using custom template & standard aliases
     const template = settings?.birkaQrFormatTemplate;
     const orderNum = order.orderNumber || '';
 
-    let foundPart = currentMaterialDetails.find(d => 
+    const allOrderDetails = order.birkaData?.details || [];
+
+    if (allOrderDetails.length === 0) {
+      setScanErrorMsg(`В заказе отсутствуют детали спецификации бирок`);
+      playSoundEffect('error');
+      return;
+    }
+
+    // Find part matching using universal search across all details
+    const foundPart = allOrderDetails.find(d => 
       matchDetailToScannedCode(cleanCode, d, template, orderNum, settings?.birkaQrMatchingMode)
     );
 
-    // If not found in current material, search other material groups
-    if (!foundPart && order.birkaData?.details) {
-      const partInOtherMat = order.birkaData.details.find(d => 
-        matchDetailToScannedCode(cleanCode, d, template, orderNum, settings?.birkaQrMatchingMode)
-      );
-
-      if (partInOtherMat) {
-        const matName = partInOtherMat.material || 'Без указания материала';
-        targetMaterial = matName;
-        setSelectedMaterial(matName);
-        foundPart = partInOtherMat;
-        targetDetails = order.birkaData.details.filter(d => (d.material || 'Без указания материала') === matName);
-      }
-    }
-
     if (!foundPart) {
-      setScanErrorMsg(`Деталь с кодом/номером "${cleanCode}" не найдена в списке этого заказа`);
+      setScanErrorMsg(`Деталь с кодом "${cleanCode}" не найдена в списке заказа №${order.orderNumber || ''}`);
       playSoundEffect('error');
       setScanInput('');
       if (scannerInputRef.current) {
         scannerInputRef.current.value = '';
         scannerInputRef.current.focus();
       }
+      return;
+    }
+
+    const targetMaterial = foundPart.material || 'Без указания материала';
+    if (selectedMaterial !== targetMaterial) {
+      setSelectedMaterial(targetMaterial);
+    }
+
+    const targetMaterialDetails = allOrderDetails.filter(d => (d.material || 'Без указания материала') === targetMaterial);
+    const effectiveStageDetails = currentStageId === 'edging' 
+      ? targetMaterialDetails.filter(d => (d.edgeL1 || d.edgeL2 || d.edgeW1 || d.edgeW2)) 
+      : targetMaterialDetails;
+
+    // Check if this part doesn't need edging on the edging stage
+    if (currentStageId === 'edging' && !(foundPart.edgeL1 || foundPart.edgeL2 || foundPart.edgeW1 || foundPart.edgeW2)) {
+      playSoundEffect('success');
+      speakText('Деталь без кромки');
+      setScanErrorMsg(`ℹ️ Деталь №${foundPart.labelNumber} (${foundPart.name}) не требует кромления на этом участке.`);
       return;
     }
 
@@ -463,7 +471,9 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
 
     // Mark as scanned
     const newScannedIds = [...currentMatScannedIds, foundPart.id];
-    const isAllScanned = newScannedIds.length >= targetDetails.length;
+    const isAllScanned = effectiveStageDetails.length > 0
+      ? effectiveStageDetails.every(d => newScannedIds.includes(d.id))
+      : newScannedIds.length >= targetMaterialDetails.length;
 
     const updatedStageScanning = { ...(order.stageScanningProgress || {}) };
     if (!updatedStageScanning[currentStageId]) {
