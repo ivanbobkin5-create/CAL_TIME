@@ -1211,222 +1211,42 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                     </div>
                   )}
 
-                  {/* STEP 2: Quick Presets */}
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <h5 className="text-xs font-black text-indigo-300 uppercase tracking-wider">
-                        Готовые шаблоны форматов (Базис-Мебельщик):
-                      </h5>
-                      <span className="text-[10px] text-slate-400 font-medium">Нажмите для быстрой установки</span>
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{orderNumber}_{pos}' })}
-                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                          formData.birkaQrFormatTemplate === '{orderNumber}_{pos}'
-                            ? 'bg-indigo-900/60 border-indigo-400 shadow-md ring-1 ring-indigo-400'
-                            : 'bg-slate-950/60 border-slate-800 hover:border-indigo-500/40 hover:bg-slate-900'
-                        }`}
-                      >
-                        <div className="text-xs font-bold text-white flex items-center justify-between">
-                          <span>Базис Стандарт</span>
-                          <span className="text-[10px] font-mono text-emerald-400">_</span>
-                        </div>
-                        <div className="text-[11px] font-mono text-indigo-300 mt-0.5">{'{Заказ}_{№ детали}'}</div>
-                        <div className="text-[10px] text-slate-400 mt-1">Пример: 00-0000-00_00.00</div>
-                      </button>
+                  {/* Clean Standard QR Format */}
+                  <div className="bg-slate-950/60 rounded-2xl border border-indigo-500/30 p-5 space-y-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div>
+                        <h5 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
+                          <QrCode className="w-5 h-5 text-indigo-400" />
+                          <span>Стандартный формат QR-кодов бирок</span>
+                        </h5>
+                        <p className="text-xs text-slate-300 mt-1">
+                          Номер заказа через нижнее подчеркивание <code className="text-indigo-300 bg-slate-900 px-1.5 py-0.5 rounded font-mono font-bold">_</code> и номер позиции детали:
+                        </p>
+                      </div>
 
-                      <button
-                        type="button"
-                        onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{orderNumber}-{pos}' })}
-                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                          formData.birkaQrFormatTemplate === '{orderNumber}-{pos}'
-                            ? 'bg-indigo-900/60 border-indigo-400 shadow-md ring-1 ring-indigo-400'
-                            : 'bg-slate-950/60 border-slate-800 hover:border-indigo-500/40 hover:bg-slate-900'
-                        }`}
-                      >
-                        <div className="text-xs font-bold text-white flex items-center justify-between">
-                          <span>Дефисный</span>
-                          <span className="text-[10px] font-mono text-indigo-400">-</span>
-                        </div>
-                        <div className="text-[11px] font-mono text-indigo-300 mt-0.5">{'{Заказ}-{№ детали}'}</div>
-                        <div className="text-[10px] text-slate-400 mt-1">Пример: 00-0000-00-00.00</div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{pos}' })}
-                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                          formData.birkaQrFormatTemplate === '{pos}'
-                            ? 'bg-indigo-900/60 border-indigo-400 shadow-md ring-1 ring-indigo-400'
-                            : 'bg-slate-950/60 border-slate-800 hover:border-indigo-500/40 hover:bg-slate-900'
-                        }`}
-                      >
-                        <div className="text-xs font-bold text-white flex items-center justify-between">
-                          <span>Только № детали</span>
-                          <span className="text-[10px] font-mono text-amber-400">#</span>
-                        </div>
-                        <div className="text-[11px] font-mono text-indigo-300 mt-0.5">{'{№ детали}'}</div>
-                        <div className="text-[10px] text-slate-400 mt-1">Пример: 00.00 или 00.00.00</div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{orderNumber}/{pos}' })}
-                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
-                          formData.birkaQrFormatTemplate === '{orderNumber}/{pos}'
-                            ? 'bg-indigo-900/60 border-indigo-400 shadow-md ring-1 ring-indigo-400'
-                            : 'bg-slate-950/60 border-slate-800 hover:border-indigo-500/40 hover:bg-slate-900'
-                        }`}
-                      >
-                        <div className="text-xs font-bold text-white flex items-center justify-between">
-                          <span>Через слэш</span>
-                          <span className="text-[10px] font-mono text-purple-400">/</span>
-                        </div>
-                        <div className="text-[11px] font-mono text-indigo-300 mt-0.5">{'{Заказ}/{№ детали}'}</div>
-                        <div className="text-[10px] text-slate-400 mt-1">Пример: 00-0000-00/00.00</div>
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* STEP 3: Interactive Column Badges */}
-                  <div className="space-y-2">
-                    <h5 className="text-xs font-black text-indigo-300 uppercase tracking-wider">
-                      Шаг 2: Нажмите на нужные столбцы для составления QR-кода
-                    </h5>
-                    <p className="text-[10px] text-slate-400">
-                      Кликая по кнопкам ниже, вы соберете формат штрихкода. Мы сразу покажем результат на основе первой строки.
-                    </p>
-
-                    <div className="flex flex-wrap gap-2.5 pt-1">
-                      {columnsToDisplay.map((col) => {
-                        const sampleValue = normalizedSampleRow[col] || normalizedSampleRow[col.toLowerCase()] || '';
-                        return (
-                          <button
-                            key={col}
-                            type="button"
-                            onClick={() => handleAddColumnToTemplate(col)}
-                            className="group px-3 py-2 rounded-xl bg-slate-950 hover:bg-indigo-950 border border-slate-800 hover:border-indigo-500/40 text-left transition-all cursor-pointer shadow-sm active:scale-95"
-                            title={`Нажмите, чтобы добавить {${col}}`}
-                          >
-                            <div className="text-xs font-bold text-indigo-200 group-hover:text-white transition-colors">
-                              {col}
-                            </div>
-                            <div className="text-[9px] text-slate-450 font-mono mt-0.5 truncate max-w-[120px]">
-                              {sampleValue ? `Знач: ${sampleValue}` : 'пусто'}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  {/* STEP 3: Separators and helper controls */}
-                  <div className="bg-slate-950/40 p-3.5 rounded-xl border border-slate-800/80 space-y-2.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                        Разделители и инструменты:
-                      </span>
-                      <button
-                        type="button"
-                        onClick={handleClearTemplate}
-                        className="text-[10px] font-black text-rose-400 hover:text-rose-300 flex items-center gap-1 cursor-pointer transition-colors"
-                      >
-                        ❌ Очистить всё
-                      </button>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      {/* Separator buttons */}
-                      {['-', '_', 'x', '/', '|', '.'].map((sep) => (
-                        <button
-                          key={sep}
-                          type="button"
-                          onClick={() => handleAddSeparatorToTemplate(sep)}
-                          className="px-3 py-1.5 rounded-lg bg-indigo-950 border border-indigo-700/50 hover:bg-indigo-900 text-indigo-200 font-bold font-mono text-xs cursor-pointer active:scale-95 transition-all"
-                        >
-                          Вставить "{sep}"
-                        </button>
-                      ))}
-
-                      {/* Spacer or customized text helper */}
-                      <span className="text-slate-600">|</span>
-
-                      <button
-                        type="button"
-                        onClick={handleBackspaceTemplate}
-                        className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 font-bold text-xs cursor-pointer active:scale-95 transition-all flex items-center gap-1"
-                      >
-                        <span>← Стереть элемент</span>
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* STEP 4: Manual Template Edit Input */}
-                <div className="space-y-2 pt-2 border-t border-indigo-500/10">
-                  <label className="block text-[11px] font-bold text-indigo-200 uppercase tracking-wider">
-                    Результирующий шаблон кодирования QR (можно править и вручную):
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.birkaQrFormatTemplate ?? '{orderNumber}_{pos}'}
-                    onChange={(e) => setFormData({ ...formData, birkaQrFormatTemplate: e.target.value })}
-                    placeholder="Например: {Заказ}_{№ детали} или {orderNumber}_{pos}"
-                    className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-indigo-400/50 font-mono text-sm font-bold text-indigo-250 focus:ring-2 focus:ring-indigo-400 outline-none"
-                  />
-                </div>
-
-                {/* STEP 5: Beautiful Real-time Preview */}
-                <div className="bg-gradient-to-r from-indigo-950 to-slate-950 rounded-2xl border-2 border-indigo-400/30 p-4.5 flex flex-col md:flex-row items-start md:items-center justify-between gap-5 shadow-inner">
-                  <div className="space-y-1.5">
-                    <div className="text-[10px] font-black uppercase text-emerald-400 tracking-widest flex items-center gap-1.5">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                      Живой результат генерации QR по образцу:
-                    </div>
-                    
-                    <div className="text-xs text-slate-300 font-medium leading-relaxed max-w-md">
-                      {fileName ? (
-                        <span>
-                          Данные из файла <strong className="text-white">{fileName}</strong>:
-                        </span>
-                      ) : (
-                        <span>Используются стандартные данные Базиса:</span>
-                      )}
-                      <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-[11px] text-indigo-200 bg-indigo-950/30 px-2 py-1.5 rounded-lg border border-indigo-800/30">
-                        {columnsToDisplay.slice(0, 5).map((col) => {
-                          const val = normalizedSampleRow[col] || normalizedSampleRow[col.toLowerCase()] || '';
-                          return (
-                            <span key={col} className="shrink-0">
-                              {col}: <strong className="text-white">{val}</strong>
-                            </span>
-                          );
-                        })}
-                        {columnsToDisplay.length > 5 && <span className="text-slate-500">...</span>}
+                      <div className="px-3 py-1.5 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 font-mono font-bold text-xs shrink-0 flex items-center gap-1.5">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+                        <span>{'{НомерЗаказа}_{НомерПозиции}'}</span>
                       </div>
                     </div>
-                  </div>
 
-                  {/* Simulated Label with Real QR Evaluation */}
-                  <div className="bg-indigo-900/40 border border-indigo-400/40 rounded-2xl px-5 py-3.5 flex items-center gap-3.5 shrink-0 w-full md:w-auto justify-center md:justify-start">
-                    <div className="w-11 h-11 bg-white rounded-xl flex items-center justify-center shadow-md p-1 shrink-0">
-                      <QrCode className="w-9 h-9 text-slate-900" />
-                    </div>
-                    <div>
-                      <div className="text-[9px] font-black text-indigo-300 uppercase tracking-wider">Сгенерированный QR-код:</div>
-                      <div className="font-mono font-black text-base text-emerald-300 tracking-wide break-all max-w-[200px]">
-                        {evaluateBirkaQrTemplate(
-                          formData.birkaQrFormatTemplate || '{orderNumber}_{pos}',
-                          normalizedSampleRow,
-                          normalizedSampleRow.orderNumber || '00-0000-00'
-                        ) || <span className="text-rose-400 font-medium text-xs">[пусто]</span>}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                      <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
+                        <div className="text-[10px] font-black uppercase text-indigo-300 tracking-wider">Основной формат QR:</div>
+                        <div className="text-base font-mono font-black text-emerald-400 mt-1">11-0626-11_20.02</div>
+                        <div className="text-[10px] text-slate-400 mt-1">Сканируется со стикера бирки Базис-Мебельщика</div>
+                      </div>
+
+                      <div className="p-3 rounded-xl bg-slate-900 border border-slate-800">
+                        <div className="text-[10px] font-black uppercase text-indigo-300 tracking-wider">Ручной ввод / короткий номер:</div>
+                        <div className="text-base font-mono font-black text-indigo-300 mt-1">20.02</div>
+                        <div className="text-[10px] text-slate-400 mt-1">Или ввод только номера позиции детали</div>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* STEP 6: Interactive Live Barcode & QR Diagnostics / Testing Simulator */}
+                {/* Live Barcode & QR Diagnostics / Testing Simulator */}
                 <div className="bg-slate-950/80 rounded-2xl border border-indigo-500/30 p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
