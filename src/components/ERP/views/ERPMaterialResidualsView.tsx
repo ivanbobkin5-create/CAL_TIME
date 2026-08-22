@@ -19,6 +19,7 @@ import {
   Sparkles
 } from 'lucide-react';
 import { MaterialResidual, ERPEmployee, ProductionOrder } from '../types';
+import { EdgeDecorSelector } from '../components/EdgeDecorSelector';
 
 interface ERPMaterialResidualsViewProps {
   residuals: MaterialResidual[];
@@ -26,6 +27,8 @@ interface ERPMaterialResidualsViewProps {
   employees?: ERPEmployee[];
   orders?: ProductionOrder[];
   companyName?: string;
+  catalogMaterials?: Record<string, string[]>;
+  catalogProducts?: any[];
   onAddResidual: (item: MaterialResidual) => void;
   onUpdateResidual: (item: MaterialResidual) => void;
   onDeleteResidual: (id: string) => void;
@@ -37,6 +40,8 @@ export const ERPMaterialResidualsView: React.FC<ERPMaterialResidualsViewProps> =
   employees = [],
   orders = [],
   companyName,
+  catalogMaterials = {},
+  catalogProducts = [],
   onAddResidual,
   onUpdateResidual,
   onDeleteResidual
@@ -50,6 +55,7 @@ export const ERPMaterialResidualsView: React.FC<ERPMaterialResidualsViewProps> =
   const [formType, setFormType] = useState<'offcut' | 'edge'>('offcut');
   const [formCategory, setFormCategory] = useState<string>('ЛДСП');
   const [formMaterialName, setFormMaterialName] = useState('');
+  const [formEdgeBrand, setFormEdgeBrand] = useState('Rehau');
   const [formLengthMm, setFormLengthMm] = useState('');
   const [formWidthMm, setFormWidthMm] = useState('');
   const [formThicknessMm, setFormThicknessMm] = useState('16');
@@ -542,17 +548,28 @@ export const ERPMaterialResidualsView: React.FC<ERPMaterialResidualsViewProps> =
               </div>
 
               {/* Form fields */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">Наименование материала *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder={formType === 'offcut' ? "например: ЛДСП 16мм Дуб Вотан" : "например: Кромка ПВХ 2/19 Белый"}
-                  value={formMaterialName}
-                  onChange={(e) => setFormMaterialName(e.target.value)}
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+              {formType === 'edge' ? (
+                <EdgeDecorSelector
+                  selectedBrand={formEdgeBrand}
+                  onBrandChange={setFormEdgeBrand}
+                  decorValue={formMaterialName}
+                  onDecorChange={setFormMaterialName}
+                  catalogMaterials={catalogMaterials}
+                  catalogProducts={catalogProducts}
                 />
-              </div>
+              ) : (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Наименование материала *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="например: ЛДСП 16мм Дуб Вотан"
+                    value={formMaterialName}
+                    onChange={(e) => setFormMaterialName(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              )}
 
               {formType === 'offcut' ? (
                 <>

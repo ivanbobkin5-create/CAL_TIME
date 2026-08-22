@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
 import { Layers, Plus, Trash2, CheckCircle2, AlertTriangle, X } from 'lucide-react';
 import { ProductionOrder, ERPEmployee, MaterialResidual } from '../types';
+import { EdgeDecorSelector } from './EdgeDecorSelector';
 
 interface EdgingRemainsModalProps {
   isOpen: boolean;
   order: ProductionOrder;
   currentUser?: ERPEmployee | null;
+  catalogMaterials?: Record<string, string[]>;
+  catalogProducts?: any[];
   onClose: () => void;
   onSubmit: (edges: MaterialResidual[]) => void;
 }
@@ -14,16 +17,18 @@ export const EdgingRemainsModal: React.FC<EdgingRemainsModalProps> = ({
   isOpen,
   order,
   currentUser,
+  catalogMaterials = {},
+  catalogProducts = [],
   onClose,
   onSubmit
 }) => {
   const [edgesList, setEdgesList] = useState<MaterialResidual[]>([]);
 
   // Default edge from order birkaData allEdges or default
-  const defaultEdgeName = order.birkaData?.allEdges?.[0]?.name || 'Кромка ПВХ 2/19';
+  const defaultEdgeName = order.birkaData?.allEdges?.[0]?.name || '';
 
-  const [selectedEdge, setSelectedEdge] = useState<string>(defaultEdgeName);
-  const [customEdge, setCustomEdge] = useState<string>('');
+  const [selectedBrand, setSelectedBrand] = useState<string>('Rehau');
+  const [decorValue, setDecorValue] = useState<string>(defaultEdgeName);
   const [lengthMeters, setLengthMeters] = useState<string>('');
   const [quantity, setQuantity] = useState<string>('1');
   const [storageCell, setStorageCell] = useState<string>('');
@@ -36,9 +41,9 @@ export const EdgingRemainsModal: React.FC<EdgingRemainsModalProps> = ({
     e.preventDefault();
     setFormError(null);
 
-    const mat = selectedEdge === 'CUSTOM' ? customEdge.trim() : selectedEdge;
+    const mat = decorValue.trim();
     if (!mat) {
-      setFormError('Укажите наименование кромки');
+      setFormError('Укажите или выберите декор кромки из каталога');
       return;
     }
 
@@ -50,13 +55,17 @@ export const EdgingRemainsModal: React.FC<EdgingRemainsModalProps> = ({
       return;
     }
 
+    const fullMaterialName = mat.toLowerCase().includes('кромка')
+      ? mat
+      : `Кромка ${selectedBrand !== 'Все бренды' ? selectedBrand + ' ' : ''}${mat}`;
+
     const newEdge: MaterialResidual = {
       id: `edge-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       orderId: order.id,
       orderNumber: order.orderNumber,
       type: 'edge',
       category: 'Кромка',
-      materialName: mat,
+      materialName: fullMaterialName,
       lengthMeters: lenM,
       quantity: qty,
       addedAt: new Date().toISOString(),
@@ -137,34 +146,18 @@ export const EdgingRemainsModal: React.FC<EdgingRemainsModalProps> = ({
               </div>
             )}
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">Кромка *</label>
-                <select
-                  value={selectedEdge}
-                  onChange={(e) => setSelectedEdge(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
-                >
-                  {order.birkaData?.allEdges?.map((eItem) => (
-                    <option key={eItem.name} value={eItem.name}>
-                      {eItem.name} ({eItem.totalMeters} м в заказе)
-                    </option>
-                  ))}
-                  <option value="CUSTOM">+ Ввести наименование кромки вручную...</option>
-                </select>
+            <div className="space-y-3">
+              <EdgeDecorSelector
+                selectedBrand={selectedBrand}
+                onBrandChange={setSelectedBrand}
+                decorValue={decorValue}
+                onDecorChange={setDecorValue}
+                catalogMaterials={catalogMaterials}
+                catalogProducts={catalogProducts}
+                orderEdges={order.birkaData?.allEdges}
+              />
 
-                {selectedEdge === 'CUSTOM' && (
-                  <input
-                    type="text"
-                    placeholder="Например: Кромка ПВХ 0.4х19 Белый гладкий"
-                    value={customEdge}
-                    onChange={(e) => setCustomEdge(e.target.value)}
-                    className="mt-2 w-full px-3 py-2 rounded-xl bg-white border border-indigo-300 text-xs font-bold text-slate-900 outline-none"
-                  />
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-3 pt-1">
                 <div>
                   <label className="block text-[11px] font-bold text-slate-700 mb-1">Остаток (в метрах) *</label>
                   <input

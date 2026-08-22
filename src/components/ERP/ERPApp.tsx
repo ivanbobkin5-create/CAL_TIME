@@ -6,7 +6,7 @@ import {
   CalendarDays, 
   Layers, 
   BarChart3, 
-  DollarSign, 
+  RussianRuble, 
   Users, 
   Settings, 
   LogOut, 
@@ -178,10 +178,16 @@ function areOrdersEqual(arr1: any[], arr2: any[]): boolean {
 interface ERPAppProps {
   aliasOrId: string;
   catalogProducts?: any[];
+  catalogMaterials?: Record<string, string[]>;
 }
 
-export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: propsCatalogProducts = [] }) => {
+export const ERPApp: React.FC<ERPAppProps> = ({
+  aliasOrId,
+  catalogProducts: propsCatalogProducts = [],
+  catalogMaterials: propsCatalogMaterials = {}
+}) => {
   const [catalogProducts, setCatalogProducts] = useState<any[]>(propsCatalogProducts);
+  const [catalogMaterials, setCatalogMaterials] = useState<Record<string, string[]>>(propsCatalogMaterials);
 
   useEffect(() => {
     if (propsCatalogProducts && propsCatalogProducts.length > 0) {
@@ -1286,12 +1292,12 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
     { id: 'dashboard', label: 'Дашборд', icon: LayoutDashboard },
     { id: 'planning', label: 'Планирование', icon: Calendar, badge: orders.filter(o => o.status === 'planned').length },
     { id: 'schedule', label: 'График работы', icon: CalendarDays },
-    { id: 'residuals', label: 'Остатки материалов', icon: Layers, badge: residuals.filter(r => r.status === 'available').length },
+    { id: 'residuals', label: 'Остатки материалов', icon: Layers },
     { id: 'production', label: 'Производство', icon: Factory, badge: orders.filter(o => o.status === 'in_progress' || o.currentStage === 'shipping').length },
     { id: 'archive', label: 'Архив заказов', icon: Archive, badge: orders.filter(o => o.status === 'completed' || o.status === 'shipped').length },
     { id: 'reports', label: 'Аналитика и отчеты', icon: BarChart3 },
-    { id: 'salaries', label: 'Зарплаты', icon: DollarSign },
-    { id: 'employees', label: 'Сотрудники', icon: Users, badge: employees.length },
+    { id: 'salaries', label: 'Зарплаты', icon: RussianRuble },
+    { id: 'employees', label: 'Сотрудники', icon: Users },
     { id: 'settings', label: 'Настройки', icon: Settings }
   ];
 
@@ -1623,6 +1629,8 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
                 resList.forEach(r => handleAddResidual(r));
               }}
               sourceSection={activeSection}
+              catalogMaterials={catalogMaterials}
+              catalogProducts={catalogProducts}
             />
           ) : (
             <>
@@ -1677,6 +1685,8 @@ export const ERPApp: React.FC<ERPAppProps> = ({ aliasOrId, catalogProducts: prop
                   employees={employees}
                   orders={orders}
                   companyName={company?.name}
+                  catalogMaterials={catalogMaterials}
+                  catalogProducts={catalogProducts}
                 />
               )}
 

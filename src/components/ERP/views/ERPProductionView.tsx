@@ -105,22 +105,43 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
      o.projectName.toLowerCase().includes(search.toLowerCase()))
   );
 
+  // Helper to count total scanned parts across all stages
+  const countTotalScannedParts = (ord: ProductionOrder): number => {
+    let count = 0;
+    if (ord.stageScanningProgress) {
+      Object.values(ord.stageScanningProgress).forEach(stg => {
+        if (stg) {
+          Object.values(stg).forEach(mat => {
+            if (mat?.scannedPartIds) count += mat.scannedPartIds.length;
+          });
+        }
+      });
+    }
+    return count;
+  };
+
   // Keep selectedOrderDetails in sync with polled/updated parent orders
   React.useEffect(() => {
     if (selectedOrderDetails) {
       const updated = orders.find(o => o.id === selectedOrderDetails.id);
-      if (updated && (
-        updated.currentStage !== selectedOrderDetails.currentStage ||
-        updated.status !== selectedOrderDetails.status ||
-        (updated.birkaData?.fileHash || updated.birkaData?.uploadedAt || '') !== (selectedOrderDetails.birkaData?.fileHash || selectedOrderDetails.birkaData?.uploadedAt || '') ||
-        JSON.stringify(updated.stageScanningProgress) !== JSON.stringify(selectedOrderDetails.stageScanningProgress) ||
-        (updated.packages || []).length !== (selectedOrderDetails.packages || []).length ||
-        (updated.workLogs || []).length !== (selectedOrderDetails.workLogs || []).length
-      )) {
-        setSelectedOrderDetails(updated);
+      if (updated) {
+        const curScanned = countTotalScannedParts(selectedOrderDetails);
+        const newScanned = countTotalScannedParts(updated);
+
+        const metadataChanged = 
+          updated.currentStage !== selectedOrderDetails.currentStage ||
+          updated.status !== selectedOrderDetails.status ||
+          (updated.birkaData?.fileHash || updated.birkaData?.uploadedAt || '') !== (selectedOrderDetails.birkaData?.fileHash || selectedOrderDetails.birkaData?.uploadedAt || '') ||
+          (updated.packages || []).length !== (selectedOrderDetails.packages || []).length ||
+          (updated.workLogs || []).length !== (selectedOrderDetails.workLogs || []).length;
+
+        // Only overwrite selectedOrderDetails if metadata changed or if updated from parent has MORE scanned parts
+        if (metadataChanged || newScanned > curScanned) {
+          setSelectedOrderDetails(updated);
+        }
       }
     }
-  }, [orders, selectedOrderDetails]);
+  }, [orders]);
 
   // Stage details view
   const activeStage = stages.find(s => s.id === selectedStageId);

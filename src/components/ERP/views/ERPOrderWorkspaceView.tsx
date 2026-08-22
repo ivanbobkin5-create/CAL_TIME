@@ -64,6 +64,8 @@ interface ERPOrderWorkspaceViewProps {
   onAddEmployee?: (emp: Partial<ERPEmployee>) => void;
   onAddMaterialResiduals?: (residuals: MaterialResidual[]) => void;
   sourceSection?: string;
+  catalogMaterials?: Record<string, string[]>;
+  catalogProducts?: any[];
 }
 
 // Audio synthesizer for sound effects
@@ -131,7 +133,9 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   onUpdateOrderStatus,
   onAddEmployee,
   onAddMaterialResiduals,
-  sourceSection
+  sourceSection,
+  catalogMaterials = {},
+  catalogProducts = []
 }) => {
   const empName = currentUser?.employeeName || currentUser?.name || currentUser?.displayName || 'Сотрудник';
   const empId = currentUser?.employeeId || currentUser?.id || currentUser?.uid || 'unknown';
@@ -206,6 +210,38 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   const lastKeyTimeRef = useRef<number>(0);
   const bufferTimeoutRef = useRef<any>(null);
 
+  // Local optimistic order state for zero-latency scanning updates
+  const [localOrder, setLocalOrder] = useState<ProductionOrder>(order);
+
+  useEffect(() => {
+    setLocalOrder(prev => {
+      if (prev.id !== order.id) return order;
+
+      const mergedProgress = { ...(order.stageScanningProgress || {}) };
+      const prevProgress = prev.stageScanningProgress || {};
+
+      Object.keys(prevProgress).forEach(stg => {
+        if (!mergedProgress[stg]) mergedProgress[stg] = {};
+        Object.keys(prevProgress[stg]).forEach(mat => {
+          const prevIds = prevProgress[stg][mat]?.scannedPartIds || [];
+          const newIds = mergedProgress[stg]?.[mat]?.scannedPartIds || [];
+          if (prevIds.length > newIds.length) {
+            const combined = Array.from(new Set([...newIds, ...prevIds]));
+            mergedProgress[stg][mat] = {
+              scannedPartIds: combined,
+              isCompleted: prevProgress[stg][mat]?.isCompleted || mergedProgress[stg]?.[mat]?.isCompleted
+            };
+          }
+        });
+      });
+
+      return {
+        ...order,
+        stageScanningProgress: mergedProgress
+      };
+    });
+  }, [order]);
+
   // Available Note Rules from settings
   const noteRules: ERPNoteRule[] = settings?.noteRules || [
     { id: '1', pattern: '4-8-36', instruction: 'Данной детали требуется паз, см. чертеж', color: 'amber' },
@@ -215,12 +251,12 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
 
   // Initialize selected material when opening scanner
   useEffect(() => {
-    if (order.birkaData?.materialGroups && order.birkaData.materialGroups.length > 0) {
-      if (!selectedMaterial || !order.birkaData.materialGroups.some(m => m.materialName === selectedMaterial)) {
-        setSelectedMaterial(order.birkaData.materialGroups[0].materialName);
+    if (localOrder.birkaData?.materialGroups && localOrder.birkaData.materialGroups.length > 0) {
+      if (!selectedMaterial || !localOrder.birkaData.materialGroups.some(m => m.materialName === selectedMaterial)) {
+        setSelectedMaterial(localOrder.birkaData.materialGroups[0].materialName);
       }
     }
-  }, [order.birkaData, selectedMaterial]);
+  }, [localOrder.birkaData, selectedMaterial]);
 
   // Auto-focus physical scanner input
   useEffect(() => {
@@ -249,8 +285,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (order.birkaData) {
-      const confirmReplace = window.confirm(`К заказу уже загружен файл "${order.birkaData.fileName}". Перезаписать спецификацию новыми данными?`);
+    if (localOrder.birkaData) {
+      const confirmReplace = window.confirm(`К заказу уже загружен файл "${localOrder.birkaData.fileName}". Перезаписать спецификацию новыми данными?`);
       if (!confirmReplace) {
         e.target.value = '';
         return;
@@ -267,7 +303,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       }
 
       const updatedOrder: ProductionOrder = {
-        ...order,
+        ...localOrder,
         totalAreaM2: parseRes.totalAreaM2,
         totalEdgeM: parseRes.totalEdgeMeters,
         partsCount: parseRes.totalPartsCount,
@@ -281,6 +317,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
         }
       };
 
+      setLocalOrder(updatedOrder);
       onUpdateOrder(updatedOrder);
       playSoundEffect('success');
       if (parseRes.materialGroups.length > 0) {
@@ -296,7 +333,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   };
 
   // Stage scanning state for current active scanning stage
-  const stageScanning = order.stageScanningProgress?.[currentStage] || {};
+  const stageScanning = localOrder.stageScanningProgress?.[currentStage] || {};
 
   // All scanned part IDs across all materials for the current stage
   const allScannedPartIds = useMemo(() => {
@@ -318,14 +355,24 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   };
 
   // Details for selected material (for current stage)
-  const allMaterialDetails = order.birkaData?.details.filter(d => 
-    (d.material || 'Без указания материала') === selectedMaterial
-  ) || [];
+  const allMaterialDetails = useMemo(() => {
+    return localOrder.birkaData?.details.filter(d => 
+      (d.material || 'Без указания материала') === selectedMaterial
+    ) || [];
+  }, [localOrder.birkaData, selectedMaterial]);
 
-  // On edging stage, we only show parts that need edging
-  const currentMaterialDetails = currentStage === 'edging'
-    ? allMaterialDetails.filter(d => partNeedsEdge(d))
-    : allMaterialDetails;
+  // Stage filtering:
+  // - On edging: only show parts that need edge banding
+  // - On prisadka/cnc: only show parts that require drilling (considering nesting equipment settings and hole counts)
+  const currentMaterialDetails = useMemo(() => {
+    if (currentStage === 'edging') {
+      return allMaterialDetails.filter(d => partNeedsEdge(d));
+    }
+    if ((currentStage as string) === 'prisadka' || currentStage === 'cnc') {
+      return allMaterialDetails.filter(d => detailRequiresPrisadka(d, settings));
+    }
+    return allMaterialDetails;
+  }, [currentStage, allMaterialDetails, settings]);
 
   // Handle Scanning or Marking a Part
   const handleScanCode = (codeToScan: string) => {
@@ -346,9 +393,9 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     }
 
     const template = settings?.birkaQrFormatTemplate;
-    const orderNum = order.orderNumber || '';
+    const orderNum = localOrder.orderNumber || '';
 
-    const allOrderDetails = order.birkaData?.details || [];
+    const allOrderDetails = localOrder.birkaData?.details || [];
 
     if (allOrderDetails.length === 0) {
       setScanErrorMsg(`В заказе отсутствуют детали спецификации бирок`);
@@ -396,6 +443,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     const targetMaterialDetails = allOrderDetails.filter(d => (d.material || 'Без указания материала') === targetMaterial);
     const effectiveStageDetails = currentStage === 'edging' 
       ? targetMaterialDetails.filter(partNeedsEdge) 
+      : ((currentStage as string) === 'prisadka' || currentStage === 'cnc')
+      ? targetMaterialDetails.filter(d => detailRequiresPrisadka(d, settings))
       : targetMaterialDetails;
 
     // Check if this part doesn't need edging on the edging stage
@@ -406,7 +455,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       return;
     }
 
-    const currentMatScannedIds = order.stageScanningProgress?.[currentStage]?.[targetMaterial]?.scannedPartIds || [];
+    const currentMatScannedIds = localOrder.stageScanningProgress?.[currentStage]?.[targetMaterial]?.scannedPartIds || [];
 
     if (currentMatScannedIds.includes(foundPart.id) || allScannedPartIds.has(foundPart.id)) {
       setScanSuccessMsg(`Деталь №${foundPart.labelNumber} («${foundPart.name}») уже была отмечена ранее`);
@@ -420,7 +469,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       ? effectiveStageDetails.every(d => newScannedIds.includes(d.id))
       : newScannedIds.length >= targetMaterialDetails.length;
 
-    const updatedStageScanning = { ...(order.stageScanningProgress || {}) };
+    const updatedStageScanning = { ...(localOrder.stageScanningProgress || {}) };
     if (!updatedStageScanning[currentStage]) {
       updatedStageScanning[currentStage] = {};
     }
@@ -429,11 +478,14 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       isCompleted: isAllScanned
     };
 
-    onUpdateOrder({
-      ...order,
+    const updatedOrder: ProductionOrder = {
+      ...localOrder,
       currentStage: currentStage,
       stageScanningProgress: updatedStageScanning
-    });
+    };
+
+    setLocalOrder(updatedOrder);
+    onUpdateOrder(updatedOrder);
 
     setScanSuccessMsg(`✅ Деталь №${foundPart.labelNumber} «${foundPart.name}» успешно отмечена!`);
     playSoundEffect('success');
@@ -555,10 +607,18 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       newScannedIds = [...matScannedIds, detail.id];
     }
 
-    const allMatDetails = order.birkaData?.details.filter(d => (d.material || 'Без указания материала') === mat) || [];
-    const isAllScanned = newScannedIds.length >= allMatDetails.length;
+    const allMatDetails = localOrder.birkaData?.details.filter(d => (d.material || 'Без указания материала') === mat) || [];
+    const effectiveMatDetails = currentStage === 'edging'
+      ? allMatDetails.filter(partNeedsEdge)
+      : ((currentStage as string) === 'prisadka' || currentStage === 'cnc')
+      ? allMatDetails.filter(d => detailRequiresPrisadka(d, settings))
+      : allMatDetails;
 
-    const updatedStageScanning = { ...(order.stageScanningProgress || {}) };
+    const isAllScanned = effectiveMatDetails.length > 0
+      ? effectiveMatDetails.every(d => newScannedIds.includes(d.id))
+      : newScannedIds.length >= allMatDetails.length;
+
+    const updatedStageScanning = { ...(localOrder.stageScanningProgress || {}) };
     if (!updatedStageScanning[currentStage]) {
       updatedStageScanning[currentStage] = {};
     }
@@ -567,11 +627,14 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       isCompleted: isAllScanned
     };
 
-    onUpdateOrder({
-      ...order,
+    const updatedOrder: ProductionOrder = {
+      ...localOrder,
       currentStage: currentStage,
       stageScanningProgress: updatedStageScanning
-    });
+    };
+
+    setLocalOrder(updatedOrder);
+    onUpdateOrder(updatedOrder);
 
     if (!isScanned) {
       setScanSuccessMsg(`✅ Деталь №${detail.labelNumber} «${detail.name}» отмечена`);
@@ -1156,6 +1219,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                         <th className="py-2.5 px-3">Наименование</th>
                         <th className="py-2.5 px-3">Размер (мм)</th>
                         <th className="py-2.5 px-3">Кромка</th>
+                        <th className="py-2.5 px-3">Отверстия</th>
                         <th className="py-2.5 px-3">Примечания</th>
                         <th className="py-2.5 px-3 text-right">QR / Штрихкод</th>
                       </tr>
@@ -1266,6 +1330,30 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                                 )}
                               </td>
 
+                              {/* Hole Info */}
+                              <td className="py-2.5 px-3 whitespace-nowrap">
+                                {detail.holesEnd !== undefined || detail.holesFace !== undefined || detail.holesCount !== undefined ? (
+                                  <div className="flex items-center gap-1">
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                      (detail.holesEnd || 0) > 0 ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-slate-100 text-slate-500'
+                                    }`}>
+                                      Торец: {detail.holesEnd ?? 0}
+                                    </span>
+                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                      (detail.holesFace || 0) > 0 ? 'bg-blue-100 text-blue-900 border border-blue-300' : 'bg-slate-100 text-slate-500'
+                                    }`}>
+                                      Пласть: {detail.holesFace ?? 0}
+                                    </span>
+                                  </div>
+                                ) : detailRequiresPrisadka(detail, settings) ? (
+                                  <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-mono text-[10px] font-bold border border-purple-200">
+                                    Присадка
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-400 text-[10px]">0 отв.</span>
+                                )}
+                              </td>
+
                               {/* Notes */}
                               <td className="py-2.5 px-3">
                                 {matchedRule ? (
@@ -1338,6 +1426,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
         isOpen={showEdgingRemainsModal}
         order={order}
         currentUser={currentUser}
+        catalogMaterials={catalogMaterials}
+        catalogProducts={catalogProducts}
         onClose={() => setShowEdgingRemainsModal(false)}
         onSubmit={handleEdgingRemainsSubmitted}
       />

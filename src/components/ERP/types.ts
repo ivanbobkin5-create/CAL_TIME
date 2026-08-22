@@ -153,6 +153,9 @@ export interface ProductionOrder {
       edgeW2?: string;
       notes?: string;
       barcode?: string;
+      holesEnd?: number;   // Количество отверстий в торец
+      holesFace?: number;  // Количество отверстий в пласть
+      holesCount?: number; // Общее количество отверстий
     }>;
     materialGroups?: Array<{
       materialName: string;
@@ -443,6 +446,7 @@ export interface ERPCompanySettings {
   targetMonthlyEdgeM?: number;      // Плановая кромкооблицовка п.м./мес
   targetMonthlyParts?: number;      // Плановое количество деталей шт./мес
   equipmentList?: MachineEquipment[]; // Оборудование участков
+  useNestingPrisadkaOnCutting?: boolean; // Флаг: Использовать нестинг присадку в пласть на этапе распила (true = детали с 0 торцевых отв. не попадают на присадку)
   birkaColumnMapping?: Record<string, string[]>; // Кастомный маппинг столбцов файла бирок
   birkaEncodingPreference?: 'auto' | 'windows-1251' | 'utf-8' | 'cp866';
   birkaQrFormatTemplate?: string; // Шаблон кодирования QR-кодов на бирках ({orderNumber}-{pos}, {orderNumber}_{pos}, {pos}, и т.д.)

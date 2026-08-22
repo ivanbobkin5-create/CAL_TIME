@@ -44,10 +44,66 @@ export function isStageEnabled(settings: ERPCompanySettings | undefined, stageId
 /**
   * Check if detail requires drilling/prisadka
   */
-export function detailRequiresPrisadka(detail: { name?: string; notes?: string }, settings?: ERPCompanySettings): boolean {
+export function detailRequiresPrisadka(
+  detail: {
+    name?: string;
+    notes?: string;
+    holesEnd?: number;
+    holesFace?: number;
+    holesCount?: number;
+  },
+  settings?: ERPCompanySettings
+): boolean {
+  // Check global setting: is Nesting used on cutting stage? (Default is true)
+  const useNestingPrisadka = settings?.useNestingPrisadkaOnCutting !== false;
+
+  // 1. Explicit hole counts from birka specification
+  if (detail.holesEnd !== undefined || detail.holesFace !== undefined || detail.holesCount !== undefined) {
+    const hEnd = detail.holesEnd ?? 0;
+    const hFace = detail.holesFace ?? 0;
+    const hTotal = detail.holesCount ?? (hEnd + hFace);
+
+    if (useNestingPrisadka) {
+      // If Nesting is used during cutting, face holes are already done at cutting.
+      // Part ONLY requires drilling if it has end holes (holesEnd > 0).
+      if (detail.holesEnd !== undefined) {
+        return hEnd > 0;
+      }
+      return hTotal > 0;
+    } else {
+      // If Nesting is NOT used on cutting, parts with ANY holes (end OR face) require drilling
+      return hEnd > 0 || hFace > 0 || hTotal > 0;
+    }
+  }
+
+  // 2. Parse hole info from notes if present
   const notes = (detail.notes || '').toLowerCase();
   const name = (detail.name || '').toLowerCase();
 
+  // Parse patterns like "торец: 0", "торец 0", "торцевых: 0", "отв_торец: 0"
+  const endHolesMatch = notes.match(/(?:торец|торцев\w*|отв\.?\s*тор\w*)\s*[:=]?\s*(\d+)/i);
+  const faceHolesMatch = notes.match(/(?:пласть|пластев\w*|отв\.?\s*пласт\w*)\s*[:=]?\s*(\d+)/i);
+
+  if (endHolesMatch || faceHolesMatch) {
+    const hEnd = endHolesMatch ? parseInt(endHolesMatch[1], 10) : 0;
+    const hFace = faceHolesMatch ? parseInt(faceHolesMatch[1], 10) : 0;
+
+    if (useNestingPrisadka) {
+      return hEnd > 0;
+    } else {
+      return hEnd > 0 || hFace > 0;
+    }
+  }
+
+  // Explicit negative notes
+  if (/без\s+присадк|без\s+сверл|присадк\w*\s*[:=]?\s*нет|0\s*отв/i.test(notes)) {
+    return false;
+  }
+  if (useNestingPrisadka && (/без\s+торц|торец\s*[:=]?\s*0|0\s*в\s*торец/i.test(notes))) {
+    return false;
+  }
+
+  // 3. Fallback text pattern matching
   if (/присадк|сверл|отверст|чпу|отв\.|паз/i.test(notes) || /присадк|чпу/i.test(name)) {
     return true;
   }

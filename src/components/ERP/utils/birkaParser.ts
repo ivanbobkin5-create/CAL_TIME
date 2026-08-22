@@ -23,6 +23,9 @@ export interface BirkaDetail {
   texture?: string;            // Текстура (Вдоль / Поперек / Нет)
   notes?: string;              // Примечание (Присадка, Паз, ЧПУ)
   barcode?: string;            // Штрихкод
+  holesEnd?: number;           // Количество отверстий в торец
+  holesFace?: number;          // Количество отверстий в пласть
+  holesCount?: number;         // Общее количество отверстий
 }
 
 export interface BirkaMaterialGroup {
@@ -141,6 +144,11 @@ export function parseBirFileText(text: string, customMapping?: Record<string, st
     const noteIdx = findIndex(mapping.notes || ['примеч', 'паз', 'присад', 'note', 'коммент', 'инфо']);
     const barcodeIdx = findIndex(mapping.barcode || ['штрих', 'код', 'barcode', 'qr']);
 
+    // Holes indices
+    const holesEndIdx = findIndex(['отв_тор', 'отв. торец', 'отверстий в торец', 'торец отв', 'торец_отв', 'holes_end', 'end_holes', 'торец']);
+    const holesFaceIdx = findIndex(['отв_пласт', 'отв. пласть', 'отверстий в пласть', 'пласть отв', 'пласть_отв', 'holes_face', 'face_holes', 'пласть']);
+    const holesCountIdx = findIndex(['всего отв', 'кол-во отв', 'отверстий', 'сверлен', 'присадк', 'holes', 'drills', 'кол отв']);
+
     for (let i = headerLineIndex + 1; i < lines.length; i++) {
       const cols = lines[i].split(delimiter).map(c => c.trim().replace(/^["']|["']$/g, ''));
       if (cols.length < 2) continue;
@@ -167,6 +175,10 @@ export function parseBirFileText(text: string, customMapping?: Record<string, st
       const orderNumber = orderIdx !== -1 ? cols[orderIdx] : undefined;
       const barcode = barcodeIdx !== -1 ? cols[barcodeIdx] : undefined;
 
+      const holesEnd = holesEndIdx !== -1 && cols[holesEndIdx] ? parseInt(cols[holesEndIdx], 10) : undefined;
+      const holesFace = holesFaceIdx !== -1 && cols[holesFaceIdx] ? parseInt(cols[holesFaceIdx], 10) : undefined;
+      const holesCount = holesCountIdx !== -1 && cols[holesCountIdx] ? parseInt(cols[holesCountIdx], 10) : undefined;
+
       if (name || length > 0 || width > 0) {
         details.push({
           id: `det_${i}_${Math.random().toString(36).substring(2, 7)}`,
@@ -183,7 +195,10 @@ export function parseBirFileText(text: string, customMapping?: Record<string, st
           edgeW1: edgeW1 && edgeW1 !== '-' && edgeW1 !== '—' && edgeW1 !== '0' ? edgeW1 : undefined,
           edgeW2: edgeW2 && edgeW2 !== '-' && edgeW2 !== '—' && edgeW2 !== '0' ? edgeW2 : undefined,
           notes,
-          barcode
+          barcode,
+          holesEnd: !isNaN(holesEnd as number) ? holesEnd : undefined,
+          holesFace: !isNaN(holesFace as number) ? holesFace : undefined,
+          holesCount: !isNaN(holesCount as number) ? holesCount : undefined,
         });
       }
     }
@@ -246,6 +261,9 @@ export function parseBirFileText(text: string, customMapping?: Record<string, st
         if (k.includes('кромка3') || k === 'edgew1' || k === 'w1') currentItem.edgeW1 = v;
         if (k.includes('кромка4') || k === 'edgew2' || k === 'w2') currentItem.edgeW2 = v;
         if (k.includes('примеч') || k === 'note' || k === 'remark') currentItem.notes = v;
+        if (k.includes('торец') || k === 'holes_end' || k === 'end_holes') currentItem.holesEnd = parseInt(v, 10);
+        if (k.includes('пласть') || k === 'holes_face' || k === 'face_holes') currentItem.holesFace = parseInt(v, 10);
+        if (k.includes('отверст') || k === 'holes' || k === 'drills') currentItem.holesCount = parseInt(v, 10);
       }
     }
 
@@ -267,7 +285,10 @@ export function parseBirFileText(text: string, customMapping?: Record<string, st
         edgeW1: currentItem.edgeW1,
         edgeW2: currentItem.edgeW2,
         notes: currentItem.notes,
-        orderNumber: currentItem.orderNumber
+        orderNumber: currentItem.orderNumber,
+        holesEnd: !isNaN(currentItem.holesEnd as number) ? currentItem.holesEnd : undefined,
+        holesFace: !isNaN(currentItem.holesFace as number) ? currentItem.holesFace : undefined,
+        holesCount: !isNaN(currentItem.holesCount as number) ? currentItem.holesCount : undefined,
       });
     }
   }

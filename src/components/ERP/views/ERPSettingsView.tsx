@@ -2039,6 +2039,30 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
               </div>
             </div>
 
+            {/* Nesting Drilling Mode Setting */}
+            <div className="p-4 bg-gradient-to-r from-slate-50 to-blue-50/40 rounded-2xl border border-slate-200/80 mb-6 space-y-2">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <label htmlFor="useNestingPrisadkaToggle" className="font-bold text-sm text-slate-900 flex items-center gap-2 cursor-pointer">
+                    <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
+                    Использовать нестинг (присадка в пласть выполняется на этапе распила)
+                  </label>
+                  <p className="text-xs text-slate-500 leading-relaxed max-w-3xl">
+                    <strong className="text-slate-700">Включено (по умолчанию):</strong> Нестинг-центр при раскрое делает отверстия в пласть. Детали без торцевых отверстий (<code className="px-1 py-0.5 rounded bg-slate-200/80 font-mono text-[11px]">торец = 0</code>) считаются полностью готовыми после кромления и <strong className="text-emerald-700">не выводятся на участок присадки</strong>.
+                    <br />
+                    <strong className="text-slate-700">Отключено (пилим без нестинга):</strong> На этап присадки выводятся все детали, содержащие отверстия в пласть, даже если у них <code className="px-1 py-0.5 rounded bg-slate-200/80 font-mono text-[11px]">торец = 0</code>.
+                  </p>
+                </div>
+                <input
+                  id="useNestingPrisadkaToggle"
+                  type="checkbox"
+                  checked={formData.useNestingPrisadkaOnCutting !== false}
+                  onChange={(e) => setFormData({ ...formData, useNestingPrisadkaOnCutting: e.target.checked })}
+                  className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500 border-slate-300 mt-1 cursor-pointer shrink-0"
+                />
+              </div>
+            </div>
+
             <div>
               <div className="flex items-center justify-between mb-3">
                 <h4 className="font-bold text-xs text-slate-800 uppercase tracking-wider">Оборудование цеха (Станки)</h4>
