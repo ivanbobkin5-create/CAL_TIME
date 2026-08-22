@@ -189,6 +189,16 @@ export interface ProductionOrder {
   // { [stageId]: { [materialName]: { scannedPartIds: string[], isCompleted?: boolean } } }
   stageScanningProgress?: Record<string, Record<string, { scannedPartIds: string[]; isCompleted?: boolean }>>;
 
+  // Records of stages that were force-completed without scanning all parts
+  // { [stageId]: { forcedByEmployeeName: string; forcedByEmployeeId?: string; forcedAt: string; unscannedPartIds: string[]; reason?: string } }
+  forcedStageCompletions?: Record<string, {
+    forcedByEmployeeName: string;
+    forcedByEmployeeId?: string;
+    forcedAt: string;
+    unscannedPartIds: string[];
+    reason?: string;
+  }>;
+
   // Packages formed in Packaging (Упаковка) & Kitting (Комплектация)
   packages?: OrderPackage[];
 

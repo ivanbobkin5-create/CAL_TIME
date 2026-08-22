@@ -174,6 +174,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   // Modals for material residuals on stage completion
   const [showOffcutsModal, setShowOffcutsModal] = useState<boolean>(false);
   const [showEdgingRemainsModal, setShowEdgingRemainsModal] = useState<boolean>(false);
+  const [showForceCompleteModal, setShowForceCompleteModal] = useState<boolean>(false);
+  const [forceCompleteReason, setForceCompleteReason] = useState<string>('');
 
   // Material & Scanning state for cutting / edging / cnc / assembly
   const [selectedMaterial, setSelectedMaterial] = useState<string>('');
@@ -354,24 +356,34 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       return;
     }
 
-    // 1. Match against all details of the order
-    let foundPart = allOrderDetails.find((d: BirkaDetail) => {
+    // 1. Find ALL details in the order that match the scanned code
+    const matchingParts = allOrderDetails.filter((d: BirkaDetail) => {
       return matchDetailToScannedCode(cleanCode, d, template, orderNum, settings?.birkaQrMatchingMode);
     });
 
-    // 2. Fallback: split code into tokens (e.g. if code is "11-0626-11_20.02")
-    if (!foundPart) {
+    // 2. Fallback: token-based matching if no direct matches found
+    if (matchingParts.length === 0) {
       const tokens = cleanCode.split(/[_|/\\;:,\-\s]+/).map(t => t.trim()).filter(Boolean);
       for (const tok of tokens) {
-        foundPart = allOrderDetails.find(d => matchDetailToScannedCode(tok, d, template, orderNum, settings?.birkaQrMatchingMode));
-        if (foundPart) break;
+        const tokenMatches = allOrderDetails.filter(d => matchDetailToScannedCode(tok, d, template, orderNum, settings?.birkaQrMatchingMode));
+        if (tokenMatches.length > 0) {
+          matchingParts.push(...tokenMatches);
+          break;
+        }
       }
     }
 
-    if (!foundPart) {
+    if (matchingParts.length === 0) {
       setScanErrorMsg(`Код "${cleanCode}" не совпал ни с одной деталью в заказе`);
       playSoundEffect('error');
       return;
+    }
+
+    // Prioritize an UNSCANNED instance of the part on this stage!
+    let foundPart = matchingParts.find(d => !allScannedPartIds.has(d.id));
+    if (!foundPart) {
+      // If all matching instances are already scanned, pick the first one for the "already scanned" alert
+      foundPart = matchingParts[0];
     }
 
     const targetMaterial = foundPart.material || 'Без указания материала';
@@ -598,8 +610,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     }
   };
 
-  // Finalize stage completion logic
-  const finalizeStageCompletion = () => {
+  // Finalize stage completion logic (regular or forced)
+  const finalizeStageCompletion = (isForced: boolean = false, forcedReasonText?: string) => {
     const nextSt = getNextRequiredStage(order, currentStage);
     const todayStr = new Date().toLocaleDateString('ru-RU');
     const stageProgress = order.stageScanningProgress?.[currentStage] || {};
@@ -626,18 +638,41 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
 
     const updatedLogs = [...(order.workLogs || []), newLog];
 
+    // Compute unscanned parts if forced
+    const updatedForcedStageCompletions = { ...(order.forcedStageCompletions || {}) };
+    if (isForced) {
+      const allOrderDetails = order.birkaData?.details || [];
+      const stageRelevantDetails = currentStage === 'edging'
+        ? allOrderDetails.filter(partNeedsEdge)
+        : allOrderDetails;
+      
+      const unscannedIds = stageRelevantDetails
+        .filter(d => !allScannedPartIds.has(d.id))
+        .map(d => d.id);
+
+      updatedForcedStageCompletions[currentStage] = {
+        forcedByEmployeeName: empName !== 'Сотрудник' ? empName : (order.responsibleEmployeeName || 'Сотрудник участка'),
+        forcedByEmployeeId: empId !== 'unknown' ? empId : undefined,
+        forcedAt: new Date().toLocaleString('ru-RU'),
+        unscannedPartIds: unscannedIds,
+        reason: forcedReasonText || 'Принудительное завершение без сканирования всех деталей'
+      };
+    }
+
     if (nextSt) {
       onUpdateOrder({
         ...order,
         currentStage: nextSt,
-        workLogs: updatedLogs
+        workLogs: updatedLogs,
+        forcedStageCompletions: updatedForcedStageCompletions
       });
       onUpdateOrderStatus(order.id, nextSt);
     } else {
       onUpdateOrder({
         ...order,
         status: 'completed',
-        workLogs: updatedLogs
+        workLogs: updatedLogs,
+        forcedStageCompletions: updatedForcedStageCompletions
       });
     }
 
@@ -648,6 +683,12 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
 
   // Complete current stage & return user to production view
   const handleCompleteCurrentStageAndExit = () => {
+    if (!isStageFullyScanned && (currentStage === 'cutting' || currentStage === 'edging' || currentStage === 'cnc' || currentStage === 'assembly')) {
+      playSoundEffect('alert');
+      setScanErrorMsg(`Нельзя завершить этап штатно: отсканировано ${totalStageScannedParts} из ${totalOrderParts} деталей. Используйте «Всё равно завершить этап» для принудительного перехода.`);
+      return;
+    }
+
     if (currentStage === 'cutting') {
       setShowOffcutsModal(true);
       return;
@@ -656,7 +697,20 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       setShowEdgingRemainsModal(true);
       return;
     }
-    finalizeStageCompletion();
+    finalizeStageCompletion(false);
+  };
+
+  const handleConfirmForceComplete = () => {
+    setShowForceCompleteModal(false);
+    if (currentStage === 'cutting') {
+      setShowOffcutsModal(true);
+      return;
+    }
+    if (currentStage === 'edging') {
+      setShowEdgingRemainsModal(true);
+      return;
+    }
+    finalizeStageCompletion(true, forceCompleteReason);
   };
 
   const handleOffcutsSubmitted = (offcuts: MaterialResidual[]) => {
@@ -664,7 +718,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       onAddMaterialResiduals(offcuts);
     }
     setShowOffcutsModal(false);
-    finalizeStageCompletion();
+    finalizeStageCompletion(!isStageFullyScanned, forceCompleteReason);
   };
 
   const handleEdgingRemainsSubmitted = (edges: MaterialResidual[]) => {
@@ -672,7 +726,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       onAddMaterialResiduals(edges);
     }
     setShowEdgingRemainsModal(false);
-    finalizeStageCompletion();
+    finalizeStageCompletion(!isStageFullyScanned, forceCompleteReason);
   };
 
   // Total stage completion status
@@ -683,6 +737,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     : (order.partsCount || order.birkaData?.details.length || 1);
 
   const isStageFullyScanned = totalStageScannedParts >= totalOrderParts && totalOrderParts > 0;
+  const missingPartsCount = Math.max(0, totalOrderParts - totalStageScannedParts);
 
   return (
     <div className="space-y-6 animate-fade-in pb-12">
@@ -753,15 +808,33 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
         </div>
 
         {/* Right Actions: Finish Stage & Return to Production */}
-        <div className="flex items-center gap-3 shrink-0 self-end md:self-auto">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0 self-end md:self-auto">
+          {/* Main regular Finish Stage button (enabled when 100% or warning if not) */}
           <button
             onClick={handleCompleteCurrentStageAndExit}
-            className="px-5 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-lg shadow-emerald-600/30 transition-all flex items-center gap-2 cursor-pointer"
-            title="Завершить обработку на этом участке и передать заказ дальше"
+            disabled={!isStageFullyScanned}
+            className={`px-5 py-2.5 rounded-2xl font-black text-xs shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              isStageFullyScanned 
+                ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30 ring-2 ring-emerald-400/40 animate-pulse' 
+                : 'bg-slate-800 text-slate-400 border border-slate-700 cursor-not-allowed opacity-60'
+            }`}
+            title={isStageFullyScanned ? "Все детали отмечены. Завершить этап и передать дальше" : `Не все детали отмечены (${totalStageScannedParts}/${totalOrderParts})`}
           >
             <CheckCircle2 className="w-4 h-4" />
             <span>Завершить {stageMeta.shortName} и передать</span>
           </button>
+
+          {/* Small Force Complete Button if not all parts scanned */}
+          {!isStageFullyScanned && (
+            <button
+              onClick={() => setShowForceCompleteModal(true)}
+              className="px-3.5 py-2 rounded-xl bg-rose-950/80 hover:bg-rose-900/90 text-rose-300 hover:text-rose-100 font-bold text-[11px] border border-rose-800 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+              title="Принудительно передать заказ дальше. Неотмеченные детали будут подсвечены на следующем этапе"
+            >
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+              <span>Всё равно завершить этап ({missingPartsCount} не отсканировано)</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1108,18 +1181,39 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                           const birkaOrder = detail.orderNumber || order.orderNumber || '';
                           const expectedQr = detail.barcode || (birkaOrder ? `${birkaOrder}_${detail.labelNumber}` : detail.labelNumber);
 
+                          // Check if this detail was forced/unscanned in a previous stage
+                          let previousForcedInfo: { stageName: string; employeeName: string; forcedAt: string; reason?: string } | null = null;
+                          if (order.forcedStageCompletions) {
+                            for (const [stgId, info] of Object.entries(order.forcedStageCompletions)) {
+                              if (stgId !== currentStage && info.unscannedPartIds?.includes(detail.id)) {
+                                const stgShort = stages.find(s => s.id === stgId)?.name || stgId;
+                                previousForcedInfo = {
+                                  stageName: stgShort,
+                                  employeeName: info.forcedByEmployeeName,
+                                  forcedAt: info.forcedAt,
+                                  reason: info.reason
+                                };
+                                break;
+                              }
+                            }
+                          }
+
                           return (
                             <tr
                               key={detail.id}
                               onClick={() => toggleDetailScanned(detail)}
                               className={`transition-colors cursor-pointer ${
-                                isScanned ? 'bg-emerald-50/70 hover:bg-emerald-100/80' : 'hover:bg-slate-50'
+                                previousForcedInfo
+                                  ? 'bg-rose-50/90 hover:bg-rose-100/90 border-l-4 border-l-rose-500'
+                                  : isScanned
+                                  ? 'bg-emerald-50/70 hover:bg-emerald-100/80'
+                                  : 'hover:bg-slate-50'
                               }`}
                             >
                               {/* Status Checkbox */}
                               <td className="py-2.5 px-3">
                                 <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all ${
-                                  isScanned ? 'bg-emerald-600 border-emerald-600 text-white' : 'border-slate-300 bg-white'
+                                  isScanned ? 'bg-emerald-600 border-emerald-600 text-white' : previousForcedInfo ? 'border-rose-400 bg-white' : 'border-slate-300 bg-white'
                                 }`}>
                                   {isScanned && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                                 </div>
@@ -1127,12 +1221,33 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
 
                               {/* Label Number */}
                               <td className="py-2.5 px-3 font-mono font-bold text-slate-900">
-                                #{detail.labelNumber}
+                                <div className="flex items-center gap-1.5">
+                                  <span>#{detail.labelNumber}</span>
+                                  {previousForcedInfo && (
+                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-rose-600 text-white text-[9px] font-black uppercase tracking-wider animate-pulse" title={`Пропущена на этапе «${previousForcedInfo.stageName}»`}>
+                                      <AlertTriangle className="w-2.5 h-2.5" />
+                                      ВНИМАНИЕ
+                                    </span>
+                                  )}
+                                </div>
                               </td>
 
-                              {/* Part Name */}
-                              <td className="py-2.5 px-3 font-bold text-slate-800">
-                                {detail.name}
+                              {/* Part Name + Warning Note */}
+                              <td className="py-2.5 px-3">
+                                <div className="font-bold text-slate-800 flex flex-col">
+                                  <span>{detail.name}</span>
+                                  {previousForcedInfo && (
+                                    <div className="mt-1 text-[11px] font-normal leading-tight text-rose-700 bg-rose-100/80 p-1.5 rounded-lg border border-rose-300/80 max-w-sm">
+                                      <div className="font-bold flex items-center gap-1">
+                                        <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0" />
+                                        <span>На предыдущем этапе ({previousForcedInfo.stageName}) процесс был завершен принудительно без этой детали!</span>
+                                      </div>
+                                      <div className="mt-0.5 text-[10.5px] text-rose-900 font-semibold">
+                                        Информацию о детали можно получить у: <span className="underline font-bold text-rose-950">{previousForcedInfo.employeeName}</span>
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
                               </td>
 
                               {/* Dimensions */}
@@ -1226,6 +1341,70 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
         onClose={() => setShowEdgingRemainsModal(false)}
         onSubmit={handleEdgingRemainsSubmitted}
       />
+
+      {/* Force Complete Stage Confirmation Modal */}
+      {showForceCompleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-lg w-full shadow-2xl border border-slate-200 animate-scale-in space-y-5">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0 shadow-sm">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-lg font-black text-slate-900 leading-tight">
+                  Принудительно завершить этап {stageMeta.shortName}?
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Не все детали были отсканированы. Всего в заказе: <strong>{totalOrderParts}</strong>, отсканировано: <strong>{totalStageScannedParts}</strong>, пропущено: <strong className="text-rose-600">{missingPartsCount}</strong>.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 bg-rose-50 border border-rose-200/80 rounded-2xl text-xs text-rose-900 space-y-2">
+              <div className="font-bold flex items-center gap-1.5">
+                <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>Последствия принудительного завершения:</span>
+              </div>
+              <ul className="list-disc list-inside space-y-1 text-rose-800 text-[11.5px] leading-relaxed">
+                <li>Заказ будет передан на следующий этап (<strong>{getNextRequiredStage(order, currentStage) || 'Завершение'}</strong>).</li>
+                <li>Все неотсканированные детали на следующем участке <strong>будут подсвечены красным цветом</strong>.</li>
+                <li>Будет указано ваше имя (<strong className="underline">{empName !== 'Сотрудник' ? empName : (order.responsibleEmployeeName || 'Оператор')}</strong>) как сотрудника, завершившего этап принудительно.</li>
+              </ul>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-bold text-slate-700 block">
+                Причина принудительного завершения (необязательно):
+              </label>
+              <input
+                type="text"
+                placeholder="Например: деталь на допиле, повреждена кромка, брак плиты..."
+                value={forceCompleteReason}
+                onChange={(e) => setForceCompleteReason(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500 focus:border-rose-500"
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowForceCompleteModal(false)}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-xs font-bold hover:bg-slate-100 transition-all cursor-pointer"
+              >
+                Отмена (вернуться к сканированию)
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmForceComplete}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-black shadow-lg shadow-rose-600/30 transition-all flex items-center gap-2 cursor-pointer"
+              >
+                <AlertTriangle className="w-4 h-4" />
+                <span>Всё равно завершить этап</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
