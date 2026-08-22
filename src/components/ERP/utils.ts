@@ -312,13 +312,12 @@ export function matchDetailToScannedCode(
   if (cleanScan.length >= 4 && dId && (dId.includes(cleanScan) || dId.includes(enCode))) return true;
 
   // Template-based check:
-  if (template) {
-    const evaluated = evaluateBirkaQrTemplate(template, detail, orderNumber).trim().toLowerCase();
-    const evaluatedEn = normalizeBarcodeScan(evaluated).toLowerCase();
-    
-    if (evaluated === cleanScan || evaluated === enCode || evaluatedEn === cleanScan || evaluatedEn === enCode) {
-      return true;
-    }
+  const activeTemplate = template || '{orderNumber}-{pos}';
+  const evaluated = evaluateBirkaQrTemplate(activeTemplate, detail, orderNumber).trim().toLowerCase();
+  const evaluatedEn = normalizeBarcodeScan(evaluated).toLowerCase();
+  
+  if (evaluated === cleanScan || evaluated === enCode || evaluatedEn === cleanScan || evaluatedEn === enCode) {
+    return true;
   }
 
   return false;
