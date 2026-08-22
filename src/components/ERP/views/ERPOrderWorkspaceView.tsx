@@ -964,7 +964,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                   </form>
 
                   <p className="text-[11px] text-slate-400 leading-relaxed">
-                    Поддерживает сканирование номера позиции с бирки (например <code className="text-indigo-300 font-bold">12</code>, <code className="text-indigo-300 font-bold">#15</code> или штрихкод).
+                    Поддерживает сканирование QR-кода бирки (например <code className="text-emerald-300 font-bold">{order.orderNumber || '00-0000-00'}_20.02</code>), штрихкода или номера позиции детали (<code className="text-indigo-300 font-bold">20.02</code>).
                   </p>
 
                   {/* Scan Error Alert */}
@@ -1057,6 +1057,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                         <th className="py-2.5 px-3">Размер (мм)</th>
                         <th className="py-2.5 px-3">Кромка</th>
                         <th className="py-2.5 px-3">Примечания</th>
+                        <th className="py-2.5 px-3 text-right">QR / Штрихкод</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-xs">
@@ -1064,14 +1065,20 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                         .filter(d => {
                           if (!searchPartsQuery) return true;
                           const q = searchPartsQuery.toLowerCase();
+                          const orderNum = order.orderNumber || '';
+                          const fullQr = `${orderNum}_${d.labelNumber}`.toLowerCase();
                           return d.name.toLowerCase().includes(q) ||
                                  d.labelNumber.toLowerCase().includes(q) ||
                                  d.id.toLowerCase().includes(q) ||
+                                 fullQr.includes(q) ||
+                                 (d.barcode && d.barcode.toLowerCase().includes(q)) ||
                                  (d.notes && d.notes.toLowerCase().includes(q));
                         })
                         .map((detail) => {
                           const isScanned = scannedPartIds.includes(detail.id);
                           const matchedRule = getMatchedNoteRule(detail.notes, detail.name);
+                          const orderNum = order.orderNumber || '';
+                          const expectedQr = `${orderNum}_${detail.labelNumber}`;
 
                           return (
                             <tr
@@ -1129,6 +1136,14 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                                 ) : (
                                   <span className="text-slate-400 text-[10px]">—</span>
                                 )}
+                              </td>
+
+                              {/* QR Code Column */}
+                              <td className="py-2.5 px-3 text-right">
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-900 text-emerald-300 font-mono text-[11px] font-black tracking-wide border border-slate-800 shadow-xs">
+                                  <QrCode className="w-3 h-3 text-emerald-400" />
+                                  <span>{expectedQr}</span>
+                                </span>
                               </td>
                             </tr>
                           );

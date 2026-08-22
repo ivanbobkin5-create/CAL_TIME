@@ -234,6 +234,9 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
 
             const totalArea = stageOrders.reduce((sum, o) => sum + (o.totalAreaM2 || 0), 0);
             const totalParts = stageOrders.reduce((sum, o) => sum + (o.partsCount || 0), 0);
+            const totalEdge = stageOrders.reduce((sum, o) => sum + (o.totalEdgeM || 0), 0);
+            // Standard sheet size calculation (2.8m x 2.07m = ~5.796 m2, approx 5.0 - 5.5 m2 useful per sheet)
+            const approxSheets = (totalArea / 5.2).toFixed(1);
 
             return (
               <div
@@ -258,9 +261,21 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                   <h3 className="font-black text-slate-900 text-base group-hover:text-blue-600 transition-colors">
                     {stage.name}
                   </h3>
-                  <p className="text-xs text-slate-500 mt-1 font-semibold">
-                    Общий объем: <strong className="text-slate-800">{totalArea.toFixed(1)} м²</strong> ({totalParts} деталей)
-                  </p>
+                  <div className="text-xs text-slate-500 mt-1 font-semibold space-y-0.5">
+                    {stage.id === 'cutting' ? (
+                      <p>
+                        Объем: <strong className="text-slate-800">{totalArea.toFixed(1)} м²</strong> (~<strong className="text-blue-700 font-bold">{approxSheets} лист.</strong>, {totalParts} дет.)
+                      </p>
+                    ) : stage.id === 'edging' ? (
+                      <p>
+                        Объем кромления: <strong className="text-indigo-700 font-bold">{totalEdge.toFixed(1)} п.м.</strong> ({totalParts} дет., {totalArea.toFixed(1)} м²)
+                      </p>
+                    ) : (
+                      <p>
+                        Общий объем: <strong className="text-slate-800">{totalArea.toFixed(1)} м²</strong> ({totalParts} деталей)
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 {/* 4 Status Counters Tiles (Просрочено / На сегодня / На завтра / Будущие) */}

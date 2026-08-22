@@ -325,8 +325,9 @@ export function getPartNumberSegments(str: string): number[] | null {
  * Simple, Bulletproof Barcode & QR Code Matcher.
  * Matches:
  * 1. `{orderNumber}_{pos}` (e.g. "11-0626-11_20.02")
- * 2. `{pos}` (e.g. "20.02")
- * 3. Any code ending in `_{pos}` (e.g. "ANY_ORDER_PREFIX_20.02")
+ * 2. `{pos}` (e.g. "20.02" or "20,02")
+ * 3. Any code ending in `_{pos}` or `-{pos}` or `/{pos}` (e.g. "ANY_ORDER_PREFIX_20.02")
+ * 4. Substring token search: if the scanned string contains `20.02` preceded/followed by separator or boundary
  * Handles Russian/English keyboard layout conversion, whitespace/quotes/AIM removal.
  */
 export function matchDetailToScannedCode(
@@ -362,19 +363,30 @@ export function matchDetailToScannedCode(
   const lowerPos = cleanPos.toLowerCase();
   const enPos = cleanRawScannedString(convertRuToEnLayout(rawPos)).toLowerCase();
 
-  if (!lowerPos) return false;
+  if (!lowerPos && !detail.barcode && !detail.id) return false;
 
   const cleanOrder = cleanRawScannedString(String(orderNumber || detail.orderNumber || '')).trim();
   const lowerOrder = cleanOrder.toLowerCase();
   const enOrder = cleanRawScannedString(convertRuToEnLayout(cleanOrder)).toLowerCase();
 
   // 1. Direct match with position number (e.g. scan "20.02", pos "20.02")
-  if (lowerScan === lowerPos || enScan === lowerPos || lowerScan === enPos || enScan === enPos) {
-    return true;
+  if (lowerPos) {
+    if (lowerScan === lowerPos || enScan === lowerPos || lowerScan === enPos || enScan === enPos) {
+      return true;
+    }
+
+    // Direct match ignoring leading zeroes in segments (e.g. "20.02" vs "20.2")
+    const posSegs = getPartNumberSegments(lowerPos);
+    const scanSegs = getPartNumberSegments(lowerScan);
+    if (posSegs && scanSegs && posSegs.length === scanSegs.length && posSegs.length > 0) {
+      if (posSegs.every((v, i) => v === scanSegs[i])) {
+        return true;
+      }
+    }
   }
 
-  // 2. Standard format: "{orderNumber}_{pos}" (e.g. scan "11-0626-11_20.02")
-  if (lowerOrder) {
+  // 2. Standard composite format: "{orderNumber}_{pos}" or "{orderNumber}-{pos}" or "{orderNumber}/{pos}"
+  if (lowerOrder && lowerPos) {
     const expectedComposite = `${lowerOrder}_${lowerPos}`;
     const expectedEnComposite = `${enOrder}_${enPos}`;
 
@@ -382,39 +394,40 @@ export function matchDetailToScannedCode(
       lowerScan === expectedComposite || 
       enScan === expectedComposite || 
       lowerScan === expectedEnComposite || 
-      enScan === expectedEnComposite
+      enScan === expectedEnComposite ||
+      lowerScan === `${lowerOrder}-${lowerPos}` ||
+      enScan === `${enOrder}-${enPos}` ||
+      lowerScan === `${lowerOrder}/${lowerPos}` ||
+      enScan === `${enOrder}/${enPos}`
+    ) {
+      return true;
+    }
+  }
+
+  // 3. Scan ends with "_{pos}" or "-{pos}" or "/{pos}" (e.g. "PREFIX_20.02" or "11-0626-11_20.02")
+  if (lowerPos) {
+    if (
+      lowerScan.endsWith(`_${lowerPos}`) || 
+      enScan.endsWith(`_${lowerPos}`) || 
+      lowerScan.endsWith(`_${enPos}`) ||
+      lowerScan.endsWith(`-${lowerPos}`) || 
+      enScan.endsWith(`-${lowerPos}`) ||
+      lowerScan.endsWith(`/${lowerPos}`) || 
+      enScan.endsWith(`/${lowerPos}`)
     ) {
       return true;
     }
 
-    // Also support dash separator "{orderNumber}-{pos}"
-    const expectedDash = `${lowerOrder}-${lowerPos}`;
-    if (lowerScan === expectedDash || enScan === expectedDash) {
+    // 4. Token breakdown: scan string separated by _, -, /, \, |, space
+    const scanTokens = lowerScan.split(/[_|/\\;:,\-\s]+/).map(t => t.trim()).filter(Boolean);
+    const enTokens = enScan.split(/[_|/\\;:,\-\s]+/).map(t => t.trim()).filter(Boolean);
+    
+    if (scanTokens.includes(lowerPos) || scanTokens.includes(enPos) || enTokens.includes(lowerPos) || enTokens.includes(enPos)) {
       return true;
     }
   }
 
-  // 3. Scan ends with "_{pos}" or "-{pos}" (e.g. "PREFIX_20.02" or "11-0626-11_20.02")
-  if (
-    lowerScan.endsWith(`_${lowerPos}`) || 
-    enScan.endsWith(`_${lowerPos}`) || 
-    lowerScan.endsWith(`_${enPos}`) ||
-    lowerScan.endsWith(`-${lowerPos}`) ||
-    enScan.endsWith(`-${lowerPos}`)
-  ) {
-    return true;
-  }
-
-  // 4. Also check numeric segments if formatting differs (e.g. 20.02 vs 20.2 or 20,02)
-  const posSegs = getPartNumberSegments(lowerPos);
-  const scanSegs = getPartNumberSegments(lowerScan);
-  if (posSegs && scanSegs && posSegs.length === scanSegs.length && posSegs.length > 0) {
-    if (posSegs.every((v, i) => v === scanSegs[i])) {
-      return true;
-    }
-  }
-
-  // 5. Direct barcode / ID matches if assigned
+  // 5. Direct barcode matches if assigned in birka file
   if (detail.barcode) {
     const dBarcode = cleanRawScannedString(String(detail.barcode)).toLowerCase();
     if (dBarcode && (dBarcode === lowerScan || dBarcode === enScan)) {
@@ -422,6 +435,7 @@ export function matchDetailToScannedCode(
     }
   }
 
+  // 6. Direct ID matches
   if (detail.id) {
     const dId = String(detail.id).trim().toLowerCase();
     if (dId && (dId === lowerScan || dId === enScan)) {
