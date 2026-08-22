@@ -66,9 +66,9 @@ export const computeSimpleHash = (uint8: Uint8Array): string => {
 
 // Default recognized aliases for each Birka parameter
 export const DEFAULT_BIRKA_COLUMN_MAPPING: Record<string, string[]> = {
-  pos: ['№ дет', 'номер дет', 'деталь №', 'деталь номер', 'поз', 'позиц', '№ бирк', 'бирк', '№ п/п', 'п/п', 'код дет', 'part_no', 'part no', 'item_no', 'label', 'позиция'],
+  pos: ['№ дет', 'номер дет', 'деталь №', 'деталь номер', 'поз', 'позиц', '№ бирк', 'бирк', '№ п/п', 'п/п', 'код дет', 'part_no', 'part no', 'item_no', 'label', 'позиция', 'индекс', 'обозначение', 'код детали', 'номер детали', 'номер', 'код', 'поз.', '№'],
   name: ['наименов', 'название', 'наим', 'деталь', 'part', 'name', 'элемент', 'изделие'],
-  orderNumber: ['зак', 'order', 'проект', 'сделка', 'номер заказа', 'заказ №'],
+  orderNumber: ['зак', 'order', 'проект', 'сделка', 'номер заказа', 'заказ №', 'заказ', 'договор', 'номер проекта', 'код заказа', 'order_no', 'order_id'],
   length: ['длин', 'длина', 'length', 'l', 'размер х', 'размер x', 'габарит х', 'габарит x', 'x', 'l, мм', 'длина, мм'],
   width: ['шир', 'ширина', 'width', 'w', 'размер y', 'габарит y', 'y', 'w, мм', 'ширина, мм'],
   thickness: ['толщ', 'толщина', 'thick', 't', 'z', 'глубин', 'h', 'толщина, мм'],
@@ -79,7 +79,7 @@ export const DEFAULT_BIRKA_COLUMN_MAPPING: Record<string, string[]> = {
   edgeW1: ['кромка ш1', 'кромка3', 'ширина 1', 'w1', 'кромка w1', 'край 3', 'edge3'],
   edgeW2: ['кромка ш2', 'кромка4', 'ширина 2', 'w2', 'кромка w2', 'край 4', 'edge4'],
   notes: ['примеч', 'паз', 'присад', 'note', 'коммент', 'инфо', 'обработка', 'чпу'],
-  barcode: ['штрих', 'код', 'barcode', 'qr', 'штрихкод']
+  barcode: ['штрих', 'код', 'barcode', 'qr', 'штрихкод', 'qr-код', 'qrcode']
 };
 
 // Parse text content from .bir / .brx / .txt / .csv / .tsv file
@@ -152,8 +152,11 @@ export function parseBirFileText(text: string, customMapping?: Record<string, st
       const material = matIdx !== -1 && cols[matIdx] ? cols[matIdx] : 'ЛДСП 16 мм';
       const quantity = qtyIdx !== -1 && cols[qtyIdx] ? parseInt(cols[qtyIdx], 10) || 1 : 1;
       const rawPos = posIdx !== -1 && cols[posIdx] ? cols[posIdx] : String(i - headerLineIndex);
-      // Clean label number (remove leading # if present)
-      const labelNumber = rawPos.replace(/^#/, '').trim();
+      // Clean label number (remove leading #, №, words like "Поз.", "Позиция", "Деталь" while preserving "00.00", "00.00.00", etc.)
+      const labelNumber = rawPos
+        .replace(/^[#№\s]+/, '')
+        .replace(/^(поз\.?|дет\.?|позиция|деталь|номер|item|pos)\s*/i, '')
+        .trim();
 
       const edgeL1 = edgeL1Idx !== -1 ? cols[edgeL1Idx] : (generalEdgeIdx !== -1 ? cols[generalEdgeIdx] : undefined);
       const edgeL2 = edgeL2Idx !== -1 ? cols[edgeL2Idx] : undefined;
@@ -196,7 +199,10 @@ export function parseBirFileText(text: string, customMapping?: Record<string, st
         if (currentItem && (currentItem.name || currentItem.length)) {
           details.push({
             id: `det_ini_${itemIdx}_${Math.random().toString(36).substring(2, 7)}`,
-            labelNumber: (currentItem.labelNumber || String(itemIdx)).replace(/^#/, '').trim(),
+            labelNumber: (currentItem.labelNumber || String(itemIdx))
+              .replace(/^[#№\s]+/, '')
+              .replace(/^(поз\.?|дет\.?|позиция|деталь|номер|item|pos)\s*/i, '')
+              .trim(),
             name: currentItem.name || `Деталь ${itemIdx}`,
             length: currentItem.length || 700,
             width: currentItem.width || 500,
@@ -229,7 +235,10 @@ export function parseBirFileText(text: string, customMapping?: Record<string, st
         if (k.includes('матер') || k === 'material' || k === 'mat') currentItem.material = v;
         if (k.includes('кол') || k === 'qty' || k === 'count') currentItem.quantity = parseInt(v, 10);
         if ((k.includes('поз') || k.includes('дет') || k === 'pos' || k === 'num' || k === 'id') && !k.includes('зак') && !k.includes('order')) {
-          currentItem.labelNumber = v.replace(/^#/, '').trim();
+          currentItem.labelNumber = v
+            .replace(/^[#№\s]+/, '')
+            .replace(/^(поз\.?|дет\.?|позиция|деталь|номер|item|pos)\s*/i, '')
+            .trim();
         }
         if (k.includes('зак') || k === 'order') currentItem.orderNumber = v;
         if (k.includes('кромка1') || k === 'edgel1' || k === 'l1') currentItem.edgeL1 = v;
@@ -243,7 +252,10 @@ export function parseBirFileText(text: string, customMapping?: Record<string, st
     if (currentItem && (currentItem.name || currentItem.length)) {
       details.push({
         id: `det_ini_${itemIdx}_${Math.random().toString(36).substring(2, 7)}`,
-        labelNumber: (currentItem.labelNumber || String(itemIdx)).replace(/^#/, '').trim(),
+        labelNumber: (currentItem.labelNumber || String(itemIdx))
+          .replace(/^[#№\s]+/, '')
+          .replace(/^(поз\.?|дет\.?|позиция|деталь|номер|item|pos)\s*/i, '')
+          .trim(),
         name: currentItem.name || `Деталь ${itemIdx}`,
         length: currentItem.length || 700,
         width: currentItem.width || 500,

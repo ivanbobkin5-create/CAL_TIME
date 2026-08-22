@@ -164,14 +164,8 @@ export function speakText(text: string) {
     }
   }
 }
-
-/**
- * Evaluates the template for a given detail.
- * Supports both standard English placeholders (e.g., {orderNumber}, {pos})
- * and actual Russian column names (e.g., {Заказ}, {№ детали}, {Длина}, {Ширина}, {Материал}, {Количество})
- */
 export function evaluateBirkaQrTemplate(template: string, detail: any, orderNumber: string): string {
-  const t = template || '{orderNumber}-{pos}';
+  const t = template || '{orderNumber}_{pos}';
   
   const getFieldVal = (placeholder: string): string => {
     const key = placeholder.trim().toLowerCase();
@@ -201,6 +195,9 @@ export function evaluateBirkaQrTemplate(template: string, detail: any, orderNumb
       case '№':
       case '№детали':
       case 'номер_детали':
+      case 'обозначение':
+      case 'индекс':
+      case 'код детали':
         return String(detail.labelNumber || '');
         
       case 'name':
@@ -209,6 +206,7 @@ export function evaluateBirkaQrTemplate(template: string, detail: any, orderNumb
       case 'наименование':
       case 'название':
       case 'имя':
+      case 'элемент':
         return String(detail.name || '');
         
       case 'material':
@@ -259,6 +257,7 @@ export function evaluateBirkaQrTemplate(template: string, detail: any, orderNumb
       case 'штрихкод':
       case 'штрих':
       case 'код':
+      case 'qr':
         return String(detail.barcode || '');
         
       default:
@@ -276,13 +275,44 @@ export function evaluateBirkaQrTemplate(template: string, detail: any, orderNumb
   };
 
   // Replace {placeholder} with values
-  return t.replace(/\{([^{}]+)\}/g, (match, p1) => {
+  return t.replace(/\{([^{}]+)\}/g, (_match, p1) => {
     return getFieldVal(p1);
   });
 }
 
 /**
- * Checks if a scanned code matches a given detail using standard rules and custom QR template.
+ * Normalizes a part number by stripping extraneous symbols, leading hashes, and word prefixes.
+ * Examples: "#00.00" -> "00.00", "Поз. 01.02" -> "01.02", "Деталь 00.00.00" -> "00.00.00"
+ */
+export function normalizePartNumber(str: string): string {
+  if (!str) return '';
+  return String(str)
+    .trim()
+    .replace(/^[#№\s]+/, '')
+    .replace(/^(поз\.?|дет\.?|позиция|деталь|номер|item|pos)\s*/i, '')
+    .trim();
+}
+
+/**
+ * Breaks a part number or composite token into numeric segments.
+ * e.g. "00.00" -> [0, 0], "01.02.03" -> [1, 2, 3], "1.2" -> [1, 2]
+ */
+export function getPartNumberSegments(str: string): number[] | null {
+  const clean = normalizePartNumber(str);
+  const parts = clean.split(/[\.\-_/\\:,;]/).map(p => p.trim()).filter(Boolean);
+  if (parts.length > 0 && parts.every(p => /^\d+$/.test(p))) {
+    return parts.map(p => parseInt(p, 10));
+  }
+  return null;
+}
+
+/**
+ * Universal Decomposer & Matcher for Composite Barcodes and Part Numbers.
+ * Supports:
+ * - Scanned composite QR codes from Bazis: e.g. "00-0000-00_00.00", "0000-0000_00.00.00", "24-0512-01_01.02", "00-0000-00-00.00", "00-0000-00/00.00", "00-0000-00|00.00"
+ * - Manual input of just the part number: e.g. "00.00", "00.00.00", "01.02", "1.2", "1"
+ * - Layout conversion (Russian / English QWERTY keyboard)
+ * - Custom templates configured in settings
  */
 export function matchDetailToScannedCode(
   scannedCode: string, 
@@ -291,103 +321,235 @@ export function matchDetailToScannedCode(
   orderNumber: string,
   matchingMode?: 'template' | 'smart_contains'
 ): boolean {
-  const cleanScan = scannedCode.trim().toLowerCase();
-  if (!cleanScan) return false;
-  
-  const enCode = normalizeBarcodeScan(scannedCode).toLowerCase();
+  if (!scannedCode || !detail) return false;
 
-  // Helper for various detail values
-  const dLabel = (detail.labelNumber || '').toLowerCase().trim();
-  const dId = (detail.id || '').toLowerCase().trim();
-  const dBarcode = (detail.barcode || '').toLowerCase().trim();
-  const dName = (detail.name || '').toLowerCase().trim();
+  const rawScan = String(scannedCode).trim();
+  if (!rawScan) return false;
 
-  // 1. Exact matches on basic fields
-  if (dLabel === cleanScan || dLabel === enCode) return true;
-  if (dId === cleanScan || dId === enCode) return true;
-  if (dBarcode && (dBarcode === cleanScan || dBarcode === enCode)) return true;
-  if (dName && (dName === cleanScan || dName === enCode)) return true;
+  // 1. Prepare normalized strings and keyboard layouts
+  const cleanScan = normalizePartNumber(rawScan);
+  const lowerScan = cleanScan.toLowerCase();
+  const enScan = convertRuToEnLayout(cleanScan).toLowerCase();
 
-  // 2. Alphanumeric only exact matches (removes dots, dashes, slashes, etc.)
-  // e.g., if labelNumber is "02.01" -> "0201", and scan is "02/01" -> "0201" or "02.01" -> "0201"
-  const makeAlphaNumeric = (str: string) => str.replace(/[^a-zA-Z0-9а-яА-Я]/g, '');
-  const dLabelAlpha = makeAlphaNumeric(dLabel);
-  const cleanScanAlpha = makeAlphaNumeric(cleanScan);
-  const enCodeAlpha = makeAlphaNumeric(enCode);
+  // Detail's own fields
+  const rawLabel = String(detail.labelNumber || '').trim();
+  const cleanLabel = normalizePartNumber(rawLabel);
+  const lowerLabel = cleanLabel.toLowerCase();
+  const enLabel = convertRuToEnLayout(cleanLabel).toLowerCase();
 
-  if (dLabelAlpha && (dLabelAlpha === cleanScanAlpha || dLabelAlpha === enCodeAlpha)) {
+  const dId = String(detail.id || '').trim().toLowerCase();
+  const dBarcode = String(detail.barcode || '').trim().toLowerCase();
+  const dName = String(detail.name || '').trim().toLowerCase();
+
+  const cleanOrder = String(orderNumber || detail.orderNumber || '').trim();
+  const lowerOrder = cleanOrder.toLowerCase();
+  const enOrder = convertRuToEnLayout(cleanOrder).toLowerCase();
+
+  // Helper for alphanumeric-only comparison
+  const makeAlphaNum = (s: string) => s.replace(/[^a-z0-9а-я]/g, '');
+  const alphaScan = makeAlphaNum(lowerScan);
+  const alphaEnScan = makeAlphaNum(enScan);
+  const alphaLabel = makeAlphaNum(lowerLabel);
+
+  // ----------------------------------------------------
+  // LEVEL 1: Direct Exact Matches on Part Number, Barcode, or ID
+  // ----------------------------------------------------
+  if (lowerLabel && (lowerLabel === lowerScan || lowerLabel === enScan || enLabel === lowerScan || enLabel === enScan)) {
+    return true;
+  }
+  if (dBarcode && (dBarcode === lowerScan || dBarcode === enScan)) {
+    return true;
+  }
+  if (dId && (dId === lowerScan || dId === enScan)) {
+    return true;
+  }
+  if (dName && (dName === lowerScan || dName === enScan)) {
     return true;
   }
 
-  // 3. Template-based evaluation
-  const activeTemplate = template || '{orderNumber}-{pos}';
-  const evaluated = evaluateBirkaQrTemplate(activeTemplate, detail, orderNumber).trim().toLowerCase();
-  const evaluatedEn = normalizeBarcodeScan(evaluated).toLowerCase();
-
-  // Exact template match
-  if (evaluated === cleanScan || evaluated === enCode || evaluatedEn === cleanScan || evaluatedEn === enCode) {
+  // ----------------------------------------------------
+  // LEVEL 2: Segment & Alphanumeric Equality for Part Numbers
+  // e.g. "00.00" vs "00.00", "01.02" vs "1.2", "00.00.00" vs "0.0.0", "00/00" vs "00.00"
+  // ----------------------------------------------------
+  if (alphaLabel && (alphaLabel === alphaScan || alphaLabel === alphaEnScan)) {
     return true;
   }
 
-  // Alphanumeric template match
-  const evaluatedAlpha = makeAlphaNumeric(evaluated);
-  const evaluatedEnAlpha = makeAlphaNumeric(evaluatedEn);
-
-  if (evaluatedAlpha === cleanScanAlpha || evaluatedEnAlpha === enCodeAlpha) {
-    return true;
+  const labelSegs = getPartNumberSegments(lowerLabel);
+  const scanSegs = getPartNumberSegments(lowerScan);
+  if (labelSegs && scanSegs && labelSegs.length === scanSegs.length && labelSegs.length > 0) {
+    if (labelSegs.every((val, i) => val === scanSegs[i])) {
+      return true;
+    }
   }
 
-  // If strict template matching mode is requested, stop here!
-  if (matchingMode === 'template') {
-    return false;
-  }
+  // ----------------------------------------------------
+  // LEVEL 3: Standard Composite Formats (OrderNumber + Separator + PartNumber)
+  // e.g. `${order}_${pos}`, `${order}-${pos}`, `${order}/${pos}`, `${order}|${pos}`, `${order} ${pos}`
+  // ----------------------------------------------------
+  if (cleanOrder && lowerLabel) {
+    const compositeVariants = [
+      `${lowerOrder}_${lowerLabel}`,
+      `${lowerOrder}-${lowerLabel}`,
+      `${lowerOrder}/${lowerLabel}`,
+      `${lowerOrder}|${lowerLabel}`,
+      `${lowerOrder} ${lowerLabel}`,
+      `${lowerOrder}.${lowerLabel}`,
+      `${enOrder}_${enLabel}`,
+      `${enOrder}-${enLabel}`,
+      `${enOrder}/${enLabel}`,
+      `${enOrder}|${enLabel}`,
+      `${enOrder} ${enLabel}`,
+      `${enOrder}.${enLabel}`,
+    ];
 
-  // 4. "Smart contains" mode (default or explicitly selected) - Option 3:
-  // Substring containment:
-  // If the scanned code has multiple parameters (e.g. "1042-02.01;LDSP;16mm"),
-  // then the scanned code (cleanScan or enCode) should CONTAIN the evaluated template!
-  // Or, in alphanumeric space, cleanScanAlpha contains evaluatedAlpha!
-  if (evaluated.length >= 4 && (cleanScan.includes(evaluated) || enCode.includes(evaluatedEn))) {
-    return true;
-  }
-  if (evaluatedAlpha.length >= 4 && (cleanScanAlpha.includes(evaluatedAlpha) || enCodeAlpha.includes(evaluatedEnAlpha))) {
-    return true;
-  }
-
-  // Also vice-versa (e.g. if the user typed/scanned a subset of the template, e.g. "02.01" but template evaluates to "1042-02.01")
-  // But only if the scanned code is reasonably long/specific to avoid false positives (e.g. at least 3 chars)
-  if (cleanScan.length >= 3 && evaluated.includes(cleanScan)) {
-    return true;
-  }
-  if (enCode.length >= 3 && evaluatedEn.includes(enCode)) {
-    return true;
-  }
-  if (cleanScanAlpha.length >= 3 && evaluatedAlpha.includes(cleanScanAlpha)) {
-    return true;
-  }
-  if (enCodeAlpha.length >= 3 && evaluatedEnAlpha.includes(enCodeAlpha)) {
-    return true;
-  }
-
-  // 5. Special check for orderNumber and labelNumber separately inside scanned code:
-  // If the scanned QR code contains both the order number and the detail's label number as separate words or substrings,
-  // it is extremely likely to be our detail!
-  // e.g., if orderNumber is "1042" and labelNumber is "02.01", and QR code is "1042-02.01-LDSP" or "1042_02.01_BOCOVINA" or even "1042 02.01".
-  const cleanOrder = orderNumber.trim().toLowerCase();
-  if (cleanOrder && dLabel) {
-    const orderAlpha = makeAlphaNumeric(cleanOrder);
-    const labelAlpha = makeAlphaNumeric(dLabel);
-    
-    // Check if both order number and label number are present in the scanned code
-    if (orderAlpha.length >= 2 && labelAlpha.length >= 2) {
-      if (cleanScanAlpha.includes(orderAlpha) && cleanScanAlpha.includes(labelAlpha)) {
+    for (const variant of compositeVariants) {
+      if (variant === lowerScan || variant === enScan) {
         return true;
       }
-      if (enCodeAlpha.includes(orderAlpha) && enCodeAlpha.includes(labelAlpha)) {
+      if (makeAlphaNum(variant) === alphaScan || makeAlphaNum(variant) === alphaEnScan) {
         return true;
       }
     }
   }
 
+  // ----------------------------------------------------
+  // LEVEL 4: Custom Template Evaluation from Settings
+  // ----------------------------------------------------
+  const activeTemplate = template || '{orderNumber}_{pos}';
+  const evaluated = evaluateBirkaQrTemplate(activeTemplate, detail, cleanOrder).trim().toLowerCase();
+  const evaluatedEn = normalizeBarcodeScan(evaluated).toLowerCase();
+
+  if (evaluated && (evaluated === lowerScan || evaluated === enScan || evaluatedEn === lowerScan || evaluatedEn === enScan)) {
+    return true;
+  }
+  const evaluatedAlpha = makeAlphaNum(evaluated);
+  if (evaluatedAlpha && (evaluatedAlpha === alphaScan || evaluatedAlpha === alphaEnScan)) {
+    return true;
+  }
+
+  // If strict template matching is requested, only continue if template matches, else proceed to smart decomposition
+  if (matchingMode === 'template' && evaluated) {
+    // If strict, allow token decomposition fallback if scanned code is composite
+  }
+
+  // ----------------------------------------------------
+  // LEVEL 5: Intelligent Token & Delimiter Decomposition
+  // Splits scanned composite string by _, |, /, \, ;, :, space, etc.
+  // ----------------------------------------------------
+  const splitTokens = (str: string) => {
+    return str.split(/[_|/\\;:,\t\n\s]+/).map(t => t.trim()).filter(Boolean);
+  };
+
+  const tokens = [...splitTokens(lowerScan), ...splitTokens(enScan)];
+
+  // If order number is present as a prefix, strip it and test the remaining token
+  if (cleanOrder) {
+    const escapedOrder = cleanOrder.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const orderPrefixRegex = new RegExp(`^${escapedOrder}[_\\-\\/\\\\|;:\\s]+`, 'i');
+    if (orderPrefixRegex.test(lowerScan)) {
+      const remainder = lowerScan.replace(orderPrefixRegex, '').trim();
+      if (remainder) tokens.push(remainder);
+    }
+    if (orderPrefixRegex.test(enScan)) {
+      const remainder = enScan.replace(orderPrefixRegex, '').trim();
+      if (remainder) tokens.push(remainder);
+    }
+  }
+
+  for (const token of tokens) {
+    const cleanToken = normalizePartNumber(token);
+    if (!cleanToken) continue;
+
+    // Check token against label
+    if (cleanToken === lowerLabel || cleanToken === enLabel) {
+      return true;
+    }
+
+    // Check alphanumeric token
+    const tokenAlpha = makeAlphaNum(cleanToken);
+    if (alphaLabel && tokenAlpha === alphaLabel) {
+      return true;
+    }
+
+    // Check numeric segments
+    const tokenSegs = getPartNumberSegments(cleanToken);
+    if (labelSegs && tokenSegs && labelSegs.length === tokenSegs.length && labelSegs.length > 0) {
+      if (labelSegs.every((v, idx) => v === tokenSegs[idx])) {
+        return true;
+      }
+    }
+  }
+
+  // ----------------------------------------------------
+  // LEVEL 6: Smart Multi-Parameter Substring Containment
+  // ----------------------------------------------------
+  if (cleanOrder && alphaLabel && alphaLabel.length >= 2) {
+    const orderAlpha = makeAlphaNum(lowerOrder);
+    if (orderAlpha.length >= 2) {
+      if ((alphaScan.includes(orderAlpha) || alphaEnScan.includes(orderAlpha)) &&
+          (alphaScan.includes(alphaLabel) || alphaEnScan.includes(alphaLabel))) {
+        return true;
+      }
+    }
+  }
+
+  if (evaluated.length >= 4 && (lowerScan.includes(evaluated) || enScan.includes(evaluatedEn))) {
+    return true;
+  }
+
   return false;
+}
+
+/**
+ * Diagnostics & Decomposition helper for testing barcode parsing in UI & Settings.
+ */
+export interface DecomposedBarcodeResult {
+  rawCode: string;
+  orderNumberDetected: string | null;
+  partNumberDetected: string | null;
+  tokens: string[];
+  isMatch: boolean;
+}
+
+export function decomposeBarcodeForDiagnostics(
+  rawCode: string, 
+  orderNumber?: string,
+  sampleDetail?: any,
+  template?: string
+): DecomposedBarcodeResult {
+  const clean = String(rawCode || '').trim();
+  if (!clean) {
+    return {
+      rawCode: '',
+      orderNumberDetected: null,
+      partNumberDetected: null,
+      tokens: [],
+      isMatch: false
+    };
+  }
+
+  const tokens = clean.split(/[_|/\\;:,\t\n\s]+/).map(t => t.trim()).filter(Boolean);
+  
+  let orderDetected: string | null = null;
+  let partDetected: string | null = null;
+
+  if (tokens.length >= 2) {
+    orderDetected = tokens[0];
+    partDetected = tokens[1];
+  } else if (tokens.length === 1) {
+    partDetected = tokens[0];
+  }
+
+  const isMatch = sampleDetail 
+    ? matchDetailToScannedCode(clean, sampleDetail, template, orderNumber || '')
+    : false;
+
+  return {
+    rawCode: clean,
+    orderNumberDetected: orderDetected,
+    partNumberDetected: partDetected,
+    tokens,
+    isMatch
+  };
 }

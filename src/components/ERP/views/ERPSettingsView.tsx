@@ -40,7 +40,7 @@ import { ERPCompanySettings, MachineEquipment, PackageLabelSettings, ProductionS
 import { DEFAULT_BIRKA_COLUMN_MAPPING } from '../utils/birkaParser';
 import { DEFAULT_HARDWARE_COLUMN_MAPPING } from '../utils/hardwareParser';
 import { WarehouseCatalogPickerModal } from '../components/WarehouseCatalogPickerModal';
-import { evaluateBirkaQrTemplate } from '../utils';
+import { evaluateBirkaQrTemplate, matchDetailToScannedCode, decomposeBarcodeForDiagnostics } from '../utils';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import { smartDecodeFile } from '../../../utils/fileEncodingDetector';
@@ -265,20 +265,24 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
   const [parseError, setParseError] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string | null>(null);
 
+  const [testScanCode, setTestScanCode] = useState<string>('00-0000-00_00.00');
+  const [testOrderNumber, setTestOrderNumber] = useState<string>('00-0000-00');
+  const [testPartNumber, setTestPartNumber] = useState<string>('00.00');
+
   const normalizedSampleRow = useMemo(() => {
     if (!parsedFirstRow) {
       return {
-        orderNumber: '1042',
-        labelNumber: '12',
-        material: 'ЛДСП 16',
+        orderNumber: '00-0000-00',
+        labelNumber: '00.00',
+        material: 'ЛДСП 16 мм',
         length: 700,
         width: 500,
         thickness: 16,
-        name: 'Боковина',
+        name: 'Боковина шкафа',
         quantity: 1,
-        'Заказ': '1042',
-        '№ детали': '12',
-        'Материал': 'ЛДСП 16',
+        'Заказ': '00-0000-00',
+        '№ детали': '00.00',
+        'Материал': 'ЛДСП 16 мм',
         'Длина': '700',
         'Ширина': '500',
         'Толщина': '16',
@@ -1207,7 +1211,86 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                     </div>
                   )}
 
-                  {/* STEP 2: Interactive Column Badges */}
+                  {/* STEP 2: Quick Presets */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h5 className="text-xs font-black text-indigo-300 uppercase tracking-wider">
+                        Готовые шаблоны форматов (Базис-Мебельщик):
+                      </h5>
+                      <span className="text-[10px] text-slate-400 font-medium">Нажмите для быстрой установки</span>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{orderNumber}_{pos}' })}
+                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                          formData.birkaQrFormatTemplate === '{orderNumber}_{pos}'
+                            ? 'bg-indigo-900/60 border-indigo-400 shadow-md ring-1 ring-indigo-400'
+                            : 'bg-slate-950/60 border-slate-800 hover:border-indigo-500/40 hover:bg-slate-900'
+                        }`}
+                      >
+                        <div className="text-xs font-bold text-white flex items-center justify-between">
+                          <span>Базис Стандарт</span>
+                          <span className="text-[10px] font-mono text-emerald-400">_</span>
+                        </div>
+                        <div className="text-[11px] font-mono text-indigo-300 mt-0.5">{'{Заказ}_{№ детали}'}</div>
+                        <div className="text-[10px] text-slate-400 mt-1">Пример: 00-0000-00_00.00</div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{orderNumber}-{pos}' })}
+                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                          formData.birkaQrFormatTemplate === '{orderNumber}-{pos}'
+                            ? 'bg-indigo-900/60 border-indigo-400 shadow-md ring-1 ring-indigo-400'
+                            : 'bg-slate-950/60 border-slate-800 hover:border-indigo-500/40 hover:bg-slate-900'
+                        }`}
+                      >
+                        <div className="text-xs font-bold text-white flex items-center justify-between">
+                          <span>Дефисный</span>
+                          <span className="text-[10px] font-mono text-indigo-400">-</span>
+                        </div>
+                        <div className="text-[11px] font-mono text-indigo-300 mt-0.5">{'{Заказ}-{№ детали}'}</div>
+                        <div className="text-[10px] text-slate-400 mt-1">Пример: 00-0000-00-00.00</div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{pos}' })}
+                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                          formData.birkaQrFormatTemplate === '{pos}'
+                            ? 'bg-indigo-900/60 border-indigo-400 shadow-md ring-1 ring-indigo-400'
+                            : 'bg-slate-950/60 border-slate-800 hover:border-indigo-500/40 hover:bg-slate-900'
+                        }`}
+                      >
+                        <div className="text-xs font-bold text-white flex items-center justify-between">
+                          <span>Только № детали</span>
+                          <span className="text-[10px] font-mono text-amber-400">#</span>
+                        </div>
+                        <div className="text-[11px] font-mono text-indigo-300 mt-0.5">{'{№ детали}'}</div>
+                        <div className="text-[10px] text-slate-400 mt-1">Пример: 00.00 или 00.00.00</div>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setFormData({ ...formData, birkaQrFormatTemplate: '{orderNumber}/{pos}' })}
+                        className={`p-2.5 rounded-xl border text-left transition-all cursor-pointer ${
+                          formData.birkaQrFormatTemplate === '{orderNumber}/{pos}'
+                            ? 'bg-indigo-900/60 border-indigo-400 shadow-md ring-1 ring-indigo-400'
+                            : 'bg-slate-950/60 border-slate-800 hover:border-indigo-500/40 hover:bg-slate-900'
+                        }`}
+                      >
+                        <div className="text-xs font-bold text-white flex items-center justify-between">
+                          <span>Через слэш</span>
+                          <span className="text-[10px] font-mono text-purple-400">/</span>
+                        </div>
+                        <div className="text-[11px] font-mono text-indigo-300 mt-0.5">{'{Заказ}/{№ детали}'}</div>
+                        <div className="text-[10px] text-slate-400 mt-1">Пример: 00-0000-00/00.00</div>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* STEP 3: Interactive Column Badges */}
                   <div className="space-y-2">
                     <h5 className="text-xs font-black text-indigo-300 uppercase tracking-wider">
                       Шаг 2: Нажмите на нужные столбцы для составления QR-кода
@@ -1256,7 +1339,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
 
                     <div className="flex flex-wrap items-center gap-2">
                       {/* Separator buttons */}
-                      {['-', '_', 'x', '/', '|'].map((sep) => (
+                      {['-', '_', 'x', '/', '|', '.'].map((sep) => (
                         <button
                           key={sep}
                           type="button"
@@ -1288,9 +1371,9 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                   </label>
                   <input
                     type="text"
-                    value={formData.birkaQrFormatTemplate ?? '{orderNumber}-{pos}'}
+                    value={formData.birkaQrFormatTemplate ?? '{orderNumber}_{pos}'}
                     onChange={(e) => setFormData({ ...formData, birkaQrFormatTemplate: e.target.value })}
-                    placeholder="Например: {Заказ}-{№ детали} или {Длина}x{Ширина}"
+                    placeholder="Например: {Заказ}_{№ детали} или {orderNumber}_{pos}"
                     className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-indigo-400/50 font-mono text-sm font-bold text-indigo-250 focus:ring-2 focus:ring-indigo-400 outline-none"
                   />
                 </div>
@@ -1300,7 +1383,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                   <div className="space-y-1.5">
                     <div className="text-[10px] font-black uppercase text-emerald-400 tracking-widest flex items-center gap-1.5">
                       <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                      Живой результат генерации QR по первой строке:
+                      Живой результат генерации QR по образцу:
                     </div>
                     
                     <div className="text-xs text-slate-300 font-medium leading-relaxed max-w-md">
@@ -1309,7 +1392,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                           Данные из файла <strong className="text-white">{fileName}</strong>:
                         </span>
                       ) : (
-                        <span>Используются стандартные тестовые данные:</span>
+                        <span>Используются стандартные данные Базиса:</span>
                       )}
                       <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1 text-[11px] text-indigo-200 bg-indigo-950/30 px-2 py-1.5 rounded-lg border border-indigo-800/30">
                         {columnsToDisplay.slice(0, 5).map((col) => {
@@ -1331,16 +1414,160 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                       <QrCode className="w-9 h-9 text-slate-900" />
                     </div>
                     <div>
-                      <div className="text-[9px] font-black text-indigo-300 uppercase tracking-wider">Содержимое QR-кода:</div>
+                      <div className="text-[9px] font-black text-indigo-300 uppercase tracking-wider">Сгенерированный QR-код:</div>
                       <div className="font-mono font-black text-base text-emerald-300 tracking-wide break-all max-w-[200px]">
                         {evaluateBirkaQrTemplate(
-                          formData.birkaQrFormatTemplate || '{orderNumber}-{pos}',
+                          formData.birkaQrFormatTemplate || '{orderNumber}_{pos}',
                           normalizedSampleRow,
-                          normalizedSampleRow.orderNumber || '1042'
+                          normalizedSampleRow.orderNumber || '00-0000-00'
                         ) || <span className="text-rose-400 font-medium text-xs">[пусто]</span>}
                       </div>
                     </div>
                   </div>
+                </div>
+
+                {/* STEP 6: Interactive Live Barcode & QR Diagnostics / Testing Simulator */}
+                <div className="bg-slate-950/80 rounded-2xl border border-indigo-500/30 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded-lg bg-indigo-600/20 text-indigo-400 border border-indigo-500/30">
+                        <Sparkles className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <h5 className="text-xs font-black text-white uppercase tracking-wider">
+                          Интерактивный тестер сканирования (Проверка распознавания)
+                        </h5>
+                        <p className="text-[10px] text-slate-400">
+                          Введите или отсканируйте реальный QR-код, чтобы проверить, как алгоритм сопоставит деталь
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-300 uppercase mb-1">
+                        Тестовый номер заказа:
+                      </label>
+                      <input
+                        type="text"
+                        value={testOrderNumber}
+                        onChange={(e) => setTestOrderNumber(e.target.value)}
+                        placeholder="Например: 00-0000-00"
+                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:ring-1 focus:ring-indigo-400 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-300 uppercase mb-1">
+                        Тестовый номер детали в заказе:
+                      </label>
+                      <input
+                        type="text"
+                        value={testPartNumber}
+                        onChange={(e) => setTestPartNumber(e.target.value)}
+                        placeholder="Например: 00.00"
+                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs font-mono text-white focus:ring-1 focus:ring-indigo-400 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-emerald-300 uppercase mb-1">
+                        Отсканированный QR-код / Штрихкод:
+                      </label>
+                      <input
+                        type="text"
+                        value={testScanCode}
+                        onChange={(e) => setTestScanCode(e.target.value)}
+                        placeholder="Например: 00-0000-00_00.00"
+                        className="w-full px-3 py-1.5 rounded-lg bg-slate-900 border border-emerald-500/50 text-xs font-mono text-emerald-300 focus:ring-1 focus:ring-emerald-400 outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Diagnostic Calculation Result */}
+                  {(() => {
+                    const samplePartObj = {
+                      id: 'test_part_1',
+                      labelNumber: testPartNumber,
+                      orderNumber: testOrderNumber,
+                      name: 'Тестовая деталь',
+                      material: 'ЛДСП 16 мм'
+                    };
+                    const diag = decomposeBarcodeForDiagnostics(
+                      testScanCode,
+                      testOrderNumber,
+                      samplePartObj,
+                      formData.birkaQrFormatTemplate
+                    );
+
+                    return (
+                      <div className={`p-3 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+                        diag.isMatch 
+                          ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200' 
+                          : 'bg-rose-950/40 border-rose-500/40 text-rose-200'
+                      }`}>
+                        <div className="flex items-center gap-2.5">
+                          {diag.isMatch ? (
+                            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                          ) : (
+                            <Info className="w-5 h-5 text-rose-400 shrink-0" />
+                          )}
+                          <div>
+                            <div className="text-xs font-bold flex items-center gap-2">
+                              <span>Статус сопоставления:</span>
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                                diag.isMatch ? 'bg-emerald-500/30 text-emerald-300' : 'bg-rose-500/30 text-rose-300'
+                              }`}>
+                                {diag.isMatch ? '✓ УСПЕШНО РАСПОЗНАНО' : '✗ ДЕТАЛЬ НЕ НАЙДЕНА'}
+                              </span>
+                            </div>
+                            <div className="text-[11px] opacity-80 mt-0.5">
+                              {diag.isMatch 
+                                ? `Код "${testScanCode}" идеально привязывается к детали №${testPartNumber} в заказе №${testOrderNumber}`
+                                : `Код "${testScanCode}" не соответствует детали №${testPartNumber}. Проверьте шаблон или разделители.`
+                              }
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Quick test buttons */}
+                        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                          <span className="text-[9px] uppercase font-bold text-slate-400">Тест:</span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTestOrderNumber('00-0000-00');
+                              setTestPartNumber('00.00');
+                              setTestScanCode('00-0000-00_00.00');
+                            }}
+                            className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-[10px] font-mono font-bold text-slate-300 border border-slate-700"
+                          >
+                            00-0000-00_00.00
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTestOrderNumber('0000-0000');
+                              setTestPartNumber('00.00.00');
+                              setTestScanCode('0000-0000_00.00.00');
+                            }}
+                            className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-[10px] font-mono font-bold text-slate-300 border border-slate-700"
+                          >
+                            0000-0000_00.00.00
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setTestPartNumber('00.00');
+                              setTestScanCode('00.00');
+                            }}
+                            className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-[10px] font-mono font-bold text-slate-300 border border-slate-700"
+                          >
+                            00.00
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             </div>
