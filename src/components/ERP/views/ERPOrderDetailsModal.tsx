@@ -31,7 +31,7 @@ import {
 import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee } from '../types';
 import { parseBirkaFile, BirkaParseResult, BirkaDetail } from '../utils/birkaParser';
 import { parseHardwareFile } from '../utils/hardwareParser';
-import { formatDeadlineDate, speakText, matchDetailToScannedCode } from '../utils';
+import { formatDeadlineDate, speakText, matchDetailToScannedCode, normalizeBarcodeScan } from '../utils';
 import { detailRequiresPrisadka } from '../utils/stageReadiness';
 import { FinishedPartNoticeModal } from '../components/FinishedPartNoticeModal';
 import { OrderClientPrivacyModal } from '../components/OrderClientPrivacyModal';
@@ -520,6 +520,8 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
     const handleGlobalKeyDown = (e: KeyboardEvent) => {
       const activeEl = document.activeElement as HTMLElement | null;
       const target = e.target as HTMLElement | null;
+      const isScannerInput = target === scannerInputRef.current || activeEl === scannerInputRef.current;
+
       const isOtherInput = (target && (
         (target.tagName === 'INPUT' && target !== scannerInputRef.current) ||
         target.tagName === 'TEXTAREA' ||
@@ -535,7 +537,10 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
       if (isOtherInput) return;
 
       if (e.key === 'Enter') {
-        const bufferedCode = barcodeBufferRef.current.trim() || scanInput.trim() || (scannerInputRef.current?.value || '').trim();
+        const rawCode = isScannerInput
+          ? (scanInput.trim() || (scannerInputRef.current?.value || '').trim())
+          : (barcodeBufferRef.current.trim() || scanInput.trim() || (scannerInputRef.current?.value || '').trim());
+        const bufferedCode = normalizeBarcodeScan(rawCode);
         if (bufferedCode) {
           e.preventDefault();
           barcodeBufferRef.current = '';
@@ -545,18 +550,20 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
       }
 
       if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (isScannerInput) {
+          return;
+        }
+
         const now = Date.now();
-        if (now - lastKeyTimeRef.current > 1200 && document.activeElement !== scannerInputRef.current) {
+        if (now - lastKeyTimeRef.current > 1200) {
           barcodeBufferRef.current = '';
         }
         lastKeyTimeRef.current = now;
 
         barcodeBufferRef.current += e.key;
 
-        if (document.activeElement !== scannerInputRef.current) {
-          setScanInput(barcodeBufferRef.current);
-          scannerInputRef.current?.focus();
-        }
+        setScanInput(barcodeBufferRef.current);
+        scannerInputRef.current?.focus();
 
         if (bufferTimeoutRef.current) {
           clearTimeout(bufferTimeoutRef.current);

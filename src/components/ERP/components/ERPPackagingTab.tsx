@@ -195,6 +195,8 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
 
       const activeEl = document.activeElement as HTMLElement | null;
       const target = e.target as HTMLElement | null;
+      const isScannerInput = target === scannerInputRef.current || activeEl === scannerInputRef.current;
+
       const isOtherInput = (target && (
         (target.tagName === 'INPUT' && target !== scannerInputRef.current) ||
         target.tagName === 'TEXTAREA' ||
@@ -210,7 +212,9 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
       if (isOtherInput) return;
 
       if (e.key === 'Enter') {
-        const rawCode = barcodeBufferRef.current.trim() || scanInput.trim() || (scannerInputRef.current?.value || '').trim();
+        const rawCode = isScannerInput
+          ? (scanInput.trim() || (scannerInputRef.current?.value || '').trim())
+          : (barcodeBufferRef.current.trim() || scanInput.trim() || (scannerInputRef.current?.value || '').trim());
         const bufferedCode = normalizeBarcodeScan(rawCode);
         if (bufferedCode) {
           e.preventDefault();
@@ -221,18 +225,20 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
       }
 
       if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (isScannerInput) {
+          return;
+        }
+
         const now = Date.now();
-        if (now - lastKeyTimeRef.current > 1200 && document.activeElement !== scannerInputRef.current) {
+        if (now - lastKeyTimeRef.current > 1200) {
           barcodeBufferRef.current = '';
         }
         lastKeyTimeRef.current = now;
         const enChar = convertRuCharToEn(e.key);
         barcodeBufferRef.current += enChar;
 
-        if (document.activeElement !== scannerInputRef.current) {
-          setScanInput(barcodeBufferRef.current);
-          scannerInputRef.current?.focus();
-        }
+        setScanInput(barcodeBufferRef.current);
+        scannerInputRef.current?.focus();
       }
     };
 
