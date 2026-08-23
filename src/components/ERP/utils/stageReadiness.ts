@@ -383,3 +383,90 @@ export function getDetailAvailabilityForStage(
     isScannedOnCurrentStage
   };
 }
+
+export interface StageTaskReadiness {
+  isLocked: boolean;
+  statusText: string;
+  readyPartsCount: number;
+  totalPartsCount: number;
+  blockingReason?: string;
+}
+
+/**
+ * Get overall task readiness for an entire stage of an order (e.g. for display in Production View)
+ */
+export function getStageTaskReadinessInfo(
+  order: ProductionOrder,
+  stageId: string,
+  settings?: ERPCompanySettings
+): StageTaskReadiness {
+  const details = order.birkaData?.details || [];
+  const totalPartsCount = details.length || order.partsCount || 0;
+
+  // In classic mode, stage tasks are never locked
+  if (settings?.executionMode === 'classic') {
+    return {
+      isLocked: false,
+      statusText: 'Доступна в работу',
+      readyPartsCount: totalPartsCount,
+      totalPartsCount
+    };
+  }
+
+  // Cutting (raskroy) and Kitting (kitting): always unlocked
+  if (stageId === 'raskroy' || stageId === 'kitting' || stageId === 'cutting') {
+    return {
+      isLocked: false,
+      statusText: 'Доступна в работу',
+      readyPartsCount: totalPartsCount,
+      totalPartsCount
+    };
+  }
+
+  // Packing: accessible immediately, but shows stats
+  if (stageId === 'packing') {
+    let readyCount = 0;
+    details.forEach(d => {
+      if (getDetailAvailabilityForStage(d, order, 'packing', settings).isAvailable) {
+        readyCount++;
+      }
+    });
+    return {
+      isLocked: false,
+      statusText: readyCount === totalPartsCount ? '100% готов к упаковке' : `Готово ${readyCount} из ${totalPartsCount} деталей`,
+      readyPartsCount: readyCount,
+      totalPartsCount
+    };
+  }
+
+  // Edging (kromka), Prisadka, Assembly: calculate how many details are ready
+  let readyPartsCount = 0;
+  details.forEach(d => {
+    if (getDetailAvailabilityForStage(d, order, stageId, settings).isAvailable) {
+      readyPartsCount++;
+    }
+  });
+
+  const isLocked = details.length > 0 && readyPartsCount === 0;
+
+  let blockingReason = undefined;
+  if (isLocked) {
+    if (stageId === 'kromka' || stageId === 'edging') {
+      blockingReason = '0 деталей отсканировано на участке Распил';
+    } else if (stageId === 'prisadka' || stageId === 'cnc') {
+      blockingReason = '0 деталей готово после Распила и Кромки';
+    } else {
+      blockingReason = '0 деталей готово на предшествующих участках';
+    }
+  }
+
+  return {
+    isLocked,
+    statusText: isLocked 
+      ? `Заблокирована (${blockingReason})` 
+      : `Доступна (${readyPartsCount} из ${totalPartsCount} деталей готово)`,
+    readyPartsCount,
+    totalPartsCount,
+    blockingReason
+  };
+}

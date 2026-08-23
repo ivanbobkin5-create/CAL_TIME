@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { 
   Calendar as CalendarIcon, 
   Search, 
@@ -23,7 +23,14 @@ import {
   ArrowRight,
   ExternalLink,
   PackageCheck,
-  Package
+  Package,
+  ChevronLeft,
+  ChevronRight,
+  GripVertical,
+  Move,
+  Sparkles,
+  RotateCcw,
+  List
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPEmployee, ERPCompanySettings, AdditionalWorks } from '../types';
 import { formatDeadlineDate } from '../utils';
@@ -60,6 +67,102 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
   const [launchedModalOrder, setLaunchedModalOrder] = useState<{ order: ProductionOrder; plannedDate: string } | null>(null);
   const [birkaSearchQuery, setBirkaSearchQuery] = useState('');
   const [hardwareSearchQuery, setHardwareSearchQuery] = useState('');
+
+  // Planning view mode tab
+  const [planningViewTab, setPlanningViewTab] = useState<'calendar' | 'list'>('calendar');
+
+  // Drag and drop task state
+  const [draggedStageTask, setDraggedStageTask] = useState<{ orderId: string; stageId: ProductionStageId } | null>(null);
+
+  // Week calculation
+  const [currentWeekMonday, setCurrentWeekMonday] = useState<Date>(() => {
+    const today = new Date();
+    const day = today.getDay();
+    const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(today.setDate(diff));
+    monday.setHours(0, 0, 0, 0);
+    return monday;
+  });
+
+  const weekDays = useMemo(() => {
+    const dayNames = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
+    const res = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(currentWeekMonday);
+      d.setDate(d.getDate() + i);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      const dateStr = `${yyyy}-${mm}-${dd}`;
+      const isToday = dateStr === new Date().toISOString().split('T')[0];
+      res.push({
+        dateObj: d,
+        dateStr,
+        dayName: dayNames[i],
+        dayNum: d.getDate(),
+        monthName: d.toLocaleDateString('ru-RU', { month: 'short' }),
+        isToday
+      });
+    }
+    return res;
+  }, [currentWeekMonday]);
+
+  const handlePrevWeek = () => {
+    const prev = new Date(currentWeekMonday);
+    prev.setDate(prev.getDate() - 7);
+    setCurrentWeekMonday(prev);
+  };
+
+  const handleNextWeek = () => {
+    const next = new Date(currentWeekMonday);
+    next.setDate(next.getDate() + 7);
+    setCurrentWeekMonday(next);
+  };
+
+  const handleTodayWeek = () => {
+    const today = new Date();
+    const day = today.getDay();
+    const diff = today.getDate() - day + (day === 0 ? -6 : 1);
+    const monday = new Date(today.setDate(diff));
+    monday.setHours(0, 0, 0, 0);
+    setCurrentWeekMonday(monday);
+  };
+
+  const STAGE_CONFIGS: { id: ProductionStageId; name: string; shortName: string; icon: any; color: string; bg: string }[] = [
+    { id: 'cutting', name: 'Распил (ЛДСП/МДФ)', shortName: 'Распил', icon: Scissors, color: 'text-blue-600', bg: 'bg-blue-50 text-blue-700 border-blue-200' },
+    { id: 'edging', name: 'Кромкооблицовка', shortName: 'Кромка', icon: Layers, color: 'text-indigo-600', bg: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
+    { id: 'cnc', name: 'Присадка / ЧПУ', shortName: 'Присадка', icon: Factory, color: 'text-purple-600', bg: 'bg-purple-50 text-purple-700 border-purple-200' },
+    { id: 'kitting', name: 'Комплектовка', shortName: 'Фурнитура', icon: Box, color: 'text-cyan-600', bg: 'bg-cyan-50 text-cyan-700 border-cyan-200' },
+    { id: 'assembly', name: 'Сборка корпусов', shortName: 'Сборка', icon: Wrench, color: 'text-teal-600', bg: 'bg-teal-50 text-teal-700 border-teal-200' },
+    { id: 'packing', name: 'Упаковка мест', shortName: 'Упаковка', icon: Package, color: 'text-orange-600', bg: 'bg-orange-50 text-orange-700 border-orange-200' },
+  ];
+
+  const handleAssignStageTaskToDate = (orderId: string, stageId: ProductionStageId, dateStr: string | null) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
+
+    const currentStageDates = order.stagePlannedDates || {};
+    const updatedStageDates = { ...currentStageDates };
+
+    if (dateStr) {
+      updatedStageDates[stageId] = dateStr;
+    } else {
+      delete updatedStageDates[stageId];
+    }
+
+    let plannedCuttingDate = order.plannedCuttingDate;
+    if (stageId === 'cutting' || !plannedCuttingDate) {
+      plannedCuttingDate = dateStr || order.plannedCuttingDate;
+    }
+
+    const updatedOrder: ProductionOrder = {
+      ...order,
+      stagePlannedDates: updatedStageDates,
+      plannedCuttingDate: plannedCuttingDate || undefined
+    };
+
+    onUpdateOrder(updatedOrder);
+  };
 
   const handleBirkaUploadForOrder = async (order: ProductionOrder, file: File) => {
     if (order.birkaData) {
@@ -227,81 +330,330 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
           </p>
         </div>
 
-        {/* Quick Filter Tabs */}
-        <div className="flex items-center p-1 bg-slate-100 rounded-2xl border border-slate-200 shrink-0">
-          <button
-            onClick={() => setStatusFilter('queue')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              statusFilter === 'queue' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <span>Очередь запуска</span>
-            <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${statusFilter === 'queue' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
-              {queueOrdersCount}
-            </span>
-          </button>
-          <button
-            onClick={() => setStatusFilter('ready')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-              statusFilter === 'ready' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <span>Запущены в цех</span>
-            <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${statusFilter === 'ready' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
-              {readyOrdersCount}
-            </span>
-          </button>
-          <button
-            onClick={() => setStatusFilter('all')}
-            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-              statusFilter === 'all' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            Все
-          </button>
-        </div>
-      </div>
-
-      {/* Controls Bar */}
-      <div className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-center justify-between gap-3">
-        <div className="relative w-full md:w-96">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            placeholder="Поиск заказа, клиента, проекта..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
-          />
-        </div>
-
-        <div className="flex items-center gap-3 w-full md:w-auto justify-end">
-          <select
-            value={selectedPriority}
-            onChange={(e) => setSelectedPriority(e.target.value)}
-            className="px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-          >
-            <option value="all">Все приоритеты</option>
-            <option value="urgent">Только срочные</option>
-            <option value="high">Высокий приоритет</option>
-            <option value="normal">Обычный приоритет</option>
-          </select>
-
-          <span className="text-xs text-slate-500 font-bold">
-            Всего: {filteredOrders.length}
-          </span>
-        </div>
-      </div>
-
-      {/* Orders List in Planning */}
-      <div className="space-y-4">
-        {filteredOrders.length === 0 ? (
-          <div className="py-12 text-center bg-white rounded-3xl border border-dashed border-slate-200 p-8">
-            <AlertCircle className="w-10 h-10 text-slate-300 mx-auto mb-2" />
-            <p className="text-sm font-bold text-slate-700">Заказов в планировании не найдено</p>
-            <p className="text-xs text-slate-400 mt-1">Все заказы запущены или попробуйте изменить поисковые фильтры</p>
+        {/* View Mode Switcher & Quick Filter Tabs */}
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center p-1 bg-indigo-50/80 rounded-2xl border border-indigo-200 shrink-0">
+            <button
+              onClick={() => setPlanningViewTab('calendar')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                planningViewTab === 'calendar' ? 'bg-indigo-600 text-white shadow-sm' : 'text-indigo-900 hover:text-indigo-950'
+              }`}
+            >
+              <CalendarIcon className="w-3.5 h-3.5" />
+              <span>📅 Календарь задач (Drag & Drop)</span>
+            </button>
+            <button
+              onClick={() => setPlanningViewTab('list')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                planningViewTab === 'list' ? 'bg-indigo-600 text-white shadow-sm' : 'text-indigo-900 hover:text-indigo-950'
+              }`}
+            >
+              <List className="w-3.5 h-3.5" />
+              <span>📋 Реестр и подгрузка файлов</span>
+            </button>
           </div>
-        ) : (
+
+          <div className="flex items-center p-1 bg-slate-100 rounded-2xl border border-slate-200 shrink-0">
+            <button
+              onClick={() => setStatusFilter('queue')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                statusFilter === 'queue' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>Очередь</span>
+              <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${statusFilter === 'queue' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
+                {queueOrdersCount}
+              </span>
+            </button>
+            <button
+              onClick={() => setStatusFilter('ready')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                statusFilter === 'ready' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <span>Запущены</span>
+              <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${statusFilter === 'ready' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
+                {readyOrdersCount}
+              </span>
+            </button>
+            <button
+              onClick={() => setStatusFilter('all')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                statusFilter === 'all' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Все
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Interactive Calendar View vs List View */}
+      {planningViewTab === 'calendar' ? (
+        <div className="space-y-6">
+          {/* Calendar Week Navigation Bar */}
+          <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={handlePrevWeek}
+                className="p-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer"
+                title="Предыдущая неделя"
+              >
+                <ChevronLeft className="w-5 h-5" />
+              </button>
+              <button
+                onClick={handleTodayWeek}
+                className="px-4 py-2.5 rounded-2xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-extrabold text-xs transition-all cursor-pointer flex items-center gap-1.5"
+              >
+                <CalendarIcon className="w-4 h-4" />
+                <span>Текущая неделя</span>
+              </button>
+              <button
+                onClick={handleNextWeek}
+                className="p-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-all cursor-pointer"
+                title="Следующая неделя"
+              >
+                <ChevronRight className="w-5 h-5" />
+              </button>
+
+              <span className="text-sm font-black text-slate-900 ml-2">
+                {weekDays[0].dayNum} {weekDays[0].monthName} – {weekDays[6].dayNum} {weekDays[6].monthName} {weekDays[6].dateObj.getFullYear()}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
+              <Move className="w-4 h-4 text-blue-600 animate-pulse" />
+              <span>Перетаскивайте карточки участков из списка слева в ячейки календаря</span>
+            </div>
+          </div>
+
+          {/* Calendar Workspace Grid */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+            {/* Left Drawer: Order Stage Tasks (4 cols on lg) */}
+            <div className="lg:col-span-4 bg-white rounded-3xl p-5 border border-slate-200/90 shadow-sm space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2 font-black text-slate-900 text-sm">
+                  <GripVertical className="w-4 h-4 text-blue-600" />
+                  <span>Заказы и задачи по участкам</span>
+                </div>
+                <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-xs font-mono font-bold">
+                  {filteredOrders.length}
+                </span>
+              </div>
+
+              <div className="relative">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  placeholder="Фильтр заказов..."
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:bg-white"
+                />
+              </div>
+
+              <div className="space-y-3 max-h-[700px] overflow-y-auto pr-1">
+                {filteredOrders.length === 0 ? (
+                  <div className="py-8 text-center text-xs text-slate-400 font-medium">
+                    Заказы не найдены
+                  </div>
+                ) : (
+                  filteredOrders.map(order => {
+                    const stageDates = order.stagePlannedDates || {};
+
+                    return (
+                      <div key={order.id} className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2.5">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-mono font-black text-slate-900 text-xs bg-white px-2 py-0.5 rounded-lg border border-slate-200">
+                            № {order.orderNumber}
+                          </span>
+                          <span className="text-xs font-extrabold text-slate-800 truncate max-w-[150px]">
+                            {order.clientName || order.projectName}
+                          </span>
+                        </div>
+
+                        {/* Stage Tasks list for Dragging */}
+                        <div className="grid grid-cols-2 gap-1.5 pt-1">
+                          {STAGE_CONFIGS.map(st => {
+                            const StIcon = st.icon;
+                            const assignedDate = stageDates[st.id] || (st.id === 'cutting' ? order.plannedCuttingDate : null);
+
+                            return (
+                              <div
+                                key={st.id}
+                                draggable={true}
+                                onDragStart={() => setDraggedStageTask({ orderId: order.id, stageId: st.id })}
+                                className={`p-2 rounded-xl border text-[11px] font-bold flex flex-col gap-1 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.02] shadow-2xs ${
+                                  assignedDate ? 'bg-white border-emerald-300 text-slate-800' : 'bg-white border-slate-200 text-slate-600'
+                                }`}
+                                title="Зажмите мышку и перетащите в календарь на нужный день"
+                              >
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="flex items-center gap-1 font-black">
+                                    <StIcon className={`w-3 h-3 ${st.color}`} />
+                                    <span>{st.shortName}</span>
+                                  </span>
+                                  <GripVertical className="w-3 h-3 text-slate-300" />
+                                </div>
+                                {assignedDate ? (
+                                  <span className="text-[10px] text-emerald-700 font-extrabold bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-200 self-start">
+                                    📅 {assignedDate.split('-').slice(1).join('.')}
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] text-amber-700 font-semibold bg-amber-50 px-1.5 py-0.5 rounded-md border border-amber-200/80 self-start">
+                                    ⚠️ Не назначена
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* Right Area: Interactive 7-Day Calendar Columns (8 cols on lg) */}
+            <div className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-7 gap-2.5">
+              {weekDays.map(day => {
+                // Find all stage tasks scheduled for this date
+                const tasksOnThisDay: { order: ProductionOrder; stage: typeof STAGE_CONFIGS[0] }[] = [];
+                orders.forEach(o => {
+                  const sDates = o.stagePlannedDates || {};
+                  STAGE_CONFIGS.forEach(st => {
+                    const assigned = sDates[st.id] || (st.id === 'cutting' ? o.plannedCuttingDate : null);
+                    if (assigned === day.dateStr) {
+                      tasksOnThisDay.push({ order: o, stage: st });
+                    }
+                  });
+                });
+
+                return (
+                  <div
+                    key={day.dateStr}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (draggedStageTask) {
+                        handleAssignStageTaskToDate(draggedStageTask.orderId, draggedStageTask.stageId, day.dateStr);
+                        setDraggedStageTask(null);
+                      }
+                    }}
+                    className={`rounded-3xl p-3 border transition-all min-h-[520px] flex flex-col space-y-2.5 ${
+                      day.isToday 
+                        ? 'bg-blue-50/40 border-blue-300 shadow-sm ring-2 ring-blue-400/30' 
+                        : 'bg-white border-slate-200/80 hover:border-slate-300'
+                    }`}
+                  >
+                    {/* Day Header */}
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-black text-xs text-slate-800">{day.dayName}</span>
+                        <span className="font-mono font-black text-sm text-slate-900">{day.dayNum}</span>
+                        <span className="text-[10px] text-slate-400 font-bold">{day.monthName}</span>
+                      </div>
+                      {day.isToday && (
+                        <span className="px-1.5 py-0.5 rounded-md bg-blue-600 text-white font-black text-[9px] uppercase">
+                          Сегодня
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Day Tasks Drop Zone */}
+                    <div className="flex-1 space-y-2 overflow-y-auto max-h-[620px]">
+                      {tasksOnThisDay.length === 0 ? (
+                        <div className="h-full min-h-[120px] border-2 border-dashed border-slate-200 rounded-2xl flex flex-col items-center justify-center p-3 text-center text-slate-400 text-[11px] font-medium">
+                          <span>Сюда можно перетащить задачу</span>
+                        </div>
+                      ) : (
+                        tasksOnThisDay.map(({ order, stage }) => {
+                          const StIcon = stage.icon;
+
+                          return (
+                            <div
+                              key={`${order.id}-${stage.id}`}
+                              className={`p-2.5 rounded-2xl border shadow-2xs space-y-1.5 bg-white border-slate-200 hover:border-blue-400 transition-all`}
+                            >
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="font-mono font-black text-[11px] text-slate-900">
+                                  №{order.orderNumber}
+                                </span>
+                                <button
+                                  onClick={() => handleAssignStageTaskToDate(order.id, stage.id, null)}
+                                  className="p-1 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                                  title="Убрать с этой даты"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+
+                              <div className="text-[10px] font-bold text-slate-700 truncate">
+                                {order.clientName || order.projectName}
+                              </div>
+
+                              <div className={`px-2 py-1 rounded-xl border text-[10px] font-black flex items-center justify-between ${stage.bg}`}>
+                                <span className="flex items-center gap-1">
+                                  <StIcon className={`w-3 h-3 ${stage.color}`} />
+                                  <span>{stage.shortName}</span>
+                                </span>
+                                <span className="text-[9px] opacity-80">{order.partsCount || 0} дет.</span>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* LIST VIEW */
+        <div className="space-y-6">
+          {/* Controls Bar */}
+          <div className="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-sm flex flex-col md:flex-row items-center justify-between gap-3">
+            <div className="relative w-full md:w-96">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Поиск заказа, клиента, проекта..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+              />
+            </div>
+
+            <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+              <select
+                value={selectedPriority}
+                onChange={(e) => setSelectedPriority(e.target.value)}
+                className="px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+              >
+                <option value="all">Все приоритеты</option>
+                <option value="urgent">Только срочные</option>
+                <option value="high">Высокий приоритет</option>
+                <option value="normal">Обычный приоритет</option>
+              </select>
+
+              <span className="text-xs text-slate-500 font-bold">
+                Всего: {filteredOrders.length}
+              </span>
+            </div>
+          </div>
+
+          {/* Orders List in Planning */}
+          <div className="space-y-4">
+            {filteredOrders.length === 0 ? (
+              <div className="py-12 text-center bg-white rounded-3xl border border-dashed border-slate-200 p-8">
+                <AlertCircle className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                <p className="text-sm font-bold text-slate-700">Заказов в планировании не найдено</p>
+                <p className="text-xs text-slate-400 mt-1">Все заказы запущены или попробуйте изменить поисковые фильтры</p>
+              </div>
+            ) : (
           filteredOrders.map((order) => {
             const priorityStyles = {
               urgent: 'bg-red-50 text-red-700 border-red-200',
@@ -777,6 +1129,8 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
           })
         )}
       </div>
+    </div>
+  )}
 
       {/* Modal: Launched Order Confirmation */}
       {launchedModalOrder && (

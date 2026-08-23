@@ -25,10 +25,12 @@ import {
   UserCheck,
   Camera,
   Sparkles,
-  Truck
+  Truck,
+  Lock
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPEmployee, ERPCompanySettings } from '../types';
 import { formatDeadlineDate, getNextRequiredStage } from '../utils';
+import { getStageTaskReadinessInfo } from '../utils/stageReadiness';
 import { ERPOrderDetailsModal } from './ERPOrderDetailsModal';
 import { ERPDispatchView } from './ERPDispatchView';
 import { MobileCameraScannerModal } from '../components/MobileCameraScannerModal';
@@ -489,6 +491,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
 
                   const works = order.additionalWorks;
                   const activeLogs = order.workLogs?.filter(l => l.stageId === selectedStageId) || [];
+                  const taskReadiness = getStageTaskReadinessInfo(order, selectedStageId || order.currentStage, settings);
 
                   const clientNameClean = (order.clientName || '').trim();
                   const projectNameClean = (order.projectName || '').trim();
@@ -499,8 +502,18 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                   return (
                     <div
                       key={order.id}
-                      onClick={() => onSelectOrder(order, selectedStageId || order.currentStage)}
-                      className="bg-white rounded-3xl p-5 border border-slate-200/90 hover:border-blue-400 transition-all shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4 cursor-pointer"
+                      onClick={() => {
+                        if (taskReadiness.isLocked) {
+                          alert(`🔒 Задача по заказу №${order.orderNumber} заблокирована!\n\nПричина: ${taskReadiness.blockingReason}\n\nСотрудник на предыдущем участке еще не начал сканирование деталей. Как только первая деталь будет отсканирована на прошлом участке, задание автоматически разблокируется.`);
+                          return;
+                        }
+                        onSelectOrder(order, selectedStageId || order.currentStage);
+                      }}
+                      className={`rounded-3xl p-5 border transition-all shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4 ${
+                        taskReadiness.isLocked
+                          ? 'bg-slate-50/90 border-slate-300 opacity-80 cursor-not-allowed'
+                          : 'bg-white border-slate-200/90 hover:border-blue-400 cursor-pointer'
+                      }`}
                     >
                       {/* Left: Info */}
                       <div className="space-y-2 min-w-0 flex-1">
@@ -508,6 +521,18 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                           <span className="font-mono font-black text-slate-900 text-sm bg-slate-100 px-3 py-1 rounded-xl border border-slate-200 shrink-0">
                             {order.orderNumber}
                           </span>
+
+                          {taskReadiness.isLocked ? (
+                            <span className="px-2.5 py-1 rounded-xl bg-slate-200/90 text-slate-700 font-extrabold text-[11px] border border-slate-300 flex items-center gap-1 shrink-0" title={taskReadiness.blockingReason}>
+                              <Lock className="w-3.5 h-3.5 text-slate-500" />
+                              <span>Заблокирована (0 деталей с прошлого участка)</span>
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-xl bg-emerald-100 text-emerald-900 font-extrabold text-[11px] border border-emerald-300 flex items-center gap-1 shrink-0">
+                              <Check className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>{taskReadiness.statusText}</span>
+                            </span>
+                          )}
 
                           <a
                             href={order.bitrixUrl || (order.bitrixDealId ? `https://b24.ru/crm/deal/details/${order.bitrixDealId}/` : '#')}
