@@ -16,11 +16,12 @@ import {
   Sparkles,
   Info,
   Check,
-  X
+  X,
+  Lock
 } from 'lucide-react';
 import { ProductionOrder, OrderPackage, OrderPackagePart, ERPCompanySettings, ERPEmployee, ProductionStageId } from '../types';
 import { PackageLabelPrintModal } from './PackageLabelPrintModal';
-import { convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, matchDetailToScannedCode } from '../utils';
+import { convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, matchDetailToScannedCode, processQRCommand } from '../utils';
 import { isDetailReadyForPackaging, arePrecedingStagesCompleted, getPackagingReadinessStats } from '../utils/stageReadiness';
 
 interface ERPPackagingTabProps {
@@ -77,8 +78,8 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
   // Available unpacked details (not in existing packages & not in active buffer)
   const rawUnpackedDetails = allDetails.filter(d => !packedDetailIds.has(d.id) && !bufferDetailIds.has(d.id));
 
-  // In online packaging mode, only show details that have completed preceding stages (raskroy, kromka, prisadka)
-  const unpackedDetails = rawUnpackedDetails.filter(d => isDetailReadyForPackaging(d, order, settings));
+  // Display all unpacked details (ready & pending previous processing stages)
+  const unpackedDetails = rawUnpackedDetails;
 
   // Materials list for filter
   const materialList = Array.from(new Set(allDetails.map(d => d.material || 'Без материала'))).filter(Boolean);
@@ -159,7 +160,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
     showFeedback(`Добавлено ${newParts.length} деталей в текущую упаковку`, 'success');
   };
 
-  // Handle Scanning Barcode/QR of Detail to Pack
+  // Handle Scanning Barcode/QR of Detail to Pack or Command
   const handleScanCode = (code: string) => {
     setScanInput('');
     barcodeBufferRef.current = '';
@@ -169,6 +170,22 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
 
     const cleanCode = code.trim().replace(/^#/, '');
     if (!cleanCode) return;
+
+    // Check if it's a QR Command
+    const cmdResult = processQRCommand(cleanCode, {
+      onFinishPackage: () => {
+        if (currentBufferParts.length > 0) {
+          handleSealPackage(true);
+        } else {
+          showFeedback('В формируемой коробке пока нет деталей!', 'error');
+        }
+      }
+    });
+
+    if (cmdResult.isCommand) {
+      showFeedback(cmdResult.message || 'Выполнена команда QR-кода', 'success');
+      return;
+    }
 
     const enCode = normalizeBarcodeScan(cleanCode);
 
@@ -678,43 +695,59 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                   По заданному поисковому фильтру ничего не найдено.
                 </div>
               ) : (
-                filteredUnpacked.map(detail => (
-                  <div
-                    key={detail.id}
-                    onClick={() => handleAddDetailToCurrentPackage(detail)}
-                    className="p-3 bg-white hover:bg-orange-50/70 rounded-2xl border border-slate-200/90 hover:border-orange-300 transition-all flex items-center justify-between gap-3 cursor-pointer group shadow-sm hover:shadow"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-9 h-9 rounded-xl bg-slate-100 group-hover:bg-orange-500 group-hover:text-white text-slate-800 font-black font-mono text-xs flex items-center justify-center transition-colors shrink-0">
-                        #{detail.labelNumber}
-                      </div>
-
-                      <div className="min-w-0">
-                        <div className="font-black text-slate-900 text-xs truncate">
-                          {detail.name}
-                        </div>
-                        <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono mt-0.5 flex-wrap">
-                          <span>{detail.length} × {detail.width} × {detail.thickness || 16} мм</span>
-                          <span>•</span>
-                          <span className="text-slate-700 font-medium">{detail.material || 'ЛДСП'}</span>
-                          {detail.notes && (
-                            <span className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 font-bold text-[9px]">
-                              {detail.notes}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      className="px-3 py-1.5 rounded-xl bg-slate-100 group-hover:bg-orange-600 group-hover:text-white text-slate-700 font-bold text-xs transition-colors flex items-center gap-1 shrink-0"
+                filteredUnpacked.map(detail => {
+                  const isReady = isDetailReadyForPackaging(detail, order, settings);
+                  return (
+                    <div
+                      key={detail.id}
+                      onClick={() => handleAddDetailToCurrentPackage(detail)}
+                      className={`p-3 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
+                        isReady
+                          ? 'bg-white hover:bg-orange-50/70 border-slate-200/90 hover:border-orange-300 cursor-pointer group shadow-xs hover:shadow'
+                          : 'bg-slate-100/80 border-slate-200 opacity-60 cursor-not-allowed'
+                      }`}
                     >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Вложить</span>
-                    </button>
-                  </div>
-                ))
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className={`w-9 h-9 rounded-xl font-black font-mono text-xs flex items-center justify-center transition-colors shrink-0 ${
+                          isReady ? 'bg-slate-100 group-hover:bg-orange-500 group-hover:text-white text-slate-800' : 'bg-slate-200 text-slate-500'
+                        }`}>
+                          {isReady ? `#${detail.labelNumber}` : <Lock className="w-4 h-4 text-slate-400" />}
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="font-black text-slate-900 text-xs truncate flex items-center gap-1.5">
+                            <span>{detail.name}</span>
+                            {!isReady && (
+                              <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 text-[9px] font-bold border border-amber-200">
+                                🔒 Не готова
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono mt-0.5 flex-wrap">
+                            <span>#{detail.labelNumber} • {detail.length} × {detail.width} × {detail.thickness || 16} мм</span>
+                            <span>•</span>
+                            <span className="text-slate-700 font-medium">{detail.material || 'ЛДСП'}</span>
+                            {detail.notes && (
+                              <span className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 font-bold text-[9px]">
+                                {detail.notes}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-colors flex items-center gap-1 shrink-0 ${
+                          isReady ? 'bg-slate-100 group-hover:bg-orange-600 group-hover:text-white text-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                        }`}
+                      >
+                        {isReady ? <Plus className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                        <span>{isReady ? 'Вложить' : 'Залочена'}</span>
+                      </button>
+                    </div>
+                  );
+                })
               )}
             </div>
           </div>
@@ -804,28 +837,56 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                     </div>
                   </div>
 
-                  {/* Expand / Collapse Parts inside */}
+                  {/* Expand / Collapse Parts & Hardware inside */}
                   <div className="pt-1">
                     <button
                       onClick={() => setExpandedPkgId(isExpanded ? null : pkg.id)}
-                      className="w-full py-1 text-[11px] font-bold text-slate-600 hover:text-slate-900 flex items-center justify-center gap-1"
+                      className="w-full py-1 text-[11px] font-bold text-slate-600 hover:text-slate-900 flex items-center justify-center gap-1 cursor-pointer"
                     >
-                      <span>{isExpanded ? 'Скрыть список деталей' : `Показать состав места (${pkg.parts.length} дет.)`}</span>
+                      <span>
+                        {isExpanded 
+                          ? 'Скрыть состав места' 
+                          : `Показать состав места (${pkg.parts.length} деталей${pkg.hardwareItems && pkg.hardwareItems.length > 0 ? `, ${pkg.hardwareItems.length} поз. фурнитуры/док.` : ''})`}
+                      </span>
                       {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                     </button>
 
                     {isExpanded && (
-                      <div className="mt-2 pt-2 border-t border-slate-200 max-h-48 overflow-y-auto space-y-1 text-xs">
-                        {pkg.parts.map((part, pIdx) => (
-                          <div key={pIdx} className="flex items-center justify-between p-1.5 bg-white rounded-lg border border-slate-200/60 text-[11px]">
-                            <span className="font-semibold truncate max-w-[200px]">
-                              #{part.labelNumber} {part.name}
-                            </span>
-                            <span className="font-mono text-slate-500 text-[10px] shrink-0">
-                              {part.length}×{part.width}
-                            </span>
+                      <div className="mt-2 pt-2 border-t border-slate-200 max-h-56 overflow-y-auto space-y-1.5 text-xs">
+                        {/* Parts list */}
+                        {pkg.parts.length > 0 && (
+                          <div className="space-y-1">
+                            <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Детали ЛДСП/МДФ:</div>
+                            {pkg.parts.map((part, pIdx) => (
+                              <div key={pIdx} className="flex items-center justify-between p-1.5 bg-white rounded-lg border border-slate-200/60 text-[11px]">
+                                <span className="font-semibold text-slate-800 truncate max-w-[200px]">
+                                  #{part.labelNumber} {part.name}
+                                </span>
+                                <span className="font-mono text-slate-500 text-[10px] shrink-0">
+                                  {part.length}×{part.width}
+                                </span>
+                              </div>
+                            ))}
                           </div>
-                        ))}
+                        )}
+
+                        {/* Hardware & Documents list */}
+                        {pkg.hardwareItems && pkg.hardwareItems.length > 0 && (
+                          <div className="space-y-1 pt-1">
+                            <div className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">Фурнитура и документы в месте:</div>
+                            {pkg.hardwareItems.map((hw, hIdx) => (
+                              <div key={hIdx} className="flex items-center justify-between p-1.5 bg-indigo-50/60 rounded-lg border border-indigo-100 text-[11px]">
+                                <span className="font-bold text-indigo-950 truncate max-w-[200px]">
+                                  {hw.name}
+                                  {hw.article ? <span className="text-[10px] text-indigo-500 ml-1">({hw.article})</span> : null}
+                                </span>
+                                <span className="font-mono font-bold text-indigo-700 text-[11px] shrink-0">
+                                  {hw.quantity} {hw.unit || 'шт'}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

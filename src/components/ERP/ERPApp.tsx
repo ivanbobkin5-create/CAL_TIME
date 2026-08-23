@@ -57,6 +57,7 @@ import { ERPMaterialResidualsView } from './views/ERPMaterialResidualsView';
 import { ERPLoginView } from './views/ERPLoginView';
 import { ERPOrderWorkspaceView } from './views/ERPOrderWorkspaceView';
 import { MobileCameraScannerModal } from './components/MobileCameraScannerModal';
+import { ShiftSummaryModal } from './components/ShiftSummaryModal';
 import { VoiceAssistantToggle } from './components/VoiceAssistantToggle';
 
 function isOrderEqual(o1: any, o2: any): boolean {
@@ -315,6 +316,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
   const [shiftElapsedSeconds, setShiftElapsedSeconds] = useState<number>(0);
   const [isOvertimeApproved, setIsOvertimeApproved] = useState<boolean>(false);
   const [showShiftWarningModal, setShowShiftWarningModal] = useState<boolean>(false);
+  const [showShiftSummaryModal, setShowShiftSummaryModal] = useState<boolean>(false);
   const [shiftWarningMessage, setShiftWarningMessage] = useState<string>('');
 
   // Clock updater
@@ -1566,7 +1568,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
                   )}
 
                   <button
-                    onClick={handleEndShift}
+                    onClick={() => setShowShiftSummaryModal(true)}
                     className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs transition-all cursor-pointer"
                   >
                     Завершить смену
@@ -1987,8 +1989,8 @@ export const ERPApp: React.FC<ERPAppProps> = ({
                   </div>
                   <button
                     onClick={() => {
-                      handleEndShift();
                       setShowMobileShiftModal(false);
+                      setShowShiftSummaryModal(true);
                     }}
                     className="w-full py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs shadow-lg transition-all cursor-pointer mt-2"
                   >
@@ -2055,6 +2057,18 @@ export const ERPApp: React.FC<ERPAppProps> = ({
           </div>
         </div>
       )}
+      {/* Shift Summary Report Modal */}
+      <ShiftSummaryModal
+        isOpen={showShiftSummaryModal}
+        currentUser={matchedEmp}
+        orders={orders}
+        settings={settings}
+        onClose={() => setShowShiftSummaryModal(false)}
+        onConfirmEndShift={() => {
+          handleEndShift();
+          setShowShiftSummaryModal(false);
+        }}
+      />
     </div>
   );
 };

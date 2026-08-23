@@ -33,16 +33,18 @@ import {
   UserCheck,
   UserX,
   ShieldAlert,
-  ArrowRight
+  ArrowRight,
+  Lock
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee, MaterialResidual } from '../types';
 import { parseBirkaFile, BirkaParseResult, BirkaDetail } from '../utils/birkaParser';
-import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, getStageNameRussian, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, speakText, matchDetailToScannedCode, cleanRawScannedString } from '../utils';
+import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, getStageNameRussian, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, speakText, matchDetailToScannedCode, cleanRawScannedString, processQRCommand } from '../utils';
 import { CuttingOffcutsModal } from '../components/CuttingOffcutsModal';
 import { EdgingRemainsModal } from '../components/EdgingRemainsModal';
-import { detailRequiresPrisadka } from '../utils/stageReadiness';
+import { detailRequiresPrisadka, getDetailAvailabilityForStage } from '../utils/stageReadiness';
 import { FinishedPartNoticeModal } from '../components/FinishedPartNoticeModal';
 import { MobileCameraScannerModal } from '../components/MobileCameraScannerModal';
+import { ReportDefectModal } from '../components/ReportDefectModal';
 import { ERPPackagingTab } from '../components/ERPPackagingTab';
 import { ERPKittingTab } from '../components/ERPKittingTab';
 import { ERPShippingTab } from '../components/ERPShippingTab';
@@ -203,6 +205,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   const [scanSuccessMsg, setScanSuccessMsg] = useState<string | null>(null);
   const [showCameraScannerModal, setShowCameraScannerModal] = useState<boolean>(false);
   const [showShiftRequiredModal, setShowShiftRequiredModal] = useState<boolean>(false);
+  const [defectTargetDetail, setDefectTargetDetail] = useState<any | null>(null);
   const [isIdentityConfirmed, setIsIdentityConfirmed] = useState<boolean>(false);
 
   const scannerInputRef = useRef<HTMLInputElement | null>(null);
@@ -392,6 +395,28 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       return;
     }
 
+    // Check QR Command first
+    const cmdResult = processQRCommand(cleanCode, {
+      onStartShift: () => {
+        setShowShiftRequiredModal(false);
+        setScanSuccessMsg('Смена успешно начата!');
+      },
+      onEndShift: () => {
+        setShowShiftRequiredModal(true);
+      },
+      onPrintAct: () => {
+        setScanSuccessMsg('🖨️ Запуск печати акта сдачи...');
+        window.print();
+      }
+    });
+
+    if (cmdResult.isCommand) {
+      setScanSuccessMsg(cmdResult.message || 'Выполнена команда QR-кода');
+      playSoundEffect('success');
+      scannerInputRef.current?.focus();
+      return;
+    }
+
     const template = settings?.birkaQrFormatTemplate;
     const orderNum = localOrder.orderNumber || '';
 
@@ -452,6 +477,15 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       playSoundEffect('success');
       speakText('Деталь без кромки');
       setScanSuccessMsg(`ℹ️ Деталь №${foundPart.labelNumber} (${foundPart.name}) не требует кромления.`);
+      return;
+    }
+
+    // Check if detail is unlocked/available for this stage in live mode
+    const availability = getDetailAvailabilityForStage(foundPart, localOrder, currentStage, settings);
+    if (!availability.isAvailable) {
+      playSoundEffect('alert');
+      speakText('Деталь не готова');
+      setScanSuccessMsg(`⛔ Деталь №${foundPart.labelNumber} («${foundPart.name}») заблокирована! ${availability.blockingReason}`);
       return;
     }
 
@@ -604,6 +638,13 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     if (isScanned) {
       newScannedIds = matScannedIds.filter(id => id !== detail.id);
     } else {
+      const availability = getDetailAvailabilityForStage(detail, localOrder, currentStage, settings);
+      if (!availability.isAvailable) {
+        playSoundEffect('alert');
+        speakText('Деталь не готова');
+        setScanSuccessMsg(`⛔ Деталь №${detail.labelNumber} («${detail.name}») заблокирована! ${availability.blockingReason}`);
+        return;
+      }
       newScannedIds = [...matScannedIds, detail.id];
     }
 
@@ -1222,6 +1263,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                         <th className="py-2.5 px-3">Отверстия</th>
                         <th className="py-2.5 px-3">Примечания</th>
                         <th className="py-2.5 px-3 text-right">QR / Штрихкод</th>
+                        <th className="py-2.5 px-3 text-center">Брак</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-xs">
@@ -1262,24 +1304,39 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                             }
                           }
 
+                          const availability = getDetailAvailabilityForStage(detail, localOrder, currentStage, settings);
+                          const isLocked = !availability.isAvailable;
+
                           return (
                             <tr
                               key={detail.id}
                               onClick={() => toggleDetailScanned(detail)}
-                              className={`transition-colors cursor-pointer ${
-                                previousForcedInfo
-                                  ? 'bg-rose-50/90 hover:bg-rose-100/90 border-l-4 border-l-rose-500'
+                              className={`transition-colors ${
+                                isLocked
+                                  ? 'bg-slate-100/70 hover:bg-slate-100 opacity-60 cursor-not-allowed text-slate-500'
+                                  : previousForcedInfo
+                                  ? 'bg-rose-50/90 hover:bg-rose-100/90 border-l-4 border-l-rose-500 cursor-pointer'
                                   : isScanned
-                                  ? 'bg-emerald-50/70 hover:bg-emerald-100/80'
-                                  : 'hover:bg-slate-50'
+                                  ? 'bg-emerald-50/70 hover:bg-emerald-100/80 cursor-pointer'
+                                  : 'hover:bg-slate-50 cursor-pointer'
                               }`}
                             >
                               {/* Status Checkbox */}
                               <td className="py-2.5 px-3">
                                 <div className={`w-5 h-5 rounded-lg border flex items-center justify-center transition-all ${
-                                  isScanned ? 'bg-emerald-600 border-emerald-600 text-white' : previousForcedInfo ? 'border-rose-400 bg-white' : 'border-slate-300 bg-white'
+                                  isLocked
+                                    ? 'border-slate-300 bg-slate-200 text-slate-400'
+                                    : isScanned
+                                    ? 'bg-emerald-600 border-emerald-600 text-white'
+                                    : previousForcedInfo
+                                    ? 'border-rose-400 bg-white'
+                                    : 'border-slate-300 bg-white'
                                 }`}>
-                                  {isScanned && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                                  {isLocked ? (
+                                    <Lock className="w-3 h-3 text-slate-400" />
+                                  ) : isScanned ? (
+                                    <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                  ) : null}
                                 </div>
                               </td>
 
@@ -1287,6 +1344,12 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                               <td className="py-2.5 px-3 font-mono font-bold text-slate-900">
                                 <div className="flex items-center gap-1.5">
                                   <span>#{detail.labelNumber}</span>
+                                  {isLocked && (
+                                    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 text-[9px] font-bold border border-slate-300">
+                                      <Lock className="w-2.5 h-2.5" />
+                                      Залочена
+                                    </span>
+                                  )}
                                   {previousForcedInfo && (
                                     <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-rose-600 text-white text-[9px] font-black uppercase tracking-wider animate-pulse" title={`Пропущена на этапе «${previousForcedInfo.stageName}»`}>
                                       <AlertTriangle className="w-2.5 h-2.5" />
@@ -1300,6 +1363,12 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                               <td className="py-2.5 px-3">
                                 <div className="font-bold text-slate-800 flex flex-col">
                                   <span>{detail.name}</span>
+                                  {isLocked && availability.blockingReason && (
+                                    <span className="mt-0.5 inline-flex items-center gap-1 text-[10px] text-amber-800 font-semibold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200/70 max-w-max">
+                                      <Lock className="w-2.5 h-2.5 text-amber-600" />
+                                      {availability.blockingReason}
+                                    </span>
+                                  )}
                                   {previousForcedInfo && (
                                     <div className="mt-1 text-[11px] font-normal leading-tight text-rose-700 bg-rose-100/80 p-1.5 rounded-lg border border-rose-300/80 max-w-sm">
                                       <div className="font-bold flex items-center gap-1">
@@ -1375,6 +1444,22 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                                   <QrCode className="w-3 h-3 text-emerald-400" />
                                   <span>{expectedQr}</span>
                                 </span>
+                              </td>
+
+                              {/* Defect Button */}
+                              <td className="py-2.5 px-3 text-center">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDefectTargetDetail(detail);
+                                  }}
+                                  className="px-2 py-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-[10px] font-black transition-colors cursor-pointer flex items-center gap-1 mx-auto"
+                                  title="Зафиксировать брак и направить на переделку"
+                                >
+                                  <ShieldAlert className="w-3 h-3 text-rose-600" />
+                                  <span>Брак</span>
+                                </button>
                               </td>
                             </tr>
                           );
@@ -1494,6 +1579,27 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+      {/* Report Defect Modal */}
+      {defectTargetDetail && (
+        <ReportDefectModal
+          isOpen={!!defectTargetDetail}
+          order={localOrder}
+          detail={defectTargetDetail}
+          settings={settings}
+          currentUser={currentUser}
+          allOrders={[]}
+          onClose={() => setDefectTargetDetail(null)}
+          onDefectReported={(updatedMainOrder, defectTaskOrder) => {
+            onUpdateOrder(updatedMainOrder);
+            if (defectTaskOrder) {
+              onUpdateOrder(defectTaskOrder);
+            }
+            setDefectTargetDetail(null);
+            setScanSuccessMsg(`Зафиксирован брак детали #${defectTargetDetail.labelNumber}. Передано на переделку.`);
+            playSoundEffect('alert');
+          }}
+        />
       )}
     </div>
   );

@@ -92,18 +92,19 @@ export const ReportDefectModal: React.FC<ReportDefectModalProps> = ({
         partsCount: 1,
         facadesCount: 0,
         status: 'in_progress',
+        stageProgress: {},
+        stageScanningProgress: {},
         isDefectReworkOrder: true,
         parentOrderId: order.id,
         parentOrderNumber: order.orderNumber,
         defectItems: [defectItem],
         birkaData: {
-          fileHash: `def-${order.id}`,
+          fileName: `Переделка_Детали_${detail.labelNumber}.txt`,
+          fileHash: `def-${order.id}-${Date.now()}`,
           uploadedAt: new Date().toISOString(),
           details: [{ ...detail, isDefectPart: true }],
-          totalDetailsCount: 1,
-          totalAreaM2: (detail.length * detail.width) / 1000000,
-          totalEdgeM: ((detail.length + detail.width) * 2) / 1000,
-          materialsSummary: [{ material: detail.material || 'ЛДСП', count: 1, areaM2: (detail.length * detail.width) / 1000000 }]
+          materialGroups: [],
+          allEdges: []
         }
       };
     }

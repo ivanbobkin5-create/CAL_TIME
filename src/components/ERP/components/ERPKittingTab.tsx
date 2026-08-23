@@ -57,6 +57,7 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
   // Selected hardware items to be put into the current box being prepared
   // Map of hardwareId -> quantity to put in this box
   const [draftBoxItems, setDraftBoxItems] = useState<Record<string, number>>({});
+  const [selectedDocs, setSelectedDocs] = useState<Record<string, boolean>>({});
   const [packageName, setPackageName] = useState<string>(`Место ${nextNumber} (Фурнитура)`);
   const [customNotes, setCustomNotes] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -219,6 +220,29 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
       }
     });
 
+    // Add selected mandatory documents
+    const mandatoryDocsList = settings?.requiredKittingDocuments || [
+      { id: 'doc-1', name: 'Паспорт изделия и инструкция по сборке', enabled: true },
+      { id: 'doc-2', name: 'Акт приема-передачи товара', enabled: true },
+      { id: 'doc-3', name: 'Чертежи и схема разметки', enabled: true }
+    ];
+
+    Object.entries(selectedDocs).forEach(([docId, isChecked]) => {
+      if (!isChecked) return;
+      const doc = mandatoryDocsList.find(d => d.id === docId);
+      if (doc) {
+        packedItemsList.push({
+          hardwareId: doc.id,
+          article: 'ДОК',
+          name: doc.name,
+          quantity: 1,
+          unit: 'компл',
+          category: 'Документы'
+        });
+        formattedNotesLines.push(`• [Документ] ${doc.name} — 1 компл`);
+      }
+    });
+
     if (customNotes.trim()) {
       formattedNotesLines.push(`Примечание: ${customNotes.trim()}`);
     }
@@ -278,6 +302,7 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
 
     // Reset draft
     setDraftBoxItems({});
+    setSelectedDocs({});
     setCustomNotes('');
     setPackageName(`Место ${updatedPackages.length + 1} (Фурнитура)`);
     setFeedbackMsg(`Упаковка "${cleanName}" сформирована! Нажмите печать этикетки.`);
@@ -806,6 +831,40 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
                 placeholder="например: Место 2 (Фурнитура Blum)"
                 className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-slate-900 text-xs focus:ring-2 focus:ring-cyan-500 outline-none"
               />
+            </div>
+
+            {/* Mandatory Documents Checklist */}
+            <div className="pt-2 border-t border-slate-100 space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-800">
+                <span className="flex items-center gap-1.5">
+                  <FileText className="w-3.5 h-3.5 text-cyan-600" />
+                  Вложить позиции документов:
+                </span>
+                <span className="text-[10px] font-semibold text-slate-400">из настроек ERP</span>
+              </div>
+
+              <div className="space-y-1 bg-slate-50 p-2.5 rounded-2xl border border-slate-200">
+                {(settings?.requiredKittingDocuments || [
+                  { id: 'doc-1', name: 'Паспорт изделия и инструкция по сборке', enabled: true },
+                  { id: 'doc-2', name: 'Акт приема-передачи товара', enabled: true },
+                  { id: 'doc-3', name: 'Чертежи и схема разметки', enabled: true }
+                ]).filter(d => d.enabled !== false).map(doc => {
+                  const isChecked = !!selectedDocs[doc.id];
+                  return (
+                    <label key={doc.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-100 p-1.5 rounded-xl transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => setSelectedDocs({ ...selectedDocs, [doc.id]: e.target.checked })}
+                        className="w-4 h-4 rounded text-cyan-600 focus:ring-cyan-500 border-slate-300 cursor-pointer"
+                      />
+                      <span className="text-xs font-bold text-slate-800 leading-tight">
+                        {doc.name}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
             </div>
 
             {/* Quick Presets */}

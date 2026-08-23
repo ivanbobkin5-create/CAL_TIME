@@ -208,3 +208,178 @@ export function getPackagingReadinessStats(order: ProductionOrder, settings?: ER
     isFullyReady
   };
 }
+
+export interface DetailStageStatus {
+  isAvailable: boolean; // Можно ли сканировать деталь на текущем участке
+  isScannedOnCurrentStage: boolean; // Просканирована ли уже на текущем участке
+  blockingReason?: string; // Причина блокировки
+  requiredPrecedingStage?: string; // ID этапа, который еще не пройден
+}
+
+/**
+ * Check if a specific detail is available to be scanned/processed at target stage in live mode
+ */
+export function getDetailAvailabilityForStage(
+  detail: {
+    id: string;
+    edgeL1?: string;
+    edgeL2?: string;
+    edgeW1?: string;
+    edgeW2?: string;
+    notes?: string;
+    name?: string;
+    holesEnd?: number;
+    holesFace?: number;
+    holesCount?: number;
+  },
+  order: ProductionOrder,
+  targetStageId: string,
+  settings?: ERPCompanySettings
+): DetailStageStatus {
+  const isScannedOnCurrentStage = getScannedPartIdsForStage(order, targetStageId).has(detail.id);
+
+  // If classic execution mode, all details are allowed to be scanned
+  if (settings?.executionMode === 'classic') {
+    return {
+      isAvailable: true,
+      isScannedOnCurrentStage
+    };
+  }
+
+  // 1. Raskroy (Cutting): always available
+  if (targetStageId === 'raskroy') {
+    return {
+      isAvailable: true,
+      isScannedOnCurrentStage
+    };
+  }
+
+  // 2. Kitting (Комплектация фурнитуры): active immediately
+  if (targetStageId === 'kitting') {
+    return {
+      isAvailable: true,
+      isScannedOnCurrentStage
+    };
+  }
+
+  const raskroyScanned = getScannedPartIdsForStage(order, 'raskroy');
+  const kromkaScanned = getScannedPartIdsForStage(order, 'kromka');
+  const prisadkaScanned = getScannedPartIdsForStage(order, 'prisadka');
+
+  const isRaskroyDone = !isStageEnabled(settings, 'raskroy') || raskroyScanned.has(detail.id);
+
+  // 3. Kromka (Edging): requires Raskroy
+  if (targetStageId === 'kromka') {
+    if (!isRaskroyDone) {
+      return {
+        isAvailable: false,
+        isScannedOnCurrentStage,
+        blockingReason: 'Деталь еще не распилена на участке Распил',
+        requiredPrecedingStage: 'raskroy'
+      };
+    }
+    return {
+      isAvailable: true,
+      isScannedOnCurrentStage
+    };
+  }
+
+  const hasEdges = !!(detail.edgeL1 || detail.edgeL2 || detail.edgeW1 || detail.edgeW2);
+  const isKromkaDone = !hasEdges || !isStageEnabled(settings, 'kromka') || kromkaScanned.has(detail.id);
+
+  // 4. Prisadka / CNC: requires Raskroy AND Kromka (if detail has edge banding)
+  if (targetStageId === 'prisadka') {
+    if (!isRaskroyDone) {
+      return {
+        isAvailable: false,
+        isScannedOnCurrentStage,
+        blockingReason: 'Деталь еще не распилена на участке Распил',
+        requiredPrecedingStage: 'raskroy'
+      };
+    }
+    if (!isKromkaDone) {
+      return {
+        isAvailable: false,
+        isScannedOnCurrentStage,
+        blockingReason: 'Деталь еще не прошла обработку на участке Кромка',
+        requiredPrecedingStage: 'kromka'
+      };
+    }
+    return {
+      isAvailable: true,
+      isScannedOnCurrentStage
+    };
+  }
+
+  // 5. Assembly (Сборка)
+  const needsPrisadka = detailRequiresPrisadka(detail, settings);
+  const isPrisadkaDone = !needsPrisadka || !isStageEnabled(settings, 'prisadka') || prisadkaScanned.has(detail.id);
+
+  if (targetStageId === 'assembly') {
+    if (!isRaskroyDone) {
+      return {
+        isAvailable: false,
+        isScannedOnCurrentStage,
+        blockingReason: 'Ожидает распила',
+        requiredPrecedingStage: 'raskroy'
+      };
+    }
+    if (!isKromkaDone) {
+      return {
+        isAvailable: false,
+        isScannedOnCurrentStage,
+        blockingReason: 'Ожидает кромкооблицовки',
+        requiredPrecedingStage: 'kromka'
+      };
+    }
+    if (!isPrisadkaDone) {
+      return {
+        isAvailable: false,
+        isScannedOnCurrentStage,
+        blockingReason: 'Ожидает присадки (ЧПУ)',
+        requiredPrecedingStage: 'prisadka'
+      };
+    }
+    return {
+      isAvailable: true,
+      isScannedOnCurrentStage
+    };
+  }
+
+  // 6. Packing (Упаковка)
+  if (targetStageId === 'packing') {
+    if (!isRaskroyDone) {
+      return {
+        isAvailable: false,
+        isScannedOnCurrentStage,
+        blockingReason: 'Ожидает распила',
+        requiredPrecedingStage: 'raskroy'
+      };
+    }
+    if (!isKromkaDone) {
+      return {
+        isAvailable: false,
+        isScannedOnCurrentStage,
+        blockingReason: 'Ожидает кромкооблицовки',
+        requiredPrecedingStage: 'kromka'
+      };
+    }
+    if (!isPrisadkaDone) {
+      return {
+        isAvailable: false,
+        isScannedOnCurrentStage,
+        blockingReason: 'Ожидает присадки (ЧПУ)',
+        requiredPrecedingStage: 'prisadka'
+      };
+    }
+    return {
+      isAvailable: true,
+      isScannedOnCurrentStage
+    };
+  }
+
+  return {
+    isAvailable: true,
+    isScannedOnCurrentStage
+  };
+}

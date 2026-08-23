@@ -524,3 +524,104 @@ export function decomposeBarcodeForDiagnostics(
     isMatch
   };
 }
+
+export interface QRCommandResult {
+  isCommand: boolean;
+  commandKey?: string;
+  message?: string;
+}
+
+export function processQRCommand(
+  rawCode: string,
+  callbacks?: {
+    onFinishPackage?: () => void;
+    onStartShift?: () => void;
+    onEndShift?: () => void;
+    onReportDefect?: () => void;
+    onNextStage?: () => void;
+    onPrintAct?: () => void;
+  }
+): QRCommandResult {
+  const clean = cleanRawScannedString(rawCode).toUpperCase().replace(/[\s\-_]/g, '');
+  if (!clean) return { isCommand: false };
+
+  // Finish package / Close box
+  if (
+    clean.includes('CMD_FINISH_PACKAGE') ||
+    clean.includes('CMDFINISHPACKAGE') ||
+    clean.includes('CMD_CLOSE_BOX') ||
+    clean.includes('CMDCLOSEBOX') ||
+    clean.includes('CMD_FINISH_BOX') ||
+    clean.includes('ЗАКРЫТЬКОРОБКУ') ||
+    clean.includes('ЗАКРЫТЬМЕСТО')
+  ) {
+    if (callbacks?.onFinishPackage) callbacks.onFinishPackage();
+    speakText('Место и упаковка закрыты');
+    return { isCommand: true, commandKey: 'CMD_FINISH_PACKAGE', message: 'Команда: Упаковка / место закрыто' };
+  }
+
+  // Start shift
+  if (
+    clean.includes('CMD_START_SHIFT') ||
+    clean.includes('CMDSTARTSHIFT') ||
+    clean.includes('НАЧАТЬСМЕНУ') ||
+    clean.includes('ОТКРЫТЬСМЕНУ')
+  ) {
+    if (callbacks?.onStartShift) callbacks.onStartShift();
+    speakText('Смена начата');
+    return { isCommand: true, commandKey: 'CMD_START_SHIFT', message: 'Команда: Смена успешно начата' };
+  }
+
+  // End shift
+  if (
+    clean.includes('CMD_END_SHIFT') ||
+    clean.includes('CMDENDSHIFT') ||
+    clean.includes('CMD_FINISH_SHIFT') ||
+    clean.includes('ЗАВЕРШИТЬСМЕНУ') ||
+    clean.includes('ЗАКРЫТЬСМЕНУ')
+  ) {
+    if (callbacks?.onEndShift) callbacks.onEndShift();
+    speakText('Смена завершена');
+    return { isCommand: true, commandKey: 'CMD_END_SHIFT', message: 'Команда: Итоги смены' };
+  }
+
+  // Report defect
+  if (
+    clean.includes('CMD_REPORT_DEFECT') ||
+    clean.includes('CMDREPORTDEFECT') ||
+    clean.includes('ФИКСАЦИЯБРАКА') ||
+    clean.includes('БРАК')
+  ) {
+    if (callbacks?.onReportDefect) callbacks.onReportDefect();
+    speakText('Фиксация брака');
+    return { isCommand: true, commandKey: 'CMD_REPORT_DEFECT', message: 'Команда: Фиксация брака' };
+  }
+
+  // Next stage
+  if (
+    clean.includes('CMD_NEXT_STAGE') ||
+    clean.includes('CMDNEXTSTAGE') ||
+    clean.includes('СЛЕДУЮЩИЙУЧАСТОК')
+  ) {
+    if (callbacks?.onNextStage) callbacks.onNextStage();
+    speakText('Передано на следующий участок');
+    return { isCommand: true, commandKey: 'CMD_NEXT_STAGE', message: 'Команда: Переход на следующий участок' };
+  }
+
+  // Print act
+  if (
+    clean.includes('CMD_PRINT_ACT') ||
+    clean.includes('CMDPRINTACT') ||
+    clean.includes('ПЕЧАТЬАКТА')
+  ) {
+    if (callbacks?.onPrintAct) callbacks.onPrintAct();
+    speakText('Печать акта');
+    return { isCommand: true, commandKey: 'CMD_PRINT_ACT', message: 'Команда: Открыта печать акта' };
+  }
+
+  if (clean.startsWith('CMD')) {
+    return { isCommand: true, commandKey: clean, message: `Выполнена команда ${clean}` };
+  }
+
+  return { isCommand: false };
+}

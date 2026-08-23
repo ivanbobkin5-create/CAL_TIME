@@ -92,8 +92,13 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
   tomorrowObj.setDate(tomorrowObj.getDate() + 1);
   const tomorrowStr = tomorrowObj.toISOString().split('T')[0];
 
-  const getOrderDateCategory = (order: ProductionOrder): 'overdue' | 'today' | 'tomorrow' | 'future' => {
-    const planned = order.plannedCuttingDate || order.plannedStartDate;
+  const getOrderDateCategory = (order: ProductionOrder, stageId?: ProductionStageId | null): 'overdue' | 'today' | 'tomorrow' | 'future' => {
+    let planned: string | undefined = undefined;
+    if (stageId && order.stagePlannedDates?.[stageId]) {
+      planned = order.stagePlannedDates[stageId];
+    } else {
+      planned = order.plannedCuttingDate || order.plannedStartDate;
+    }
     if (!planned) return 'today';
     if (planned < todayStr) return 'overdue';
     if (planned === todayStr) return 'today';
@@ -262,10 +267,10 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
             const Icon = stage.icon;
             const stageOrders = productionOrders.filter(o => o.currentStage === stage.id);
 
-            const overdueOrders = stageOrders.filter(o => getOrderDateCategory(o) === 'overdue');
-            const todayOrders = stageOrders.filter(o => getOrderDateCategory(o) === 'today');
-            const tomorrowOrders = stageOrders.filter(o => getOrderDateCategory(o) === 'tomorrow');
-            const futureOrders = stageOrders.filter(o => getOrderDateCategory(o) === 'future');
+            const overdueOrders = stageOrders.filter(o => getOrderDateCategory(o, stage.id) === 'overdue');
+            const todayOrders = stageOrders.filter(o => getOrderDateCategory(o, stage.id) === 'today');
+            const tomorrowOrders = stageOrders.filter(o => getOrderDateCategory(o, stage.id) === 'tomorrow');
+            const futureOrders = stageOrders.filter(o => getOrderDateCategory(o, stage.id) === 'future');
 
             const totalArea = stageOrders.reduce((sum, o) => sum + (o.totalAreaM2 || 0), 0);
             const totalParts = stageOrders.reduce((sum, o) => sum + (o.partsCount || 0), 0);
@@ -451,7 +456,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
             });
             const filteredByTab = stageOrders.filter(o => {
               if (stageTabFilter === 'all') return true;
-              return getOrderDateCategory(o) === stageTabFilter;
+              return getOrderDateCategory(o, selectedStageId) === stageTabFilter;
             });
 
             if (filteredByTab.length === 0) {
@@ -467,7 +472,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
             return (
               <div className="space-y-3">
                 {filteredByTab.map((order) => {
-                  const dateCat = getOrderDateCategory(order);
+                  const dateCat = getOrderDateCategory(order, selectedStageId);
                   const dateBadgeStyles = {
                     overdue: 'bg-red-100 text-red-800 border-red-300',
                     today: 'bg-amber-100 text-amber-900 border-amber-300',

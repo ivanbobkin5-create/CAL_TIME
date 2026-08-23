@@ -120,6 +120,7 @@ export interface ProductionOrder {
   deadlineDate: string;
   plannedStartDate?: string;
   plannedCuttingDate?: string; // Выбранный день распила YYYY-MM-DD
+  stagePlannedDates?: Record<string, string>; // Плановые даты по участкам { [stageId]: "YYYY-MM-DD" }
   isReadyForProduction?: boolean; // Отметка "Готов к началу" в планировании
   currentStage: ProductionStageId;
   priority: 'low' | 'normal' | 'high' | 'urgent';
@@ -422,6 +423,7 @@ export interface SalaryRecord {
 
 export interface ERPCompanySettings {
   erpEnabled: boolean;
+  executionMode?: 'classic' | 'live_item_planning'; // Режим работы: 'classic' (конвейер) или 'live_item_planning' (интерактивный календарь с поштучным live-сканированием)
   workDayStart: string;
   workDayEnd: string;
   defaultShiftDurationHours: number;
