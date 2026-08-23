@@ -3,6 +3,7 @@ import { CheckCircle2, Sparkles, Volume2, X } from 'lucide-react';
 
 interface FinishedPartNoticeModalProps {
   isOpen: boolean;
+  enabled?: boolean; // if false, notice & voice are turned off
   labelNumber: string;
   partName: string;
   materialName?: string;
@@ -12,6 +13,7 @@ interface FinishedPartNoticeModalProps {
 
 export const FinishedPartNoticeModal: React.FC<FinishedPartNoticeModalProps> = ({
   isOpen,
+  enabled = true,
   labelNumber,
   partName,
   materialName,
@@ -27,7 +29,7 @@ export const FinishedPartNoticeModal: React.FC<FinishedPartNoticeModalProps> = (
   }, [onClose]);
 
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !enabled) return;
 
     setRemainingTime(durationSeconds);
     const totalMs = durationSeconds * 1000;
@@ -60,7 +62,7 @@ export const FinishedPartNoticeModal: React.FC<FinishedPartNoticeModalProps> = (
     };
   }, [isOpen, durationSeconds, labelNumber]);
 
-  if (!isOpen) return null;
+  if (!isOpen || !enabled) return null;
 
   const progressPercent = Math.max(0, Math.min(100, (remainingTime / durationSeconds) * 100));
 

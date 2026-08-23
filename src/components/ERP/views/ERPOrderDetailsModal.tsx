@@ -26,7 +26,8 @@ import {
   Lock,
   Package,
   PackageCheck,
-  Wrench
+  Wrench,
+  ShieldAlert
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee } from '../types';
 import { parseBirkaFile, BirkaParseResult, BirkaDetail } from '../utils/birkaParser';
@@ -37,6 +38,7 @@ import { FinishedPartNoticeModal } from '../components/FinishedPartNoticeModal';
 import { OrderClientPrivacyModal } from '../components/OrderClientPrivacyModal';
 import { HardwareSpecificationModal } from '../components/HardwareSpecificationModal';
 import { AssemblyFileModal } from '../components/AssemblyFileModal';
+import { ReportDefectModal } from '../components/ReportDefectModal';
 
 interface ERPOrderDetailsModalProps {
   order: ProductionOrder;
@@ -133,6 +135,7 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
   const [showHardwareModal, setShowHardwareModal] = useState(false);
   const [showAssemblyModal, setShowAssemblyModal] = useState(false);
+  const [defectTargetDetail, setDefectTargetDetail] = useState<any | null>(null);
 
   // Material & Scanning state
   const [selectedMaterial, setSelectedMaterial] = useState<string>('');
@@ -1000,6 +1003,7 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
                             <th className="px-4 py-3 text-center">Кол-во</th>
                             <th className="px-4 py-3 text-center">Кромка L1/L2/W1/W2</th>
                             <th className="px-4 py-3">Примечание / Спец-операции</th>
+                            <th className="px-4 py-3 text-right">Действие</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
@@ -1073,6 +1077,17 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
                                     ) : (
                                       <span className="text-slate-500 text-[11px]">{item.notes || '—'}</span>
                                     )}
+                                  </td>
+                                  <td className="px-4 py-3 text-right">
+                                    <button
+                                      type="button"
+                                      onClick={() => setDefectTargetDetail(item)}
+                                      className="px-2.5 py-1 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] border border-rose-200 transition-colors flex items-center gap-1 ml-auto cursor-pointer"
+                                      title="Зафиксировать брак детали и отправить в переделку"
+                                    >
+                                      <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
+                                      <span>Брак</span>
+                                    </button>
                                   </td>
                                 </tr>
                               );
@@ -1405,6 +1420,7 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
           labelNumber={finishedPartNotice.labelNumber}
           partName={finishedPartNotice.partName}
           materialName={finishedPartNotice.materialName}
+          enabled={settings?.finishedPartNoticeEnabled !== false}
           durationSeconds={settings?.finishedPartNoticeDuration ?? 5}
           onClose={() => setFinishedPartNotice(null)}
         />
@@ -1438,6 +1454,23 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
           onClose={() => setShowAssemblyModal(false)}
           onUpdateOrder={(updated) => {
             onUpdateOrder(updated);
+          }}
+        />
+      )}
+
+      {/* Report Defect Modal */}
+      {defectTargetDetail && (
+        <ReportDefectModal
+          isOpen={!!defectTargetDetail}
+          order={order}
+          detail={defectTargetDetail}
+          settings={settings}
+          currentUser={currentUser}
+          allOrders={[]}
+          onClose={() => setDefectTargetDetail(null)}
+          onDefectReported={(updatedMainOrder) => {
+            onUpdateOrder(updatedMainOrder);
+            setDefectTargetDetail(null);
           }}
         />
       )}

@@ -53,6 +53,7 @@ import { ERPCompanySettings, MachineEquipment, PackageLabelSettings, ProductionS
 import { DEFAULT_BIRKA_COLUMN_MAPPING } from '../utils/birkaParser';
 import { DEFAULT_HARDWARE_COLUMN_MAPPING } from '../utils/hardwareParser';
 import { WarehouseCatalogPickerModal } from '../components/WarehouseCatalogPickerModal';
+import { PrintQrCommandsModal } from '../components/PrintQrCommandsModal';
 import { evaluateBirkaQrTemplate, matchDetailToScannedCode, decomposeBarcodeForDiagnostics } from '../utils';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
@@ -262,6 +263,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
   })();
 
   const [stagesOrder, setStagesOrder] = useState<ProductionStageId[]>(initialStagesOrder);
+  const [isPrintQrModalOpen, setIsPrintQrModalOpen] = useState<boolean>(false);
 
   const [formData, setFormData] = useState<ERPCompanySettings>(() => ({
     ...settings,
@@ -2073,9 +2075,293 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
         </div>
       )}
 
-      {/* TAB 5: ADDITIONAL WORKS */}
+      {/* TAB 5: ADDITIONAL WORKS, NOTICES, DEFECTS, DOCUMENTS & QR COMMANDS */}
       {activeTab === 'additional' && (
         <div className="space-y-6">
+          {/* Section 1: Voice & Notice Toggle */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-4">
+            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-indigo-600" />
+              <span>Голосовые и визуальные всплывающие уведомления</span>
+            </h3>
+            <p className="text-xs text-slate-500">
+              Настройка уведомления при сканировании готовой детали (когда деталь прошла все промежуточные операции цеха).
+            </p>
+
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
+              <label className="flex items-center justify-between cursor-pointer">
+                <div>
+                  <div className="font-bold text-xs text-slate-900">
+                    Показывать окно и воспроизводить голос «Готовая деталь»
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    При включении программа выводит баннер и озвучивает "Готовая деталь". При отключении сотрудник сам ориентируется по списку без модальных окон.
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={formData.finishedPartNoticeEnabled ?? true}
+                  onChange={(e) => setFormData({ ...formData, finishedPartNoticeEnabled: e.target.checked })}
+                  className="w-5 h-5 rounded-lg border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0"
+                />
+              </label>
+
+              {(formData.finishedPartNoticeEnabled ?? true) && (
+                <div className="pt-3 border-t border-slate-200 flex items-center gap-3">
+                  <label className="text-xs font-bold text-slate-700 shrink-0">
+                    Длительность автоскрытия окна (секунд):
+                  </label>
+                  <input
+                    type="number"
+                    min={1}
+                    max={30}
+                    value={formData.finishedPartNoticeDuration ?? 5}
+                    onChange={(e) => setFormData({ ...formData, finishedPartNoticeDuration: Number(e.target.value) })}
+                    className="w-24 px-3 py-1.5 rounded-xl bg-white border border-slate-200 font-bold text-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                  />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Section 2: Defect Reasons Settings */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-4">
+            <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+              <AlertCircle className="w-5 h-5 text-rose-600" />
+              <span>Причины брака для переделки деталей</span>
+            </h3>
+            <p className="text-xs text-slate-500">
+              Список причин, из которых сотрудник выбирает при нажатии кнопки "Брак" на строке детали. По этим причинам создается не связанная с Битрикс24 задача переделки брака.
+            </p>
+
+            <div className="space-y-3">
+              {(formData.defectReasons || ['Скол при распиле', 'Ошибка кромкооблицовки', 'Брак присадки / ЧПУ', 'Царапина / Повреждение ЛДСП', 'Неверный размер / декор']).map((reason, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={reason}
+                    onChange={(e) => {
+                      const copy = [...(formData.defectReasons || ['Скол при распиле', 'Ошибка кромкооблицовки', 'Брак присадки / ЧПУ', 'Царапина / Повреждение ЛДСП', 'Неверный размер / декор'])];
+                      copy[idx] = e.target.value;
+                      setFormData({ ...formData, defectReasons: copy });
+                    }}
+                    className="flex-1 px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-rose-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const copy = (formData.defectReasons || ['Скол при распиле', 'Ошибка кромкооблицовки', 'Брак присадки / ЧПУ', 'Царапина / Повреждение ЛДСП', 'Неверный размер / декор']).filter((_, i) => i !== idx);
+                      setFormData({ ...formData, defectReasons: copy });
+                    }}
+                    className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+
+              <button
+                type="button"
+                onClick={() => {
+                  const copy = [...(formData.defectReasons || ['Скол при распиле', 'Ошибка кромкооблицовки', 'Брак присадки / ЧПУ', 'Царапина / Повреждение ЛДСП', 'Неверный размер / декор']), 'Новая причина брака'];
+                  setFormData({ ...formData, defectReasons: copy });
+                }}
+                className="px-4 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+              >
+                <Plus className="w-4 h-4" /> Добавить причину брака
+              </button>
+            </div>
+          </div>
+
+          {/* Section 3: Hardware Exclusions & Mandatory Kitting Documents */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-6">
+            <div>
+              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                <Box className="w-5 h-5 text-cyan-600" />
+                <span>Исключения и обязательные документы Комплектации</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Настройка автоматической фильтрации ведомости фурнитуры и добавление обязательных сопроводительных документов.
+              </p>
+            </div>
+
+            {/* Hardware Exclusions Keywords */}
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
+              <label className="block text-xs font-bold text-slate-900">
+                Исключать из загружаемого файла фурнитуры (через запятую):
+              </label>
+              <input
+                type="text"
+                value={(formData.hardwareExcludeKeywords || ['ЛДСП', 'ДСП', 'МДФ', 'ХДФ', 'Кромка', 'ПВХ', 'Столешница', 'Стеновая']).join(', ')}
+                onChange={(e) => {
+                  const arr = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                  setFormData({ ...formData, hardwareExcludeKeywords: arr });
+                }}
+                placeholder="ЛДСП, ДСП, МДФ, ХДФ, Кромка, ПВХ..."
+                className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-cyan-500"
+              />
+              <p className="text-[11px] text-slate-500">
+                Позиции, наименование или категория которых содержат указанные слова, будут автоматически пропускаться при загрузке ведомости фурнитуры.
+              </p>
+            </div>
+
+            {/* Mandatory Kitting Documents List */}
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-slate-900">
+                  Обязательные сопроводительные документы для укладки в коробку:
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const existing = formData.requiredKittingDocuments || [
+                      { id: 'doc-1', name: 'Чертежи для сборки', enabled: true },
+                      { id: 'doc-2', name: 'Акт приема-передачи', enabled: true }
+                    ];
+                    const nextDoc = { id: `doc-${Date.now()}`, name: 'Новый документ', enabled: true };
+                    setFormData({ ...formData, requiredKittingDocuments: [...existing, nextDoc] });
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-cyan-50 hover:bg-cyan-100 text-cyan-700 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Добавить документ
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {(formData.requiredKittingDocuments || [
+                  { id: 'doc-1', name: 'Чертежи для сборки', enabled: true },
+                  { id: 'doc-2', name: 'Акт приема-передачи', enabled: true }
+                ]).map((doc, dIdx) => (
+                  <div key={doc.id || dIdx} className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={doc.enabled}
+                      onChange={(e) => {
+                        const copy = [...(formData.requiredKittingDocuments || [])];
+                        copy[dIdx].enabled = e.target.checked;
+                        setFormData({ ...formData, requiredKittingDocuments: copy });
+                      }}
+                      className="w-4 h-4 rounded text-cyan-600 focus:ring-cyan-500 border-slate-300 cursor-pointer"
+                    />
+                    <input
+                      type="text"
+                      value={doc.name}
+                      onChange={(e) => {
+                        const copy = [...(formData.requiredKittingDocuments || [])];
+                        copy[dIdx].name = e.target.value;
+                        setFormData({ ...formData, requiredKittingDocuments: copy });
+                      }}
+                      className="flex-1 px-3 py-1.5 rounded-xl bg-white border border-slate-200 font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-cyan-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const copy = (formData.requiredKittingDocuments || []).filter((_, i) => i !== dIdx);
+                        setFormData({ ...formData, requiredKittingDocuments: copy });
+                      }}
+                      className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Section 4: QR Commands for Shop Floor Control */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                  <QrCode className="w-5 h-5 text-orange-600" />
+                  <span>Создание команд и QR-кодов управления без мыши</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Создавайте QR-кнопки действий для поднесения сканера. Вы можете распечатать их на А4 и наклеить возле станков и столов комплектовки.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setIsPrintQrModalOpen(true)}
+                className="px-4 py-2 rounded-2xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs shadow-md shadow-orange-600/20 transition-all flex items-center gap-2 cursor-pointer shrink-0"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Печать QR-команд (А4)</span>
+              </button>
+            </div>
+
+            {/* QR Commands Catalog & Custom Items */}
+            <div className="space-y-3">
+              {(formData.qrCommands || [
+                { id: 'cmd-1', commandKey: 'CMD_FINISH_PACKAGE', name: 'Закрыть коробку / место', description: 'Завершает текущую коробку в комплектовке и начинает следующую' },
+                { id: 'cmd-2', commandKey: 'CMD_START_SHIFT', name: 'Начать рабочую смену', description: 'Регистрирует приход сотрудника на смену' },
+                { id: 'cmd-3', commandKey: 'CMD_END_SHIFT', name: 'Завершить смену и показать отчет', description: 'Выводит сменный отчет выработки за день' }
+              ]).map((cmd, cIdx) => (
+                <div key={cmd.id || cIdx} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="px-2 py-0.5 rounded-lg bg-slate-900 text-white font-mono font-bold text-[10px]">
+                        {cmd.commandKey}
+                      </span>
+                      <strong className="text-xs text-slate-900 font-bold">{cmd.name}</strong>
+                    </div>
+                    {cmd.description && <p className="text-[11px] text-slate-500">{cmd.description}</p>}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const copy = (formData.qrCommands || []).filter((_, i) => i !== cIdx);
+                      setFormData({ ...formData, qrCommands: copy });
+                    }}
+                    className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer self-end md:self-auto"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+
+              <div className="pt-2 flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const existing = formData.qrCommands || [];
+                    const nextCmd = {
+                      id: `cmd-${Date.now()}`,
+                      commandKey: 'CMD_FINISH_PACKAGE',
+                      name: 'Закрыть коробку / место',
+                      description: 'Автоматически завершает место комплектовки'
+                    };
+                    setFormData({ ...formData, qrCommands: [...existing, nextCmd] });
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-orange-50 hover:bg-orange-100 text-orange-800 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" /> + Закрыть коробку
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const existing = formData.qrCommands || [];
+                    const nextCmd = {
+                      id: `cmd-${Date.now()}`,
+                      commandKey: 'CMD_END_SHIFT',
+                      name: 'Завершить смену',
+                      description: 'Выводит отчет выработки и завершает смену'
+                    };
+                    setFormData({ ...formData, qrCommands: [...existing, nextCmd] });
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" /> + Завершить смену
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 5: Additional Works Toggle */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-4">
             <h3 className="font-bold text-slate-900 text-base mb-1">Дополнительные производственные работы</h3>
             <p className="text-xs text-slate-400">Настройка отображения блока специфических работ (столешница, стеновая панель, нарезка штанги/трубы, нарезка цоколя) при планировании и загрузке бирок</p>
@@ -3488,6 +3774,17 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
           </div>
         </div>
       </div>
+
+      <PrintQrCommandsModal
+        isOpen={isPrintQrModalOpen}
+        qrCommands={formData.qrCommands || [
+          { id: 'cmd-1', commandKey: 'CMD_FINISH_PACKAGE', name: 'Закрыть коробку / место', description: 'Завершает текущую коробку в комплектовке и начинает следующую' },
+          { id: 'cmd-2', commandKey: 'CMD_START_SHIFT', name: 'Начать рабочую смену', description: 'Регистрирует приход сотрудника на смену' },
+          { id: 'cmd-3', commandKey: 'CMD_END_SHIFT', name: 'Завершить смену и показать отчет', description: 'Выводит сменный отчет выработки за день' }
+        ]}
+        companyTitle={companyName || 'Мебельное производство'}
+        onClose={() => setIsPrintQrModalOpen(false)}
+      />
     </div>
   );
 };

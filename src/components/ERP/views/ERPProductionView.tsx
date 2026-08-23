@@ -32,6 +32,8 @@ import { formatDeadlineDate, getNextRequiredStage } from '../utils';
 import { ERPOrderDetailsModal } from './ERPOrderDetailsModal';
 import { ERPDispatchView } from './ERPDispatchView';
 import { MobileCameraScannerModal } from '../components/MobileCameraScannerModal';
+import { ReportDefectModal } from '../components/ReportDefectModal';
+import { ShiftSummaryModal } from '../components/ShiftSummaryModal';
 
 interface ERPProductionViewProps {
   orders: ProductionOrder[];
@@ -62,6 +64,8 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<ProductionOrder | null>(null);
   const [showCameraScannerModal, setShowCameraScannerModal] = useState<boolean>(false);
   const [cameraScanFeedback, setCameraScanFeedback] = useState<string | null>(null);
+  const [showShiftModal, setShowShiftModal] = useState<boolean>(false);
+  const [reportingDefectDetail, setReportingDefectDetail] = useState<{ order: ProductionOrder; detail: any } | null>(null);
 
   const allStages: { id: ProductionStageId; name: string; icon: any; color: string; badgeColor: string; bgGradient: string }[] = [
     { id: 'cutting', name: 'Участок раскроя (Распил)', icon: Scissors, color: 'text-blue-600 border-blue-200 bg-blue-50', badgeColor: 'bg-blue-600 text-white', bgGradient: 'from-blue-50/50 to-white' },
@@ -202,6 +206,16 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            onClick={() => setShowShiftModal(true)}
+            className="px-4 py-2.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center gap-2 shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
+            title="Посмотреть выработку за день и отчет смены"
+          >
+            <Clock className="w-4 h-4" />
+            <span>Итоги смены / Выработка</span>
+          </button>
+
           <button
             onClick={() => setShowCameraScannerModal(true)}
             className="md:hidden px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs flex items-center gap-2 shadow-md shadow-indigo-200 transition-all cursor-pointer"
@@ -689,6 +703,38 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
         title="Сканирование заказа камерой"
         subtitle="Наведите камеру на QR-код или штрихкод бланка / бирки заказа"
       />
+
+      {/* Shift Summary Modal */}
+      <ShiftSummaryModal
+        isOpen={showShiftModal}
+        currentUser={currentUser}
+        orders={orders}
+        settings={settings}
+        onClose={() => setShowShiftModal(false)}
+        onConfirmEndShift={() => {
+          setShowShiftModal(false);
+        }}
+      />
+
+      {/* Report Defect Modal */}
+      {reportingDefectDetail && (
+        <ReportDefectModal
+          isOpen={!!reportingDefectDetail}
+          order={reportingDefectDetail.order}
+          detail={reportingDefectDetail.detail}
+          settings={settings}
+          currentUser={currentUser}
+          allOrders={orders}
+          onClose={() => setReportingDefectDetail(null)}
+          onDefectReported={(updatedMainOrder, defectTaskOrder) => {
+            if (onUpdateOrder) {
+              onUpdateOrder(updatedMainOrder);
+              onUpdateOrder(defectTaskOrder);
+            }
+            setReportingDefectDetail(null);
+          }}
+        />
+      )}
     </div>
   );
 };

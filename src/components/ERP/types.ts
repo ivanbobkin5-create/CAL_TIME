@@ -95,6 +95,21 @@ export interface EmployeeWorkLog {
   status: 'in_progress' | 'paused' | 'completed';
 }
 
+export interface OrderDefectItem {
+  id: string;
+  orderId: string;
+  orderNumber: string;
+  detailId?: string;
+  detailName: string;
+  labelNumber?: string;
+  material?: string;
+  reason: string;
+  reportedByEmployeeName?: string;
+  reportedAt: string;
+  targetStage: ProductionStageId;
+  notes?: string;
+}
+
 export interface ProductionOrder {
   id: string;
   orderNumber: string;
@@ -125,6 +140,12 @@ export interface ProductionOrder {
   bitrixUrl?: string;
   projectId?: string;
   activeWorkers?: any[];
+  
+  // Поля задачи брака
+  isDefectReworkOrder?: boolean;
+  parentOrderId?: string;
+  parentOrderNumber?: string;
+  defectItems?: OrderDefectItem[];
   
   // Дополнительные работы (столешница, стеновая, штанга, цоколь)
   additionalWorks?: AdditionalWorks;
@@ -459,7 +480,18 @@ export interface ERPCompanySettings {
   warehouseItemsCatalog?: Array<{ id: string; name: string; article?: string; category?: string; storageCell: string; updatedAt?: string }>;
 
   // Настройки уведомлений и ассистента сканирования
+  finishedPartNoticeEnabled?: boolean; // Включен/выключен вывод и озвучка сообщения "Готовая деталь"
   finishedPartNoticeDuration?: number; // Время автоскрытия сообщения "Готовая деталь" в секундах
+
+  // Настройки брака
+  defectReasons?: string[]; // Список причин брака (например: Скол при распиле, Ошибка присадки, Царапина, Не тот декор)
+
+  // Настройки загрузки и фильтрации фурнитуры
+  hardwareExcludeKeywords?: string[]; // Исключать из ведомости фурнитуры ключевые слова (ЛДСП, ДСП, МДФ, ХДФ, Кромка, ПВХ и т.д.)
+  requiredKittingDocuments?: Array<{ id: string; name: string; enabled: boolean }>; // Обязательные документы для укладки в коробки (Чертежи, Акт приема-передачи)
+
+  // QR-Команды управления цехом
+  qrCommands?: Array<{ id: string; commandKey: string; name: string; description?: string; createdAt?: string }>;
 
   // Сопоставление стадий ERP и Битрикс24
   bitrix24WebhookUrl?: string;

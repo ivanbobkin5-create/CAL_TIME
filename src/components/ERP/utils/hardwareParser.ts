@@ -106,10 +106,14 @@ function matchColumnIndex(headerCells: string[], aliases: string[]): number {
   return -1;
 }
 
+// Default excluded sheet and edge keywords
+export const DEFAULT_EXCLUDE_KEYWORDS = ["ЛДСП", "ДСП", "МДФ", "ХДФ", "Кромка", "ПВХ", "Столешница", "Стеновая", "ДВП"];
+
 // Parse Table Data (Array of Rows) into OrderHardwareItem[]
 export function parseTableRowsToHardware(
   rows: (string | number)[][],
-  customMapping?: Record<string, string[]>
+  customMapping?: Record<string, string[]>,
+  excludeKeywords: string[] = DEFAULT_EXCLUDE_KEYWORDS
 ): OrderHardwareItem[] {
   if (!rows || rows.length < 2) return [];
 
@@ -170,14 +174,22 @@ export function parseTableRowsToHardware(
       continue;
     }
 
+    const rawArt = artCol !== -1 && row[artCol] !== undefined && row[artCol] !== null ? String(row[artCol]).trim() : '';
+    const rawCategory = catCol !== -1 && row[catCol] !== undefined && row[catCol] !== null ? String(row[catCol]).trim() : currentGroupCategory;
+
+    // Check excluded keywords (sheet materials, edge, etc.)
+    const checkString = `${rawName} ${rawArt} ${rawCategory}`.toLowerCase();
+    const isExcluded = excludeKeywords.some(kw => kw.trim().length > 0 && checkString.includes(kw.trim().toLowerCase()));
+    if (isExcluded) {
+      continue; // Skip sheet material / edge item
+    }
+
     // Parse Quantity
     let rawQtyVal = qtyCol !== -1 && row[qtyCol] !== undefined && row[qtyCol] !== null ? String(row[qtyCol]) : '1';
     rawQtyVal = rawQtyVal.replace(/,/g, '.').replace(/[^\d.]/g, '');
     const quantity = parseFloat(rawQtyVal) || 1;
 
-    const rawArt = artCol !== -1 && row[artCol] !== undefined && row[artCol] !== null ? String(row[artCol]).trim() : '';
     const rawUnit = unitCol !== -1 && row[unitCol] !== undefined && row[unitCol] !== null ? String(row[unitCol]).trim() : 'шт';
-    const rawCategory = catCol !== -1 && row[catCol] !== undefined && row[catCol] !== null ? String(row[catCol]).trim() : currentGroupCategory;
     const rawNotes = noteCol !== -1 && row[noteCol] !== undefined && row[noteCol] !== null ? String(row[noteCol]).trim() : '';
 
     const category = detectHardwareCategory(rawName, rawArt, rawCategory);
