@@ -429,474 +429,462 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
 
       {/* Interactive Calendar View vs List View */}
       {planningViewTab === 'calendar' ? (
-        <div className="space-y-5">
-          {/* Calendar Navigation & Period Controls Bar */}
-          <div className="bg-white rounded-3xl p-4 md:p-5 border border-slate-200/90 shadow-sm space-y-3">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-              {/* Date Navigation */}
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200">
-                  <button
-                    onClick={handlePrevPeriod}
-                    className="p-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 shadow-2xs transition-all cursor-pointer"
-                    title="Предыдущий период"
-                  >
-                    <ChevronLeft className="w-4 h-4" />
-                  </button>
-                  <button
-                    onClick={handleTodayPeriod}
-                    className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
-                  >
-                    <CalendarIcon className="w-3.5 h-3.5" />
-                    <span>Сегодня</span>
-                  </button>
-                  <button
-                    onClick={handleNextPeriod}
-                    className="p-2 rounded-xl bg-white hover:bg-slate-50 text-slate-700 shadow-2xs transition-all cursor-pointer"
-                    title="Следующий период"
-                  >
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-
-                <span className="text-xs font-black text-slate-900 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200">
-                  {timelineDays[0].dayNum} {timelineDays[0].monthName} – {timelineDays[timelineDays.length - 1].dayNum} {timelineDays[timelineDays.length - 1].monthName} {timelineDays[timelineDays.length - 1].dateObj.getFullYear()}
-                </span>
-              </div>
-
-              {/* Period Horizon selector & Grid mode switch */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="flex items-center p-1 bg-slate-100 rounded-2xl border border-slate-200 text-xs font-bold">
-                  <button
-                    onClick={() => {
-                      setPeriodRange('1week');
-                      handleTodayPeriod();
-                    }}
-                    className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                      periodRange === '1week' ? 'bg-white text-blue-700 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Неделя (7 дн)
-                  </button>
-                  <button
-                    onClick={() => {
-                      setPeriodRange('2weeks');
-                      handleTodayPeriod();
-                    }}
-                    className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                      periodRange === '2weeks' ? 'bg-white text-blue-700 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    2 недели (14 дн)
-                  </button>
-                  <button
-                    onClick={() => {
-                      setPeriodRange('month');
-                      handleTodayPeriod();
-                    }}
-                    className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
-                      periodRange === 'month' ? 'bg-white text-blue-700 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Месяц (30 дн)
-                  </button>
-                </div>
-
-                {/* Rows Display Mode: Stages vs Orders */}
-                <div className="flex items-center p-1 bg-indigo-50/90 rounded-2xl border border-indigo-200 text-xs font-bold">
-                  <button
-                    onClick={() => setGridRowsMode('stages')}
-                    className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1 ${
-                      gridRowsMode === 'stages' ? 'bg-indigo-600 text-white shadow-2xs font-black' : 'text-indigo-900 hover:text-indigo-950'
-                    }`}
-                  >
-                    <Factory className="w-3.5 h-3.5" />
-                    <span>Участки слева</span>
-                  </button>
-                  <button
-                    onClick={() => setGridRowsMode('orders')}
-                    className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1 ${
-                      gridRowsMode === 'orders' ? 'bg-indigo-600 text-white shadow-2xs font-black' : 'text-indigo-900 hover:text-indigo-950'
-                    }`}
-                  >
-                    <Box className="w-3.5 h-3.5" />
-                    <span>Заказы слева</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Queue Drawer: Collapsible Section for Unscheduled Orders & Stage Tasks */}
-          <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden">
-            <div
-              onClick={() => setIsQueueDrawerOpen(!isQueueDrawerOpen)}
-              className="p-4 bg-slate-50/80 hover:bg-slate-100/80 border-b border-slate-200 flex items-center justify-between cursor-pointer transition-colors"
-            >
-              <div className="flex items-center gap-2.5">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+          {/* Persistent Left Sidebar: Orders & Stage Tasks Queue */}
+          <div className="lg:col-span-4 xl:col-span-3 bg-white rounded-3xl p-4 border border-slate-200/90 shadow-sm space-y-3 lg:sticky lg:top-4 max-h-[calc(100vh-80px)] flex flex-col">
+            {/* Sidebar Title & Count */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-2">
                 <div className="p-1.5 rounded-xl bg-blue-100 text-blue-700">
                   <GripVertical className="w-4 h-4" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                    <span>📦 Очередь нераспределенных заказов и задач</span>
-                    <span className="px-2 py-0.5 rounded-md bg-blue-600 text-white text-xs font-mono font-bold">
-                      {filteredOrders.length}
-                    </span>
+                  <h3 className="font-black text-slate-900 text-xs uppercase tracking-wider">
+                    Очередь заказов
                   </h3>
-                  <p className="text-[11px] text-slate-500 font-medium">
-                    Кликните чтобы развернуть заказ и перетащить задачи участков в ячейки календаря
+                  <p className="text-[10px] text-slate-500 font-medium">
+                    Зажмите этап и тащите в календарь
                   </p>
                 </div>
               </div>
-
-              <div className="flex items-center gap-3">
-                <div className="relative w-48 md:w-64" onClick={(e) => e.stopPropagation()}>
-                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    placeholder="Фильтр в очереди..."
-                    value={search}
-                    onChange={(e) => setSearch(e.target.value)}
-                    className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:outline-none"
-                  />
-                </div>
-
-                <button className="p-1.5 rounded-xl text-slate-500 hover:bg-slate-200 transition-colors">
-                  {isQueueDrawerOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
-                </button>
-              </div>
+              <span className="px-2 py-0.5 rounded-md bg-blue-600 text-white text-xs font-mono font-bold">
+                {filteredOrders.length}
+              </span>
             </div>
 
-            {isQueueDrawerOpen && (
-              <div className="p-4 max-h-[300px] overflow-y-auto space-y-2.5 bg-slate-50/30">
-                {filteredOrders.length === 0 ? (
-                  <div className="py-6 text-center text-xs text-slate-400 font-medium">
-                    Нет заказов в очереди
-                  </div>
-                ) : (
-                  filteredOrders.map(order => {
-                    const isExpanded = !!expandedOrdersMap[order.id];
-                    const stageDates = order.stagePlannedDates || {};
+            {/* Filter Input */}
+            <div className="relative shrink-0">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Поиск заказа..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:bg-white"
+              />
+            </div>
 
-                    return (
-                      <div key={order.id} className="bg-white rounded-2xl border border-slate-200 p-3 shadow-2xs space-y-2">
-                        <div
-                          onClick={() => toggleOrderExpanded(order.id)}
-                          className="flex items-center justify-between gap-3 cursor-pointer select-none"
-                        >
-                          <div className="flex items-center gap-2 min-w-0">
-                            <button className="p-1 rounded-lg hover:bg-slate-100 text-slate-500">
-                              {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                            </button>
-                            <span className="font-mono font-black text-xs text-slate-900 bg-slate-100 px-2 py-0.5 rounded-lg border border-slate-200 shrink-0">
-                              №{order.orderNumber}
-                            </span>
-                            <span className="text-xs font-bold text-slate-800 truncate">
-                              {order.clientName || order.projectName}
-                            </span>
-                            {order.priority === 'urgent' && (
-                              <span className="px-1.5 py-0.5 rounded-md bg-red-100 text-red-700 text-[10px] font-black shrink-0">
-                                🚨 Срочно
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-2 shrink-0">
-                            <span className="text-[11px] font-medium text-slate-500">
-                              {order.partsCount || 0} дет.
-                            </span>
-                            <button
-                              onClick={(e) => handleLaunchToProduction(order, e)}
-                              className="px-2.5 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] transition-all flex items-center gap-1 cursor-pointer"
-                            >
-                              <Play className="w-3 h-3 fill-current" />
-                              <span>Запустить</span>
-                            </button>
-                          </div>
-                        </div>
-
-                        {/* Sub-stage tasks when expanded */}
-                        {isExpanded && (
-                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2 pt-2 border-t border-slate-100">
-                            {STAGE_CONFIGS.map(st => {
-                              const StIcon = st.icon;
-                              const assignedDate = stageDates[st.id] || (st.id === 'cutting' ? order.plannedCuttingDate : null);
-
-                              return (
-                                <div
-                                  key={st.id}
-                                  draggable={true}
-                                  onDragStart={() => setDraggedStageTask({ orderId: order.id, stageId: st.id })}
-                                  className={`p-2 rounded-xl border text-xs font-bold flex items-center justify-between gap-1 transition-all shadow-2xs ${
-                                    assignedDate 
-                                      ? 'bg-emerald-50 border-emerald-300 text-emerald-900' 
-                                      : 'bg-white border-dashed border-slate-300 text-slate-700 hover:border-blue-400 cursor-grab active:cursor-grabbing'
-                                  }`}
-                                  title={assignedDate ? `Назначена на ${assignedDate}` : 'Перетащите в календарь'}
-                                >
-                                  <div className="flex items-center gap-1.5 min-w-0">
-                                    <StIcon className={`w-3.5 h-3.5 shrink-0 ${st.color}`} />
-                                    <span className="truncate text-[11px]">{st.shortName}</span>
-                                  </div>
-
-                                  {assignedDate ? (
-                                    <span className="text-[10px] font-mono font-bold text-emerald-700 shrink-0">
-                                      {assignedDate.split('-').slice(1).join('.')}
-                                    </span>
-                                  ) : (
-                                    <GripVertical className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                                  )}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Main Planner Matrix Grid (Table with Sticky Left Column) */}
-          <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-x-auto">
-            <div className="min-w-[900px]">
-              {/* Matrix Header Row: Dates across the top */}
-              <div className="flex border-b border-slate-200 bg-slate-100/90 sticky top-0 z-20 text-xs font-black text-slate-700">
-                <div className="w-64 p-3 shrink-0 border-r border-slate-200 flex items-center gap-2 bg-slate-100">
-                  <Factory className="w-4 h-4 text-blue-600" />
-                  <span>{gridRowsMode === 'stages' ? 'Участки производства' : 'Заказы и этапы'}</span>
-                </div>
-
-                <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${timelineDays.length}, minmax(110px, 1fr))` }}>
-                  {timelineDays.map(day => (
-                    <div
-                      key={day.dateStr}
-                      className={`p-2.5 text-center border-r border-slate-200 last:border-r-0 flex flex-col items-center justify-center gap-0.5 ${
-                        day.isToday 
-                          ? 'bg-blue-600 text-white font-black' 
-                          : day.isWeekend 
-                            ? 'bg-slate-200/60 text-slate-800' 
-                            : 'bg-slate-100 text-slate-800'
-                      }`}
-                    >
-                      <div className="flex items-center gap-1 text-[11px]">
-                        <span>{day.dayName}</span>
-                        <span className="font-mono font-extrabold">{day.dayNum}</span>
-                        <span className="text-[10px] opacity-80">{day.monthName}</span>
-                      </div>
-                      {day.isToday && (
-                        <span className="text-[9px] uppercase font-black tracking-wider bg-white/20 px-1.5 rounded">
-                          Сегодня
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Grid Rows Body */}
-              {gridRowsMode === 'stages' ? (
-                /* STAGES AS ROWS */
-                <div className="divide-y divide-slate-200">
-                  {STAGE_CONFIGS.map(st => {
-                    const StIcon = st.icon;
-
-                    return (
-                      <div key={st.id} className="flex min-h-[90px] hover:bg-slate-50/50 transition-colors">
-                        {/* Row Header: Stage name & icon */}
-                        <div className="w-64 p-3 shrink-0 border-r border-slate-200 flex flex-col justify-center bg-slate-50/80">
-                          <div className="flex items-center gap-2 font-black text-slate-900 text-xs">
-                            <div className={`p-1.5 rounded-xl border ${st.bg}`}>
-                              <StIcon className={`w-4 h-4 ${st.color}`} />
-                            </div>
-                            <span>{st.name}</span>
-                          </div>
-                        </div>
-
-                        {/* Day Cells for this stage */}
-                        <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${timelineDays.length}, minmax(110px, 1fr))` }}>
-                          {timelineDays.map(day => {
-                            // Find tasks assigned to this stage on this day
-                            const tasksInCell: ProductionOrder[] = [];
-                            orders.forEach(o => {
-                              const sDates = o.stagePlannedDates || {};
-                              const assigned = sDates[st.id] || (st.id === 'cutting' ? o.plannedCuttingDate : null);
-                              if (assigned === day.dateStr) {
-                                tasksInCell.push(o);
-                              }
-                            });
-
-                            return (
-                              <div
-                                key={day.dateStr}
-                                onDragOver={(e) => e.preventDefault()}
-                                onDrop={(e) => {
-                                  e.preventDefault();
-                                  if (draggedStageTask) {
-                                    handleAssignStageTaskToDate(draggedStageTask.orderId, draggedStageTask.stageId, day.dateStr);
-                                    setDraggedStageTask(null);
-                                  }
-                                }}
-                                className={`p-1.5 border-r border-slate-200 last:border-r-0 space-y-1 overflow-y-auto max-h-[160px] transition-colors ${
-                                  day.isToday ? 'bg-blue-50/20' : day.isWeekend ? 'bg-slate-50/50' : ''
-                                }`}
-                              >
-                                {tasksInCell.map(order => (
-                                  <div
-                                    key={order.id}
-                                    draggable={true}
-                                    onDragStart={() => setDraggedStageTask({ orderId: order.id, stageId: st.id })}
-                                    className={`px-2 py-1.5 rounded-xl border bg-white shadow-2xs hover:shadow-md transition-all text-xs font-bold flex items-center justify-between gap-1 group cursor-grab active:cursor-grabbing ${
-                                      order.priority === 'urgent' ? 'border-red-300 ring-1 ring-red-200' : 'border-slate-200'
-                                    }`}
-                                  >
-                                    <div className="flex items-center gap-1 min-w-0">
-                                      <span className="font-mono font-black text-[11px] text-slate-900 shrink-0">
-                                        №{order.orderNumber}
-                                      </span>
-                                      <span className="text-[10px] text-slate-600 truncate max-w-[60px]">
-                                        {order.clientName || order.projectName}
-                                      </span>
-                                    </div>
-
-                                    <button
-                                      onClick={() => handleAssignStageTaskToDate(order.id, st.id, null)}
-                                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-600 transition-all cursor-pointer"
-                                      title="Убрать из этой даты"
-                                    >
-                                      <X className="w-3 h-3" />
-                                    </button>
-                                  </div>
-                                ))}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
+            {/* List of Orders & Drag-and-drop Stage Tasks */}
+            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+              {filteredOrders.length === 0 ? (
+                <div className="py-8 text-center text-xs text-slate-400 font-medium">
+                  Заказы не найдены
                 </div>
               ) : (
-                /* ORDERS AS ROWS */
-                <div className="divide-y divide-slate-200">
-                  {filteredOrders.length === 0 ? (
-                    <div className="py-8 text-center text-xs text-slate-400 font-medium">
-                      Заказов не найдено
-                    </div>
-                  ) : (
-                    filteredOrders.map(order => {
-                      const isExpanded = !!expandedOrdersMap[order.id];
-                      const stageDates = order.stagePlannedDates || {};
+                filteredOrders.map(order => {
+                  const isExpanded = expandedOrdersMap[order.id] !== false; // Default expanded
+                  const stageDates = order.stagePlannedDates || {};
 
-                      return (
-                        <div key={order.id} className="divide-y divide-slate-100">
-                          {/* Order Parent Row */}
-                          <div className="flex min-h-[48px] bg-slate-50/90 font-bold text-xs items-center">
-                            <div
-                              onClick={() => toggleOrderExpanded(order.id)}
-                              className="w-64 p-3 shrink-0 border-r border-slate-200 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition-colors"
-                            >
-                              <div className="flex items-center gap-2 min-w-0">
-                                {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-slate-500" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-500" />}
-                                <span className="font-mono font-black text-slate-900 bg-white px-1.5 py-0.5 rounded border border-slate-200">
-                                  №{order.orderNumber}
-                                </span>
-                                <span className="truncate text-slate-800 text-[11px]">
-                                  {order.clientName || order.projectName}
-                                </span>
-                              </div>
-                            </div>
+                  return (
+                    <div key={order.id} className="bg-slate-50/90 rounded-2xl border border-slate-200 p-2.5 shadow-2xs space-y-2 hover:border-slate-300 transition-all">
+                      {/* Order Header */}
+                      <div
+                        onClick={() => toggleOrderExpanded(order.id)}
+                        className="flex items-center justify-between gap-2 cursor-pointer select-none"
+                      >
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <button className="p-0.5 rounded text-slate-400 hover:text-slate-700">
+                            {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                          </button>
+                          <span className="font-mono font-black text-xs text-slate-900 bg-white px-2 py-0.5 rounded-lg border border-slate-200 shrink-0">
+                            №{order.orderNumber}
+                          </span>
+                          <span className="text-xs font-bold text-slate-800 truncate">
+                            {order.clientName || order.projectName}
+                          </span>
+                        </div>
 
-                            {/* Timeline row summary for this order */}
-                            <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${timelineDays.length}, minmax(110px, 1fr))` }}>
-                              {timelineDays.map(day => {
-                                // Find all stage tasks of this order on this day
-                                const assignedStages = STAGE_CONFIGS.filter(st => {
-                                  const assigned = stageDates[st.id] || (st.id === 'cutting' ? order.plannedCuttingDate : null);
-                                  return assigned === day.dateStr;
-                                });
+                        {order.priority === 'urgent' && (
+                          <span className="px-1.5 py-0.5 rounded-md bg-red-100 text-red-700 text-[9px] font-black shrink-0">
+                            🚨 Срочно
+                          </span>
+                        )}
+                      </div>
 
-                                return (
-                                  <div key={day.dateStr} className="p-1 border-r border-slate-200 last:border-r-0 flex flex-wrap gap-1 items-center justify-center">
-                                    {assignedStages.map(st => {
-                                      const StIcon = st.icon;
-                                      return (
-                                        <span key={st.id} className={`px-1.5 py-0.5 rounded-md border text-[9px] font-black flex items-center gap-0.5 ${st.bg}`} title={st.name}>
-                                          <StIcon className="w-2.5 h-2.5" />
-                                          <span>{st.shortName}</span>
-                                        </span>
-                                      );
-                                    })}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          {/* Expanded Order Stage Sub-Rows */}
-                          {isExpanded && STAGE_CONFIGS.map(st => {
+                      {/* Stage tasks pills */}
+                      {isExpanded && (
+                        <div className="grid grid-cols-2 gap-1.5 pt-1.5 border-t border-slate-200/70">
+                          {STAGE_CONFIGS.map(st => {
                             const StIcon = st.icon;
                             const assignedDate = stageDates[st.id] || (st.id === 'cutting' ? order.plannedCuttingDate : null);
 
                             return (
-                              <div key={st.id} className="flex min-h-[38px] bg-white text-xs hover:bg-slate-50/40">
-                                <div className="w-64 pl-8 pr-3 py-2 shrink-0 border-r border-slate-200 flex items-center justify-between text-[11px] text-slate-700">
-                                  <span className="flex items-center gap-1.5 font-bold">
-                                    <StIcon className={`w-3.5 h-3.5 ${st.color}`} />
-                                    <span>{st.name}</span>
+                              <div
+                                key={st.id}
+                                draggable={true}
+                                onDragStart={() => setDraggedStageTask({ orderId: order.id, stageId: st.id })}
+                                className={`p-1.5 rounded-xl border text-xs font-bold flex flex-col gap-0.5 cursor-grab active:cursor-grabbing transition-all hover:scale-[1.02] shadow-2xs ${
+                                  assignedDate 
+                                    ? 'bg-emerald-50/90 border-emerald-300 text-emerald-900' 
+                                    : 'bg-white border-slate-200 text-slate-700 hover:border-blue-400 hover:shadow-sm'
+                                }`}
+                                title="Зажмите мышку и перетащите в календарь"
+                              >
+                                <div className="flex items-center justify-between gap-1">
+                                  <span className="flex items-center gap-1 min-w-0">
+                                    <StIcon className={`w-3.5 h-3.5 shrink-0 ${st.color}`} />
+                                    <span className="truncate text-[11px] font-extrabold">{st.shortName}</span>
                                   </span>
+                                  <GripVertical className="w-3 h-3 text-slate-300 shrink-0" />
                                 </div>
 
-                                <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${timelineDays.length}, minmax(110px, 1fr))` }}>
-                                  {timelineDays.map(day => {
-                                    const isAssignedToThisDay = assignedDate === day.dateStr;
-
-                                    return (
-                                      <div
-                                        key={day.dateStr}
-                                        onDragOver={(e) => e.preventDefault()}
-                                        onDrop={(e) => {
-                                          e.preventDefault();
-                                          if (draggedStageTask) {
-                                            handleAssignStageTaskToDate(draggedStageTask.orderId, draggedStageTask.stageId, day.dateStr);
-                                            setDraggedStageTask(null);
-                                          }
-                                        }}
-                                        className={`p-1 border-r border-slate-200 last:border-r-0 flex items-center justify-center transition-colors ${
-                                          isAssignedToThisDay ? 'bg-emerald-50/80' : ''
-                                        }`}
-                                      >
-                                        {isAssignedToThisDay && (
-                                          <div
-                                            draggable={true}
-                                            onDragStart={() => setDraggedStageTask({ orderId: order.id, stageId: st.id })}
-                                            className={`px-2 py-1 rounded-lg border text-[10px] font-black flex items-center justify-between gap-1 w-full bg-white border-emerald-300 text-emerald-900 shadow-2xs group cursor-grab active:cursor-grabbing`}
-                                          >
-                                            <span className="truncate">№{order.orderNumber}</span>
-                                            <button
-                                              onClick={() => handleAssignStageTaskToDate(order.id, st.id, null)}
-                                              className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-600 transition-all cursor-pointer"
-                                            >
-                                              <X className="w-3 h-3" />
-                                            </button>
-                                          </div>
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
+                                {assignedDate ? (
+                                  <span className="text-[9px] font-mono font-black text-emerald-700 bg-white/90 px-1 py-0.5 rounded border border-emerald-200 self-start">
+                                    📅 {assignedDate.split('-').slice(1).join('.')}
+                                  </span>
+                                ) : (
+                                  <span className="text-[9px] text-amber-700 font-semibold bg-amber-50 px-1 py-0.5 rounded border border-amber-200 self-start">
+                                    ⚠️ В план
+                                  </span>
+                                )}
                               </div>
                             );
                           })}
                         </div>
-                      );
-                    })
-                  )}
-                </div>
+                      )}
+                    </div>
+                  );
+                })
               )}
+            </div>
+          </div>
+
+          {/* Right Area: Interactive Calendar Matrix Grid */}
+          <div className="lg:col-span-8 xl:col-span-9 space-y-4 min-w-0">
+            {/* Calendar Controls Bar */}
+            <div className="bg-white rounded-3xl p-4 border border-slate-200/90 shadow-sm space-y-3">
+              <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+                {/* Navigation */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200">
+                    <button
+                      onClick={handlePrevPeriod}
+                      className="p-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 shadow-2xs transition-all cursor-pointer"
+                      title="Назад"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={handleTodayPeriod}
+                      className="px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
+                    >
+                      <CalendarIcon className="w-3.5 h-3.5" />
+                      <span>Сегодня</span>
+                    </button>
+                    <button
+                      onClick={handleNextPeriod}
+                      className="p-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-700 shadow-2xs transition-all cursor-pointer"
+                      title="Вперед"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <span className="text-xs font-black text-slate-900 bg-slate-50 px-3 py-2 rounded-xl border border-slate-200">
+                    {timelineDays[0].dayNum} {timelineDays[0].monthName} – {timelineDays[timelineDays.length - 1].dayNum} {timelineDays[timelineDays.length - 1].monthName} {timelineDays[timelineDays.length - 1].dateObj.getFullYear()}
+                  </span>
+                </div>
+
+                {/* Horizon and Mode Switcher */}
+                <div className="flex items-center gap-2 flex-wrap">
+                  {/* Period Horizon */}
+                  <div className="flex items-center p-1 bg-slate-100 rounded-2xl border border-slate-200 text-xs font-bold">
+                    <button
+                      onClick={() => {
+                        setPeriodRange('1week');
+                        handleTodayPeriod();
+                      }}
+                      className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                        periodRange === '1week' ? 'bg-white text-blue-700 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Неделя
+                    </button>
+                    <button
+                      onClick={() => {
+                        setPeriodRange('2weeks');
+                        handleTodayPeriod();
+                      }}
+                      className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                        periodRange === '2weeks' ? 'bg-white text-blue-700 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      2 недели
+                    </button>
+                    <button
+                      onClick={() => {
+                        setPeriodRange('month');
+                        handleTodayPeriod();
+                      }}
+                      className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer ${
+                        periodRange === 'month' ? 'bg-white text-blue-700 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      Месяц
+                    </button>
+                  </div>
+
+                  {/* Rows Mode */}
+                  <div className="flex items-center p-1 bg-indigo-50 rounded-2xl border border-indigo-200 text-xs font-bold">
+                    <button
+                      onClick={() => setGridRowsMode('stages')}
+                      className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1 ${
+                        gridRowsMode === 'stages' ? 'bg-indigo-600 text-white shadow-2xs font-black' : 'text-indigo-900 hover:text-indigo-950'
+                      }`}
+                    >
+                      <Factory className="w-3.5 h-3.5" />
+                      <span>Участки слева</span>
+                    </button>
+                    <button
+                      onClick={() => setGridRowsMode('orders')}
+                      className={`px-3 py-1.5 rounded-xl transition-all cursor-pointer flex items-center gap-1 ${
+                        gridRowsMode === 'orders' ? 'bg-indigo-600 text-white shadow-2xs font-black' : 'text-indigo-900 hover:text-indigo-950'
+                      }`}
+                    >
+                      <Box className="w-3.5 h-3.5" />
+                      <span>Заказы слева</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Matrix Calendar Grid */}
+            <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-x-auto">
+              <div className="min-w-[850px]">
+                {/* Table Header: Date Columns */}
+                <div className="flex border-b border-slate-200 bg-slate-100/90 sticky top-0 z-20 text-xs font-black text-slate-700">
+                  <div className="w-56 p-3 shrink-0 border-r border-slate-200 flex items-center gap-2 bg-slate-100">
+                    <Factory className="w-4 h-4 text-blue-600" />
+                    <span>{gridRowsMode === 'stages' ? 'Участки производства' : 'Заказы и этапы'}</span>
+                  </div>
+
+                  <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${timelineDays.length}, minmax(110px, 1fr))` }}>
+                    {timelineDays.map(day => (
+                      <div
+                        key={day.dateStr}
+                        className={`p-2 text-center border-r border-slate-200 last:border-r-0 flex flex-col items-center justify-center gap-0.5 ${
+                          day.isToday 
+                            ? 'bg-blue-600 text-white font-black' 
+                            : day.isWeekend 
+                              ? 'bg-slate-200/60 text-slate-800' 
+                              : 'bg-slate-100 text-slate-800'
+                        }`}
+                      >
+                        <div className="flex items-center gap-1 text-[11px]">
+                          <span>{day.dayName}</span>
+                          <span className="font-mono font-extrabold">{day.dayNum}</span>
+                          <span className="text-[10px] opacity-80">{day.monthName}</span>
+                        </div>
+                        {day.isToday && (
+                          <span className="text-[9px] uppercase font-black tracking-wider bg-white/20 px-1.5 rounded">
+                            Сегодня
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Table Body */}
+                {gridRowsMode === 'stages' ? (
+                  /* MODE A: STAGES AS ROWS */
+                  <div className="divide-y divide-slate-200">
+                    {STAGE_CONFIGS.map(st => {
+                      const StIcon = st.icon;
+
+                      return (
+                        <div key={st.id} className="flex min-h-[90px] hover:bg-slate-50/50 transition-colors">
+                          {/* Stage Row Header */}
+                          <div className="w-56 p-3 shrink-0 border-r border-slate-200 flex flex-col justify-center bg-slate-50/80">
+                            <div className="flex items-center gap-2 font-black text-slate-900 text-xs">
+                              <div className={`p-1.5 rounded-xl border ${st.bg}`}>
+                                <StIcon className={`w-4 h-4 ${st.color}`} />
+                              </div>
+                              <span>{st.name}</span>
+                            </div>
+                          </div>
+
+                          {/* Day Cells for this stage */}
+                          <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${timelineDays.length}, minmax(110px, 1fr))` }}>
+                            {timelineDays.map(day => {
+                              const tasksInCell: ProductionOrder[] = [];
+                              orders.forEach(o => {
+                                const sDates = o.stagePlannedDates || {};
+                                const assigned = sDates[st.id] || (st.id === 'cutting' ? o.plannedCuttingDate : null);
+                                if (assigned === day.dateStr) {
+                                  tasksInCell.push(o);
+                                }
+                              });
+
+                              return (
+                                <div
+                                  key={day.dateStr}
+                                  onDragOver={(e) => e.preventDefault()}
+                                  onDrop={(e) => {
+                                    e.preventDefault();
+                                    if (draggedStageTask) {
+                                      handleAssignStageTaskToDate(draggedStageTask.orderId, draggedStageTask.stageId, day.dateStr);
+                                      setDraggedStageTask(null);
+                                    }
+                                  }}
+                                  className={`p-1.5 border-r border-slate-200 last:border-r-0 space-y-1 overflow-y-auto max-h-[160px] transition-colors ${
+                                    day.isToday ? 'bg-blue-50/20' : day.isWeekend ? 'bg-slate-50/30' : ''
+                                  }`}
+                                >
+                                  {tasksInCell.map(order => (
+                                    <div
+                                      key={order.id}
+                                      draggable={true}
+                                      onDragStart={() => setDraggedStageTask({ orderId: order.id, stageId: st.id })}
+                                      className={`px-2 py-1.5 rounded-xl border bg-white shadow-2xs hover:shadow-md transition-all text-xs font-bold flex items-center justify-between gap-1 group cursor-grab active:cursor-grabbing ${
+                                        order.priority === 'urgent' ? 'border-red-300 ring-1 ring-red-200' : 'border-slate-200'
+                                      }`}
+                                    >
+                                      <div className="flex items-center gap-1 min-w-0">
+                                        <span className="font-mono font-black text-[11px] text-slate-900 shrink-0">
+                                          №{order.orderNumber}
+                                        </span>
+                                        <span className="text-[10px] text-slate-600 truncate max-w-[55px]">
+                                          {order.clientName || order.projectName}
+                                        </span>
+                                      </div>
+
+                                      <button
+                                        onClick={() => handleAssignStageTaskToDate(order.id, st.id, null)}
+                                        className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-600 transition-all cursor-pointer"
+                                        title="Снять с даты"
+                                      >
+                                        <X className="w-3 h-3" />
+                                      </button>
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  /* MODE B: ORDERS AS ROWS */
+                  <div className="divide-y divide-slate-200">
+                    {filteredOrders.length === 0 ? (
+                      <div className="py-8 text-center text-xs text-slate-400 font-medium">
+                        Заказов не найдено
+                      </div>
+                    ) : (
+                      filteredOrders.map(order => {
+                        const isExpanded = !!expandedOrdersMap[order.id];
+                        const stageDates = order.stagePlannedDates || {};
+
+                        return (
+                          <div key={order.id} className="divide-y divide-slate-100">
+                            {/* Order Parent Row */}
+                            <div className="flex min-h-[44px] bg-slate-50/90 font-bold text-xs items-center">
+                              <div
+                                onClick={() => toggleOrderExpanded(order.id)}
+                                className="w-56 p-3 shrink-0 border-r border-slate-200 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition-colors"
+                              >
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  {isExpanded ? <ChevronUp className="w-3.5 h-3.5 text-slate-500" /> : <ChevronDown className="w-3.5 h-3.5 text-slate-500" />}
+                                  <span className="font-mono font-black text-slate-900 bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                                    №{order.orderNumber}
+                                  </span>
+                                  <span className="truncate text-slate-800 text-[11px]">
+                                    {order.clientName || order.projectName}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* Stage summary on order row */}
+                              <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${timelineDays.length}, minmax(110px, 1fr))` }}>
+                                {timelineDays.map(day => {
+                                  const assignedStages = STAGE_CONFIGS.filter(st => {
+                                    const assigned = stageDates[st.id] || (st.id === 'cutting' ? order.plannedCuttingDate : null);
+                                    return assigned === day.dateStr;
+                                  });
+
+                                  return (
+                                    <div key={day.dateStr} className="p-1 border-r border-slate-200 last:border-r-0 flex flex-wrap gap-1 items-center justify-center">
+                                      {assignedStages.map(st => {
+                                        const StIcon = st.icon;
+                                        return (
+                                          <span key={st.id} className={`px-1.5 py-0.5 rounded-md border text-[9px] font-black flex items-center gap-0.5 ${st.bg}`} title={st.name}>
+                                            <StIcon className="w-2.5 h-2.5" />
+                                            <span>{st.shortName}</span>
+                                          </span>
+                                        );
+                                      })}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Sub-rows for each stage of order */}
+                            {isExpanded && STAGE_CONFIGS.map(st => {
+                              const StIcon = st.icon;
+                              const assignedDate = stageDates[st.id] || (st.id === 'cutting' ? order.plannedCuttingDate : null);
+
+                              return (
+                                <div key={st.id} className="flex min-h-[38px] bg-white text-xs hover:bg-slate-50/40">
+                                  <div className="w-56 pl-7 pr-3 py-1.5 shrink-0 border-r border-slate-200 flex items-center justify-between text-[11px] text-slate-700">
+                                    <span className="flex items-center gap-1.5 font-bold">
+                                      <StIcon className={`w-3.5 h-3.5 ${st.color}`} />
+                                      <span>{st.name}</span>
+                                    </span>
+                                  </div>
+
+                                  <div className="flex-1 grid" style={{ gridTemplateColumns: `repeat(${timelineDays.length}, minmax(110px, 1fr))` }}>
+                                    {timelineDays.map(day => {
+                                      const isAssignedToThisDay = assignedDate === day.dateStr;
+
+                                      return (
+                                        <div
+                                          key={day.dateStr}
+                                          onDragOver={(e) => e.preventDefault()}
+                                          onDrop={(e) => {
+                                            e.preventDefault();
+                                            if (draggedStageTask) {
+                                              handleAssignStageTaskToDate(draggedStageTask.orderId, draggedStageTask.stageId, day.dateStr);
+                                              setDraggedStageTask(null);
+                                            }
+                                          }}
+                                          className={`p-1 border-r border-slate-200 last:border-r-0 flex items-center justify-center transition-colors ${
+                                            isAssignedToThisDay ? 'bg-emerald-50/80' : ''
+                                          }`}
+                                        >
+                                          {isAssignedToThisDay && (
+                                            <div
+                                              draggable={true}
+                                              onDragStart={() => setDraggedStageTask({ orderId: order.id, stageId: st.id })}
+                                              className="px-2 py-1 rounded-lg border text-[10px] font-black flex items-center justify-between gap-1 w-full bg-white border-emerald-300 text-emerald-900 shadow-2xs group cursor-grab active:cursor-grabbing"
+                                            >
+                                              <span className="truncate">№{order.orderNumber}</span>
+                                              <button
+                                                onClick={() => handleAssignStageTaskToDate(order.id, st.id, null)}
+                                                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-600 transition-all cursor-pointer"
+                                              >
+                                                <X className="w-3 h-3" />
+                                              </button>
+                                            </div>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
