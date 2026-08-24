@@ -1175,8 +1175,13 @@ export const ERPApp: React.FC<ERPAppProps> = ({
         }
       },
       onFinishPackage: () => {
-        window.dispatchEvent(new CustomEvent('erp_cmd_close_box'));
-        showCommandToast('📦 Команда: Закрыть коробку / место');
+        const isPackingOrKitting = selectedOrderForWorkspace && (selectedOrderForWorkspace.currentStage === 'packing' || selectedOrderForWorkspace.currentStage === 'kitting');
+        if (isPackingOrKitting) {
+          window.dispatchEvent(new CustomEvent('erp_cmd_close_box'));
+          showCommandToast('📦 Команда: Закрыть коробку / место');
+        } else {
+          showCommandToast('⚠️ Команда «Закрыть место» доступна только на участке комплектовки и упаковки');
+        }
       },
       onPrintAct: () => {
         showCommandToast('🖨️ Печать акта сдачи');

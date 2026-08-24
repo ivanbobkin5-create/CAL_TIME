@@ -614,11 +614,8 @@ export function processQRCommand(
   ) {
     if (callbacks?.onFinishPackage) {
       callbacks.onFinishPackage();
-    } else if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('erp_cmd_close_box'));
     }
-    speakText('Команда: Закрыть коробку');
-    return { isCommand: true, commandKey: 'CMD_FINISH_PACKAGE', message: 'Команда: Упаковка / место закрыто' };
+    return { isCommand: true, commandKey: 'CMD_FINISH_PACKAGE', message: 'Команда: Закрыть упаковку / место' };
   }
 
   // 2. Start shift ("Начать смену")

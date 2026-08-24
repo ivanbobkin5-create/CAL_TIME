@@ -96,6 +96,14 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
   // Drag and drop task state
   const [draggedStageTask, setDraggedStageTask] = useState<{ orderId: string; stageId: ProductionStageId } | null>(null);
 
+  // Capacity overload warning alert banner
+  const [capacityWarningAlert, setCapacityWarningAlert] = useState<{
+    text: string;
+    stageName: string;
+    dateStr: string;
+    orderTitle?: string;
+  } | null>(null);
+
   // Start date calculation
   const [startDate, setStartDate] = useState<Date>(() => {
     const today = new Date();
@@ -277,6 +285,213 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
     return clientName ? `${orderNumber} · ${clientName}` : orderNumber;
   };
 
+  // Helper: calculate load created by a single order on a production stage
+  const getOrderStageLoad = (order: ProductionOrder, stageId: ProductionStageId) => {
+    const m2 = order.totalAreaM2 || 0;
+    let sheets = 0;
+    if (order.birkaData?.materialGroups && order.birkaData.materialGroups.length > 0) {
+      sheets = order.birkaData.materialGroups.reduce((acc, g) => acc + (g.estimatedSheets || Math.max(1, Math.ceil((g.totalAreaM2 || 0) / 5.5))), 0);
+    }
+    if (sheets === 0 && m2 > 0) {
+      sheets = Math.max(1, Math.ceil(m2 / 5.5));
+    }
+
+    const edgeM = order.totalEdgeM || 0;
+
+    let holes = 0;
+    if (order.birkaData?.details && order.birkaData.details.length > 0) {
+      holes = order.birkaData.details.reduce((acc, d) => {
+        const hCount = d.holesCount ?? ((d.holesEnd || 0) + (d.holesFace || 0));
+        return acc + (hCount > 0 ? hCount * (d.quantity || 1) : 0);
+      }, 0);
+    }
+    if (holes === 0 && (order.partsCount || 0) > 0) {
+      holes = (order.partsCount || 0) * 8;
+    }
+    const parts = order.partsCount || (order.birkaData?.details?.length || 0);
+
+    const kittingOrders = 1;
+    const kittingItems = order.hardwareData?.items?.length || order.hardwareData?.totalQuantity || 1;
+
+    const packagingM2 = m2;
+    const packagingBoxes = Math.max(1, Math.ceil(parts / 8));
+
+    const facadesM2 = order.facadesCount ? order.facadesCount * 0.4 : (m2 * 0.2);
+    const assemblyModules = Math.max(1, Math.ceil(parts / 7));
+
+    return {
+      m2,
+      sheets,
+      edgeM,
+      holes,
+      parts,
+      kittingOrders,
+      kittingItems,
+      packagingM2,
+      packagingBoxes,
+      facadesM2,
+      assemblyModules
+    };
+  };
+
+  // Helper: calculate total load and evaluate capacity for a stage on a date
+  const getDailyStageCapacityStatus = (
+    stageId: ProductionStageId,
+    ordersInCell: ProductionOrder[]
+  ) => {
+    const cap = settings?.stageDailyCapacities?.[stageId];
+
+    let totalM2 = 0;
+    let totalSheets = 0;
+    let totalEdgeM = 0;
+    let totalHoles = 0;
+    let totalParts = 0;
+    let totalKittingOrders = 0;
+    let totalKittingItems = 0;
+    let totalPackagingM2 = 0;
+    let totalAssemblyModules = 0;
+    let totalFacadesM2 = 0;
+
+    ordersInCell.forEach(o => {
+      const l = getOrderStageLoad(o, stageId);
+      totalM2 += l.m2;
+      totalSheets += l.sheets;
+      totalEdgeM += l.edgeM;
+      totalHoles += l.holes;
+      totalParts += l.parts;
+      totalKittingOrders += l.kittingOrders;
+      totalKittingItems += l.kittingItems;
+      totalPackagingM2 += l.packagingM2;
+      totalAssemblyModules += l.assemblyModules;
+      totalFacadesM2 += l.facadesM2;
+    });
+
+    totalM2 = Math.round(totalM2 * 10) / 10;
+    totalEdgeM = Math.round(totalEdgeM * 10) / 10;
+    totalPackagingM2 = Math.round(totalPackagingM2 * 10) / 10;
+    totalFacadesM2 = Math.round(totalFacadesM2 * 10) / 10;
+
+    if (!cap || cap.enabled === false) {
+      return {
+        isConfigured: false,
+        isOverloaded: false,
+        warningText: null,
+        badgeText: '',
+        totalM2,
+        totalSheets,
+        totalEdgeM,
+        totalHoles,
+        totalParts,
+        totalKittingOrders,
+        totalKittingItems
+      };
+    }
+
+    let isOverloaded = false;
+    let warningText: string | null = null;
+    let badgeText = '';
+
+    switch (stageId) {
+      case 'cutting': {
+        const limitSheets = cap.dailyLimitSheets ?? 20;
+        const limitM2 = cap.dailyLimitM2 ?? 100;
+        badgeText = `${totalSheets}/${limitSheets} л (${totalM2}/${limitM2} м²)`;
+
+        if ((limitSheets > 0 && totalSheets > limitSheets) || (limitM2 > 0 && totalM2 > limitM2)) {
+          isOverloaded = true;
+          const reasons: string[] = [];
+          if (limitSheets > 0 && totalSheets > limitSheets) reasons.push(`${totalSheets} листов (норма ${limitSheets})`);
+          if (limitM2 > 0 && totalM2 > limitM2) reasons.push(`${totalM2} м² (норма ${limitM2} м²)`);
+          warningText = `На участке «Распил» запланировано ${reasons.join(', ')}. Риск невыполнения сменного объема раскроя.`;
+        }
+        break;
+      }
+
+      case 'edging': {
+        const limitEdgeM = cap.dailyLimitEdgeM ?? 1500;
+        badgeText = `${Math.round(totalEdgeM)}/${limitEdgeM} м`;
+        if (limitEdgeM > 0 && totalEdgeM > limitEdgeM) {
+          isOverloaded = true;
+          warningText = `На участке «Кромкооблицовка» запланировано ${Math.round(totalEdgeM)} п.м. при норме ${limitEdgeM} п.м./смену. Риск перегрузки станка.`;
+        }
+        break;
+      }
+
+      case 'cnc': {
+        const limitHoles = cap.dailyLimitHoles ?? 3000;
+        const limitParts = cap.dailyLimitParts ?? 250;
+        badgeText = `${totalHoles}/${limitHoles} отв.`;
+        if ((limitHoles > 0 && totalHoles > limitHoles) || (limitParts > 0 && totalParts > limitParts)) {
+          isOverloaded = true;
+          const reasons: string[] = [];
+          if (limitHoles > 0 && totalHoles > limitHoles) reasons.push(`${totalHoles} отв. (норма ${limitHoles})`);
+          if (limitParts > 0 && totalParts > limitParts) reasons.push(`${totalParts} дет. (норма ${limitParts})`);
+          warningText = `На участке «Присадка и ЧПУ» запланировано ${reasons.join(', ')}. Риск срыва сменного плана присадки.`;
+        }
+        break;
+      }
+
+      case 'kitting': {
+        const limitOrders = cap.dailyLimitOrders ?? 8;
+        const limitItems = cap.dailyLimitItems ?? 200;
+        badgeText = `${totalKittingOrders}/${limitOrders} зак.`;
+        if ((limitOrders > 0 && totalKittingOrders > limitOrders) || (limitItems > 0 && totalKittingItems > limitItems)) {
+          isOverloaded = true;
+          warningText = `На участке «Комплектовка» запланировано ${totalKittingOrders} заказов (${totalKittingItems} поз.) при дневной норме ${limitOrders} заказов.`;
+        }
+        break;
+      }
+
+      case 'packing': {
+        const limitM2 = cap.dailyLimitM2 ?? 120;
+        const limitParts = cap.dailyLimitParts ?? 250;
+        badgeText = `${totalPackagingM2}/${limitM2} м²`;
+        if ((limitM2 > 0 && totalPackagingM2 > limitM2) || (limitParts > 0 && totalParts > limitParts)) {
+          isOverloaded = true;
+          warningText = `На участке «Упаковка» запланировано ${totalPackagingM2} м² (${totalParts} дет.) при норме ${limitM2} м² в день. Риск задержки упаковочных работ.`;
+        }
+        break;
+      }
+
+      case 'assembly': {
+        const limitModules = cap.dailyLimitModules ?? 15;
+        badgeText = `${totalAssemblyModules}/${limitModules} мод.`;
+        if (limitModules > 0 && totalAssemblyModules > limitModules) {
+          isOverloaded = true;
+          warningText = `На участке «Сборка» запланировано ${totalAssemblyModules} модулей при норме ${limitModules} в смену. Риск перегрузки сборочного участка.`;
+        }
+        break;
+      }
+
+      case 'facades': {
+        const limitM2 = cap.dailyLimitM2 ?? 35;
+        badgeText = `${totalFacadesM2}/${limitM2} м²`;
+        if (limitM2 > 0 && totalFacadesM2 > limitM2) {
+          isOverloaded = true;
+          warningText = `На фасадном участке запланировано ${totalFacadesM2} м² при норме ${limitM2} м² в день.`;
+        }
+        break;
+      }
+
+      default:
+        break;
+    }
+
+    return {
+      isConfigured: true,
+      isOverloaded,
+      warningText,
+      badgeText,
+      totalM2,
+      totalSheets,
+      totalEdgeM,
+      totalHoles,
+      totalParts,
+      totalKittingOrders,
+      totalKittingItems
+    };
+  };
+
   const handleAssignStageTaskToDate = (orderId: string, stageId: ProductionStageId, dateStr: string | null) => {
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
@@ -302,6 +517,27 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
     };
 
     onUpdateOrder(updatedOrder);
+
+    // Check if adding this task causes stage capacity overload on this date
+    if (dateStr && settings?.warnStageCapacityOverloadInPlanning !== false) {
+      const ordersAfterUpdate = orders.map(o => o.id === orderId ? updatedOrder : o);
+      const ordersInTargetCell = ordersAfterUpdate.filter(o => {
+        const sDates = o.stagePlannedDates || {};
+        const assigned = sDates[stageId] || (stageId === 'cutting' ? o.plannedCuttingDate : null);
+        return assigned === dateStr;
+      });
+
+      const capacityStatus = getDailyStageCapacityStatus(stageId, ordersInTargetCell);
+      if (capacityStatus.isOverloaded && capacityStatus.warningText) {
+        const stName = STAGE_CONFIGS.find(s => s.id === stageId)?.name || stageId;
+        setCapacityWarningAlert({
+          text: capacityStatus.warningText,
+          stageName: stName,
+          dateStr,
+          orderTitle: displayOrderTitle(order)
+        });
+      }
+    }
   };
 
   const handleBirkaUploadForOrder = async (order: ProductionOrder, file: File) => {
@@ -884,6 +1120,40 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
               </div>
             </div>
 
+            {/* Stage Daily Capacity Overload Non-blocking Warning Banner */}
+            {capacityWarningAlert && (
+              <div className="p-4 bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50/70 border-2 border-amber-300 text-amber-950 rounded-3xl flex items-start justify-between gap-3 shadow-md">
+                <div className="flex items-start gap-3 min-w-0">
+                  <div className="p-2 rounded-2xl bg-amber-500 text-white shrink-0 mt-0.5 shadow-2xs">
+                    <AlertCircle className="w-4 h-4" />
+                  </div>
+                  <div className="space-y-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-black text-xs text-amber-950">
+                        Внимание: превышена дневная норма выработки!
+                      </span>
+                      <span className="px-2 py-0.5 rounded-lg bg-amber-200/90 text-amber-900 text-[10px] font-black font-mono">
+                        Участок: {capacityWarningAlert.stageName} · Дата: {capacityWarningAlert.dateStr}
+                      </span>
+                    </div>
+                    <p className="text-xs text-amber-900 leading-relaxed font-semibold">
+                      {capacityWarningAlert.text}
+                    </p>
+                    <div className="text-[11px] text-amber-800/90 font-medium">
+                      ℹ️ Заказ <span className="font-bold">{capacityWarningAlert.orderTitle}</span> добавлен в план. Предупреждение носит уведомительный характер, начальник цеха может перераспределить объемы при необходимости.
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setCapacityWarningAlert(null)}
+                  className="p-1.5 rounded-2xl hover:bg-amber-200/80 text-amber-800 transition-colors cursor-pointer shrink-0"
+                  title="Закрыть уведомление"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
             {/* Matrix Calendar Grid - Fluid and auto-adapting */}
             <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden">
               <div className="w-full overflow-x-auto">
@@ -896,28 +1166,51 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                     </div>
 
                     <div className={`flex-1 grid ${periodRange === '1week' ? 'grid-cols-7' : 'grid-cols-14'}`}>
-                      {timelineDays.map(day => (
-                        <div
-                          key={day.dateStr}
-                          className={`p-1.5 text-center border-r border-slate-200 last:border-r-0 flex flex-col items-center justify-center gap-0.5 min-w-0 ${
-                            day.isToday 
-                              ? 'bg-blue-600 text-white font-black' 
-                              : day.isWeekend 
-                                ? 'bg-slate-200/60 text-slate-800' 
-                                : 'bg-slate-100 text-slate-800'
-                          }`}
-                        >
-                          <div className="flex items-center gap-1 text-[10px]">
-                            <span>{day.dayName}</span>
-                            <span className="font-mono font-extrabold">{day.dayNum}</span>
+                      {timelineDays.map(day => {
+                        // Check if any stage is overloaded on this day
+                        const dayOverloadedCount = STAGE_CONFIGS.filter(st => {
+                          const tasksInSt: ProductionOrder[] = [];
+                          orders.forEach(o => {
+                            const sDates = o.stagePlannedDates || {};
+                            const assigned = sDates[st.id] || (st.id === 'cutting' ? o.plannedCuttingDate : null);
+                            if (assigned === day.dateStr) tasksInSt.push(o);
+                          });
+                          const stStatus = getDailyStageCapacityStatus(st.id, tasksInSt);
+                          return stStatus.isOverloaded;
+                        }).length;
+
+                        return (
+                          <div
+                            key={day.dateStr}
+                            className={`p-1.5 text-center border-r border-slate-200 last:border-r-0 flex flex-col items-center justify-center gap-0.5 min-w-0 ${
+                              day.isToday 
+                                ? 'bg-blue-600 text-white font-black' 
+                                : day.isWeekend 
+                                  ? 'bg-slate-200/60 text-slate-800' 
+                                  : 'bg-slate-100 text-slate-800'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1 text-[10px]">
+                              <span>{day.dayName}</span>
+                              <span className="font-mono font-extrabold">{day.dayNum}</span>
+                            </div>
+                            {day.isToday && (
+                              <span className="text-[8px] uppercase font-black tracking-wider bg-white/20 px-1 rounded">
+                                Сегодня
+                              </span>
+                            )}
+                            {dayOverloadedCount > 0 && (
+                              <span
+                                className="px-1 py-0.2 rounded bg-rose-500 text-white text-[7.5px] font-black uppercase tracking-wider flex items-center gap-0.5 shadow-2xs mt-0.5"
+                                title={`Внимание: на эту дату на ${dayOverloadedCount} уч. превышена дневная норма выработки!`}
+                              >
+                                <AlertCircle className="w-2 h-2 shrink-0" />
+                                <span>Риск</span>
+                              </span>
+                            )}
                           </div>
-                          {day.isToday && (
-                            <span className="text-[8px] uppercase font-black tracking-wider bg-white/20 px-1 rounded">
-                              Сегодня
-                            </span>
-                          )}
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -927,6 +1220,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                     <div className="divide-y divide-slate-200">
                       {STAGE_CONFIGS.map(st => {
                         const StIcon = st.icon;
+                        const stCap = settings?.stageDailyCapacities?.[st.id];
 
                         return (
                           <div key={st.id} className="flex min-h-[75px] hover:bg-slate-50/40 transition-colors">
@@ -938,6 +1232,17 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                 </div>
                                 <span className="text-[11px] truncate">{st.name}</span>
                               </div>
+                              {stCap && stCap.enabled !== false && (
+                                <div className="text-[9px] text-slate-500 font-semibold truncate mt-1 pl-1 border-l-2 border-slate-300" title="Установленная дневная норма выработки">
+                                  {st.id === 'cutting' && `Норма: ${stCap.dailyLimitSheets ?? 20} л (${stCap.dailyLimitM2 ?? 100} м²)`}
+                                  {st.id === 'edging' && `Норма: ${stCap.dailyLimitEdgeM ?? 1500} п.м.`}
+                                  {st.id === 'cnc' && `Норма: ${stCap.dailyLimitHoles ?? 3000} отв.`}
+                                  {st.id === 'kitting' && `Норма: ${stCap.dailyLimitOrders ?? 8} зак.`}
+                                  {st.id === 'packing' && `Норма: ${stCap.dailyLimitM2 ?? 120} м²`}
+                                  {st.id === 'assembly' && `Норма: ${stCap.dailyLimitModules ?? 15} мод.`}
+                                  {st.id === 'facades' && `Норма: ${stCap.dailyLimitM2 ?? 35} м²`}
+                                </div>
+                              )}
                             </div>
 
                             {/* Day Cells for this stage */}
@@ -952,6 +1257,8 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                   }
                                 });
 
+                                const cellStatus = getDailyStageCapacityStatus(st.id, tasksInCell);
+
                                 return (
                                   <div
                                     key={day.dateStr}
@@ -963,10 +1270,40 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                         setDraggedStageTask(null);
                                       }
                                     }}
-                                    className={`p-1 border-r border-slate-200 last:border-r-0 space-y-1 overflow-y-auto max-h-[140px] transition-colors min-w-0 ${
+                                    className={`p-1 border-r border-slate-200 last:border-r-0 space-y-1 overflow-y-auto max-h-[145px] transition-colors min-w-0 flex flex-col ${
                                       day.isToday ? 'bg-blue-50/20' : day.isWeekend ? 'bg-slate-50/30' : ''
                                     }`}
                                   >
+                                    {/* Cell Load Summary Indicator */}
+                                    {tasksInCell.length > 0 && cellStatus.badgeText && (
+                                      <div
+                                        className={`px-1 py-0.5 rounded-lg text-[8.5px] font-black tracking-tight flex items-center justify-between gap-1 border transition-colors shrink-0 ${
+                                          cellStatus.isOverloaded
+                                            ? 'bg-rose-100 text-rose-900 border-rose-300'
+                                            : 'bg-slate-100/90 text-slate-700 border-slate-200'
+                                        }`}
+                                        title={
+                                          cellStatus.isOverloaded
+                                            ? `⚠️ Внимание: превышена дневная норма!\n${cellStatus.warningText}`
+                                            : `Загрузка участка: ${cellStatus.badgeText}`
+                                        }
+                                      >
+                                        <div className="flex items-center gap-0.5 truncate min-w-0">
+                                          {cellStatus.isOverloaded ? (
+                                            <AlertCircle className="w-2.5 h-2.5 text-rose-600 shrink-0" />
+                                          ) : (
+                                            <CheckCircle2 className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                                          )}
+                                          <span className="truncate">{cellStatus.badgeText}</span>
+                                        </div>
+                                        {cellStatus.isOverloaded && (
+                                          <span className="px-1 py-0.2 rounded bg-rose-600 text-white text-[6.5px] font-black uppercase shrink-0">
+                                            Риск
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+
                                     {tasksInCell.map(order => {
                                       const orderColor = getOrderColor(order.id);
                                       const { orderNumber, clientName } = getOrderDisplayParts(order);

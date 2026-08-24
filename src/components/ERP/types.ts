@@ -472,6 +472,22 @@ export interface ERPCompanySettings {
   targetMonthlyM2?: number;          // Плановая выработка ЛДСП м²/мес
   targetMonthlyEdgeM?: number;      // Плановая кромкооблицовка п.м./мес
   targetMonthlyParts?: number;      // Плановое количество деталей шт./мес
+  
+  // Дневная пропускная способность оборудования и участков (лимиты на смену)
+  stageDailyCapacities?: Partial<Record<ProductionStageId, {
+    enabled: boolean;
+    dailyLimitM2?: number;          // Лимит м²/смену (Распил, Упаковка, Фасады)
+    dailyLimitSheets?: number;      // Лимит листов/смену (Распил)
+    dailyLimitEdgeM?: number;       // Лимит п.м. кромки/смену (Кромка)
+    dailyLimitHoles?: number;       // Лимит отверстий/смену (Присадка)
+    dailyLimitParts?: number;       // Лимит деталей/смену (Присадка, Упаковка)
+    dailyLimitOrders?: number;      // Лимит заказов/смену (Комплектовка, Сборка)
+    dailyLimitItems?: number;       // Лимит позиций фурнитуры/смену (Комплектовка)
+    dailyLimitModules?: number;     // Лимит модулей/смену (Сборка)
+    warnOnOverload?: boolean;       // Предупреждать о рисках невыполнения при планировании
+  }>>;
+  warnStageCapacityOverloadInPlanning?: boolean; // Глобальный флаг предупреждений о перегрузке в планировании
+
   equipmentList?: MachineEquipment[]; // Оборудование участков
   useNestingPrisadkaOnCutting?: boolean; // Флаг: Использовать нестинг присадку в пласть на этапе распила (true = детали с 0 торцевых отв. не попадают на присадку)
   birkaColumnMapping?: Record<string, string[]>; // Кастомный маппинг столбцов файла бирок

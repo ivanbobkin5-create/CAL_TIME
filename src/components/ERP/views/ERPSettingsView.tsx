@@ -2408,27 +2408,406 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
               </div>
             </div>
 
-            {/* Nesting Drilling Mode Setting */}
-            <div className="p-4 bg-gradient-to-r from-slate-50 to-blue-50/40 rounded-2xl border border-slate-200/80 mb-6 space-y-2">
-              <div className="flex items-start justify-between gap-4">
-                <div className="space-y-1">
-                  <label htmlFor="useNestingPrisadkaToggle" className="font-bold text-sm text-slate-900 flex items-center gap-2 cursor-pointer">
-                    <span className="w-2.5 h-2.5 rounded-full bg-blue-600"></span>
-                    Использовать нестинг (присадка в пласть выполняется на этапе распила)
-                  </label>
-                  <p className="text-xs text-slate-500 leading-relaxed max-w-3xl">
-                    <strong className="text-slate-700">Включено (по умолчанию):</strong> Нестинг-центр при раскрое делает отверстия в пласть. Детали без торцевых отверстий (<code className="px-1 py-0.5 rounded bg-slate-200/80 font-mono text-[11px]">торец = 0</code>) считаются полностью готовыми после кромления и <strong className="text-emerald-700">не выводятся на участок присадки</strong>.
-                    <br />
-                    <strong className="text-slate-700">Отключено (пилим без нестинга):</strong> На этап присадки выводятся все детали, содержащие отверстия в пласть, даже если у них <code className="px-1 py-0.5 rounded bg-slate-200/80 font-mono text-[11px]">торец = 0</code>.
+            {/* Daily Stage Capacities Section */}
+            <div className="p-5 bg-gradient-to-br from-indigo-50/50 via-slate-50 to-blue-50/40 rounded-3xl border border-indigo-100 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="p-1.5 rounded-xl bg-indigo-600 text-white shadow-2xs">
+                      <Factory className="w-4 h-4" />
+                    </span>
+                    <h4 className="font-extrabold text-slate-900 text-sm">
+                      Дневная пропускная способность участков (нормы на смену)
+                    </h4>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                    Укажите предельную дневную выработку участков. При переносе заказов в календарь планирования система автоматически сопоставит нагрузку и предупредит начальника цеха о рисках невыполнения объема при перегрузке.
                   </p>
                 </div>
-                <input
-                  id="useNestingPrisadkaToggle"
-                  type="checkbox"
-                  checked={formData.useNestingPrisadkaOnCutting !== false}
-                  onChange={(e) => setFormData({ ...formData, useNestingPrisadkaOnCutting: e.target.checked })}
-                  className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500 border-slate-300 mt-1 cursor-pointer shrink-0"
-                />
+
+                <label className="flex items-center gap-2 px-3 py-2 bg-white rounded-2xl border border-slate-200 shadow-2xs cursor-pointer select-none shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={formData.warnStageCapacityOverloadInPlanning !== false}
+                    onChange={(e) => setFormData({ ...formData, warnStageCapacityOverloadInPlanning: e.target.checked })}
+                    className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300"
+                  />
+                  <span className="text-xs font-bold text-slate-800">Предупреждать о рисках в плане</span>
+                </label>
+              </div>
+
+              {/* Grid of Stage Daily Capacity Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 pt-2">
+                {/* 1. Cutting (Распил) */}
+                <div className="p-4 bg-white rounded-2xl border border-slate-200/90 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded-xl bg-blue-50 text-blue-600 border border-blue-200">
+                        <Scissors className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="font-extrabold text-xs text-slate-900">Распил (Раскрой)</div>
+                        <div className="text-[10px] text-slate-400">Форматно-раскроечный / ЧПУ</div>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={formData.stageDailyCapacities?.cutting?.enabled !== false}
+                      onChange={(e) => {
+                        const cur = formData.stageDailyCapacities || {};
+                        const stCur = cur.cutting || { enabled: true, dailyLimitM2: 100, dailyLimitSheets: 20 };
+                        setFormData({
+                          ...formData,
+                          stageDailyCapacities: { ...cur, cutting: { ...stCur, enabled: e.target.checked } }
+                        });
+                      }}
+                      className="w-4 h-4 rounded text-blue-600 cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Лимит листов/день</label>
+                      <input
+                        type="number"
+                        placeholder="20"
+                        value={formData.stageDailyCapacities?.cutting?.dailyLimitSheets ?? 20}
+                        onChange={(e) => {
+                          const cur = formData.stageDailyCapacities || {};
+                          const stCur = cur.cutting || { enabled: true };
+                          setFormData({
+                            ...formData,
+                            stageDailyCapacities: { ...cur, cutting: { ...stCur, dailyLimitSheets: Number(e.target.value) } }
+                          });
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 font-black text-slate-900 text-xs focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Лимит м²/день</label>
+                      <input
+                        type="number"
+                        placeholder="100"
+                        value={formData.stageDailyCapacities?.cutting?.dailyLimitM2 ?? 100}
+                        onChange={(e) => {
+                          const cur = formData.stageDailyCapacities || {};
+                          const stCur = cur.cutting || { enabled: true };
+                          setFormData({
+                            ...formData,
+                            stageDailyCapacities: { ...cur, cutting: { ...stCur, dailyLimitM2: Number(e.target.value) } }
+                          });
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 font-black text-slate-900 text-xs focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. Edging (Кромка) */}
+                <div className="p-4 bg-white rounded-2xl border border-slate-200/90 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded-xl bg-indigo-50 text-indigo-600 border border-indigo-200">
+                        <Layers className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="font-extrabold text-xs text-slate-900">Кромкооблицовка</div>
+                        <div className="text-[10px] text-slate-400">Проходной кромкооблицовочный</div>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={formData.stageDailyCapacities?.edging?.enabled !== false}
+                      onChange={(e) => {
+                        const cur = formData.stageDailyCapacities || {};
+                        const stCur = cur.edging || { enabled: true, dailyLimitEdgeM: 1500 };
+                        setFormData({
+                          ...formData,
+                          stageDailyCapacities: { ...cur, edging: { ...stCur, enabled: e.target.checked } }
+                        });
+                      }}
+                      className="w-4 h-4 rounded text-indigo-600 cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="pt-1 border-t border-slate-100">
+                    <label className="block text-[10px] font-bold text-slate-600 mb-1">Лимит кромки (п.м./день)</label>
+                    <input
+                      type="number"
+                      placeholder="1500"
+                      value={formData.stageDailyCapacities?.edging?.dailyLimitEdgeM ?? 1500}
+                      onChange={(e) => {
+                        const cur = formData.stageDailyCapacities || {};
+                        const stCur = cur.edging || { enabled: true };
+                        setFormData({
+                          ...formData,
+                          stageDailyCapacities: { ...cur, edging: { ...stCur, dailyLimitEdgeM: Number(e.target.value) } }
+                        });
+                      }}
+                      className="w-full px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 font-black text-slate-900 text-xs focus:bg-white focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* 3. CNC / Drilling (Присадка) */}
+                <div className="p-4 bg-white rounded-2xl border border-slate-200/90 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded-xl bg-purple-50 text-purple-600 border border-purple-200">
+                        <Factory className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="font-extrabold text-xs text-slate-900">Присадка и ЧПУ</div>
+                        <div className="text-[10px] text-slate-400">Сверлильно-присадочный станок</div>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={formData.stageDailyCapacities?.cnc?.enabled !== false}
+                      onChange={(e) => {
+                        const cur = formData.stageDailyCapacities || {};
+                        const stCur = cur.cnc || { enabled: true, dailyLimitHoles: 3000, dailyLimitParts: 250 };
+                        setFormData({
+                          ...formData,
+                          stageDailyCapacities: { ...cur, cnc: { ...stCur, enabled: e.target.checked } }
+                        });
+                      }}
+                      className="w-4 h-4 rounded text-purple-600 cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Лимит отверстий/день</label>
+                      <input
+                        type="number"
+                        placeholder="3000"
+                        value={formData.stageDailyCapacities?.cnc?.dailyLimitHoles ?? 3000}
+                        onChange={(e) => {
+                          const cur = formData.stageDailyCapacities || {};
+                          const stCur = cur.cnc || { enabled: true };
+                          setFormData({
+                            ...formData,
+                            stageDailyCapacities: { ...cur, cnc: { ...stCur, dailyLimitHoles: Number(e.target.value) } }
+                          });
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 font-black text-slate-900 text-xs focus:bg-white focus:ring-2 focus:ring-purple-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Лимит деталей/день</label>
+                      <input
+                        type="number"
+                        placeholder="250"
+                        value={formData.stageDailyCapacities?.cnc?.dailyLimitParts ?? 250}
+                        onChange={(e) => {
+                          const cur = formData.stageDailyCapacities || {};
+                          const stCur = cur.cnc || { enabled: true };
+                          setFormData({
+                            ...formData,
+                            stageDailyCapacities: { ...cur, cnc: { ...stCur, dailyLimitParts: Number(e.target.value) } }
+                          });
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 font-black text-slate-900 text-xs focus:bg-white focus:ring-2 focus:ring-purple-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 4. Kitting (Комплектовка) */}
+                <div className="p-4 bg-white rounded-2xl border border-slate-200/90 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded-xl bg-cyan-50 text-cyan-600 border border-cyan-200">
+                        <Box className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="font-extrabold text-xs text-slate-900">Комплектовка фурнитуры</div>
+                        <div className="text-[10px] text-slate-400">Стол комплектовки и крепежа</div>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={formData.stageDailyCapacities?.kitting?.enabled !== false}
+                      onChange={(e) => {
+                        const cur = formData.stageDailyCapacities || {};
+                        const stCur = cur.kitting || { enabled: true, dailyLimitOrders: 8, dailyLimitItems: 200 };
+                        setFormData({
+                          ...formData,
+                          stageDailyCapacities: { ...cur, kitting: { ...stCur, enabled: e.target.checked } }
+                        });
+                      }}
+                      className="w-4 h-4 rounded text-cyan-600 cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Лимит заказов/день</label>
+                      <input
+                        type="number"
+                        placeholder="8"
+                        value={formData.stageDailyCapacities?.kitting?.dailyLimitOrders ?? 8}
+                        onChange={(e) => {
+                          const cur = formData.stageDailyCapacities || {};
+                          const stCur = cur.kitting || { enabled: true };
+                          setFormData({
+                            ...formData,
+                            stageDailyCapacities: { ...cur, kitting: { ...stCur, dailyLimitOrders: Number(e.target.value) } }
+                          });
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 font-black text-slate-900 text-xs focus:bg-white focus:ring-2 focus:ring-cyan-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Лимит позиций/день</label>
+                      <input
+                        type="number"
+                        placeholder="200"
+                        value={formData.stageDailyCapacities?.kitting?.dailyLimitItems ?? 200}
+                        onChange={(e) => {
+                          const cur = formData.stageDailyCapacities || {};
+                          const stCur = cur.kitting || { enabled: true };
+                          setFormData({
+                            ...formData,
+                            stageDailyCapacities: { ...cur, kitting: { ...stCur, dailyLimitItems: Number(e.target.value) } }
+                          });
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 font-black text-slate-900 text-xs focus:bg-white focus:ring-2 focus:ring-cyan-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 5. Packaging (Упаковка) */}
+                <div className="p-4 bg-white rounded-2xl border border-slate-200/90 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded-xl bg-orange-50 text-orange-600 border border-orange-200">
+                        <Package className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="font-extrabold text-xs text-slate-900">Упаковка и маркировка</div>
+                        <div className="text-[10px] text-slate-400">Упаковочный стол / стреппинг</div>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={formData.stageDailyCapacities?.packing?.enabled !== false}
+                      onChange={(e) => {
+                        const cur = formData.stageDailyCapacities || {};
+                        const stCur = cur.packing || { enabled: true, dailyLimitM2: 120, dailyLimitParts: 250 };
+                        setFormData({
+                          ...formData,
+                          stageDailyCapacities: { ...cur, packing: { ...stCur, enabled: e.target.checked } }
+                        });
+                      }}
+                      className="w-4 h-4 rounded text-orange-600 cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Лимит м²/день</label>
+                      <input
+                        type="number"
+                        placeholder="120"
+                        value={formData.stageDailyCapacities?.packing?.dailyLimitM2 ?? 120}
+                        onChange={(e) => {
+                          const cur = formData.stageDailyCapacities || {};
+                          const stCur = cur.packing || { enabled: true };
+                          setFormData({
+                            ...formData,
+                            stageDailyCapacities: { ...cur, packing: { ...stCur, dailyLimitM2: Number(e.target.value) } }
+                          });
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 font-black text-slate-900 text-xs focus:bg-white focus:ring-2 focus:ring-orange-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Лимит деталей/день</label>
+                      <input
+                        type="number"
+                        placeholder="250"
+                        value={formData.stageDailyCapacities?.packing?.dailyLimitParts ?? 250}
+                        onChange={(e) => {
+                          const cur = formData.stageDailyCapacities || {};
+                          const stCur = cur.packing || { enabled: true };
+                          setFormData({
+                            ...formData,
+                            stageDailyCapacities: { ...cur, packing: { ...stCur, dailyLimitParts: Number(e.target.value) } }
+                          });
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 font-black text-slate-900 text-xs focus:bg-white focus:ring-2 focus:ring-orange-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 6. Assembly & Facades (Сборка и фасады) */}
+                <div className="p-4 bg-white rounded-2xl border border-slate-200/90 shadow-2xs space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="p-1.5 rounded-xl bg-teal-50 text-teal-600 border border-teal-200">
+                        <Wrench className="w-4 h-4" />
+                      </div>
+                      <div>
+                        <div className="font-extrabold text-xs text-slate-900">Сборка и Фасады</div>
+                        <div className="text-[10px] text-slate-400">Сборочный участок / Покраска</div>
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={formData.stageDailyCapacities?.assembly?.enabled !== false}
+                      onChange={(e) => {
+                        const cur = formData.stageDailyCapacities || {};
+                        const stCur = cur.assembly || { enabled: true, dailyLimitModules: 15 };
+                        setFormData({
+                          ...formData,
+                          stageDailyCapacities: { ...cur, assembly: { ...stCur, enabled: e.target.checked } }
+                        });
+                      }}
+                      className="w-4 h-4 rounded text-teal-600 cursor-pointer"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2 pt-1 border-t border-slate-100">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Сборка (модулей/день)</label>
+                      <input
+                        type="number"
+                        placeholder="15"
+                        value={formData.stageDailyCapacities?.assembly?.dailyLimitModules ?? 15}
+                        onChange={(e) => {
+                          const cur = formData.stageDailyCapacities || {};
+                          const stCur = cur.assembly || { enabled: true };
+                          setFormData({
+                            ...formData,
+                            stageDailyCapacities: { ...cur, assembly: { ...stCur, dailyLimitModules: Number(e.target.value) } }
+                          });
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 font-black text-slate-900 text-xs focus:bg-white focus:ring-2 focus:ring-teal-500 outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 mb-1">Фасады (м²/день)</label>
+                      <input
+                        type="number"
+                        placeholder="35"
+                        value={formData.stageDailyCapacities?.facades?.dailyLimitM2 ?? 35}
+                        onChange={(e) => {
+                          const cur = formData.stageDailyCapacities || {};
+                          const stCur = cur.facades || { enabled: true };
+                          setFormData({
+                            ...formData,
+                            stageDailyCapacities: { ...cur, facades: { ...stCur, dailyLimitM2: Number(e.target.value) } }
+                          });
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 font-black text-slate-900 text-xs focus:bg-white focus:ring-2 focus:ring-amber-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
 

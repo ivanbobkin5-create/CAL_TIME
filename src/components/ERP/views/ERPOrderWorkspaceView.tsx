@@ -409,8 +409,15 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
         setScanSuccessMsg('📊 Открыт отчет: Итоги рабочей смены');
       },
       onFinishPackage: () => {
-        window.dispatchEvent(new CustomEvent('erp_cmd_close_box'));
-        setScanSuccessMsg('📦 Команда: Закрыть коробку / место');
+        if (currentStage === 'packing' || currentStage === 'kitting') {
+          window.dispatchEvent(new CustomEvent('erp_cmd_close_box'));
+          setScanSuccessMsg('📦 Команда: Закрыть коробку / место');
+          speakText('Команда: Закрыть коробку');
+        } else {
+          setScanErrorMsg('⚠️ Команда «Закрыть место» работает только на участках Комплектовки и Упаковки');
+          speakText('Команда закрытия места доступна только на упаковке и комплектовке');
+          playSoundEffect('error');
+        }
       },
       onPrintAct: () => {
         setScanSuccessMsg('🖨️ Запуск печати акта сдачи...');
