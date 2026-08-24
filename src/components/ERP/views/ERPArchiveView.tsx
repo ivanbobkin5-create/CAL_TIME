@@ -11,15 +11,19 @@ import {
   Scissors, 
   Box,
   Download,
-  RotateCcw
+  RotateCcw,
+  Printer,
+  History
 } from 'lucide-react';
 import { ProductionOrder, ERPEmployee } from '../types';
 import { formatDeadlineDate } from '../utils';
+import { ERPArchiveOrderModal } from '../components/ERPArchiveOrderModal';
+import { printArchiveOrderPassport } from '../utils/archivePassportPrinter';
 
 interface ERPArchiveViewProps {
   orders: ProductionOrder[];
   employees?: ERPEmployee[];
-  onSelectOrder: (order: ProductionOrder) => void;
+  onSelectOrder?: (order: ProductionOrder) => void;
   onRestoreOrder?: (orderId: string) => void;
 }
 
@@ -31,8 +35,10 @@ export const ERPArchiveView: React.FC<ERPArchiveViewProps> = ({
 }) => {
   const [search, setSearch] = useState('');
   const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week' | 'month'>('all');
+  const [viewingArchiveOrder, setViewingArchiveOrder] = useState<ProductionOrder | null>(null);
 
   // All archived orders: status is strictly completed or shipped (when handed over to driver)
+
   const archivedOrders = useMemo(() => {
     const now = new Date();
     const todayStr = now.toISOString().split('T')[0];
@@ -335,23 +341,37 @@ export const ERPArchiveView: React.FC<ERPArchiveViewProps> = ({
 
                 {/* Right: Actions */}
                 <div className="flex items-center gap-2 self-end lg:self-center">
+                  <button
+                    onClick={() => printArchiveOrderPassport(order, employees)}
+                    className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
+                    title="Печать архивного паспорта (А4)"
+                  >
+                    <Printer className="w-4 h-4 text-emerald-600" />
+                    <span className="hidden sm:inline">Печать А4</span>
+                  </button>
+
                   {onRestoreOrder && (
                     <button
-                      onClick={() => onRestoreOrder(order.id)}
+                      onClick={() => {
+                        if (window.confirm(`Вернуть заказ №${order.orderNumber} из архива обратно в цех?`)) {
+                          onRestoreOrder(order.id);
+                        }
+                      }}
                       className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-amber-50 text-slate-600 hover:text-amber-700 font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer"
                       title="Вернуть заказ в производство"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Вернуть в цех</span>
+                      <span>В цех</span>
                     </button>
                   )}
 
                   <button
-                    onClick={() => onSelectOrder(order)}
-                    className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs flex items-center gap-1.5 shadow-md shadow-emerald-600/20 transition-all cursor-pointer"
-                    title="Открыть рабочее пространство заказа"
+                    onClick={() => setViewingArchiveOrder(order)}
+                    className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs flex items-center gap-1.5 shadow-md shadow-slate-900/20 transition-all cursor-pointer"
+                    title="Открыть архивный паспорт и детальную историю заказа"
                   >
-                    <span>Открыть</span>
+                    <History className="w-4 h-4 text-emerald-400" />
+                    <span>История и паспорт</span>
                     <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
@@ -359,6 +379,16 @@ export const ERPArchiveView: React.FC<ERPArchiveViewProps> = ({
             );
           })}
         </div>
+      )}
+
+      {/* Archive Order Detailed History & Passport Modal */}
+      {viewingArchiveOrder && (
+        <ERPArchiveOrderModal
+          order={viewingArchiveOrder}
+          employees={employees}
+          onClose={() => setViewingArchiveOrder(null)}
+          onRestoreOrder={onRestoreOrder}
+        />
       )}
     </div>
   );

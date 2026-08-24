@@ -17,12 +17,15 @@ import {
   Info,
   Check,
   X,
-  Lock
+  Lock,
+  Zap,
+  RefreshCw
 } from 'lucide-react';
 import { ProductionOrder, OrderPackage, OrderPackagePart, ERPCompanySettings, ERPEmployee, ProductionStageId } from '../types';
 import { PackageLabelPrintModal } from './PackageLabelPrintModal';
 import { convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, matchDetailToScannedCode, processQRCommand } from '../utils';
 import { isDetailReadyForPackaging, arePrecedingStagesCompleted, getPackagingReadinessStats } from '../utils/stageReadiness';
+import { printPackageLabelDirect } from '../utils/packageLabelPrinter';
 
 interface ERPPackagingTabProps {
   order: ProductionOrder;
@@ -53,6 +56,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
   const [packageNameInput, setPackageNameInput] = useState<string>(`Место ${nextPkgNumber}`);
   const [currentBufferParts, setCurrentBufferParts] = useState<OrderPackagePart[]>([]);
   const [scanFeedbackMsg, setScanFeedbackMsg] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [autoPrintDirect, setAutoPrintDirect] = useState<boolean>(settings?.packageLabelSettings?.autoPrintOnCloseBox !== false);
 
   // Scan input & buffer for hardware barcodes
   const [scanInput, setScanInput] = useState<string>('');
@@ -279,8 +283,8 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
     return () => window.removeEventListener('erp_cmd_close_box', handleCloseBoxEvent);
   }, [currentBufferParts, existingPackages, packageNameInput, order, currentUser]);
 
-  // Finish & Seal current package -> Add to order.packages and open print modal
-  const handleSealPackage = (openPrint: boolean = true) => {
+  // Finish & Seal current package -> Add to order.packages and auto-print or open print modal
+  const handleSealPackage = (forceOpenModal: boolean = false) => {
     if (currentBufferParts.length === 0) {
       showFeedback('Сначала добавьте или отсканируйте хотя бы одну деталь в упаковку!', 'error');
       return;
@@ -317,12 +321,26 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
     setCurrentBufferParts([]);
     setPackageNameInput(`Место ${pkgNum + 1}`);
 
-    showFeedback(`Упаковка "${cleanName}" (${newPackage.parts.length} дет.) успешно создана!`, 'success');
-
-    if (openPrint) {
+    if (autoPrintDirect && !forceOpenModal) {
+      printPackageLabelDirect(order, newPackage, updatedPackages.length, settings?.packageLabelSettings);
+      showFeedback(`📦 Место №${pkgNum} запечатано (${newPackage.parts.length} дет.). Этикетка отправлена на термопринтер! Готово к следующей коробке.`, 'success');
+    } else {
+      showFeedback(`Упаковка "${cleanName}" (${newPackage.parts.length} дет.) успешно создана!`, 'success');
       setSelectedPrintPkg(newPackage);
       setShowPrintModal(true);
     }
+  };
+
+  // Reset or explicitly start fresh package
+  const handleResetOrNewPackage = () => {
+    if (currentBufferParts.length > 0) {
+      if (!window.confirm('В текущем формируемом месте есть вложенные детали. Очистить буфер и начать новое место?')) {
+        return;
+      }
+    }
+    setCurrentBufferParts([]);
+    setPackageNameInput(`Место ${existingPackages.length + 1}`);
+    showFeedback('Создана новая чистая упаковка. Сканируйте детали!', 'info');
   };
 
   // Delete / Unpack an existing package
@@ -493,14 +511,60 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                 <span className="w-7 h-7 rounded-xl bg-orange-600 text-white text-xs font-black flex items-center justify-center font-mono">
                   {nextPkgNumber}
                 </span>
-                <h3 className="font-black text-slate-900 text-base">
-                  Формируемое место №{nextPkgNumber}
-                </h3>
+                <div>
+                  <h3 className="font-black text-slate-900 text-base leading-tight">
+                    Формируемое место №{nextPkgNumber}
+                  </h3>
+                  <div className="text-[10px] text-slate-500 font-medium">
+                    Заказ №{order.orderNumber}
+                  </div>
+                </div>
               </div>
 
-              <span className="px-2.5 py-1 rounded-xl bg-orange-100 text-orange-800 text-[11px] font-black">
-                {currentBufferParts.length} дет. внутри
-              </span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleResetOrNewPackage}
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-orange-100 text-slate-700 hover:text-orange-900 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer"
+                  title="Очистить буфер и начать упаковку нового места"
+                >
+                  <Plus className="w-3.5 h-3.5 text-orange-600" />
+                  <span>Новая коробка</span>
+                </button>
+
+                <span className="px-2.5 py-1.5 rounded-xl bg-orange-100 text-orange-800 text-[11px] font-black">
+                  {currentBufferParts.length} дет.
+                </span>
+              </div>
+            </div>
+
+            {/* Direct Thermal Auto-print Quick Toggle */}
+            <div className="p-2.5 bg-orange-50/70 border border-orange-200 rounded-2xl flex items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2">
+                <div className={`w-7 h-7 rounded-xl flex items-center justify-center font-black ${autoPrintDirect ? 'bg-orange-600 text-white shadow-sm' : 'bg-slate-200 text-slate-500'}`}>
+                  <Zap className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="font-black text-slate-900 text-[11px]">
+                    Прямая печать на термопринтер
+                  </div>
+                  <div className="text-[10px] text-slate-500">
+                    Печатать сразу по QR-команде «Закрыть коробку»
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setAutoPrintDirect(!autoPrintDirect)}
+                className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                  autoPrintDirect 
+                    ? 'bg-orange-600 text-white shadow-sm' 
+                    : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                {autoPrintDirect ? 'ВКЛ' : 'ВЫКЛ'}
+              </button>
             </div>
 
             {/* Package Name Input with Quick Suggestion Chips */}
@@ -627,12 +691,22 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
             <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row items-center gap-2">
               <button
                 type="button"
-                onClick={() => handleSealPackage(true)}
+                onClick={() => handleSealPackage(false)}
                 disabled={currentBufferParts.length === 0}
-                className="w-full py-3 rounded-2xl bg-orange-600 hover:bg-orange-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-xs shadow-md shadow-orange-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                className="flex-1 w-full py-3 rounded-2xl bg-orange-600 hover:bg-orange-500 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-xs shadow-md shadow-orange-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Printer className="w-4 h-4" />
-                <span>Завершить упаковку и распечатать этикетку</span>
+                <span>Запечатать коробку и напечатать</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleSealPackage(true)}
+                disabled={currentBufferParts.length === 0}
+                className="px-3 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-40 font-bold text-xs transition-colors cursor-pointer"
+                title="Открыть окно предпросмотра этикетки перед печатью"
+              >
+                Предпросмотр
               </button>
             </div>
           </div>

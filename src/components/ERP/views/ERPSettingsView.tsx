@@ -1461,19 +1461,19 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                     );
 
                     return (
-                      <div className={`p-3 rounded-xl border flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 ${
+                      <div className={`p-3.5 rounded-xl border flex flex-col gap-3 w-full overflow-hidden ${
                         diag.isMatch 
                           ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-200' 
                           : 'bg-rose-950/40 border-rose-500/40 text-rose-200'
                       }`}>
-                        <div className="flex items-center gap-2.5">
+                        <div className="flex items-start gap-2.5 min-w-0">
                           {diag.isMatch ? (
-                            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0" />
+                            <CheckCircle2 className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
                           ) : (
-                            <Info className="w-5 h-5 text-rose-400 shrink-0" />
+                            <Info className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
                           )}
-                          <div>
-                            <div className="text-xs font-bold flex items-center gap-2">
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <div className="text-xs font-bold flex flex-wrap items-center gap-2">
                               <span>Статус сопоставления:</span>
                               <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
                                 diag.isMatch ? 'bg-emerald-500/30 text-emerald-300' : 'bg-rose-500/30 text-rose-300'
@@ -1481,7 +1481,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                                 {diag.isMatch ? '✓ УСПЕШНО РАСПОЗНАНО' : '✗ ДЕТАЛЬ НЕ НАЙДЕНА'}
                               </span>
                             </div>
-                            <div className="text-[11px] opacity-80 mt-0.5">
+                            <div className="text-[11px] opacity-90 leading-relaxed break-words break-all">
                               {diag.isMatch 
                                 ? `Код "${testScanCode}" идеально привязывается к детали №${testPartNumber} в заказе №${testOrderNumber}`
                                 : `Код "${testScanCode}" не соответствует детали №${testPartNumber}. Проверьте шаблон или разделители.`
@@ -1491,8 +1491,8 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                         </div>
 
                         {/* Quick test buttons */}
-                        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                          <span className="text-[9px] uppercase font-bold text-slate-400">Тест:</span>
+                        <div className="pt-2 border-t border-white/10 flex flex-wrap items-center gap-1.5">
+                          <span className="text-[10px] font-bold text-slate-400 mr-1">Быстрый пример:</span>
                           <button
                             type="button"
                             onClick={() => {
@@ -1500,7 +1500,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                               setTestPartNumber('20.02');
                               setTestScanCode('11-0626-11_20.02');
                             }}
-                            className="px-2 py-1 rounded bg-indigo-900/60 hover:bg-indigo-800 text-[10px] font-mono font-bold text-indigo-200 border border-indigo-700"
+                            className="px-2 py-1 rounded-lg bg-indigo-900/60 hover:bg-indigo-800 text-[10px] font-mono font-bold text-indigo-200 border border-indigo-700/80 transition-colors cursor-pointer"
                           >
                             11-0626-11_20.02
                           </button>
@@ -1510,7 +1510,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                               setTestPartNumber('20.02');
                               setTestScanCode('20.02');
                             }}
-                            className="px-2 py-1 rounded bg-indigo-900/60 hover:bg-indigo-800 text-[10px] font-mono font-bold text-indigo-200 border border-indigo-700"
+                            className="px-2 py-1 rounded-lg bg-indigo-900/60 hover:bg-indigo-800 text-[10px] font-mono font-bold text-indigo-200 border border-indigo-700/80 transition-colors cursor-pointer"
                           >
                             20.02
                           </button>
@@ -1521,7 +1521,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                               setTestPartNumber('00.00');
                               setTestScanCode('00-0000-00_00.00');
                             }}
-                            className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-[10px] font-mono font-bold text-slate-300 border border-slate-700"
+                            className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-[10px] font-mono font-bold text-slate-300 border border-slate-700/80 transition-colors cursor-pointer"
                           >
                             00-0000-00_00.00
                           </button>
@@ -1532,7 +1532,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                               setTestPartNumber('00.00.00');
                               setTestScanCode('0000-0000_00.00.00');
                             }}
-                            className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-[10px] font-mono font-bold text-slate-300 border border-slate-700"
+                            className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-[10px] font-mono font-bold text-slate-300 border border-slate-700/80 transition-colors cursor-pointer"
                           >
                             0000-0000_00.00.00
                           </button>
@@ -1542,7 +1542,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                               setTestPartNumber('00.00');
                               setTestScanCode('00.00');
                             }}
-                            className="px-2 py-1 rounded bg-slate-900 hover:bg-slate-800 text-[10px] font-mono font-bold text-slate-300 border border-slate-700"
+                            className="px-2 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 text-[10px] font-mono font-bold text-slate-300 border border-slate-700/80 transition-colors cursor-pointer"
                           >
                             00.00
                           </button>
@@ -2690,6 +2690,55 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                       <div className="text-[11px] text-slate-500">Точное время запечатывания места в цеху</div>
                     </div>
                   </label>
+
+                  {/* Direct Thermal Auto-Print Setting */}
+                  <label className="flex items-center gap-3 p-3 bg-orange-50/60 rounded-2xl border border-orange-200 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.packageLabelSettings?.autoPrintOnCloseBox !== false}
+                      onChange={(e) => {
+                        const current = formData.packageLabelSettings || { widthMm: 120, heightMm: 75 };
+                        setFormData({
+                          ...formData,
+                          packageLabelSettings: {
+                            ...current,
+                            autoPrintOnCloseBox: e.target.checked
+                          }
+                        });
+                      }}
+                      className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
+                    />
+                    <div>
+                      <div className="text-xs font-black text-orange-950">
+                        ⚡ Автоматическая печать этикетки при закрытии коробки
+                      </div>
+                      <div className="text-[11px] text-orange-800">
+                        Мгновенно отправлять этикетку на термопринтер по QR-команде «Закрыть коробку» или нажатию кнопки «Запечатать»
+                      </div>
+                    </div>
+                  </label>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">
+                      Модель принтера / Целевой принтер (опционально)
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.packageLabelSettings?.printerName || ''}
+                      onChange={(e) => {
+                        const current = formData.packageLabelSettings || { widthMm: 120, heightMm: 75 };
+                        setFormData({
+                          ...formData,
+                          packageLabelSettings: {
+                            ...current,
+                            printerName: e.target.value
+                          }
+                        });
+                      }}
+                      placeholder="например: Xprinter XP-365B / TSC TE200 / Zebra ZD220"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 font-medium text-slate-900 text-xs focus:ring-2 focus:ring-orange-500 outline-none"
+                    />
+                  </div>
                 </div>
               </div>
 

@@ -20,7 +20,9 @@ import {
   Info, 
   CheckSquare, 
   Square,
-  MapPin 
+  MapPin,
+  Zap,
+  RefreshCw
 } from 'lucide-react';
 import { 
   ProductionOrder, 
@@ -35,6 +37,7 @@ import { PackageLabelPrintModal } from './PackageLabelPrintModal';
 import { parseHardwareFile } from '../utils/kittingParser';
 import { arePrecedingStagesCompleted, getPackagingReadinessStats } from '../utils/stageReadiness';
 import { processQRCommand, normalizeBarcodeScan, convertRuCharToEn } from '../utils';
+import { printPackageLabelDirect } from '../utils/packageLabelPrinter';
 
 interface ERPKittingTabProps {
   order: ProductionOrder;
@@ -69,6 +72,7 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
   const [feedbackMsg, setFeedbackMsg] = useState<string | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [autoPrintDirect, setAutoPrintDirect] = useState<boolean>(settings?.packageLabelSettings?.autoPrintOnCloseBox !== false);
 
   const hardwareData = order.hardwareData;
   const hardwareItems = hardwareData?.items || [];
@@ -198,7 +202,7 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
   };
 
   // Create Package from draft or manual description
-  const handleCreatePackage = () => {
+  const handleCreatePackage = (forceOpenModal: boolean = false) => {
     // Build structured hardware items list from draft
     const packedItemsList: OrderPackageHardwareItem[] = [];
     const formattedNotesLines: string[] = [];
@@ -306,11 +310,33 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
     setSelectedDocs({});
     setCustomNotes('');
     setPackageName(`Место ${updatedPackages.length + 1} (Фурнитура)`);
-    setFeedbackMsg(`Упаковка "${cleanName}" сформирована! Нажмите печать этикетки.`);
-    setTimeout(() => setFeedbackMsg(null), 3500);
 
-    setSelectedPrintPkg(newPackage);
-    setShowPrintModal(true);
+    if (autoPrintDirect && !forceOpenModal) {
+      printPackageLabelDirect(order, newPackage, updatedPackages.length, settings?.packageLabelSettings);
+      setFeedbackMsg(`📦 Место №${nextNumber} укомплектовано! Этикетка отправлена на термопринтер.`);
+      setTimeout(() => setFeedbackMsg(null), 3500);
+    } else {
+      setFeedbackMsg(`Упаковка "${cleanName}" сформирована!`);
+      setTimeout(() => setFeedbackMsg(null), 3500);
+      setSelectedPrintPkg(newPackage);
+      setShowPrintModal(true);
+    }
+  };
+
+  // Reset or start fresh kitting box
+  const handleResetOrNewPackage = () => {
+    const draftCount = Object.values(draftBoxItems).reduce((a, b) => a + b, 0);
+    if (draftCount > 0 || customNotes.trim()) {
+      if (!window.confirm('В текущем формируемом месте есть выбранные позиции фурнитуры. Очистить и начать новое место?')) {
+        return;
+      }
+    }
+    setDraftBoxItems({});
+    setSelectedDocs({});
+    setCustomNotes('');
+    setPackageName(`Место ${existingPackages.length + 1} (Фурнитура)`);
+    setFeedbackMsg('Создано новое чистое место комплектации.');
+    setTimeout(() => setFeedbackMsg(null), 3000);
   };
 
   // Close box on QR command / window event
@@ -865,11 +891,53 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2 font-black text-slate-900 text-base">
                 <Tag className="w-5 h-5 text-cyan-600" />
-                <span>Формирование коробки</span>
+                <span>Формирование места №{nextNumber}</span>
               </div>
-              <span className="px-3 py-1 rounded-xl bg-cyan-100 text-cyan-800 text-xs font-black font-mono">
-                Место №{nextNumber}
-              </span>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={handleResetOrNewPackage}
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-cyan-100 text-slate-700 hover:text-cyan-900 font-bold text-xs transition-colors flex items-center gap-1 cursor-pointer"
+                  title="Очистить выбранное и начать новое место"
+                >
+                  <Plus className="w-3.5 h-3.5 text-cyan-600" />
+                  <span>Новая коробка</span>
+                </button>
+
+                <span className="px-2.5 py-1.5 rounded-xl bg-cyan-100 text-cyan-800 text-xs font-black font-mono">
+                  M{nextNumber}
+                </span>
+              </div>
+            </div>
+
+            {/* Direct Thermal Auto-print Quick Toggle */}
+            <div className="p-2.5 bg-cyan-50/70 border border-cyan-200 rounded-2xl flex items-center justify-between gap-2 text-xs">
+              <div className="flex items-center gap-2">
+                <div className={`w-7 h-7 rounded-xl flex items-center justify-center font-black ${autoPrintDirect ? 'bg-cyan-600 text-white shadow-sm' : 'bg-slate-200 text-slate-500'}`}>
+                  <Zap className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="font-black text-slate-900 text-[11px]">
+                    Прямая печать на термопринтер
+                  </div>
+                  <div className="text-[10px] text-slate-500">
+                    Печатать сразу по кнопке или QR-команде «Закрыть коробку»
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setAutoPrintDirect(!autoPrintDirect)}
+                className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                  autoPrintDirect 
+                    ? 'bg-cyan-600 text-white shadow-sm' 
+                    : 'bg-white border border-slate-300 text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                {autoPrintDirect ? 'ВКЛ' : 'ВЫКЛ'}
+              </button>
             </div>
 
             {/* Selected Items in Draft Box Summary */}
@@ -990,13 +1058,25 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
             </div>
 
             {/* Button Create and Print */}
-            <button
-              onClick={handleCreatePackage}
-              className="w-full py-3.5 rounded-2xl bg-cyan-600 hover:bg-cyan-500 text-white font-black text-xs shadow-md shadow-cyan-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <Printer className="w-4 h-4" />
-              <span>Запаковать в коробку №{nextNumber} и распечатать</span>
-            </button>
+            <div className="flex flex-col sm:flex-row items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleCreatePackage(false)}
+                className="flex-1 w-full py-3.5 rounded-2xl bg-cyan-600 hover:bg-cyan-500 text-white font-black text-xs shadow-md shadow-cyan-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Printer className="w-4 h-4" />
+                <span>Запаковать место №{nextNumber} и напечатать</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleCreatePackage(true)}
+                className="px-3 py-3.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
+                title="Предпросмотр этикетки перед печатью"
+              >
+                Предпросмотр
+              </button>
+            </div>
           </div>
 
           {/* Formed Packages List */}

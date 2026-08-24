@@ -32,7 +32,8 @@ import {
   RotateCcw,
   List,
   PanelLeftClose,
-  PanelLeftOpen
+  PanelLeftOpen,
+  ShieldCheck
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPEmployee, ERPCompanySettings, AdditionalWorks } from '../types';
 import { formatDeadlineDate } from '../utils';
@@ -157,16 +158,41 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
     setStartDate(monday);
   };
 
-  const STAGE_CONFIGS: { id: ProductionStageId; name: string; shortName: string; icon: any; color: string; bg: string }[] = [
+  const ALL_POSSIBLE_STAGE_CONFIGS: { id: ProductionStageId; name: string; shortName: string; icon: any; color: string; bg: string }[] = [
     { id: 'cutting', name: 'Распил', shortName: 'Распил', icon: Scissors, color: 'text-blue-600', bg: 'bg-blue-50 text-blue-700 border-blue-200' },
     { id: 'edging', name: 'Кромка', shortName: 'Кромка', icon: Layers, color: 'text-indigo-600', bg: 'bg-indigo-50 text-indigo-700 border-indigo-200' },
     { id: 'cnc', name: 'Присадка', shortName: 'Присадка', icon: Factory, color: 'text-purple-600', bg: 'bg-purple-50 text-purple-700 border-purple-200' },
-    { id: 'kitting', name: 'Комплектовка', shortName: 'Комплектовка', icon: Box, color: 'text-cyan-600', bg: 'bg-cyan-50 text-cyan-700 border-cyan-200' },
+    { id: 'facades', name: 'Фасады', shortName: 'Фасады', icon: Wrench, color: 'text-amber-600', bg: 'bg-amber-50 text-amber-700 border-amber-200' },
     { id: 'assembly', name: 'Сборка', shortName: 'Сборка', icon: Wrench, color: 'text-teal-600', bg: 'bg-teal-50 text-teal-700 border-teal-200' },
+    { id: 'kitting', name: 'Комплектовка', shortName: 'Комплектовка', icon: Box, color: 'text-cyan-600', bg: 'bg-cyan-50 text-cyan-700 border-cyan-200' },
+    { id: 'qc', name: 'ОТК', shortName: 'ОТК', icon: ShieldCheck, color: 'text-emerald-600', bg: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
     { id: 'packing', name: 'Упаковка', shortName: 'Упаковка', icon: Package, color: 'text-orange-600', bg: 'bg-orange-50 text-orange-700 border-orange-200' },
   ];
 
-  const REQUIRED_STAGES: ProductionStageId[] = ['cutting', 'edging', 'cnc', 'kitting', 'assembly', 'packing'];
+  // Dynamic active production stages list honoring company settings
+  const enabledStagesList = useMemo<ProductionStageId[]>(() => {
+    if (settings?.enabledStages && settings.enabledStages.length > 0) {
+      return settings.enabledStages.filter(s => s !== 'queue' && s !== 'ready' && s !== 'shipping');
+    }
+    // Default standard production route if not specified
+    return ['cutting', 'edging', 'cnc', 'kitting', 'packing'];
+  }, [settings?.enabledStages]);
+
+  const STAGE_CONFIGS = useMemo(() => {
+    // Preserve custom order if user arranged stages in settings
+    const ordered: typeof ALL_POSSIBLE_STAGE_CONFIGS = [];
+    enabledStagesList.forEach(stId => {
+      const found = ALL_POSSIBLE_STAGE_CONFIGS.find(cfg => cfg.id === stId);
+      if (found) {
+        ordered.push(found);
+      }
+    });
+    return ordered.length > 0 ? ordered : ALL_POSSIBLE_STAGE_CONFIGS.filter(cfg => cfg.id !== 'assembly');
+  }, [enabledStagesList]);
+
+  const REQUIRED_STAGES = useMemo(() => {
+    return STAGE_CONFIGS.map(st => st.id);
+  }, [STAGE_CONFIGS]);
 
   const isOrderFullyPlanned = (order: ProductionOrder): boolean => {
     const dates = order.stagePlannedDates || {};

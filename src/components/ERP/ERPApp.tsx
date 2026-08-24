@@ -319,6 +319,11 @@ export const ERPApp: React.FC<ERPAppProps> = ({
   const [isOvertimeApproved, setIsOvertimeApproved] = useState<boolean>(false);
   const [showShiftWarningModal, setShowShiftWarningModal] = useState<boolean>(false);
   const [showShiftSummaryModal, setShowShiftSummaryModal] = useState<boolean>(false);
+  const showShiftSummaryModalRef = useRef<boolean>(false);
+  useEffect(() => {
+    showShiftSummaryModalRef.current = showShiftSummaryModal;
+  }, [showShiftSummaryModal]);
+
   const [shiftWarningMessage, setShiftWarningMessage] = useState<string>('');
   const [commandToastMsg, setCommandToastMsg] = useState<string | null>(null);
 
@@ -1160,8 +1165,14 @@ export const ERPApp: React.FC<ERPAppProps> = ({
         showCommandToast('🟢 Рабочая смена успешно начата!');
       },
       onEndShift: () => {
-        setShowShiftSummaryModal(true);
-        showCommandToast('📊 Открыт отчет: Итоги рабочей смены');
+        if (showShiftSummaryModalRef.current) {
+          handleEndShift();
+          setShowShiftSummaryModal(false);
+          showCommandToast('✅ Рабочая смена закрыта и отчет сохранен!');
+        } else {
+          setShowShiftSummaryModal(true);
+          showCommandToast('📊 Открыт отчет смены. Отсканируйте повторно «Завершить смену» для закрытия.');
+        }
       },
       onFinishPackage: () => {
         window.dispatchEvent(new CustomEvent('erp_cmd_close_box'));
@@ -1229,8 +1240,14 @@ export const ERPApp: React.FC<ERPAppProps> = ({
       showCommandToast('🟢 Рабочая смена успешно начата!');
     };
     const onEndShiftEvent = () => {
-      setShowShiftSummaryModal(true);
-      showCommandToast('📊 Открыт отчет: Итоги рабочей смены');
+      if (showShiftSummaryModalRef.current) {
+        handleEndShift();
+        setShowShiftSummaryModal(false);
+        showCommandToast('✅ Рабочая смена закрыта и отчет сохранен!');
+      } else {
+        setShowShiftSummaryModal(true);
+        showCommandToast('📊 Открыт отчет смены. Отсканируйте повторно «Завершить смену» для закрытия.');
+      }
     };
     const onCloseBoxEvent = () => {
       showCommandToast('📦 Команда: Закрыть коробку / место');
@@ -1721,8 +1738,8 @@ export const ERPApp: React.FC<ERPAppProps> = ({
               )}
             </div>
 
-            {/* Voice Assistant Toggle */}
-            <VoiceAssistantToggle variant="pill" className="bg-white" />
+            {/* Sound & Voice Toggle */}
+            <VoiceAssistantToggle variant="icon" className="bg-slate-50 hover:bg-slate-100" />
 
             {/* Operator Card */}
             <div className="flex items-center gap-2.5 pl-3 border-l border-slate-200">

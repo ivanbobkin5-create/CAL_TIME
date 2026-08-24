@@ -332,6 +332,9 @@ export interface PackageLabelSettings {
   showDateTime?: boolean;        // Печатать дату и время
   showOrderQr?: boolean;         // Печатать QR-код места
   fontSizeScale?: number;        // Масштаб шрифта 80%-120%
+  autoPrintOnCloseBox?: boolean; // Автоматически отправлять на печать при закрытии коробки
+  autoCloseModalAfterPrint?: boolean; // Закрывать окно печати после отправки задания
+  printerName?: string;          // Название термопринтера (например 'Термопринтер 120x75')
 }
 
 export interface ERPEmployee {
@@ -422,6 +425,7 @@ export interface SalaryRecord {
 }
 
 export interface ERPCompanySettings {
+  companyTitle?: string;
   erpEnabled: boolean;
   executionMode?: 'classic' | 'live_item_planning'; // Режим работы: 'classic' (конвейер) или 'live_item_planning' (интерактивный календарь с поштучным live-сканированием)
   workDayStart: string;

@@ -1870,6 +1870,32 @@ function transliterate(str: string): string {
         }
       }
 
+      // Guarantee that all local saved orders (especially completed, shipped, and archived history)
+      // are ALWAYS preserved in the list and never lost even if external Bitrix24 deal moves stage or loses connection
+      const existingOrderIds = new Set(orders.map(o => o.id));
+      for (const [localId, localOrder] of Object.entries(localErpOrdersMap)) {
+        if (!existingOrderIds.has(localId) && localOrder && typeof localOrder === 'object') {
+          orders.push({
+            id: localId,
+            orderNumber: (localOrder as any).orderNumber || localId,
+            clientName: (localOrder as any).clientName || 'Заказчик',
+            projectName: (localOrder as any).projectName || 'Заказ',
+            createdAt: (localOrder as any).createdAt || new Date().toISOString().substring(0, 10),
+            deadlineDate: (localOrder as any).deadlineDate || new Date().toISOString().substring(0, 10),
+            currentStage: (localOrder as any).currentStage || 'shipping',
+            priority: (localOrder as any).priority || 'normal',
+            totalAreaM2: (localOrder as any).totalAreaM2 || 0,
+            totalEdgeM: (localOrder as any).totalEdgeM || 0,
+            partsCount: (localOrder as any).partsCount || 0,
+            facadesCount: (localOrder as any).facadesCount || 0,
+            priceTotal: (localOrder as any).priceTotal || 0,
+            status: (localOrder as any).status || 'completed',
+            ...(localOrder as any)
+          });
+          existingOrderIds.add(localId);
+        }
+      }
+
       const enrichedOrders = orders.map(o => ({
         ...o,
         activeWorkers: cleanAndGetActiveWorkers(o.id)
