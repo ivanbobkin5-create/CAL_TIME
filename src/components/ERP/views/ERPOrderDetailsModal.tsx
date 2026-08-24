@@ -32,7 +32,7 @@ import {
 import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee } from '../types';
 import { parseBirkaFile, BirkaParseResult, BirkaDetail } from '../utils/birkaParser';
 import { parseHardwareFile } from '../utils/hardwareParser';
-import { formatDeadlineDate, speakText, matchDetailToScannedCode, normalizeBarcodeScan, cleanRawScannedString } from '../utils';
+import { formatDeadlineDate, speakText, matchDetailToScannedCode, normalizeBarcodeScan, cleanRawScannedString, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl } from '../utils';
 import { detailRequiresPrisadka } from '../utils/stageReadiness';
 import { FinishedPartNoticeModal } from '../components/FinishedPartNoticeModal';
 import { OrderClientPrivacyModal } from '../components/OrderClientPrivacyModal';
@@ -655,8 +655,38 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
             <div>
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="text-lg font-black text-slate-900">
-                  Заказ №{order.orderNumber}
+                  Заказ №{cleanOrderNumber(order.orderNumber, order.id)}
                 </h3>
+
+                <a
+                  href={getBitrixDealUrl(order, settings)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const dealUrl = getBitrixDealUrl(order, settings);
+                    if (dealUrl === '#') {
+                      e.preventDefault();
+                      const dealId = extractBitrixDealId(order);
+                      const val = prompt('Введите URL или ID сделки в Битрикс24:', dealId || '');
+                      if (val) {
+                        const url = val.startsWith('http') ? val : `https://b24.ru/crm/deal/details/${val}/`;
+                        onUpdateOrder({
+                          ...order,
+                          bitrixUrl: url,
+                          bitrixDealId: val
+                        });
+                        window.open(url, '_blank');
+                      }
+                    }
+                  }}
+                  className="px-2.5 py-0.5 rounded-lg bg-cyan-500 hover:bg-cyan-600 active:bg-cyan-700 text-white font-extrabold text-[11px] shadow-2xs transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+                  title="Открыть сделку в Битрикс24"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                  <span>B24</span>
+                </a>
+
                 <span className="px-2.5 py-0.5 rounded-lg bg-blue-100 text-blue-800 text-xs font-bold font-mono">
                   {stageNames[order.currentStage] || order.currentStage}
                 </span>

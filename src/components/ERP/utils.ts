@@ -593,7 +593,7 @@ export function processQRCommand(
     });
   };
 
-  // 1. Finish package / Close box ("Закрыть коробку / место")
+  // 1. Finish package / Close box ("Закрыть коробку / место / упаковку")
   if (
     matches([
       'CMD_FINISH_PACKAGE',
@@ -602,20 +602,39 @@ export function processQRCommand(
       'CMDCLOSEBOX',
       'CMD_FINISH_BOX',
       'CMDFINISHBOX',
+      'CMD_CLOSE_PLACE',
+      'CMDCLOSEPLACE',
       'FINISH_PACKAGE',
+      'CLOSE_PACKAGE',
       'CLOSE_BOX',
+      'FINISH_BOX',
+      'CLOSE_PLACE',
+      'FINISH_PLACE',
       'ЗАКРЫТЬКОРОБКУ',
       'ЗАКРЫТЬМЕСТО',
+      'ЗАКРЫТЬМЕСТРО',
+      'ЗАКРЫТЬУПАКОВКУ',
+      'ЗАКРЫТЬКОРОБКУМЕСТО',
       'ЗАПЕЧАТАТЬКОРОБКУ',
       'ЗАПЕЧАТАТЬМЕСТО',
+      'ЗАПЕЧАТАТЬУПАКОВКУ',
+      'ЗАПЕЧАТАТЬ',
       'КОРОБКАЗАКРЫТЬ',
-      'СЬВ_АСт'
+      'МЕСТОЗАКРЫТЬ',
+      'УПАКОВКАЗАКРЫТЬ',
+      'ЗАВЕРШИТЬКОРОБКУ',
+      'ЗАВЕРШИТЬМЕСТО',
+      'ЗАВЕРШИТЬУПАКОВКУ',
+      'PFRHSNMKHJHARE', // закрыть коробку
+      'PFRHSNBMTCNJ', // закрыть место
+      'PFRHSNBMTCnhj', // закрыть местро
+      'PFRHSNBENFRJBRE' // закрыть упаковку
     ])
   ) {
     if (callbacks?.onFinishPackage) {
       callbacks.onFinishPackage();
     }
-    return { isCommand: true, commandKey: 'CMD_FINISH_PACKAGE', message: 'Команда: Закрыть упаковку / место' };
+    return { isCommand: true, commandKey: 'CMD_FINISH_PACKAGE', message: 'Команда: Закрыть коробку / место' };
   }
 
   // 2. Start shift ("Начать смену")
@@ -726,4 +745,121 @@ export function processQRCommand(
   }
 
   return { isCommand: false };
+}
+
+/**
+ * Очищает номер заказа от технических префиксов (b24_, №, #), сохраняя чистый номер или номер сделки
+ */
+export function cleanOrderNumber(rawNumber?: string, fallbackId?: string): string {
+  let num = (rawNumber || '').trim();
+  if (!num && fallbackId) {
+    num = fallbackId.trim();
+  }
+
+  if (num.toLowerCase().startsWith('b24_')) {
+    num = num.slice(4).trim();
+  }
+
+  // Remove leading №, #
+  num = num.replace(/^[№#\s]+/, '').trim();
+
+  // If starts with order number followed by space and client, extract order number
+  const matchWithClient = num.match(/^([A-Za-z0-9\-_./]+)\s+(.+)$/);
+  if (matchWithClient && matchWithClient[1].length >= 3) {
+    num = matchWithClient[1];
+  }
+
+  return num || (fallbackId ? fallbackId.replace(/^b24_/i, '') : '—');
+}
+
+/**
+ * Извлекает числовой ID сделки в Битрикс24 из объекта заказа
+ */
+export function extractBitrixDealId(order?: { bitrixDealId?: string; bitrixUrl?: string; orderNumber?: string; id?: string }): string | null {
+  if (!order) return null;
+
+  if (order.bitrixDealId) {
+    const clean = String(order.bitrixDealId).replace(/^b24_/i, '').trim();
+    if (clean) return clean;
+  }
+
+  if (order.bitrixUrl) {
+    const match = order.bitrixUrl.match(/deal\/details\/(\d+)/i);
+    if (match) return match[1];
+  }
+
+  const idToCheck = order.id || '';
+  if (idToCheck.toLowerCase().startsWith('b24_')) {
+    const clean = idToCheck.slice(4).trim();
+    if (/^\d+$/.test(clean)) return clean;
+  }
+
+  const numToCheck = order.orderNumber || '';
+  if (numToCheck.toLowerCase().startsWith('b24_')) {
+    const clean = numToCheck.slice(4).trim();
+    if (/^\d+$/.test(clean)) return clean;
+  }
+
+  return null;
+}
+
+/**
+ * Формирует ссылку на сделку в Битрикс24 с учетом настроенного вебхука / домена
+ */
+export function getBitrixDealUrl(
+  order: { bitrixDealId?: string; bitrixUrl?: string; orderNumber?: string; id?: string },
+  settings?: any
+): string {
+  if (order.bitrixUrl && order.bitrixUrl.startsWith('http')) {
+    return order.bitrixUrl;
+  }
+
+  const dealId = extractBitrixDealId(order);
+  if (!dealId) return '#';
+
+  const webhookUrl = settings?.bitrix24WebhookUrl || settings?.bitrixWebhookUrl || '';
+  if (webhookUrl && webhookUrl.includes('/rest/')) {
+    const domain = webhookUrl.split('/rest/')[0];
+    return `${domain}/crm/deal/details/${dealId}/`;
+  }
+
+  return `https://b24.ru/crm/deal/details/${dealId}/`;
+}
+
+/**
+ * Проверяет, начато ли уже выполнение задачи по заказу на данном производственном участке
+ */
+export function isStageTaskStarted(order: ProductionOrder, stageId: ProductionStageId): boolean {
+  if (!order) return false;
+
+  // 1. Logs on this stage
+  if (order.workLogs && order.workLogs.some(l => l.stageId === stageId)) {
+    return true;
+  }
+
+  // 2. Scanned parts in stageScanningProgress for this stage
+  if (order.stageScanningProgress && order.stageScanningProgress[stageId]) {
+    const stageMats = order.stageScanningProgress[stageId];
+    const hasScanned = Object.values(stageMats).some(mat => (mat.scannedPartIds?.length || 0) > 0 || mat.isCompleted);
+    if (hasScanned) return true;
+  }
+
+  // 3. Stage force-completed
+  if (order.forcedStageCompletions && order.forcedStageCompletions[stageId]) {
+    return true;
+  }
+
+  // 4. Current active stage with in_progress status
+  if (order.currentStage === stageId && order.status === 'in_progress') {
+    return true;
+  }
+
+  // 5. Packages created on kitting/packing/shipping
+  if (order.packages && order.packages.length > 0) {
+    if (stageId === 'kitting' && order.packages.some(p => p.type === 'kitting')) return true;
+    if (stageId === 'packing' && order.packages.some(p => p.type === 'details' || p.type === 'custom')) return true;
+    if (stageId === 'shipping' && order.packages.some(p => (p as any).isShipped || (p as any).status === 'shipped')) return true;
+  }
+
+  return false;
 }

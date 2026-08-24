@@ -38,7 +38,7 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee, MaterialResidual } from '../types';
 import { parseBirkaFile, BirkaParseResult, BirkaDetail } from '../utils/birkaParser';
-import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, getStageNameRussian, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, speakText, matchDetailToScannedCode, cleanRawScannedString, processQRCommand } from '../utils';
+import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, getStageNameRussian, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, speakText, matchDetailToScannedCode, cleanRawScannedString, processQRCommand, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl } from '../utils';
 import { CuttingOffcutsModal } from '../components/CuttingOffcutsModal';
 import { EdgingRemainsModal } from '../components/EdgingRemainsModal';
 import { detailRequiresPrisadka, getDetailAvailabilityForStage } from '../utils/stageReadiness';
@@ -880,8 +880,39 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
               </span>
 
               <span className="px-3 py-1 rounded-xl bg-slate-800 text-white text-xs font-black font-mono border border-slate-700">
-                Заказ №{order.orderNumber}
+                Заказ №{cleanOrderNumber(order.orderNumber, order.id)}
               </span>
+
+              <a
+                href={getBitrixDealUrl(order, settings)}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const dealUrl = getBitrixDealUrl(order, settings);
+                  if (dealUrl === '#') {
+                    e.preventDefault();
+                    const dealId = extractBitrixDealId(order);
+                    const val = prompt('Введите URL или ID сделки в Битрикс24:', dealId || '');
+                    if (val) {
+                      const url = val.startsWith('http') ? val : `https://b24.ru/crm/deal/details/${val}/`;
+                      const updated = {
+                        ...order,
+                        bitrixUrl: url,
+                        bitrixDealId: val
+                      };
+                      setLocalOrder(updated);
+                      onUpdateOrder(updated);
+                      window.open(url, '_blank');
+                    }
+                  }
+                }}
+                className="px-2.5 py-1 rounded-xl bg-cyan-500 hover:bg-cyan-600 active:bg-cyan-700 text-white font-extrabold text-[11px] shadow-sm transition-all flex items-center gap-1 shrink-0 cursor-pointer"
+                title="Открыть сделку в Битрикс24"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>B24</span>
+              </a>
 
               {order.birkaData && (
                 <span className="px-2.5 py-1 rounded-xl bg-emerald-950/90 text-emerald-300 border border-emerald-800 text-[11px] font-bold flex items-center gap-1">

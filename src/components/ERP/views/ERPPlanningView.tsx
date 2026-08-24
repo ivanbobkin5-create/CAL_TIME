@@ -33,10 +33,11 @@ import {
   List,
   PanelLeftClose,
   PanelLeftOpen,
-  ShieldCheck
+  ShieldCheck,
+  AlertTriangle
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPEmployee, ERPCompanySettings, AdditionalWorks } from '../types';
-import { formatDeadlineDate } from '../utils';
+import { formatDeadlineDate, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, isStageTaskStarted } from '../utils';
 import { parseBirkaFile } from '../utils/birkaParser';
 import { parseHardwareFile } from '../utils/hardwareParser';
 import { HardwareSpecificationModal } from '../components/HardwareSpecificationModal';
@@ -95,6 +96,17 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
 
   // Drag and drop task state
   const [draggedStageTask, setDraggedStageTask] = useState<{ orderId: string; stageId: ProductionStageId } | null>(null);
+
+  // Modal confirmation for moving an already started stage task
+  const [moveStartedTaskConfirmation, setMoveStartedTaskConfirmation] = useState<{
+    orderId: string;
+    stageId: ProductionStageId;
+    targetDateStr: string | null;
+    currentDateStr: string | null;
+    stageName: string;
+    orderTitle: string;
+    orderNumber: string;
+  } | null>(null);
 
   // Capacity overload warning alert banner
   const [capacityWarningAlert, setCapacityWarningAlert] = useState<{
@@ -256,33 +268,39 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
   };
 
   const getOrderDisplayParts = (order: ProductionOrder) => {
-    const num = (order.orderNumber || '').trim();
+    const cleanNum = cleanOrderNumber(order.orderNumber, order.id);
     let client = (order.clientName || order.projectName || '').trim();
 
-    const cleanNum = num.replace(/^[№#\s]+/, '').trim();
-    const displayNum = `№${cleanNum || num}`;
-
     if (client) {
-      if (client === num || client === cleanNum || client === `№${cleanNum}`) {
+      if (
+        client.toLowerCase() === cleanNum.toLowerCase() ||
+        client.toLowerCase() === `№${cleanNum.toLowerCase()}` ||
+        client.toLowerCase() === (order.orderNumber || '').toLowerCase()
+      ) {
         client = '';
       } else {
         if (cleanNum) {
           const escaped = cleanNum.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
-          const regex = new RegExp(`^[№#\\s]*${escaped}[\\s:·\\-_–—]*`, 'i');
+          const regex = new RegExp(`^[№#\\s]*${escaped}[\\s:·\\-_–—/]*`, 'i');
           client = client.replace(regex, '').trim();
+        }
+        if (order.orderNumber) {
+          const escapedRaw = order.orderNumber.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+          const regexRaw = new RegExp(`^[№#\\s]*${escapedRaw}[\\s:·\\-_–—/]*`, 'i');
+          client = client.replace(regexRaw, '').trim();
         }
       }
     }
 
     return {
-      orderNumber: displayNum,
+      orderNumber: cleanNum,
       clientName: client
     };
   };
 
   const displayOrderTitle = (order: ProductionOrder) => {
     const { orderNumber, clientName } = getOrderDisplayParts(order);
-    return clientName ? `${orderNumber} · ${clientName}` : orderNumber;
+    return clientName ? `№${orderNumber} · ${clientName}` : `№${orderNumber}`;
   };
 
   // Helper: calculate load created by a single order on a production stage
@@ -492,7 +510,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
     };
   };
 
-  const handleAssignStageTaskToDate = (orderId: string, stageId: ProductionStageId, dateStr: string | null) => {
+  const executeAssignStageTaskToDate = (orderId: string, stageId: ProductionStageId, dateStr: string | null) => {
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
 
@@ -538,6 +556,36 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
         });
       }
     }
+  };
+
+  const handleAssignStageTaskToDate = (orderId: string, stageId: ProductionStageId, dateStr: string | null) => {
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
+
+    const currentStageDates = order.stagePlannedDates || {};
+    const currentAssigned = currentStageDates[stageId] || (stageId === 'cutting' ? order.plannedCuttingDate : null) || null;
+
+    // If date didn't change, do nothing
+    if (currentAssigned === dateStr) return;
+
+    // If task is already started in production, show confirmation modal with options
+    if (isStageTaskStarted(order, stageId)) {
+      const stName = STAGE_CONFIGS.find(s => s.id === stageId)?.name || stageId;
+      const { orderNumber } = getOrderDisplayParts(order);
+
+      setMoveStartedTaskConfirmation({
+        orderId,
+        stageId,
+        targetDateStr: dateStr,
+        currentDateStr: currentAssigned,
+        stageName: stName,
+        orderTitle: displayOrderTitle(order),
+        orderNumber
+      });
+      return;
+    }
+
+    executeAssignStageTaskToDate(orderId, stageId, dateStr);
   };
 
   const handleBirkaUploadForOrder = async (order: ProductionOrder, file: File) => {
@@ -692,73 +740,71 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
   const readyOrdersCount = orders.filter(o => isOrderFullyPlanned(o)).length;
 
   return (
-    <div className="space-y-6">
-      {/* Top Banner & Header */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-2 text-xs font-bold text-blue-600 uppercase tracking-wider mb-1">
-            <CalendarIcon className="w-4 h-4" /> Планирование производства & спецификации
+    <div className="space-y-4">
+      {/* Top Banner & Header - Compact & Space-efficient */}
+      <div className="bg-white rounded-2xl sm:rounded-3xl px-4 py-3 sm:px-5 sm:py-3.5 border border-slate-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 text-[11px] font-black text-blue-600 uppercase tracking-wider">
+            <CalendarIcon className="w-3.5 h-3.5 shrink-0" />
+            <span>Планирование производства</span>
           </div>
-          <h2 className="text-xl md:text-2xl font-black text-slate-900">
-            Формирование плана и подгрузка файлов бирок
+          <h2 className="text-lg md:text-xl font-black text-slate-900 leading-tight">
+            Формирование плана
           </h2>
-          <p className="text-xs text-slate-500 mt-1">
-            Прикрепите спецификацию бирок (`.bir`), назначьте дни для всех участков, заполните доп. работы и запустите заказ.
-          </p>
         </div>
 
         {/* View Mode Switcher & Quick Filter Tabs */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex items-center p-1 bg-indigo-50/80 rounded-2xl border border-indigo-200 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <div className="flex items-center p-0.5 bg-indigo-50/80 rounded-xl border border-indigo-200 shrink-0">
             <button
               onClick={() => setPlanningViewTab('calendar')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
-                planningViewTab === 'calendar' ? 'bg-indigo-600 text-white shadow-sm' : 'text-indigo-900 hover:text-indigo-950'
+              className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                planningViewTab === 'calendar' ? 'bg-indigo-600 text-white shadow-xs' : 'text-indigo-900 hover:text-indigo-950'
               }`}
             >
               <CalendarIcon className="w-3.5 h-3.5" />
-              <span>📅 Календарь задач (Drag & Drop)</span>
+              <span>Календарь</span>
             </button>
             <button
               onClick={() => setPlanningViewTab('list')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
-                planningViewTab === 'list' ? 'bg-indigo-600 text-white shadow-sm' : 'text-indigo-900 hover:text-indigo-950'
+              className={`px-3 py-1.5 rounded-lg text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                planningViewTab === 'list' ? 'bg-indigo-600 text-white shadow-xs' : 'text-indigo-900 hover:text-indigo-950'
               }`}
             >
               <List className="w-3.5 h-3.5" />
-              <span>📋 Реестр и подгрузка файлов</span>
+              <span>Реестр и файлы</span>
             </button>
           </div>
 
-          <div className="flex items-center p-1 bg-slate-100 rounded-2xl border border-slate-200 shrink-0">
+          <div className="flex items-center p-0.5 bg-slate-100 rounded-xl border border-slate-200 shrink-0">
             <button
               onClick={() => setStatusFilter('queue')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                statusFilter === 'queue' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                statusFilter === 'queue' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
               }`}
               title="Заказы, в которых еще не все этапы распределены по участкам"
             >
               <span>Очередь</span>
-              <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-black ${statusFilter === 'queue' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
+              <span className={`px-1.5 py-0.2 rounded text-[10px] font-black ${statusFilter === 'queue' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
                 {queueOrdersCount}
               </span>
             </button>
             <button
               onClick={() => setStatusFilter('ready')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                statusFilter === 'ready' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                statusFilter === 'ready' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
               }`}
               title="Заказы, где все участки полностью спланированы"
             >
               <span>Спланированы</span>
-              <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-black ${statusFilter === 'ready' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
+              <span className={`px-1.5 py-0.2 rounded text-[10px] font-black ${statusFilter === 'ready' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
                 {readyOrdersCount}
               </span>
             </button>
             <button
               onClick={() => setStatusFilter('all')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                statusFilter === 'all' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                statusFilter === 'all' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               Все ({orders.length})
@@ -872,6 +918,36 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                 {unplannedCount} в план
                               </span>
                             )}
+
+                            {/* B24 link button positioned right under the unplanned tasks badge */}
+                            <a
+                              href={getBitrixDealUrl(order, settings)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const url = getBitrixDealUrl(order, settings);
+                                if (url === '#') {
+                                  e.preventDefault();
+                                  const dealId = extractBitrixDealId(order);
+                                  const val = prompt('Введите URL или ID сделки в Битрикс24:', dealId || '');
+                                  if (val) {
+                                    const directUrl = val.startsWith('http') ? val : `https://b24.ru/crm/deal/details/${val}/`;
+                                    onUpdateOrder({
+                                      ...order,
+                                      bitrixUrl: directUrl,
+                                      bitrixDealId: val
+                                    });
+                                    window.open(directUrl, '_blank');
+                                  }
+                                }
+                              }}
+                              className="px-1.5 py-0.5 rounded bg-cyan-500 hover:bg-cyan-600 active:bg-cyan-700 text-white font-black text-[8.5px] shadow-2xs transition-all flex items-center gap-0.5 shrink-0 cursor-pointer"
+                              title="Открыть сделку в Битрикс24"
+                            >
+                              <ExternalLink className="w-2.5 h-2.5" />
+                              <span>B24</span>
+                            </a>
                           </div>
                         </div>
 
@@ -1270,7 +1346,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                         setDraggedStageTask(null);
                                       }
                                     }}
-                                    className={`p-1 border-r border-slate-200 last:border-r-0 space-y-1 overflow-y-auto max-h-[145px] transition-colors min-w-0 flex flex-col ${
+                                    className={`p-1 border-r border-slate-200 last:border-r-0 space-y-1 overflow-y-auto max-h-[165px] transition-colors min-w-0 flex flex-col ${
                                       day.isToday ? 'bg-blue-50/20' : day.isWeekend ? 'bg-slate-50/30' : ''
                                     }`}
                                   >
@@ -1313,15 +1389,15 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                           key={order.id}
                                           draggable={true}
                                           onDragStart={() => setDraggedStageTask({ orderId: order.id, stageId: st.id })}
-                                          className={`group relative px-2 py-1 min-h-[38px] max-h-[46px] rounded-xl border text-left shadow-2xs hover:shadow-md transition-all cursor-grab active:cursor-grabbing w-full overflow-hidden flex flex-col justify-center gap-0.5 ${orderColor.bg} ${orderColor.border} ${
+                                          className={`group relative px-1.5 py-1 min-h-[44px] sm:min-h-[48px] rounded-xl border text-left shadow-2xs hover:shadow-md transition-all cursor-grab active:cursor-grabbing w-full overflow-hidden flex flex-col justify-center gap-0.5 ${orderColor.bg} ${orderColor.border} ${
                                             order.priority === 'urgent' ? 'ring-2 ring-red-400' : ''
                                           }`}
                                         >
-                                          {/* Line 1: Order Number + Urgency + Unassign X */}
+                                          {/* Line 1: Clean bold Order Number + Urgency badge + Unassign button */}
                                           <div className="flex items-center justify-between gap-1 w-full min-w-0">
                                             <div className="flex items-center gap-1 min-w-0 flex-1">
                                               <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: orderColor.bar }} />
-                                              <span className={`font-mono font-black text-[10px] sm:text-[10.5px] leading-none truncate ${orderColor.text}`}>
+                                              <span className={`font-mono font-black text-[11px] sm:text-xs leading-none truncate ${orderColor.text}`}>
                                                 {orderNumber}
                                               </span>
                                               {order.priority === 'urgent' && (
@@ -1343,15 +1419,15 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                             </button>
                                           </div>
 
-                                          {/* Line 2: Client / Project Name */}
+                                          {/* Line 2: ONLY Client / Project Text (Never repeats order number) */}
                                           <div className="w-full min-w-0 overflow-hidden">
                                             {clientName ? (
-                                              <div className={`text-[9px] sm:text-[9.5px] font-bold leading-tight truncate ${orderColor.text} opacity-90`} title={clientName}>
+                                              <div className={`text-[9.5px] sm:text-[10px] font-bold leading-tight truncate ${orderColor.text} opacity-90`} title={clientName}>
                                                 {clientName}
                                               </div>
                                             ) : (
-                                              <div className={`text-[8.5px] font-medium leading-tight truncate ${orderColor.text} opacity-60 italic`}>
-                                                {orderNumber}
+                                              <div className={`text-[9px] font-medium leading-tight truncate ${orderColor.text} opacity-40`}>
+                                                —
                                               </div>
                                             )}
                                           </div>
@@ -2025,6 +2101,60 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
       </div>
     </div>
   )}
+
+      {/* Modal: Confirmation for moving an already started stage task */}
+      {moveStartedTaskConfirmation && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-amber-200/90 space-y-4 animate-scale-in">
+            <div className="flex items-start gap-3.5">
+              <div className="w-11 h-11 rounded-2xl bg-amber-100 text-amber-700 border border-amber-300 flex items-center justify-center shrink-0 shadow-inner">
+                <AlertTriangle className="w-6 h-6 text-amber-600" />
+              </div>
+              <div className="min-w-0 space-y-0.5">
+                <div className="text-[10px] font-black text-amber-700 uppercase tracking-wider">Внимание: задача в работе</div>
+                <h3 className="text-base font-black text-slate-900 leading-snug">
+                  Задача уже в процессе выполнения
+                </h3>
+              </div>
+            </div>
+
+            <div className="p-4 bg-amber-50/80 rounded-2xl border border-amber-200/80 text-xs text-amber-950 space-y-2.5 leading-relaxed">
+              <p>
+                По заказу <strong className="font-mono font-black text-slate-900">№{moveStartedTaskConfirmation.orderNumber}</strong> на участке <strong className="text-slate-900">«{moveStartedTaskConfirmation.stageName}»</strong> уже начато выполнение сотрудниками в цехе (зафиксированы логи работы или отсканированы детали).
+              </p>
+              <div className="pt-2 border-t border-amber-200/70 flex flex-col gap-1 text-[11px]">
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Текущая дата:</span>
+                  <span className="font-bold text-slate-900">{moveStartedTaskConfirmation.currentDateStr || 'Не указана'}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-slate-600">Новая дата:</span>
+                  <span className="font-bold text-blue-700">{moveStartedTaskConfirmation.targetDateStr || 'Снять с плана'}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2">
+              <button
+                onClick={() => setMoveStartedTaskConfirmation(null)}
+                className="px-4 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
+              >
+                Оставить без изменений
+              </button>
+              <button
+                onClick={() => {
+                  const { orderId, stageId, targetDateStr } = moveStartedTaskConfirmation;
+                  setMoveStartedTaskConfirmation(null);
+                  executeAssignStageTaskToDate(orderId, stageId, targetDateStr);
+                }}
+                className="px-4 py-2.5 rounded-2xl bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white font-extrabold text-xs shadow-md shadow-amber-200 transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <span>Все равно переместить</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Modal: Launched Order Confirmation */}
       {launchedModalOrder && (

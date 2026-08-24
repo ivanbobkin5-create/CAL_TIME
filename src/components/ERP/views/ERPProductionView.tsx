@@ -29,7 +29,7 @@ import {
   Lock
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPEmployee, ERPCompanySettings } from '../types';
-import { formatDeadlineDate, getNextRequiredStage } from '../utils';
+import { formatDeadlineDate, getNextRequiredStage, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl } from '../utils';
 import { getStageTaskReadinessInfo } from '../utils/stageReadiness';
 import { ERPOrderDetailsModal } from './ERPOrderDetailsModal';
 import { ERPDispatchView } from './ERPDispatchView';
@@ -519,7 +519,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                       <div className="space-y-2 min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-mono font-black text-slate-900 text-sm bg-slate-100 px-3 py-1 rounded-xl border border-slate-200 shrink-0">
-                            {order.orderNumber}
+                            №{cleanOrderNumber(order.orderNumber, order.id)}
                           </span>
 
                           {taskReadiness.isLocked ? (
@@ -535,15 +535,17 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                           )}
 
                           <a
-                            href={order.bitrixUrl || (order.bitrixDealId ? `https://b24.ru/crm/deal/details/${order.bitrixDealId}/` : '#')}
+                            href={getBitrixDealUrl(order, settings)}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (!order.bitrixUrl && !order.bitrixDealId) {
+                              const dealUrl = getBitrixDealUrl(order, settings);
+                              if (dealUrl === '#') {
                                 e.preventDefault();
-                                const val = prompt('Введите URL или ID сделки в Битрикс24:', order.bitrixDealId || '');
-                                if (val) {
+                                const dealId = extractBitrixDealId(order);
+                                const val = prompt('Введите URL или ID сделки в Битрикс24:', dealId || '');
+                                if (val && onUpdateOrder) {
                                   const url = val.startsWith('http') ? val : `https://b24.ru/crm/deal/details/${val}/`;
                                   onUpdateOrder({
                                     ...order,

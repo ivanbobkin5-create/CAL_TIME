@@ -179,7 +179,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
     const cmdResult = processQRCommand(cleanCode, {
       onFinishPackage: () => {
         if (currentBufferParts.length > 0) {
-          handleSealPackage(true);
+          handleSealPackage(false);
         } else {
           showFeedback('В формируемой коробке пока нет деталей!', 'error');
         }
@@ -232,6 +232,16 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
 
       if (isOtherInput) return;
 
+      if (e.key === 'F8') {
+        e.preventDefault();
+        if (currentBufferParts.length > 0) {
+          handleSealPackage(false);
+        } else {
+          showFeedback('В формируемой коробке пока нет деталей! Отсканируйте деталь для упаковки.', 'error');
+        }
+        return;
+      }
+
       if (e.key === 'Enter') {
         const rawCode = isScannerInput
           ? (scanInput.trim() || (scannerInputRef.current?.value || '').trim())
@@ -273,7 +283,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
   useEffect(() => {
     const handleCloseBoxEvent = () => {
       if (currentBufferParts.length > 0) {
-        handleSealPackage(true);
+        handleSealPackage(false);
       } else {
         showFeedback('В формируемой коробке пока нет деталей! Отсканируйте деталь для упаковки.', 'error');
       }
@@ -281,7 +291,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
 
     window.addEventListener('erp_cmd_close_box', handleCloseBoxEvent);
     return () => window.removeEventListener('erp_cmd_close_box', handleCloseBoxEvent);
-  }, [currentBufferParts, existingPackages, packageNameInput, order, currentUser]);
+  }, [currentBufferParts, existingPackages, packageNameInput, order, currentUser, autoPrintDirect]);
 
   // Finish & Seal current package -> Add to order.packages and auto-print or open print modal
   const handleSealPackage = (forceOpenModal: boolean = false) => {
