@@ -164,6 +164,69 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
     { id: 'packing', name: 'Упаковка мест', shortName: 'Упаковка', icon: Package, color: 'text-orange-600', bg: 'bg-orange-50 text-orange-700 border-orange-200' },
   ];
 
+  // Distinct harmonious colors for each order across the 2-week schedule
+  const ORDER_COLOR_PALETTES = [
+    { bg: 'bg-sky-100/90', border: 'border-sky-300', text: 'text-sky-950', dot: 'bg-sky-500', bar: '#0284c7' },
+    { bg: 'bg-emerald-100/90', border: 'border-emerald-300', text: 'text-emerald-950', dot: 'bg-emerald-500', bar: '#059669' },
+    { bg: 'bg-amber-100/90', border: 'border-amber-300', text: 'text-amber-950', dot: 'bg-amber-500', bar: '#d97706' },
+    { bg: 'bg-purple-100/90', border: 'border-purple-300', text: 'text-purple-950', dot: 'bg-purple-500', bar: '#9333ea' },
+    { bg: 'bg-rose-100/90', border: 'border-rose-300', text: 'text-rose-950', dot: 'bg-rose-500', bar: '#e11d48' },
+    { bg: 'bg-teal-100/90', border: 'border-teal-300', text: 'text-teal-950', dot: 'bg-teal-500', bar: '#0d9488' },
+    { bg: 'bg-orange-100/90', border: 'border-orange-300', text: 'text-orange-950', dot: 'bg-orange-500', bar: '#ea580c' },
+    { bg: 'bg-indigo-100/90', border: 'border-indigo-300', text: 'text-indigo-950', dot: 'bg-indigo-500', bar: '#4f46e5' },
+    { bg: 'bg-lime-100/90', border: 'border-lime-300', text: 'text-lime-950', dot: 'bg-lime-500', bar: '#65a30d' },
+    { bg: 'bg-fuchsia-100/90', border: 'border-fuchsia-300', text: 'text-fuchsia-950', dot: 'bg-fuchsia-500', bar: '#c026d3' },
+    { bg: 'bg-cyan-100/90', border: 'border-cyan-300', text: 'text-cyan-950', dot: 'bg-cyan-500', bar: '#0891b2' },
+    { bg: 'bg-violet-100/90', border: 'border-violet-300', text: 'text-violet-950', dot: 'bg-violet-500', bar: '#7c3aed' },
+    { bg: 'bg-pink-100/90', border: 'border-pink-300', text: 'text-pink-950', dot: 'bg-pink-500', bar: '#db2777' },
+    { bg: 'bg-yellow-100/90', border: 'border-yellow-300', text: 'text-yellow-950', dot: 'bg-yellow-500', bar: '#ca8a04' },
+    { bg: 'bg-blue-100/90', border: 'border-blue-300', text: 'text-blue-950', dot: 'bg-blue-500', bar: '#2563eb' },
+    { bg: 'bg-red-100/90', border: 'border-red-300', text: 'text-red-950', dot: 'bg-red-500', bar: '#dc2626' },
+  ];
+
+  const getOrderColor = (orderId: string) => {
+    const orderIdx = orders.findIndex(o => o.id === orderId);
+    if (orderIdx >= 0) {
+      return ORDER_COLOR_PALETTES[orderIdx % ORDER_COLOR_PALETTES.length];
+    }
+    let hash = 0;
+    for (let i = 0; i < orderId.length; i++) {
+      hash = orderId.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    const index = Math.abs(hash) % ORDER_COLOR_PALETTES.length;
+    return ORDER_COLOR_PALETTES[index];
+  };
+
+  const getOrderDisplayParts = (order: ProductionOrder) => {
+    const num = (order.orderNumber || '').trim();
+    let client = (order.clientName || order.projectName || '').trim();
+
+    const cleanNum = num.replace(/^[№#\s]+/, '').trim();
+    const displayNum = `№${cleanNum || num}`;
+
+    if (client) {
+      if (client === num || client === cleanNum || client === `№${cleanNum}`) {
+        client = '';
+      } else {
+        if (cleanNum) {
+          const escaped = cleanNum.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+          const regex = new RegExp(`^[№#\\s]*${escaped}[\\s:·\\-_–—]*`, 'i');
+          client = client.replace(regex, '').trim();
+        }
+      }
+    }
+
+    return {
+      orderNumber: displayNum,
+      clientName: client
+    };
+  };
+
+  const displayOrderTitle = (order: ProductionOrder) => {
+    const { orderNumber, clientName } = getOrderDisplayParts(order);
+    return clientName ? `${orderNumber} · ${clientName}` : orderNumber;
+  };
+
   const handleAssignStageTaskToDate = (orderId: string, stageId: ProductionStageId, dateStr: string | null) => {
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
@@ -462,28 +525,35 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                 filteredOrders.map(order => {
                   const isExpanded = !!expandedOrdersMap[order.id]; // Default collapsed
                   const stageDates = order.stagePlannedDates || {};
+                  const orderColor = getOrderColor(order.id);
+                  const { orderNumber, clientName } = getOrderDisplayParts(order);
 
                   return (
                     <div key={order.id} className="bg-slate-50/90 rounded-2xl border border-slate-200 p-2 shadow-2xs space-y-1.5 hover:border-slate-300 transition-all">
                       {/* Order Header */}
                       <div
                         onClick={() => toggleOrderExpanded(order.id)}
-                        className="flex items-center justify-between gap-1.5 cursor-pointer select-none"
+                        className="flex items-start justify-between gap-1.5 cursor-pointer select-none"
                       >
-                        <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                          <button className="p-0.5 rounded text-slate-400 hover:text-slate-700 shrink-0">
+                        <div className="flex items-start gap-1.5 min-w-0 flex-1">
+                          <button className="p-0.5 mt-0.5 rounded text-slate-400 hover:text-slate-700 shrink-0">
                             {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
                           </button>
-                          <span className="font-mono font-black text-[10px] text-slate-900 bg-white px-1.5 py-0.5 rounded border border-slate-200 shrink-0">
-                            №{order.orderNumber}
-                          </span>
-                          <span className="text-[11px] font-bold text-slate-800 truncate" title={order.clientName || order.projectName}>
-                            {order.clientName || order.projectName}
-                          </span>
+                          <span className="w-2 h-2 mt-1 rounded-full shrink-0 shadow-2xs" style={{ backgroundColor: orderColor.bar }} />
+                          <div className="min-w-0 flex flex-col">
+                            <span className="text-[11px] font-mono font-black text-slate-900 leading-tight">
+                              {orderNumber}
+                            </span>
+                            {clientName && (
+                              <span className="text-[10px] font-bold text-slate-600 truncate leading-tight mt-0.5" title={clientName}>
+                                {clientName}
+                              </span>
+                            )}
+                          </div>
                         </div>
 
                         {order.priority === 'urgent' && (
-                          <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700 text-[9px] font-black shrink-0">
+                          <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700 text-[8px] font-black shrink-0">
                             🚨 Срочно
                           </span>
                         )}
@@ -799,32 +869,54 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                       day.isToday ? 'bg-blue-50/20' : day.isWeekend ? 'bg-slate-50/30' : ''
                                     }`}
                                   >
-                                    {tasksInCell.map(order => (
-                                      <div
-                                        key={order.id}
-                                        draggable={true}
-                                        onDragStart={() => setDraggedStageTask({ orderId: order.id, stageId: st.id })}
-                                        className={`px-1.5 py-1 rounded-lg border bg-white shadow-2xs hover:shadow transition-all text-left flex flex-col gap-0.5 group cursor-grab active:cursor-grabbing w-full overflow-hidden ${
-                                          order.priority === 'urgent' ? 'border-red-300 ring-1 ring-red-200' : 'border-slate-200'
-                                        }`}
-                                      >
-                                        <div className="flex items-center justify-between gap-1 w-full">
-                                          <span className="font-mono font-black text-[10px] text-slate-900 truncate">
-                                            №{order.orderNumber}
-                                          </span>
-                                          <button
-                                            onClick={() => handleAssignStageTaskToDate(order.id, st.id, null)}
-                                            className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-600 transition-opacity cursor-pointer shrink-0"
-                                            title="Снять с даты"
-                                          >
-                                            <X className="w-2.5 h-2.5" />
-                                          </button>
+                                    {tasksInCell.map(order => {
+                                      const orderColor = getOrderColor(order.id);
+                                      const { orderNumber, clientName } = getOrderDisplayParts(order);
+
+                                      return (
+                                        <div
+                                          key={order.id}
+                                          draggable={true}
+                                          onDragStart={() => setDraggedStageTask({ orderId: order.id, stageId: st.id })}
+                                          className={`group relative p-1.5 rounded-xl border text-left shadow-2xs hover:shadow-md transition-all cursor-grab active:cursor-grabbing w-full overflow-hidden flex flex-col gap-0.5 ${orderColor.bg} ${orderColor.border} ${
+                                            order.priority === 'urgent' ? 'ring-2 ring-red-400' : ''
+                                          }`}
+                                        >
+                                          {/* Line 1: Order Number + Badges + Unassign Button */}
+                                          <div className="flex items-center justify-between gap-1 w-full min-w-0">
+                                            <div className="flex items-center gap-1 min-w-0">
+                                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: orderColor.bar }} />
+                                              <span className={`font-mono font-black text-[10.5px] leading-tight truncate ${orderColor.text}`}>
+                                                {orderNumber}
+                                              </span>
+                                              {order.priority === 'urgent' && (
+                                                <span className="px-1 py-0.2 rounded bg-red-600 text-white font-black text-[7px] uppercase tracking-wider shrink-0">
+                                                  Срочно
+                                                </span>
+                                              )}
+                                            </div>
+
+                                            <button
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleAssignStageTaskToDate(order.id, st.id, null);
+                                              }}
+                                              className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-black/10 text-slate-500 hover:text-red-700 transition-opacity cursor-pointer shrink-0"
+                                              title="Снять с даты"
+                                            >
+                                              <X className="w-2.5 h-2.5" />
+                                            </button>
+                                          </div>
+
+                                          {/* Line 2 and subsequent: Client / Project Name */}
+                                          {clientName ? (
+                                            <div className={`text-[9.5px] font-bold leading-tight line-clamp-2 ${orderColor.text} opacity-90`} title={clientName}>
+                                              {clientName}
+                                            </div>
+                                          ) : null}
                                         </div>
-                                        <span className="text-[9px] text-slate-600 font-semibold truncate w-full" title={order.clientName || order.projectName}>
-                                          {order.clientName || order.projectName}
-                                        </span>
-                                      </div>
-                                    ))}
+                                      );
+                                    })}
                                   </div>
                                 );
                               })}
@@ -844,6 +936,8 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                         filteredOrders.map(order => {
                           const isExpanded = !!expandedOrdersMap[order.id];
                           const stageDates = order.stagePlannedDates || {};
+                          const orderColor = getOrderColor(order.id);
+                          const { orderNumber, clientName } = getOrderDisplayParts(order);
 
                           return (
                             <div key={order.id} className="divide-y divide-slate-100">
@@ -851,16 +945,21 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                               <div className="flex min-h-[40px] bg-slate-50/90 font-bold text-xs items-center">
                                 <div
                                   onClick={() => toggleOrderExpanded(order.id)}
-                                  className="w-48 p-2.5 shrink-0 border-r border-slate-200 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition-colors"
+                                  className="w-48 p-2 shrink-0 border-r border-slate-200 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition-colors"
                                 >
-                                  <div className="flex items-center gap-1 min-w-0">
-                                    {isExpanded ? <ChevronUp className="w-3 h-3 text-slate-500" /> : <ChevronDown className="w-3 h-3 text-slate-500" />}
-                                    <span className="font-mono font-black text-slate-900 bg-white px-1 py-0.5 rounded border border-slate-200 text-[10px]">
-                                      №{order.orderNumber}
-                                    </span>
-                                    <span className="truncate text-slate-800 text-[10px]" title={order.clientName || order.projectName}>
-                                      {order.clientName || order.projectName}
-                                    </span>
+                                  <div className="flex items-start gap-1.5 min-w-0">
+                                    {isExpanded ? <ChevronUp className="w-3 h-3 text-slate-500 mt-0.5" /> : <ChevronDown className="w-3 h-3 text-slate-500 mt-0.5" />}
+                                    <span className="w-2 h-2 mt-1 rounded-full shrink-0" style={{ backgroundColor: orderColor.bar }} />
+                                    <div className="min-w-0 flex flex-col">
+                                      <span className="truncate text-slate-900 font-mono font-black text-[10.5px] leading-tight">
+                                        {orderNumber}
+                                      </span>
+                                      {clientName && (
+                                        <span className="text-[9.5px] font-bold text-slate-600 truncate leading-tight mt-0.5" title={clientName}>
+                                          {clientName}
+                                        </span>
+                                      )}
+                                    </div>
                                   </div>
                                 </div>
 
@@ -877,7 +976,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                         {assignedStages.map(st => {
                                           const StIcon = st.icon;
                                           return (
-                                            <span key={st.id} className={`px-1 py-0.5 rounded border text-[8px] font-black flex items-center gap-0.5 ${st.bg}`} title={st.name}>
+                                            <span key={st.id} className={`px-1 py-0.5 rounded border text-[8px] font-black flex items-center gap-0.5 ${orderColor.bg} ${orderColor.border} ${orderColor.text}`} title={`${st.name}: ${orderNumber}${clientName ? ` (${clientName})` : ''}`}>
                                               <StIcon className="w-2.5 h-2.5" />
                                               <span>{st.shortName}</span>
                                             </span>
@@ -919,22 +1018,32 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                               }
                                             }}
                                             className={`p-0.5 border-r border-slate-200 last:border-r-0 flex items-center justify-center transition-colors min-w-0 ${
-                                              isAssignedToThisDay ? 'bg-emerald-50/80' : ''
+                                              isAssignedToThisDay ? 'bg-slate-50/50' : ''
                                             }`}
                                           >
                                             {isAssignedToThisDay && (
                                               <div
                                                 draggable={true}
                                                 onDragStart={() => setDraggedStageTask({ orderId: order.id, stageId: st.id })}
-                                                className="px-1.5 py-0.5 rounded border text-[9px] font-black flex items-center justify-between gap-1 w-full bg-white border-emerald-300 text-emerald-900 shadow-2xs group cursor-grab active:cursor-grabbing"
+                                                className={`group relative p-1 rounded-lg border text-[9px] font-black flex flex-col gap-0.5 w-full shadow-2xs cursor-grab active:cursor-grabbing ${orderColor.bg} ${orderColor.border} ${orderColor.text}`}
                                               >
-                                                <span className="truncate">№{order.orderNumber}</span>
-                                                <button
-                                                  onClick={() => handleAssignStageTaskToDate(order.id, st.id, null)}
-                                                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-red-50 text-slate-400 hover:text-red-600 transition-opacity cursor-pointer"
-                                                >
-                                                  <X className="w-2.5 h-2.5" />
-                                                </button>
+                                                <div className="flex items-center justify-between gap-1 w-full min-w-0">
+                                                  <span className="truncate font-mono">{orderNumber}</span>
+                                                  <button
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      handleAssignStageTaskToDate(order.id, st.id, null);
+                                                    }}
+                                                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-black/10 text-slate-500 hover:text-red-700 transition-opacity cursor-pointer shrink-0"
+                                                  >
+                                                    <X className="w-2.5 h-2.5" />
+                                                  </button>
+                                                </div>
+                                                {clientName && (
+                                                  <span className="text-[8px] font-bold truncate opacity-85 leading-tight" title={clientName}>
+                                                    {clientName}
+                                                  </span>
+                                                )}
                                               </div>
                                             )}
                                           </div>

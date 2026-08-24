@@ -265,6 +265,20 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
     };
   }, [showPrintModal, scanInput, currentBufferParts, existingPackages]);
 
+  // Window event listener for global QR close box command
+  useEffect(() => {
+    const handleCloseBoxEvent = () => {
+      if (currentBufferParts.length > 0) {
+        handleSealPackage(true);
+      } else {
+        showFeedback('В формируемой коробке пока нет деталей! Отсканируйте деталь для упаковки.', 'error');
+      }
+    };
+
+    window.addEventListener('erp_cmd_close_box', handleCloseBoxEvent);
+    return () => window.removeEventListener('erp_cmd_close_box', handleCloseBoxEvent);
+  }, [currentBufferParts, existingPackages, packageNameInput, order, currentUser]);
+
   // Finish & Seal current package -> Add to order.packages and open print modal
   const handleSealPackage = (openPrint: boolean = true) => {
     if (currentBufferParts.length === 0) {
@@ -833,7 +847,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                   <div className="flex items-center justify-between text-[10px] text-slate-500 pt-2 border-t border-slate-200/70">
                     <div>Упаковщик: <strong className="text-slate-700">{pkg.createdByEmployeeName || 'Мастер'}</strong></div>
                     <div>
-                      {pkg.createdAt ? new Date(pkg.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : ''}
+                      {pkg.createdAt ? (!isNaN(new Date(pkg.createdAt).getTime()) ? new Date(pkg.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : pkg.createdAt.slice(0, 5)) : ''}
                     </div>
                   </div>
 

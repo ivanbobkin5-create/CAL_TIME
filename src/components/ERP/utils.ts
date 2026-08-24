@@ -542,85 +542,151 @@ export function processQRCommand(
     onPrintAct?: () => void;
   }
 ): QRCommandResult {
-  const clean = cleanRawScannedString(rawCode).toUpperCase().replace(/[\s\-_]/g, '');
-  if (!clean) return { isCommand: false };
+  const rawClean = cleanRawScannedString(rawCode).toUpperCase();
+  const clean = rawClean.replace(/[\s\-_.:/\\#]/g, '');
+  const enLayout = convertRuToEnLayout(rawCode).toUpperCase().replace(/[\s\-_.:/\\#]/g, '');
+  if (!clean && !enLayout) return { isCommand: false };
 
-  // Finish package / Close box
+  const matches = (keywords: string[]) => {
+    return keywords.some(kw => {
+      const cleanKw = kw.toUpperCase().replace(/[\s\-_.:/\\#]/g, '');
+      return clean.includes(cleanKw) || enLayout.includes(cleanKw);
+    });
+  };
+
+  // 1. Finish package / Close box ("Закрыть коробку / место")
   if (
-    clean.includes('CMD_FINISH_PACKAGE') ||
-    clean.includes('CMDFINISHPACKAGE') ||
-    clean.includes('CMD_CLOSE_BOX') ||
-    clean.includes('CMDCLOSEBOX') ||
-    clean.includes('CMD_FINISH_BOX') ||
-    clean.includes('ЗАКРЫТЬКОРОБКУ') ||
-    clean.includes('ЗАКРЫТЬМЕСТО')
+    matches([
+      'CMD_FINISH_PACKAGE',
+      'CMDFINISHPACKAGE',
+      'CMD_CLOSE_BOX',
+      'CMDCLOSEBOX',
+      'CMD_FINISH_BOX',
+      'CMDFINISHBOX',
+      'FINISH_PACKAGE',
+      'CLOSE_BOX',
+      'ЗАКРЫТЬКОРОБКУ',
+      'ЗАКРЫТЬМЕСТО',
+      'ЗАПЕЧАТАТЬКОРОБКУ',
+      'ЗАПЕЧАТАТЬМЕСТО',
+      'КОРОБКАЗАКРЫТЬ',
+      'СЬВ_АСт'
+    ])
   ) {
-    if (callbacks?.onFinishPackage) callbacks.onFinishPackage();
-    speakText('Место и упаковка закрыты');
+    if (callbacks?.onFinishPackage) {
+      callbacks.onFinishPackage();
+    } else if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('erp_cmd_close_box'));
+    }
+    speakText('Команда: Закрыть коробку');
     return { isCommand: true, commandKey: 'CMD_FINISH_PACKAGE', message: 'Команда: Упаковка / место закрыто' };
   }
 
-  // Start shift
+  // 2. Start shift ("Начать смену")
   if (
-    clean.includes('CMD_START_SHIFT') ||
-    clean.includes('CMDSTARTSHIFT') ||
-    clean.includes('НАЧАТЬСМЕНУ') ||
-    clean.includes('ОТКРЫТЬСМЕНУ')
+    matches([
+      'CMD_START_SHIFT',
+      'CMDSTARTSHIFT',
+      'START_SHIFT',
+      'STARTSHIFT',
+      'НАЧАТЬСМЕНУ',
+      'ОТКРЫТЬСМЕНУ',
+      'НАЧАТЬРАБОЧУЮСМЕНУ',
+      'СТАРТСМЕНЫ',
+      'СМЕНАНАЧАТЬ'
+    ])
   ) {
-    if (callbacks?.onStartShift) callbacks.onStartShift();
+    if (callbacks?.onStartShift) {
+      callbacks.onStartShift();
+    } else if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('erp_cmd_start_shift'));
+    }
     speakText('Смена начата');
     return { isCommand: true, commandKey: 'CMD_START_SHIFT', message: 'Команда: Смена успешно начата' };
   }
 
-  // End shift
+  // 3. End shift ("Закрыть смену / Завершить смену с отчетом")
   if (
-    clean.includes('CMD_END_SHIFT') ||
-    clean.includes('CMDENDSHIFT') ||
-    clean.includes('CMD_FINISH_SHIFT') ||
-    clean.includes('ЗАВЕРШИТЬСМЕНУ') ||
-    clean.includes('ЗАКРЫТЬСМЕНУ')
+    matches([
+      'CMD_END_SHIFT',
+      'CMDENDSHIFT',
+      'CMD_FINISH_SHIFT',
+      'CMDFINISHSHIFT',
+      'END_SHIFT',
+      'FINISH_SHIFT',
+      'ЗАВЕРШИТЬСМЕНУ',
+      'ЗАКРЫТЬСМЕНУ',
+      'ИТОГИСМЕНЫ',
+      'ОТЧЕТСМЕНЫ',
+      'СМЕНАЗАКРЫТЬ'
+    ])
   ) {
-    if (callbacks?.onEndShift) callbacks.onEndShift();
-    speakText('Смена завершена');
+    if (callbacks?.onEndShift) {
+      callbacks.onEndShift();
+    } else if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('erp_cmd_end_shift'));
+    }
+    speakText('Итоги смены');
     return { isCommand: true, commandKey: 'CMD_END_SHIFT', message: 'Команда: Итоги смены' };
   }
 
-  // Report defect
+  // 4. Report defect
   if (
-    clean.includes('CMD_REPORT_DEFECT') ||
-    clean.includes('CMDREPORTDEFECT') ||
-    clean.includes('ФИКСАЦИЯБРАКА') ||
-    clean.includes('БРАК')
+    matches([
+      'CMD_REPORT_DEFECT',
+      'CMDREPORTDEFECT',
+      'REPORT_DEFECT',
+      'ФИКСАЦИЯБРАКА',
+      'БРАК'
+    ])
   ) {
-    if (callbacks?.onReportDefect) callbacks.onReportDefect();
+    if (callbacks?.onReportDefect) {
+      callbacks.onReportDefect();
+    } else if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('erp_cmd_report_defect'));
+    }
     speakText('Фиксация брака');
     return { isCommand: true, commandKey: 'CMD_REPORT_DEFECT', message: 'Команда: Фиксация брака' };
   }
 
-  // Next stage
+  // 5. Next stage
   if (
-    clean.includes('CMD_NEXT_STAGE') ||
-    clean.includes('CMDNEXTSTAGE') ||
-    clean.includes('СЛЕДУЮЩИЙУЧАСТОК')
+    matches([
+      'CMD_NEXT_STAGE',
+      'CMDNEXTSTAGE',
+      'NEXT_STAGE',
+      'СЛЕДУЮЩИЙУЧАСТОК'
+    ])
   ) {
-    if (callbacks?.onNextStage) callbacks.onNextStage();
+    if (callbacks?.onNextStage) {
+      callbacks.onNextStage();
+    } else if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('erp_cmd_next_stage'));
+    }
     speakText('Передано на следующий участок');
     return { isCommand: true, commandKey: 'CMD_NEXT_STAGE', message: 'Команда: Переход на следующий участок' };
   }
 
-  // Print act
+  // 6. Print act
   if (
-    clean.includes('CMD_PRINT_ACT') ||
-    clean.includes('CMDPRINTACT') ||
-    clean.includes('ПЕЧАТЬАКТА')
+    matches([
+      'CMD_PRINT_ACT',
+      'CMDPRINTACT',
+      'PRINT_ACT',
+      'ПЕЧАТЬАКТА'
+    ])
   ) {
-    if (callbacks?.onPrintAct) callbacks.onPrintAct();
+    if (callbacks?.onPrintAct) {
+      callbacks.onPrintAct();
+    } else if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('erp_cmd_print_act'));
+    }
     speakText('Печать акта');
     return { isCommand: true, commandKey: 'CMD_PRINT_ACT', message: 'Команда: Открыта печать акта' };
   }
 
-  if (clean.startsWith('CMD')) {
-    return { isCommand: true, commandKey: clean, message: `Выполнена команда ${clean}` };
+  if (clean.startsWith('CMD') || enLayout.startsWith('CMD')) {
+    return { isCommand: true, commandKey: clean || enLayout, message: `Выполнена команда ${clean || enLayout}` };
   }
 
   return { isCommand: false };

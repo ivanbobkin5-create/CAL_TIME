@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Factory, 
   LayoutDashboard, 
@@ -29,7 +29,8 @@ import {
   Check,
   Archive,
   Truck,
-  PackageCheck
+  PackageCheck,
+  Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -59,6 +60,7 @@ import { ERPOrderWorkspaceView } from './views/ERPOrderWorkspaceView';
 import { MobileCameraScannerModal } from './components/MobileCameraScannerModal';
 import { ShiftSummaryModal } from './components/ShiftSummaryModal';
 import { VoiceAssistantToggle } from './components/VoiceAssistantToggle';
+import { processQRCommand, cleanRawScannedString, normalizeBarcodeScan, convertRuCharToEn } from './utils';
 
 function isOrderEqual(o1: any, o2: any): boolean {
   if (!o1 || !o2) return o1 === o2;
@@ -318,6 +320,14 @@ export const ERPApp: React.FC<ERPAppProps> = ({
   const [showShiftWarningModal, setShowShiftWarningModal] = useState<boolean>(false);
   const [showShiftSummaryModal, setShowShiftSummaryModal] = useState<boolean>(false);
   const [shiftWarningMessage, setShiftWarningMessage] = useState<string>('');
+  const [commandToastMsg, setCommandToastMsg] = useState<string | null>(null);
+
+  const showCommandToast = (msg: string) => {
+    setCommandToastMsg(msg);
+    setTimeout(() => {
+      setCommandToastMsg(prev => (prev === msg ? null : prev));
+    }, 4000);
+  };
 
   // Clock updater
   useEffect(() => {
@@ -1138,35 +1148,169 @@ export const ERPApp: React.FC<ERPAppProps> = ({
     }
   };
 
-  const handleGlobalCameraScan = (code: string) => {
-    const clean = code.trim().toLowerCase();
-    
-    // Try to find matching order
+  // Unified QR code and barcode scanner executor
+  const handleExecuteScannedCode = (rawCode: string) => {
+    const clean = cleanRawScannedString(rawCode);
+    if (!clean) return;
+
+    // 1. Process QR command
+    const cmd = processQRCommand(clean, {
+      onStartShift: () => {
+        handleStartShift();
+        showCommandToast('🟢 Рабочая смена успешно начата!');
+      },
+      onEndShift: () => {
+        setShowShiftSummaryModal(true);
+        showCommandToast('📊 Открыт отчет: Итоги рабочей смены');
+      },
+      onFinishPackage: () => {
+        window.dispatchEvent(new CustomEvent('erp_cmd_close_box'));
+        showCommandToast('📦 Команда: Закрыть коробку / место');
+      },
+      onPrintAct: () => {
+        showCommandToast('🖨️ Печать акта сдачи');
+        window.print();
+      }
+    });
+
+    if (cmd.isCommand) {
+      if (!commandToastMsg) {
+        showCommandToast(cmd.message || 'Выполнена команда QR-кода');
+      }
+      return;
+    }
+
+    // 2. Otherwise try to find matching order or detail
+    const lower = clean.toLowerCase();
     const found = orders.find(o => 
-      o.id.toLowerCase() === clean ||
-      o.orderNumber?.toLowerCase() === clean ||
-      o.clientName?.toLowerCase().includes(clean) ||
+      o.id.toLowerCase() === lower ||
+      o.orderNumber?.toLowerCase() === lower ||
+      o.orderNumber?.toLowerCase().replace(/^[№#\s]+/, '') === lower.replace(/^[№#\s]+/, '') ||
+      o.clientName?.toLowerCase().includes(lower) ||
+      (o.birkaData && (o.birkaData as any).details && (o.birkaData as any).details.some((p: any) => 
+        (p.barcode && p.barcode.toLowerCase() === lower) ||
+        (p.id && p.id.toLowerCase() === lower) ||
+        (p.labelNumber && String(p.labelNumber) === lower) ||
+        (p.name && p.name.toLowerCase().includes(lower))
+      )) ||
       (o.birkaData && (o.birkaData as any).parts && (o.birkaData as any).parts.some((p: any) => 
-        (p.barcode && p.barcode.toLowerCase() === clean) ||
-        (p.id && p.id.toLowerCase() === clean) ||
-        (p.name && p.name.toLowerCase().includes(clean))
+        (p.barcode && p.barcode.toLowerCase() === lower) ||
+        (p.id && p.id.toLowerCase() === lower) ||
+        (p.name && p.name.toLowerCase().includes(lower))
       ))
     );
 
     if (found) {
       setSelectedOrderForWorkspace(found);
       setShowGlobalCameraScanner(false);
+      showCommandToast(`📋 Открыт заказ №${found.orderNumber || found.id}`);
     } else {
-      const numMatch = clean.replace(/[^0-9]/g, '');
-      if (numMatch) {
-        const byNum = orders.find(o => o.orderNumber?.includes(numMatch));
+      const numMatch = lower.replace(/[^0-9]/g, '');
+      if (numMatch && numMatch.length >= 2) {
+        const byNum = orders.find(o => (o.orderNumber || '').replace(/[^0-9]/g, '').includes(numMatch));
         if (byNum) {
           setSelectedOrderForWorkspace(byNum);
           setShowGlobalCameraScanner(false);
+          showCommandToast(`📋 Открыт заказ №${byNum.orderNumber || byNum.id}`);
         }
       }
     }
   };
+
+  const handleGlobalCameraScan = (code: string) => {
+    handleExecuteScannedCode(code);
+    setShowGlobalCameraScanner(false);
+  };
+
+  // Listen to custom window events for QR commands across components
+  useEffect(() => {
+    const onStartShiftEvent = () => {
+      handleStartShift();
+      showCommandToast('🟢 Рабочая смена успешно начата!');
+    };
+    const onEndShiftEvent = () => {
+      setShowShiftSummaryModal(true);
+      showCommandToast('📊 Открыт отчет: Итоги рабочей смены');
+    };
+    const onCloseBoxEvent = () => {
+      showCommandToast('📦 Команда: Закрыть коробку / место');
+    };
+
+    window.addEventListener('erp_cmd_start_shift', onStartShiftEvent);
+    window.addEventListener('erp_cmd_end_shift', onEndShiftEvent);
+    window.addEventListener('erp_cmd_close_box', onCloseBoxEvent);
+
+    return () => {
+      window.removeEventListener('erp_cmd_start_shift', onStartShiftEvent);
+      window.removeEventListener('erp_cmd_end_shift', onEndShiftEvent);
+      window.removeEventListener('erp_cmd_close_box', onCloseBoxEvent);
+    };
+  }, [employees, authUser, company, scheduleEntries]);
+
+  // Root global barcode scanner buffer for hardware USB / Bluetooth scanners
+  const rootBarcodeBufferRef = useRef<string>('');
+  const rootLastKeyTimeRef = useRef<number>(0);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const activeEl = document.activeElement as HTMLElement | null;
+
+      const isInput = (target && (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable
+      )) || (activeEl && (
+        activeEl.tagName === 'INPUT' ||
+        activeEl.tagName === 'TEXTAREA' ||
+        activeEl.tagName === 'SELECT' ||
+        activeEl.isContentEditable
+      ));
+
+      const now = Date.now();
+      const timeDiff = now - rootLastKeyTimeRef.current;
+      rootLastKeyTimeRef.current = now;
+
+      // If user paused for > 250ms and not in input, reset buffer
+      if (timeDiff > 250 && !isInput) {
+        rootBarcodeBufferRef.current = '';
+      }
+
+      if (e.key === 'Enter') {
+        const buffered = (rootBarcodeBufferRef.current || '').trim();
+        if (buffered.length >= 2) {
+          // If buffered is a command, consume it globally even if an input was focused
+          const cmdCheck = processQRCommand(buffered);
+          if (cmdCheck.isCommand) {
+            e.preventDefault();
+            rootBarcodeBufferRef.current = '';
+            handleExecuteScannedCode(buffered);
+            return;
+          }
+
+          if (!isInput) {
+            e.preventDefault();
+            rootBarcodeBufferRef.current = '';
+            handleExecuteScannedCode(buffered);
+          }
+        }
+        return;
+      }
+
+      if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (!isInput) {
+          rootBarcodeBufferRef.current += convertRuCharToEn(e.key);
+        } else if (timeDiff < 65) {
+          // Rapid input from hardware scanner while focused in a search field
+          rootBarcodeBufferRef.current += convertRuCharToEn(e.key);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
+  }, [orders, isShiftActive]);
 
   // 1. Loading Splash (Strict pre-cabinet synchronization)
   if (isLoading) {
@@ -2069,6 +2213,24 @@ export const ERPApp: React.FC<ERPAppProps> = ({
           setShowShiftSummaryModal(false);
         }}
       />
+
+      {/* Floating QR Command Toast Banner */}
+      <AnimatePresence>
+        {commandToastMsg && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.95 }}
+            transition={{ duration: 0.2 }}
+            className="fixed top-5 left-1/2 -translate-x-1/2 z-50 pointer-events-none"
+          >
+            <div className="bg-slate-900/95 text-white px-5 py-3 rounded-2xl shadow-2xl border border-slate-700/80 backdrop-blur-md flex items-center gap-3 text-sm font-black tracking-wide">
+              <Sparkles className="w-5 h-5 text-amber-400 shrink-0 animate-pulse" />
+              <span>{commandToastMsg}</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

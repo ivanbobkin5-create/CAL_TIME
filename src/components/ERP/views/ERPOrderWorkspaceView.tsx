@@ -399,10 +399,18 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     const cmdResult = processQRCommand(cleanCode, {
       onStartShift: () => {
         setShowShiftRequiredModal(false);
-        setScanSuccessMsg('Смена успешно начата!');
+        if (onStartShift) onStartShift();
+        window.dispatchEvent(new CustomEvent('erp_cmd_start_shift'));
+        setScanSuccessMsg('🟢 Смена успешно начата!');
       },
       onEndShift: () => {
-        setShowShiftRequiredModal(true);
+        setShowShiftRequiredModal(false);
+        window.dispatchEvent(new CustomEvent('erp_cmd_end_shift'));
+        setScanSuccessMsg('📊 Открыт отчет: Итоги рабочей смены');
+      },
+      onFinishPackage: () => {
+        window.dispatchEvent(new CustomEvent('erp_cmd_close_box'));
+        setScanSuccessMsg('📦 Команда: Закрыть коробку / место');
       },
       onPrintAct: () => {
         setScanSuccessMsg('🖨️ Запуск печати акта сдачи...');

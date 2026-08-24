@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Box, 
   Plus, 
@@ -34,6 +34,7 @@ import {
 import { PackageLabelPrintModal } from './PackageLabelPrintModal';
 import { parseHardwareFile } from '../utils/kittingParser';
 import { arePrecedingStagesCompleted, getPackagingReadinessStats } from '../utils/stageReadiness';
+import { processQRCommand, normalizeBarcodeScan, convertRuCharToEn } from '../utils';
 
 interface ERPKittingTabProps {
   order: ProductionOrder;
@@ -311,6 +312,94 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
     setSelectedPrintPkg(newPackage);
     setShowPrintModal(true);
   };
+
+  // Close box on QR command / window event
+  useEffect(() => {
+    const handleCloseBoxEvent = () => {
+      // If items exist in draft, create package
+      const draftCount = Object.values(draftBoxItems).reduce((a, b) => a + b, 0);
+      if (draftCount > 0 || customNotes.trim()) {
+        handleCreatePackage();
+      } else {
+        // Auto-select remaining items from first category with unpacked items
+        const remainingItems = hardwareItems.filter(h => Math.max(0, h.quantity - (h.packedQuantity || 0)) > 0);
+        if (remainingItems.length > 0) {
+          const firstCat = remainingItems[0].category || 'Разное / Крепеж';
+          const autoDraft: Record<string, number> = {};
+          remainingItems.filter(h => (h.category || 'Разное / Крепеж') === firstCat).forEach(h => {
+            autoDraft[h.id] = Math.max(0, h.quantity - (h.packedQuantity || 0));
+          });
+          setDraftBoxItems(autoDraft);
+          setFeedbackMsg(`Сформирован состав для места (${firstCat}). Повторите сканирование или нажмите "Сформировать место".`);
+          setTimeout(() => setFeedbackMsg(null), 3500);
+        } else {
+          setFeedbackMsg('Все позиции фурнитуры уже укомплектованы!');
+          setTimeout(() => setFeedbackMsg(null), 3500);
+        }
+      }
+    };
+
+    window.addEventListener('erp_cmd_close_box', handleCloseBoxEvent);
+    return () => window.removeEventListener('erp_cmd_close_box', handleCloseBoxEvent);
+  }, [draftBoxItems, customNotes, hardwareItems, existingPackages, nextNumber, selectedDocs, packageName, order, currentUser]);
+
+  // Global keydown listener for barcode scanners
+  const barcodeBufferRef = useRef<string>('');
+  const lastKeyTimeRef = useRef<number>(0);
+
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (showPrintModal) return;
+
+      const activeEl = document.activeElement as HTMLElement | null;
+      const target = e.target as HTMLElement | null;
+
+      const isInput = (target && (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable
+      )) || (activeEl && (
+        activeEl.tagName === 'INPUT' ||
+        activeEl.tagName === 'TEXTAREA' ||
+        activeEl.tagName === 'SELECT' ||
+        activeEl.isContentEditable
+      ));
+
+      if (isInput) return;
+
+      if (e.key === 'Enter') {
+        const rawCode = barcodeBufferRef.current.trim();
+        const bufferedCode = normalizeBarcodeScan(rawCode);
+        barcodeBufferRef.current = '';
+        if (bufferedCode) {
+          e.preventDefault();
+          const cmd = processQRCommand(bufferedCode, {
+            onFinishPackage: () => {
+              window.dispatchEvent(new CustomEvent('erp_cmd_close_box'));
+            }
+          });
+          if (cmd.isCommand) {
+            setFeedbackMsg(cmd.message || 'Выполнена команда QR-кода');
+            setTimeout(() => setFeedbackMsg(null), 3000);
+          }
+        }
+        return;
+      }
+
+      if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        const now = Date.now();
+        if (now - lastKeyTimeRef.current > 1200) {
+          barcodeBufferRef.current = '';
+        }
+        lastKeyTimeRef.current = now;
+        barcodeBufferRef.current += convertRuCharToEn(e.key);
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
+    return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
+  }, [showPrintModal]);
 
   // Delete Package and restore hardware packed quantities
   const handleDeletePackage = (pkgId: string) => {
@@ -976,7 +1065,7 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
 
                     <div className="text-[10px] text-slate-400 flex items-center justify-between">
                       <span>Сформировал: {pkg.createdByEmployeeName || 'Комплектовщик'}</span>
-                      <span>{pkg.createdAt ? new Date(pkg.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : ''}</span>
+                      <span>{pkg.createdAt ? (!isNaN(new Date(pkg.createdAt).getTime()) ? new Date(pkg.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : pkg.createdAt.slice(0, 5)) : ''}</span>
                     </div>
                   </div>
                 ))}

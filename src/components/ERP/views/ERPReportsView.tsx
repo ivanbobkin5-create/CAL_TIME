@@ -32,6 +32,70 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, ERPEmployee, ERPCompanySettings, EmployeeWorkLog, ProductionStageId } from '../types';
 
+const formatSafeDateTime = (val?: string | number | Date | null): { time: string; date: string } => {
+  if (!val) {
+    const now = new Date();
+    return {
+      time: now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+      date: now.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+    };
+  }
+
+  if (typeof val === 'number') {
+    const d = new Date(val);
+    if (!isNaN(d.getTime())) {
+      return {
+        time: d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        date: d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      };
+    }
+  }
+
+  if (typeof val === 'string') {
+    const str = val.trim();
+    // Try standard ISO parse
+    const d = new Date(str);
+    if (!isNaN(d.getTime())) {
+      return {
+        time: d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        date: d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+      };
+    }
+
+    // Try "HH:mm DD.MM.YYYY" or "HH:mm:ss DD.MM.YYYY"
+    const timeDateMatch = str.match(/^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?\s+(\d{1,2})[./-](\d{1,2})[./-](\d{4})$/);
+    if (timeDateMatch) {
+      const [, h, m, s, day, mon, yr] = timeDateMatch;
+      const parsed = new Date(Number(yr), Number(mon) - 1, Number(day), Number(h), Number(m), Number(s || 0));
+      if (!isNaN(parsed.getTime())) {
+        return {
+          time: parsed.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          date: parsed.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        };
+      }
+    }
+
+    // Try "DD.MM.YYYY HH:mm" or "DD.MM.YYYY"
+    const dateTimeMatch = str.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{4})(?:\s+(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
+    if (dateTimeMatch) {
+      const [, day, mon, yr, h, m, s] = dateTimeMatch;
+      const parsed = new Date(Number(yr), Number(mon) - 1, Number(day), Number(h || 0), Number(m || 0), Number(s || 0));
+      if (!isNaN(parsed.getTime())) {
+        return {
+          time: parsed.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+          date: parsed.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        };
+      }
+    }
+  }
+
+  const now = new Date();
+  return {
+    time: now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+    date: now.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+  };
+};
+
 interface ERPReportsViewProps {
   orders: ProductionOrder[];
   employees: ERPEmployee[];
@@ -682,8 +746,7 @@ export const ERPReportsView: React.FC<ERPReportsViewProps> = ({
                     return true;
                   })
                   .map((evt) => {
-                    const timeFormatted = new Date(evt.timestamp).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-                    const dateFormatted = new Date(evt.timestamp).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                    const { time: timeFormatted, date: dateFormatted } = formatSafeDateTime(evt.timestamp);
 
                     return (
                       <div
