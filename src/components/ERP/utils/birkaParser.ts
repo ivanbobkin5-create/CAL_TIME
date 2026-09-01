@@ -322,7 +322,77 @@ export function parseBirFileText(text: string, customMapping?: Record<string, st
     });
   }
 
-  return details;
+  return consolidateDetails(details);
+}
+
+// Consolidate duplicate rows with identical labelNumber, material, name and dimensions
+export function consolidateDetails(details: BirkaDetail[]): BirkaDetail[] {
+  if (!details || details.length === 0) return [];
+
+  const map = new Map<string, BirkaDetail[]>();
+
+  for (const d of details) {
+    const normLabel = (d.labelNumber || '').toLowerCase().trim();
+    const normMat = (d.material || '').toLowerCase().trim();
+    const normName = (d.name || '').toLowerCase().trim();
+    
+    // Grouping key: if labelNumber is provided, group by position number + material + dimensions
+    // If position number is missing, include name in key
+    const key = normLabel 
+      ? `${normLabel}|${normMat}|${d.length}|${d.width}|${d.thickness}`
+      : `empty_${normMat}|${normName}|${d.length}|${d.width}|${d.thickness}`;
+
+    if (!map.has(key)) {
+      map.set(key, []);
+    }
+    map.get(key)!.push(d);
+  }
+
+  const consolidated: BirkaDetail[] = [];
+
+  for (const items of map.values()) {
+    if (items.length === 1) {
+      consolidated.push(items[0]);
+    } else {
+      const first = items[0];
+      const qtys = items.map(it => it.quantity || 1);
+      
+      let finalQuantity: number;
+      const allEqual = qtys.every(q => q === qtys[0]);
+
+      if (allEqual) {
+        if (qtys[0] === 1) {
+          // E.g. 2 physical detail lines with qty 1 each -> combined total qty = 2
+          finalQuantity = items.length;
+        } else {
+          // E.g. 2 lines for detail 01.01, both claiming total project qty = 2 (Bazis sticker repetition)
+          finalQuantity = Math.max(qtys[0], items.length);
+        }
+      } else {
+        finalQuantity = Math.max(
+          qtys.reduce((acc, q) => acc + q, 0),
+          ...qtys,
+          items.length
+        );
+      }
+
+      consolidated.push({
+        ...first,
+        quantity: finalQuantity,
+        edgeL1: first.edgeL1 || items.find(i => i.edgeL1)?.edgeL1,
+        edgeL2: first.edgeL2 || items.find(i => i.edgeL2)?.edgeL2,
+        edgeW1: first.edgeW1 || items.find(i => i.edgeW1)?.edgeW1,
+        edgeW2: first.edgeW2 || items.find(i => i.edgeW2)?.edgeW2,
+        notes: first.notes || items.find(i => i.notes)?.notes,
+        barcode: first.barcode || items.find(i => i.barcode)?.barcode,
+        holesEnd: first.holesEnd ?? items.find(i => i.holesEnd !== undefined)?.holesEnd,
+        holesFace: first.holesFace ?? items.find(i => i.holesFace !== undefined)?.holesFace,
+        holesCount: first.holesCount ?? items.find(i => i.holesCount !== undefined)?.holesCount,
+      });
+    }
+  }
+
+  return consolidated;
 }
 
 // Group details by material type and compute totals

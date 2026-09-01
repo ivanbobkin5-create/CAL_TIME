@@ -30,7 +30,7 @@ import {
   ShieldAlert
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee } from '../types';
-import { parseBirkaFile, BirkaParseResult, BirkaDetail } from '../utils/birkaParser';
+import { parseBirkaFile, BirkaParseResult, BirkaDetail, consolidateDetails } from '../utils/birkaParser';
 import { parseHardwareFile } from '../utils/hardwareParser';
 import { formatDeadlineDate, speakText, matchDetailToScannedCode, normalizeBarcodeScan, cleanRawScannedString, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl } from '../utils';
 import { detailRequiresPrisadka } from '../utils/stageReadiness';
@@ -1037,7 +1037,7 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                          {order.birkaData.details
+                          {consolidateDetails(order.birkaData.details)
                             .filter(d => 
                               d.labelNumber.toLowerCase().includes(searchPartsQuery.toLowerCase()) ||
                               d.name.toLowerCase().includes(searchPartsQuery.toLowerCase()) ||

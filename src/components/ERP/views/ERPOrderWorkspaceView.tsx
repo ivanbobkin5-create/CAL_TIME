@@ -37,7 +37,7 @@ import {
   Lock
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee, MaterialResidual } from '../types';
-import { parseBirkaFile, BirkaParseResult, BirkaDetail } from '../utils/birkaParser';
+import { parseBirkaFile, BirkaParseResult, BirkaDetail, consolidateDetails } from '../utils/birkaParser';
 import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, getStageNameRussian, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, speakText, matchDetailToScannedCode, cleanRawScannedString, processQRCommand, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, getSmartOrderDisplay } from '../utils';
 import { CuttingOffcutsModal } from '../components/CuttingOffcutsModal';
 import { EdgingRemainsModal } from '../components/EdgingRemainsModal';
@@ -384,12 +384,17 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     return !!(p.edgeL1 || p.edgeL2 || p.edgeW1 || p.edgeW2);
   };
 
+  // Consolidated details for the order
+  const consolidatedOrderDetails = useMemo(() => {
+    return consolidateDetails(localOrder.birkaData?.details || []);
+  }, [localOrder.birkaData]);
+
   // Details for selected material (for current stage)
   const allMaterialDetails = useMemo(() => {
-    return localOrder.birkaData?.details.filter(d => 
+    return consolidatedOrderDetails.filter(d => 
       (d.material || 'Без указания материала') === selectedMaterial
-    ) || [];
-  }, [localOrder.birkaData, selectedMaterial]);
+    );
+  }, [consolidatedOrderDetails, selectedMaterial]);
 
   // Stage filtering:
   // - On edging: only show parts that need edge banding
@@ -462,7 +467,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     const currentOrder = localOrderRef.current;
     const template = settings?.birkaQrFormatTemplate;
     const orderNum = currentOrder.orderNumber || '';
-    const allOrderDetails = currentOrder.birkaData?.details || [];
+    const allOrderDetails = consolidateDetails(currentOrder.birkaData?.details || []);
 
     if (allOrderDetails.length === 0) {
       setScanErrorMsg(`В заказе отсутствуют детали спецификации бирок`);
@@ -937,11 +942,11 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   // Total stage completion status
   const allMaterialGroups = order.birkaData?.materialGroups || [];
   const stageEffectiveDetails = useMemo(() => {
-    const all = localOrder.birkaData?.details || [];
+    const all = consolidatedOrderDetails;
     if (currentStage === 'edging') return all.filter(partNeedsEdge);
     if ((currentStage as string) === 'prisadka' || currentStage === 'cnc') return all.filter(d => detailRequiresPrisadka(d, settings));
     return all;
-  }, [localOrder.birkaData, currentStage, settings]);
+  }, [consolidatedOrderDetails, currentStage, settings]);
 
   const totalOrderParts = useMemo(() => {
     if (stageEffectiveDetails.length > 0) {

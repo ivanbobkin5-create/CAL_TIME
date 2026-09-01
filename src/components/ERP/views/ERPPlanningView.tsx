@@ -40,7 +40,7 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPEmployee, ERPCompanySettings, AdditionalWorks } from '../types';
 import { formatDeadlineDate, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, isStageTaskStarted } from '../utils';
-import { parseBirkaFile } from '../utils/birkaParser';
+import { parseBirkaFile, consolidateDetails } from '../utils/birkaParser';
 import { parseHardwareFile } from '../utils/hardwareParser';
 import { HardwareSpecificationModal } from '../components/HardwareSpecificationModal';
 import { AssemblyFileModal } from '../components/AssemblyFileModal';
@@ -2463,7 +2463,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                        {viewingBirkaModalOrder.birkaData.details
+                        {consolidateDetails(viewingBirkaModalOrder.birkaData.details)
                           .filter(d => 
                             d.labelNumber.toLowerCase().includes(birkaSearchQuery.toLowerCase()) ||
                             d.name.toLowerCase().includes(birkaSearchQuery.toLowerCase()) ||
