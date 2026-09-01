@@ -1685,6 +1685,7 @@ function transliterate(str: string): string {
               "ID", "TITLE", "STAGE_ID", "CATEGORY_ID", "OPPORTUNITY", 
               "CURRENCY_ID", "DATE_CREATE", "CLOSEDATE", "DATE_MODIFY",
               "COMMENTS", "ASSIGNED_BY_NAME", "CONTACT_ID", "COMPANY_ID",
+              "CONTACT_FORMATTED_NAME", "COMPANY_TITLE",
               "BEGINDATE", "PROBABILITY", "CLOSED"
             ]
           })
@@ -1735,6 +1736,17 @@ function transliterate(str: string): string {
           const orderId = `b24_${deal.ID}`;
           const local = localErpOrdersMap[orderId] || {};
 
+          // Auto-cleanup: If deleted more than 30 days ago, skip and delete document
+          if (local.isDeleted && local.deletedAt) {
+            const deletedTime = new Date(local.deletedAt).getTime();
+            if (!isNaN(deletedTime) && (Date.now() - deletedTime) > 30 * 24 * 60 * 60 * 1000) {
+              try {
+                await dbQueryWithRetry(() => prisma.dbDocument.delete({ where: { path: `companies/${companyId}/erp_orders/${orderId}` } }));
+              } catch (_) {}
+              continue;
+            }
+          }
+
           const matchingStage = stagesList.find((s: any) => isSameStage(String(s.STATUS_ID || s.ID || s.id), dealStageId, categoryId));
           const stageName = matchingStage ? (matchingStage.NAME || matchingStage.name) : dealStageId;
 
@@ -1746,12 +1758,55 @@ function transliterate(str: string): string {
 
           const dealLink = portalBase ? `${portalBase}/crm/deal/details/${deal.ID}/` : undefined;
 
+          // Smart extraction of order number, client name, and project name from deal title and contacts
+          const rawTitle = (deal.TITLE || '').trim();
+          let parsedNumber = deal.ID;
+          let parsedClient = (deal.CONTACT_FORMATTED_NAME || deal.COMPANY_TITLE || '').trim();
+          let parsedProject = '';
+
+          if (rawTitle) {
+            // Pattern: "№12345 Кухня - Иванов" or "48291 / Шкаф / Петров" or "Заказ 48291"
+            const numMatch = rawTitle.match(/^(?:сделка|заказ|счет|deal|order)?[№#\s]*([A-Za-z0-9\-_.]+)(.*)$/i);
+            if (numMatch && numMatch[1] && numMatch[1].length >= 2 && !/^(сделка|заказ|кухня|шкаф|мебель)$/i.test(numMatch[1])) {
+              parsedNumber = numMatch[1];
+              const rest = numMatch[2].trim().replace(/^[-/:·–—\s]+/, '');
+              if (rest) {
+                if (rest.includes(' - ') || rest.includes(' / ') || rest.includes(' — ')) {
+                  const parts = rest.split(/\s*[-/—|]\s*/);
+                  parsedProject = parts[0];
+                  if (!parsedClient && parts.length > 1) {
+                    parsedClient = parts.slice(1).join(' ');
+                  }
+                } else {
+                  parsedProject = rest;
+                }
+              }
+            } else {
+              parsedProject = rawTitle;
+            }
+          }
+
+          if (!parsedClient) {
+            if (local.clientName && local.clientName !== 'Заказчик' && local.clientName !== 'Клиент') {
+              parsedClient = local.clientName;
+            } else if (local.birkaData?.fileName) {
+              const baseName = local.birkaData.fileName.replace(/\.(bir|csv|xlsx|xls|txt)$/i, '');
+              parsedClient = baseName.split(/[_\-–—]/)[0] || `Клиент #${deal.ID}`;
+            } else {
+              parsedClient = parsedProject ? parsedProject : `Клиент #${deal.ID}`;
+            }
+          }
+
+          if (!parsedProject) {
+            parsedProject = local.projectName || rawTitle || `Заказ №${parsedNumber}`;
+          }
+
           orders.push({
             ...local,
             id: orderId,
-            orderNumber: deal.TITLE ? deal.TITLE : `Сделка #${deal.ID}`,
-            clientName: deal.TITLE || `Клиент #${deal.ID}`,
-            projectName: deal.TITLE || `Заказ #${deal.ID}`,
+            orderNumber: local.orderNumber || parsedNumber || deal.TITLE || `Сделка #${deal.ID}`,
+            clientName: local.clientName && local.clientName !== 'Заказчик' ? local.clientName : parsedClient,
+            projectName: local.projectName && local.projectName !== 'Заказ' ? local.projectName : parsedProject,
             createdAt: deal.DATE_CREATE ? deal.DATE_CREATE.substring(0, 10) : new Date().toISOString().substring(0, 10),
             deadlineDate: deal.CLOSEDATE ? deal.CLOSEDATE.substring(0, 10) : (deal.BEGINDATE ? deal.BEGINDATE.substring(0, 10) : new Date(Date.now() + 7 * 86400000).toISOString().substring(0, 10)),
             currentStage: local.currentStage || 'queue',
@@ -1954,6 +2009,15 @@ function transliterate(str: string): string {
         stageScanningProgress: stageScanningProgress !== undefined ? stageScanningProgress : existingData.stageScanningProgress,
         packages: req.body.packages !== undefined ? req.body.packages : existingData.packages,
         kittingSpecification: req.body.kittingSpecification !== undefined ? req.body.kittingSpecification : existingData.kittingSpecification,
+        stagePlannedDates: req.body.stagePlannedDates !== undefined ? req.body.stagePlannedDates : existingData.stagePlannedDates,
+        workLogs: req.body.workLogs !== undefined ? req.body.workLogs : existingData.workLogs,
+        isDeleted: req.body.isDeleted !== undefined ? req.body.isDeleted : existingData.isDeleted,
+        deletedAt: req.body.deletedAt !== undefined ? req.body.deletedAt : existingData.deletedAt,
+        deletedByEmployeeName: req.body.deletedByEmployeeName !== undefined ? req.body.deletedByEmployeeName : existingData.deletedByEmployeeName,
+        deleteReason: req.body.deleteReason !== undefined ? req.body.deleteReason : existingData.deleteReason,
+        clientName: req.body.clientName !== undefined ? req.body.clientName : existingData.clientName,
+        projectName: req.body.projectName !== undefined ? req.body.projectName : existingData.projectName,
+        orderNumber: req.body.orderNumber !== undefined ? req.body.orderNumber : existingData.orderNumber,
         updatedAt: new Date().toISOString()
       };
 
@@ -2179,6 +2243,50 @@ function transliterate(str: string): string {
       res.json({ success: true, updatedData });
     } catch (e: any) {
       console.error("Error updating ERP order stage:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  // Soft delete or permanently delete ERP order
+  app.delete("/api/erp/:companyId/orders/:orderId", async (req, res) => {
+    try {
+      const { companyId, orderId } = req.params;
+      const isPermanent = req.query.permanent === 'true' || req.query.hard === 'true';
+      const orderDocPath = `companies/${companyId}/erp_orders/${orderId}`;
+
+      if (isPermanent) {
+        await dbQueryWithRetry(() => prisma.dbDocument.deleteMany({ where: { path: orderDocPath } }));
+        return res.json({ success: true, message: "Заказ безвозвратно удален" });
+      }
+
+      // Soft delete: Mark isDeleted = true with timestamp
+      const existingDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: orderDocPath } }));
+      const existingData = existingDoc ? JSON.parse(existingDoc.data) : {};
+
+      const updatedData = {
+        ...existingData,
+        isDeleted: true,
+        deletedAt: new Date().toISOString(),
+        deletedByEmployeeName: req.body?.employeeName || req.query.employeeName || 'Сотрудник',
+        updatedAt: new Date().toISOString()
+      };
+
+      await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+        where: { path: orderDocPath },
+        create: {
+          path: orderDocPath,
+          collection: `companies/${companyId}/erp_orders`,
+          docId: orderId,
+          data: JSON.stringify(updatedData)
+        },
+        update: {
+          data: JSON.stringify(updatedData)
+        }
+      }));
+
+      res.json({ success: true, isDeleted: true, deletedAt: updatedData.deletedAt });
+    } catch (e: any) {
+      console.error("Error deleting ERP order:", e);
       res.status(500).json({ error: String(e) });
     }
   });

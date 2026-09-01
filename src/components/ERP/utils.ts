@@ -747,6 +747,86 @@ export function processQRCommand(
   return { isCommand: false };
 }
 
+export function formatDateTimeSafe(dateVal?: any, fallback: string = '—'): string {
+  if (!dateVal) return fallback;
+  if (typeof dateVal === 'string') {
+    const s = dateVal.trim();
+    if (!s || s === 'Invalid Date' || s === 'undefined' || s === 'null') return fallback;
+
+    // Check if already in ru-RU format: "DD.MM.YYYY, HH:MM" or "DD.MM.YYYY"
+    const ruMatch = s.match(/^(\d{2})\.(\d{2})\.(\d{4})(?:[,\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+    if (ruMatch) {
+      const day = ruMatch[1];
+      const month = ruMatch[2];
+      const year = ruMatch[3];
+      const time = ruMatch[4] ? `${ruMatch[4].padStart(2, '0')}:${ruMatch[5]}` : '';
+      return time ? `${day}.${month}.${year}, ${time}` : `${day}.${month}.${year}`;
+    }
+
+    // Number as string
+    if (/^\d{10,13}$/.test(s)) {
+      const num = parseInt(s, 10);
+      const d = new Date(num < 1e11 ? num * 1000 : num);
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleString('ru-RU', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      }
+    }
+
+    // Try parsing ISO or other string
+    try {
+      const d = new Date(s);
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleString('ru-RU', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+      }
+    } catch (_) {}
+
+    return s;
+  }
+
+  if (typeof dateVal === 'number') {
+    const d = new Date(dateVal < 1e11 ? dateVal * 1000 : dateVal);
+    if (!isNaN(d.getTime())) {
+      return d.toLocaleString('ru-RU', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    }
+  }
+
+  if (dateVal instanceof Date && !isNaN(dateVal.getTime())) {
+    return dateVal.toLocaleString('ru-RU', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  }
+
+  return fallback;
+}
+
+export function formatDateSafe(dateVal?: any, fallback: string = '—'): string {
+  const full = formatDateTimeSafe(dateVal, fallback);
+  if (full === fallback) return fallback;
+  return full.split(',')[0].trim();
+}
+
 /**
  * Очищает номер заказа от технических префиксов (b24_, №, #), сохраняя чистый номер или номер сделки
  */
@@ -760,16 +840,122 @@ export function cleanOrderNumber(rawNumber?: string, fallbackId?: string): strin
     num = num.slice(4).trim();
   }
 
-  // Remove leading №, #
+  // Remove leading №, #, Сделка #, Заказ #
+  num = num.replace(/^(?:сделка|заказ|счет|проект|deal|order)[\s№#:]*/i, '').trim();
   num = num.replace(/^[№#\s]+/, '').trim();
 
   // If starts with order number followed by space and client, extract order number
-  const matchWithClient = num.match(/^([A-Za-z0-9\-_./]+)\s+(.+)$/);
-  if (matchWithClient && matchWithClient[1].length >= 3) {
+  const matchWithClient = num.match(/^([A-Za-zА-Яа-я0-9\-_./]+)\s+(.+)$/);
+  if (matchWithClient && matchWithClient[1].length >= 2 && !/^(сделка|заказ)$/i.test(matchWithClient[1])) {
     num = matchWithClient[1];
   }
 
   return num || (fallbackId ? fallbackId.replace(/^b24_/i, '') : '—');
+}
+
+/**
+ * Интеллектуально извлекает понятное имя клиента и название проекта
+ * устраняя артефакты "Заказчик", дублирование ID Битрикс и тавтологии
+ */
+export function getSmartOrderDisplay(order: {
+  orderNumber?: string;
+  clientName?: string;
+  projectName?: string;
+  birkaData?: any;
+  salonName?: string;
+  comments?: string;
+  bitrixDealId?: string;
+  id?: string;
+}): { orderNumber: string; clientName: string; projectName: string } {
+  const cleanNum = cleanOrderNumber(order.orderNumber, order.id);
+  let rawClient = (order.clientName || '').trim();
+  let rawProject = (order.projectName || '').trim();
+
+  const isGenericClient = (val: string) => {
+    const v = val.toLowerCase().trim();
+    return !v || 
+      v === 'заказчик' || 
+      v === 'клиент' || 
+      v === 'без названия' || 
+      v === 'клиент #—' ||
+      /^клиент\s*[#№]?\s*\d+$/i.test(v) ||
+      /^сделка\s*[#№]?\s*\d+$/i.test(v) ||
+      v === cleanNum.toLowerCase() ||
+      v === `№${cleanNum.toLowerCase()}`;
+  };
+
+  const isGenericProject = (val: string) => {
+    const v = val.toLowerCase().trim();
+    return !v || 
+      v === 'заказ' || 
+      v === 'мебельный проект' || 
+      v === 'мебельный заказ' || 
+      v === 'проект' ||
+      /^заказ\s*[#№]?\s*\d+$/i.test(v) ||
+      /^сделка\s*[#№]?\s*\d+$/i.test(v) ||
+      v === cleanNum.toLowerCase() ||
+      v === `№${cleanNum.toLowerCase()}`;
+  };
+
+  // 1. Check if rawClient contains compound info like "Кухня - Иванов" or "Иванов / Шкаф"
+  if (!isGenericClient(rawClient) && (rawClient.includes(' - ') || rawClient.includes(' / ') || rawClient.includes(' — '))) {
+    const parts = rawClient.split(/\s*[-/—|]\s*/);
+    if (parts.length >= 2) {
+      if (isGenericProject(rawProject)) {
+        rawProject = parts[0];
+        rawClient = parts.slice(1).join(' ');
+      }
+    }
+  }
+
+  // 2. Try recovering client name if it's generic
+  if (isGenericClient(rawClient)) {
+    if (!isGenericProject(rawProject)) {
+      // If project has good name, use it
+      rawClient = rawProject;
+    } else if (order.birkaData?.fileName) {
+      // Try extract from filename like "Иванов_Кухня.bir" or "Петров_шкаф.csv"
+      const cleanFileName = order.birkaData.fileName.replace(/\.(bir|csv|xlsx|xls|txt)$/i, '');
+      const parts = cleanFileName.split(/[_\-–—]/).filter(Boolean);
+      if (parts.length > 0) {
+        rawClient = parts[0].trim();
+        if (parts.length > 1 && isGenericProject(rawProject)) {
+          rawProject = parts.slice(1).join(' ').trim();
+        }
+      }
+    } else if (order.salonName) {
+      rawClient = order.salonName;
+    } else if (order.comments && order.comments.length > 2 && order.comments.length < 50) {
+      rawClient = order.comments;
+    } else {
+      rawClient = cleanNum ? `Заказ №${cleanNum}` : 'Частный заказчик';
+    }
+  }
+
+  // 3. Try recovering project name if it's generic
+  if (isGenericProject(rawProject)) {
+    if (order.birkaData?.fileName) {
+      const cleanFileName = order.birkaData.fileName.replace(/\.(bir|csv|xlsx|xls|txt)$/i, '');
+      rawProject = cleanFileName;
+    } else if (order.salonName && rawClient !== order.salonName) {
+      rawProject = order.salonName;
+    } else {
+      rawProject = `Мебельный заказ №${cleanNum}`;
+    }
+  }
+
+  // Final cleanup of redundant prefixes
+  if (cleanNum) {
+    const escaped = cleanNum.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+    rawClient = rawClient.replace(new RegExp(`^[№#\\s]*${escaped}[\\s:·\\-_–—/]*`, 'i'), '').trim();
+    rawProject = rawProject.replace(new RegExp(`^[№#\\s]*${escaped}[\\s:·\\-_–—/]*`, 'i'), '').trim();
+  }
+
+  return {
+    orderNumber: cleanNum,
+    clientName: rawClient || `Заказ №${cleanNum}`,
+    projectName: rawProject || `Заказ №${cleanNum}`
+  };
 }
 
 /**

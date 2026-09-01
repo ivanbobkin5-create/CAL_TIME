@@ -1,5 +1,5 @@
 import { ProductionOrder, ERPEmployee } from '../types';
-import { formatDeadlineDate } from '../utils';
+import { formatDeadlineDate, formatDateTimeSafe } from '../utils';
 
 /**
  * Generates and prints a full A4 Archive Order Dossier / Passport (Паспорт заказа и история выполнения)
@@ -85,7 +85,7 @@ export function printArchiveOrderPassport(order: ProductionOrder, employees: ERP
                   <td style="padding: 3px 6px; font-family: monospace;">${h.article || '—'}</td>
                   <td style="padding: 3px 6px; font-weight: bold;">${h.name}</td>
                   <td style="padding: 3px 6px; color: #475569;">${h.category || 'Фурнитура'}</td>
-                  <td style="padding: 3px 69; text-align: right; font-weight: bold;">${h.quantity} ${h.unit || 'шт'}</td>
+                  <td style="padding: 3px 6px; text-align: right; font-weight: bold;">${h.quantity} ${h.unit || 'шт'}</td>
                 </tr>
               `).join('')}
             </tbody>
@@ -104,8 +104,8 @@ export function printArchiveOrderPassport(order: ProductionOrder, employees: ERP
             </div>
           </div>
           <div style="font-size: 8.5pt; color: #475569; display: flex; gap: 15px; margin-bottom: 6px;">
-            <span>Упаковал: <strong>${pkg.createdByEmployeeName || '—'}</strong> (${pkg.createdAt ? new Date(pkg.createdAt).toLocaleString('ru-RU') : '—'})</span>
-            ${pkg.shippedAt ? `<span>Отгрузил: <strong>${pkg.shippedByEmployeeName || '—'}</strong> (${new Date(pkg.shippedAt).toLocaleString('ru-RU')})</span>` : ''}
+            <span>Упаковал: <strong>${pkg.createdByEmployeeName || '—'}</strong> (${formatDateTimeSafe(pkg.createdAt)})</span>
+            ${pkg.shippedAt ? `<span>Отгрузил: <strong>${pkg.shippedByEmployeeName || '—'}</strong> (${formatDateTimeSafe(pkg.shippedAt)})</span>` : ''}
           </div>
           ${partsListHtml}
           ${hardwareListHtml}
@@ -163,11 +163,42 @@ export function printArchiveOrderPassport(order: ProductionOrder, employees: ERP
           ${stData?.status === 'done' ? '✓ Выполнен' : (stData?.status === 'in_progress' ? 'В работе' : 'Ожидание')}
         </td>
         <td style="padding: 4px 6px;">${stData?.completedBy || '—'}</td>
-        <td style="padding: 4px 6px; font-family: monospace;">${stData?.completedAt ? new Date(stData.completedAt).toLocaleString('ru-RU') : '—'}</td>
+        <td style="padding: 4px 6px; font-family: monospace;">${formatDateTimeSafe(stData?.completedAt)}</td>
         <td style="padding: 4px 6px; color: #475569;">${stData?.notes || '—'}</td>
       </tr>
     `;
   }).join('');
+
+  // Work logs table HTML
+  const workLogsHtml = (workLogs && workLogs.length > 0)
+    ? `
+      <div class="section-title" style="page-break-before: auto;">4. Журнал работы сотрудников над заказом</div>
+      <table style="width: 100%; border-collapse: collapse; font-size: 9pt; margin-bottom: 14px;">
+        <thead>
+          <tr style="background: #f1f5f9; text-align: left; border-bottom: 1.5px solid #94a3b8;">
+            <th style="padding: 5px 6px;">Сотрудник</th>
+            <th style="padding: 5px 6px;">Участок</th>
+            <th style="padding: 5px 6px;">Начало</th>
+            <th style="padding: 5px 6px;">Окончание</th>
+            <th style="padding: 5px 6px; text-align: right;">Выработка</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${workLogs.map(log => `
+            <tr style="border-bottom: 1px solid #e2e8f0;">
+              <td style="padding: 4px 6px; font-weight: bold;">${log.employeeName || 'Сотрудник'}</td>
+              <td style="padding: 4px 6px;">${stageNames[log.stageId] || log.stageId}</td>
+              <td style="padding: 4px 6px; font-family: monospace;">${formatDateTimeSafe(log.startTime)}</td>
+              <td style="padding: 4px 6px; font-family: monospace;">${formatDateTimeSafe(log.endTime, 'В процессе')}</td>
+              <td style="padding: 4px 6px; text-align: right; font-weight: bold;">
+                ${log.scannedPartsCount ? `${log.scannedPartsCount} дет.` : ''} ${log.scannedAreaM2 ? `${log.scannedAreaM2} м²` : ''} ${log.scannedEdgeM ? `${log.scannedEdgeM} м` : ''}
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `
+    : '';
 
   const htmlContent = `
     <!DOCTYPE html>
@@ -300,7 +331,7 @@ export function printArchiveOrderPassport(order: ProductionOrder, employees: ERP
       ${order.driverInfo ? `
         <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 6px 12px; margin-bottom: 12px; font-size: 9pt;">
           <strong>Отгрузка водителю:</strong> ${order.driverInfo.driverName || '—'} | Авто: ${order.driverInfo.carPlate || '—'} | Тел: ${order.driverInfo.phone || '—'}
-          ${order.shippedAt ? ` | Дата: ${new Date(order.shippedAt).toLocaleString('ru-RU')}` : ''}
+          ${order.shippedAt ? ` | Дата: ${formatDateTimeSafe(order.shippedAt)}` : ''}
         </div>
       ` : ''}
 
@@ -325,6 +356,8 @@ export function printArchiveOrderPassport(order: ProductionOrder, employees: ERP
           ${stagesHtml}
         </tbody>
       </table>
+
+      ${workLogsHtml}
 
       <div class="footer-signatures">
         <div>

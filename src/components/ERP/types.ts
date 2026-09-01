@@ -14,19 +14,28 @@ export interface MaterialResidual {
   id: string;
   orderId?: string;
   orderNumber?: string;
-  type: 'offcut' | 'edge'; // 'offcut' = обрезок плиты (ЛДСП/МДФ/ХДФ), 'edge' = остаток кромки
-  category: 'ЛДСП' | 'МДФ' | 'ХДФ' | 'Кромка' | 'Пластик' | 'Постформинг' | 'Другое' | string;
-  materialName: string;   // e.g. "ЛДСП 16мм Дуб Сонома", "Кромка ПВХ 2/19 Белый"
+  type: 'offcut' | 'edge' | 'countertop' | 'wall_panel' | 'plinth' | 'light_profile' | 'gola_profile'; 
+  // 'offcut' = Обрезок плиты, 'edge' = Кромка, 'countertop' = Столешница, 'wall_panel' = Стеновая панель, 'plinth' = Цоколь, 'light_profile' = Профиль подсветки, 'gola_profile' = Профиль GOLA
+  category: 'ЛДСП' | 'МДФ' | 'ХДФ' | 'Кромка' | 'Столешница' | 'Стеновая панель' | 'Цоколь' | 'Профиль подсветки' | 'Профиль GOLA' | 'Пластик' | 'Постформинг' | 'Другое' | string;
+  materialName: string;   // e.g. "ЛДСП 16мм Дуб Сонома", "Столешница Кедр: Дуб Вотан", "Цоколь ПВХ Черный"
+  brand?: string;         // Бренд (для Столешниц, Стеновых панелей, Кромки: Кедр, Slotex, Egger, Скиф, Forma&Style, Kronospan, Rehau и др.)
+  decor?: string;         // Декор (вводится вручную)
+  color?: string;         // Цвет (для Цоколей, Профилей подсветки, Профилей GOLA)
+  plinthType?: 'ПВХ' | 'Металл' | 'МДФ' | 'ЛДСП' | string; // Тип цоколя: ПВХ, Металл, МДФ, ЛДСП
+  plinthHeightMm?: number; // Высота цоколя в мм (100, 150, 120, 60 и др.)
+  lightProfileType?: 'Врезной' | 'Накладной' | 'Угловой' | 'Скрытый / Теневой' | 'Подвесной' | string; // Тип профиля подсветки
+  golaType?: 'L' | 'C' | 'Оконечный' | 'Срединный' | string; // Тип профиля GOLA
   thicknessMm?: number;   // мм
-  lengthMm?: number;      // мм (для обрезка плиты)
-  widthMm?: number;       // мм (для обрезка плиты)
+  lengthMm?: number;      // мм (для обрезка плиты, столешницы, стеновой, цоколя, профилей)
+  widthMm?: number;       // мм (для обрезка плиты, столешницы, стеновой)
+  heightMm?: number;      // мм (высота цоколя / профиля)
   areaM2?: number;        // м² (для обрезка плиты)
-  lengthMeters?: number;  // м (для остатка кромки)
-  quantity: number;       // штук / бобин
+  lengthMeters?: number;  // м (для остатка кромки, цоколя, профилей)
+  quantity: number;       // штук / бобин / хлыстов
   addedAt: string;        // ISO / YYYY-MM-DD HH:mm
   addedByEmployeeName?: string;
   notes?: string;
-  storageCell?: string;   // Ячейка/место хранения (e.g. "Стеллаж А-1")
+  storageCell?: string;   // Ячейка/место хранения (e.g. "Стеллаж А-1", "Стойка профилей №2")
   status: 'available' | 'used' | 'disposed'; // 'available' (В наличии), 'used' (Использован), 'disposed' (Утилизирован)
   disposedAt?: string;
   disposedByEmployeeName?: string;
@@ -147,6 +156,12 @@ export interface ProductionOrder {
   parentOrderId?: string;
   parentOrderNumber?: string;
   defectItems?: OrderDefectItem[];
+  
+  // Корзина / Soft delete (хранится 30 дней, потом безвозвратно удаляется)
+  isDeleted?: boolean;
+  deletedAt?: string; // ISO string даты помещения в корзину
+  deletedByEmployeeName?: string;
+  deleteReason?: string;
   
   // Дополнительные работы (столешница, стеновая, штанга, цоколь)
   additionalWorks?: AdditionalWorks;

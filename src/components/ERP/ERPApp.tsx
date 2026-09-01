@@ -1780,8 +1780,10 @@ export const ERPApp: React.FC<ERPAppProps> = ({
               currentUser={{
                 employeeId: matchedEmp?.id || authUser?.id || authUser?.uid || 'unknown',
                 employeeName: displayUserName,
+                name: displayUserName,
                 role: displayUserRole
               }}
+              employees={employees}
               isShiftActive={isShiftActive}
               onStartShift={handleStartShift}
               onLogout={handleLogout}
@@ -1850,6 +1852,12 @@ export const ERPApp: React.FC<ERPAppProps> = ({
                   onAddResidual={handleAddResidual}
                   onUpdateResidual={handleUpdateResidual}
                   onDeleteResidual={handleDeleteResidual}
+                  currentUser={{
+                    id: matchedEmp?.id || authUser?.id || authUser?.uid || 'user',
+                    name: displayUserName,
+                    employeeName: displayUserName,
+                    role: displayUserRole
+                  }}
                   employees={employees}
                   orders={orders}
                   companyName={company?.name}

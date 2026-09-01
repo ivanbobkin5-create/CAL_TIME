@@ -2265,15 +2265,15 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
             {/* QR Commands Catalog & Custom Items */}
             <div className="space-y-3">
               {(formData.qrCommands || [
-                { id: 'cmd-1', commandKey: 'CMD_FINISH_PACKAGE', name: 'Закрыть коробку / место', description: 'Завершает текущую коробку в комплектовке и начинает следующую' },
-                { id: 'cmd-2', commandKey: 'CMD_START_SHIFT', name: 'Начать рабочую смену', description: 'Регистрирует приход сотрудника на смену' },
-                { id: 'cmd-3', commandKey: 'CMD_END_SHIFT', name: 'Завершить смену и показать отчет', description: 'Выводит сменный отчет выработки за день' }
+                { id: 'cmd-1', commandKey: 'ЗАКРЫТЬ_КОРОБКУ', name: 'Закрыть коробку / место', description: 'Завершает текущую коробку в комплектовке и начинает следующую' },
+                { id: 'cmd-2', commandKey: 'НАЧАТЬ_СМЕНУ', name: 'Начать рабочую смену', description: 'Регистрирует приход сотрудника на смену' },
+                { id: 'cmd-3', commandKey: 'ЗАВЕРШИТЬ_СМЕНУ', name: 'Завершить смену и показать отчет', description: 'Выводит сменный отчет выработки за день' }
               ]).map((cmd, cIdx) => (
                 <div key={cmd.id || cIdx} className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
                   <div className="space-y-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="px-2 py-0.5 rounded-lg bg-slate-900 text-white font-mono font-bold text-[10px]">
-                        {cmd.commandKey}
+                      <span className="px-2.5 py-0.5 rounded-lg bg-orange-100 text-orange-800 font-bold text-[10px]">
+                        Быстрая команда
                       </span>
                       <strong className="text-xs text-slate-900 font-bold">{cmd.name}</strong>
                     </div>
@@ -2287,6 +2287,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                       setFormData({ ...formData, qrCommands: copy });
                     }}
                     className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer self-end md:self-auto"
+                    title="Удалить команду"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -2300,9 +2301,9 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                     const existing = formData.qrCommands || [];
                     const nextCmd = {
                       id: `cmd-${Date.now()}`,
-                      commandKey: 'CMD_FINISH_PACKAGE',
+                      commandKey: 'ЗАКРЫТЬ_КОРОБКУ',
                       name: 'Закрыть коробку / место',
-                      description: 'Автоматически завершает место комплектовки'
+                      description: 'Автоматически завершает место комплектовки и открывает печать этикетки'
                     };
                     setFormData({ ...formData, qrCommands: [...existing, nextCmd] });
                   }}
@@ -2317,7 +2318,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                     const existing = formData.qrCommands || [];
                     const nextCmd = {
                       id: `cmd-${Date.now()}`,
-                      commandKey: 'CMD_END_SHIFT',
+                      commandKey: 'ЗАВЕРШИТЬ_СМЕНУ',
                       name: 'Завершить смену',
                       description: 'Выводит отчет выработки и завершает смену'
                     };
@@ -2326,6 +2327,23 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                   className="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5" /> + Завершить смену
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const existing = formData.qrCommands || [];
+                    const nextCmd = {
+                      id: `cmd-${Date.now()}`,
+                      commandKey: 'НАЧАТЬ_СМЕНУ',
+                      name: 'Начать рабочую смену',
+                      description: 'Фиксирует начало рабочей смены сотрудника'
+                    };
+                    setFormData({ ...formData, qrCommands: [...existing, nextCmd] });
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" /> + Начать смену
                 </button>
               </div>
             </div>
@@ -4176,9 +4194,9 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
       <PrintQrCommandsModal
         isOpen={isPrintQrModalOpen}
         qrCommands={formData.qrCommands || [
-          { id: 'cmd-1', commandKey: 'CMD_FINISH_PACKAGE', name: 'Закрыть коробку / место', description: 'Завершает текущую коробку в комплектовке и начинает следующую' },
-          { id: 'cmd-2', commandKey: 'CMD_START_SHIFT', name: 'Начать рабочую смену', description: 'Регистрирует приход сотрудника на смену' },
-          { id: 'cmd-3', commandKey: 'CMD_END_SHIFT', name: 'Завершить смену и показать отчет', description: 'Выводит сменный отчет выработки за день' }
+          { id: 'cmd-1', commandKey: 'ЗАКРЫТЬ_КОРОБКУ', name: 'Закрыть коробку / место', description: 'Завершает текущую коробку в комплектовке и начинает следующую' },
+          { id: 'cmd-2', commandKey: 'НАЧАТЬ_СМЕНУ', name: 'Начать рабочую смену', description: 'Регистрирует приход сотрудника на смену' },
+          { id: 'cmd-3', commandKey: 'ЗАВЕРШИТЬ_СМЕНУ', name: 'Завершить смену и показать отчет', description: 'Выводит сменный отчет выработки за день' }
         ]}
         companyTitle={companyName || 'Мебельное производство'}
         onClose={() => setIsPrintQrModalOpen(false)}

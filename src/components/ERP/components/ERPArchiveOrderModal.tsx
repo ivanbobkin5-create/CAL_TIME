@@ -24,7 +24,7 @@ import {
   Tag
 } from 'lucide-react';
 import { ProductionOrder, ERPEmployee, OrderPackage } from '../types';
-import { formatDeadlineDate } from '../utils';
+import { formatDeadlineDate, formatDateTimeSafe, formatDateSafe } from '../utils';
 import { printArchiveOrderPassport } from '../utils/archivePassportPrinter';
 import { printPackageLabelDirect } from '../utils/packageLabelPrinter';
 
@@ -158,7 +158,7 @@ export const ERPArchiveOrderModal: React.FC<ERPArchiveOrderModalProps> = ({
               {order.shippedAt && (
                 <span className="flex items-center gap-1.5 text-emerald-400">
                   <Clock className="w-3.5 h-3.5" />
-                  Отгружен: {new Date(order.shippedAt).toLocaleString('ru-RU')}
+                  Отгружен: {formatDateTimeSafe(order.shippedAt)}
                 </span>
               )}
             </div>
@@ -401,10 +401,10 @@ export const ERPArchiveOrderModal: React.FC<ERPArchiveOrderModalProps> = ({
                               </div>
 
                               <div className="flex items-center gap-3 text-[11px] text-slate-500 mt-1 flex-wrap">
-                                <span>Упаковал: <strong className="text-slate-700">{pkg.createdByEmployeeName || '—'}</strong> ({pkg.createdAt ? new Date(pkg.createdAt).toLocaleString('ru-RU') : '—'})</span>
+                                <span>Упаковал: <strong className="text-slate-700">{pkg.createdByEmployeeName || '—'}</strong> ({formatDateTimeSafe(pkg.createdAt)})</span>
                                 {pkg.shippedAt && (
                                   <span className="text-emerald-700">
-                                    Отгрузил: <strong>{pkg.shippedByEmployeeName || '—'}</strong> ({new Date(pkg.shippedAt).toLocaleString('ru-RU')})
+                                    Отгрузил: <strong>{pkg.shippedByEmployeeName || '—'}</strong> ({formatDateTimeSafe(pkg.shippedAt)})
                                   </span>
                                 )}
                               </div>
@@ -648,7 +648,7 @@ export const ERPArchiveOrderModal: React.FC<ERPArchiveOrderModalProps> = ({
                             Исполнитель: <strong className="text-slate-900">{stData?.completedBy || '—'}</strong>
                           </div>
                           <div>
-                            Дата завершения: <span className="font-mono text-slate-800">{stData?.completedAt ? new Date(stData.completedAt).toLocaleString('ru-RU') : '—'}</span>
+                            Дата завершения: <span className="font-mono text-slate-800">{formatDateTimeSafe(stData?.completedAt)}</span>
                           </div>
                           {stData?.notes && (
                             <div className="text-[11px] text-slate-500 italic pt-1">
@@ -692,8 +692,8 @@ export const ERPArchiveOrderModal: React.FC<ERPArchiveOrderModalProps> = ({
                           <tr key={idx} className="hover:bg-slate-50/80">
                             <td className="p-3 font-bold text-slate-900">{log.employeeName}</td>
                             <td className="p-3 text-slate-600">{stageNames[log.stageId]?.label || log.stageId}</td>
-                            <td className="p-3 font-mono text-slate-500">{new Date(log.startTime).toLocaleString('ru-RU')}</td>
-                            <td className="p-3 font-mono text-slate-500">{log.endTime ? new Date(log.endTime).toLocaleString('ru-RU') : 'В процессе'}</td>
+                            <td className="p-3 font-mono text-slate-500">{formatDateTimeSafe(log.startTime)}</td>
+                            <td className="p-3 font-mono text-slate-500">{formatDateTimeSafe(log.endTime, 'В процессе')}</td>
                             <td className="p-3 text-right font-black text-slate-900">
                               {log.scannedPartsCount ? `${log.scannedPartsCount} дет.` : ''} {log.scannedAreaM2 ? `${log.scannedAreaM2} м²` : ''} {log.scannedEdgeM ? `${log.scannedEdgeM} м` : ''}
                             </td>

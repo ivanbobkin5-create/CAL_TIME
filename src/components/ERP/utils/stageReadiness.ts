@@ -34,6 +34,50 @@ export function getScannedPartIdsForStage(order: ProductionOrder, stageId: strin
 }
 
 /**
+ * Count how many instances of a specific detail were scanned in a list of IDs
+ */
+export function getScannedCountForDetail(scannedIds: string[] | undefined, detailId: string): number {
+  if (!scannedIds || !Array.isArray(scannedIds) || scannedIds.length === 0) return 0;
+  return scannedIds.filter(id => id === detailId || id.startsWith(detailId + '#') || id.startsWith(detailId + '_inst_')).length;
+}
+
+/**
+ * Check if a detail is fully scanned based on its required quantity
+ */
+export function isDetailFullyScanned(scannedIds: string[] | undefined, detail: { id: string; quantity?: number }): boolean {
+  const reqQty = Math.max(1, detail.quantity || 1);
+  const scanned = getScannedCountForDetail(scannedIds, detail.id);
+  return scanned >= reqQty;
+}
+
+/**
+ * Count total scanned pieces across all materials for a stage
+ */
+export function getStageScannedPiecesCount(order: ProductionOrder, stageId: string, details?: { id: string; quantity?: number }[]): { scanned: number; total: number } {
+  const allDetails = details || order.birkaData?.details || [];
+  const stageProgress = order.stageScanningProgress?.[stageId] || {};
+  
+  const allScannedList: string[] = [];
+  Object.values(stageProgress).forEach(matGroup => {
+    if (matGroup && Array.isArray(matGroup.scannedPartIds)) {
+      allScannedList.push(...matGroup.scannedPartIds);
+    }
+  });
+
+  let totalScanned = 0;
+  let totalRequired = 0;
+
+  for (const d of allDetails) {
+    const qty = Math.max(1, d.quantity || 1);
+    totalRequired += qty;
+    const count = getScannedCountForDetail(allScannedList, d.id);
+    totalScanned += Math.min(count, qty);
+  }
+
+  return { scanned: totalScanned, total: totalRequired };
+}
+
+/**
   * Check if a stage is enabled in company settings
   */
 export function isStageEnabled(settings: ERPCompanySettings | undefined, stageId: string): boolean {

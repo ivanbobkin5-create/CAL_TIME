@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
-import { Layers, Plus, Trash2, CheckCircle2, AlertTriangle, X } from 'lucide-react';
+import { Layers, Plus, Trash2, CheckCircle2, AlertTriangle, X, User } from 'lucide-react';
 import { ProductionOrder, ERPEmployee, MaterialResidual } from '../types';
 import { EdgeDecorSelector } from './EdgeDecorSelector';
 
 interface EdgingRemainsModalProps {
   isOpen: boolean;
   order: ProductionOrder;
-  currentUser?: ERPEmployee | null;
+  currentUser?: ERPEmployee | any | null;
+  employees?: ERPEmployee[];
   catalogMaterials?: Record<string, string[]>;
   catalogProducts?: any[];
   onClose: () => void;
@@ -17,12 +18,23 @@ export const EdgingRemainsModal: React.FC<EdgingRemainsModalProps> = ({
   isOpen,
   order,
   currentUser,
+  employees = [],
   catalogMaterials = {},
   catalogProducts = [],
   onClose,
   onSubmit
 }) => {
   const [edgesList, setEdgesList] = useState<MaterialResidual[]>([]);
+
+  // Default employee name from currentUser or order
+  const resolvedDefaultEmpName = 
+    currentUser?.employeeName || 
+    currentUser?.name || 
+    currentUser?.displayName || 
+    order.responsibleEmployeeName || 
+    (employees.length > 0 ? employees[0].name : '');
+
+  const [employeeName, setEmployeeName] = useState<string>(resolvedDefaultEmpName);
 
   // Default edge from order birkaData allEdges or default
   const defaultEdgeName = order.birkaData?.allEdges?.[0]?.name || '';
@@ -44,6 +56,12 @@ export const EdgingRemainsModal: React.FC<EdgingRemainsModalProps> = ({
     const mat = decorValue.trim();
     if (!mat) {
       setFormError('Укажите или выберите декор кромки из каталога');
+      return;
+    }
+
+    const currentEmp = employeeName.trim() || resolvedDefaultEmpName || 'Сотрудник цеха';
+    if (!currentEmp) {
+      setFormError('Укажите ФИО сотрудника, вносящего остаток');
       return;
     }
 
@@ -69,7 +87,7 @@ export const EdgingRemainsModal: React.FC<EdgingRemainsModalProps> = ({
       lengthMeters: lenM,
       quantity: qty,
       addedAt: new Date().toISOString(),
-      addedByEmployeeName: currentUser?.name || 'Оператор кромления',
+      addedByEmployeeName: currentEmp,
       storageCell: storageCell.trim() || 'Стеллаж кромки',
       notes: notes.trim(),
       status: 'available'
@@ -183,6 +201,49 @@ export const EdgingRemainsModal: React.FC<EdgingRemainsModalProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                  <User className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Кто внес остаток (ФИО сотрудника) *</span>
+                </label>
+                {employees && employees.length > 0 ? (
+                  <div className="space-y-1">
+                    <select
+                      value={employeeName}
+                      onChange={(e) => setEmployeeName(e.target.value)}
+                      className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                    >
+                      {resolvedDefaultEmpName && !employees.some(emp => emp.name === resolvedDefaultEmpName) && (
+                        <option value={resolvedDefaultEmpName}>{resolvedDefaultEmpName}</option>
+                      )}
+                      {employees.map((emp) => (
+                        <option key={emp.id} value={emp.name}>
+                          {emp.name} {emp.role ? `(${emp.role})` : ''}
+                        </option>
+                      ))}
+                      <option value="custom">+ Ввести другое ФИО...</option>
+                    </select>
+                    {employeeName === 'custom' && (
+                      <input
+                        type="text"
+                        placeholder="Введите ФИО сотрудника..."
+                        onChange={(e) => setEmployeeName(e.target.value)}
+                        className="w-full px-3 py-2 rounded-xl bg-white border border-indigo-300 text-xs font-bold text-slate-900 outline-none"
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    required
+                    placeholder="ФИО сотрудника"
+                    value={employeeName}
+                    onChange={(e) => setEmployeeName(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                )}
+              </div>
+
+              <div>
                 <label className="block text-[11px] font-bold text-slate-700 mb-1">Ячейка / Место хранения</label>
                 <input
                   type="text"
@@ -192,17 +253,17 @@ export const EdgingRemainsModal: React.FC<EdgingRemainsModalProps> = ({
                   className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-900 outline-none"
                 />
               </div>
+            </div>
 
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">Примечание</label>
-                <input
-                  type="text"
-                  placeholder="Остаток в бухте, надрезов нет..."
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-medium text-slate-900 outline-none"
-                />
-              </div>
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 mb-1">Примечание</label>
+              <input
+                type="text"
+                placeholder="Остаток в бухте, надрезов нет..."
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-medium text-slate-900 outline-none"
+              />
             </div>
 
             <button

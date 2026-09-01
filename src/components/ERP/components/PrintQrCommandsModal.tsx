@@ -85,10 +85,10 @@ export const PrintQrCommandsModal: React.FC<PrintQrCommandsModalProps> = ({
                     className="p-5 border-2 border-slate-900 rounded-3xl bg-slate-50/50 flex flex-col items-center justify-between text-center space-y-3"
                   >
                     <div className="w-full">
-                      <span className="px-2.5 py-1 rounded-full bg-slate-900 text-white font-mono font-bold text-[10px] uppercase tracking-wider">
-                        {cmd.commandKey}
+                      <span className="px-3 py-1 rounded-full bg-slate-900 text-white font-bold text-[10px] uppercase tracking-wider">
+                        Быстрая команда цеха
                       </span>
-                      <h2 className="text-base font-black text-slate-900 mt-2 leading-tight">
+                      <h2 className="text-base font-black text-slate-900 mt-2.5 leading-tight">
                         {cmd.name}
                       </h2>
                       {cmd.description && (
