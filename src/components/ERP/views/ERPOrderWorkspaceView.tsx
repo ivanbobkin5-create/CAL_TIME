@@ -219,6 +219,16 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   const localOrderRef = useRef<ProductionOrder>(order);
   localOrderRef.current = localOrder;
 
+  // Visual instant feedback for scanned details
+  const [recentlyScannedPartId, setRecentlyScannedPartId] = useState<string | null>(null);
+  const [scannedPartFlashInfo, setScannedPartFlashInfo] = useState<{
+    id: string;
+    labelNumber: string;
+    name: string;
+    count: number;
+    total: number;
+  } | null>(null);
+
   useEffect(() => {
     setLocalOrder(prev => {
       if (prev.id !== order.id) {
@@ -234,13 +244,11 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
         Object.keys(prevProgress[stg]).forEach(mat => {
           const prevIds = prevProgress[stg][mat]?.scannedPartIds || [];
           const newIds = mergedProgress[stg]?.[mat]?.scannedPartIds || [];
-          if (prevIds.length > newIds.length) {
-            const combined = Array.from(new Set([...newIds, ...prevIds]));
-            mergedProgress[stg][mat] = {
-              scannedPartIds: combined,
-              isCompleted: prevProgress[stg][mat]?.isCompleted || mergedProgress[stg]?.[mat]?.isCompleted
-            };
-          }
+          const combined = Array.from(new Set([...newIds, ...prevIds]));
+          mergedProgress[stg][mat] = {
+            scannedPartIds: combined,
+            isCompleted: (combined.length > 0) || prevProgress[stg][mat]?.isCompleted || mergedProgress[stg]?.[mat]?.isCompleted
+          };
         });
       });
 
@@ -573,6 +581,28 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     setLocalOrder(updatedOrder);
     onUpdateOrder(updatedOrder);
 
+    // Instant flash visual notification and scroll into view
+    setRecentlyScannedPartId(foundPart.id);
+    setScannedPartFlashInfo({
+      id: foundPart.id,
+      labelNumber: foundPart.labelNumber,
+      name: foundPart.name,
+      count: nextInstanceNumber,
+      total: reqPartQty
+    });
+
+    setTimeout(() => {
+      const el = document.getElementById(`part-row-${foundPart.id}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 50);
+
+    setTimeout(() => {
+      setRecentlyScannedPartId(prev => prev === foundPart.id ? null : prev);
+      setScannedPartFlashInfo(prev => prev?.id === foundPart.id ? null : prev);
+    }, 4500);
+
     if (nextInstanceNumber >= reqPartQty) {
       setScanSuccessMsg(`✅ Деталь №${foundPart.labelNumber} «${foundPart.name}» полностью отсканирована (${nextInstanceNumber} из ${reqPartQty} шт.)!`);
     } else {
@@ -747,6 +777,29 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     localOrderRef.current = updatedOrder;
     setLocalOrder(updatedOrder);
     onUpdateOrder(updatedOrder);
+
+    if (currentCount < reqQty) {
+      setRecentlyScannedPartId(detail.id);
+      setScannedPartFlashInfo({
+        id: detail.id,
+        labelNumber: detail.labelNumber,
+        name: detail.name,
+        count: currentCount + 1,
+        total: reqQty
+      });
+
+      setTimeout(() => {
+        const el = document.getElementById(`part-row-${detail.id}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+      }, 50);
+
+      setTimeout(() => {
+        setRecentlyScannedPartId(prev => prev === detail.id ? null : prev);
+        setScannedPartFlashInfo(prev => prev?.id === detail.id ? null : prev);
+      }, 4500);
+    }
 
     if (currentCount < reqQty && currentStage === 'edging') {
       const needsPrisadka = detailRequiresPrisadka(detail, settings);
@@ -1330,6 +1383,33 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
 
               {/* Right Column (8 cols): Parts List & Interactive Progress */}
               <div className="lg:col-span-8 bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/80 shadow-sm space-y-4">
+                {/* Instant Scanned Part Flash Banner */}
+                {scannedPartFlashInfo && (
+                  <div className="p-3.5 rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-600 text-white shadow-xl border-2 border-emerald-300 animate-in fade-in zoom-in-95 duration-200 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-white text-emerald-600 flex items-center justify-center shadow-md animate-bounce shrink-0">
+                        <CheckCircle2 className="w-6 h-6 stroke-[3]" />
+                      </div>
+                      <div>
+                        <div className="text-[10px] font-black uppercase tracking-widest text-emerald-100 flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-300 animate-ping" />
+                          Мгновенная отметка детали
+                        </div>
+                        <div className="text-sm font-black text-white mt-0.5">
+                          Деталь №{scannedPartFlashInfo.labelNumber} «{scannedPartFlashInfo.name}»
+                          <span className="ml-2 font-mono text-xs bg-emerald-800/90 px-2 py-0.5 rounded-lg border border-emerald-400/40">
+                            {scannedPartFlashInfo.count} из {scannedPartFlashInfo.total} шт.
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/20 backdrop-blur-sm text-white text-xs font-black">
+                      <Check className="w-4 h-4 stroke-[3]" />
+                      <span>ОТМЕЧЕНО В СПИСКЕ</span>
+                    </div>
+                  </div>
+                )}
+
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                   <div>
                     <h4 className="font-black text-slate-900 text-sm">
@@ -1413,13 +1493,17 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
 
                           const availability = getDetailAvailabilityForStage(detail, localOrder, currentStage, settings);
                           const isLocked = !availability.isAvailable;
+                          const isRecentlyScanned = detail.id === recentlyScannedPartId;
 
                           return (
                             <tr
                               key={detail.id}
+                              id={`part-row-${detail.id}`}
                               onClick={() => toggleDetailScanned(detail)}
-                              className={`transition-colors ${
-                                isLocked
+                              className={`transition-all duration-300 ${
+                                isRecentlyScanned
+                                  ? 'bg-emerald-200/90 border-2 border-emerald-500 ring-4 ring-emerald-400/60 shadow-xl scale-[1.01] font-extrabold text-emerald-950 animate-pulse cursor-pointer'
+                                  : isLocked
                                   ? 'bg-slate-100/70 hover:bg-slate-100 opacity-60 cursor-not-allowed text-slate-500'
                                   : previousForcedInfo
                                   ? 'bg-rose-50/90 hover:bg-rose-100/90 border-l-4 border-l-rose-500 cursor-pointer'
@@ -1433,7 +1517,9 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                               {/* Status Checkbox */}
                               <td className="py-2.5 px-3">
                                 <div className={`w-6 h-6 rounded-lg border flex items-center justify-center transition-all ${
-                                  isLocked
+                                  isRecentlyScanned
+                                    ? 'bg-emerald-600 border-2 border-emerald-400 text-white shadow-md animate-bounce scale-110'
+                                    : isLocked
                                     ? 'border-slate-300 bg-slate-200 text-slate-400'
                                     : isFullyScanned
                                     ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
@@ -1443,7 +1529,9 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                                     ? 'border-rose-400 bg-white'
                                     : 'border-slate-300 bg-white hover:border-slate-400'
                                 }`}>
-                                  {isLocked ? (
+                                  {isRecentlyScanned ? (
+                                    <Check className="w-4 h-4 stroke-[3]" />
+                                  ) : isLocked ? (
                                     <Lock className="w-3 h-3 text-slate-400" />
                                   ) : isFullyScanned ? (
                                     <Check className="w-3.5 h-3.5 stroke-[3]" />
@@ -1455,8 +1543,14 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
 
                               {/* Label Number */}
                               <td className="py-2.5 px-3 font-mono font-bold text-slate-900">
-                                <div className="flex items-center gap-1.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
                                   <span>#{detail.labelNumber}</span>
+                                  {isRecentlyScanned && (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider shadow-xs animate-bounce">
+                                      <CheckCircle2 className="w-3 h-3" />
+                                      ОТМЕЧЕНО СЕЙЧАС
+                                    </span>
+                                  )}
                                   {isLocked && (
                                     <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-slate-200 text-slate-600 text-[9px] font-bold border border-slate-300">
                                       <Lock className="w-2.5 h-2.5" />

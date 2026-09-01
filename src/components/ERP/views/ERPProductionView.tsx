@@ -122,8 +122,9 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
     return false;
   };
 
-  // Filter orders in production (must be ready or in progress or scheduled on calendar)
+  // Filter orders in production (must be ready or in progress or scheduled on calendar, and NOT deleted)
   const productionOrders = orders.filter(o => 
+    !o.isDeleted &&
     (o.isReadyForProduction || 
      o.status === 'in_progress' || 
      (o.currentStage && o.currentStage !== 'queue') || 
@@ -191,6 +192,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
 
     const cleanCode = rawCode.trim().toLowerCase();
     const foundOrder = orders.find(o => {
+      if (o.isDeleted) return false;
       if (o.id.toLowerCase() === cleanCode) return true;
       if (o.orderNumber.toLowerCase() === cleanCode) return true;
       if (o.orderNumber.toLowerCase().replace(/[^0-9a-zа-я]/g, '') === cleanCode.replace(/[^0-9a-zа-я]/g, '')) return true;
@@ -393,7 +395,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
         </div>
       ) : selectedStageId === 'shipping' ? (
         <ERPDispatchView 
-          orders={orders} 
+          orders={orders.filter(o => !o.isDeleted)} 
           employees={employees} 
           settings={settings}
           companyName={companyName}
@@ -740,7 +742,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
       <ShiftSummaryModal
         isOpen={showShiftModal}
         currentUser={currentUser}
-        orders={orders}
+        orders={orders.filter(o => !o.isDeleted)}
         settings={settings}
         onClose={() => setShowShiftModal(false)}
         onConfirmEndShift={() => {
@@ -756,7 +758,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
           detail={reportingDefectDetail.detail}
           settings={settings}
           currentUser={currentUser}
-          allOrders={orders}
+          allOrders={orders.filter(o => !o.isDeleted)}
           onClose={() => setReportingDefectDetail(null)}
           onDefectReported={(updatedMainOrder, defectTaskOrder) => {
             if (onUpdateOrder) {

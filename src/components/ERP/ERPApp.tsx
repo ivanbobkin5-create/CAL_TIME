@@ -1449,11 +1449,11 @@ export const ERPApp: React.FC<ERPAppProps> = ({
   // 4. Navigation items with RBAC filtering
   const allNavItems: { id: ERPSection; label: string; icon: any; badge?: number }[] = [
     { id: 'dashboard', label: 'Дашборд', icon: LayoutDashboard },
-    { id: 'planning', label: 'Планирование', icon: Calendar, badge: orders.filter(o => o.status === 'planned').length },
+    { id: 'planning', label: 'Планирование', icon: Calendar, badge: orders.filter(o => !o.isDeleted && o.status === 'planned').length },
     { id: 'schedule', label: 'График работы', icon: CalendarDays },
     { id: 'residuals', label: 'Остатки материалов', icon: Layers },
-    { id: 'production', label: 'Производство', icon: Factory, badge: orders.filter(o => (o.isReadyForProduction || o.status === 'in_progress' || (o.currentStage && o.currentStage !== 'queue') || !!o.plannedCuttingDate || (o.stagePlannedDates && Object.keys(o.stagePlannedDates).length > 0)) && o.status !== 'completed' && o.status !== 'shipped').length },
-    { id: 'archive', label: 'Архив заказов', icon: Archive, badge: orders.filter(o => o.status === 'completed' || o.status === 'shipped').length },
+    { id: 'production', label: 'Производство', icon: Factory, badge: orders.filter(o => !o.isDeleted && (o.isReadyForProduction || o.status === 'in_progress' || (o.currentStage && o.currentStage !== 'queue') || !!o.plannedCuttingDate || (o.stagePlannedDates && Object.keys(o.stagePlannedDates).length > 0)) && o.status !== 'completed' && o.status !== 'shipped').length },
+    { id: 'archive', label: 'Архив заказов', icon: Archive, badge: orders.filter(o => !o.isDeleted && (o.status === 'completed' || o.status === 'shipped')).length },
     { id: 'reports', label: 'Аналитика и отчеты', icon: BarChart3 },
     { id: 'salaries', label: 'Зарплаты', icon: RussianRuble },
     { id: 'employees', label: 'Сотрудники', icon: Users },
@@ -1754,7 +1754,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
 
         {/* Dynamic Section View with Adaptive Padding */}
         <div className="p-3.5 sm:p-4 md:p-8 max-w-7xl w-full mx-auto space-y-5">
-          {selectedOrderForWorkspace ? (
+          {selectedOrderForWorkspace && !selectedOrderForWorkspace.isDeleted ? (
             <ERPOrderWorkspaceView 
               order={selectedOrderForWorkspace}
               initialStageId={workspaceStageId}

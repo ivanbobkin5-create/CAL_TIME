@@ -54,6 +54,8 @@ export const ERPDispatchView: React.FC<ERPDispatchViewProps> = ({
   // Filter dispatch candidate orders:
   // Orders that reached 'shipping', 'ready', 'packing' or completed status
   const dispatchOrders = orders.filter(order => {
+    if (order.isDeleted) return false;
+
     const isDispatchCandidate = 
       order.currentStage === 'shipping' || 
       order.currentStage === 'ready' || 
@@ -81,8 +83,8 @@ export const ERPDispatchView: React.FC<ERPDispatchViewProps> = ({
   });
 
   // Calculate statistics
-  const readyOrdersCount = orders.filter(o => (o.currentStage === 'shipping' || o.currentStage === 'ready') && o.status !== 'shipped' && o.status !== 'completed').length;
-  const shippedTodayCount = orders.filter(o => o.shippedAt && o.shippedAt.startsWith(new Date().toISOString().split('T')[0])).length;
+  const readyOrdersCount = orders.filter(o => !o.isDeleted && (o.currentStage === 'shipping' || o.currentStage === 'ready') && o.status !== 'shipped' && o.status !== 'completed').length;
+  const shippedTodayCount = orders.filter(o => !o.isDeleted && o.shippedAt && o.shippedAt.startsWith(new Date().toISOString().split('T')[0])).length;
   const totalPackagesToShip = dispatchOrders.reduce((sum, o) => sum + (o.packages?.length || 0), 0);
 
   return (

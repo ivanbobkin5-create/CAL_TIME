@@ -46,6 +46,7 @@ export const ERPArchiveView: React.FC<ERPArchiveViewProps> = ({
     const monthAgo = new Date(now.getTime() - 30 * 24 * 3600 * 1000).toISOString().split('T')[0];
 
     return orders.filter(o => {
+      if (o.isDeleted) return false;
       const isArchived = o.status === 'completed' || o.status === 'shipped';
       if (!isArchived) return false;
 

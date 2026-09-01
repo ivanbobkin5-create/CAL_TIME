@@ -41,8 +41,8 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
   onSelectOrder,
   onCreateOrderModal
 }) => {
-  const activeOrders = orders.filter(o => o.status === 'in_progress' || o.status === 'planned');
-  const completedOrders = orders.filter(o => o.status === 'completed' || o.status === 'shipped');
+  const activeOrders = orders.filter(o => !o.isDeleted && (o.status === 'in_progress' || o.status === 'planned'));
+  const completedOrders = orders.filter(o => !o.isDeleted && (o.status === 'completed' || o.status === 'shipped'));
   const urgentOrders = activeOrders.filter(o => o.priority === 'urgent' || o.priority === 'high');
 
   const totalAreaInWork = activeOrders.reduce((sum, o) => sum + (o.totalAreaM2 || 0), 0);
@@ -64,11 +64,11 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
   // Production Plan for Today: cutting m2, sheets estimate, edge meters
   // Filter active orders that are in cutting or edging or scheduled for today
   const todayDateStr = new Date().toISOString().split('T')[0];
-  const todayCuttingOrders = orders.filter(o => (o.currentStage === 'cutting' && o.status === 'in_progress') || (o.currentStage === 'queue' && o.status === 'in_progress'));
+  const todayCuttingOrders = orders.filter(o => !o.isDeleted && ((o.currentStage === 'cutting' && o.status === 'in_progress') || (o.currentStage === 'queue' && o.status === 'in_progress')));
   const todayCuttingM2 = todayCuttingOrders.reduce((sum, o) => sum + (o.totalAreaM2 || 0), 0);
   const todayCuttingSheets = Math.ceil(todayCuttingM2 / 5.8) || (todayCuttingM2 > 0 ? 1 : 0);
 
-  const todayEdgingOrders = orders.filter(o => o.currentStage === 'edging' && o.status === 'in_progress');
+  const todayEdgingOrders = orders.filter(o => !o.isDeleted && o.currentStage === 'edging' && o.status === 'in_progress');
   const todayEdgingM = todayEdgingOrders.reduce((sum, o) => sum + (o.totalEdgeM || 0), 0);
 
   // Current Month Production Pace Calculation
@@ -81,6 +81,7 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
 
   // Month target (estimated from settings or sum of active + completed orders this month)
   const monthOrders = orders.filter(o => {
+    if (o.isDeleted) return false;
     if (!o.createdAt) return true;
     const d = new Date(o.createdAt);
     return d.getFullYear() === currentYear && d.getMonth() === currentMonth;
@@ -99,14 +100,14 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
 
   // Calculate actual stage load based on real orders in progress
   const stageStats = {
-    cutting: orders.filter(o => o.currentStage === 'cutting' && o.status === 'in_progress'),
-    edging: orders.filter(o => o.currentStage === 'edging' && o.status === 'in_progress'),
-    cnc: orders.filter(o => o.currentStage === 'cnc' && o.status === 'in_progress'),
-    facades: orders.filter(o => o.currentStage === 'facades' && o.status === 'in_progress'),
-    assembly: orders.filter(o => o.currentStage === 'assembly' && o.status === 'in_progress'),
-    kitting: orders.filter(o => o.currentStage === 'kitting' && o.status === 'in_progress'),
-    packing: orders.filter(o => o.currentStage === 'packing' && o.status === 'in_progress'),
-    shipping: orders.filter(o => o.currentStage === 'shipping' && o.status === 'in_progress')
+    cutting: orders.filter(o => !o.isDeleted && o.currentStage === 'cutting' && o.status === 'in_progress'),
+    edging: orders.filter(o => !o.isDeleted && o.currentStage === 'edging' && o.status === 'in_progress'),
+    cnc: orders.filter(o => !o.isDeleted && o.currentStage === 'cnc' && o.status === 'in_progress'),
+    facades: orders.filter(o => !o.isDeleted && o.currentStage === 'facades' && o.status === 'in_progress'),
+    assembly: orders.filter(o => !o.isDeleted && o.currentStage === 'assembly' && o.status === 'in_progress'),
+    kitting: orders.filter(o => !o.isDeleted && o.currentStage === 'kitting' && o.status === 'in_progress'),
+    packing: orders.filter(o => !o.isDeleted && o.currentStage === 'packing' && o.status === 'in_progress'),
+    shipping: orders.filter(o => !o.isDeleted && o.currentStage === 'shipping' && o.status === 'in_progress')
   };
 
   const getStageLoadPercent = (count: number, capacity: number = 6) => {
