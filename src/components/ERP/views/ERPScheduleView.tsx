@@ -154,6 +154,11 @@ export const ERPScheduleView: React.FC<ERPScheduleViewProps> = ({
   const [printIncludeSummary, setPrintIncludeSummary] = useState<boolean>(true);
   const [printIncludeSignatures, setPrintIncludeSignatures] = useState<boolean>(true);
 
+  // Auto-fill Template Modal State
+  const [showAutoFillModal, setShowAutoFillModal] = useState<boolean>(false);
+  const [autoFillPattern, setAutoFillPattern] = useState<'2/2' | '5/2' | 'night_12' | 'clear'>('5/2');
+  const [autoFillTargetEmployeeId, setAutoFillTargetEmployeeId] = useState<string>('all');
+
   const canSelfEdit = isUserForeman || settings?.scheduleCanSelfEdit !== false;
   const showOtherEmployees = isUserForeman || settings?.scheduleShowOtherEmployees !== false;
 
@@ -620,30 +625,40 @@ export const ERPScheduleView: React.FC<ERPScheduleViewProps> = ({
     });
   };
 
-  // Bulk Auto-fill patterns (2/2 or 5/2)
-  const handleAutoFillPattern = (pattern: '2/2' | '5/2' | 'clear') => {
+  // Bulk Auto-fill patterns (2/2, 5/2, night_12 or clear) with target employee selection
+  const handleAutoFillPattern = (pattern: '2/2' | '5/2' | 'night_12' | 'clear', targetEmployeeId: string = 'all') => {
+    const targetEmployees = targetEmployeeId === 'all'
+      ? filteredEmployees
+      : filteredEmployees.filter(e => e.id === targetEmployeeId);
+
+    if (targetEmployees.length === 0) return;
+
     if (pattern === 'clear') {
-      if (!window.confirm(`Очистить весь график за период ${periodTitle}?`)) return;
+      const targetName = targetEmployeeId === 'all' 
+        ? `всех сотрудников (${filteredEmployees.length} чел.)` 
+        : `сотрудника ${targetEmployees[0]?.name}`;
+      if (!window.confirm(`Очистить график для ${targetName} за период ${periodTitle}?`)) return;
       setScheduleEntries(prev => {
         const next = { ...prev };
-        filteredEmployees.forEach(emp => {
+        targetEmployees.forEach(emp => {
           dateColumns.forEach(d => {
             delete next[`${emp.id}_${d.dateStr}`];
           });
         });
         return next;
       });
+      setShowAutoFillModal(false);
       return;
     }
 
     setScheduleEntries(prev => {
       const next = { ...prev };
-      filteredEmployees.forEach((emp, empIdx) => {
+      targetEmployees.forEach((emp, empIdx) => {
         dateColumns.forEach((d, dayIdx) => {
           const key = `${emp.id}_${d.dateStr}`;
           if (pattern === '2/2') {
-            // Alternate 2 work, 2 off with stagger by employee index
-            const cycle = (dayIdx + (empIdx * 2)) % 4;
+            // For a single chosen employee, start day 0,1 as work, 2,3 as off; for all staggered by index
+            const cycle = targetEmployeeId === 'all' ? (dayIdx + (empIdx * 2)) % 4 : dayIdx % 4;
             if (cycle === 0 || cycle === 1) {
               next[key] = {
                 employeeId: emp.id,
@@ -675,11 +690,29 @@ export const ERPScheduleView: React.FC<ERPScheduleViewProps> = ({
                 hours: 0
               };
             }
+          } else if (pattern === 'night_12') {
+            const cycle = targetEmployeeId === 'all' ? (dayIdx + (empIdx * 2)) % 4 : dayIdx % 4;
+            if (cycle === 0 || cycle === 1) {
+              next[key] = {
+                employeeId: emp.id,
+                date: d.dateStr,
+                type: 'night_12',
+                hours: 12
+              };
+            } else {
+              next[key] = {
+                employeeId: emp.id,
+                date: d.dateStr,
+                type: 'day_off',
+                hours: 0
+              };
+            }
           }
         });
       });
       return next;
     });
+    setShowAutoFillModal(false);
   };
 
   // Calculations for summary stats
@@ -874,29 +907,42 @@ export const ERPScheduleView: React.FC<ERPScheduleViewProps> = ({
             {/* Quick Batch Actions Dropdown / Tools */}
             <div className="bg-slate-900 text-white rounded-3xl p-4 shadow-sm flex items-center justify-between gap-2">
               <div>
-                <div className="text-xs font-black text-amber-400 flex items-center gap-1">
+                <button
+                  onClick={() => setShowAutoFillModal(true)}
+                  className="text-xs font-black text-amber-400 flex items-center gap-1 hover:text-amber-300 transition-colors cursor-pointer text-left"
+                  title="Настроить автозаполнение графика (для всех или выбранного сотрудника)"
+                >
                   <Sparkles className="w-3.5 h-3.5" /> Автозаполнение
-                </div>
+                </button>
                 <div className="text-[11px] text-slate-300">Шаблоны графиков</div>
               </div>
 
               <div className="flex items-center gap-1.5">
                 <button
-                  onClick={() => handleAutoFillPattern('2/2')}
+                  onClick={() => {
+                    setAutoFillPattern('2/2');
+                    setShowAutoFillModal(true);
+                  }}
                   className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white transition-all cursor-pointer border border-slate-700"
-                  title="Заполнить всех по графику 2/2"
+                  title="Шаблон 2/2 (для всех или выбранного сотрудника)"
                 >
                   2/2
                 </button>
                 <button
-                  onClick={() => handleAutoFillPattern('5/2')}
+                  onClick={() => {
+                    setAutoFillPattern('5/2');
+                    setShowAutoFillModal(true);
+                  }}
                   className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-bold text-white transition-all cursor-pointer border border-slate-700"
-                  title="Заполнить всех по графику 5/2"
+                  title="Шаблон 5/2 (для всех или выбранного сотрудника)"
                 >
                   5/2
                 </button>
                 <button
-                  onClick={() => handleAutoFillPattern('clear')}
+                  onClick={() => {
+                    setAutoFillPattern('clear');
+                    setShowAutoFillModal(true);
+                  }}
                   className="px-2 py-1.5 rounded-xl bg-rose-950/60 hover:bg-rose-900 text-rose-300 text-xs font-bold transition-all cursor-pointer border border-rose-800/60"
                   title="Очистить график за период"
                 >
@@ -1966,6 +2012,205 @@ export const ERPScheduleView: React.FC<ERPScheduleViewProps> = ({
             >
               <X className="w-3.5 h-3.5" /> Очистить ячейку
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Auto-fill Template Configuration Modal */}
+      {showAutoFillModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500/15 text-amber-700 flex items-center justify-center font-bold">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-slate-900 text-base">
+                    Автозаполнение графика
+                  </h3>
+                  <div className="text-xs text-slate-500 font-medium">
+                    Период: <strong className="text-slate-800">{periodTitle}</strong>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setShowAutoFillModal(false)}
+                className="p-2 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Step 1: Select Target (All or specific employee) */}
+            <div className="space-y-2">
+              <label className="block text-xs font-black text-slate-700 uppercase tracking-wider">
+                1. Для кого применить шаблон:
+              </label>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <label 
+                  onClick={() => setAutoFillTargetEmployeeId('all')}
+                  className={`p-3 rounded-2xl border-2 flex items-center gap-2.5 cursor-pointer transition-all ${
+                    autoFillTargetEmployeeId === 'all'
+                      ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 font-bold'
+                      : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="autoFillTarget"
+                    checked={autoFillTargetEmployeeId === 'all'}
+                    onChange={() => setAutoFillTargetEmployeeId('all')}
+                    className="w-4 h-4 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <div className="text-xs">
+                    <div className="font-black">Для всех мастеров</div>
+                    <div className="text-[10px] text-slate-500">В списке ({filteredEmployees.length} чел.)</div>
+                  </div>
+                </label>
+
+                <label 
+                  onClick={() => {
+                    if (autoFillTargetEmployeeId === 'all' && filteredEmployees.length > 0) {
+                      setAutoFillTargetEmployeeId(filteredEmployees[0].id);
+                    }
+                  }}
+                  className={`p-3 rounded-2xl border-2 flex items-center gap-2.5 cursor-pointer transition-all ${
+                    autoFillTargetEmployeeId !== 'all'
+                      ? 'border-indigo-600 bg-indigo-50/70 text-indigo-950 font-bold'
+                      : 'border-slate-200 hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="autoFillTarget"
+                    checked={autoFillTargetEmployeeId !== 'all'}
+                    onChange={() => {
+                      if (filteredEmployees.length > 0) {
+                        setAutoFillTargetEmployeeId(filteredEmployees[0].id);
+                      }
+                    }}
+                    className="w-4 h-4 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <div className="text-xs">
+                    <div className="font-black">Выбрать сотрудника</div>
+                    <div className="text-[10px] text-slate-500">Только для одного</div>
+                  </div>
+                </label>
+              </div>
+
+              {/* Specific employee select dropdown */}
+              {autoFillTargetEmployeeId !== 'all' && (
+                <div className="pt-2 animate-in fade-in duration-100">
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    Выберите сотрудника:
+                  </label>
+                  <select
+                    value={autoFillTargetEmployeeId}
+                    onChange={(e) => setAutoFillTargetEmployeeId(e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-xs text-slate-900 focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer"
+                  >
+                    {filteredEmployees.map(emp => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.name} ({emp.role || 'Мастер'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Step 2: Select Pattern */}
+            <div className="space-y-2">
+              <label className="block text-xs font-black text-slate-700 uppercase tracking-wider">
+                2. Выберите шаблон смен:
+              </label>
+
+              <div className="space-y-1.5">
+                {[
+                  {
+                    id: '5/2' as const,
+                    title: 'График 5/2 (Пятидневка)',
+                    desc: 'С понедельника по пятницу по 8 часов, суббота и воскресенье — выходные',
+                    badge: '8ч',
+                    badgeBg: 'bg-blue-100 text-blue-800'
+                  },
+                  {
+                    id: '2/2' as const,
+                    title: 'График 2/2 (Дневные смены)',
+                    desc: '2 рабочих дня по 12ч (08:00–20:00) / 2 выходных дня',
+                    badge: '12ч',
+                    badgeBg: 'bg-emerald-100 text-emerald-800'
+                  },
+                  {
+                    id: 'night_12' as const,
+                    title: 'График 2/2 Ночные смены',
+                    desc: '2 ночные смены по 12ч (20:00–08:00) / 2 выходных дня',
+                    badge: 'Н 12ч',
+                    badgeBg: 'bg-purple-100 text-purple-800'
+                  },
+                  {
+                    id: 'clear' as const,
+                    title: 'Очистить смены',
+                    desc: 'Удалить все запланированные смены за данный период',
+                    badge: 'Сброс',
+                    badgeBg: 'bg-rose-100 text-rose-800'
+                  }
+                ].map(item => (
+                  <label
+                    key={item.id}
+                    onClick={() => setAutoFillPattern(item.id)}
+                    className={`p-3 rounded-2xl border-2 flex items-center justify-between gap-3 cursor-pointer transition-all ${
+                      autoFillPattern === item.id
+                        ? 'border-indigo-600 bg-indigo-50/50 shadow-xs'
+                        : 'border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <input
+                        type="radio"
+                        name="autoFillPattern"
+                        checked={autoFillPattern === item.id}
+                        onChange={() => setAutoFillPattern(item.id)}
+                        className="w-4 h-4 text-indigo-600 focus:ring-indigo-500 shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <div className="font-bold text-xs text-slate-900">{item.title}</div>
+                        <div className="text-[10px] text-slate-500 leading-tight">{item.desc}</div>
+                      </div>
+                    </div>
+
+                    <span className={`px-2 py-0.5 rounded-lg text-[10px] font-mono font-black shrink-0 ${item.badgeBg}`}>
+                      {item.badge}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setShowAutoFillModal(false)}
+                className="px-4 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
+              >
+                Отмена
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleAutoFillPattern(autoFillPattern, autoFillTargetEmployeeId)}
+                className="px-5 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs shadow-md shadow-indigo-600/20 transition-all flex items-center gap-2 cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>
+                  {autoFillPattern === 'clear' ? 'Очистить выбранное' : 'Применить к графику'}
+                </span>
+              </button>
+            </div>
           </div>
         </div>
       )}

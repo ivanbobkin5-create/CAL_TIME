@@ -243,15 +243,6 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
             <span>Итоги смены / Выработка</span>
           </button>
 
-          <button
-            onClick={() => setShowCameraScannerModal(true)}
-            className="md:hidden px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-black text-xs flex items-center gap-2 shadow-md shadow-indigo-200 transition-all cursor-pointer"
-            title="Сканировать бирку или QR-код заказа камерой телефона"
-          >
-            <Camera className="w-4 h-4" />
-            <span>Сканер камерой</span>
-          </button>
-
           {selectedStageId && (
             <button
               onClick={() => setSelectedStageId(null)}

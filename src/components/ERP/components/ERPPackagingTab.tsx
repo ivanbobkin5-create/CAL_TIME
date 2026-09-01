@@ -19,7 +19,8 @@ import {
   X,
   Lock,
   Zap,
-  RefreshCw
+  RefreshCw,
+  ArrowRightLeft
 } from 'lucide-react';
 import { ProductionOrder, OrderPackage, OrderPackagePart, ERPCompanySettings, ERPEmployee, ProductionStageId } from '../types';
 import { PackageLabelPrintModal } from './PackageLabelPrintModal';
@@ -57,6 +58,22 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
   const [currentBufferParts, setCurrentBufferParts] = useState<OrderPackagePart[]>([]);
   const [scanFeedbackMsg, setScanFeedbackMsg] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [autoPrintDirect, setAutoPrintDirect] = useState<boolean>(settings?.packageLabelSettings?.autoPrintOnCloseBox !== false);
+
+  // Move Detail / Part Modal & Alert State
+  const [movePartModal, setMovePartModal] = useState<{
+    isOpen: boolean;
+    sourcePkgId: string; // package.id or 'buffer'
+    sourcePkgName: string;
+    part: OrderPackagePart;
+  } | null>(null);
+  const [movePartTargetPkgId, setMovePartTargetPkgId] = useState<string>('');
+
+  // Prominent alert for label reprinting
+  const [reprintAlert, setReprintAlert] = useState<{
+    isOpen: boolean;
+    packages: OrderPackage[];
+    message: string;
+  } | null>(null);
 
   // Scan input & buffer for hardware barcodes
   const [scanInput, setScanInput] = useState<string>('');
@@ -341,6 +358,108 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
     }
   };
 
+  // Preview Draft Package label WITHOUT sealing/creating the package
+  const handlePreviewDraftPackage = () => {
+    if (currentBufferParts.length === 0) {
+      showFeedback('В текущем формируемом месте нет деталей для предпросмотра!', 'error');
+      return;
+    }
+
+    const pkgNum = existingPackages.length + 1;
+    const cleanName = packageNameInput.trim() || `Место №${pkgNum}`;
+    const draftPackage: OrderPackage = {
+      id: 'preview-packaging-draft',
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      packageNumber: pkgNum,
+      name: cleanName,
+      type: 'details',
+      code: `PKG-${order.orderNumber}-M${pkgNum}-ПРЕДПРОСМОТР`,
+      parts: [...currentBufferParts],
+      createdAt: new Date().toISOString(),
+      createdByEmployeeId: currentUser?.id,
+      createdByEmployeeName: currentUser?.name || 'Мастер упаковки',
+      isCompleted: false
+    };
+
+    setSelectedPrintPkg(draftPackage);
+    setShowPrintModal(true);
+  };
+
+  // Move Detail/Part between packages, buffer, or unpacked pool
+  const handleMovePart = (
+    sourcePkgId: string, // package.id or 'buffer'
+    targetPkgId: string, // package.id or 'buffer' or 'unpacked'
+    part: OrderPackagePart
+  ) => {
+    const affectedPackages: OrderPackage[] = [];
+    let updatedPackages = [...existingPackages];
+
+    // Case 1: Source is buffer
+    if (sourcePkgId === 'buffer') {
+      setCurrentBufferParts(prev => prev.filter(p => p.detailId !== part.detailId));
+
+      if (targetPkgId !== 'unpacked' && targetPkgId !== 'buffer') {
+        const targetPkg = updatedPackages.find(p => p.id === targetPkgId);
+        if (targetPkg) {
+          const updatedTargetPkg: OrderPackage = {
+            ...targetPkg,
+            parts: [...targetPkg.parts, part]
+          };
+          updatedPackages = updatedPackages.map(p => p.id === targetPkgId ? updatedTargetPkg : p);
+          affectedPackages.push(updatedTargetPkg);
+        }
+      }
+    } else {
+      // Case 2: Source is an existing sealed package
+      const sourcePkg = updatedPackages.find(p => p.id === sourcePkgId);
+      if (!sourcePkg) return;
+
+      const updatedSourcePkg: OrderPackage = {
+        ...sourcePkg,
+        parts: sourcePkg.parts.filter(p => p.detailId !== part.detailId)
+      };
+      updatedPackages = updatedPackages.map(p => p.id === sourcePkgId ? updatedSourcePkg : p);
+      affectedPackages.push(updatedSourcePkg);
+
+      if (targetPkgId === 'buffer') {
+        setCurrentBufferParts(prev => [...prev, part]);
+      } else if (targetPkgId === 'unpacked') {
+        // Just removed from sourcePkg, naturally back in unpacked pool!
+      } else {
+        // Move to another existing package
+        const targetPkg = updatedPackages.find(p => p.id === targetPkgId);
+        if (targetPkg) {
+          const updatedTargetPkg: OrderPackage = {
+            ...targetPkg,
+            parts: [...targetPkg.parts, part]
+          };
+          updatedPackages = updatedPackages.map(p => p.id === targetPkgId ? updatedTargetPkg : p);
+          affectedPackages.push(updatedTargetPkg);
+        }
+      }
+    }
+
+    onUpdateOrder({
+      ...order,
+      packages: updatedPackages
+    });
+
+    setMovePartModal(null);
+
+    // If affectedPackages contains any package, alert the employee to re-print & re-label!
+    if (affectedPackages.length > 0) {
+      const pkgNames = affectedPackages.map(p => `Место №${p.packageNumber} (${p.name})`).join(' и ');
+      setReprintAlert({
+        isOpen: true,
+        packages: affectedPackages,
+        message: `Содержимое упаковок (${pkgNames}) изменилось! Обязательно перепечатайте и переклейте этикетку на коробках.`
+      });
+    } else {
+      showFeedback(`Деталь "${part.name}" перемещена.`, 'success');
+    }
+  };
+
   // Reset or explicitly start fresh package
   const handleResetOrNewPackage = () => {
     if (currentBufferParts.length > 0) {
@@ -611,7 +730,17 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                 <span className="flex items-center gap-1.5 font-bold text-orange-400">
                   <QrCode className="w-3.5 h-3.5" /> Сканер бирок деталей
                 </span>
-                <span className="text-[10px] text-slate-400">Сканируйте бирку для вложения</span>
+                {onOpenScannerModal && (
+                  <button
+                    type="button"
+                    onClick={onOpenScannerModal}
+                    className="px-2.5 py-1 rounded-xl bg-orange-600 hover:bg-orange-500 text-white text-[11px] font-bold flex items-center gap-1 transition-all shadow-sm cursor-pointer"
+                    title="Сканировать камерой"
+                  >
+                    <Camera className="w-3.5 h-3.5" />
+                    <span>Сканировать</span>
+                  </button>
+                )}
               </div>
 
               <div className="flex items-center gap-2">
@@ -684,13 +813,32 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                         </div>
                       </div>
 
-                      <button
-                        onClick={() => handleRemoveFromBuffer(part.detailId)}
-                        className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-100 transition-colors"
-                        title="Убрать из этого места"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMovePartModal({
+                              isOpen: true,
+                              sourcePkgId: 'buffer',
+                              sourcePkgName: `Формируемое место №${nextPkgNumber} (${packageNameInput})`,
+                              part
+                            });
+                            // Default target: first existing package if available, else 'unpacked'
+                            setMovePartTargetPkgId(existingPackages[0]?.id || 'unpacked');
+                          }}
+                          className="p-1.5 rounded-lg text-slate-500 hover:bg-orange-100 hover:text-orange-800 transition-colors"
+                          title="Переместить в другую упаковку"
+                        >
+                          <ArrowRightLeft className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleRemoveFromBuffer(part.detailId)}
+                          className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-100 transition-colors"
+                          title="Убрать из этого места"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
                     </div>
                   ))
                 )}
@@ -711,10 +859,10 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
 
               <button
                 type="button"
-                onClick={() => handleSealPackage(true)}
+                onClick={handlePreviewDraftPackage}
                 disabled={currentBufferParts.length === 0}
                 className="px-3 py-3 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 disabled:opacity-40 font-bold text-xs transition-colors cursor-pointer"
-                title="Открыть окно предпросмотра этикетки перед печатью"
+                title="Предпросмотр этикетки (без запечатывания)"
               >
                 Предпросмотр
               </button>
@@ -956,13 +1104,35 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                           <div className="space-y-1">
                             <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Детали ЛДСП/МДФ:</div>
                             {pkg.parts.map((part, pIdx) => (
-                              <div key={pIdx} className="flex items-center justify-between p-1.5 bg-white rounded-lg border border-slate-200/60 text-[11px]">
-                                <span className="font-semibold text-slate-800 truncate max-w-[200px]">
-                                  #{part.labelNumber} {part.name}
-                                </span>
-                                <span className="font-mono text-slate-500 text-[10px] shrink-0">
-                                  {part.length}×{part.width}
-                                </span>
+                              <div key={pIdx} className="flex items-center justify-between gap-2 p-1.5 bg-white rounded-lg border border-slate-200/60 text-[11px]">
+                                <div className="min-w-0 flex-1">
+                                  <span className="font-semibold text-slate-800 truncate block">
+                                    #{part.labelNumber} {part.name}
+                                  </span>
+                                  <span className="font-mono text-slate-500 text-[10px] block">
+                                    {part.length}×{part.width} мм • {part.material || 'ЛДСП'}
+                                  </span>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setMovePartModal({
+                                      isOpen: true,
+                                      sourcePkgId: pkg.id,
+                                      sourcePkgName: `Место №${pkg.packageNumber} (${pkg.name})`,
+                                      part
+                                    });
+                                    // Default target: pick first other package, or 'buffer', or 'unpacked'
+                                    const otherPkg = existingPackages.find(p => p.id !== pkg.id);
+                                    setMovePartTargetPkgId(otherPkg ? otherPkg.id : 'buffer');
+                                  }}
+                                  className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-orange-100 text-orange-800 font-bold text-[10px] flex items-center gap-1 transition-colors cursor-pointer shrink-0"
+                                  title="Переместить деталь в другое место или в буфер"
+                                >
+                                  <ArrowRightLeft className="w-3 h-3 text-orange-600" />
+                                  <span>Переместить</span>
+                                </button>
                               </div>
                             ))}
                           </div>
@@ -1024,6 +1194,164 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>
+
+      {/* Move Detail Modal */}
+      {movePartModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 font-black text-slate-900 text-base">
+                <ArrowRightLeft className="w-5 h-5 text-orange-600" />
+                <span>Перемещение детали</span>
+              </div>
+              <button
+                onClick={() => setMovePartModal(null)}
+                className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3.5 bg-orange-50/70 rounded-2xl border border-orange-200 space-y-1">
+              <div className="text-[10px] text-orange-600 font-bold uppercase">Деталь</div>
+              <div className="font-black text-slate-900 text-xs sm:text-sm">
+                #{movePartModal.part.labelNumber} {movePartModal.part.name}
+              </div>
+              <div className="text-[11px] text-slate-600 font-mono">
+                {movePartModal.part.length} × {movePartModal.part.width} × {movePartModal.part.thickness || 16} мм • {movePartModal.part.material || 'ЛДСП'}
+              </div>
+              <div className="text-[11px] text-slate-500 pt-1">
+                Текущее место: <strong className="text-slate-800">{movePartModal.sourcePkgName}</strong>
+              </div>
+            </div>
+
+            {/* Target Destination Selection */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Куда переместить деталь:
+              </label>
+              <select
+                value={movePartTargetPkgId}
+                onChange={(e) => setMovePartTargetPkgId(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-xs text-slate-900 focus:ring-2 focus:ring-orange-500 outline-none cursor-pointer"
+              >
+                <optgroup label="Сформированные упаковки">
+                  {existingPackages
+                    .filter(p => p.id !== movePartModal.sourcePkgId)
+                    .map(p => (
+                      <option key={p.id} value={p.id}>
+                        Место №{p.packageNumber}: {p.name} ({p.code}) — {p.parts.length} дет.
+                      </option>
+                    ))}
+                </optgroup>
+                <optgroup label="Другие варианты">
+                  <option value="buffer">В текущую формируемую коробку (Место №{nextPkgNumber})</option>
+                  <option value="unpacked">Вернуть в список неупакованных деталей (распаковать)</option>
+                </optgroup>
+              </select>
+            </div>
+
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] leading-relaxed flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <span>
+                Если на коробке уже была напечатана и наклеена этикетка, после перемещения система предложит сразу распечатать обновленную этикетку с актуальным количеством и составом деталей.
+              </span>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setMovePartModal(null)}
+                className="px-4 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={() => handleMovePart(
+                  movePartModal.sourcePkgId,
+                  movePartTargetPkgId,
+                  movePartModal.part
+                )}
+                className="px-5 py-2.5 rounded-2xl bg-orange-600 hover:bg-orange-500 text-white font-black text-xs shadow-md shadow-orange-600/20 flex items-center gap-2 cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>Подтвердить перемещение</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Label Reprint Alert Modal (Prompts employee to re-label modified boxes) */}
+      {reprintAlert && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border-2 border-amber-400 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-black text-slate-900 text-base">
+                  ⚠️ Содержимое упаковки изменилось!
+                </h3>
+                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                  {reprintAlert.message}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-amber-50/70 rounded-2xl border border-amber-200 text-xs font-semibold text-amber-950">
+              Пожалуйста, распечатайте обновленную термоэтикетку и переклейте её на коробку, чтобы количество и список деталей на маркировке совпадали с фактическим содержимым!
+            </div>
+
+            {/* List of affected packages with instant 1-click print buttons */}
+            <div className="space-y-2">
+              {reprintAlert.packages.map(pkg => (
+                <div
+                  key={pkg.id}
+                  className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3 text-xs"
+                >
+                  <div>
+                    <div className="font-black text-slate-900">
+                      Место №{pkg.packageNumber}: {pkg.name}
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-mono">{pkg.code} • {pkg.parts.length} деталей</div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (autoPrintDirect) {
+                        printPackageLabelDirect(order, pkg, existingPackages.length, settings?.packageLabelSettings);
+                        showFeedback(`🖨️ Новая этикетка для Места №${pkg.packageNumber} отправлена на печать!`, 'success');
+                      } else {
+                        setSelectedPrintPkg(pkg);
+                        setShowPrintModal(true);
+                      }
+                    }}
+                    className="px-3 py-2 rounded-xl bg-orange-600 hover:bg-orange-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Перепечатать этикетку №{pkg.packageNumber}</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-end pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setReprintAlert(null)}
+                className="px-5 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs cursor-pointer"
+              >
+                Понятно, этикетка обновлена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Print Modal for Selected Package */}
       {selectedPrintPkg && (

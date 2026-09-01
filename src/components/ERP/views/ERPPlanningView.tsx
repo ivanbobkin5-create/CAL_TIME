@@ -34,7 +34,9 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   ShieldCheck,
-  AlertTriangle
+  AlertTriangle,
+  Trash2,
+  Undo2
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPEmployee, ERPCompanySettings, AdditionalWorks } from '../types';
 import { formatDeadlineDate, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, isStageTaskStarted } from '../utils';
@@ -60,7 +62,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
 }) => {
   const [search, setSearch] = useState('');
   const [selectedPriority, setSelectedPriority] = useState<string>('all');
-  const [statusFilter, setStatusFilter] = useState<'queue' | 'ready' | 'all'>('queue');
+  const [statusFilter, setStatusFilter] = useState<'queue' | 'ready' | 'all' | 'deleted'>('queue');
   const [uploadingOrderId, setUploadingOrderId] = useState<string | null>(null);
   const [expandedWorksOrderId, setExpandedWorksOrderId] = useState<string | null>(null);
   
@@ -727,27 +729,40 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
     onUpdateOrder(updatedOrder);
   };
 
-  const filteredOrders = orders.filter(o => {
-    const matchesSearch = 
-      o.orderNumber.toLowerCase().includes(search.toLowerCase()) ||
-      o.clientName.toLowerCase().includes(search.toLowerCase()) ||
-      o.projectName.toLowerCase().includes(search.toLowerCase());
-    
-    const matchesPriority = selectedPriority === 'all' || o.priority === selectedPriority;
+  const activeOrders = useMemo(() => orders.filter(o => !o.isDeleted), [orders]);
+  const deletedOrders = useMemo(() => orders.filter(o => !!o.isDeleted), [orders]);
 
-    let matchesStatus = true;
-    if (statusFilter === 'queue') {
-      // Order stays in the planning queue until ALL 6 stage tasks have been scheduled!
-      matchesStatus = !isOrderFullyPlanned(o);
-    } else if (statusFilter === 'ready') {
-      matchesStatus = isOrderFullyPlanned(o);
-    }
+  const filteredOrders = useMemo(() => {
+    return orders.filter(o => {
+      // If deleted filter is selected, show only deleted orders
+      if (statusFilter === 'deleted') {
+        if (!o.isDeleted) return false;
+      } else {
+        // Otherwise only show active orders
+        if (o.isDeleted) return false;
+      }
 
-    return matchesSearch && matchesPriority && matchesStatus;
-  });
+      const matchesSearch = 
+        o.orderNumber.toLowerCase().includes(search.toLowerCase()) ||
+        o.clientName.toLowerCase().includes(search.toLowerCase()) ||
+        o.projectName.toLowerCase().includes(search.toLowerCase());
+      
+      const matchesPriority = selectedPriority === 'all' || o.priority === selectedPriority;
 
-  const queueOrdersCount = orders.filter(o => !isOrderFullyPlanned(o)).length;
-  const readyOrdersCount = orders.filter(o => isOrderFullyPlanned(o)).length;
+      let matchesStatus = true;
+      if (statusFilter === 'queue') {
+        matchesStatus = !isOrderFullyPlanned(o);
+      } else if (statusFilter === 'ready') {
+        matchesStatus = isOrderFullyPlanned(o);
+      }
+
+      return matchesSearch && matchesPriority && matchesStatus;
+    });
+  }, [orders, statusFilter, search, selectedPriority]);
+
+  const queueOrdersCount = activeOrders.filter(o => !isOrderFullyPlanned(o)).length;
+  const readyOrdersCount = activeOrders.filter(o => isOrderFullyPlanned(o)).length;
+  const deletedOrdersCount = deletedOrders.length;
 
   return (
     <div className="space-y-4">
@@ -817,7 +832,22 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                 statusFilter === 'all' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Все ({orders.length})
+              Все ({activeOrders.length})
+            </button>
+            <button
+              onClick={() => setStatusFilter('deleted')}
+              className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                statusFilter === 'deleted' ? 'bg-rose-600 text-white shadow-xs' : 'text-rose-600 hover:text-rose-800'
+              }`}
+              title="Удаленные заказы (Корзина)"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Корзина</span>
+              {deletedOrdersCount > 0 && (
+                <span className={`px-1.5 py-0.2 rounded text-[10px] font-black ${statusFilter === 'deleted' ? 'bg-white/20 text-white' : 'bg-rose-100 text-rose-800'}`}>
+                  {deletedOrdersCount}
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -904,13 +934,16 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                   {orderNumber}
                                 </span>
                               </div>
-                              {/* Line 2: Client / Project Name */}
+                              {/* Line 2: Client / Project Name - 2 lines clean display */}
                               {clientName ? (
-                                <span className="text-[10.5px] font-bold text-slate-600 truncate leading-tight mt-0.5" title={clientName}>
+                                <span 
+                                  className="text-[10.5px] font-bold text-slate-700 leading-snug mt-0.5 line-clamp-2 break-words" 
+                                  title={clientName}
+                                >
                                   {clientName}
                                 </span>
                               ) : (
-                                <span className="text-[9px] text-slate-400 italic leading-tight mt-0.5 truncate">
+                                <span className="text-[9px] text-slate-400 italic leading-tight mt-0.5">
                                   Без названия
                                 </span>
                               )}
@@ -1048,6 +1081,41 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                 }}
                               />
                             </label>
+                          )}
+
+                          {/* 4. Delete / Restore Button */}
+                          {order.isDeleted ? (
+                            <button
+                              onClick={() => {
+                                onUpdateOrder({
+                                  ...order,
+                                  isDeleted: false,
+                                  deletedAt: undefined,
+                                  deletedByEmployeeName: undefined
+                                });
+                              }}
+                              className="ml-auto px-1.5 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 text-[8.5px] font-bold flex items-center gap-0.5 cursor-pointer transition-colors"
+                              title="Восстановить из корзины"
+                            >
+                              <Undo2 className="w-2.5 h-2.5" />
+                              <span>Восст.</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                if (window.confirm(`Переместить заказ «${orderNumber} ${clientName}» в корзину?`)) {
+                                  onUpdateOrder({
+                                    ...order,
+                                    isDeleted: true,
+                                    deletedAt: new Date().toISOString()
+                                  });
+                                }
+                              }}
+                              className="ml-auto p-1 rounded text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 text-[8.5px] flex items-center gap-0.5 cursor-pointer transition-colors"
+                              title="Удалить заказ в корзину"
+                            >
+                              <Trash2 className="w-2.5 h-2.5" />
+                            </button>
                           )}
                         </div>
 
@@ -1745,6 +1813,41 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                       <span className="px-3 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 border border-slate-200 shrink-0">
                         В очереди
                       </span>
+                    )}
+
+                    {/* Delete / Restore Actions */}
+                    {order.isDeleted ? (
+                      <button
+                        onClick={() => {
+                          onUpdateOrder({
+                            ...order,
+                            isDeleted: false,
+                            deletedAt: undefined,
+                            deletedByEmployeeName: undefined
+                          });
+                        }}
+                        className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 flex items-center gap-1 shrink-0 cursor-pointer transition-colors shadow-2xs"
+                        title="Восстановить заказ из корзины"
+                      >
+                        <Undo2 className="w-3.5 h-3.5" />
+                        <span>Восстановить</span>
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          if (window.confirm(`Переместить заказ «${displayNumber} ${displayClient}» в корзину?`)) {
+                            onUpdateOrder({
+                              ...order,
+                              isDeleted: true,
+                              deletedAt: new Date().toISOString()
+                            });
+                          }
+                        }}
+                        className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition-colors shrink-0 cursor-pointer"
+                        title="Удалить заказ в корзину"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     )}
                   </div>
                 </div>

@@ -22,7 +22,9 @@ import {
   Square,
   MapPin,
   Zap,
-  RefreshCw
+  RefreshCw,
+  ArrowRightLeft,
+  X
 } from 'lucide-react';
 import { 
   ProductionOrder, 
@@ -73,6 +75,27 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [autoPrintDirect, setAutoPrintDirect] = useState<boolean>(settings?.packageLabelSettings?.autoPrintOnCloseBox !== false);
+
+  // Move Hardware Item Modal & Alert State
+  const [moveHardwareModal, setMoveHardwareModal] = useState<{
+    isOpen: boolean;
+    sourcePkgId: string; // package id or 'draft'
+    sourcePkgName: string;
+    hardwareId: string;
+    hardwareName: string;
+    hardwareArticle?: string;
+    hardwareUnit?: string;
+    currentQty: number;
+  } | null>(null);
+  const [moveHardwareQty, setMoveHardwareQty] = useState<number>(1);
+  const [moveHardwareTargetPkgId, setMoveHardwareTargetPkgId] = useState<string>('');
+
+  // Prominent Alert when box contents change requiring label reprint
+  const [reprintAlert, setReprintAlert] = useState<{
+    isOpen: boolean;
+    packages: OrderPackage[];
+    message: string;
+  } | null>(null);
 
   const hardwareData = order.hardwareData;
   const hardwareItems = hardwareData?.items || [];
@@ -323,7 +346,271 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
     }
   };
 
-  // Reset or start fresh kitting box
+  // Preview Draft Box label WITHOUT creating/sealing the box
+  const handlePreviewDraftLabel = () => {
+    const packedItemsList: OrderPackageHardwareItem[] = [];
+    const formattedNotesLines: string[] = [];
+
+    Object.entries(draftBoxItems).forEach(([hwId, qty]) => {
+      if (qty <= 0) return;
+      const original = hardwareItems.find(h => h.id === hwId);
+      if (original) {
+        packedItemsList.push({
+          hardwareId: original.id,
+          article: original.article,
+          name: original.name,
+          quantity: qty,
+          unit: original.unit || 'шт',
+          category: original.category
+        });
+        formattedNotesLines.push(`• ${original.name}${original.article ? ` [${original.article}]` : ''} — ${qty} ${original.unit || 'шт'}`);
+      }
+    });
+
+    const mandatoryDocsList = settings?.requiredKittingDocuments || [
+      { id: 'doc-1', name: 'Паспорт изделия и инструкция по сборке', enabled: true },
+      { id: 'doc-2', name: 'Акт приема-передачи товара', enabled: true },
+      { id: 'doc-3', name: 'Чертежи и схема разметки', enabled: true }
+    ];
+
+    Object.entries(selectedDocs).forEach(([docId, isChecked]) => {
+      if (!isChecked) return;
+      const doc = mandatoryDocsList.find(d => d.id === docId);
+      if (doc) {
+        packedItemsList.push({
+          hardwareId: doc.id,
+          article: 'ДОК',
+          name: doc.name,
+          quantity: 1,
+          unit: 'компл',
+          category: 'Документы'
+        });
+        formattedNotesLines.push(`• [Документ] ${doc.name} — 1 компл`);
+      }
+    });
+
+    if (customNotes.trim()) {
+      formattedNotesLines.push(`Примечание: ${customNotes.trim()}`);
+    }
+
+    if (packedItemsList.length === 0 && !customNotes.trim()) {
+      setUploadError('В формируемой коробке пока нет позиций для предпросмотра!');
+      setTimeout(() => setUploadError(null), 3500);
+      return;
+    }
+
+    const cleanName = packageName.trim() || `Место ${nextNumber} (Фурнитура)`;
+    const draftPackage: OrderPackage = {
+      id: 'preview-kitting-draft',
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      packageNumber: nextNumber,
+      name: cleanName,
+      type: 'kitting',
+      code: `PKG-${order.orderNumber}-KIT-${nextNumber}-ПРЕДПРОСМОТР`,
+      parts: [],
+      hardwareItems: packedItemsList,
+      customItemsNote: formattedNotesLines.join('\n') || customNotes.trim() || 'Комплект мебельной фурнитуры',
+      createdAt: new Date().toISOString(),
+      createdByEmployeeName: currentUser?.name || 'Мастер комплектовки',
+      isCompleted: false
+    };
+
+    setSelectedPrintPkg(draftPackage);
+    setShowPrintModal(true);
+  };
+
+  // Move Hardware Item between packages or draft/unpacked
+  const handleMoveHardwareItem = (
+    sourcePkgId: string, // package id or 'draft'
+    targetPkgId: string, // package id or 'draft' or 'unpack'
+    hardwareId: string,
+    qtyToMove: number
+  ) => {
+    if (qtyToMove <= 0) return;
+
+    const originalHw = hardwareItems.find(h => h.id === hardwareId);
+    const hwName = originalHw?.name || 'Фурнитура';
+
+    const affectedPackages: OrderPackage[] = [];
+    let updatedPackages = [...existingPackages];
+    let updatedHardwareData = order.hardwareData;
+
+    // Case 1: Source is draft box
+    if (sourcePkgId === 'draft') {
+      const currentInDraft = draftBoxItems[hardwareId] || 0;
+      const actualMove = Math.min(currentInDraft, qtyToMove);
+      const nextDraft = { ...draftBoxItems };
+      if (currentInDraft - actualMove <= 0) {
+        delete nextDraft[hardwareId];
+      } else {
+        nextDraft[hardwareId] = currentInDraft - actualMove;
+      }
+      setDraftBoxItems(nextDraft);
+
+      if (targetPkgId !== 'unpack' && targetPkgId !== 'draft') {
+        // Move into existing package
+        const targetPkg = updatedPackages.find(p => p.id === targetPkgId);
+        if (targetPkg) {
+          const existingItems = [...(targetPkg.hardwareItems || [])];
+          const existingItemIdx = existingItems.findIndex(h => h.hardwareId === hardwareId);
+          if (existingItemIdx >= 0) {
+            existingItems[existingItemIdx] = {
+              ...existingItems[existingItemIdx],
+              quantity: existingItems[existingItemIdx].quantity + actualMove
+            };
+          } else {
+            existingItems.push({
+              hardwareId: hardwareId,
+              article: originalHw?.article,
+              name: hwName,
+              quantity: actualMove,
+              unit: originalHw?.unit || 'шт',
+              category: originalHw?.category
+            });
+          }
+
+          const lines = existingItems.map(h => `• ${h.name}${h.article ? ` [${h.article}]` : ''} — ${h.quantity} ${h.unit || 'шт'}`);
+          const updatedTargetPkg: OrderPackage = {
+            ...targetPkg,
+            hardwareItems: existingItems,
+            customItemsNote: lines.join('\n')
+          };
+          updatedPackages = updatedPackages.map(p => p.id === targetPkgId ? updatedTargetPkg : p);
+          affectedPackages.push(updatedTargetPkg);
+
+          // Update packed quantity in hardwareData
+          if (updatedHardwareData) {
+            const updatedItems = updatedHardwareData.items.map(item => {
+              if (item.id === hardwareId) {
+                return {
+                  ...item,
+                  packedQuantity: Math.min(item.quantity, (item.packedQuantity || 0) + actualMove)
+                };
+              }
+              return item;
+            });
+            updatedHardwareData = { ...updatedHardwareData, items: updatedItems };
+          }
+        }
+      }
+    } else {
+      // Case 2: Source is an existing package
+      const sourcePkg = updatedPackages.find(p => p.id === sourcePkgId);
+      if (!sourcePkg) return;
+
+      const sourceItems = [...(sourcePkg.hardwareItems || [])];
+      const sourceItemIdx = sourceItems.findIndex(h => h.hardwareId === hardwareId);
+      if (sourceItemIdx < 0) return;
+
+      const currentQtyInSource = sourceItems[sourceItemIdx].quantity;
+      const actualMove = Math.min(currentQtyInSource, qtyToMove);
+
+      if (currentQtyInSource - actualMove <= 0) {
+        sourceItems.splice(sourceItemIdx, 1);
+      } else {
+        sourceItems[sourceItemIdx] = {
+          ...sourceItems[sourceItemIdx],
+          quantity: currentQtyInSource - actualMove
+        };
+      }
+
+      const sourceLines = sourceItems.map(h => `• ${h.name}${h.article ? ` [${h.article}]` : ''} — ${h.quantity} ${h.unit || 'шт'}`);
+      const updatedSourcePkg: OrderPackage = {
+        ...sourcePkg,
+        hardwareItems: sourceItems,
+        customItemsNote: sourceLines.join('\n')
+      };
+      updatedPackages = updatedPackages.map(p => p.id === sourcePkgId ? updatedSourcePkg : p);
+      affectedPackages.push(updatedSourcePkg);
+
+      if (targetPkgId === 'draft') {
+        // Move to draft
+        setDraftBoxItems(prev => ({
+          ...prev,
+          [hardwareId]: (prev[hardwareId] || 0) + actualMove
+        }));
+        // Decrease packed in order.hardwareData because it's back in draft
+        if (updatedHardwareData) {
+          const updatedItems = updatedHardwareData.items.map(item => {
+            if (item.id === hardwareId) {
+              return {
+                ...item,
+                packedQuantity: Math.max(0, (item.packedQuantity || 0) - actualMove)
+              };
+            }
+            return item;
+          });
+          updatedHardwareData = { ...updatedHardwareData, items: updatedItems };
+        }
+      } else if (targetPkgId === 'unpack') {
+        // Return to unpacked
+        if (updatedHardwareData) {
+          const updatedItems = updatedHardwareData.items.map(item => {
+            if (item.id === hardwareId) {
+              return {
+                ...item,
+                packedQuantity: Math.max(0, (item.packedQuantity || 0) - actualMove)
+              };
+            }
+            return item;
+          });
+          updatedHardwareData = { ...updatedHardwareData, items: updatedItems };
+        }
+      } else {
+        // Move to another existing package
+        const targetPkg = updatedPackages.find(p => p.id === targetPkgId);
+        if (targetPkg) {
+          const targetItems = [...(targetPkg.hardwareItems || [])];
+          const targetItemIdx = targetItems.findIndex(h => h.hardwareId === hardwareId);
+          if (targetItemIdx >= 0) {
+            targetItems[targetItemIdx] = {
+              ...targetItems[targetItemIdx],
+              quantity: targetItems[targetItemIdx].quantity + actualMove
+            };
+          } else {
+            targetItems.push({
+              hardwareId: hardwareId,
+              article: originalHw?.article,
+              name: hwName,
+              quantity: actualMove,
+              unit: originalHw?.unit || 'шт',
+              category: originalHw?.category
+            });
+          }
+          const targetLines = targetItems.map(h => `• ${h.name}${h.article ? ` [${h.article}]` : ''} — ${h.quantity} ${h.unit || 'шт'}`);
+          const updatedTargetPkg: OrderPackage = {
+            ...targetPkg,
+            hardwareItems: targetItems,
+            customItemsNote: targetLines.join('\n')
+          };
+          updatedPackages = updatedPackages.map(p => p.id === targetPkgId ? updatedTargetPkg : p);
+          affectedPackages.push(updatedTargetPkg);
+        }
+      }
+    }
+
+    onUpdateOrder({
+      ...order,
+      packages: updatedPackages,
+      hardwareData: updatedHardwareData
+    });
+
+    setMoveHardwareModal(null);
+
+    // If affectedPackages contains any package, alert the employee to re-print & re-label!
+    if (affectedPackages.length > 0) {
+      const pkgNames = affectedPackages.map(p => `Место №${p.packageNumber} (${p.name})`).join(' и ');
+      setReprintAlert({
+        isOpen: true,
+        packages: affectedPackages,
+        message: `Содержимое коробок (${pkgNames}) изменилось! Обязательно перепечатайте и переклейте этикетку.`
+      });
+    } else {
+      setFeedbackMsg(`Позиция "${hwName}" перемещена в черновик.`);
+      setTimeout(() => setFeedbackMsg(null), 3000);
+    }
+  };
   const handleResetOrNewPackage = () => {
     const draftCount = Object.values(draftBoxItems).reduce((a, b) => a + b, 0);
     if (draftCount > 0 || customNotes.trim()) {
@@ -1070,7 +1357,7 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
 
               <button
                 type="button"
-                onClick={() => handleCreatePackage(true)}
+                onClick={handlePreviewDraftLabel}
                 className="px-3 py-3.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors cursor-pointer"
                 title="Предпросмотр этикетки перед печатью"
               >
@@ -1136,14 +1423,60 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
                       </div>
                     </div>
 
-                    {/* Content snippet */}
-                    {pkg.customItemsNote && (
-                      <div className="text-[11px] text-slate-700 bg-white p-2.5 rounded-xl border border-slate-200/80 font-mono whitespace-pre-line max-h-28 overflow-y-auto leading-relaxed">
-                        {pkg.customItemsNote}
+                    {/* Detailed Hardware Items with Move Button */}
+                    {pkg.hardwareItems && pkg.hardwareItems.length > 0 ? (
+                      <div className="space-y-1 bg-white p-2.5 rounded-xl border border-slate-200/80 max-h-40 overflow-y-auto">
+                        {pkg.hardwareItems.map((item, itemIdx) => (
+                          <div
+                            key={item.hardwareId || itemIdx}
+                            className="flex items-center justify-between gap-2 p-1.5 rounded-lg hover:bg-slate-50 text-xs border-b border-slate-100 last:border-0"
+                          >
+                            <div className="min-w-0 flex-1">
+                              <div className="font-bold text-slate-900 truncate">
+                                {item.name}
+                              </div>
+                              <div className="text-[10px] text-slate-500 font-mono flex items-center gap-2">
+                                {item.article && <span>Арт: {item.article}</span>}
+                                <span className="font-bold text-cyan-700">{item.quantity} {item.unit || 'шт'}</span>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setMoveHardwareModal({
+                                  isOpen: true,
+                                  sourcePkgId: pkg.id,
+                                  sourcePkgName: `Место №${pkg.packageNumber} (${pkg.name})`,
+                                  hardwareId: item.hardwareId,
+                                  hardwareName: item.name,
+                                  hardwareArticle: item.article,
+                                  hardwareUnit: item.unit || 'шт',
+                                  currentQty: item.quantity
+                                });
+                                setMoveHardwareQty(item.quantity);
+                                // Default target box: pick first other package, or 'draft', or 'unpack'
+                                const otherPkg = kittingPackages.find(p => p.id !== pkg.id);
+                                setMoveHardwareTargetPkgId(otherPkg ? otherPkg.id : 'draft');
+                              }}
+                              className="px-2 py-1 rounded-lg bg-slate-100 hover:bg-cyan-100 text-cyan-800 font-bold text-[10px] flex items-center gap-1 transition-colors cursor-pointer shrink-0"
+                              title="Переместить позицию в другую коробку или вернуть в остаток"
+                            >
+                              <ArrowRightLeft className="w-3 h-3 text-cyan-600" />
+                              <span>Переместить</span>
+                            </button>
+                          </div>
+                        ))}
                       </div>
+                    ) : (
+                      pkg.customItemsNote && (
+                        <div className="text-[11px] text-slate-700 bg-white p-2.5 rounded-xl border border-slate-200/80 font-mono whitespace-pre-line max-h-28 overflow-y-auto leading-relaxed">
+                          {pkg.customItemsNote}
+                        </div>
+                      )
                     )}
 
-                    <div className="text-[10px] text-slate-400 flex items-center justify-between">
+                    <div className="text-[10px] text-slate-400 flex items-center justify-between pt-1">
                       <span>Сформировал: {pkg.createdByEmployeeName || 'Комплектовщик'}</span>
                       <span>{pkg.createdAt ? (!isNaN(new Date(pkg.createdAt).getTime()) ? new Date(pkg.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : pkg.createdAt.slice(0, 5)) : ''}</span>
                     </div>
@@ -1175,6 +1508,188 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
           <ArrowRight className="w-4 h-4" />
         </button>
       </div>
+
+      {/* Move Hardware Item Modal */}
+      {moveHardwareModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2 font-black text-slate-900 text-base">
+                <ArrowRightLeft className="w-5 h-5 text-cyan-600" />
+                <span>Перемещение фурнитуры</span>
+              </div>
+              <button
+                onClick={() => setMoveHardwareModal(null)}
+                className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 hover:text-slate-600 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-1">
+              <div className="text-[10px] text-slate-400 font-bold uppercase">Позиция</div>
+              <div className="font-black text-slate-900 text-xs sm:text-sm">
+                {moveHardwareModal.hardwareName}
+              </div>
+              <div className="text-[11px] text-slate-500 flex items-center gap-2">
+                <span>Из коробки: <strong className="text-slate-800">{moveHardwareModal.sourcePkgName}</strong></span>
+                <span>Доступно: <strong className="text-cyan-700 font-mono font-bold">{moveHardwareModal.currentQty} {moveHardwareModal.hardwareUnit}</strong></span>
+              </div>
+            </div>
+
+            {/* Quantity selection */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Количество для перемещения ({moveHardwareModal.hardwareUnit}):
+              </label>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  max={moveHardwareModal.currentQty}
+                  value={moveHardwareQty}
+                  onChange={(e) => setMoveHardwareQty(Math.max(1, Math.min(moveHardwareModal.currentQty, parseInt(e.target.value) || 1)))}
+                  className="w-24 px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 font-mono font-bold text-slate-900 text-xs focus:ring-2 focus:ring-cyan-500 outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setMoveHardwareQty(moveHardwareModal.currentQty)}
+                  className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-cyan-50 text-cyan-800 text-xs font-bold transition-colors cursor-pointer"
+                >
+                  Все ({moveHardwareModal.currentQty})
+                </button>
+              </div>
+            </div>
+
+            {/* Target Destination Selection */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Куда переместить:
+              </label>
+              <select
+                value={moveHardwareTargetPkgId}
+                onChange={(e) => setMoveHardwareTargetPkgId(e.target.value)}
+                className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-xs text-slate-900 focus:ring-2 focus:ring-cyan-500 outline-none cursor-pointer"
+              >
+                <optgroup label="Существующие коробки с фурнитурой">
+                  {kittingPackages
+                    .filter(p => p.id !== moveHardwareModal.sourcePkgId)
+                    .map(p => (
+                      <option key={p.id} value={p.id}>
+                        Место №{p.packageNumber}: {p.name} ({p.code})
+                      </option>
+                    ))}
+                </optgroup>
+                <optgroup label="Другие варианты">
+                  <option value="draft">В текущий черновик (Формируемое место №{nextNumber})</option>
+                  <option value="unpack">Вернуть в неупакованный остаток (распаковать)</option>
+                </optgroup>
+              </select>
+            </div>
+
+            <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] leading-relaxed flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <span>
+                Если на коробке уже была напечатана и наклеена этикетка, после перемещения система предложит сразу распечатать обновленную этикетку с актуальным составом!
+              </span>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setMoveHardwareModal(null)}
+                className="px-4 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={() => handleMoveHardwareItem(
+                  moveHardwareModal.sourcePkgId,
+                  moveHardwareTargetPkgId,
+                  moveHardwareModal.hardwareId,
+                  moveHardwareQty
+                )}
+                className="px-5 py-2.5 rounded-2xl bg-cyan-600 hover:bg-cyan-500 text-white font-black text-xs shadow-md shadow-cyan-600/20 flex items-center gap-2 cursor-pointer"
+              >
+                <Check className="w-4 h-4" />
+                <span>Подтвердить перемещение</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Label Reprint Alert Modal (Prompts employee to re-label modified boxes) */}
+      {reprintAlert && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border-2 border-amber-400 space-y-4 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-start gap-3">
+              <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                <AlertCircle className="w-6 h-6" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h3 className="font-black text-slate-900 text-base">
+                  ⚠️ Содержимое коробки изменилось!
+                </h3>
+                <p className="text-xs text-slate-600 mt-1 leading-relaxed">
+                  {reprintAlert.message}
+                </p>
+              </div>
+            </div>
+
+            <div className="p-3 bg-amber-50/70 rounded-2xl border border-amber-200 text-xs font-semibold text-amber-950">
+              Пожалуйста, распечатайте обновленную термоэтикетку и переклейте её на коробку, чтобы комплектация соответствовала паспорту и составу!
+            </div>
+
+            {/* List of affected packages with instant 1-click print buttons */}
+            <div className="space-y-2">
+              {reprintAlert.packages.map(pkg => (
+                <div
+                  key={pkg.id}
+                  className="p-3 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-3 text-xs"
+                >
+                  <div>
+                    <div className="font-black text-slate-900">
+                      Место №{pkg.packageNumber}: {pkg.name}
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-mono">{pkg.code}</div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (autoPrintDirect) {
+                        printPackageLabelDirect(order, pkg, existingPackages.length, settings?.packageLabelSettings);
+                        setFeedbackMsg(`🖨️ Новая этикетка для Места №${pkg.packageNumber} отправлена на печать!`);
+                        setTimeout(() => setFeedbackMsg(null), 3000);
+                      } else {
+                        setSelectedPrintPkg(pkg);
+                        setShowPrintModal(true);
+                      }
+                    }}
+                    className="px-3 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Перепечатать этикетку №{pkg.packageNumber}</span>
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex items-center justify-end pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setReprintAlert(null)}
+                className="px-5 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs cursor-pointer"
+              >
+                Понятно, этикетка обновлена
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Print Modal */}
       {selectedPrintPkg && (

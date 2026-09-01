@@ -354,10 +354,11 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
               {onOpenScannerModal && (
                 <button
                   onClick={onOpenScannerModal}
-                  className="md:hidden px-2.5 py-1 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                  className="px-2.5 py-1 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer"
+                  title="Сканировать камерой"
                 >
                   <Camera className="w-3.5 h-3.5" />
-                  <span>Камера смартфона</span>
+                  <span>Сканировать</span>
                 </button>
               )}
             </div>

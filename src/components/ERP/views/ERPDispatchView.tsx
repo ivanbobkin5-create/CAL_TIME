@@ -508,9 +508,10 @@ const ERPDispatchWorkspaceModal: React.FC<ERPDispatchWorkspaceModalProps> = ({
                 <button
                   onClick={() => setShowCameraScanner(true)}
                   className="px-3.5 py-2 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
+                  title="Сканировать камерой"
                 >
                   <Camera className="w-4 h-4" />
-                  <span>Камера</span>
+                  <span>Сканировать</span>
                 </button>
 
                 <button

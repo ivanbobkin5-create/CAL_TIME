@@ -79,8 +79,8 @@ export const MobileCameraScannerModal: React.FC<MobileCameraScannerModalProps> =
     if (!cleanText) return;
 
     const now = Date.now();
-    // Debounce exact same code within 1.2s
-    if (cleanText === lastScannedCodeRef.current && now - lastScannedTimeRef.current < 1200) {
+    // Debounce exact same code within 600ms for swift continuous scanning
+    if (cleanText === lastScannedCodeRef.current && now - lastScannedTimeRef.current < 600) {
       return;
     }
 
@@ -110,36 +110,38 @@ export const MobileCameraScannerModal: React.FC<MobileCameraScannerModalProps> =
         }
       }
 
-      // Prioritize high performance formats used in industrial furniture labels
+      // Prioritize reliable ZXing WASM/JS engine across Android & iOS
       const html5QrCode = new Html5Qrcode(readerElementId, {
         formatsToSupport: [
           Html5QrcodeSupportedFormats.QR_CODE,
           Html5QrcodeSupportedFormats.CODE_128,
           Html5QrcodeSupportedFormats.DATA_MATRIX,
           Html5QrcodeSupportedFormats.EAN_13,
-          Html5QrcodeSupportedFormats.CODE_39
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.CODE_39,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.UPC_E
         ],
         verbose: false,
         experimentalFeatures: {
-          useBarCodeDetectorIfSupported: true
+          useBarCodeDetectorIfSupported: false // Set to false to avoid Android native BarcodeDetector API dropouts
         }
       });
       scannerRef.current = html5QrCode;
 
-      // Full-frame scanning box with high FPS for instant detection
+      // Optimal 15 FPS: instantaneous detection without thread queuing lag on mobile
       const config = {
-        fps: 30,
+        fps: 15,
         qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
-          // Dynamic large recognition zone (90% of viewport)
-          const w = Math.floor(viewfinderWidth * 0.92);
-          const h = Math.floor(viewfinderHeight * 0.85);
-          return { width: Math.max(260, w), height: Math.max(220, h) };
+          const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+          const edgeSize = Math.max(220, Math.floor(minEdge * 0.85));
+          return { width: edgeSize, height: edgeSize };
         },
         aspectRatio: undefined,
         disableFlip: false
       };
 
-      // Use standard camera configuration expected by html5-qrcode (exactly 1 key)
+      // Camera config with facingMode
       const cameraConfig = { facingMode: facingMode };
 
       await html5QrCode.start(
@@ -149,16 +151,21 @@ export const MobileCameraScannerModal: React.FC<MobileCameraScannerModalProps> =
           handleDecodedCode(decodedText);
         },
         () => {
-          // Frame scan error (normal when no barcode is in frame)
+          // Frame scan pass
         }
       );
 
       setIsScanning(true);
 
-      // Check capabilities (Torch & Zoom)
+      // Check capabilities (Continuous autofocus, Torch & Zoom)
       try {
         const track = (html5QrCode as any).getRunningTrack?.() || 
                       (html5QrCode as any).localMediaStream?.getVideoTracks?.()[0];
+        if (track && track.applyConstraints) {
+          track.applyConstraints({
+            advanced: [{ focusMode: 'continuous' } as any]
+          }).catch(() => {});
+        }
         if (track && track.getCapabilities) {
           const caps = track.getCapabilities();
           if (caps && caps.torch) {
@@ -171,7 +178,7 @@ export const MobileCameraScannerModal: React.FC<MobileCameraScannerModalProps> =
           }
         }
       } catch (e) {
-        setHasTorch(false);
+        // capabilities error ignored
       }
 
     } catch (err: any) {
@@ -303,6 +310,21 @@ export const MobileCameraScannerModal: React.FC<MobileCameraScannerModalProps> =
 
         {/* Camera Viewfinder Area */}
         <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden min-h-[300px] sm:min-h-[360px]">
+          <style>{`
+            #mobile-html5-camera-reader {
+              width: 100% !important;
+              height: 100% !important;
+              border: none !important;
+            }
+            #mobile-html5-camera-reader video {
+              width: 100% !important;
+              height: 100% !important;
+              object-fit: cover !important;
+            }
+            #mobile-html5-camera-reader img {
+              display: none !important;
+            }
+          `}</style>
           {/* HTML5 QR Container */}
           <div id={readerElementId} className="w-full h-full object-cover" />
 

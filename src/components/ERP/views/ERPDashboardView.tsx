@@ -124,9 +124,6 @@ export const ERPDashboardView: React.FC<ERPDashboardViewProps> = ({
         <div className="absolute top-0 right-0 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
         <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-300 text-xs font-semibold uppercase tracking-wider mb-3">
-              <Sparkles className="w-3.5 h-3.5" /> Сводка производственных мощностей
-            </div>
             <h2 className="text-2xl md:text-3xl font-black tracking-tight text-white mb-2">
               Оперативная сводка цеха
             </h2>

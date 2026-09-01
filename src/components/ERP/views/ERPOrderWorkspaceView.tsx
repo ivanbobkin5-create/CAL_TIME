@@ -1148,11 +1148,11 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
               </div>
             </div>
           ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-              {/* Left Column (5 cols): Materials Selector & Scanner Controls */}
-              <div className="lg:col-span-5 space-y-5">
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+              {/* Left Column (4 cols): Materials Selector & Scanner Controls */}
+              <div className="lg:col-span-4 space-y-4">
                 {/* Material Groups Pills */}
-                <div className="bg-white rounded-3xl p-5 border border-slate-200/80 shadow-sm space-y-3">
+                <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200/80 shadow-sm space-y-3">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-black text-slate-400 uppercase tracking-wider">
                       Материалы заказа
@@ -1228,10 +1228,11 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                       <button
                         type="button"
                         onClick={() => setShowCameraScannerModal(true)}
-                        className="md:hidden px-2.5 py-1 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-[11px] font-bold flex items-center gap-1.5 transition-all shadow-md shadow-indigo-600/30 cursor-pointer"
-                        title="Включить сканирование камерой телефона"
+                        className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-bold flex items-center gap-1.5 transition-all shadow-md shadow-indigo-600/30 cursor-pointer"
+                        title="Включить сканирование камерой телефона или планшета"
                       >
-                        <Camera className="w-3.5 h-3.5" /> Камера
+                        <Camera className="w-4 h-4" />
+                        <span>Сканировать</span>
                       </button>
                       <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Сканер готов к приему кодов" />
                     </div>
@@ -1327,8 +1328,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                 )}
               </div>
 
-              {/* Right Column (7 cols): Parts List & Interactive Progress */}
-              <div className="lg:col-span-7 bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-4">
+              {/* Right Column (8 cols): Parts List & Interactive Progress */}
+              <div className="lg:col-span-8 bg-white rounded-3xl p-5 sm:p-6 border border-slate-200/80 shadow-sm space-y-4">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                   <div>
                     <h4 className="font-black text-slate-900 text-sm">
@@ -1365,7 +1366,6 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                         <th className="py-2.5 px-3">Кромка</th>
                         <th className="py-2.5 px-3">Отверстия</th>
                         <th className="py-2.5 px-3">Примечания</th>
-                        <th className="py-2.5 px-3 text-right">QR / Штрихкод</th>
                         <th className="py-2.5 px-3 text-center">Брак</th>
                       </tr>
                     </thead>
@@ -1556,14 +1556,6 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                                 ) : (
                                   <span className="text-slate-400 text-[10px]">—</span>
                                 )}
-                              </td>
-
-                              {/* QR Code Column */}
-                              <td className="py-2.5 px-3 text-right">
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-900 text-emerald-300 font-mono text-[11px] font-black tracking-wide border border-slate-800 shadow-xs">
-                                  <QrCode className="w-3 h-3 text-emerald-400" />
-                                  <span>{expectedQr}</span>
-                                </span>
                               </td>
 
                               {/* Defect Button */}

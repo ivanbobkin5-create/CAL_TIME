@@ -57,7 +57,6 @@ import { ERPArchiveView } from './views/ERPArchiveView';
 import { ERPMaterialResidualsView } from './views/ERPMaterialResidualsView';
 import { ERPLoginView } from './views/ERPLoginView';
 import { ERPOrderWorkspaceView } from './views/ERPOrderWorkspaceView';
-import { MobileCameraScannerModal } from './components/MobileCameraScannerModal';
 import { ShiftSummaryModal } from './components/ShiftSummaryModal';
 import { VoiceAssistantToggle } from './components/VoiceAssistantToggle';
 import { processQRCommand, cleanRawScannedString, normalizeBarcodeScan, convertRuCharToEn } from './utils';
@@ -445,7 +444,6 @@ export const ERPApp: React.FC<ERPAppProps> = ({
   const [isDataReady, setIsDataReady] = useState<boolean>(false);
   const [showMobileMenuDrawer, setShowMobileMenuDrawer] = useState<boolean>(false);
   const [showMobileShiftModal, setShowMobileShiftModal] = useState<boolean>(false);
-  const [showGlobalCameraScanner, setShowGlobalCameraScanner] = useState<boolean>(false);
 
   // Fetch Company & ERP Data with strict pre-cabinet synchronization
   const loadAllERPData = async (userOverride?: any) => {
@@ -1218,7 +1216,6 @@ export const ERPApp: React.FC<ERPAppProps> = ({
 
     if (found) {
       setSelectedOrderForWorkspace(found);
-      setShowGlobalCameraScanner(false);
       showCommandToast(`📋 Открыт заказ №${found.orderNumber || found.id}`);
     } else {
       const numMatch = lower.replace(/[^0-9]/g, '');
@@ -1226,16 +1223,10 @@ export const ERPApp: React.FC<ERPAppProps> = ({
         const byNum = orders.find(o => (o.orderNumber || '').replace(/[^0-9]/g, '').includes(numMatch));
         if (byNum) {
           setSelectedOrderForWorkspace(byNum);
-          setShowGlobalCameraScanner(false);
           showCommandToast(`📋 Открыт заказ №${byNum.orderNumber || byNum.id}`);
         }
       }
     }
-  };
-
-  const handleGlobalCameraScan = (code: string) => {
-    handleExecuteScannedCode(code);
-    setShowGlobalCameraScanner(false);
   };
 
   // Listen to custom window events for QR commands across components
@@ -1646,19 +1637,10 @@ export const ERPApp: React.FC<ERPAppProps> = ({
           </div>
         </div>
 
-        {/* Mobile Quick Action Buttons: Scan + Shift Timer */}
+        {/* Mobile Quick Action Buttons: Shift Timer & Voice */}
         <div className="flex items-center gap-2 shrink-0">
           {/* Voice Assistant Toggle on Mobile */}
           <VoiceAssistantToggle variant="icon" className="!bg-slate-900 hover:!bg-slate-800 !text-slate-300 !border-slate-800" />
-
-          {/* Quick Scanner Button */}
-          <button
-            onClick={() => setShowGlobalCameraScanner(true)}
-            className="md:hidden p-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-600/30 flex items-center gap-1.5 text-xs font-bold transition-all cursor-pointer"
-          >
-            <Camera className="w-4 h-4" />
-            <span className="text-[11px]">Сканер</span>
-          </button>
 
           {/* Shift Status Pill */}
           <button
@@ -1996,13 +1978,20 @@ export const ERPApp: React.FC<ERPAppProps> = ({
           <span className="text-[10px] mt-1">Заказы</span>
         </button>
 
-        {/* 3. Center Camera Scan Button */}
+        {/* 3. Materials & Residuals */}
         <button
-          onClick={() => setShowGlobalCameraScanner(true)}
-          className="w-12 h-12 -mt-5 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-blue-500/40 border-2 border-slate-900 cursor-pointer active:scale-95 transition-transform"
-          title="Сканировать бирку детали или заказа"
+          onClick={() => {
+            setSelectedOrderForWorkspace(null);
+            setActiveSection('residuals');
+          }}
+          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-xl transition-all cursor-pointer relative ${
+            activeSection === 'residuals' && !selectedOrderForWorkspace
+              ? 'text-indigo-400 font-black'
+              : 'text-slate-400 hover:text-white'
+          }`}
         >
-          <Camera className="w-6 h-6" />
+          <Layers className="w-5 h-5" />
+          <span className="text-[10px] mt-1">Остатки</span>
         </button>
 
         {/* 4. Shift Management */}
@@ -2199,15 +2188,6 @@ export const ERPApp: React.FC<ERPAppProps> = ({
           </div>
         )}
       </AnimatePresence>
-
-      {/* Global Mobile Camera Scanner Modal */}
-      <MobileCameraScannerModal
-        isOpen={showGlobalCameraScanner}
-        onClose={() => setShowGlobalCameraScanner(false)}
-        onScan={handleGlobalCameraScan}
-        title="Сканирование в цехе"
-        subtitle="Наведите камеру на штрихкод детали или QR-код заказа"
-      />
 
       {/* Warning Modal when starting shift not in schedule */}
       {showShiftWarningModal && (
