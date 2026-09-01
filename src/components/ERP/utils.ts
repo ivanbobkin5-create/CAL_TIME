@@ -871,34 +871,57 @@ export function getSmartOrderDisplay(order: {
   let rawClient = (order.clientName || '').trim();
   let rawProject = (order.projectName || '').trim();
 
+  const dealId = (order.bitrixDealId || '').toLowerCase().trim();
+  const idClean = (order.id || '').replace(/^b24_/i, '').toLowerCase().trim();
+  const numClean = cleanNum.toLowerCase().trim();
+
   const isGenericClient = (val: string) => {
     const v = val.toLowerCase().trim();
-    return !v || 
+    if (!v) return true;
+    if (
       v === 'заказчик' || 
       v === 'клиент' || 
       v === 'без названия' || 
       v === 'клиент #—' ||
-      /^клиент\s*[#№]?\s*\d+$/i.test(v) ||
-      /^сделка\s*[#№]?\s*\d+$/i.test(v) ||
-      v === cleanNum.toLowerCase() ||
-      v === `№${cleanNum.toLowerCase()}`;
+      v === 'частный заказчик'
+    ) return true;
+
+    // Check generic patterns like "Сделка #12345", "Заказ №12345", "Клиент 12345", "12345", "b24_12345"
+    if (/^(?:сделка|заказ|клиент|проект|deal|order)[\s№#:]*\d+$/i.test(v)) return true;
+    if (/^b24_\d+$/i.test(v)) return true;
+    if (/^\d+$/.test(v)) return true;
+
+    if (numClean && (v === numClean || v === `№${numClean}` || v === `заказ №${numClean}` || v === `сделка №${numClean}` || v === `заказ ${numClean}` || v === `сделка ${numClean}`)) return true;
+    if (dealId && (v === dealId || v === `клиент #${dealId}` || v === `сделка #${dealId}` || v === `заказ №${dealId}` || v === `b24_${dealId}`)) return true;
+    if (idClean && (v === idClean || v === `клиент #${idClean}` || v === `сделка #${idClean}` || v === `заказ №${idClean}` || v === `b24_${idClean}`)) return true;
+
+    return false;
   };
 
   const isGenericProject = (val: string) => {
     const v = val.toLowerCase().trim();
-    return !v || 
+    if (!v) return true;
+    if (
       v === 'заказ' || 
       v === 'мебельный проект' || 
       v === 'мебельный заказ' || 
       v === 'проект' ||
-      /^заказ\s*[#№]?\s*\d+$/i.test(v) ||
-      /^сделка\s*[#№]?\s*\d+$/i.test(v) ||
-      v === cleanNum.toLowerCase() ||
-      v === `№${cleanNum.toLowerCase()}`;
+      v === 'без названия'
+    ) return true;
+
+    if (/^(?:заказ|сделка|проект|deal|order)[\s№#:]*\d+$/i.test(v)) return true;
+    if (/^b24_\d+$/i.test(v)) return true;
+    if (/^\d+$/.test(v)) return true;
+
+    if (numClean && (v === numClean || v === `№${numClean}` || v === `заказ №${numClean}` || v === `сделка №${numClean}`)) return true;
+    if (dealId && (v === dealId || v === `b24_${dealId}`)) return true;
+    if (idClean && (v === idClean || v === `b24_${idClean}`)) return true;
+
+    return false;
   };
 
   // 1. Check if rawClient contains compound info like "Кухня - Иванов" or "Иванов / Шкаф"
-  if (!isGenericClient(rawClient) && (rawClient.includes(' - ') || rawClient.includes(' / ') || rawClient.includes(' — '))) {
+  if (!isGenericClient(rawClient) && (rawClient.includes(' - ') || rawClient.includes(' / ') || rawClient.includes(' — ') || rawClient.includes(' | '))) {
     const parts = rawClient.split(/\s*[-/—|]\s*/);
     if (parts.length >= 2) {
       if (isGenericProject(rawProject)) {
@@ -911,10 +934,8 @@ export function getSmartOrderDisplay(order: {
   // 2. Try recovering client name if it's generic
   if (isGenericClient(rawClient)) {
     if (!isGenericProject(rawProject)) {
-      // If project has good name, use it
       rawClient = rawProject;
     } else if (order.birkaData?.fileName) {
-      // Try extract from filename like "Иванов_Кухня.bir" or "Петров_шкаф.csv"
       const cleanFileName = order.birkaData.fileName.replace(/\.(bir|csv|xlsx|xls|txt)$/i, '');
       const parts = cleanFileName.split(/[_\-–—]/).filter(Boolean);
       if (parts.length > 0) {
@@ -925,10 +946,10 @@ export function getSmartOrderDisplay(order: {
       }
     } else if (order.salonName) {
       rawClient = order.salonName;
-    } else if (order.comments && order.comments.length > 2 && order.comments.length < 50) {
+    } else if (order.comments && order.comments.length > 2 && order.comments.length < 50 && !/^(https?:\/\/|b24_)/i.test(order.comments)) {
       rawClient = order.comments;
     } else {
-      rawClient = cleanNum ? `Заказ №${cleanNum}` : 'Частный заказчик';
+      rawClient = '';
     }
   }
 
@@ -940,21 +961,31 @@ export function getSmartOrderDisplay(order: {
     } else if (order.salonName && rawClient !== order.salonName) {
       rawProject = order.salonName;
     } else {
-      rawProject = `Мебельный заказ №${cleanNum}`;
+      rawProject = '';
     }
   }
 
   // Final cleanup of redundant prefixes
   if (cleanNum) {
     const escaped = cleanNum.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
-    rawClient = rawClient.replace(new RegExp(`^[№#\\s]*${escaped}[\\s:·\\-_–—/]*`, 'i'), '').trim();
-    rawProject = rawProject.replace(new RegExp(`^[№#\\s]*${escaped}[\\s:·\\-_–—/]*`, 'i'), '').trim();
+    const regex = new RegExp(`^[№#\\s]*${escaped}[\\s:·\\-_–—/]*`, 'i');
+    rawClient = rawClient.replace(regex, '').trim();
+    rawProject = rawProject.replace(regex, '').trim();
   }
+  if (dealId) {
+    const escaped = dealId.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+    const regex = new RegExp(`^[№#\\s]*${escaped}[\\s:·\\-_–—/]*`, 'i');
+    rawClient = rawClient.replace(regex, '').trim();
+    rawProject = rawProject.replace(regex, '').trim();
+  }
+
+  if (isGenericClient(rawClient)) rawClient = '';
+  if (isGenericProject(rawProject)) rawProject = '';
 
   return {
     orderNumber: cleanNum,
-    clientName: rawClient || `Заказ №${cleanNum}`,
-    projectName: rawProject || `Заказ №${cleanNum}`
+    clientName: rawClient,
+    projectName: rawProject
   };
 }
 

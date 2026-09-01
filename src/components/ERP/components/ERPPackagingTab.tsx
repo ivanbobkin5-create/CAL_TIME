@@ -802,7 +802,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
                           <span className="font-mono font-black text-orange-950">
-                            #{part.labelNumber}
+                            {part.labelNumber}
                           </span>
                           <span className="font-bold text-slate-900 truncate">
                             {part.name}
@@ -957,7 +957,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                         <div className={`w-9 h-9 rounded-xl font-black font-mono text-xs flex items-center justify-center transition-colors shrink-0 ${
                           isReady ? 'bg-slate-100 group-hover:bg-orange-500 group-hover:text-white text-slate-800' : 'bg-slate-200 text-slate-500'
                         }`}>
-                          {isReady ? `#${detail.labelNumber}` : <Lock className="w-4 h-4 text-slate-400" />}
+                          {isReady ? detail.labelNumber : <Lock className="w-4 h-4 text-slate-400" />}
                         </div>
 
                         <div className="min-w-0">
@@ -970,7 +970,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                             )}
                           </div>
                           <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono mt-0.5 flex-wrap">
-                            <span>#{detail.labelNumber} • {detail.length} × {detail.width} × {detail.thickness || 16} мм</span>
+                            <span>{detail.labelNumber} • {detail.length} × {detail.width} × {detail.thickness || 16} мм</span>
                             <span>•</span>
                             <span className="text-slate-700 font-medium">{detail.material || 'ЛДСП'}</span>
                             {detail.notes && (
@@ -1107,7 +1107,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                               <div key={pIdx} className="flex items-center justify-between gap-2 p-1.5 bg-white rounded-lg border border-slate-200/60 text-[11px]">
                                 <div className="min-w-0 flex-1">
                                   <span className="font-semibold text-slate-800 truncate block">
-                                    #{part.labelNumber} {part.name}
+                                    {part.labelNumber} {part.name}
                                   </span>
                                   <span className="font-mono text-slate-500 text-[10px] block">
                                     {part.length}×{part.width} мм • {part.material || 'ЛДСП'}
@@ -1215,7 +1215,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
             <div className="p-3.5 bg-orange-50/70 rounded-2xl border border-orange-200 space-y-1">
               <div className="text-[10px] text-orange-600 font-bold uppercase">Деталь</div>
               <div className="font-black text-slate-900 text-xs sm:text-sm">
-                #{movePartModal.part.labelNumber} {movePartModal.part.name}
+                {movePartModal.part.labelNumber} {movePartModal.part.name}
               </div>
               <div className="text-[11px] text-slate-600 font-mono">
                 {movePartModal.part.length} × {movePartModal.part.width} × {movePartModal.part.thickness || 16} мм • {movePartModal.part.material || 'ЛДСП'}

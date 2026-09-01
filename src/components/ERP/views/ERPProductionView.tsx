@@ -495,9 +495,8 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                   const activeLogs = order.workLogs?.filter(l => l.stageId === selectedStageId) || [];
                   const taskReadiness = getStageTaskReadinessInfo(order, selectedStageId || order.currentStage, settings);
 
-                  const clientNameClean = (order.clientName || '').trim();
-                  const projectNameClean = (order.projectName || '').trim();
-                  const isDuplicateName = projectNameClean.toLowerCase() === clientNameClean.toLowerCase() ||
+                  const { clientName: clientNameClean, projectName: projectNameClean } = getSmartOrderDisplay(order);
+                  const isDuplicateName = !clientNameClean || !projectNameClean || projectNameClean.toLowerCase() === clientNameClean.toLowerCase() ||
                     (projectNameClean && clientNameClean.toLowerCase().includes(projectNameClean.toLowerCase())) ||
                     (clientNameClean && projectNameClean.toLowerCase().includes(clientNameClean.toLowerCase()));
 
@@ -506,7 +505,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                       key={order.id}
                       onClick={() => {
                         if (taskReadiness.isLocked) {
-                          alert(`🔒 Задача по заказу №${order.orderNumber} заблокирована!\n\nПричина: ${taskReadiness.blockingReason}\n\nСотрудник на предыдущем участке еще не начал сканирование деталей. Как только первая деталь будет отсканирована на прошлом участке, задание автоматически разблокируется.`);
+                          alert(`🔒 Задача по заказу ${order.orderNumber} заблокирована!\n\nПричина: ${taskReadiness.blockingReason}\n\nСотрудник на предыдущем участке еще не начал сканирование деталей. Как только первая деталь будет отсканирована на прошлом участке, задание автоматически разблокируется.`);
                           return;
                         }
                         onSelectOrder(order, selectedStageId || order.currentStage);
@@ -521,7 +520,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                       <div className="space-y-2 min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
                           <span className="font-mono font-black text-slate-900 text-sm bg-slate-100 px-3 py-1 rounded-xl border border-slate-200 shrink-0">
-                            №{cleanOrderNumber(order.orderNumber, order.id)}
+                            {cleanOrderNumber(order.orderNumber, order.id)}
                           </span>
 
                           {taskReadiness.isLocked ? (
@@ -565,11 +564,11 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                             <span>B24</span>
                           </a>
 
-                          <span className="font-extrabold text-slate-900 text-sm max-w-[220px] sm:max-w-[360px] truncate" title={clientNameClean || 'Заказ без названия'}>
-                            {clientNameClean || 'Заказ без названия'}
+                          <span className="font-extrabold text-slate-900 text-sm max-w-[220px] sm:max-w-[360px] truncate" title={clientNameClean || projectNameClean || 'Частный заказчик'}>
+                            {clientNameClean || projectNameClean || 'Частный заказчик'}
                           </span>
 
-                          {!isDuplicateName && projectNameClean && (
+                          {!isDuplicateName && projectNameClean && clientNameClean && (
                             <>
                               <span className="text-xs text-slate-400">•</span>
                               <span className="text-xs text-slate-600 font-semibold max-w-[200px] truncate" title={projectNameClean}>
@@ -693,7 +692,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                           className="px-5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs shadow-md shadow-blue-600/20 transition-all flex items-center gap-2 cursor-pointer"
                         >
                           <Play className="w-4 h-4 fill-current" />
-                          <span>Взять в работу (Сканировать)</span>
+                          <span>Взять в работу</span>
                         </button>
                       </div>
                     </div>

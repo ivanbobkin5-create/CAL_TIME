@@ -436,7 +436,7 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
                       {pkg.parts.slice(0, 5).map((p, idx) => (
                         <div key={idx} className="flex items-center justify-between gap-1 leading-tight border-b border-dotted border-black pb-0.5 text-black">
                           <span className="truncate max-w-[130px] font-bold text-black">
-                            #{p.labelNumber} {p.name}
+                            {p.labelNumber} {p.name}
                           </span>
                           <span className="font-mono text-[8.5px] text-black font-bold shrink-0">
                             {p.length && p.width ? `${p.length}×${p.width}` : ''}

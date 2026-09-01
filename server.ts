@@ -1682,11 +1682,7 @@ function transliterate(str: string): string {
             order: { DATE_CREATE: "DESC" },
             filter: dealsFilter,
             select: [
-              "ID", "TITLE", "STAGE_ID", "CATEGORY_ID", "OPPORTUNITY", 
-              "CURRENCY_ID", "DATE_CREATE", "CLOSEDATE", "DATE_MODIFY",
-              "COMMENTS", "ASSIGNED_BY_NAME", "CONTACT_ID", "COMPANY_ID",
-              "CONTACT_FORMATTED_NAME", "COMPANY_TITLE",
-              "BEGINDATE", "PROBABILITY", "CLOSED"
+              "*", "UF_*", "CONTACT_FORMATTED_NAME", "COMPANY_TITLE"
             ]
           })
         });
@@ -1758,20 +1754,26 @@ function transliterate(str: string): string {
 
           const dealLink = portalBase ? `${portalBase}/crm/deal/details/${deal.ID}/` : undefined;
 
-          // Smart extraction of order number, client name, and project name from deal title and contacts
+          // Smart extraction of order number, client name, and project name from deal title, custom fields, and contacts
+          const customClientField = erpConfig.bitrix24FieldMapping?.clientNameField;
+          let customClientVal = '';
+          if (customClientField && deal[customClientField]) {
+            customClientVal = String(deal[customClientField]).trim();
+          }
+
           const rawTitle = (deal.TITLE || '').trim();
           let parsedNumber = deal.ID;
-          let parsedClient = (deal.CONTACT_FORMATTED_NAME || deal.COMPANY_TITLE || '').trim();
+          let parsedClient = customClientVal || (deal.CONTACT_FORMATTED_NAME || deal.COMPANY_TITLE || '').trim();
           let parsedProject = '';
 
           if (rawTitle) {
             // Pattern: "№12345 Кухня - Иванов" or "48291 / Шкаф / Петров" or "Заказ 48291"
             const numMatch = rawTitle.match(/^(?:сделка|заказ|счет|deal|order)?[№#\s]*([A-Za-z0-9\-_.]+)(.*)$/i);
-            if (numMatch && numMatch[1] && numMatch[1].length >= 2 && !/^(сделка|заказ|кухня|шкаф|мебель)$/i.test(numMatch[1])) {
+            if (numMatch && numMatch[1] && numMatch[1].length >= 2 && !/^(сделка|заказ|кухня|шкаф|мебель|прихожая|гардероб)$/i.test(numMatch[1])) {
               parsedNumber = numMatch[1];
               const rest = numMatch[2].trim().replace(/^[-/:·–—\s]+/, '');
               if (rest) {
-                if (rest.includes(' - ') || rest.includes(' / ') || rest.includes(' — ')) {
+                if (rest.includes(' - ') || rest.includes(' / ') || rest.includes(' — ') || rest.includes(' | ')) {
                   const parts = rest.split(/\s*[-/—|]\s*/);
                   parsedProject = parts[0];
                   if (!parsedClient && parts.length > 1) {
@@ -1782,31 +1784,65 @@ function transliterate(str: string): string {
                 }
               }
             } else {
-              parsedProject = rawTitle;
+              if (rawTitle.includes(' - ') || rawTitle.includes(' / ') || rawTitle.includes(' — ') || rawTitle.includes(' | ')) {
+                const parts = rawTitle.split(/\s*[-/—|]\s*/);
+                parsedProject = parts[0];
+                if (!parsedClient && parts.length > 1) {
+                  parsedClient = parts.slice(1).join(' ');
+                }
+              } else if (rawTitle.includes('(') && rawTitle.includes(')')) {
+                const pMatch = rawTitle.match(/^(.*?)\s*\((.*?)\)$/);
+                if (pMatch) {
+                  parsedProject = pMatch[1].trim();
+                  if (!parsedClient) parsedClient = pMatch[2].trim();
+                } else {
+                  parsedProject = rawTitle;
+                }
+              } else {
+                parsedProject = rawTitle;
+              }
             }
           }
 
-          if (!parsedClient) {
-            if (local.clientName && local.clientName !== 'Заказчик' && local.clientName !== 'Клиент') {
+          const isGenericVal = (v: string) => {
+            const s = v.toLowerCase().trim();
+            if (!s || s === 'заказчик' || s === 'клиент' || s === 'заказ' || s === 'проект' || s === 'без названия') return true;
+            if (/^(?:сделка|заказ|клиент|проект|deal|order)[\s№#:]*\d+$/i.test(s)) return true;
+            if (/^b24_\d+$/i.test(s)) return true;
+            if (/^\d+$/.test(s)) return true;
+            if (s === String(parsedNumber).toLowerCase() || s === `b24_${String(parsedNumber).toLowerCase()}`) return true;
+            if (s === String(deal.ID).toLowerCase()) return true;
+            return false;
+          };
+
+          if (isGenericVal(parsedClient)) {
+            if (local.clientName && !isGenericVal(local.clientName)) {
               parsedClient = local.clientName;
             } else if (local.birkaData?.fileName) {
               const baseName = local.birkaData.fileName.replace(/\.(bir|csv|xlsx|xls|txt)$/i, '');
-              parsedClient = baseName.split(/[_\-–—]/)[0] || `Клиент #${deal.ID}`;
+              const parts = baseName.split(/[_\-–—]/).filter(Boolean);
+              parsedClient = parts[0]?.trim() || '';
             } else {
-              parsedClient = parsedProject ? parsedProject : `Клиент #${deal.ID}`;
+              parsedClient = '';
             }
           }
 
-          if (!parsedProject) {
-            parsedProject = local.projectName || rawTitle || `Заказ №${parsedNumber}`;
+          if (isGenericVal(parsedProject)) {
+            if (local.projectName && !isGenericVal(local.projectName)) {
+              parsedProject = local.projectName;
+            } else if (local.birkaData?.fileName) {
+              parsedProject = local.birkaData.fileName.replace(/\.(bir|csv|xlsx|xls|txt)$/i, '');
+            } else {
+              parsedProject = '';
+            }
           }
 
           orders.push({
             ...local,
             id: orderId,
             orderNumber: local.orderNumber || parsedNumber || deal.TITLE || `Сделка #${deal.ID}`,
-            clientName: local.clientName && local.clientName !== 'Заказчик' ? local.clientName : parsedClient,
-            projectName: local.projectName && local.projectName !== 'Заказ' ? local.projectName : parsedProject,
+            clientName: (local.clientName && !isGenericVal(local.clientName)) ? local.clientName : parsedClient,
+            projectName: (local.projectName && !isGenericVal(local.projectName)) ? local.projectName : parsedProject,
             createdAt: deal.DATE_CREATE ? deal.DATE_CREATE.substring(0, 10) : new Date().toISOString().substring(0, 10),
             deadlineDate: deal.CLOSEDATE ? deal.CLOSEDATE.substring(0, 10) : (deal.BEGINDATE ? deal.BEGINDATE.substring(0, 10) : new Date(Date.now() + 7 * 86400000).toISOString().substring(0, 10)),
             currentStage: local.currentStage || 'queue',

@@ -151,7 +151,7 @@ export const ReportDefectModal: React.FC<ReportDefectModalProps> = ({
         {/* Selected Part Info Card */}
         <div className="p-3.5 bg-rose-50/70 border border-rose-200 rounded-2xl space-y-1 text-xs">
           <div className="flex items-center justify-between font-black text-slate-900">
-            <span>#{detail.labelNumber} {detail.name}</span>
+            <span>{detail.labelNumber} {detail.name}</span>
             <span className="font-mono text-rose-700">{detail.length} × {detail.width} мм</span>
           </div>
           <div className="text-slate-600 font-mono text-[11px]">

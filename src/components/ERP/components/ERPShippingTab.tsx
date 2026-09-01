@@ -510,7 +510,7 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
                             <div className="mt-2 max-h-36 overflow-y-auto space-y-1">
                               {pkg.parts.map((p, idx) => (
                                 <div key={idx} className="flex items-center justify-between p-1 bg-white rounded text-[10px] font-medium">
-                                  <span>#{p.labelNumber} {p.name}</span>
+                                  <span>{p.labelNumber} {p.name}</span>
                                   <span className="font-mono text-slate-500">{p.length}×{p.width} мм</span>
                                 </div>
                               ))}
