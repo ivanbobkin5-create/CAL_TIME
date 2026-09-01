@@ -29,7 +29,7 @@ import {
   Lock
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPEmployee, ERPCompanySettings } from '../types';
-import { formatDeadlineDate, getNextRequiredStage, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl } from '../utils';
+import { formatDeadlineDate, getNextRequiredStage, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, getSmartOrderDisplay } from '../utils';
 import { getStageTaskReadinessInfo } from '../utils/stageReadiness';
 import { ERPOrderDetailsModal } from './ERPOrderDetailsModal';
 import { ERPDispatchView } from './ERPDispatchView';
