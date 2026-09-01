@@ -108,9 +108,29 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
     return 'future';
   };
 
-  // Filter orders in production (must be ready or in progress)
+  // Helper to check if order belongs to a specific production stage
+  const isOrderOnStage = (order: ProductionOrder, stageId: ProductionStageId): boolean => {
+    if (order.currentStage === stageId) return true;
+    if (order.stagePlannedDates && order.stagePlannedDates[stageId]) return true;
+    if (stageId === 'cutting' && !!order.plannedCuttingDate) return true;
+    if (stageId === 'kitting' || stageId === 'packing') {
+      const startedEdgingStages: ProductionStageId[] = ['edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing'];
+      if (startedEdgingStages.includes(order.currentStage)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  // Filter orders in production (must be ready or in progress or scheduled on calendar)
   const productionOrders = orders.filter(o => 
-    (o.isReadyForProduction || o.status === 'in_progress' || o.currentStage !== 'queue') &&
+    (o.isReadyForProduction || 
+     o.status === 'in_progress' || 
+     (o.currentStage && o.currentStage !== 'queue') || 
+     !!o.plannedCuttingDate || 
+     (o.stagePlannedDates && Object.keys(o.stagePlannedDates).length > 0)) &&
+    o.status !== 'completed' &&
+    o.status !== 'shipped' &&
     (o.orderNumber.toLowerCase().includes(search.toLowerCase()) ||
      o.clientName.toLowerCase().includes(search.toLowerCase()) ||
      o.projectName.toLowerCase().includes(search.toLowerCase()))
@@ -267,7 +287,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {stages.map((stage) => {
             const Icon = stage.icon;
-            const stageOrders = productionOrders.filter(o => o.currentStage === stage.id);
+            const stageOrders = productionOrders.filter(o => isOrderOnStage(o, stage.id));
 
             const overdueOrders = stageOrders.filter(o => getOrderDateCategory(o, stage.id) === 'overdue');
             const todayOrders = stageOrders.filter(o => getOrderDateCategory(o, stage.id) === 'today');
@@ -444,18 +464,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
 
           {/* Orders Cards List */}
           {(() => {
-            const stageOrders = productionOrders.filter(o => {
-              if (o.currentStage === selectedStageId) return true;
-              
-              // Заказы на комплектовку и упаковку доступны только когда заказ уже начал этап кромления (edging) и далее
-              if (selectedStageId === 'kitting' || selectedStageId === 'packing') {
-                const startedEdgingStages: ProductionStageId[] = ['edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing'];
-                if (startedEdgingStages.includes(o.currentStage)) {
-                  return true;
-                }
-              }
-              return false;
-            });
+            const stageOrders = productionOrders.filter(o => selectedStageId ? isOrderOnStage(o, selectedStageId) : false);
             const filteredByTab = stageOrders.filter(o => {
               if (stageTabFilter === 'all') return true;
               return getOrderDateCategory(o, selectedStageId) === stageTabFilter;

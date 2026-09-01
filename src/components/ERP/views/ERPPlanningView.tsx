@@ -528,10 +528,20 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
       plannedCuttingDate = dateStr || order.plannedCuttingDate;
     }
 
+    const hasAnyPlannedDate = Object.keys(updatedStageDates).length > 0 || !!plannedCuttingDate;
+    const firstProdStage = settings?.enabledStages?.find(s => s !== 'queue' && s !== 'ready') || 'cutting';
+    let nextCurrentStage = order.currentStage;
+    if ((!order.currentStage || order.currentStage === 'queue') && hasAnyPlannedDate) {
+      nextCurrentStage = firstProdStage;
+    }
+
     const updatedOrder: ProductionOrder = {
       ...order,
       stagePlannedDates: updatedStageDates,
-      plannedCuttingDate: plannedCuttingDate || undefined
+      plannedCuttingDate: plannedCuttingDate || undefined,
+      currentStage: nextCurrentStage,
+      isReadyForProduction: hasAnyPlannedDate ? true : order.isReadyForProduction,
+      status: (hasAnyPlannedDate && (order.status === 'planned' || !order.status)) ? 'in_progress' : order.status
     };
 
     onUpdateOrder(updatedOrder);
@@ -1832,9 +1842,15 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                           type="date"
                           value={order.plannedCuttingDate || ''}
                           onChange={(e) => {
+                            const newDate = e.target.value;
+                            const hasDate = !!newDate;
+                            const firstProdStage = settings?.enabledStages?.find(s => s !== 'queue' && s !== 'ready') || 'cutting';
                             onUpdateOrder({
                               ...order,
-                              plannedCuttingDate: e.target.value
+                              plannedCuttingDate: newDate,
+                              isReadyForProduction: hasDate ? true : order.isReadyForProduction,
+                              status: (hasDate && (order.status === 'planned' || !order.status)) ? 'in_progress' : order.status,
+                              currentStage: (!order.currentStage || order.currentStage === 'queue') && hasDate ? firstProdStage : order.currentStage
                             });
                           }}
                           className="bg-transparent font-bold text-slate-800 text-xs focus:outline-none cursor-pointer mt-0.5"
