@@ -23,14 +23,25 @@ export interface BirkaDetailItem {
   */
 export function getScannedPartIdsForStage(order: ProductionOrder, stageId: string): Set<string> {
   const set = new Set<string>();
-  const stageProgress = order.stageScanningProgress?.[stageId];
-  if (stageProgress) {
-    Object.values(stageProgress).forEach(matData => {
-      if (matData.scannedPartIds && Array.isArray(matData.scannedPartIds)) {
-        matData.scannedPartIds.forEach(id => set.add(id));
-      }
-    });
-  }
+  if (!order || !order.stageScanningProgress) return set;
+
+  const stageKeys = [stageId];
+  if (stageId === 'raskroy' || stageId === 'cutting') stageKeys.push('raskroy', 'cutting');
+  if (stageId === 'kromka' || stageId === 'edging') stageKeys.push('kromka', 'edging');
+  if (stageId === 'prisadka' || stageId === 'cnc' || stageId === 'drilling') stageKeys.push('prisadka', 'cnc', 'drilling');
+  if (stageId === 'packing' || stageId === 'packaging' || stageId === 'upakovka') stageKeys.push('packing', 'packaging', 'upakovka');
+
+  stageKeys.forEach(key => {
+    const stageProgress = order.stageScanningProgress?.[key];
+    if (stageProgress) {
+      Object.values(stageProgress).forEach(matData => {
+        if (matData.scannedPartIds && Array.isArray(matData.scannedPartIds)) {
+          matData.scannedPartIds.forEach(id => set.add(id));
+        }
+      });
+    }
+  });
+
   return set;
 }
 
@@ -180,16 +191,11 @@ export function isDetailReadyForPackaging(
   order: ProductionOrder,
   settings?: ERPCompanySettings
 ): boolean {
-  const currentStage = order.currentStage;
+  if (!order) return true;
 
-  // If order is at or past packaging stage, all details are ready
-  if (currentStage === 'packing' || currentStage === 'shipping' || (currentStage as string) === 'ready') {
-    return true;
-  }
-
-  const raskroyScanned = getScannedPartIdsForStage(order, 'raskroy');
-  const kromkaScanned = getScannedPartIdsForStage(order, 'kromka');
-  const prisadkaScanned = getScannedPartIdsForStage(order, 'prisadka');
+  const raskroyScanned = getScannedPartIdsForStage(order, 'cutting');
+  const kromkaScanned = getScannedPartIdsForStage(order, 'edging');
+  const prisadkaScanned = getScannedPartIdsForStage(order, 'cnc');
 
   const raskroyList = Array.from(raskroyScanned);
   const kromkaList = Array.from(kromkaScanned);
@@ -198,21 +204,29 @@ export function isDetailReadyForPackaging(
   const hasEdges = !!(detail.edgeL1 || detail.edgeL2 || detail.edgeW1 || detail.edgeW2);
   const needsPrisadka = detailRequiresPrisadka(detail, settings);
 
-  // 1. Raskroy check
-  if (isStageEnabled(settings, 'raskroy')) {
-    const isRaskroyDone = raskroyScanned.has(detail.id) || isDetailFullyScanned(raskroyList, detail);
+  // Check if forced completion exists on stages
+  const forcedCutting = order.forcedStageCompletions?.cutting || order.forcedStageCompletions?.raskroy;
+  const forcedEdging = order.forcedStageCompletions?.edging || order.forcedStageCompletions?.kromka;
+  const forcedCnc = order.forcedStageCompletions?.cnc || order.forcedStageCompletions?.prisadka;
+
+  // 1. Raskroy / Cutting check
+  if (isStageEnabled(settings, 'cutting') && isStageEnabled(settings, 'raskroy')) {
+    const isCuttingForcedOk = forcedCutting && !forcedCutting.unscannedPartIds?.includes(detail.id);
+    const isRaskroyDone = isCuttingForcedOk || raskroyScanned.has(detail.id) || isDetailFullyScanned(raskroyList, detail);
     if (!isRaskroyDone) return false;
   }
 
-  // 2. Kromka check (if detail has edge banding)
-  if (hasEdges && isStageEnabled(settings, 'kromka')) {
-    const isKromkaDone = kromkaScanned.has(detail.id) || isDetailFullyScanned(kromkaList, detail);
+  // 2. Kromka / Edging check (if detail has edge banding)
+  if (hasEdges && isStageEnabled(settings, 'edging') && isStageEnabled(settings, 'kromka')) {
+    const isEdgingForcedOk = forcedEdging && !forcedEdging.unscannedPartIds?.includes(detail.id);
+    const isKromkaDone = isEdgingForcedOk || kromkaScanned.has(detail.id) || isDetailFullyScanned(kromkaList, detail);
     if (!isKromkaDone) return false;
   }
 
-  // 3. Prisadka check (if detail requires drilling)
-  if (needsPrisadka && isStageEnabled(settings, 'prisadka')) {
-    const isPrisadkaDone = prisadkaScanned.has(detail.id) || isDetailFullyScanned(prisadkaList, detail);
+  // 3. Prisadka / CNC check (if detail requires drilling)
+  if (needsPrisadka && isStageEnabled(settings, 'cnc') && isStageEnabled(settings, 'prisadka')) {
+    const isCncForcedOk = forcedCnc && !forcedCnc.unscannedPartIds?.includes(detail.id);
+    const isPrisadkaDone = isCncForcedOk || prisadkaScanned.has(detail.id) || isDetailFullyScanned(prisadkaList, detail);
     if (!isPrisadkaDone) return false;
   }
 
@@ -223,10 +237,6 @@ export function isDetailReadyForPackaging(
   * Check if all preceding processing stages (raskroy, kromka, prisadka) are 100% completed for all details in the order
   */
 export function arePrecedingStagesCompleted(order: ProductionOrder, settings?: ERPCompanySettings): boolean {
-  if (order.currentStage === 'packing' || order.currentStage === 'shipping' || (order.currentStage as string) === 'ready') {
-    return true;
-  }
-
   const raw = order.birkaData?.details || [];
   const details = consolidateDetails(raw as BirkaDetail[]);
   if (details.length === 0) return true;
@@ -257,7 +267,7 @@ export function getPackagingReadinessStats(order: ProductionOrder, settings?: ER
     }
   }
 
-  const isFullyReady = readyCount >= details.length || order.currentStage === 'packing' || order.currentStage === 'shipping' || (order.currentStage as string) === 'ready';
+  const isFullyReady = readyCount >= details.length;
 
   return {
     readyCount,
@@ -293,7 +303,13 @@ export function getDetailAvailabilityForStage(
   targetStageId: string,
   settings?: ERPCompanySettings
 ): DetailStageStatus {
-  const isScannedOnCurrentStage = getScannedPartIdsForStage(order, targetStageId).has(detail.id);
+  const normStage = (targetStageId === 'raskroy' || targetStageId === 'cutting') ? 'cutting'
+    : (targetStageId === 'kromka' || targetStageId === 'edging') ? 'edging'
+    : (targetStageId === 'prisadka' || targetStageId === 'cnc' || targetStageId === 'drilling') ? 'cnc'
+    : (targetStageId === 'packing' || targetStageId === 'packaging') ? 'packing'
+    : targetStageId;
+
+  const isScannedOnCurrentStage = getScannedPartIdsForStage(order, normStage).has(detail.id);
 
   // If classic execution mode, all details are allowed to be scanned
   if (settings?.executionMode === 'classic') {
@@ -304,7 +320,7 @@ export function getDetailAvailabilityForStage(
   }
 
   // 1. Raskroy (Cutting): always available
-  if (targetStageId === 'raskroy') {
+  if (normStage === 'cutting') {
     return {
       isAvailable: true,
       isScannedOnCurrentStage
@@ -312,31 +328,33 @@ export function getDetailAvailabilityForStage(
   }
 
   // 2. Kitting (Комплектация фурнитуры): active immediately
-  if (targetStageId === 'kitting') {
+  if (normStage === 'kitting') {
     return {
       isAvailable: true,
       isScannedOnCurrentStage
     };
   }
 
-  const raskroyScanned = getScannedPartIdsForStage(order, 'raskroy');
-  const kromkaScanned = getScannedPartIdsForStage(order, 'kromka');
-  const prisadkaScanned = getScannedPartIdsForStage(order, 'prisadka');
+  const raskroyScanned = getScannedPartIdsForStage(order, 'cutting');
+  const kromkaScanned = getScannedPartIdsForStage(order, 'edging');
+  const prisadkaScanned = getScannedPartIdsForStage(order, 'cnc');
 
   const raskroyList = Array.from(raskroyScanned);
   const kromkaList = Array.from(kromkaScanned);
   const prisadkaList = Array.from(prisadkaScanned);
 
-  const isRaskroyDone = !isStageEnabled(settings, 'raskroy') || raskroyScanned.has(detail.id) || isDetailFullyScanned(raskroyList, detail);
+  const forcedCutting = order.forcedStageCompletions?.cutting || order.forcedStageCompletions?.raskroy;
+  const isCuttingForcedOk = forcedCutting && !forcedCutting.unscannedPartIds?.includes(detail.id);
+  const isRaskroyDone = !isStageEnabled(settings, 'cutting') || !isStageEnabled(settings, 'raskroy') || isCuttingForcedOk || raskroyScanned.has(detail.id) || isDetailFullyScanned(raskroyList, detail);
 
   // 3. Kromka (Edging): requires Raskroy
-  if (targetStageId === 'kromka') {
+  if (normStage === 'edging') {
     if (!isRaskroyDone) {
       return {
         isAvailable: false,
         isScannedOnCurrentStage,
         blockingReason: 'Деталь еще не распилена на участке Распил',
-        requiredPrecedingStage: 'raskroy'
+        requiredPrecedingStage: 'cutting'
       };
     }
     return {
@@ -346,16 +364,18 @@ export function getDetailAvailabilityForStage(
   }
 
   const hasEdges = !!(detail.edgeL1 || detail.edgeL2 || detail.edgeW1 || detail.edgeW2);
-  const isKromkaDone = !hasEdges || !isStageEnabled(settings, 'kromka') || kromkaScanned.has(detail.id) || isDetailFullyScanned(kromkaList, detail);
+  const forcedEdging = order.forcedStageCompletions?.edging || order.forcedStageCompletions?.kromka;
+  const isEdgingForcedOk = forcedEdging && !forcedEdging.unscannedPartIds?.includes(detail.id);
+  const isKromkaDone = !hasEdges || !isStageEnabled(settings, 'edging') || !isStageEnabled(settings, 'kromka') || isEdgingForcedOk || kromkaScanned.has(detail.id) || isDetailFullyScanned(kromkaList, detail);
 
   // 4. Prisadka / CNC: requires Raskroy AND Kromka (if detail has edge banding)
-  if (targetStageId === 'prisadka') {
+  if (normStage === 'cnc') {
     if (!isRaskroyDone) {
       return {
         isAvailable: false,
         isScannedOnCurrentStage,
         blockingReason: 'Деталь еще не распилена на участке Распил',
-        requiredPrecedingStage: 'raskroy'
+        requiredPrecedingStage: 'cutting'
       };
     }
     if (!isKromkaDone) {
@@ -363,7 +383,7 @@ export function getDetailAvailabilityForStage(
         isAvailable: false,
         isScannedOnCurrentStage,
         blockingReason: 'Деталь еще не прошла обработку на участке Кромка',
-        requiredPrecedingStage: 'kromka'
+        requiredPrecedingStage: 'edging'
       };
     }
     return {
@@ -374,15 +394,17 @@ export function getDetailAvailabilityForStage(
 
   // 5. Assembly (Сборка)
   const needsPrisadka = detailRequiresPrisadka(detail, settings);
-  const isPrisadkaDone = !needsPrisadka || !isStageEnabled(settings, 'prisadka') || prisadkaScanned.has(detail.id);
+  const forcedCnc = order.forcedStageCompletions?.cnc || order.forcedStageCompletions?.prisadka;
+  const isCncForcedOk = forcedCnc && !forcedCnc.unscannedPartIds?.includes(detail.id);
+  const isPrisadkaDone = !needsPrisadka || !isStageEnabled(settings, 'cnc') || !isStageEnabled(settings, 'prisadka') || isCncForcedOk || prisadkaScanned.has(detail.id) || isDetailFullyScanned(prisadkaList, detail);
 
-  if (targetStageId === 'assembly') {
+  if (normStage === 'assembly') {
     if (!isRaskroyDone) {
       return {
         isAvailable: false,
         isScannedOnCurrentStage,
         blockingReason: 'Ожидает распила',
-        requiredPrecedingStage: 'raskroy'
+        requiredPrecedingStage: 'cutting'
       };
     }
     if (!isKromkaDone) {
@@ -390,7 +412,7 @@ export function getDetailAvailabilityForStage(
         isAvailable: false,
         isScannedOnCurrentStage,
         blockingReason: 'Ожидает кромкооблицовки',
-        requiredPrecedingStage: 'kromka'
+        requiredPrecedingStage: 'edging'
       };
     }
     if (!isPrisadkaDone) {
@@ -398,7 +420,7 @@ export function getDetailAvailabilityForStage(
         isAvailable: false,
         isScannedOnCurrentStage,
         blockingReason: 'Ожидает присадки (ЧПУ)',
-        requiredPrecedingStage: 'prisadka'
+        requiredPrecedingStage: 'cnc'
       };
     }
     return {
@@ -408,13 +430,13 @@ export function getDetailAvailabilityForStage(
   }
 
   // 6. Packing (Упаковка)
-  if (targetStageId === 'packing') {
+  if (normStage === 'packing') {
     if (!isRaskroyDone) {
       return {
         isAvailable: false,
         isScannedOnCurrentStage,
         blockingReason: 'Ожидает распила',
-        requiredPrecedingStage: 'raskroy'
+        requiredPrecedingStage: 'cutting'
       };
     }
     if (!isKromkaDone) {
@@ -422,7 +444,7 @@ export function getDetailAvailabilityForStage(
         isAvailable: false,
         isScannedOnCurrentStage,
         blockingReason: 'Ожидает кромкооблицовки',
-        requiredPrecedingStage: 'kromka'
+        requiredPrecedingStage: 'edging'
       };
     }
     if (!isPrisadkaDone) {
@@ -430,7 +452,7 @@ export function getDetailAvailabilityForStage(
         isAvailable: false,
         isScannedOnCurrentStage,
         blockingReason: 'Ожидает присадки (ЧПУ)',
-        requiredPrecedingStage: 'prisadka'
+        requiredPrecedingStage: 'cnc'
       };
     }
     return {

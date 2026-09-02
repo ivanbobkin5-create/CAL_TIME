@@ -42,6 +42,7 @@ import { ProductionOrder, ProductionStageId, ERPEmployee, ERPCompanySettings, Ad
 import { formatDeadlineDate, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, isStageTaskStarted } from '../utils';
 import { parseBirkaFile, consolidateDetails } from '../utils/birkaParser';
 import { parseHardwareFile } from '../utils/hardwareParser';
+import { getScannedPartIdsForStage, getScannedCountForDetail, detailRequiresPrisadka } from '../utils/stageReadiness';
 import { HardwareSpecificationModal } from '../components/HardwareSpecificationModal';
 import { AssemblyFileModal } from '../components/AssemblyFileModal';
 
@@ -219,8 +220,8 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
   const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
 
   // Helper to determine the effective planned date of a stage on an order
-  // If no manual date was assigned by foreman, but order is currently active at this stage in shop,
-  // it automatically belongs to TODAY's date in planning so it is visible immediately!
+  // If no manual date was assigned by foreman, but order is currently active at this stage in shop
+  // or worker started packing/kitting/scanning, it automatically belongs to TODAY's date in planning!
   const getStageAssignedDate = (order: ProductionOrder, stageId: ProductionStageId): string | null => {
     const dates = order.stagePlannedDates || {};
     if (dates[stageId]) return dates[stageId];
@@ -228,22 +229,149 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
     
     // Auto-surface active in-progress stages to today's planning schedule
     if (
-      order.currentStage === stageId && 
       order.status !== 'completed' && 
       order.status !== 'shipped' && 
       !order.isDeleted
     ) {
-      return todayStr;
+      if (order.currentStage === stageId) {
+        return todayStr;
+      }
+
+      // Kitting: if any box exists with hardware or hardware items were packed or kitting work log started
+      if (stageId === 'kitting') {
+        const hasKittingPkgs = (order.packages || []).some(p => p.type === 'kitting' || ((p.hardwareItems || []).length > 0));
+        const hasHardwarePacked = (order.hardwareData?.items || []).some(h => (h.packedQuantity || 0) > 0);
+        const hasKittingLogs = order.workLogs?.some(l => l.stageId === 'kitting');
+        if (hasKittingPkgs || hasHardwarePacked || hasKittingLogs) {
+          return todayStr;
+        }
+      }
+
+      // Packing: if any detail package exists or packing work log started
+      if (stageId === 'packing') {
+        const hasPackingPkgs = (order.packages || []).some(p => p.type === 'details' || ((p.parts || []).length > 0));
+        const hasPackingLogs = order.workLogs?.some(l => l.stageId === 'packing');
+        if (hasPackingPkgs || hasPackingLogs) {
+          return todayStr;
+        }
+      }
+
+      // Physical processing stages: if any parts have been scanned on this stage
+      const scannedSet = getScannedPartIdsForStage(order, stageId);
+      if (scannedSet.size > 0) {
+        return todayStr;
+      }
+
+      // Any active work log on this stage
+      if (order.workLogs?.some(l => (l.stageId === stageId || (stageId === 'cnc' && (l.stageId as string) === 'prisadka')) && l.status === 'in_progress')) {
+        return todayStr;
+      }
     }
     return null;
   };
 
+  const getStageCompletionStatus = (
+    order: ProductionOrder,
+    stageId: ProductionStageId
+  ): { isDone: boolean; isWorkingNow: boolean; scannedCount: number; totalCount: number } => {
+    if (!order) return { isDone: false, isWorkingNow: false, scannedCount: 0, totalCount: 0 };
+
+    if (order.status === 'completed' || order.status === 'shipped') {
+      return { isDone: true, isWorkingNow: false, scannedCount: 0, totalCount: 0 };
+    }
+
+    // 1. Check if forced completion exists
+    const forced = order.forcedStageCompletions?.[stageId] ||
+      (stageId === 'cnc' ? order.forcedStageCompletions?.['prisadka'] : undefined) ||
+      (stageId === 'cutting' ? order.forcedStageCompletions?.['raskroy'] : undefined) ||
+      (stageId === 'edging' ? order.forcedStageCompletions?.['kromka'] : undefined);
+    if (forced) {
+      return { isDone: true, isWorkingNow: false, scannedCount: 0, totalCount: 0 };
+    }
+
+    // 2. Work logs completed
+    if (order.workLogs?.some(l => (l.stageId === stageId || (stageId === 'cnc' && (l.stageId as string) === 'prisadka')) && l.status === 'completed')) {
+      return { isDone: true, isWorkingNow: false, scannedCount: 0, totalCount: 0 };
+    }
+
+    // 3. Kitting completion check
+    if (stageId === 'kitting') {
+      const hardwareItems = order.hardwareData?.items || [];
+      const totalHwRequired = hardwareItems.reduce((sum, h) => sum + (h.quantity || 1), 0);
+      const totalHwPacked = hardwareItems.reduce((sum, h) => sum + (h.packedQuantity || 0), 0);
+      const kittingPackages = (order.packages || []).filter(p => p.type === 'kitting' || ((p.hardwareItems || []).length > 0));
+
+      if (totalHwRequired > 0 && totalHwPacked >= totalHwRequired) {
+        return { isDone: true, isWorkingNow: false, scannedCount: totalHwPacked, totalCount: totalHwRequired };
+      }
+      if (order.stageProgress?.kitting?.status === 'done' && order.currentStage !== 'kitting') {
+        return { isDone: true, isWorkingNow: false, scannedCount: totalHwPacked, totalCount: totalHwRequired || 1 };
+      }
+      const isWorkingNow = (order.currentStage === 'kitting' && order.status === 'in_progress') || kittingPackages.length > 0 || totalHwPacked > 0;
+      return { isDone: false, isWorkingNow, scannedCount: totalHwPacked, totalCount: totalHwRequired };
+    }
+
+    // 4. Scan progress check for physical processing stages
+    const raw = order.birkaData?.details || [];
+    const details = consolidateDetails(raw as any);
+
+    if (details.length > 0 && (stageId === 'cutting' || stageId === 'edging' || stageId === 'cnc' || stageId === 'assembly')) {
+      const relevant = stageId === 'edging'
+        ? details.filter(d => !!(d.edgeL1 || d.edgeL2 || d.edgeW1 || d.edgeW2))
+        : stageId === 'cnc'
+        ? details.filter(d => detailRequiresPrisadka(d, settings))
+        : details;
+
+      const totalCount = relevant.reduce((sum, d) => sum + Math.max(1, d.quantity || 1), 0);
+      const scannedSet = getScannedPartIdsForStage(order, stageId);
+      const scannedList = Array.from(scannedSet);
+
+      let scannedCount = 0;
+      for (const d of relevant) {
+        const c = getScannedCountForDetail(scannedList, d.id);
+        scannedCount += Math.min(c, Math.max(1, d.quantity || 1));
+      }
+
+      if (totalCount > 0) {
+        if (scannedCount >= totalCount) {
+          return { isDone: true, isWorkingNow: false, scannedCount, totalCount };
+        }
+        const isWorkingNow = (order.currentStage === stageId || (stageId === 'cnc' && (order.currentStage as string) === 'prisadka')) && order.status === 'in_progress';
+        if (order.stageProgress?.[stageId]?.status === 'done' && order.currentStage !== stageId) {
+          return { isDone: true, isWorkingNow: false, scannedCount, totalCount };
+        }
+        return { isDone: false, isWorkingNow: isWorkingNow || scannedCount > 0, scannedCount, totalCount };
+      }
+    }
+
+    // 5. Packaging
+    if (stageId === 'packing') {
+      const totalRequired = details.reduce((sum, d) => sum + Math.max(1, d.quantity || 1), 0);
+      const packedCount = (order.packages || []).reduce((sum, p) => sum + (p.parts?.length || 0), 0);
+      if (totalRequired > 0 && packedCount >= totalRequired) {
+        return { isDone: true, isWorkingNow: false, scannedCount: packedCount, totalCount: totalRequired };
+      }
+      const isWorkingNow = order.currentStage === 'packing' && order.status === 'in_progress';
+      if (order.stageProgress?.packing?.status === 'done' && order.currentStage !== 'packing') {
+        return { isDone: true, isWorkingNow: false, scannedCount: packedCount, totalCount: totalRequired };
+      }
+      return { isDone: false, isWorkingNow: isWorkingNow || packedCount > 0, scannedCount: packedCount, totalCount: totalRequired };
+    }
+
+    // 6. Fallback check for other stages
+    const isWorkingNow = order.currentStage === stageId && order.status === 'in_progress';
+    if (order.stageProgress?.[stageId]?.status === 'done' && !isWorkingNow) {
+      return { isDone: true, isWorkingNow: false, scannedCount: 0, totalCount: 0 };
+    }
+
+    return { isDone: false, isWorkingNow, scannedCount: 0, totalCount: 0 };
+  };
+
   const isStagePlannedOrDone = (order: ProductionOrder, stId: ProductionStageId): boolean => {
-    if (order.stageProgress?.[stId]?.status === 'done') return true;
-    const dates = order.stagePlannedDates || {};
-    if (dates[stId]) return true;
-    if (stId === 'cutting' && order.plannedCuttingDate) return true;
-    if (order.currentStage === stId && order.status !== 'completed' && order.status !== 'shipped' && !order.isDeleted) return true;
+    const { isDone } = getStageCompletionStatus(order, stId);
+    if (isDone) return true;
+    const assignedDate = getStageAssignedDate(order, stId);
+    if (assignedDate) return true;
     return false;
   };
 
@@ -1144,8 +1272,8 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                             {STAGE_CONFIGS.map(st => {
                               const StIcon = st.icon;
                               const assignedDate = getStageAssignedDate(order, st.id);
-                              const isStageDone = order.stageProgress?.[st.id]?.status === 'done';
-                              const isStageActiveNow = order.currentStage === st.id && order.status === 'in_progress';
+                              const { isDone: isStageDone, isWorkingNow, scannedCount, totalCount } = getStageCompletionStatus(order, st.id);
+                              const isStageActiveNow = isWorkingNow || (order.currentStage === st.id && order.status === 'in_progress');
 
                               return (
                                 <div
@@ -1172,6 +1300,10 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                     {isStageDone ? (
                                       <span className="text-[8.5px] font-bold text-emerald-700 bg-white/90 px-1.5 py-0.5 rounded border border-emerald-200 flex items-center gap-0.5">
                                         ✓ Выполнен
+                                      </span>
+                                    ) : (scannedCount > 0 && totalCount > 0) ? (
+                                      <span className="text-[8.5px] font-bold text-blue-700 bg-blue-100/90 px-1.5 py-0.5 rounded border border-blue-200 flex items-center gap-0.5" title={`Отсканировано ${scannedCount} из ${totalCount} деталей`}>
+                                        ⚡ {scannedCount}/{totalCount} шт.
                                       </span>
                                     ) : isStageActiveNow && !order.stagePlannedDates?.[st.id] ? (
                                       <span className="text-[8.5px] font-bold text-blue-700 bg-blue-100/90 px-1.5 py-0.5 rounded border border-blue-200 flex items-center gap-0.5">
@@ -1347,9 +1479,9 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                 <div className="min-w-[650px] w-full">
                   {/* Table Header: Date Columns */}
                   <div className="flex border-b border-slate-200 bg-slate-100/90 sticky top-0 z-20 text-xs font-black text-slate-700">
-                    <div className="w-48 p-2.5 shrink-0 border-r border-slate-200 flex items-center gap-1.5 bg-slate-100">
-                      <Factory className="w-3.5 h-3.5 text-blue-600" />
-                      <span className="truncate">{gridRowsMode === 'stages' ? 'Участки' : 'Заказы'}</span>
+                    <div className="w-32 sm:w-36 p-2 shrink-0 border-r border-slate-200 flex items-center gap-1.5 bg-slate-100">
+                      <Factory className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                      <span className="truncate text-xs">{gridRowsMode === 'stages' ? 'Участки' : 'Заказы'}</span>
                     </div>
 
                     <div className={`flex-1 grid ${periodRange === '1week' ? 'grid-cols-7' : 'grid-cols-14'}`}>
@@ -1368,7 +1500,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                         return (
                           <div
                             key={day.dateStr}
-                            className={`p-1.5 text-center border-r border-slate-200 last:border-r-0 flex flex-col items-center justify-center gap-0.5 min-w-0 ${
+                            className={`p-1 text-center border-r border-slate-200 last:border-r-0 flex flex-col items-center justify-center gap-0.5 min-w-0 ${
                               day.isToday 
                                 ? 'bg-blue-600 text-white font-black' 
                                 : day.isWeekend 
@@ -1376,18 +1508,18 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                   : 'bg-slate-100 text-slate-800'
                             }`}
                           >
-                            <div className="flex items-center gap-1 text-[10px]">
-                              <span>{day.dayName}</span>
+                            <div className="flex items-center gap-0.5 text-[10px] leading-none">
+                              <span className="opacity-80">{day.dayName}</span>
                               <span className="font-mono font-extrabold">{day.dayNum}</span>
                             </div>
                             {day.isToday && (
-                              <span className="text-[8px] uppercase font-black tracking-wider bg-white/20 px-1 rounded">
+                              <span className="text-[7.5px] uppercase font-black tracking-wider bg-white/20 px-1 rounded">
                                 Сегодня
                               </span>
                             )}
                             {dayOverloadedCount > 0 && (
                               <span
-                                className="px-1 py-0.2 rounded bg-rose-500 text-white text-[7.5px] font-black uppercase tracking-wider flex items-center gap-0.5 shadow-2xs mt-0.5"
+                                className="px-1 py-0.2 rounded bg-rose-500 text-white text-[7px] font-black uppercase tracking-wider flex items-center gap-0.5 shadow-2xs mt-0.5"
                                 title={`Внимание: на эту дату на ${dayOverloadedCount} уч. превышена дневная норма выработки!`}
                               >
                                 <AlertCircle className="w-2 h-2 shrink-0" />
@@ -1411,22 +1543,22 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                         return (
                           <div key={st.id} className="flex min-h-[75px] hover:bg-slate-50/40 transition-colors">
                             {/* Stage Row Header */}
-                            <div className="w-48 p-2.5 shrink-0 border-r border-slate-200 flex flex-col justify-center bg-slate-50/80">
-                              <div className="flex items-center gap-1.5 font-black text-slate-900 text-xs">
-                                <div className={`p-1 rounded-lg border ${st.bg}`}>
-                                  <StIcon className={`w-3.5 h-3.5 ${st.color}`} />
+                            <div className="w-32 sm:w-36 p-2 shrink-0 border-r border-slate-200 flex flex-col justify-center bg-slate-50/80">
+                              <div className="flex items-center gap-1 font-black text-slate-900 text-xs">
+                                <div className={`p-1 rounded-lg border ${st.bg} shrink-0`}>
+                                  <StIcon className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${st.color}`} />
                                 </div>
-                                <span className="text-[11px] truncate">{st.name}</span>
+                                <span className="text-[10.5px] sm:text-[11px] font-black truncate">{st.name}</span>
                               </div>
                               {stCap && stCap.enabled !== false && (
-                                <div className="text-[9px] text-slate-500 font-semibold truncate mt-1 pl-1 border-l-2 border-slate-300" title="Установленная дневная норма выработки">
-                                  {st.id === 'cutting' && `Норма: ${stCap.dailyLimitSheets ?? 20} л (${stCap.dailyLimitM2 ?? 100} м²)`}
-                                  {st.id === 'edging' && `Норма: ${stCap.dailyLimitEdgeM ?? 1500} п.м.`}
-                                  {st.id === 'cnc' && `Норма: ${stCap.dailyLimitHoles ?? 3000} отв.`}
-                                  {st.id === 'kitting' && `Норма: ${stCap.dailyLimitOrders ?? 8} зак.`}
-                                  {st.id === 'packing' && `Норма: ${stCap.dailyLimitM2 ?? 120} м²`}
-                                  {st.id === 'assembly' && `Норма: ${stCap.dailyLimitModules ?? 15} мод.`}
-                                  {st.id === 'facades' && `Норма: ${stCap.dailyLimitM2 ?? 35} м²`}
+                                <div className="text-[8.5px] text-slate-500 font-semibold truncate mt-1 pl-1 border-l-2 border-slate-300" title="Установленная дневная норма выработки">
+                                  {st.id === 'cutting' && `Норма: ${stCap.dailyLimitSheets ?? 20}л`}
+                                  {st.id === 'edging' && `Норма: ${stCap.dailyLimitEdgeM ?? 1500}м`}
+                                  {st.id === 'cnc' && `Норма: ${stCap.dailyLimitHoles ?? 3000}отв.`}
+                                  {st.id === 'kitting' && `Норма: ${stCap.dailyLimitOrders ?? 8}зак.`}
+                                  {st.id === 'packing' && `Норма: ${stCap.dailyLimitM2 ?? 120}м²`}
+                                  {st.id === 'assembly' && `Норма: ${stCap.dailyLimitModules ?? 15}м.`}
+                                  {st.id === 'facades' && `Норма: ${stCap.dailyLimitM2 ?? 35}м²`}
                                 </div>
                               )}
                             </div>
@@ -1455,14 +1587,14 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                         setDraggedStageTask(null);
                                       }
                                     }}
-                                    className={`p-1 border-r border-slate-200 last:border-r-0 space-y-1 overflow-y-auto max-h-[165px] transition-colors min-w-0 flex flex-col ${
+                                    className={`p-1 border-r border-slate-200 last:border-r-0 space-y-1 overflow-y-auto max-h-[175px] transition-colors min-w-0 flex flex-col ${
                                       day.isToday ? 'bg-blue-50/20' : day.isWeekend ? 'bg-slate-50/30' : ''
                                     }`}
                                   >
                                     {/* Cell Load Summary Indicator */}
                                     {tasksInCell.length > 0 && cellStatus.badgeText && (
                                       <div
-                                        className={`px-1 py-0.5 rounded-lg text-[8.5px] font-black tracking-tight flex items-center justify-between gap-1 border transition-colors shrink-0 ${
+                                        className={`px-1 py-0.5 rounded-lg text-[8px] font-black tracking-tight flex items-center justify-between gap-0.5 border transition-colors shrink-0 ${
                                           cellStatus.isOverloaded
                                             ? 'bg-rose-100 text-rose-900 border-rose-300'
                                             : 'bg-slate-100/90 text-slate-700 border-slate-200'
@@ -1492,8 +1624,8 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                     {tasksInCell.map(order => {
                                       const orderColor = getOrderColor(order.id);
                                       const { orderNumber, clientName } = getOrderDisplayParts(order);
-                                      const isStageDone = order.stageProgress?.[st.id]?.status === 'done';
-                                      const isStageActiveNow = order.currentStage === st.id && order.status === 'in_progress';
+                                      const { isDone: isStageDone, isWorkingNow, scannedCount, totalCount } = getStageCompletionStatus(order, st.id);
+                                      const isStageActiveNow = isWorkingNow || (order.currentStage === st.id && order.status === 'in_progress');
                                       const isAutoAssignedToday = !order.stagePlannedDates?.[st.id] && (st.id !== 'cutting' || !order.plannedCuttingDate) && isStageActiveNow;
 
                                       return (
@@ -1501,57 +1633,64 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                           key={order.id}
                                           draggable={true}
                                           onDragStart={() => setDraggedStageTask({ orderId: order.id, stageId: st.id })}
-                                          className={`group relative px-2.5 py-1.5 min-h-[52px] sm:min-h-[58px] rounded-xl border text-left shadow-2xs hover:shadow-md transition-all cursor-grab active:cursor-grabbing w-full overflow-hidden flex flex-col justify-center gap-1 ${orderColor.bg} ${orderColor.border} ${
+                                          onClick={() => setViewingBirkaModalOrder(order)}
+                                          className={`group relative p-1.5 min-h-[48px] rounded-xl border text-left shadow-2xs hover:shadow-md transition-all cursor-pointer hover:ring-1 hover:ring-blue-400 w-full flex flex-col justify-between gap-0.5 ${orderColor.bg} ${orderColor.border} ${
                                             order.priority === 'urgent' ? 'ring-2 ring-red-400' : ''
-                                          } ${isStageDone ? 'opacity-75 bg-slate-100/80 border-slate-300' : ''}`}
+                                          } ${isStageDone ? 'opacity-70 bg-slate-100/90 border-slate-300' : ''}`}
+                                          title={`Заказ №${order.orderNumber}\nКлиент: ${clientName || '—'}\nСрок: ${formatDeadlineDate(order.deadlineDate)}\nДеталей: ${order.partsCount || 0} шт (${order.totalAreaM2 || 0} м²)\nКромка: ${order.totalEdgeM || 0} п.м.\nСтатус: ${isStageDone ? '✓ Готово' : scannedCount > 0 ? `В работе (${scannedCount}/${totalCount} шт.)` : 'В плане'}`}
                                         >
-                                          {/* Line 1: Clean bold Order Number + Status badge + Unassign button */}
-                                          <div className="flex items-center justify-between gap-1.5 w-full min-w-0">
-                                            <div className="flex items-center gap-1.5 min-w-0 flex-1">
-                                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: isStageDone ? '#10b981' : orderColor.bar }} />
-                                              <span className={`font-mono font-black text-xs sm:text-[13px] leading-tight truncate ${isStageDone ? 'text-slate-700 line-through' : orderColor.text}`}>
-                                                {orderNumber}
+                                          {/* Line 1: Order Number + Compact Badges + Unassign button */}
+                                          <div className="flex items-center justify-between gap-1 w-full min-w-0">
+                                            <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
+                                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: isStageDone ? '#10b981' : orderColor.bar }} />
+                                              <span className={`font-mono font-black text-[11px] sm:text-xs leading-none truncate ${isStageDone ? 'text-slate-600 line-through' : orderColor.text}`}>
+                                                №{orderNumber}
                                               </span>
+                                            </div>
+
+                                            <div className="flex items-center gap-0.5 shrink-0">
                                               {order.priority === 'urgent' && !isStageDone && (
-                                                <span className="px-1.5 py-0.5 rounded bg-red-600 text-white font-black text-[8px] uppercase tracking-wider shrink-0">
-                                                  Срочно
+                                                <span className="px-1 py-0.2 rounded bg-red-600 text-white font-black text-[7px] uppercase" title="Срочный заказ!">
+                                                  !
                                                 </span>
                                               )}
                                               {isStageDone && (
-                                                <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold text-[8px] uppercase tracking-wider shrink-0">
-                                                  ✓ Готово
+                                                <span className="px-1 py-0.2 rounded bg-emerald-100 text-emerald-800 font-bold text-[7.5px]" title="Этап выполнен">
+                                                  ✓
                                                 </span>
                                               )}
-                                              {isAutoAssignedToday && !isStageDone && (
-                                                <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-800 font-bold text-[8px] uppercase tracking-wider shrink-0" title="Автоматически добавлен в план при переходе заказа на этот участок">
-                                                  ⚡ В работе
+                                              {!isStageDone && scannedCount > 0 && totalCount > 0 && (
+                                                <span className="px-1 py-0.2 rounded bg-blue-100 text-blue-800 font-bold text-[7.5px]" title={`Отсканировано: ${scannedCount} из ${totalCount} шт.`}>
+                                                  ⚡{scannedCount}/{totalCount}
                                                 </span>
                                               )}
+                                              {isAutoAssignedToday && !isStageDone && scannedCount === 0 && (
+                                                <span className="px-1 py-0.2 rounded bg-blue-100 text-blue-800 font-bold text-[7.5px]" title="В работе сегодня">
+                                                  ⚡
+                                                </span>
+                                              )}
+                                              <button
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleAssignStageTaskToDate(order.id, st.id, null);
+                                                }}
+                                                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-black/10 text-slate-500 hover:text-red-700 transition-opacity cursor-pointer"
+                                                title="Снять с даты"
+                                              >
+                                                <X className="w-2.5 h-2.5" />
+                                              </button>
                                             </div>
-
-                                            <button
-                                              onClick={(e) => {
-                                                e.stopPropagation();
-                                                handleAssignStageTaskToDate(order.id, st.id, null);
-                                              }}
-                                              className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-black/10 text-slate-500 hover:text-red-700 transition-opacity cursor-pointer shrink-0"
-                                              title="Снять с даты"
-                                            >
-                                              <X className="w-3 h-3" />
-                                            </button>
                                           </div>
 
-                                          {/* Line 2: ONLY Client / Project Text (Never repeats order number) */}
-                                          <div className="w-full min-w-0 overflow-hidden">
-                                            {clientName ? (
-                                              <div className={`text-[10.5px] sm:text-[11.5px] font-bold leading-tight truncate ${orderColor.text} opacity-95`} title={clientName}>
-                                                {clientName}
-                                              </div>
-                                            ) : (
-                                              <div className={`text-[10px] font-medium leading-tight truncate ${orderColor.text} opacity-40`}>
-                                                —
-                                              </div>
-                                            )}
+                                          {/* Line 2: Client / Project Name (Legible multi-line with clamp) */}
+                                          <div className="text-[9.5px] sm:text-[10px] font-bold leading-tight line-clamp-2 text-slate-800 break-words" title={clientName}>
+                                            {clientName || '—'}
+                                          </div>
+
+                                          {/* Line 3: Volume & Parts Footnote */}
+                                          <div className="flex items-center justify-between text-[7.5px] sm:text-[8px] font-semibold text-slate-500 pt-0.5 border-t border-black/5">
+                                            <span>{order.partsCount || 0} дет.</span>
+                                            <span>{order.totalAreaM2 ? `${order.totalAreaM2} м²` : ''}</span>
                                           </div>
                                         </div>
                                       );
@@ -1584,17 +1723,17 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                               <div className="flex min-h-[40px] bg-slate-50/90 font-bold text-xs items-center">
                                 <div
                                   onClick={() => toggleOrderExpanded(order.id)}
-                                  className="w-48 p-2 shrink-0 border-r border-slate-200 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition-colors"
+                                  className="w-32 sm:w-36 p-2 shrink-0 border-r border-slate-200 flex items-center justify-between cursor-pointer hover:bg-slate-100 transition-colors"
                                 >
                                   <div className="flex items-start gap-1.5 min-w-0">
                                     {isExpanded ? <ChevronUp className="w-3 h-3 text-slate-500 mt-0.5" /> : <ChevronDown className="w-3 h-3 text-slate-500 mt-0.5" />}
                                     <span className="w-2 h-2 mt-1 rounded-full shrink-0" style={{ backgroundColor: orderColor.bar }} />
                                     <div className="min-w-0 flex flex-col">
                                       <span className="truncate text-slate-900 font-mono font-black text-[10.5px] leading-tight">
-                                        {orderNumber}
+                                        №{orderNumber}
                                       </span>
                                       {clientName && (
-                                        <span className="text-[9.5px] font-bold text-slate-600 truncate leading-tight mt-0.5" title={clientName}>
+                                        <span className="text-[9px] font-bold text-slate-600 truncate leading-tight mt-0.5" title={clientName}>
                                           {clientName}
                                         </span>
                                       )}
@@ -1614,7 +1753,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                       <div key={day.dateStr} className="p-0.5 border-r border-slate-200 last:border-r-0 flex flex-wrap gap-0.5 items-center justify-center min-w-0">
                                         {assignedStages.map(st => {
                                           const StIcon = st.icon;
-                                          const isStageDone = order.stageProgress?.[st.id]?.status === 'done';
+                                          const { isDone: isStageDone } = getStageCompletionStatus(order, st.id);
 
                                           return (
                                             <span 
@@ -1641,20 +1780,25 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                               {isExpanded && STAGE_CONFIGS.map(st => {
                                 const StIcon = st.icon;
                                 const assignedDate = getStageAssignedDate(order, st.id);
-                                const isStageDone = order.stageProgress?.[st.id]?.status === 'done';
-                                const isStageActiveNow = order.currentStage === st.id && order.status === 'in_progress';
+                                const { isDone: isStageDone, isWorkingNow, scannedCount, totalCount } = getStageCompletionStatus(order, st.id);
+                                const isStageActiveNow = isWorkingNow || (order.currentStage === st.id && order.status === 'in_progress');
                                 const isAutoAssignedToday = !order.stagePlannedDates?.[st.id] && (st.id !== 'cutting' || !order.plannedCuttingDate) && isStageActiveNow;
 
                                 return (
                                   <div key={st.id} className="flex min-h-[34px] bg-white text-xs hover:bg-slate-50/40">
-                                    <div className="w-48 pl-6 pr-2.5 py-1 shrink-0 border-r border-slate-200 flex items-center justify-between text-[10px] text-slate-700">
+                                    <div className="w-32 sm:w-36 pl-4 pr-2 py-1 shrink-0 border-r border-slate-200 flex items-center justify-between text-[10px] text-slate-700">
                                       <span className="flex items-center gap-1 font-bold truncate">
                                         <StIcon className={`w-3 h-3 ${st.color}`} />
-                                        <span className="truncate">{st.name}</span>
+                                        <span className="truncate text-[10px]">{st.name}</span>
                                       </span>
                                       {isStageDone && (
                                         <span className="text-[7.5px] font-bold text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200 shrink-0">
                                           ✓ Выполнен
+                                        </span>
+                                      )}
+                                      {!isStageDone && scannedCount > 0 && totalCount > 0 && (
+                                        <span className="text-[7.5px] font-bold text-blue-700 bg-blue-50 px-1 py-0.2 rounded border border-blue-200 shrink-0">
+                                          ⚡ {scannedCount}/{totalCount}
                                         </span>
                                       )}
                                     </div>
@@ -1682,7 +1826,8 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                               <div
                                                 draggable={true}
                                                 onDragStart={() => setDraggedStageTask({ orderId: order.id, stageId: st.id })}
-                                                className={`group relative px-2 py-1.5 rounded-xl border min-h-[44px] flex flex-col justify-center gap-0.5 w-full shadow-2xs cursor-grab active:cursor-grabbing overflow-hidden ${
+                                                onClick={() => setViewingBirkaModalOrder(order)}
+                                                className={`group relative px-2 py-1.5 rounded-xl border min-h-[44px] flex flex-col justify-center gap-0.5 w-full shadow-2xs cursor-pointer hover:ring-1 hover:ring-blue-400 overflow-hidden ${
                                                   isStageDone 
                                                     ? 'bg-emerald-50/90 border-emerald-300 text-emerald-950 opacity-80' 
                                                     : `${orderColor.bg} ${orderColor.border} ${orderColor.text}`
@@ -1690,7 +1835,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                               >
                                                 <div className="flex items-center justify-between gap-1 w-full min-w-0">
                                                   <span className="truncate font-mono font-black text-[11px] sm:text-xs leading-none">
-                                                    {orderNumber}{isStageDone ? ' ✓' : isAutoAssignedToday ? ' ⚡' : ''}
+                                                    №{orderNumber}{isStageDone ? ' ✓' : isAutoAssignedToday ? ' ⚡' : ''}
                                                   </span>
                                                   <button
                                                     onClick={(e) => {
@@ -1698,14 +1843,15 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                                       handleAssignStageTaskToDate(order.id, st.id, null);
                                                     }}
                                                     className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-black/10 text-slate-500 hover:text-red-700 transition-opacity cursor-pointer shrink-0"
+                                                    title="Снять с даты"
                                                   >
                                                     <X className="w-3 h-3" />
                                                   </button>
                                                 </div>
                                                 {clientName && (
-                                                  <span className="text-[9.5px] sm:text-[10px] font-bold truncate opacity-90 leading-tight" title={clientName}>
+                                                  <div className="text-[9.5px] font-bold text-slate-800 leading-tight truncate opacity-90" title={clientName}>
                                                     {clientName}
-                                                  </span>
+                                                  </div>
                                                 )}
                                               </div>
                                             )}

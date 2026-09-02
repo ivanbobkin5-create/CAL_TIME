@@ -247,7 +247,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
           const combined = Array.from(new Set([...newIds, ...prevIds]));
           mergedProgress[stg][mat] = {
             scannedPartIds: combined,
-            isCompleted: (combined.length > 0) || prevProgress[stg][mat]?.isCompleted || mergedProgress[stg]?.[mat]?.isCompleted
+            isCompleted: prevProgress[stg][mat]?.isCompleted || mergedProgress[stg]?.[mat]?.isCompleted || false
           };
         });
       });
@@ -576,10 +576,24 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       isCompleted: isAllScanned
     };
 
+    // If detail was previously forced-skipped on an earlier stage, remove it from unscannedPartIds
+    const updatedForcedCompletions = { ...(currentOrder.forcedStageCompletions || {}) };
+    let forcedChanged = false;
+    Object.keys(updatedForcedCompletions).forEach(stg => {
+      if (updatedForcedCompletions[stg]?.unscannedPartIds?.includes(foundPart.id)) {
+        updatedForcedCompletions[stg] = {
+          ...updatedForcedCompletions[stg],
+          unscannedPartIds: updatedForcedCompletions[stg].unscannedPartIds.filter(id => id !== foundPart.id)
+        };
+        forcedChanged = true;
+      }
+    });
+
     const updatedOrder: ProductionOrder = {
       ...currentOrder,
       currentStage: currentStage,
-      stageScanningProgress: updatedStageScanning
+      stageScanningProgress: updatedStageScanning,
+      ...(forcedChanged ? { forcedStageCompletions: updatedForcedCompletions } : {})
     };
 
     localOrderRef.current = updatedOrder;
@@ -773,10 +787,26 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       isCompleted: isAllScanned
     };
 
+    // If detail was previously forced-skipped on an earlier stage, remove it from unscannedPartIds when scanned
+    const updatedForcedCompletions = { ...(currentOrder.forcedStageCompletions || {}) };
+    let forcedChanged = false;
+    if (currentCount < reqQty) {
+      Object.keys(updatedForcedCompletions).forEach(stg => {
+        if (updatedForcedCompletions[stg]?.unscannedPartIds?.includes(detail.id)) {
+          updatedForcedCompletions[stg] = {
+            ...updatedForcedCompletions[stg],
+            unscannedPartIds: updatedForcedCompletions[stg].unscannedPartIds.filter(id => id !== detail.id)
+          };
+          forcedChanged = true;
+        }
+      });
+    }
+
     const updatedOrder: ProductionOrder = {
       ...currentOrder,
       currentStage: currentStage,
-      stageScanningProgress: updatedStageScanning
+      stageScanningProgress: updatedStageScanning,
+      ...(forcedChanged ? { forcedStageCompletions: updatedForcedCompletions } : {})
     };
 
     localOrderRef.current = updatedOrder;
@@ -1497,7 +1527,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
 
                           // Check if this detail was forced/unscanned in a previous stage
                           let previousForcedInfo: { stageName: string; employeeName: string; forcedAt: string; reason?: string } | null = null;
-                          if (order.forcedStageCompletions) {
+                          if (order.forcedStageCompletions && scannedQty === 0) {
                             for (const [stgId, info] of Object.entries(order.forcedStageCompletions)) {
                               if (stgId !== currentStage && info.unscannedPartIds?.includes(detail.id)) {
                                 const stgShort = getStageNameRussian(stgId);

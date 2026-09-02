@@ -222,8 +222,16 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
   // Add ALL currently filtered unpacked details to package
   const handleAddAllFilteredToBuffer = () => {
     if (filteredUnpacked.length === 0) return;
+    const readyDetails = filteredUnpacked.filter(d => isDetailReadyForPackaging(d, order, settings));
+    const lockedCount = filteredUnpacked.length - readyDetails.length;
+
+    if (readyDetails.length === 0) {
+      showFeedback('Все выбранные детали еще не готовы (ожидают распила, кромления или присадки)!', 'error');
+      return;
+    }
+
     const newParts: OrderPackagePart[] = [];
-    filteredUnpacked.forEach(d => {
+    readyDetails.forEach(d => {
       const reqQty = Math.max(1, d.quantity || 1);
       const packedCount = getPackedCountForDetail(d.id);
       const bufferCount = getBufferCountForDetail(d.id);
@@ -245,7 +253,11 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
       }
     });
     setCurrentBufferParts(prev => [...prev, ...newParts]);
-    showFeedback(`Добавлено ${newParts.length} деталей в текущую упаковку`, 'success');
+    if (lockedCount > 0) {
+      showFeedback(`Добавлено ${newParts.length} готовых деталей. Пропущено ${lockedCount} не готовых деталей.`, 'info');
+    } else {
+      showFeedback(`Добавлено ${newParts.length} деталей в текущую упаковку`, 'success');
+    }
   };
 
   // Handle Scanning Barcode/QR of Detail to Pack or Command
@@ -266,7 +278,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
         if (currentBufferParts.length > 0) {
           handleSealPackage(false);
         } else {
-          showFeedback('В формируемой коробке пока нет деталей! Отсканируйте деталь для добавления.', 'error');
+          showFeedback('Вложите в упаковку деталь! В формируемом месте еще нет ни одной детали.', 'error');
         }
       }
     });
@@ -400,7 +412,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
       if (currentBufferParts.length > 0) {
         handleSealPackage(false);
       } else {
-        showFeedback('В формируемой коробке пока нет деталей! Отсканируйте деталь для упаковки.', 'error');
+        showFeedback('Вложите в упаковку деталь! В формируемом месте еще нет ни одной детали.', 'error');
       }
     };
 
@@ -411,7 +423,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
   // Finish & Seal current package -> Add to order.packages and auto-print or open print modal
   const handleSealPackage = (forceOpenModal: boolean = false) => {
     if (currentBufferParts.length === 0) {
-      showFeedback('Сначала добавьте или отсканируйте хотя бы одну деталь в упаковку!', 'error');
+      showFeedback('Вложите в упаковку деталь! В формируемом месте еще нет ни одной детали.', 'error');
       return;
     }
 
@@ -437,8 +449,15 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
 
     const updatedPackages = [...existingPackages, newPackage];
 
+    const todayStr = new Date().toISOString().split('T')[0];
+    const updatedStageDates = {
+      ...(order.stagePlannedDates || {}),
+      packing: order.stagePlannedDates?.packing || todayStr
+    };
+
     onUpdateOrder({
       ...order,
+      stagePlannedDates: updatedStageDates,
       packages: updatedPackages
     });
 

@@ -94,18 +94,58 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
   tomorrowObj.setDate(tomorrowObj.getDate() + 1);
   const tomorrowStr = tomorrowObj.toISOString().split('T')[0];
 
-  const getOrderDateCategory = (order: ProductionOrder, stageId?: ProductionStageId | null): 'overdue' | 'today' | 'tomorrow' | 'future' => {
-    let planned: string | undefined = undefined;
+  const getOrderPlannedDate = (order: ProductionOrder, stageId?: ProductionStageId | null): string => {
     if (stageId && order.stagePlannedDates?.[stageId]) {
-      planned = order.stagePlannedDates[stageId];
-    } else {
-      planned = order.plannedCuttingDate || order.plannedStartDate;
+      return order.stagePlannedDates[stageId];
     }
+    return order.plannedCuttingDate || order.plannedStartDate || '';
+  };
+
+  const getOrderDateCategory = (order: ProductionOrder, stageId?: ProductionStageId | null): 'overdue' | 'today' | 'tomorrow' | 'future' => {
+    const planned = getOrderPlannedDate(order, stageId);
     if (!planned) return 'today';
     if (planned < todayStr) return 'overdue';
     if (planned === todayStr) return 'today';
     if (planned === tomorrowStr) return 'tomorrow';
     return 'future';
+  };
+
+  // Strict date-ordered sorting: Overdue (0) -> Today (1) -> Tomorrow (2) -> Future (3, sorted by exact date ASC) -> Unscheduled
+  const sortOrdersByPlannedDate = (ordersList: ProductionOrder[], stageId?: ProductionStageId | null): ProductionOrder[] => {
+    const categoryWeight = (cat: 'overdue' | 'today' | 'tomorrow' | 'future'): number => {
+      switch (cat) {
+        case 'overdue': return 0;
+        case 'today': return 1;
+        case 'tomorrow': return 2;
+        case 'future': return 3;
+        default: return 4;
+      }
+    };
+
+    return [...ordersList].sort((a, b) => {
+      const catA = getOrderDateCategory(a, stageId);
+      const catB = getOrderDateCategory(b, stageId);
+      const weightA = categoryWeight(catA);
+      const weightB = categoryWeight(catB);
+
+      if (weightA !== weightB) {
+        return weightA - weightB;
+      }
+
+      const dateA = getOrderPlannedDate(a, stageId);
+      const dateB = getOrderPlannedDate(b, stageId);
+
+      if (dateA && dateB) {
+        const cmp = dateA.localeCompare(dateB);
+        if (cmp !== 0) return cmp;
+      } else if (dateA && !dateB) {
+        return -1;
+      } else if (!dateA && dateB) {
+        return 1;
+      }
+
+      return (a.orderNumber || '').localeCompare(b.orderNumber || '', undefined, { numeric: true });
+    });
   };
 
   const STAGE_ORDER: ProductionStageId[] = ['queue', 'cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing', 'shipping', 'ready'];
@@ -124,6 +164,23 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
     const currentIdx = STAGE_ORDER.indexOf(order.currentStage);
     const targetIdx = STAGE_ORDER.indexOf(stageId);
 
+    // Specific condition for shipping stage:
+    // Order MUST NOT appear on shipping stage until packaging is completed!
+    if (stageId === 'shipping') {
+      const isPackingDone = 
+        order.currentStage === 'shipping' ||
+        order.currentStage === 'ready' ||
+        order.stageProgress?.packing?.status === 'done' ||
+        !!order.forcedStageCompletions?.packing ||
+        ((order.packages || []).length > 0 && (order.partsCount || 0) > 0 && 
+         (order.packages || []).reduce((sum, p) => sum + (p.parts?.length || 0), 0) >= (order.partsCount || 0));
+
+      if (!isPackingDone) {
+        return false;
+      }
+      return order.currentStage === 'shipping' || order.currentStage === 'ready' || !!order.stagePlannedDates?.['shipping'];
+    }
+
     // If order's current stage has already moved beyond stageId in the production flow,
     // this stage is completed and must not be listed as an active task on this workstation!
     if (currentIdx !== -1 && targetIdx !== -1 && currentIdx > targetIdx) {
@@ -133,7 +190,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
     }
 
     if (order.currentStage === 'shipping' || order.currentStage === 'ready') {
-      return stageId === 'shipping' || stageId === 'ready';
+      return stageId === 'ready';
     }
     if (order.currentStage === stageId) return true;
     if (stageId === 'kitting' || stageId === 'packing') {
@@ -488,8 +545,9 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
 
           {/* Orders Cards List */}
           {(() => {
-            const stageOrders = productionOrders.filter(o => selectedStageId ? isOrderOnStage(o, selectedStageId) : false);
-            const filteredByTab = stageOrders.filter(o => {
+            const rawStageOrders = productionOrders.filter(o => selectedStageId ? isOrderOnStage(o, selectedStageId) : false);
+            const sortedStageOrders = sortOrdersByPlannedDate(rawStageOrders, selectedStageId);
+            const filteredByTab = sortedStageOrders.filter(o => {
               if (stageTabFilter === 'all') return true;
               return getOrderDateCategory(o, selectedStageId) === stageTabFilter;
             });
@@ -609,7 +667,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                           )}
                           
                           <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-extrabold border shrink-0 ${dateBadgeStyles}`}>
-                            {dateCatText} ({order.plannedCuttingDate || 'Не указана'})
+                            {dateCatText} ({getOrderPlannedDate(order, selectedStageId) || 'Не указана'})
                           </span>
 
                           {order.currentStage !== selectedStageId && (

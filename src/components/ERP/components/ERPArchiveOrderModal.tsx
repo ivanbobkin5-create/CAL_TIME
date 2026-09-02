@@ -128,7 +128,7 @@ export const ERPArchiveOrderModal: React.FC<ERPArchiveOrderModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-fade-in">
-      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-6xl max-h-[94vh] flex flex-col overflow-hidden">
+      <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-7xl max-h-[94vh] flex flex-col overflow-hidden">
         
         {/* Modal Top Header */}
         <div className="p-4 sm:p-6 bg-slate-900 text-white flex flex-col md:flex-row md:items-center justify-between gap-4 shrink-0">
@@ -255,64 +255,64 @@ export const ERPArchiveOrderModal: React.FC<ERPArchiveOrderModalProps> = ({
         </div>
 
         {/* Tab Navigation */}
-        <div className="flex items-center gap-2 px-4 sm:px-6 pt-3 border-b border-slate-200 bg-white overflow-x-auto shrink-0">
+        <div className="flex items-center gap-1 sm:gap-2 px-3 sm:px-6 pt-2.5 border-b border-slate-200 bg-white overflow-x-auto scrollbar-none shrink-0">
           <button
             onClick={() => setActiveTab('packages')}
-            className={`px-4 py-2.5 rounded-t-2xl font-black text-xs transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer border-b-2 ${
+            className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-t-2xl font-black text-xs transition-all flex items-center gap-1.5 sm:gap-2 whitespace-nowrap cursor-pointer border-b-2 ${
               activeTab === 'packages'
                 ? 'border-orange-600 text-orange-600 bg-orange-50/50'
                 : 'border-transparent text-slate-500 hover:text-slate-900 hover:bg-slate-50'
             }`}
           >
-            <Box className="w-4 h-4" />
+            <Box className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
             <span>Упаковочные места ({packages.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('hardware')}
-            className={`px-4 py-2.5 rounded-t-2xl font-black text-xs transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer border-b-2 ${
+            className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-t-2xl font-black text-xs transition-all flex items-center gap-1.5 sm:gap-2 whitespace-nowrap cursor-pointer border-b-2 ${
               activeTab === 'hardware'
                 ? 'border-cyan-600 text-cyan-600 bg-cyan-50/50'
                 : 'border-transparent text-slate-500 hover:text-slate-900 hover:bg-slate-50'
             }`}
           >
-            <Tag className="w-4 h-4" />
+            <Tag className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
             <span>Фурнитура и крепеж ({hardwareItems.length})</span>
           </button>
 
           <button
             onClick={() => setActiveTab('stages')}
-            className={`px-4 py-2.5 rounded-t-2xl font-black text-xs transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer border-b-2 ${
+            className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-t-2xl font-black text-xs transition-all flex items-center gap-1.5 sm:gap-2 whitespace-nowrap cursor-pointer border-b-2 ${
               activeTab === 'stages'
                 ? 'border-indigo-600 text-indigo-600 bg-indigo-50/50'
                 : 'border-transparent text-slate-500 hover:text-slate-900 hover:bg-slate-50'
             }`}
           >
-            <Clock className="w-4 h-4" />
+            <Clock className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
             <span>Хронология и исполнители</span>
           </button>
 
           <button
             onClick={() => setActiveTab('deviations')}
-            className={`px-4 py-2.5 rounded-t-2xl font-black text-xs transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer border-b-2 ${
+            className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-t-2xl font-black text-xs transition-all flex items-center gap-1.5 sm:gap-2 whitespace-nowrap cursor-pointer border-b-2 ${
               activeTab === 'deviations'
                 ? 'border-rose-600 text-rose-600 bg-rose-50/50'
                 : 'border-transparent text-slate-500 hover:text-slate-900 hover:bg-slate-50'
             }`}
           >
-            <AlertTriangle className="w-4 h-4" />
+            <AlertTriangle className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
             <span>Отклонения и контроль качества</span>
           </button>
 
           <button
             onClick={() => setActiveTab('birka')}
-            className={`px-4 py-2.5 rounded-t-2xl font-black text-xs transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer border-b-2 ${
+            className={`px-3 sm:px-4 py-2 sm:py-2.5 rounded-t-2xl font-black text-xs transition-all flex items-center gap-1.5 sm:gap-2 whitespace-nowrap cursor-pointer border-b-2 ${
               activeTab === 'birka'
                 ? 'border-emerald-600 text-emerald-600 bg-emerald-50/50'
                 : 'border-transparent text-slate-500 hover:text-slate-900 hover:bg-slate-50'
             }`}
           >
-            <FileText className="w-4 h-4" />
+            <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
             <span>Спецификация бирки ({parts.length})</span>
           </button>
         </div>

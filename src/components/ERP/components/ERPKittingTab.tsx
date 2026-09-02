@@ -276,8 +276,12 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
     }
 
     if (packedItemsList.length === 0 && !customNotes.trim()) {
-      setUploadError('Нельзя создать пустое место! Отметьте позиции фурнитуры кнопками "+" для укладки в коробку.');
-      setTimeout(() => setUploadError(null), 4000);
+      setUploadError('Вложите в коробку фурнитуру! В формируемом месте еще нет ни одной позиции.');
+      setFeedbackMsg('Вложите в коробку фурнитуру! В формируемом месте еще нет ни одной позиции.');
+      setTimeout(() => {
+        setUploadError(null);
+        setFeedbackMsg(null);
+      }, 4000);
       return;
     }
 
@@ -322,8 +326,15 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
       };
     }
 
+    const todayStr = new Date().toISOString().split('T')[0];
+    const updatedStageDates = {
+      ...(order.stagePlannedDates || {}),
+      kitting: order.stagePlannedDates?.kitting || todayStr
+    };
+
     onUpdateOrder({
       ...order,
+      stagePlannedDates: updatedStageDates,
       packages: updatedPackages,
       hardwareData: updatedHardwareData
     });
@@ -631,30 +642,22 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
     const handleCloseBoxEvent = () => {
       // If items exist in draft, create package
       const draftCount = Object.values(draftBoxItems).reduce((a, b) => a + b, 0);
-      if (draftCount > 0 || customNotes.trim()) {
+      const hasCheckedDocs = Object.values(selectedDocs).some(Boolean);
+      if (draftCount > 0 || hasCheckedDocs || customNotes.trim()) {
         handleCreatePackage();
       } else {
-        // Auto-select remaining items from first category with unpacked items
-        const remainingItems = hardwareItems.filter(h => Math.max(0, h.quantity - (h.packedQuantity || 0)) > 0);
-        if (remainingItems.length > 0) {
-          const firstCat = remainingItems[0].category || 'Разное / Крепеж';
-          const autoDraft: Record<string, number> = {};
-          remainingItems.filter(h => (h.category || 'Разное / Крепеж') === firstCat).forEach(h => {
-            autoDraft[h.id] = Math.max(0, h.quantity - (h.packedQuantity || 0));
-          });
-          setDraftBoxItems(autoDraft);
-          setFeedbackMsg(`Сформирован состав для места (${firstCat}). Повторите сканирование или нажмите "Сформировать место".`);
-          setTimeout(() => setFeedbackMsg(null), 3500);
-        } else {
-          setFeedbackMsg('Все позиции фурнитуры уже укомплектованы!');
-          setTimeout(() => setFeedbackMsg(null), 3500);
-        }
+        setUploadError('Вложите в коробку фурнитуру! В формируемом месте еще нет ни одной позиции.');
+        setFeedbackMsg('Вложите в коробку фурнитуру! В формируемом месте еще нет ни одной позиции.');
+        setTimeout(() => {
+          setUploadError(null);
+          setFeedbackMsg(null);
+        }, 4000);
       }
     };
 
     window.addEventListener('erp_cmd_close_box', handleCloseBoxEvent);
     return () => window.removeEventListener('erp_cmd_close_box', handleCloseBoxEvent);
-  }, [draftBoxItems, customNotes, hardwareItems, existingPackages, nextNumber, selectedDocs, packageName, order, currentUser]);
+  }, [draftBoxItems, customNotes, hardwareItems, existingPackages, nextNumber, selectedDocs, packageName, order, currentUser, autoPrintDirect]);
 
   // Global keydown listener for barcode scanners
   const barcodeBufferRef = useRef<string>('');
