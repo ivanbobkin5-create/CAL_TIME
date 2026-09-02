@@ -40,7 +40,7 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee, MaterialResidual } from '../types';
 import { parseBirkaFile, BirkaParseResult, BirkaDetail, consolidateDetails } from '../utils/birkaParser';
-import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, getStageNameRussian, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, speakText, matchDetailToScannedCode, cleanRawScannedString, processQRCommand, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, getSmartOrderDisplay, comparePositionNumbers } from '../utils';
+import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, getStageNameRussian, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, speakText, matchDetailToScannedCode, cleanRawScannedString, processQRCommand, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, getSmartOrderDisplay, formatPositionNumber } from '../utils';
 import { CuttingOffcutsModal } from '../components/CuttingOffcutsModal';
 import { EdgingRemainsModal } from '../components/EdgingRemainsModal';
 import { detailRequiresPrisadka, getDetailAvailabilityForStage, getScannedCountForDetail, isDetailFullyScanned } from '../utils/stageReadiness';
@@ -210,7 +210,6 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   const [showShiftRequiredModal, setShowShiftRequiredModal] = useState<boolean>(false);
   const [defectTargetDetail, setDefectTargetDetail] = useState<any | null>(null);
   const [isIdentityConfirmed, setIsIdentityConfirmed] = useState<boolean>(false);
-  const [positionSortOrder, setPositionSortOrder] = useState<'asc' | 'desc'>('asc');
   const [isPaused, setIsPaused] = useState<boolean>(false);
 
   const scannerInputRef = useRef<HTMLInputElement | null>(null);
@@ -419,11 +418,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
              (d.notes && d.notes.toLowerCase().includes(q));
     });
 
-    return [...filtered].sort((a, b) => {
-      const cmp = comparePositionNumbers(a.labelNumber, b.labelNumber);
-      return positionSortOrder === 'asc' ? cmp : -cmp;
-    });
-  }, [currentMaterialDetails, searchPartsQuery, order.orderNumber, positionSortOrder]);
+    return filtered;
+  }, [currentMaterialDetails, searchPartsQuery, order.orderNumber]);
 
   // Quick Actions & QR Command Buttons Execution Handler
   const handleExecuteCommand = (cmd: string) => {
@@ -1456,64 +1452,6 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                     </div>
                   )}
 
-                  {/* Quick Action Commands & Buttons Grid */}
-                  <div className="pt-2 border-t border-slate-800 space-y-2">
-                    <div className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
-                      <span>Быстрые действия и QR-команды</span>
-                      <span className="text-[10px] text-slate-500 font-normal hidden sm:inline">Нажмите или отсканируйте</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        type="button"
-                        onClick={() => handleExecuteCommand('finish_stage')}
-                        className="p-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md shadow-emerald-950/40"
-                      >
-                        <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-200" />
-                        <span className="truncate">Завершить этап</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleExecuteCommand('report_defect')}
-                        className="p-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 active:scale-95 text-white text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md shadow-amber-950/40"
-                      >
-                        <AlertTriangle className="w-4 h-4 shrink-0 text-amber-200" />
-                        <span className="truncate">Брак / Переделка</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleExecuteCommand('pause_work')}
-                        className={`p-2.5 rounded-xl active:scale-95 text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border ${
-                          isPaused
-                            ? 'bg-amber-500 text-slate-950 border-amber-400 font-black'
-                            : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
-                        }`}
-                      >
-                        <PauseCircle className="w-4 h-4 shrink-0" />
-                        <span className="truncate">{isPaused ? '▶️ Снять паузу' : '⏸️ Пауза смены'}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleExecuteCommand('clear_scan')}
-                        className="p-2.5 rounded-xl bg-rose-900/60 hover:bg-rose-800 text-rose-100 border border-rose-700/60 active:scale-95 text-xs font-bold transition-all flex items-center gap-2 cursor-pointer"
-                      >
-                        <RefreshCw className="w-4 h-4 shrink-0 text-rose-300" />
-                        <span className="truncate">Сбросить скан</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleExecuteCommand('print_labels')}
-                        className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md shadow-indigo-950/40 col-span-2"
-                      >
-                        <Printer className="w-4 h-4 shrink-0 text-indigo-200" />
-                        <span className="truncate">Печать этикеток / листа заказа</span>
-                      </button>
-                    </div>
-                  </div>
-
                   {/* Finish Station Button */}
                   <div className="pt-1">
                     <button
@@ -1599,17 +1537,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                     </p>
                   </div>
 
-                  {/* Search and Sort controls */}
+                  {/* Search controls */}
                   <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setPositionSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-bold text-slate-700 transition-colors cursor-pointer shrink-0"
-                      title="Нажмите для смены порядка сортировки по № позиции"
-                    >
-                      <ArrowUpDown className="w-3.5 h-3.5 text-blue-600" />
-                      <span>№ {positionSortOrder === 'asc' ? '1 → 9' : '9 → 1'}</span>
-                    </button>
                     <div className="relative min-w-[200px]">
                       <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
                       <input
@@ -1629,18 +1558,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                     <thead>
                       <tr className="border-b border-slate-200 text-[11px] font-mono text-slate-400 uppercase tracking-wider bg-slate-50">
                         <th className="py-2.5 px-3">Статус</th>
-                        <th 
-                          onClick={() => setPositionSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
-                          className="py-2.5 px-3 cursor-pointer select-none hover:bg-slate-100 text-slate-800 transition-colors"
-                          title="Кликните для переключения сортировки по № позиции (от меньшего или от большего)"
-                        >
-                          <div className="flex items-center gap-1">
-                            <span>№ позиции</span>
-                            <span className="text-blue-600 font-extrabold text-xs">
-                              {positionSortOrder === 'asc' ? '↑' : '↓'}
-                            </span>
-                          </div>
-                        </th>
+                        <th className="py-2.5 px-3">№ позиции</th>
                         <th className="py-2.5 px-3">Наименование</th>
                         <th className="py-2.5 px-3 text-center">Кол-во</th>
                         <th className="py-2.5 px-3">Размер (мм)</th>
@@ -1732,7 +1650,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                               {/* Label Number */}
                               <td className="py-2.5 px-3 font-mono font-bold text-slate-900">
                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span>{detail.labelNumber}</span>
+                                  <span>{formatPositionNumber(detail.labelNumber)}</span>
                                   {isRecentlyScanned && (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider shadow-xs animate-bounce">
                                       <CheckCircle2 className="w-3 h-3" />

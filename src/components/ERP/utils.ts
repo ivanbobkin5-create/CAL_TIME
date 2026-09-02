@@ -1,5 +1,27 @@
 import { ProductionOrder, ProductionStageId } from './types';
 
+export function formatPositionNumber(rawPos: string | number | undefined | null): string {
+  if (rawPos === undefined || rawPos === null || rawPos === '') return '00.00';
+  const str = String(rawPos).trim();
+  if (!str) return '00.00';
+
+  const parts = str.split(/[\.\-_/\\:]+/).filter(Boolean);
+  if (parts.length === 0) return '00.00';
+
+  const formattedParts = parts.map(p => {
+    if (/^\d+$/.test(p)) {
+      return p.padStart(2, '0');
+    }
+    return p;
+  });
+
+  if (formattedParts.length === 1) {
+    return `${formattedParts[0]}.00`;
+  }
+
+  return formattedParts.join('.');
+}
+
 export function formatDeadlineDate(dateStr?: string): string {
   if (!dateStr) return '—';
   const cleanStr = String(dateStr).trim();
