@@ -753,7 +753,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       playSoundEffect('success');
     }
 
-    const allMatDetails = currentOrder.birkaData?.details.filter(d => (d.material || 'Без указания материала') === mat) || [];
+    const allMatDetails = consolidatedOrderDetails.filter(d => (d.material || 'Без указания материала') === mat);
     const effectiveMatDetails = currentStage === 'edging'
       ? allMatDetails.filter(partNeedsEdge)
       : ((currentStage as string) === 'prisadka' || currentStage === 'cnc')
@@ -851,13 +851,15 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     // Compute unscanned parts if forced
     const updatedForcedStageCompletions = { ...(order.forcedStageCompletions || {}) };
     if (isForced) {
-      const allOrderDetails = order.birkaData?.details || [];
+      const allOrderDetails = consolidatedOrderDetails;
       const stageRelevantDetails = currentStage === 'edging'
         ? allOrderDetails.filter(partNeedsEdge)
+        : ((currentStage as string) === 'prisadka' || currentStage === 'cnc')
+        ? allOrderDetails.filter(d => detailRequiresPrisadka(d, settings))
         : allOrderDetails;
       
       const unscannedIds = stageRelevantDetails
-        .filter(d => !allScannedPartIds.has(d.id))
+        .filter(d => !isDetailFullyScanned(allStageScannedIds, d))
         .map(d => d.id);
 
       updatedForcedStageCompletions[currentStage] = {
@@ -869,21 +871,36 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       };
     }
 
-    if (nextSt) {
-      onUpdateOrder({
-        ...order,
-        currentStage: nextSt,
-        workLogs: updatedLogs,
-        forcedStageCompletions: updatedForcedStageCompletions
-      });
+    const isOrderFullyCompleted = !nextSt || nextSt === 'ready';
+    const updatedStageProgress = {
+      ...(order.stageProgress || {}),
+      [currentStage]: {
+        status: 'done' as const,
+        completedBy: empName !== 'Сотрудник' ? empName : (order.responsibleEmployeeName || 'Сотрудник цеха'),
+        completedAt: nowIso
+      }
+    };
+    if (nextSt && nextSt !== currentStage && nextSt !== 'ready') {
+      updatedStageProgress[nextSt] = {
+        status: 'in_progress' as const
+      };
+    }
+
+    const updatedOrder: ProductionOrder = {
+      ...order,
+      currentStage: nextSt || currentStage,
+      status: isOrderFullyCompleted ? 'completed' : 'in_progress',
+      stageProgress: updatedStageProgress,
+      workLogs: updatedLogs,
+      forcedStageCompletions: updatedForcedStageCompletions
+    };
+
+    onUpdateOrder(updatedOrder);
+
+    if (nextSt && nextSt !== 'ready') {
       onUpdateOrderStatus(order.id, nextSt);
     } else {
-      onUpdateOrder({
-        ...order,
-        status: 'completed',
-        workLogs: updatedLogs,
-        forcedStageCompletions: updatedForcedStageCompletions
-      });
+      onUpdateOrderStatus(order.id, currentStage, true);
     }
 
     playSoundEffect('success');
@@ -1225,9 +1242,9 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                   </div>
 
                   <div className="space-y-2">
-                    {order.birkaData.materialGroups.map((mg) => {
+                    {(localOrder.birkaData?.materialGroups || []).map((mg) => {
                       const matName = mg.materialName;
-                      let matDetails = order.birkaData?.details.filter(d => (d.material || 'Без указания материала') === matName) || [];
+                      let matDetails = consolidatedOrderDetails.filter(d => (d.material || 'Без указания материала') === matName);
                       if (currentStage === 'edging') {
                         matDetails = matDetails.filter(partNeedsEdge);
                       } else if ((currentStage as string) === 'prisadka' || currentStage === 'cnc') {

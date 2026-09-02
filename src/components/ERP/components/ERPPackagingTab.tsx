@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   Package, 
   Plus, 
@@ -1239,7 +1239,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
           <div className="text-base font-black">
             {isAllDetailsPacked ? (
               <span className="text-emerald-400 flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5" /> Все детали упакованы ({totalPackedCount} из {totalDetailsCount}) в {existingPackages.length} мест
+                <CheckCircle2 className="w-5 h-5" /> Все детали упакованы ({totalPackedUnitsCount} из {totalRequiredPartsCount}) в {existingPackages.length} мест
               </span>
             ) : (
               <span className="text-amber-400 flex items-center gap-2">

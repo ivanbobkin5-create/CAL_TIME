@@ -505,6 +505,7 @@ export interface ERPCompanySettings {
 
   equipmentList?: MachineEquipment[]; // Оборудование участков
   useNestingPrisadkaOnCutting?: boolean; // Флаг: Использовать нестинг присадку в пласть на этапе распила (true = детали с 0 торцевых отв. не попадают на присадку)
+  filterPrisadkaParts?: boolean; // Флаг: Фильтровать детали на участке присадки (true = отображать только детали с отверстиями, false = отображать все детали заказа)
   birkaColumnMapping?: Record<string, string[]>; // Кастомный маппинг столбцов файла бирок
   birkaEncodingPreference?: 'auto' | 'windows-1251' | 'utf-8' | 'cp866';
   birkaQrFormatTemplate?: string; // Шаблон кодирования QR-кодов на бирках ({orderNumber}-{pos}, {orderNumber}_{pos}, {pos}, и т.д.)

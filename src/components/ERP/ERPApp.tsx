@@ -787,22 +787,37 @@ export const ERPApp: React.FC<ERPAppProps> = ({
     }
   };
 
-  const handleUpdateOrderStatus = async (orderId: string, nextStage: ProductionStageId) => {
-    const isCompleted = nextStage === 'ready';
+  const handleUpdateOrderStatus = async (orderId: string, nextStage: ProductionStageId, isExplicitlyCompleted?: boolean) => {
+    const isCompleted = isExplicitlyCompleted || nextStage === 'ready' || nextStage === 'shipping';
     const newStatus: ProductionOrder['status'] = isCompleted ? 'completed' : 'in_progress';
     
+    const matchedEmp = employees.find(e => e.id === activeEmployeeKey || e.barcode === activeEmployeeKey);
+    const displayUserName = matchedEmp ? `${matchedEmp.lastName || ''} ${matchedEmp.firstName || ''}`.trim() : activeEmployeeKey;
+
     // Instant UI update
     let updatedOrderObj: ProductionOrder | null = null;
     setOrders(prev => {
       const nextList = prev.map(o => {
         if (o.id === orderId) {
+          const prevStage = o.currentStage;
           const updated = {
             ...o,
             currentStage: nextStage,
             status: newStatus,
             stageProgress: {
               ...o.stageProgress,
-              [nextStage]: { status: isCompleted ? 'done' : 'in_progress' }
+              ...(prevStage && prevStage !== nextStage ? {
+                [prevStage]: {
+                  status: 'done' as const,
+                  completedBy: displayUserName || undefined,
+                  completedAt: new Date().toISOString()
+                }
+              } : {}),
+              [nextStage]: {
+                status: isCompleted ? ('done' as const) : ('in_progress' as const),
+                completedBy: isCompleted ? (displayUserName || undefined) : undefined,
+                completedAt: isCompleted ? new Date().toISOString() : undefined
+              }
             }
           };
           updatedOrderObj = updated;
@@ -834,7 +849,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
             currentStage: nextStage,
             status: newStatus,
             completedByEmployeeId: matchedEmp?.id || '',
-            stageProgress: {
+            stageProgress: updatedOrderObj?.stageProgress || {
               [nextStage]: { 
                 status: isCompleted ? 'done' : 'in_progress',
                 completedBy: displayUserName || undefined,

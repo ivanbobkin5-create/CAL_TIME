@@ -1,4 +1,5 @@
 import { ProductionOrder, ERPCompanySettings } from '../types';
+import { consolidateDetails, BirkaDetail } from './birkaParser';
 
 export interface BirkaDetailItem {
   id: string;
@@ -54,7 +55,8 @@ export function isDetailFullyScanned(scannedIds: string[] | undefined, detail: {
  * Count total scanned pieces across all materials for a stage
  */
 export function getStageScannedPiecesCount(order: ProductionOrder, stageId: string, details?: { id: string; quantity?: number }[]): { scanned: number; total: number } {
-  const allDetails = details || order.birkaData?.details || [];
+  const rawDetails = details || order.birkaData?.details || [];
+  const allDetails = consolidateDetails(rawDetails as BirkaDetail[]);
   const stageProgress = order.stageScanningProgress?.[stageId] || {};
   
   const allScannedList: string[] = [];
@@ -98,6 +100,11 @@ export function detailRequiresPrisadka(
   },
   settings?: ERPCompanySettings
 ): boolean {
+  // Если включено отключение фильтра присадки, то все детали попадают на присадку (без фильтрации)
+  if (settings?.filterPrisadkaParts === false) {
+    return true;
+  }
+
   // Check global setting: is Nesting used on cutting stage? (Default is true)
   const useNestingPrisadka = settings?.useNestingPrisadkaOnCutting !== false;
 
@@ -184,24 +191,28 @@ export function isDetailReadyForPackaging(
   const kromkaScanned = getScannedPartIdsForStage(order, 'kromka');
   const prisadkaScanned = getScannedPartIdsForStage(order, 'prisadka');
 
+  const raskroyList = Array.from(raskroyScanned);
+  const kromkaList = Array.from(kromkaScanned);
+  const prisadkaList = Array.from(prisadkaScanned);
+
   const hasEdges = !!(detail.edgeL1 || detail.edgeL2 || detail.edgeW1 || detail.edgeW2);
   const needsPrisadka = detailRequiresPrisadka(detail, settings);
 
   // 1. Raskroy check
   if (isStageEnabled(settings, 'raskroy')) {
-    const isRaskroyDone = raskroyScanned.has(detail.id);
+    const isRaskroyDone = raskroyScanned.has(detail.id) || isDetailFullyScanned(raskroyList, detail);
     if (!isRaskroyDone) return false;
   }
 
   // 2. Kromka check (if detail has edge banding)
   if (hasEdges && isStageEnabled(settings, 'kromka')) {
-    const isKromkaDone = kromkaScanned.has(detail.id);
+    const isKromkaDone = kromkaScanned.has(detail.id) || isDetailFullyScanned(kromkaList, detail);
     if (!isKromkaDone) return false;
   }
 
   // 3. Prisadka check (if detail requires drilling)
   if (needsPrisadka && isStageEnabled(settings, 'prisadka')) {
-    const isPrisadkaDone = prisadkaScanned.has(detail.id);
+    const isPrisadkaDone = prisadkaScanned.has(detail.id) || isDetailFullyScanned(prisadkaList, detail);
     if (!isPrisadkaDone) return false;
   }
 
@@ -216,7 +227,8 @@ export function arePrecedingStagesCompleted(order: ProductionOrder, settings?: E
     return true;
   }
 
-  const details = order.birkaData?.details || [];
+  const raw = order.birkaData?.details || [];
+  const details = consolidateDetails(raw as BirkaDetail[]);
   if (details.length === 0) return true;
 
   for (const d of details) {
@@ -232,7 +244,8 @@ export function arePrecedingStagesCompleted(order: ProductionOrder, settings?: E
   * Count how many details are ready for packaging out of total details
   */
 export function getPackagingReadinessStats(order: ProductionOrder, settings?: ERPCompanySettings): { readyCount: number; totalCount: number; isFullyReady: boolean } {
-  const details = order.birkaData?.details || [];
+  const raw = order.birkaData?.details || [];
+  const details = consolidateDetails(raw as BirkaDetail[]);
   if (details.length === 0) {
     return { readyCount: 0, totalCount: 0, isFullyReady: true };
   }
@@ -310,7 +323,11 @@ export function getDetailAvailabilityForStage(
   const kromkaScanned = getScannedPartIdsForStage(order, 'kromka');
   const prisadkaScanned = getScannedPartIdsForStage(order, 'prisadka');
 
-  const isRaskroyDone = !isStageEnabled(settings, 'raskroy') || raskroyScanned.has(detail.id);
+  const raskroyList = Array.from(raskroyScanned);
+  const kromkaList = Array.from(kromkaScanned);
+  const prisadkaList = Array.from(prisadkaScanned);
+
+  const isRaskroyDone = !isStageEnabled(settings, 'raskroy') || raskroyScanned.has(detail.id) || isDetailFullyScanned(raskroyList, detail);
 
   // 3. Kromka (Edging): requires Raskroy
   if (targetStageId === 'kromka') {
@@ -329,7 +346,7 @@ export function getDetailAvailabilityForStage(
   }
 
   const hasEdges = !!(detail.edgeL1 || detail.edgeL2 || detail.edgeW1 || detail.edgeW2);
-  const isKromkaDone = !hasEdges || !isStageEnabled(settings, 'kromka') || kromkaScanned.has(detail.id);
+  const isKromkaDone = !hasEdges || !isStageEnabled(settings, 'kromka') || kromkaScanned.has(detail.id) || isDetailFullyScanned(kromkaList, detail);
 
   // 4. Prisadka / CNC: requires Raskroy AND Kromka (if detail has edge banding)
   if (targetStageId === 'prisadka') {
@@ -444,7 +461,8 @@ export function getStageTaskReadinessInfo(
   stageId: string,
   settings?: ERPCompanySettings
 ): StageTaskReadiness {
-  const details = order.birkaData?.details || [];
+  const rawDetails = order.birkaData?.details || [];
+  const details = consolidateDetails(rawDetails as BirkaDetail[]);
   const totalPartsCount = details.length || order.partsCount || 0;
 
   // In classic mode, stage tasks are never locked

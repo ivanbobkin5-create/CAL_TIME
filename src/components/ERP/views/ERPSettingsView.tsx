@@ -267,6 +267,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
 
   const [formData, setFormData] = useState<ERPCompanySettings>(() => ({
     ...settings,
+    filterPrisadkaParts: settings.filterPrisadkaParts !== false,
     bitrix24WebhookUrl: settings.bitrix24WebhookUrl || companyData?.bitrix24?.webhookUrl || companyData?.erpConfig?.bitrix24WebhookUrl || '',
     enabledStages: settings.enabledStages || defaultStageIds,
     equipmentList: (settings.equipmentList && settings.equipmentList.length > 0) 
@@ -870,7 +871,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
             { id: 'birka', label: 'Парсер бирок', desc: 'Колонки Excel / Базис / bCAD', icon: Table },
             { id: 'hardware', label: 'Парсер фурнитуры', desc: 'Колонки ведомости комплектации', icon: Box },
             { id: 'warehouse_cells', label: 'Ячейки хранения', desc: 'Адресное хранение склада', icon: MapPin },
-            { id: 'rules', label: 'Правила примечаний', desc: 'Авто-подсветка пазов и ЧПУ', icon: Sliders, count: formData.noteRules?.length },
+            { id: 'rules', label: 'Настройка присадки', desc: 'Фильтрация деталей и правила примечаний', icon: Sliders, count: formData.noteRules?.length },
             { id: 'tariffs', label: 'Тарифы и расценки', desc: 'Сдельная оплата за м², кромку', icon: Coins },
             { id: 'additional', label: 'Доп. работы', desc: 'Столешницы, цоколи, штанги', icon: Wrench },
             { id: 'equipment', label: 'Оборудование и план', desc: 'Станки и мощности смены', icon: Scissors, count: formData.equipmentList?.length },
@@ -1880,9 +1881,60 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
         </div>
       )}
 
-      {/* TAB 4: NOTE RULES */}
+      {/* TAB 4: NOTE RULES & PRISADKA SETTINGS */}
       {activeTab === 'rules' && (
         <div className="space-y-6">
+          {/* Prisadka Filter Setting Card */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-4">
+            <div className="flex items-center gap-2">
+              <Factory className="w-5 h-5 text-purple-600" />
+              <h3 className="font-bold text-slate-900 text-base">
+                Настройка присадки и фильтрации деталей
+              </h3>
+            </div>
+            <p className="text-xs text-slate-500">
+              Управление отображением деталей и фильтрацией при обработке заказов на участке присадки / ЧПУ.
+            </p>
+
+            <div className="p-4 rounded-2xl bg-purple-50/60 border border-purple-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="space-y-1">
+                <div className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                  <span>Фильтр деталей с присадкой на участке ЧПУ</span>
+                  {formData.filterPrisadkaParts !== false ? (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      Фильтр включен
+                    </span>
+                  ) : (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                      Фильтр выключен (Все детали)
+                    </span>
+                  )}
+                </div>
+                <div className="text-[11px] text-slate-600 max-w-xl">
+                  {formData.filterPrisadkaParts !== false ? (
+                    <span>
+                      <strong>Включено:</strong> на участке присадки отображаются только детали, содержащие отверстия/сверление (стандартное поведение).
+                    </span>
+                  ) : (
+                    <span>
+                      <strong>Выключено:</strong> на участке присадки отображаются полностью все детали заказа без отсеивания деталей без отверстий.
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                <input
+                  type="checkbox"
+                  checked={formData.filterPrisadkaParts !== false}
+                  onChange={(e) => setFormData(prev => ({ ...prev, filterPrisadkaParts: e.target.checked }))}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+            </div>
+          </div>
+
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>

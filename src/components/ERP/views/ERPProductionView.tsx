@@ -110,21 +110,27 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
 
   // Helper to check if order belongs to a specific production stage
   const isOrderOnStage = (order: ProductionOrder, stageId: ProductionStageId): boolean => {
+    // Completed or shipped orders are no longer active on production stations
     if (order.status === 'shipped' || order.status === 'completed') {
-      return stageId === 'shipping' || stageId === 'ready';
+      return false;
+    }
+    // If this specific stage is already marked as done on the order, it should not be listed on this stage
+    if (order.stageProgress?.[stageId]?.status === 'done') {
+      return false;
     }
     if (order.currentStage === 'shipping' || order.currentStage === 'ready') {
       return stageId === 'shipping' || stageId === 'ready';
     }
     if (order.currentStage === stageId) return true;
-    if (order.stagePlannedDates && order.stagePlannedDates[stageId]) return true;
-    if (stageId === 'cutting' && !!order.plannedCuttingDate) return true;
     if (stageId === 'kitting' || stageId === 'packing') {
-      const onlinePackagingAllowedStages: ProductionStageId[] = ['edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing'];
+      const onlinePackagingAllowedStages: ProductionStageId[] = ['cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing'];
       if (onlinePackagingAllowedStages.includes(order.currentStage)) {
         return true;
       }
     }
+    if (order.stagePlannedDates && order.stagePlannedDates[stageId]) return true;
+    if (stageId === 'cutting' && !!order.plannedCuttingDate) return true;
+
     return false;
   };
 
