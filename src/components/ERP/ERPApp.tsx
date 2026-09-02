@@ -238,6 +238,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
   const [orderSource, setOrderSource] = useState<string>('projects');
   const [selectedOrderForWorkspace, setSelectedOrderForWorkspace] = useState<ProductionOrder | null>(null);
   const [workspaceStageId, setWorkspaceStageId] = useState<ProductionStageId | null>(null);
+  const [activeProductionStageId, setActiveProductionStageId] = useState<ProductionStageId | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // Helper to load order state from localStorage
@@ -1891,11 +1892,17 @@ export const ERPApp: React.FC<ERPAppProps> = ({
                     employeeName: displayUserName,
                     role: displayUserRole
                   }}
+                  initialStageId={activeProductionStageId}
+                  onStageChange={(st) => setActiveProductionStageId(st)}
                   onUpdateOrderStatus={handleUpdateOrderStatus}
                   onUpdateOrder={handleUpdateOrder}
                   onSelectOrder={(order, stageId) => {
+                    const targetStage = stageId || order.currentStage || 'cutting';
                     setSelectedOrderForWorkspace(order);
-                    setWorkspaceStageId(stageId || order.currentStage || 'cutting');
+                    setWorkspaceStageId(targetStage);
+                    if (stageId) {
+                      setActiveProductionStageId(stageId);
+                    }
                   }}
                 />
               )}
@@ -2245,9 +2252,10 @@ export const ERPApp: React.FC<ERPAppProps> = ({
       {/* Shift Summary Report Modal */}
       <ShiftSummaryModal
         isOpen={showShiftSummaryModal}
-        currentUser={matchedEmp}
+        currentUser={matchedEmp ? { ...matchedEmp, name: matchedEmp.name || displayUserName } : { id: authUser?.id || authUser?.uid || 'emp-user', name: displayUserName, employeeName: displayUserName, role: displayUserRole }}
         orders={orders}
         settings={settings}
+        companyName={company?.name || settings?.companyTitle || settings?.shippingActTemplate?.companyTitle}
         onClose={() => setShowShiftSummaryModal(false)}
         onConfirmEndShift={() => {
           handleEndShift();

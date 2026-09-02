@@ -145,6 +145,7 @@ export interface ProductionOrder {
   priceTotal?: number;
   costTotal?: number;
   bitrixDealId?: string;
+  bitrixDealTitle?: string;
   bitrixStageId?: string;
   bitrixStageName?: string;
   bitrixUrl?: string;
@@ -506,6 +507,7 @@ export interface ERPCompanySettings {
   equipmentList?: MachineEquipment[]; // Оборудование участков
   useNestingPrisadkaOnCutting?: boolean; // Флаг: Использовать нестинг присадку в пласть на этапе распила (true = детали с 0 торцевых отв. не попадают на присадку)
   filterPrisadkaParts?: boolean; // Флаг: Фильтровать детали на участке присадки (true = отображать только детали с отверстиями, false = отображать все детали заказа)
+  drillingHolesCalculationMode?: 'all' | 'edge_only' | 'face_only'; // Что считать за отверстия в присадке для отчетов и зарплаты ('all' - пласть и торец, 'edge_only' - только торец, 'face_only' - только пласть)
   birkaColumnMapping?: Record<string, string[]>; // Кастомный маппинг столбцов файла бирок
   birkaEncodingPreference?: 'auto' | 'windows-1251' | 'utf-8' | 'cp866';
   birkaQrFormatTemplate?: string; // Шаблон кодирования QR-кодов на бирках ({orderNumber}-{pos}, {orderNumber}_{pos}, {pos}, и т.д.)

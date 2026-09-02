@@ -240,27 +240,27 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
                         ${pkg.customItemsNote || 'Фурнитура, крепеж, комплектующие'}
                       </div>
                     ` : (showDetails && pkg.parts && pkg.parts.length > 0) ? `
-                      <div style="display: flex; justify-content: space-between; font-size: 8.5px; font-weight: 900; color: #000000; text-transform: uppercase; margin-bottom: 2px;">
+                      <div style="display: flex; justify-content: space-between; font-size: 8px; font-weight: 900; color: #000000; text-transform: uppercase; margin-bottom: 1px; border-bottom: 1px solid #000000; padding-bottom: 1px;">
                         <span>Вложенные детали:</span>
                         <span style="font-family: monospace; font-weight: 900;">${pkg.parts.length} шт.</span>
                       </div>
-                      <div style="max-height: 88px; overflow: hidden;">
-                        ${pkg.parts.slice(0, 4).map((p: any) => {
-                          const num = (p.labelNumber || '').toString().trim().replace(/^#+/, '');
+                      <div style="max-height: 96px; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-start;">
+                        ${pkg.parts.slice(0, 4).map((p: any, idx: number) => {
+                          const num = (p.labelNumber || p.detailNumber || p.pos || p.item_no || p.id || '').toString().trim().replace(/^#+/, '') || (idx + 1);
                           return `
-                            <div class="part-item">
+                            <div class="part-item" style="display: flex; justify-content: space-between; align-items: baseline; font-size: 8.5px; line-height: 1.15; border-bottom: 1px dotted #000000; padding: 0.5px 0;">
                               <span style="font-weight: 700; max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #000000;">
-                                #${num} ${p.name}
+                                #${num} ${p.name || 'Деталь'}
                               </span>
-                              <span style="font-family: monospace; font-size: 9px; color: #000000; font-weight: bold; flex-shrink: 0;">
+                              <span style="font-family: monospace; font-size: 8px; color: #000000; font-weight: bold; flex-shrink: 0; margin-left: 2px;">
                                 ${p.length && p.width ? `${p.length}×${p.width}` : ''}
                               </span>
                             </div>
                           `;
                         }).join('')}
                         ${pkg.parts.length > 4 ? `
-                          <div style="font-size: 8px; font-weight: 700; color: #000000; line-height: 1.15; margin-top: 2px; word-break: break-word;">
-                            и еще ${pkg.parts.slice(4).map((p: any) => (p.labelNumber || p.name || '').toString().trim().replace(/^#+/, '')).filter(Boolean).join(', ')}
+                          <div style="font-size: 7.5px; font-weight: 800; color: #000000; line-height: 1.15; margin-top: 1.5px; word-break: break-word;">
+                            и еще ${pkg.parts.slice(4).map((p: any, idx: number) => ((p.labelNumber || p.detailNumber || p.pos || p.item_no || p.id || '').toString().trim().replace(/^#+/, '') || (idx + 5))).filter(Boolean).join(', ')}
                           </div>
                         ` : ''}
                       </div>
@@ -431,24 +431,27 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
                   </div>
                 ) : showDetails && pkg.parts && pkg.parts.length > 0 ? (
                   <div>
-                    <div className="flex items-center justify-between text-[8.5px] font-black text-black uppercase mb-0.5">
+                    <div className="flex items-center justify-between text-[8px] font-black text-black uppercase mb-0.5 border-b border-black pb-0.5">
                       <span>Вложенные детали:</span>
                       <span className="font-mono font-black">{pkg.parts.length} шт.</span>
                     </div>
-                    <div className="max-h-[95px] overflow-hidden space-y-0.5 text-[9px]">
-                      {pkg.parts.slice(0, 4).map((p, idx) => (
-                        <div key={idx} className="flex items-center justify-between gap-1 leading-tight border-b border-dotted border-black pb-0.5 text-black">
-                          <span className="truncate max-w-[130px] font-bold text-black">
-                            #{p.labelNumber ? p.labelNumber.replace(/^#+/, '') : idx + 1} {p.name}
-                          </span>
-                          <span className="font-mono text-[8.5px] text-black font-bold shrink-0">
-                            {p.length && p.width ? `${p.length}×${p.width}` : ''}
-                          </span>
-                        </div>
-                      ))}
+                    <div className="max-h-[96px] overflow-hidden space-y-0.5 text-[8.5px]">
+                      {pkg.parts.slice(0, 4).map((p, idx) => {
+                        const num = (p.labelNumber || (p as any).detailNumber || (p as any).pos || (p as any).item_no || (p as any).id || (p as any).detailId || '').toString().trim().replace(/^#+/, '') || (idx + 1);
+                        return (
+                          <div key={idx} className="flex items-center justify-between gap-1 leading-tight border-b border-dotted border-black pb-0.5 text-black">
+                            <span className="truncate max-w-[130px] font-bold text-black">
+                              #{num} {p.name || 'Деталь'}
+                            </span>
+                            <span className="font-mono text-[8px] text-black font-bold shrink-0">
+                              {p.length && p.width ? `${p.length}×${p.width}` : ''}
+                            </span>
+                          </div>
+                        );
+                      })}
                       {pkg.parts.length > 4 && (
-                        <div className="text-[8px] font-bold text-black leading-tight pt-0.5 break-words">
-                          и еще {pkg.parts.slice(4).map(p => (p.labelNumber || p.name || '').replace(/^#+/, '')).filter(Boolean).join(', ')}
+                        <div className="text-[7.5px] font-bold text-black leading-tight pt-0.5 break-words">
+                          и еще {pkg.parts.slice(4).map((p, idx) => ((p.labelNumber || (p as any).detailNumber || (p as any).pos || (p as any).item_no || (p as any).id || (p as any).detailId || '').toString().trim().replace(/^#+/, '') || (idx + 5))).filter(Boolean).join(', ')}
                         </div>
                       )}
                     </div>

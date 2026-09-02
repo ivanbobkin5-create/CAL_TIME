@@ -267,6 +267,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
 
   const [formData, setFormData] = useState<ERPCompanySettings>(() => ({
     ...settings,
+    drillingHolesCalculationMode: settings.drillingHolesCalculationMode || (settings.useNestingPrisadkaOnCutting !== false ? 'edge_only' : 'all'),
     filterPrisadkaParts: settings.filterPrisadkaParts !== false,
     bitrix24WebhookUrl: settings.bitrix24WebhookUrl || companyData?.bitrix24?.webhookUrl || companyData?.erpConfig?.bitrix24WebhookUrl || '',
     bitrix24CategoryId: settings.bitrix24CategoryId || companyData?.bitrix24?.categoryId || companyData?.erpConfig?.bitrix24CategoryId || '',
@@ -1129,6 +1130,126 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                   </div>
                 </div>
               )}
+            </div>
+
+            {/* CNC / Drilling Stage Specific Rules Card */}
+            <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-5">
+              <div className="flex items-start justify-between gap-4">
+                <div className="flex items-start gap-3.5">
+                  <div className="w-10 h-10 rounded-2xl bg-purple-100 border border-purple-200 flex items-center justify-center shrink-0">
+                    <Factory className="w-5 h-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-base">
+                      Настройки участка присадки / ЧПУ и расчет отверстий
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                      Укажите технологические правила для участка присадки: какие отверстия считать для учета и заработной платы, а также параметры технологии Нестинг (Nesting).
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Drilling Holes Calculation Mode Selector */}
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-3">
+                <div className="text-xs font-bold text-slate-800">
+                  Что считать за отверстия на участке присадки (для учета и начисления зарплаты):
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, drillingHolesCalculationMode: 'edge_only' })}
+                    className={`p-3.5 rounded-xl border text-left transition-all ${
+                      (formData.drillingHolesCalculationMode ?? (formData.useNestingPrisadkaOnCutting !== false ? 'edge_only' : 'all')) === 'edge_only'
+                        ? 'bg-purple-50 border-purple-400 text-purple-900 shadow-xs ring-2 ring-purple-300'
+                        : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="text-xs font-black mb-1 flex items-center justify-between">
+                      <span>Только торец</span>
+                      {(formData.drillingHolesCalculationMode ?? (formData.useNestingPrisadkaOnCutting !== false ? 'edge_only' : 'all')) === 'edge_only' && (
+                        <Check className="w-4 h-4 text-purple-600" />
+                      )}
+                    </div>
+                    <div className="text-[11px] text-slate-500 leading-snug">
+                      Лицевые отверстия делаются на раскрое (нестинг). Оператор присадки сверлит и получает оплату только за торцевые.
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, drillingHolesCalculationMode: 'all' })}
+                    className={`p-3.5 rounded-xl border text-left transition-all ${
+                      (formData.drillingHolesCalculationMode ?? (formData.useNestingPrisadkaOnCutting !== false ? 'edge_only' : 'all')) === 'all'
+                        ? 'bg-purple-50 border-purple-400 text-purple-900 shadow-xs ring-2 ring-purple-300'
+                        : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="text-xs font-black mb-1 flex items-center justify-between">
+                      <span>Все отверстия</span>
+                      {(formData.drillingHolesCalculationMode ?? (formData.useNestingPrisadkaOnCutting !== false ? 'edge_only' : 'all')) === 'all' && (
+                        <Check className="w-4 h-4 text-purple-600" />
+                      )}
+                    </div>
+                    <div className="text-[11px] text-slate-500 leading-snug">
+                      Учитывать суммарно абсолютно все отверстия детали: и в пласть (лицевые), и в торец (торцевые).
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setFormData({ ...formData, drillingHolesCalculationMode: 'face_only' })}
+                    className={`p-3.5 rounded-xl border text-left transition-all ${
+                      formData.drillingHolesCalculationMode === 'face_only'
+                        ? 'bg-purple-50 border-purple-400 text-purple-900 shadow-xs ring-2 ring-purple-300'
+                        : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="text-xs font-black mb-1 flex items-center justify-between">
+                      <span>Только пласть</span>
+                      {formData.drillingHolesCalculationMode === 'face_only' && (
+                        <Check className="w-4 h-4 text-purple-600" />
+                      )}
+                    </div>
+                    <div className="text-[11px] text-slate-500 leading-snug">
+                      Учитывать только лицевые отверстия в пласть детали.
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Toggles for Nesting & Filtering */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-start gap-3 cursor-pointer hover:bg-slate-100/70 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={formData.useNestingPrisadkaOnCutting ?? true}
+                    onChange={(e) => setFormData({ ...formData, useNestingPrisadkaOnCutting: e.target.checked })}
+                    className="w-5 h-5 rounded-lg text-purple-600 focus:ring-purple-500 border-slate-300 mt-0.5"
+                  />
+                  <div className="space-y-0.5">
+                    <span className="text-xs font-bold text-slate-900 block">Технология Нестинг (Nesting) на раскрое</span>
+                    <span className="text-[11px] text-slate-500 block leading-tight">
+                      Лицевые отверстия выполняются сразу на ЧПУ раскрое. Деталь без торцевых отверстий сразу считается готовой по присадке.
+                    </span>
+                  </div>
+                </label>
+
+                <label className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-start gap-3 cursor-pointer hover:bg-slate-100/70 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={formData.filterPrisadkaParts ?? true}
+                    onChange={(e) => setFormData({ ...formData, filterPrisadkaParts: e.target.checked })}
+                    className="w-5 h-5 rounded-lg text-purple-600 focus:ring-purple-500 border-slate-300 mt-0.5"
+                  />
+                  <div className="space-y-0.5">
+                    <span className="text-xs font-bold text-slate-900 block">Фильтровать детали на участке присадки</span>
+                    <span className="text-[11px] text-slate-500 block leading-tight">
+                      Если выключено, абсолютно все детали заказа направляются на участок присадки без фильтрации.
+                    </span>
+                  </div>
+                </label>
+              </div>
             </div>
           </div>
         </div>
@@ -2054,7 +2175,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                 />
               </div>
 
-              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
                 <label className="block text-xs font-bold text-slate-700 mb-1.5 flex items-center gap-2">
                   <Factory className="w-4 h-4 text-purple-600" />
                   ЧПУ / Присадка (₽ за отверстие)
@@ -2065,6 +2186,20 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                   onChange={(e) => setFormData({ ...formData, cncHoleRate: Number(e.target.value) })}
                   className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-black text-slate-900 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 />
+                <div className="pt-2 border-t border-slate-200">
+                  <label className="block text-[11px] font-bold text-slate-600 mb-1">
+                    Что считать за отверстия в расчете:
+                  </label>
+                  <select
+                    value={formData.drillingHolesCalculationMode || (formData.useNestingPrisadkaOnCutting !== false ? 'edge_only' : 'all')}
+                    onChange={(e) => setFormData({ ...formData, drillingHolesCalculationMode: e.target.value as any })}
+                    className="w-full px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-purple-400"
+                  >
+                    <option value="edge_only">Только торец (лицевые на раскрое)</option>
+                    <option value="all">Все отверстия (в пласть и в торец)</option>
+                    <option value="face_only">Только пласть</option>
+                  </select>
+                </div>
               </div>
 
               <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200">

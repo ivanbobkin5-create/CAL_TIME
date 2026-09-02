@@ -25,6 +25,7 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { ERPEmployee, SalaryAdjustment } from '../types';
+import { getOrderCalculatedHoles } from '../utils';
 
 interface ERPSalariesViewProps {
   employees: ERPEmployee[];
@@ -160,11 +161,12 @@ export const ERPSalariesView: React.FC<ERPSalariesViewProps> = ({
               metricLabel = `${metricValue.toFixed(2)} п.м.`;
             } else if (log.stageId === 'cnc') {
               rate = settings?.cncHoleRate || 8;
-              metricValue = log.scannedPartsCount || order.partsCount || 0;
-              // Let's assume average of 4 holes per part for CNC if not specified
-              const holes = metricValue * 4;
+              const scannedParts = log.scannedPartsCount || order.partsCount || 0;
+              const totalOrderParts = order.partsCount || 1;
+              const totalOrderHoles = getOrderCalculatedHoles(order, settings);
+              const holes = Math.round((totalOrderHoles / totalOrderParts) * (scannedParts || totalOrderParts));
               amountEarned = Math.round(holes * rate);
-              metricLabel = `${holes} отв. (${metricValue} дет.)`;
+              metricLabel = `${holes} отв. (${scannedParts} дет.)`;
             } else if (log.stageId === 'facades') {
               rate = settings?.facadesRatePerM2 || 150;
               metricValue = log.scannedAreaM2 || order.totalAreaM2 || 0;

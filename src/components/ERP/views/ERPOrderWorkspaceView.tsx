@@ -1042,9 +1042,21 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                 <span>{stageMeta.name}</span>
               </span>
 
-              <span className="px-3 py-1 rounded-xl bg-slate-800 text-white text-xs font-black font-mono border border-slate-700">
-                Заказ {cleanOrderNumber(order.orderNumber, order.id)}
-              </span>
+              {(() => {
+                const smartDisplay = getSmartOrderDisplay(order);
+                return (
+                  <>
+                    {!smartDisplay.isBitrixIdAsNumber && (
+                      <span className="px-3 py-1 rounded-xl bg-slate-800 text-white text-xs font-black font-mono border border-slate-700">
+                        № {smartDisplay.orderNumber}
+                      </span>
+                    )}
+                    <span className="px-3 py-1 rounded-xl bg-slate-800 text-white text-xs font-black border border-slate-700">
+                      {smartDisplay.displayTitle}
+                    </span>
+                  </>
+                );
+              })()}
 
               <a
                 href={getBitrixDealUrl(order, settings)}
@@ -1074,7 +1086,10 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                 title="Открыть сделку в Битрикс24"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
-                <span>B24</span>
+                <span>B24{(() => {
+                  const dealId = extractBitrixDealId(order);
+                  return dealId ? ` #${dealId}` : '';
+                })()}</span>
               </a>
 
               {order.birkaData && (
@@ -1086,10 +1101,10 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
 
             <div className="text-xs text-slate-300">
               {(() => {
-                const { clientName: clientNameClean, projectName: projectNameClean } = getSmartOrderDisplay(order);
+                const smart = getSmartOrderDisplay(order);
                 return (
                   <>
-                    Клиент: <strong className="text-white font-bold">{clientNameClean || projectNameClean || 'Частный заказчик'}</strong>
+                    <strong className="text-white font-bold">{smart.displayTitle}</strong>
                   </>
                 );
               })()}
@@ -1168,23 +1183,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
             currentUser={currentUser}
             onUpdateOrder={onUpdateOrder}
             onUpdateOrderStatus={onUpdateOrderStatus}
+            onCompleteKitting={handleCompleteCurrentStageAndExit}
           />
-
-          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h4 className="font-black text-slate-900 text-sm">Комплектация фурнитуры завершена?</h4>
-              <p className="text-xs text-slate-500 mt-0.5">
-                После формирования всех коробок нажмите кнопку для передачи заказа на упаковку / склад.
-              </p>
-            </div>
-            <button
-              onClick={handleCompleteCurrentStageAndExit}
-              className="px-6 py-3 rounded-2xl bg-cyan-600 hover:bg-cyan-500 text-white font-black text-xs shadow-md shadow-cyan-600/20 transition-all flex items-center gap-2 cursor-pointer shrink-0"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Завершить комплектовку и вернуться в цех</span>
-            </button>
-          </div>
         </div>
       )}
 

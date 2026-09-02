@@ -632,6 +632,32 @@ function transliterate(str: string): string {
         })
       }));
 
+      // Helper to detect assembly / drawings file across any possible field names or file arrays
+      const resolveAssemblyFile = (orderObj: any) => {
+        if (!orderObj) return undefined;
+        if (orderObj.assemblyFileData) return orderObj.assemblyFileData;
+        if (orderObj.assemblyFile) return orderObj.assemblyFile;
+        if (orderObj.drawingsFile) return orderObj.drawingsFile;
+        if (orderObj.sbFile) return orderObj.sbFile;
+        if (Array.isArray(orderObj.files)) {
+          const found = orderObj.files.find((f: any) => {
+            const name = (f.name || f.fileName || '').toLowerCase();
+            return name.includes('сборк') || name.includes('чертеж') || name.includes('assembly') || name.endsWith('.pdf');
+          });
+          if (found) {
+            return {
+              fileName: found.name || found.fileName,
+              fileSize: found.size || found.fileSize,
+              fileContent: found.content || found.fileContent || found.url || '',
+              uploadedAt: found.uploadedAt || found.createdAt
+            };
+          }
+        }
+        return undefined;
+      };
+
+      const resolvedAssembly = resolveAssemblyFile(matchedOrder);
+
       // Return sanitized public passport
       res.json({
         success: true,
@@ -646,11 +672,11 @@ function transliterate(str: string): string {
           totalPackagesCount: (matchedOrder.packages || []).length,
           status: matchedOrder.status,
           currentStage: matchedOrder.currentStage,
-          assemblyFileData: matchedOrder.assemblyFileData ? {
-            fileName: matchedOrder.assemblyFileData.fileName,
-            fileSize: matchedOrder.assemblyFileData.fileSize,
-            fileContent: matchedOrder.assemblyFileData.fileContent,
-            uploadedAt: matchedOrder.assemblyFileData.uploadedAt
+          assemblyFileData: resolvedAssembly ? {
+            fileName: resolvedAssembly.fileName,
+            fileSize: resolvedAssembly.fileSize,
+            fileContent: resolvedAssembly.fileContent,
+            uploadedAt: resolvedAssembly.uploadedAt
           } : undefined
         },
         package: {
@@ -748,11 +774,33 @@ function transliterate(str: string): string {
         }
       }
 
-      if (!matchedOrder || !matchedOrder.assemblyFileData) {
+      const resolveAssemblyFile = (orderObj: any) => {
+        if (!orderObj) return undefined;
+        if (orderObj.assemblyFileData) return orderObj.assemblyFileData;
+        if (orderObj.assemblyFile) return orderObj.assemblyFile;
+        if (orderObj.drawingsFile) return orderObj.drawingsFile;
+        if (orderObj.sbFile) return orderObj.sbFile;
+        if (Array.isArray(orderObj.files)) {
+          const found = orderObj.files.find((f: any) => {
+            const name = (f.name || f.fileName || '').toLowerCase();
+            return name.includes('сборк') || name.includes('чертеж') || name.includes('assembly') || name.endsWith('.pdf');
+          });
+          if (found) {
+            return {
+              fileName: found.name || found.fileName,
+              fileSize: found.size || found.fileSize,
+              fileContent: found.content || found.fileContent || found.url || '',
+              uploadedAt: found.uploadedAt || found.createdAt
+            };
+          }
+        }
+        return undefined;
+      };
+
+      const af = resolveAssemblyFile(matchedOrder);
+      if (!matchedOrder || !af) {
         return res.status(404).send("Файл чертежей (Сборка) не прикреплен к данному заказу");
       }
-
-      const af = matchedOrder.assemblyFileData;
       const content = af.fileContent || '';
       const fileName = af.fileName || 'assembly.pdf';
 

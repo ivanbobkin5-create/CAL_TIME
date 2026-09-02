@@ -128,20 +128,59 @@ export function parseTableRowsToHardware(
   let catCol = -1;
   let noteCol = -1;
 
-  for (let r = 0; r < Math.min(rows.length, 15); r++) {
-    const stringRow = rows[r].map(c => (c !== null && c !== undefined ? String(c).trim() : ''));
-    const matchedName = matchColumnIndex(stringRow, mapping.name);
-    const matchedQty = matchColumnIndex(stringRow, mapping.quantity);
+  // 1. PRIMARY STRATEGY: Ищем строку со столбцом A "Артикул" по всей таблице
+  for (let r = 0; r < rows.length; r++) {
+    const row = rows[r];
+    if (!row || !Array.isArray(row)) continue;
 
-    if (matchedName !== -1 && (matchedQty !== -1 || stringRow.some(s => /кол|qty|шт/i.test(s)))) {
+    const col0 = String(row[0] ?? '').toLowerCase().trim();
+    const col1 = String(row[1] ?? '').toLowerCase().trim();
+
+    const isCol0Article = /^(?:№\s*)?артикул\b/i.test(col0) || col0 === 'артикул' || col0 === 'арт.' || col0 === 'арт' || col0 === 'код' || col0 === 'article';
+    const isCol1Article = !isCol0Article && (/^(?:№\s*)?артикул\b/i.test(col1) || col1 === 'артикул' || col1 === 'арт.' || col1 === 'арт' || col1 === 'код' || col1 === 'article');
+
+    if (isCol0Article || isCol1Article) {
       headerIndex = r;
-      nameCol = matchedName;
-      qtyCol = matchedQty !== -1 ? matchedQty : matchColumnIndex(stringRow, mapping.quantity);
+      const stringRow = row.map(c => (c !== null && c !== undefined ? String(c).trim() : ''));
+      nameCol = matchColumnIndex(stringRow, mapping.name);
+      qtyCol = matchColumnIndex(stringRow, mapping.quantity);
       artCol = matchColumnIndex(stringRow, mapping.article);
       unitCol = matchColumnIndex(stringRow, mapping.unit);
       catCol = matchColumnIndex(stringRow, mapping.category);
       noteCol = matchColumnIndex(stringRow, mapping.notes);
+
+      if (artCol === -1) {
+        artCol = isCol0Article ? 0 : 1;
+      }
+      if (nameCol === -1) {
+        const nextIdx = artCol + 1;
+        if (nextIdx < row.length) nameCol = nextIdx;
+      }
+      if (qtyCol === -1) {
+        const foundQty = matchColumnIndex(stringRow, mapping.quantity);
+        if (foundQty !== -1) qtyCol = foundQty;
+      }
       break;
+    }
+  }
+
+  // 2. SECONDARY STRATEGY: Если строки со столбцом A "Артикул" нет, ищем заголовок по имени и количеству
+  if (headerIndex === -1) {
+    for (let r = 0; r < rows.length; r++) {
+      const stringRow = rows[r].map(c => (c !== null && c !== undefined ? String(c).trim() : ''));
+      const matchedName = matchColumnIndex(stringRow, mapping.name);
+      const matchedQty = matchColumnIndex(stringRow, mapping.quantity);
+
+      if (matchedName !== -1 && (matchedQty !== -1 || stringRow.some(s => /кол|qty|шт/i.test(s)))) {
+        headerIndex = r;
+        nameCol = matchedName;
+        qtyCol = matchedQty !== -1 ? matchedQty : matchColumnIndex(stringRow, mapping.quantity);
+        artCol = matchColumnIndex(stringRow, mapping.article);
+        unitCol = matchColumnIndex(stringRow, mapping.unit);
+        catCol = matchColumnIndex(stringRow, mapping.category);
+        noteCol = matchColumnIndex(stringRow, mapping.notes);
+        break;
+      }
     }
   }
 

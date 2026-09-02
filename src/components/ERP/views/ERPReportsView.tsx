@@ -31,6 +31,7 @@ import {
   Eye
 } from 'lucide-react';
 import { ProductionOrder, ERPEmployee, ERPCompanySettings, EmployeeWorkLog, ProductionStageId } from '../types';
+import { getOrderCalculatedHoles } from '../utils';
 
 const formatSafeDateTime = (val?: string | number | Date | null): { time: string; date: string } => {
   if (!val) {
@@ -310,7 +311,18 @@ export const ERPReportsView: React.FC<ERPReportsViewProps> = ({
       orderSet.add(e.orderId);
       if (e.stageId === 'cutting') cuttingM2 += e.volumeM2 || 0;
       if (e.stageId === 'edging') edgingM += e.volumeMeters || 0;
-      if (e.stageId === 'cnc') cncHoles += (e.volumeParts || 0) * 6;
+      if (e.stageId === 'cnc') {
+        const matchedOrder = filteredOrders.find(o => o.id === e.orderId);
+        if (matchedOrder) {
+          const totalOrderParts = matchedOrder.partsCount || e.volumeParts || 1;
+          const orderHoles = getOrderCalculatedHoles(matchedOrder, settings);
+          cncHoles += Math.round((orderHoles / totalOrderParts) * (e.volumeParts || totalOrderParts));
+        } else {
+          const mode = settings?.drillingHolesCalculationMode || (settings?.useNestingPrisadkaOnCutting !== false ? 'edge_only' : 'all');
+          const multiplier = mode === 'edge_only' ? 2 : mode === 'face_only' ? 4 : 6;
+          cncHoles += (e.volumeParts || 0) * multiplier;
+        }
+      }
       if (e.stageId === 'assembly') assemblyParts += e.volumeParts || 0;
       if (e.stageId === 'packing') packedPackages += e.volumeParts || 1;
       if (e.stageId === 'shipping') shippedOrdersCount += 1;
@@ -323,7 +335,7 @@ export const ERPReportsView: React.FC<ERPReportsViewProps> = ({
           orderSet.add(o.id);
           cuttingM2 += o.totalAreaM2 || 0;
           edgingM += o.totalEdgeM || 0;
-          cncHoles += (o.partsCount || 0) * 6;
+          cncHoles += getOrderCalculatedHoles(o, settings);
           assemblyParts += o.partsCount || 0;
           packedPackages += o.packages?.length || 1;
         }

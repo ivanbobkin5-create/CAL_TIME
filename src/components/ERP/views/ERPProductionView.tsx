@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPEmployee, ERPCompanySettings } from '../types';
 import { formatDeadlineDate, getNextRequiredStage, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, getSmartOrderDisplay } from '../utils';
-import { getStageTaskReadinessInfo } from '../utils/stageReadiness';
+import { getStageTaskReadinessInfo, getStageScannedPiecesCount } from '../utils/stageReadiness';
 import { ERPOrderDetailsModal } from './ERPOrderDetailsModal';
 import { ERPDispatchView } from './ERPDispatchView';
 import { MobileCameraScannerModal } from '../components/MobileCameraScannerModal';
@@ -44,6 +44,8 @@ interface ERPProductionViewProps {
   companyName?: string;
   companyId?: string;
   currentUser?: any;
+  initialStageId?: ProductionStageId | null;
+  onStageChange?: (stageId: ProductionStageId | null) => void;
   onUpdateOrderStatus: (orderId: string, nextStage: ProductionStageId) => void;
   onUpdateOrder?: (updatedOrder: ProductionOrder) => void;
   onSelectOrder: (order: ProductionOrder, stageId?: ProductionStageId) => void;
@@ -56,12 +58,25 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
   companyName,
   companyId,
   currentUser,
+  initialStageId,
+  onStageChange,
   onUpdateOrderStatus,
   onUpdateOrder,
   onSelectOrder
 }) => {
   const [search, setSearch] = useState('');
-  const [selectedStageId, setSelectedStageId] = useState<ProductionStageId | null>(null);
+  const [selectedStageId, setSelectedStageId] = useState<ProductionStageId | null>(initialStageId ?? null);
+
+  React.useEffect(() => {
+    if (initialStageId !== undefined) {
+      setSelectedStageId(initialStageId);
+    }
+  }, [initialStageId]);
+
+  const handleStageSelect = (stageId: ProductionStageId | null) => {
+    setSelectedStageId(stageId);
+    if (onStageChange) onStageChange(stageId);
+  };
   const [stageTabFilter, setStageTabFilter] = useState<'all' | 'overdue' | 'today' | 'tomorrow' | 'future'>('all');
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<ProductionOrder | null>(null);
   const [showCameraScannerModal, setShowCameraScannerModal] = useState<boolean>(false);
@@ -149,7 +164,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
   };
 
   const resolveEmployeeName = (idOrName?: string | null, fallbackOrder?: ProductionOrder, stageId?: ProductionStageId): string => {
-    if (idOrName && idOrName.trim() && idOrName !== 'Сотрудник') {
+    if (idOrName && idOrName.trim() && idOrName !== 'Сотрудник' && idOrName !== 'Мастер смены') {
       const found = employees.find(e => e.id === idOrName || e.name.toLowerCase() === idOrName.toLowerCase());
       if (found) return found.name;
       return idOrName;
@@ -159,22 +174,15 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
         const by = fallbackOrder.stageProgress[stageId].completedBy;
         const found = employees.find(e => e.id === by || e.name.toLowerCase() === by.toLowerCase());
         if (found) return found.name;
-        if (by && by !== 'Сотрудник') return by;
+        if (by && by !== 'Сотрудник' && by !== 'Мастер смены') return by;
       }
-      if (fallbackOrder.responsibleEmployeeName && fallbackOrder.responsibleEmployeeName !== 'Сотрудник') {
+      if (fallbackOrder.responsibleEmployeeName && fallbackOrder.responsibleEmployeeName !== 'Сотрудник' && fallbackOrder.responsibleEmployeeName !== 'Мастер смены') {
         const found = employees.find(e => e.id === fallbackOrder.responsibleEmployeeName || e.name.toLowerCase() === fallbackOrder.responsibleEmployeeName.toLowerCase());
         if (found) return found.name;
         return fallbackOrder.responsibleEmployeeName;
       }
-      if (stageId) {
-        const stageWorker = employees.find(e => e.department === stageId || e.role === stageId || e.productionRole === stageId || e.role?.toLowerCase().includes('мастер') || e.role?.toLowerCase().includes('оператор'));
-        if (stageWorker) return stageWorker.name;
-      }
-      if (employees.length > 0) {
-        return employees[0].name;
-      }
     }
-    return currentUser?.name || employees?.[0]?.name || 'Мастер смены';
+    return '';
   };
 
   const STAGE_ORDER: ProductionStageId[] = ['queue', 'cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing', 'shipping', 'ready'];
@@ -364,7 +372,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
 
           {selectedStageId && (
             <button
-              onClick={() => setSelectedStageId(null)}
+              onClick={() => handleStageSelect(null)}
               className="px-4 py-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-all flex items-center gap-2 cursor-pointer"
             >
               <ArrowLeft className="w-4 h-4" />
@@ -414,7 +422,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
               <div
                 key={stage.id}
                 onClick={() => {
-                  setSelectedStageId(stage.id);
+                  handleStageSelect(stage.id);
                   setStageTabFilter('all');
                 }}
                 className={`bg-gradient-to-br ${stage.bgGradient} rounded-3xl p-6 border border-slate-200/90 hover:border-blue-400 hover:shadow-lg transition-all cursor-pointer flex flex-col justify-between group space-y-5`}
@@ -613,7 +621,8 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                   const activeLogs = order.workLogs?.filter(l => l.stageId === selectedStageId) || [];
                   const taskReadiness = getStageTaskReadinessInfo(order, selectedStageId || order.currentStage, settings);
 
-                  const { clientName: clientNameClean, projectName: projectNameClean } = getSmartOrderDisplay(order);
+                  const smartDisplay = getSmartOrderDisplay(order);
+                  const { clientName: clientNameClean, projectName: projectNameClean, displayTitle, isBitrixIdAsNumber } = smartDisplay;
                   const isDuplicateName = !clientNameClean || !projectNameClean || projectNameClean.toLowerCase() === clientNameClean.toLowerCase() ||
                     (projectNameClean && clientNameClean.toLowerCase().includes(projectNameClean.toLowerCase())) ||
                     (clientNameClean && projectNameClean.toLowerCase().includes(clientNameClean.toLowerCase()));
@@ -623,7 +632,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                       key={order.id}
                       onClick={() => {
                         if (taskReadiness.isLocked) {
-                          alert(`🔒 Задача по заказу ${order.orderNumber} заблокирована!\n\nПричина: ${taskReadiness.blockingReason}\n\nСотрудник на предыдущем участке еще не начал сканирование деталей. Как только первая деталь будет отсканирована на прошлом участке, задание автоматически разблокируется.`);
+                          alert(`🔒 Задача по заказу ${displayTitle || order.orderNumber} заблокирована!\n\nПричина: ${taskReadiness.blockingReason}\n\nСотрудник на предыдущем участке еще не начал сканирование деталей. Как только первая деталь будет отсканирована на прошлом участке, задание автоматически разблокируется.`);
                           return;
                         }
                         onSelectOrder(order, selectedStageId || order.currentStage);
@@ -637,8 +646,14 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                       {/* Left: Info */}
                       <div className="space-y-2 min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-mono font-black text-slate-900 text-sm bg-slate-100 px-3 py-1 rounded-xl border border-slate-200 shrink-0">
-                            {cleanOrderNumber(order.orderNumber, order.id)}
+                          {!isBitrixIdAsNumber ? (
+                            <span className="font-mono font-black text-slate-900 text-sm bg-slate-100 px-3 py-1 rounded-xl border border-slate-200 shrink-0">
+                              № {smartDisplay.orderNumber}
+                            </span>
+                          ) : null}
+
+                          <span className="font-black text-slate-900 text-sm sm:text-base max-w-[280px] sm:max-w-[440px] truncate" title={displayTitle}>
+                            {displayTitle}
                           </span>
 
                           {taskReadiness.isLocked ? (
@@ -679,21 +694,8 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                             title="Открыть сделку в Битрикс24"
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
-                            <span>B24</span>
+                            <span>B24{isBitrixIdAsNumber ? ` #${extractBitrixDealId(order) || smartDisplay.orderNumber}` : ''}</span>
                           </a>
-
-                          <span className="font-extrabold text-slate-900 text-sm max-w-[220px] sm:max-w-[360px] truncate" title={clientNameClean || projectNameClean || 'Частный заказчик'}>
-                            {clientNameClean || projectNameClean || 'Частный заказчик'}
-                          </span>
-
-                          {!isDuplicateName && projectNameClean && clientNameClean && (
-                            <>
-                              <span className="text-xs text-slate-400">•</span>
-                              <span className="text-xs text-slate-600 font-semibold max-w-[200px] truncate" title={projectNameClean}>
-                                {projectNameClean}
-                              </span>
-                            </>
-                          )}
                           
                           <span className={`px-2.5 py-0.5 rounded-md text-[10px] font-extrabold border shrink-0 ${dateBadgeStyles}`}>
                             {dateCatText} ({getOrderPlannedDate(order, selectedStageId) || 'Не указана'})
@@ -754,50 +756,78 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
 
                           const stageObj = allStages.find(s => s.id === prevStageId);
                           const prevStageName = stageObj ? stageObj.name : prevStageId;
+                          const isStageDone = (order.stageProgress as any)?.[prevStageId]?.status === 'done' || 
+                                              !!order.forcedStageCompletions?.[prevStageId];
+
                           const prevLogs = (order.workLogs || []).filter(l => l.stageId === prevStageId);
+                          const validLogs = prevLogs.filter(l => (l.scannedPartsCount || 0) > 0 || (l.scannedAreaM2 || 0) > 0);
+                          const scannedPieces = getStageScannedPiecesCount(order, prevStageId);
 
-                          if (prevLogs.length > 0) {
-                            const formattedWorkers = prevLogs.map(l => {
-                              const empName = resolveEmployeeName(l.employeeName || order.stageProgress?.[prevStageId]?.completedBy, order, prevStageId);
-                              return `${empName}, ${l.scannedPartsCount || order.partsCount} деталей в объеме ${(l.scannedAreaM2 || order.totalAreaM2).toFixed(1)} м², ${l.endTime || l.startTime || 'сегодня'}`;
-                            });
-                            const text = formattedWorkers.length > 1
-                              ? `${prevStageName} выполнили: ${formattedWorkers[0]} совместно с ${formattedWorkers.slice(1).join(', ')}`
-                              : `${prevStageName} выполнил: ${formattedWorkers[0]}`;
-
-                            return (
-                              <div className="mt-2 text-[11px] font-semibold text-slate-800 bg-emerald-50/90 p-2.5 rounded-2xl border border-emerald-200/90 flex items-start gap-2">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                                <div>{text}</div>
-                              </div>
-                            );
+                          // 1. If previous stage is NOT completed yet
+                          if (!isStageDone) {
+                            if (scannedPieces.scanned === 0) {
+                              return (
+                                <div className="mt-2 text-[11px] font-medium text-slate-700 bg-slate-100/90 p-2.5 rounded-2xl border border-slate-200 flex items-start gap-2">
+                                  <Clock className="w-4 h-4 text-slate-400 shrink-0 mt-0.5" />
+                                  <div>
+                                    <span className="font-bold text-slate-800">
+                                      Предыдущий этап ({prevStageName}): еще не выполнялся
+                                    </span>
+                                    {' '}(готово 0 из {scannedPieces.total || order.partsCount || 0} дет.)
+                                    {curStage === 'packing' && (
+                                      <div className="text-[10px] text-slate-500 mt-0.5 font-normal">
+                                        Детали заказа на участке упаковки заблокированы до прохождения прошлых этапов.
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            } else {
+                              return (
+                                <div className="mt-2 text-[11px] font-medium text-amber-900 bg-amber-50/90 p-2.5 rounded-2xl border border-amber-200 flex items-start gap-2">
+                                  <Clock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                                  <div>
+                                    <span className="font-bold text-amber-950">
+                                      Предыдущий этап ({prevStageName}): в процессе
+                                    </span>
+                                    {' '}— готово {scannedPieces.scanned} из {scannedPieces.total || order.partsCount} дет.
+                                    {curStage === 'packing' && (
+                                      <div className="text-[10px] text-amber-700 mt-0.5 font-normal">
+                                        Готовые детали доступны для упаковки, остальные заблокированы до завершения обработки.
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            }
                           }
 
-                          const prevScanning = order.stageScanningProgress?.[prevStageId];
+                          // 2. Previous stage is completed
+                          const workerNames = Array.from(new Set(
+                            validLogs
+                              .map(l => resolveEmployeeName(l.employeeName, order, prevStageId))
+                              .filter(name => Boolean(name) && name !== 'Мастер смены' && name !== 'Сотрудник')
+                          ));
                           const completedByName = resolveEmployeeName(order.stageProgress?.[prevStageId]?.completedBy, order, prevStageId);
-                          if (prevScanning && Object.keys(prevScanning).length > 0) {
-                            return (
-                              <div className="mt-2 text-[11px] font-semibold text-slate-800 bg-emerald-50/90 p-2.5 rounded-2xl border border-emerald-200/90 flex items-center gap-2">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                                <div>
-                                  {prevStageName} выполнил: {completedByName}, {order.partsCount} деталей в объеме {order.totalAreaM2} м², {order.plannedCuttingDate || 'Ранее'}
-                                </div>
-                              </div>
-                            );
-                          }
+                          const whoText = workerNames.length > 0
+                            ? (workerNames.length > 1 ? `${workerNames[0]} совместно с ${workerNames.slice(1).join(', ')}` : workerNames[0])
+                            : (completedByName && completedByName !== 'Мастер смены' && completedByName !== 'Сотрудник' ? completedByName : '');
 
-                          if (order.stageProgress?.[prevStageId]?.status === 'done') {
-                            return (
-                              <div className="mt-2 text-[11px] font-semibold text-slate-800 bg-emerald-50/90 p-2.5 rounded-2xl border border-emerald-200/90 flex items-center gap-2">
-                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                                <div>
-                                  {prevStageName} выполнил: {completedByName}, {order.partsCount} деталей в объеме {order.totalAreaM2} м²
-                                </div>
-                              </div>
-                            );
-                          }
+                          const partsDisplay = scannedPieces.scanned > 0 ? scannedPieces.scanned : (order.partsCount || 0);
+                          const areaDisplay = (order.totalAreaM2 || 0).toFixed(1);
 
-                          return null;
+                          return (
+                            <div className="mt-2 text-[11px] font-semibold text-slate-800 bg-emerald-50/90 p-2.5 rounded-2xl border border-emerald-200/90 flex items-start gap-2">
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                              <div>
+                                {whoText ? (
+                                  <span>{prevStageName} выполнил: <strong>{whoText}</strong>, {partsDisplay} дет. в объеме {areaDisplay} м²</span>
+                                ) : (
+                                  <span>{prevStageName} завершен: {partsDisplay} дет. в объеме {areaDisplay} м²</span>
+                                )}
+                              </div>
+                            </div>
+                          );
                         })()}
                       </div>
 
@@ -880,6 +910,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
         currentUser={currentUser}
         orders={orders.filter(o => !o.isDeleted)}
         settings={settings}
+        companyName={companyName || settings?.companyTitle || settings?.shippingActTemplate?.companyTitle}
         onClose={() => setShowShiftModal(false)}
         onConfirmEndShift={() => {
           setShowShiftModal(false);

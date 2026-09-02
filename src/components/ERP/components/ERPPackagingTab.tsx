@@ -25,7 +25,7 @@ import {
 import { ProductionOrder, OrderPackage, OrderPackagePart, ERPCompanySettings, ERPEmployee, ProductionStageId } from '../types';
 import { PackageLabelPrintModal } from './PackageLabelPrintModal';
 import { convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, matchDetailToScannedCode, processQRCommand } from '../utils';
-import { isDetailReadyForPackaging, arePrecedingStagesCompleted, getPackagingReadinessStats } from '../utils/stageReadiness';
+import { isDetailReadyForPackaging, getDetailPackagingReadiness, arePrecedingStagesCompleted, getPackagingReadinessStats } from '../utils/stageReadiness';
 import { printPackageLabelDirect } from '../utils/packageLabelPrinter';
 
 interface ERPPackagingTabProps {
@@ -52,6 +52,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
   const [expandedPkgId, setExpandedPkgId] = useState<string | null>(null);
   const [searchUnpacked, setSearchUnpacked] = useState<string>('');
   const [selectedMaterialFilter, setSelectedMaterialFilter] = useState<string>('all');
+  const [readinessFilter, setReadinessFilter] = useState<'all' | 'ready' | 'locked'>('all');
   
   // Current in-progress package state
   const existingPackages = order.packages || [];
@@ -150,11 +151,22 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
 
   const unpackedDetails = rawUnpackedDetails;
 
+  // Counts of ready vs locked among unpacked
+  const readyUnpackedCount = useMemo(() => {
+    return unpackedDetails.filter(d => isDetailReadyForPackaging(d, order, settings)).length;
+  }, [unpackedDetails, order, settings]);
+
+  const lockedUnpackedCount = unpackedDetails.length - readyUnpackedCount;
+
   // Materials list for filter
   const materialList = Array.from(new Set(allDetails.map(d => d.material || 'Без материала'))).filter(Boolean);
 
   // Filtered unpacked details for display
   const filteredUnpacked = unpackedDetails.filter(d => {
+    const isReady = isDetailReadyForPackaging(d, order, settings);
+    if (readinessFilter === 'ready' && !isReady) return false;
+    if (readinessFilter === 'locked' && isReady) return false;
+
     const matMatches = selectedMaterialFilter === 'all' || (d.material || 'Без материала') === selectedMaterialFilter;
     const searchMatches = !searchUnpacked || 
       d.labelNumber.toLowerCase().includes(searchUnpacked.toLowerCase()) ||
@@ -176,8 +188,9 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
 
   // Add detail instance to current active package
   const handleAddDetailToCurrentPackage = (detail: any) => {
-    if (!isDetailReadyForPackaging(detail, order, settings)) {
-      showFeedback(`Деталь №${detail.labelNumber} ("${detail.name}") еще проходит кромление/присадку на пред. этапе и пока не готова к упаковке!`, 'error');
+    const readiness = getDetailPackagingReadiness(detail, order, settings);
+    if (!readiness.isReady) {
+      showFeedback(`⛔ Деталь №${detail.labelNumber} («${detail.name}») еще не готова к упаковке! ${readiness.reason}. Завершите обработку на предыдущих участках.`, 'error');
       return;
     }
 
@@ -424,6 +437,30 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
   const handleSealPackage = (forceOpenModal: boolean = false) => {
     if (currentBufferParts.length === 0) {
       showFeedback('Вложите в упаковку деталь! В формируемом месте еще нет ни одной детали.', 'error');
+      return;
+    }
+
+    // Strict validation: check that all parts inside the buffer are 100% ready
+    const unreadyParts: { label: string; name: string; reason: string }[] = [];
+    currentBufferParts.forEach(p => {
+      const origId = (p as any).originalDetailId || (p.detailId || '').split('#')[0];
+      const origDetail = allDetails.find(d => d.id === origId);
+      if (origDetail) {
+        const readiness = getDetailPackagingReadiness(origDetail, order, settings);
+        if (!readiness.isReady) {
+          unreadyParts.push({
+            label: origDetail.labelNumber,
+            name: origDetail.name,
+            reason: readiness.reason || 'Ожидает предшествующие этапы'
+          });
+        }
+      }
+    });
+
+    if (unreadyParts.length > 0) {
+      const errorMsg = `⛔ Нельзя упаковать то, что еще не готово!\n\nСледующие детали в месте еще не завершили прошлые участки:\n${unreadyParts.map(u => `• №${u.label} «${u.name}» (${u.reason})`).join('\n')}\n\nУдалите эти детали из коробки. Они должны пройти прошлые этапы в цеху.`;
+      alert(errorMsg);
+      showFeedback(`⛔ В коробке есть ${unreadyParts.length} не готовых дет.! Упаковка заблокирована.`, 'error');
       return;
     }
 
@@ -707,22 +744,28 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
               <div className="text-xl font-black text-orange-950 font-mono">
                 {existingPackages.length} <span className="text-xs font-normal text-orange-700">упак.</span>
               </div>
+              <div className="text-[10px] font-medium text-orange-800/80 mt-0.5">
+                Всего готовых коробок
+              </div>
             </div>
 
             <div className="bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5">
               <div className="text-[10px] font-bold text-slate-500 uppercase">Упаковано деталей</div>
               <div className="text-xl font-black text-slate-900 font-mono">
-                {packedDetailIds.size} / {totalDetailsCount}
-                <span className="text-xs font-bold ml-1.5 text-slate-500">
-                  ({totalDetailsCount > 0 ? Math.round((packedDetailIds.size / totalDetailsCount) * 100) : 0}%)
-                </span>
+                {totalPackedUnitsCount} / {totalRequiredPartsCount} <span className="text-xs font-bold text-slate-500">шт.</span>
+              </div>
+              <div className="text-[10px] font-medium text-slate-500 mt-0.5">
+                {packedDetailIds.size} из {allDetails.length} поз. ({totalRequiredPartsCount > 0 ? Math.round((totalPackedUnitsCount / totalRequiredPartsCount) * 100) : 0}%)
               </div>
             </div>
 
-            <div className={`border rounded-2xl px-4 py-2.5 ${unpackedDetails.length === 0 ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
+            <div className={`border rounded-2xl px-4 py-2.5 ${Math.max(0, totalRequiredPartsCount - totalPackedUnitsCount) === 0 ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
               <div className="text-[10px] font-bold uppercase">Осталось упаковать</div>
               <div className="text-xl font-black font-mono">
-                {unpackedDetails.length} <span className="text-xs font-normal">дет.</span>
+                {Math.max(0, totalRequiredPartsCount - totalPackedUnitsCount)} <span className="text-xs font-normal">шт.</span>
+              </div>
+              <div className="text-[10px] font-medium mt-0.5 opacity-80">
+                {unpackedDetails.length} поз.
               </div>
             </div>
           </div>
@@ -732,13 +775,13 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
         <div className="mt-6 pt-4 border-t border-slate-100">
           <div className="flex items-center justify-between text-xs font-bold text-slate-600 mb-1.5">
             <span>Прогресс упаковки заказа {order.orderNumber}</span>
-            <span>{totalDetailsCount > 0 ? Math.round((packedDetailIds.size / totalDetailsCount) * 100) : 0}%</span>
+            <span>{totalPackedUnitsCount} из {totalRequiredPartsCount} шт. ({totalRequiredPartsCount > 0 ? Math.round((totalPackedUnitsCount / totalRequiredPartsCount) * 100) : 0}%)</span>
           </div>
           <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden flex">
             <div
               className="h-full bg-gradient-to-r from-orange-500 to-amber-500 rounded-full transition-all duration-500"
               style={{
-                width: `${totalDetailsCount > 0 ? (packedDetailIds.size / totalDetailsCount) * 100 : 0}%`
+                width: `${totalRequiredPartsCount > 0 ? (totalPackedUnitsCount / totalRequiredPartsCount) * 100 : 0}%`
               }}
             />
           </div>
@@ -1021,24 +1064,76 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
               <div>
                 <h3 className="font-black text-slate-900 text-base flex items-center gap-2">
                   <span>Неупакованные детали заказа</span>
-                  <span className="px-2 py-0.5 rounded-lg bg-amber-100 text-amber-900 text-xs font-mono font-bold">
-                    {unpackedDetails.length} шт.
+                  <span className="px-2.5 py-1 rounded-lg bg-amber-100 text-amber-900 text-xs font-mono font-bold">
+                    {Math.max(0, totalRequiredPartsCount - totalPackedUnitsCount)} шт. ({unpackedDetails.length} поз.)
                   </span>
                 </h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Нажмите на деталь, чтобы добавить её в текущее формируемое место.
+                  Нажмите на готовую деталь, чтобы добавить её в текущее формируемое место.
                 </p>
               </div>
 
               {filteredUnpacked.length > 0 && (
                 <button
+                  type="button"
                   onClick={handleAddAllFilteredToBuffer}
-                  className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-orange-50 hover:text-orange-900 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
+                  disabled={filteredUnpacked.filter(d => isDetailReadyForPackaging(d, order, settings)).length === 0}
+                  className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-orange-50 hover:text-orange-900 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-xs transition-colors flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5 text-orange-600" />
-                  <span>Добавить все показанные ({filteredUnpacked.length})</span>
+                  <span>Добавить все готовые ({filteredUnpacked.filter(d => isDetailReadyForPackaging(d, order, settings)).length})</span>
                 </button>
               )}
+            </div>
+
+            {/* Quick Readiness Filter Tabs */}
+            <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-2xl">
+              <button
+                type="button"
+                onClick={() => setReadinessFilter('all')}
+                className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  readinessFilter === 'all'
+                    ? 'bg-white text-slate-900 shadow-xs font-black'
+                    : 'text-slate-600 hover:text-slate-900 font-bold'
+                }`}
+              >
+                <span>Все детали</span>
+                <span className="px-1.5 py-0.5 rounded-md bg-slate-200/70 text-[10px] font-mono font-bold">
+                  {unpackedDetails.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setReadinessFilter('ready')}
+                className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  readinessFilter === 'ready'
+                    ? 'bg-emerald-600 text-white shadow-xs font-black'
+                    : 'text-emerald-800 hover:bg-emerald-100/60 font-bold'
+                }`}
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Готовы к упаковке</span>
+                <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono font-bold ${readinessFilter === 'ready' ? 'bg-emerald-700 text-white' : 'bg-emerald-200 text-emerald-900'}`}>
+                  {readyUnpackedCount}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setReadinessFilter('locked')}
+                className={`flex-1 py-1.5 px-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                  readinessFilter === 'locked'
+                    ? 'bg-rose-600 text-white shadow-xs font-black'
+                    : 'text-rose-800 hover:bg-rose-100/60 font-bold'
+                }`}
+              >
+                <Lock className="w-3.5 h-3.5" />
+                <span>Еще не готовы</span>
+                <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono font-bold ${readinessFilter === 'locked' ? 'bg-rose-700 text-white' : 'bg-rose-200 text-rose-900'}`}>
+                  {lockedUnpackedCount}
+                </span>
+              </button>
             </div>
 
             {/* Filter Chips & Search Bar */}
@@ -1060,7 +1155,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                   onChange={(e) => setSelectedMaterialFilter(e.target.value)}
                   className="px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 font-bold text-slate-800 text-xs focus:ring-2 focus:ring-orange-500 outline-none"
                 >
-                  <option value="all">Все материалы ({unpackedDetails.length})</option>
+                  <option value="all">Все материалы ({unpackedDetails.length} поз.)</option>
                   {materialList.map(mat => (
                     <option key={mat} value={mat}>
                       {mat}
@@ -1082,41 +1177,75 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                 </div>
               ) : filteredUnpacked.length === 0 ? (
                 <div className="p-8 text-center text-slate-400 text-xs">
-                  По заданному поисковому фильтру ничего не найдено.
+                  {readinessFilter === 'ready' && lockedUnpackedCount > 0
+                    ? `Готовых деталей для упаковки пока нет. Все ${lockedUnpackedCount} оставшихся деталей еще ожидают обработки на предыдущих станках.`
+                    : readinessFilter === 'locked'
+                    ? 'Все оставшиеся детали уже готовы к упаковке!'
+                    : 'По заданному поисковому фильтру ничего не найдено.'}
                 </div>
               ) : (
                 filteredUnpacked.map(detail => {
-                  const isReady = isDetailReadyForPackaging(detail, order, settings);
+                  const readiness = getDetailPackagingReadiness(detail, order, settings);
+                  const isReady = readiness.isReady;
+                  const reqQty = Math.max(1, detail.quantity || 1);
+                  const packedCount = getPackedCountForDetail(detail.id);
+                  const bufferCount = getBufferCountForDetail(detail.id);
+                  const remainingForDetail = Math.max(0, reqQty - (packedCount + bufferCount));
+
                   return (
                     <div
                       key={detail.id}
-                      onClick={() => handleAddDetailToCurrentPackage(detail)}
+                      onClick={() => {
+                        if (!isReady) {
+                          showFeedback(`⛔ Деталь №${detail.labelNumber} («${detail.name}») еще не готова к упаковке! ${readiness.reason}. Сначала завершите предыдущие этапы в цеху.`, 'error');
+                          return;
+                        }
+                        handleAddDetailToCurrentPackage(detail);
+                      }}
                       className={`p-3 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
                         isReady
                           ? 'bg-white hover:bg-orange-50/70 border-slate-200/90 hover:border-orange-300 cursor-pointer group shadow-xs hover:shadow'
-                          : 'bg-slate-100/80 border-slate-200 opacity-60 cursor-not-allowed'
+                          : 'bg-rose-50/60 border-rose-200 cursor-not-allowed'
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         <div className={`w-9 h-9 rounded-xl font-black font-mono text-xs flex items-center justify-center transition-colors shrink-0 ${
-                          isReady ? 'bg-slate-100 group-hover:bg-orange-500 group-hover:text-white text-slate-800' : 'bg-slate-200 text-slate-500'
+                          isReady 
+                            ? 'bg-slate-100 group-hover:bg-orange-500 group-hover:text-white text-slate-800' 
+                            : 'bg-rose-100 text-rose-800 border border-rose-200'
                         }`}>
-                          {isReady ? detail.labelNumber : <Lock className="w-4 h-4 text-slate-400" />}
+                          {isReady ? (
+                            detail.labelNumber
+                          ) : (
+                            <div className="flex flex-col items-center justify-center">
+                              <Lock className="w-3.5 h-3.5 text-rose-600" />
+                              <span className="text-[9px] font-mono font-black">{detail.labelNumber}</span>
+                            </div>
+                          )}
                         </div>
 
                         <div className="min-w-0">
-                          <div className="font-black text-slate-900 text-xs truncate flex items-center gap-1.5">
-                            <span>{detail.name}</span>
+                          <div className="font-black text-slate-900 text-xs truncate flex items-center gap-1.5 flex-wrap">
+                            <span className={!isReady ? 'text-slate-800' : ''}>{detail.name}</span>
+                            <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 text-[10px] font-mono font-black border border-slate-200">
+                              Осталось: {remainingForDetail} из {reqQty} шт.
+                            </span>
                             {!isReady && (
-                              <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 text-[9px] font-bold border border-amber-200">
-                                🔒 Не готова
+                              <span className="px-2.5 py-0.5 rounded-md bg-rose-100 text-rose-900 text-[11px] font-black border border-rose-300 flex items-center gap-1 shadow-2xs">
+                                <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0" />
+                                <span>⛔ Еще не готова ({readiness.reason || 'Ожидает пред. этапы'})</span>
                               </span>
                             )}
                           </div>
                           <div className="flex items-center gap-2 text-[10px] text-slate-500 font-mono mt-0.5 flex-wrap">
-                            <span>{detail.labelNumber} • {detail.length} × {detail.width} × {detail.thickness || 16} мм</span>
+                            <span>№ {detail.labelNumber} • {detail.length} × {detail.width} × {detail.thickness || 16} мм</span>
                             <span>•</span>
                             <span className="text-slate-700 font-medium">{detail.material || 'ЛДСП'}</span>
+                            {packedCount > 0 && (
+                              <span className="text-emerald-700 font-bold">
+                                (уже упаковано: {packedCount} шт.)
+                              </span>
+                            )}
                             {detail.notes && (
                               <span className="px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 font-bold text-[9px]">
                                 {detail.notes}
@@ -1128,12 +1257,23 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
 
                       <button
                         type="button"
-                        className={`px-3 py-1.5 rounded-xl font-bold text-xs transition-colors flex items-center gap-1 shrink-0 ${
-                          isReady ? 'bg-slate-100 group-hover:bg-orange-600 group-hover:text-white text-slate-700' : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                        disabled={!isReady}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (!isReady) {
+                            showFeedback(`⛔ Деталь №${detail.labelNumber} («${detail.name}») еще не готова! ${readiness.reason}.`, 'error');
+                            return;
+                          }
+                          handleAddDetailToCurrentPackage(detail);
+                        }}
+                        className={`px-3 py-1.5 rounded-xl font-black text-xs transition-colors flex items-center gap-1.5 shrink-0 ${
+                          isReady 
+                            ? 'bg-slate-100 group-hover:bg-orange-600 group-hover:text-white text-slate-700 cursor-pointer' 
+                            : 'bg-rose-100 text-rose-700 border border-rose-300 cursor-not-allowed opacity-90'
                         }`}
                       >
-                        {isReady ? <Plus className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
-                        <span>{isReady ? 'Вложить' : 'Залочена'}</span>
+                        {isReady ? <Plus className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5 text-rose-600" />}
+                        <span>{isReady ? 'Вложить' : 'Заблокировано'}</span>
                       </button>
                     </div>
                   );

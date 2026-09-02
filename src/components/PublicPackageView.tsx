@@ -226,8 +226,10 @@ export const PublicPackageView: React.FC<PublicPackageViewProps> = ({ packageCod
   const assemblyData = order?.assemblyFileData;
   const isAssemblyPdf = Boolean(
     assemblyData && (
-      assemblyData.fileName.toLowerCase().endsWith('.pdf') ||
-      assemblyData.fileContent?.startsWith('data:application/pdf')
+      (assemblyData.fileName || '').toLowerCase().endsWith('.pdf') ||
+      assemblyData.fileContent?.startsWith('data:application/pdf') ||
+      (assemblyData.fileContent?.startsWith('data:') && assemblyData.fileContent?.includes('pdf')) ||
+      (assemblyData.fileName || '').toLowerCase().includes('.pdf')
     )
   );
 
@@ -836,6 +838,45 @@ export const PublicPackageView: React.FC<PublicPackageViewProps> = ({ packageCod
                   )}
                 </div>
               )}
+            </div>
+          </section>
+        )}
+
+        {/* Quick Drawings & Assembly File Banner */}
+        {order?.assemblyFileData && (
+          <section className="bg-gradient-to-r from-purple-900 via-indigo-900 to-slate-900 text-white rounded-2xl p-4 shadow-lg border border-purple-700/50 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-purple-500/30">
+                <FileText className="w-5 h-5" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[10px] font-black uppercase tracking-wider text-purple-300 flex items-center gap-1.5">
+                  <span>Документация к заказу</span>
+                  <span className="px-1.5 py-0.2 bg-purple-500/40 text-purple-200 rounded text-[9px] font-mono font-bold">
+                    {isAssemblyPdf ? 'PDF ЧЕРТЕЖИ' : 'СБОРКА'}
+                  </span>
+                </div>
+                <div className="text-sm font-black text-white truncate">
+                  {order.assemblyFileData.fileName || 'Чертежи и схема сборки'}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                onClick={() => setShowAssemblyModal(true)}
+                className="px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-xl text-xs font-black transition-all flex items-center gap-1.5 shadow-md shadow-purple-950/40 active:scale-95 cursor-pointer"
+              >
+                <Eye className="w-4 h-4" />
+                <span>Чертежи</span>
+              </button>
+              <button
+                onClick={handleOpenPdfNewTab}
+                title="Открыть чертежи в новой вкладке на весь экран"
+                className="p-2 bg-white/10 hover:bg-white/20 text-white rounded-xl text-xs font-bold transition-all flex items-center justify-center border border-white/15 cursor-pointer"
+              >
+                <ExternalLink className="w-4 h-4" />
+              </button>
             </div>
           </section>
         )}

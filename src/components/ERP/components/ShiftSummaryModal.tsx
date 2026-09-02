@@ -4,9 +4,10 @@ import { ProductionOrder, ERPEmployee, ERPCompanySettings } from '../types';
 
 interface ShiftSummaryModalProps {
   isOpen: boolean;
-  currentUser?: ERPEmployee | null;
+  currentUser?: ERPEmployee | any;
   orders: ProductionOrder[];
   settings?: ERPCompanySettings;
+  companyName?: string;
   onClose: () => void;
   onConfirmEndShift?: () => void;
 }
@@ -16,6 +17,7 @@ export const ShiftSummaryModal: React.FC<ShiftSummaryModalProps> = ({
   currentUser,
   orders,
   settings,
+  companyName: customCompanyName,
   onClose,
   onConfirmEndShift
 }) => {
@@ -46,12 +48,36 @@ export const ShiftSummaryModal: React.FC<ShiftSummaryModalProps> = ({
   const now = new Date();
   const dateStr = now.toLocaleDateString('ru-RU');
   const timeStr = now.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-  const empName = currentUser?.name || 'Мастер смены';
-  const empRole = currentUser?.role || currentUser?.department || 'Оператор производства';
-  const companyTitle = settings?.companyTitle || 'ООО «Мебельное Производство»';
-  const reportNumber = `СР-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${(currentUser?.id || 'EMP').slice(-4).toUpperCase()}`;
 
-  // Calculate real performance metrics for today across all orders
+  // Resolve Real Employee Name (Strictly FIO without hardcoded 'Мастер смены')
+  const empName = 
+    currentUser?.name || 
+    currentUser?.employeeName || 
+    currentUser?.fullName || 
+    currentUser?.displayName || 
+    (currentUser?.email ? currentUser.email.split('@')[0] : null) ||
+    'Сотрудник производства';
+
+  const empRole = 
+    currentUser?.productionRole || 
+    currentUser?.role || 
+    currentUser?.department || 
+    'Мастер цеха';
+
+  // Resolve Real Company Name (from settings or custom prop, no generic fake name)
+  const companyTitle = 
+    customCompanyName ||
+    settings?.companyTitle || 
+    (settings as any)?.companyName || 
+    settings?.shippingActTemplate?.companyTitle || 
+    (window as any)?.__ERP_COMPANY_NAME__ ||
+    localStorage.getItem('erp_company_title') ||
+    localStorage.getItem('company_name') ||
+    'Производственная компания';
+
+  const reportNumber = `СР-${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}-${(currentUser?.id || currentUser?.employeeId || 'EMP').slice(-4).toUpperCase()}`;
+
+  // Calculate real performance metrics across all orders
   let totalCuttingParts = 0;
   let totalCuttingM2 = 0;
   let totalEdgingParts = 0;
@@ -59,6 +85,7 @@ export const ShiftSummaryModal: React.FC<ShiftSummaryModalProps> = ({
   let totalCncParts = 0;
   let totalCncHoles = 0;
   let totalPackedBoxes = 0;
+  let totalPackedPartsCount = 0;
   let totalFacadesParts = 0;
   let totalQcParts = 0;
 
@@ -67,78 +94,131 @@ export const ShiftSummaryModal: React.FC<ShiftSummaryModalProps> = ({
   orders.forEach(ord => {
     const details = ord.birkaData?.details || [];
     const packages = ord.packages || [];
-    const totalOrdParts = details.length || ord.partsCount || 1;
+    const totalOrdParts = details.reduce((sum, d) => sum + Math.max(1, d.quantity || 1), 0) || ord.partsCount || 1;
     const stagesDone: string[] = [];
 
+    // Helper for edge meters of a single detail
+    const calcDetailEdgeM = (dt: any) => {
+      let meters = 0;
+      if (dt.edgeL1) meters += (dt.length || 0) / 1000;
+      if (dt.edgeL2) meters += (dt.length || 0) / 1000;
+      if (dt.edgeW1) meters += (dt.width || 0) / 1000;
+      if (dt.edgeW2) meters += (dt.width || 0) / 1000;
+      if (meters === 0 && (dt.edge || dt.edgeMaterial)) {
+        meters = ((dt.length + dt.width) * 2) / 1000;
+      }
+      return meters;
+    };
+
     // 1. Cutting Progress
+    const isCuttingCompleted = (ord.stageProgress as any)?.cutting?.status === 'done' || (ord.stageProgress as any)?.raskroy?.status === 'done' || !!ord.forcedStageCompletions?.cutting;
+    const cuttingScannedIds = new Set<string>();
     if (ord.stageScanningProgress?.cutting) {
-      let ordCuttingCount = 0;
       Object.values(ord.stageScanningProgress.cutting).forEach(mat => {
-        if (mat?.scannedPartIds) {
-          mat.scannedPartIds.forEach(partId => {
-            const dt = details.find(d => d.id === partId);
-            if (dt) {
-              totalCuttingParts++;
-              ordCuttingCount++;
-              totalCuttingM2 += (dt.length * dt.width) / 1000000;
-            }
-          });
+        mat?.scannedPartIds?.forEach(id => cuttingScannedIds.add(id));
+      });
+    }
+    if (isCuttingCompleted && cuttingScannedIds.size === 0 && details.length > 0) {
+      details.forEach(d => {
+        const qty = Math.max(1, d.quantity || 1);
+        totalCuttingParts += qty;
+        totalCuttingM2 += ((d.length * d.width) / 1000000) * qty;
+      });
+      stagesDone.push(`Раскрой (${details.length} поз.)`);
+    } else if (cuttingScannedIds.size > 0) {
+      let ordCuttingCount = 0;
+      cuttingScannedIds.forEach(partId => {
+        const dt = details.find(d => d.id === partId || partId.startsWith(d.id));
+        if (dt) {
+          totalCuttingParts++;
+          ordCuttingCount++;
+          totalCuttingM2 += (dt.length * dt.width) / 1000000;
         }
       });
-      if (ordCuttingCount > 0) stagesDone.push(`Раскрой (${ordCuttingCount} дет)`);
+      if (ordCuttingCount > 0) stagesDone.push(`Раскрой (${ordCuttingCount} дет.)`);
     }
 
     // 2. Edging Progress
+    const isEdgingCompleted = (ord.stageProgress as any)?.edging?.status === 'done' || (ord.stageProgress as any)?.kromka?.status === 'done' || !!ord.forcedStageCompletions?.edging;
+    const edgingScannedIds = new Set<string>();
     if (ord.stageScanningProgress?.edging) {
-      let ordEdgingCount = 0;
       Object.values(ord.stageScanningProgress.edging).forEach(mat => {
-        if (mat?.scannedPartIds) {
-          mat.scannedPartIds.forEach(partId => {
-            const dt = details.find(d => d.id === partId);
-            if (dt) {
-              totalEdgingParts++;
-              ordEdgingCount++;
-              totalEdgingM += ((dt.length + dt.width) * 2) / 1000;
-            }
-          });
+        mat?.scannedPartIds?.forEach(id => edgingScannedIds.add(id));
+      });
+    }
+    if (isEdgingCompleted && edgingScannedIds.size === 0 && details.length > 0) {
+      details.forEach(d => {
+        const edgeM = calcDetailEdgeM(d);
+        if (edgeM > 0) {
+          const qty = Math.max(1, d.quantity || 1);
+          totalEdgingParts += qty;
+          totalEdgingM += edgeM * qty;
         }
       });
-      if (ordEdgingCount > 0) stagesDone.push(`Кромка (${ordEdgingCount} дет)`);
+      stagesDone.push(`Кромка (${details.length} поз.)`);
+    } else if (edgingScannedIds.size > 0) {
+      let ordEdgingCount = 0;
+      edgingScannedIds.forEach(partId => {
+        const dt = details.find(d => d.id === partId || partId.startsWith(d.id));
+        if (dt) {
+          totalEdgingParts++;
+          ordEdgingCount++;
+          totalEdgingM += calcDetailEdgeM(dt);
+        }
+      });
+      if (ordEdgingCount > 0) stagesDone.push(`Кромка (${ordEdgingCount} дет.)`);
     }
 
     // 3. CNC Progress
+    const isCncCompleted = (ord.stageProgress as any)?.cnc?.status === 'done' || (ord.stageProgress as any)?.prisadka?.status === 'done' || !!ord.forcedStageCompletions?.cnc;
+    const cncScannedIds = new Set<string>();
     if (ord.stageScanningProgress?.cnc) {
-      let ordCncCount = 0;
       Object.values(ord.stageScanningProgress.cnc).forEach(mat => {
-        if (mat?.scannedPartIds) {
-          mat.scannedPartIds.forEach(partId => {
-            const dt = details.find(d => d.id === partId);
-            if (dt) {
-              totalCncParts++;
-              ordCncCount++;
-              totalCncHoles += dt.holesCount || 4;
-            }
-          });
+        mat?.scannedPartIds?.forEach(id => cncScannedIds.add(id));
+      });
+    }
+    if (isCncCompleted && cncScannedIds.size === 0 && details.length > 0) {
+      details.forEach(d => {
+        const holes = d.holesCount || ((d as any).hasDrilling ? 6 : 0);
+        if (holes > 0) {
+          const qty = Math.max(1, d.quantity || 1);
+          totalCncParts += qty;
+          totalCncHoles += holes * qty;
         }
       });
-      if (ordCncCount > 0) stagesDone.push(`Присадка (${ordCncCount} дет)`);
+      stagesDone.push(`Присадка (${details.length} поз.)`);
+    } else if (cncScannedIds.size > 0) {
+      let ordCncCount = 0;
+      cncScannedIds.forEach(partId => {
+        const dt = details.find(d => d.id === partId || partId.startsWith(d.id));
+        if (dt) {
+          totalCncParts++;
+          ordCncCount++;
+          totalCncHoles += dt.holesCount || 4;
+        }
+      });
+      if (ordCncCount > 0) stagesDone.push(`Присадка (${ordCncCount} дет.)`);
     }
 
     // 4. Packaging Progress
     if (packages.length > 0) {
-      const packedDetailIds = new Set(packages.flatMap(p => p.parts.map(pt => pt.detailId)));
-      if (packedDetailIds.size > 0 || packages.some(p => p.type === 'kitting')) {
-        totalPackedBoxes += packages.length;
-        stagesDone.push(`Упаковка (${packages.length} мест)`);
-        processedOrdersMap.set(ord.id, {
-          orderNumber: ord.orderNumber,
-          clientName: ord.clientName || 'Частный заказчик',
-          totalParts: totalOrdParts,
-          packedParts: packedDetailIds.size,
-          packagesCount: packages.length,
-          stagesDone
+      let ordPackedPieces = 0;
+      packages.forEach(p => {
+        (p.parts || []).forEach(pt => {
+          ordPackedPieces += (pt.quantity || 1);
         });
-      }
+      });
+      totalPackedBoxes += packages.length;
+      totalPackedPartsCount += ordPackedPieces;
+      stagesDone.push(`Упаковка (${packages.length} мест, ${ordPackedPieces} дет.)`);
+      processedOrdersMap.set(ord.id, {
+        orderNumber: ord.orderNumber,
+        clientName: ord.clientName || 'Частный заказчик',
+        totalParts: totalOrdParts,
+        packedParts: ordPackedPieces,
+        packagesCount: packages.length,
+        stagesDone
+      });
     } else if (stagesDone.length > 0) {
       processedOrdersMap.set(ord.id, {
         orderNumber: ord.orderNumber,

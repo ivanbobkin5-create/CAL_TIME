@@ -47,6 +47,7 @@ interface ERPKittingTabProps {
   currentUser?: ERPEmployee | null;
   onUpdateOrder: (updatedOrder: ProductionOrder) => void;
   onUpdateOrderStatus: (orderId: string, nextStage: ProductionStageId) => void;
+  onCompleteKitting?: () => void;
 }
 
 export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
@@ -54,7 +55,8 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
   settings,
   currentUser,
   onUpdateOrder,
-  onUpdateOrderStatus
+  onUpdateOrderStatus,
+  onCompleteKitting
 }) => {
   const existingPackages = order.packages || [];
   const kittingPackages = existingPackages.filter(p => p.type === 'kitting');
@@ -754,7 +756,12 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
   const handleCompleteKitting = () => {
     onUpdateOrderStatus(order.id, 'qc');
     setFeedbackMsg('Комплектация завершена! Заказ передан на ОТК / упаковку.');
-    setTimeout(() => setFeedbackMsg(null), 3500);
+    setTimeout(() => {
+      setFeedbackMsg(null);
+      if (onCompleteKitting) {
+        onCompleteKitting();
+      }
+    }, 1000);
   };
 
   // Filter hardware list

@@ -1,4 +1,5 @@
-import { ProductionOrder, ProductionStageId } from './types';
+import { ProductionOrder, ProductionStageId, ERPCompanySettings } from './types';
+import { getDetailDrillingHolesCount } from './utils/stageReadiness';
 
 export function formatDeadlineDate(dateStr?: string): string {
   if (!dateStr) return '—';
@@ -989,19 +990,35 @@ export function getSmartOrderDisplay(order: {
   orderNumber?: string;
   clientName?: string;
   projectName?: string;
+  bitrixDealTitle?: string;
   birkaData?: any;
   salonName?: string;
   comments?: string;
   bitrixDealId?: string;
   id?: string;
-}): { orderNumber: string; clientName: string; projectName: string } {
-  const cleanNum = cleanOrderNumber(order.orderNumber, order.id);
+  deliveryData?: any;
+}): {
+  orderNumber: string;
+  clientName: string;
+  projectName: string;
+  displayTitle: string;
+  isBitrixIdAsNumber: boolean;
+} {
+  let cleanNum = cleanOrderNumber(order.orderNumber, order.id);
   let rawClient = (order.clientName || '').trim();
   let rawProject = (order.projectName || '').trim();
+  const rawDealTitle = (order.bitrixDealTitle || '').trim();
 
   const dealId = (order.bitrixDealId || '').toLowerCase().trim();
   const idClean = (order.id || '').replace(/^b24_/i, '').toLowerCase().trim();
   const numClean = cleanNum.toLowerCase().trim();
+
+  // Проверяем, является ли orderNumber просто числовым идентификатором Битрикса
+  const isBitrixIdAsNumber = /^\d+$/.test(numClean) && (
+    numClean === dealId || 
+    numClean === idClean || 
+    Boolean(order.bitrixDealId && numClean === String(order.bitrixDealId).trim())
+  );
 
   const isGenericClient = (val: string) => {
     const v = val.toLowerCase().trim();
@@ -1048,20 +1065,50 @@ export function getSmartOrderDisplay(order: {
     return false;
   };
 
-  // 1. Check if rawClient contains compound info like "Кухня - Иванов" or "Иванов / Шкаф"
+  // 1. Проверяем deliveryData клиента, если клиент пустой
+  if (isGenericClient(rawClient) && order.deliveryData?.clientName && !isGenericClient(order.deliveryData.clientName)) {
+    rawClient = order.deliveryData.clientName.trim();
+  }
+
+  // 2. Интеллектуальный разбор заголовка сделки Битрикс (например: "Иванов - Кухня" или "Кухня МДФ (Иванов И.И.)")
+  if (rawDealTitle && !isGenericClient(rawDealTitle)) {
+    if (rawDealTitle.includes(' - ') || rawDealTitle.includes(' / ') || rawDealTitle.includes(' — ') || rawDealTitle.includes(' | ')) {
+      const parts = rawDealTitle.split(/\s*[-/—|]\s*/);
+      if (parts.length >= 2) {
+        if (isGenericProject(rawProject)) rawProject = parts[0].trim();
+        if (isGenericClient(rawClient)) rawClient = parts.slice(1).join(' ').trim();
+      }
+    } else if (rawDealTitle.includes('(') && rawDealTitle.includes(')')) {
+      const pMatch = rawDealTitle.match(/^(.*?)\s*\((.*?)\)$/);
+      if (pMatch) {
+        if (isGenericProject(rawProject)) rawProject = pMatch[1].trim();
+        if (isGenericClient(rawClient)) rawClient = pMatch[2].trim();
+      }
+    } else if (isGenericClient(rawClient) && isGenericProject(rawProject)) {
+      rawProject = rawDealTitle;
+    }
+  }
+
+  // 3. Проверяем составной rawClient (например "Кухня - Иванов")
   if (!isGenericClient(rawClient) && (rawClient.includes(' - ') || rawClient.includes(' / ') || rawClient.includes(' — ') || rawClient.includes(' | '))) {
     const parts = rawClient.split(/\s*[-/—|]\s*/);
     if (parts.length >= 2) {
       if (isGenericProject(rawProject)) {
-        rawProject = parts[0];
-        rawClient = parts.slice(1).join(' ');
+        rawProject = parts[0].trim();
+        rawClient = parts.slice(1).join(' ').trim();
       }
     }
   }
 
-  // 2. Try recovering client name if it's generic
+  // 4. Восстановление имени клиента из бирки или комментариев
   if (isGenericClient(rawClient)) {
-    if (!isGenericProject(rawProject)) {
+    if (order.birkaData?.details?.[0]?.orderNumber && !isGenericClient(order.birkaData.details[0].orderNumber)) {
+      // Часто в деталях бирки записано имя клиента или договора
+      const birkaOrder = String(order.birkaData.details[0].orderNumber).trim();
+      if (!/^\d+$/.test(birkaOrder) || birkaOrder.length <= 4) {
+        rawClient = birkaOrder;
+      }
+    } else if (!isGenericProject(rawProject)) {
       rawClient = rawProject;
     } else if (order.birkaData?.fileName) {
       const cleanFileName = order.birkaData.fileName.replace(/\.(bir|csv|xlsx|xls|txt)$/i, '');
@@ -1081,7 +1128,7 @@ export function getSmartOrderDisplay(order: {
     }
   }
 
-  // 3. Try recovering project name if it's generic
+  // 5. Восстановление проекта
   if (isGenericProject(rawProject)) {
     if (order.birkaData?.fileName) {
       const cleanFileName = order.birkaData.fileName.replace(/\.(bir|csv|xlsx|xls|txt)$/i, '');
@@ -1093,7 +1140,7 @@ export function getSmartOrderDisplay(order: {
     }
   }
 
-  // Final cleanup of redundant prefixes
+  // Финальная очистка префиксов
   if (cleanNum) {
     const escaped = cleanNum.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
     const regex = new RegExp(`^[№#\\s]*${escaped}[\\s:·\\-_–—/]*`, 'i');
@@ -1110,11 +1157,54 @@ export function getSmartOrderDisplay(order: {
   if (isGenericClient(rawClient)) rawClient = '';
   if (isGenericProject(rawProject)) rawProject = '';
 
+  // Формируем читабельное отображение заказа
+  let displayTitle = '';
+  if (rawClient && rawProject && rawClient.toLowerCase() !== rawProject.toLowerCase()) {
+    displayTitle = `${rawClient} • ${rawProject}`;
+  } else if (rawClient) {
+    displayTitle = rawClient;
+  } else if (rawProject) {
+    displayTitle = rawProject;
+  } else if (rawDealTitle && !isGenericProject(rawDealTitle)) {
+    displayTitle = rawDealTitle;
+  } else if (order.birkaData?.fileName) {
+    displayTitle = order.birkaData.fileName.replace(/\.(bir|csv|xlsx|xls|txt)$/i, '');
+  } else {
+    displayTitle = `Заказ #${cleanNum}`;
+  }
+
   return {
     orderNumber: cleanNum,
     clientName: rawClient,
-    projectName: rawProject
+    projectName: rawProject,
+    displayTitle,
+    isBitrixIdAsNumber
   };
+}
+
+/**
+ * Подсчитывает количество отверстий в заказе для участка ЧПУ / присадки 
+ * в строгом соответствии с настройками drillingHolesCalculationMode ('all' | 'face_only' | 'edge_only')
+ */
+export function getOrderCalculatedHoles(
+  order: { birkaData?: { details?: any[] }; partsCount?: number },
+  settings?: ERPCompanySettings
+): number {
+  const details = order.birkaData?.details;
+  if (Array.isArray(details) && details.length > 0) {
+    let sum = 0;
+    for (const d of details) {
+      const holeInfo = getDetailDrillingHolesCount(d, settings);
+      const qty = Math.max(1, d.quantity || 1);
+      sum += holeInfo.counted * qty;
+    }
+    return sum;
+  }
+  const parts = order.partsCount || 0;
+  const mode = settings?.drillingHolesCalculationMode || (settings?.useNestingPrisadkaOnCutting !== false ? 'edge_only' : 'all');
+  if (mode === 'edge_only') return parts * 2;
+  if (mode === 'face_only') return parts * 4;
+  return parts * 6;
 }
 
 /**

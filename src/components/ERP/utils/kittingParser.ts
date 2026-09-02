@@ -303,6 +303,7 @@ export async function parseHardwareFile(
 
 /**
  * Parses rows (from Excel or CSV) matching column headers using aliases
+ * Prioritizes locating column A with 'Артикул' as the table start and ignoring any noise above it.
  */
 function parseTableRows(
   rows: any[][],
@@ -310,46 +311,109 @@ function parseTableRows(
 ): Array<{ article?: string; name: string; quantity: number; unit?: string; category?: string; notes?: string }> {
   if (!rows || rows.length === 0) return [];
 
-  // Find header row
   let headerRowIndex = -1;
   let colIndices: Record<string, number> = {};
 
-  for (let i = 0; i < Math.min(rows.length, 25); i++) {
+  // 1. PRIMARY STRATEGY:
+  // Ищем строку, где в столбце A (индекс 0 или 1 при наличии пустого отступа слева)
+  // расположен заголовок "Артикул". Все строки ВЫШЕ этой строки безоговорочно отметаются.
+  for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     if (!row || !Array.isArray(row)) continue;
 
-    const stringRow = row.map(c => String(c || '').toLowerCase().trim());
-    const tempIndices: Record<string, number> = {};
+    const col0 = String(row[0] ?? '').toLowerCase().trim();
+    const col1 = String(row[1] ?? '').toLowerCase().trim();
 
-    for (const [paramKey, aliases] of Object.entries(mapping)) {
-      const foundIdx = stringRow.findIndex(cell => 
-        aliases.some(alias => cell === alias || cell.includes(alias))
-      );
-      if (foundIdx !== -1) {
-        tempIndices[paramKey] = foundIdx;
-      }
-    }
+    const isCol0Article = /^(?:№\s*)?артикул\b/i.test(col0) || col0 === 'артикул' || col0 === 'арт.' || col0 === 'арт' || col0 === 'код' || col0 === 'article';
+    const isCol1Article = !isCol0Article && (/^(?:№\s*)?артикул\b/i.test(col1) || col1 === 'артикул' || col1 === 'арт.' || col1 === 'арт' || col1 === 'код' || col1 === 'article');
 
-    // Header requires at least name or article & quantity
-    if ((tempIndices.name !== undefined || tempIndices.article !== undefined) && (tempIndices.quantity !== undefined || tempIndices.name !== undefined)) {
+    if (isCol0Article || isCol1Article) {
       headerRowIndex = i;
-      colIndices = tempIndices;
+      const stringRow = row.map(c => String(c ?? '').toLowerCase().trim());
+
+      for (const [paramKey, aliases] of Object.entries(mapping)) {
+        const foundIdx = stringRow.findIndex(cell => 
+          aliases.some(alias => cell === alias || cell.includes(alias))
+        );
+        if (foundIdx !== -1) {
+          colIndices[paramKey] = foundIdx;
+        }
+      }
+
+      if (colIndices.article === undefined) {
+        colIndices.article = isCol0Article ? 0 : 1;
+      }
+
+      // Если наименование не найдено алиасами, берем соседнюю колонку после артикула
+      if (colIndices.name === undefined) {
+        const nextCol = (colIndices.article ?? 0) + 1;
+        if (nextCol < row.length) {
+          colIndices.name = nextCol;
+        }
+      }
+
+      // Если количество не найдено алиасами, ищем колонку с 'кол'/'qty'/'потребность'/'расход'
+      if (colIndices.quantity === undefined) {
+        const qtyIdx = stringRow.findIndex((c, idx) => 
+          idx !== colIndices.article && 
+          idx !== colIndices.name && 
+          (/кол/i.test(c) || /qty/i.test(c) || /потреб/i.test(c) || /расход/i.test(c) || /к-во/i.test(c))
+        );
+        if (qtyIdx !== -1) colIndices.quantity = qtyIdx;
+      }
+
       break;
+    }
+  }
+
+  // 2. SECONDARY STRATEGY (Fallback, если в файле нет колонки "Артикул" в столбце A)
+  if (headerRowIndex === -1) {
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      if (!row || !Array.isArray(row)) continue;
+
+      const stringRow = row.map(c => String(c ?? '').toLowerCase().trim());
+      const tempIndices: Record<string, number> = {};
+
+      for (const [paramKey, aliases] of Object.entries(mapping)) {
+        const foundIdx = stringRow.findIndex(cell => 
+          aliases.some(alias => cell === alias || cell.includes(alias))
+        );
+        if (foundIdx !== -1) {
+          tempIndices[paramKey] = foundIdx;
+        }
+      }
+
+      if ((tempIndices.name !== undefined || tempIndices.article !== undefined) && 
+          (tempIndices.quantity !== undefined || tempIndices.name !== undefined)) {
+        headerRowIndex = i;
+        colIndices = tempIndices;
+        break;
+      }
     }
   }
 
   const results: Array<{ article?: string; name: string; quantity: number; unit?: string; category?: string; notes?: string }> = [];
 
-  // If header found, extract tabular rows
+  // If header found, extract tabular rows strictly below it
   if (headerRowIndex !== -1) {
     for (let i = headerRowIndex + 1; i < rows.length; i++) {
       const row = rows[i];
       if (!row || row.length === 0) continue;
 
-      const rawName = colIndices.name !== undefined ? String(row[colIndices.name] || '').trim() : '';
-      const rawArticle = colIndices.article !== undefined ? String(row[colIndices.article] || '').trim() : '';
+      const rawName = colIndices.name !== undefined ? String(row[colIndices.name] ?? '').trim() : '';
+      const rawArticle = colIndices.article !== undefined ? String(row[colIndices.article] ?? '').trim() : '';
 
       if (!rawName && !rawArticle) continue;
+
+      // Filter out footer rows, repeated headers, or signoff lines
+      if (/^(?:итого|всего|total|подпись|сдал|принял|руководитель)\b/i.test(rawName) || 
+          /^(?:итого|всего|total)\b/i.test(rawArticle)) {
+        continue;
+      }
+      if (/^артикул\b/i.test(rawArticle) && (/^наименование\b/i.test(rawName) || colIndices.name === undefined)) {
+        continue;
+      }
 
       let name = rawName || rawArticle;
       let article = rawArticle;
