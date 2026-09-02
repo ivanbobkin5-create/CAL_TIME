@@ -59,7 +59,7 @@ import { ERPLoginView } from './views/ERPLoginView';
 import { ERPOrderWorkspaceView } from './views/ERPOrderWorkspaceView';
 import { ShiftSummaryModal } from './components/ShiftSummaryModal';
 import { VoiceAssistantToggle } from './components/VoiceAssistantToggle';
-import { processQRCommand, cleanRawScannedString, normalizeBarcodeScan, convertRuCharToEn, matchPackageToScannedCode } from './utils';
+import { processQRCommand, cleanRawScannedString, normalizeBarcodeScan, convertRuCharToEn } from './utils';
 
 function isOrderEqual(o1: any, o2: any): boolean {
   if (!o1 || !o2) return o1 === o2;
@@ -1211,8 +1211,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
         (p.barcode && p.barcode.toLowerCase() === lower) ||
         (p.id && p.id.toLowerCase() === lower) ||
         (p.name && p.name.toLowerCase().includes(lower))
-      )) ||
-      (o.packages && o.packages.some((pkg: any) => matchPackageToScannedCode(clean, pkg, o)))
+      ))
     );
 
     if (found) {
@@ -1314,10 +1313,10 @@ export const ERPApp: React.FC<ERPAppProps> = ({
 
       if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
         if (!isInput) {
-          rootBarcodeBufferRef.current += e.key;
+          rootBarcodeBufferRef.current += convertRuCharToEn(e.key);
         } else if (timeDiff < 65) {
           // Rapid input from hardware scanner while focused in a search field
-          rootBarcodeBufferRef.current += e.key;
+          rootBarcodeBufferRef.current += convertRuCharToEn(e.key);
         }
       }
     };

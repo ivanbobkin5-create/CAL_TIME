@@ -217,7 +217,7 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
                       </div>
                     </div>
                     <div style="text-align: right;">
-                      <div class="badge">МЕСТО № ${pkg.packageNumber}</div>
+                      <div class="badge">МЕСТО ${pkg.packageNumber}${totalPackagesCount > 1 ? ` / ${totalPackagesCount}` : ''}</div>
                       <div style="font-size: 8.5px; font-family: monospace; color: #000000; margin-top: 1px; font-weight: 900;">
                         ${pkg.type === 'kitting' ? 'КОМПЛЕКТАЦИЯ' : 'УПАКОВКА'}
                       </div>
@@ -357,7 +357,7 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
               Заказ {order.orderNumber}
             </span>
             <span className="px-2.5 py-1 rounded-xl bg-orange-100 text-orange-800">
-              Место № {pkg.packageNumber}
+              Место № {pkg.packageNumber} {totalPackagesCount > 1 ? `из ${totalPackagesCount}` : ''}
             </span>
           </div>
 
@@ -398,7 +398,7 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
                 {/* Big Package Badge */}
                 <div className="text-right">
                   <div className="bg-white text-black border-2 border-black px-2 py-0.5 rounded-none text-xs font-black font-mono inline-block">
-                    МЕСТО № {pkg.packageNumber}
+                    МЕСТО {pkg.packageNumber}{totalPackagesCount > 1 ? ` / ${totalPackagesCount}` : ''}
                   </div>
                   <div className="text-[8.5px] font-mono text-black font-black mt-0.5">
                     {pkg.type === 'kitting' ? 'КОМПЛЕКТАЦИЯ' : 'УПАКОВКА'}

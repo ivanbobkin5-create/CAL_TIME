@@ -53,8 +53,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
   
   // Current in-progress package state
   const existingPackages = order.packages || [];
-  const maxPkgNum = existingPackages.reduce((max, p) => Math.max(max, p.packageNumber || 0), 0);
-  const nextPkgNumber = Math.max(existingPackages.length, maxPkgNum) + 1;
+  const nextPkgNumber = existingPackages.length + 1;
   const [packageNameInput, setPackageNameInput] = useState<string>(`Место ${nextPkgNumber}`);
   const [currentBufferParts, setCurrentBufferParts] = useState<OrderPackagePart[]>([]);
   const [scanFeedbackMsg, setScanFeedbackMsg] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
@@ -85,51 +84,22 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
   // All details from specification
   const allDetails = order.birkaData?.details || [];
 
-  // Helper functions for packed quantity tracking per detail ID
-  const getDetailPackedInPackagesCount = (detailId: string): number => {
-    return existingPackages.reduce((sum, pkg) => {
-      const pt = pkg.parts?.find(p => p.detailId === detailId);
-      return sum + (pt ? (pt.quantity || 1) : 0);
-    }, 0);
-  };
+  // Detail IDs already packed in completed packages
+  const packedDetailIds = new Set(
+    existingPackages.flatMap(pkg => pkg.parts.map(p => p.detailId))
+  );
 
-  const getDetailBufferCount = (detailId: string): number => {
-    const pt = currentBufferParts.find(p => p.detailId === detailId);
-    return pt ? (pt.quantity || 1) : 0;
-  };
-
-  // Total piece counters
-  const totalDetailsPieces = allDetails.reduce((sum, d) => sum + Math.max(1, d.quantity || 1), 0);
-  const totalPackedPiecesInPackages = existingPackages.reduce((sum, pkg) => {
-    return sum + (pkg.parts?.reduce((pSum, pt) => pSum + Math.max(1, pt.quantity || 1), 0) || 0);
-  }, 0);
-  const totalBufferPieces = currentBufferParts.reduce((sum, pt) => sum + Math.max(1, pt.quantity || 1), 0);
-  const totalPackedPieces = totalPackedPiecesInPackages + totalBufferPieces;
+  // Detail IDs in the currently forming buffer
+  const bufferDetailIds = new Set(currentBufferParts.map(p => p.detailId));
 
   // Stage readiness calculations for Online Packaging
   const isPreviousStagesCompleted = arePrecedingStagesCompleted(order, settings);
   const readinessStats = getPackagingReadinessStats(order, settings);
 
-  // Details with remaining unpacked pieces > 0
-  const rawUnpackedDetails = allDetails
-    .map(d => {
-      const reqQty = Math.max(1, d.quantity || 1);
-      const packedInPkgs = getDetailPackedInPackagesCount(d.id);
-      const inBuffer = getDetailBufferCount(d.id);
-      const remainingOutsideBuffer = Math.max(0, reqQty - packedInPkgs);
-      const remainingUnpacked = Math.max(0, reqQty - packedInPkgs - inBuffer);
-      return {
-        ...d,
-        reqQty,
-        packedInPkgs,
-        inBuffer,
-        remainingOutsideBuffer,
-        remainingUnpacked
-      };
-    })
-    .filter(d => d.remainingUnpacked > 0);
+  // Available unpacked details (not in existing packages & not in active buffer)
+  const rawUnpackedDetails = allDetails.filter(d => !packedDetailIds.has(d.id) && !bufferDetailIds.has(d.id));
 
-  // Display all unpacked details
+  // Display all unpacked details (ready & pending previous processing stages)
   const unpackedDetails = rawUnpackedDetails;
 
   // Materials list for filter
@@ -145,7 +115,9 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
     return matMatches && searchMatches;
   });
 
-  const isAllDetailsPacked = totalDetailsPieces > 0 && totalPackedPiecesInPackages >= totalDetailsPieces;
+  const totalDetailsCount = allDetails.length;
+  const totalPackedCount = packedDetailIds.size + currentBufferParts.length;
+  const isAllDetailsPacked = totalDetailsCount > 0 && packedDetailIds.size >= totalDetailsCount;
 
   // Feedback timer helper
   const showFeedback = (text: string, type: 'success' | 'error' | 'info') => {
@@ -155,84 +127,58 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
     }, 4000);
   };
 
-  // Add detail to current active package with quantity support
-  const handleAddDetailToCurrentPackage = (detail: any, addQty: number = 1) => {
+  // Add detail to current active package
+  const handleAddDetailToCurrentPackage = (detail: any) => {
     if (!isDetailReadyForPackaging(detail, order, settings)) {
       showFeedback(`Деталь №${detail.labelNumber} ("${detail.name}") еще проходит кромление/присадку на пред. этапе и пока не готова к упаковке!`, 'error');
       return;
     }
 
-    const reqQty = Math.max(1, detail.quantity || 1);
-    const packedInPkgs = getDetailPackedInPackagesCount(detail.id);
-    const inBuffer = getDetailBufferCount(detail.id);
-    const remainingOutsideBuffer = Math.max(0, reqQty - packedInPkgs);
-
-    if (remainingOutsideBuffer <= 0) {
-      showFeedback(`Деталь №${detail.labelNumber} ("${detail.name}") уже полностью упакована (${packedInPkgs} из ${reqQty} шт.)!`, 'error');
+    if (packedDetailIds.has(detail.id)) {
+      showFeedback(`Деталь №${detail.labelNumber} уже находится в другой упаковке!`, 'error');
       return;
     }
 
-    if (inBuffer >= remainingOutsideBuffer) {
-      showFeedback(`Все доступные детали №${detail.labelNumber} (${reqQty} шт.) уже добавлены в текущее место.`, 'info');
+    if (bufferDetailIds.has(detail.id)) {
+      showFeedback(`Деталь №${detail.labelNumber} уже добавлена в текущее место.`, 'info');
       return;
     }
 
-    const qtyToAdd = Math.min(addQty, remainingOutsideBuffer - inBuffer);
-    if (qtyToAdd <= 0) return;
+    const newPart: OrderPackagePart = {
+      detailId: detail.id,
+      labelNumber: detail.labelNumber,
+      name: detail.name,
+      material: detail.material,
+      length: detail.length,
+      width: detail.width,
+      thickness: detail.thickness,
+      quantity: detail.quantity || 1
+    };
 
-    setCurrentBufferParts(prev => {
-      const existingIndex = prev.findIndex(p => p.detailId === detail.id);
-      if (existingIndex >= 0) {
-        const updated = [...prev];
-        const item = updated[existingIndex];
-        updated[existingIndex] = {
-          ...item,
-          quantity: (item.quantity || 1) + qtyToAdd
-        };
-        return updated;
-      } else {
-        const newPart: OrderPackagePart = {
-          detailId: detail.id,
-          labelNumber: detail.labelNumber,
-          name: detail.name,
-          material: detail.material,
-          length: detail.length,
-          width: detail.width,
-          thickness: detail.thickness,
-          quantity: qtyToAdd
-        };
-        return [...prev, newPart];
-      }
-    });
-
-    const newBufferTotal = inBuffer + qtyToAdd;
-    if (reqQty > 1) {
-      showFeedback(`Деталь №${detail.labelNumber} (${newBufferTotal} из ${reqQty} шт. в месте) добавлена в ${packageNameInput}`, 'success');
-    } else {
-      showFeedback(`Деталь №${detail.labelNumber} ("${detail.name}") добавлена в ${packageNameInput}`, 'success');
-    }
+    setCurrentBufferParts(prev => [...prev, newPart]);
+    showFeedback(`Деталь №${detail.labelNumber} ("${detail.name}") добавлена в ${packageNameInput}`, 'success');
   };
 
-  // Remove detail or decrement quantity from active buffer
-  const handleRemoveFromBuffer = (detailId: string, removeAll: boolean = false) => {
-    setCurrentBufferParts(prev => {
-      const item = prev.find(p => p.detailId === detailId);
-      if (!item) return prev;
-      if (removeAll || (item.quantity || 1) <= 1) {
-        return prev.filter(p => p.detailId !== detailId);
-      } else {
-        return prev.map(p => p.detailId === detailId ? { ...p, quantity: (p.quantity || 1) - 1 } : p);
-      }
-    });
+  // Remove detail from active buffer
+  const handleRemoveFromBuffer = (detailId: string) => {
+    setCurrentBufferParts(prev => prev.filter(p => p.detailId !== detailId));
   };
 
   // Add ALL currently filtered unpacked details to package
   const handleAddAllFilteredToBuffer = () => {
     if (filteredUnpacked.length === 0) return;
-    filteredUnpacked.forEach(d => {
-      handleAddDetailToCurrentPackage(d, d.remainingUnpacked);
-    });
-    showFeedback(`Добавлены все доступные детали в текущую упаковку`, 'success');
+    const newParts: OrderPackagePart[] = filteredUnpacked.map(d => ({
+      detailId: d.id,
+      labelNumber: d.labelNumber,
+      name: d.name,
+      material: d.material,
+      length: d.length,
+      width: d.width,
+      thickness: d.thickness,
+      quantity: d.quantity || 1
+    }));
+    setCurrentBufferParts(prev => [...prev, ...newParts]);
+    showFeedback(`Добавлено ${newParts.length} деталей в текущую упаковку`, 'success');
   };
 
   // Handle Scanning Barcode/QR of Detail to Pack or Command
@@ -336,7 +282,8 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
           barcodeBufferRef.current = '';
         }
         lastKeyTimeRef.current = now;
-        barcodeBufferRef.current += e.key;
+        const enChar = convertRuCharToEn(e.key);
+        barcodeBufferRef.current += enChar;
 
         setScanInput(barcodeBufferRef.current);
         scannerInputRef.current?.focus();
@@ -621,17 +568,17 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
             <div className="bg-slate-50 border border-slate-200 rounded-2xl px-4 py-2.5">
               <div className="text-[10px] font-bold text-slate-500 uppercase">Упаковано деталей</div>
               <div className="text-xl font-black text-slate-900 font-mono">
-                {totalPackedPiecesInPackages} / {totalDetailsPieces}
+                {packedDetailIds.size} / {totalDetailsCount}
                 <span className="text-xs font-bold ml-1.5 text-slate-500">
-                  ({totalDetailsPieces > 0 ? Math.round((totalPackedPiecesInPackages / totalDetailsPieces) * 100) : 0}%)
+                  ({totalDetailsCount > 0 ? Math.round((packedDetailIds.size / totalDetailsCount) * 100) : 0}%)
                 </span>
               </div>
             </div>
 
-            <div className={`border rounded-2xl px-4 py-2.5 ${rawUnpackedDetails.length === 0 ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
+            <div className={`border rounded-2xl px-4 py-2.5 ${unpackedDetails.length === 0 ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-amber-50 border-amber-200 text-amber-800'}`}>
               <div className="text-[10px] font-bold uppercase">Осталось упаковать</div>
               <div className="text-xl font-black font-mono">
-                {rawUnpackedDetails.reduce((sum, d) => sum + d.remainingUnpacked, 0)} <span className="text-xs font-normal">шт.</span>
+                {unpackedDetails.length} <span className="text-xs font-normal">дет.</span>
               </div>
             </div>
           </div>
@@ -641,13 +588,13 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
         <div className="mt-6 pt-4 border-t border-slate-100">
           <div className="flex items-center justify-between text-xs font-bold text-slate-600 mb-1.5">
             <span>Прогресс упаковки заказа {order.orderNumber}</span>
-            <span>{totalDetailsPieces > 0 ? Math.round((totalPackedPiecesInPackages / totalDetailsPieces) * 100) : 0}%</span>
+            <span>{totalDetailsCount > 0 ? Math.round((packedDetailIds.size / totalDetailsCount) * 100) : 0}%</span>
           </div>
           <div className="w-full h-3 bg-slate-100 rounded-full overflow-hidden flex">
             <div
               className="h-full bg-gradient-to-r from-orange-500 to-amber-500 rounded-full transition-all duration-500"
               style={{
-                width: `${totalDetailsPieces > 0 ? (totalPackedPiecesInPackages / totalDetailsPieces) * 100 : 0}%`
+                width: `${totalDetailsCount > 0 ? (packedDetailIds.size / totalDetailsCount) * 100 : 0}%`
               }}
             />
           </div>
@@ -860,11 +807,6 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                           <span className="font-bold text-slate-900 truncate">
                             {part.name}
                           </span>
-                          {(part.quantity || 1) > 1 && (
-                            <span className="px-1.5 py-0.5 rounded-md bg-orange-600 text-white font-mono font-black text-[10px]">
-                              {part.quantity} шт.
-                            </span>
-                          )}
                         </div>
                         <div className="text-[10px] text-slate-500 font-mono mt-0.5">
                           {part.length} × {part.width} × {part.thickness || 16} мм • {part.material || 'ЛДСП'}
@@ -890,9 +832,9 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                           <ArrowRightLeft className="w-3.5 h-3.5" />
                         </button>
                         <button
-                          onClick={() => handleRemoveFromBuffer(part.detailId, false)}
+                          onClick={() => handleRemoveFromBuffer(part.detailId)}
                           className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-100 transition-colors"
-                          title={(part.quantity || 1) > 1 ? "Убрать 1 шт. из места" : "Убрать из этого места"}
+                          title="Убрать из этого места"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -1001,13 +943,10 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
               ) : (
                 filteredUnpacked.map(detail => {
                   const isReady = isDetailReadyForPackaging(detail, order, settings);
-                  const reqQty = (detail as any).reqQty || detail.quantity || 1;
-                  const remQty = (detail as any).remainingUnpacked || 1;
-
                   return (
                     <div
                       key={detail.id}
-                      onClick={() => isReady && handleAddDetailToCurrentPackage(detail)}
+                      onClick={() => handleAddDetailToCurrentPackage(detail)}
                       className={`p-3 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
                         isReady
                           ? 'bg-white hover:bg-orange-50/70 border-slate-200/90 hover:border-orange-300 cursor-pointer group shadow-xs hover:shadow'
@@ -1022,13 +961,8 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                         </div>
 
                         <div className="min-w-0">
-                          <div className="font-black text-slate-900 text-xs truncate flex items-center gap-1.5 flex-wrap">
+                          <div className="font-black text-slate-900 text-xs truncate flex items-center gap-1.5">
                             <span>{detail.name}</span>
-                            {reqQty > 1 && (
-                              <span className="px-2 py-0.5 rounded-md bg-orange-100 text-orange-900 font-mono font-black text-[10px] border border-orange-200">
-                                Осталось: {remQty} из {reqQty} шт.
-                              </span>
-                            )}
                             {!isReady && (
                               <span className="px-1.5 py-0.5 rounded bg-amber-100 text-amber-900 text-[9px] font-bold border border-amber-200">
                                 🔒 Не готова
@@ -1055,7 +989,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                         }`}
                       >
                         {isReady ? <Plus className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
-                        <span>{isReady ? (reqQty > 1 ? 'Вложить (+1)' : 'Вложить') : 'Залочена'}</span>
+                        <span>{isReady ? 'Вложить' : 'Залочена'}</span>
                       </button>
                     </div>
                   );
@@ -1081,7 +1015,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
 
           {existingPackages.length > 0 && (
             <div className="text-xs font-bold text-slate-700 bg-slate-100 px-3.5 py-1.5 rounded-xl self-start sm:self-auto">
-              Всего упаковано: {totalPackedPiecesInPackages} деталей
+              Всего упаковано: {packedDetailIds.size} деталей
             </div>
           )}
         </div>
@@ -1112,9 +1046,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                         <div className="text-[11px] text-slate-500 font-mono mt-0.5 flex items-center gap-2">
                           <span>{pkg.code}</span>
                           <span>•</span>
-                          <span className="font-bold text-orange-700">
-                            {pkg.parts.reduce((s, p) => s + (p.quantity || 1), 0)} деталей
-                          </span>
+                          <span className="font-bold text-orange-700">{pkg.parts.length} деталей</span>
                         </div>
                       </div>
                     </div>
@@ -1176,11 +1108,6 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                                 <div className="min-w-0 flex-1">
                                   <span className="font-semibold text-slate-800 truncate block">
                                     {part.labelNumber} {part.name}
-                                    {(part.quantity || 1) > 1 && (
-                                      <span className="ml-1.5 px-1.5 py-0.5 rounded bg-orange-100 text-orange-900 font-mono font-bold text-[10px]">
-                                        ({part.quantity} шт.)
-                                      </span>
-                                    )}
                                   </span>
                                   <span className="font-mono text-slate-500 text-[10px] block">
                                     {part.length}×{part.width} мм • {part.material || 'ЛДСП'}
@@ -1247,7 +1174,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
           <div className="text-base font-black">
             {isAllDetailsPacked ? (
               <span className="text-emerald-400 flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5" /> Все детали упакованы ({totalPackedPieces} из {totalDetailsPieces}) в {existingPackages.length} мест
+                <CheckCircle2 className="w-5 h-5" /> Все детали упакованы ({totalPackedCount} из {totalDetailsCount}) в {existingPackages.length} мест
               </span>
             ) : (
               <span className="text-amber-400 flex items-center gap-2">

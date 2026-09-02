@@ -1,53 +1,5 @@
 import { ProductionOrder, ProductionStageId } from './types';
 
-export function getDetailPositionDisplay(
-  rawLabelNumber: string | number | undefined | null,
-  orderNumber?: string,
-  fallbackIndex?: number
-): string {
-  if (rawLabelNumber === undefined || rawLabelNumber === null || rawLabelNumber === '') {
-    return fallbackIndex !== undefined ? String(fallbackIndex) : '—';
-  }
-
-  let str = String(rawLabelNumber).trim()
-    .replace(/^[#№\s]+/, '')
-    .replace(/^(поз\.?|дет\.?|позиция|деталь|номер|item|pos)\s*/i, '')
-    .trim();
-
-  if (!str) {
-    return fallbackIndex !== undefined ? String(fallbackIndex) : '—';
-  }
-
-  if (orderNumber) {
-    const rawOrd = String(orderNumber).trim();
-    const cleanOrd = rawOrd
-      .replace(/^[#№\s]+/, '')
-      .replace(/^(зак|order|проект|№|номер)\s*/i, '')
-      .trim();
-
-    const candidates = Array.from(new Set([rawOrd, cleanOrd].filter(Boolean)));
-
-    for (const cand of candidates) {
-      const lowerCand = cand.toLowerCase();
-      const lowerStr = str.toLowerCase();
-
-      if (lowerStr === lowerCand) {
-        return fallbackIndex !== undefined ? String(fallbackIndex) : '1';
-      }
-
-      for (const sep of ['_', '-', '/', '.', ' ']) {
-        const prefix = lowerCand + sep;
-        if (lowerStr.startsWith(prefix)) {
-          str = str.substring(prefix.length).trim();
-          break;
-        }
-      }
-    }
-  }
-
-  return str || (fallbackIndex !== undefined ? String(fallbackIndex) : '—');
-}
-
 export function formatDeadlineDate(dateStr?: string): string {
   if (!dateStr) return '—';
   const cleanStr = String(dateStr).trim();
@@ -100,11 +52,11 @@ export function getNextRequiredStage(
   enabledStages?: ProductionStageId[]
 ): ProductionStageId | null {
   const hasEdge = orderRequiresEdging(order);
-  const defaultSequence: ProductionStageId[] = ['queue', 'cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing', 'shipping', 'ready'];
+  const defaultSequence: ProductionStageId[] = ['queue', 'cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing', 'ready'];
   
   // Build active sequence maintaining custom user order if configured
   const activeSequence: ProductionStageId[] = (enabledStages && enabledStages.length > 0)
-    ? ['queue', ...enabledStages.filter(s => s !== 'queue' && s !== 'ready'), 'ready']
+    ? ['queue', ...enabledStages.filter(s => s !== 'queue' && s !== 'ready' && s !== 'shipping'), 'ready']
     : defaultSequence;
 
   const currentIndex = activeSequence.indexOf(currentStage);
@@ -152,36 +104,12 @@ const RU_TO_EN_MAP: Record<string, string> = {
   '№': '#'
 };
 
-// English QWERTY to Russian ЙЦУКЕН key mapping dictionary
-const EN_TO_RU_MAP: Record<string, string> = {
-  'q': 'й', 'w': 'ц', 'e': 'у', 'r': 'к', 't': 'е', 'y': 'н', 'u': 'г', 'i': 'ш', 'o': 'щ', 'p': 'з', '[': 'х', ']': 'ъ',
-  'a': 'ф', 's': 'ы', 'd': 'в', 'f': 'а', 'g': 'п', 'h': 'р', 'j': 'о', 'k': 'л', 'l': 'д', ';': 'ж', "'": 'э',
-  'z': 'я', 'x': 'ч', 'c': 'с', 'v': 'м', 'b': 'и', 'n': 'т', 'm': 'ь', ',': 'б', '.': 'ю', '`': 'ё',
-  'Q': 'Й', 'W': 'Ц', 'E': 'У', 'R': 'К', 'T': 'Е', 'Y': 'Н', 'U': 'Г', 'I': 'Ш', 'O': 'Щ', 'P': 'З', '{': 'Х', '}': 'Ъ',
-  'A': 'Ф', 'S': 'Ы', 'D': 'В', 'F': 'А', 'G': 'П', 'H': 'Р', 'J': 'О', 'K': 'Л', 'L': 'Д', ':': 'Ж', '"': 'Э',
-  'Z': 'Я', 'X': 'Ч', 'C': 'С', 'V': 'М', 'B': 'И', 'N': 'Т', 'M': 'Ь', '<': 'Б', '>': 'Ю', '~': 'Ё',
-  '#': '№'
-};
-
 /**
  * Converts a single character or key from Russian keyboard layout to English QWERTY.
  */
 export function convertRuCharToEn(char: string): string {
   if (!char) return '';
   return RU_TO_EN_MAP[char] || char;
-}
-
-/**
- * Converts an entire string from English QWERTY layout to Russian ЙЦУКЕН.
- */
-export function convertEnToRuLayout(text: string): string {
-  if (!text) return '';
-  let result = '';
-  for (let i = 0; i < text.length; i++) {
-    const ch = text[i];
-    result += EN_TO_RU_MAP[ch] || ch;
-  }
-  return result;
 }
 
 /**
@@ -201,39 +129,12 @@ export function convertRuToEnLayout(text: string): string {
 }
 
 /**
- * Normalizes scanned barcodes or QR text from cameras or hardware scanners.
- * Extracts payload from passport URLs (e.g. https://domain.com/p/PKG-123),
- * handles URL decoding, strips scanner control characters, and cleans the code.
+ * Normalizes scanned barcodes or QR text by trimming, cleaning and converting layout.
  */
 export function normalizeBarcodeScan(code: string): string {
   if (!code) return '';
-  let clean = String(code).trim();
-  if (!clean) return '';
-
-  // Extract path payload if it's a passport URL (e.g. http://.../p/PKG-123 or https://.../p/PKG-%D0%97...)
-  if (clean.includes('/p/')) {
-    const afterP = clean.split('/p/')[1] || '';
-    clean = afterP.split('?')[0].split('#')[0] || clean;
-  } else if (clean.includes('/passport/')) {
-    const afterPass = clean.split('/passport/')[1] || '';
-    clean = afterPass.split('?')[0].split('#')[0] || clean;
-  } else if (clean.includes('http://') || clean.includes('https://')) {
-    const lastPart = clean.split('/').pop() || '';
-    clean = lastPart.split('?')[0].split('#')[0] || clean;
-  }
-
-  // Handle URL-encoded characters (e.g. %D0%97%D0%B0%D0%BA%D0%B0%D0%B7)
-  try {
-    if (clean.includes('%')) {
-      clean = decodeURIComponent(clean);
-    }
-  } catch (e) {
-    // ignore
-  }
-
-  clean = cleanRawScannedString(clean);
-
-  return clean;
+  const clean = code.trim();
+  return convertRuToEnLayout(clean);
 }
 
 /**
@@ -451,7 +352,7 @@ export function cleanRawScannedString(str: string): string {
     // Remove leading hashes, №, words like "Поз.", "Деталь", "Позиция", "Item", "Part"
     .replace(/^[#№\s]+/, '')
     .replace(/^(поз\.?|дет\.?|позиция|деталь|номер|item|pos|part|поз|дет)\s*[:#№\-_\s]*/i, '')
-    // Replace commas and semicolons between digits with dot (e.g. 20,02 -> 20.02)
+    // Replace commas, semicolons, and slashes between digits with dot (e.g. 20,02 -> 20.02, 20/02 -> 20.02)
     .replace(/(\d+)[,;](\d+)/g, '$1.$2')
     .trim();
 }
@@ -475,62 +376,6 @@ export function getPartNumberSegments(str: string): number[] | null {
     return parts.map(p => parseInt(p, 10));
   }
   return null;
-}
-
-/**
- * Compares two position numbers/labels hierarchically.
- * Priority 1: First numeric segment (e.g. "01" vs "02")
- * Priority 2: Second numeric segment (e.g. "01" vs "02")
- * Priority 3: Third numeric segment if exists
- * Handles dotted numbers like "01.01", "01.02", "02.01", "02.02", "1.1", "1.2", "01.09", "01.10", "20.01".
- * If segments are equal, falls back to string locale comparison.
- */
-export function comparePositionNumbers(aStr: string | undefined | null, bStr: string | undefined | null): number {
-  const rawA = String(aStr || '').trim();
-  const rawB = String(bStr || '').trim();
-
-  if (!rawA && !rawB) return 0;
-  if (!rawA) return 1;
-  if (!rawB) return -1;
-  if (rawA === rawB) return 0;
-
-  const cleanA = cleanRawScannedString(rawA);
-  const cleanB = cleanRawScannedString(rawB);
-
-  // Split into segments by standard delimiters: dot, hyphen, underscore, slash, colon, comma, space
-  const segsA = cleanA.split(/[\.\-_/\\:,;\s]+/).filter(Boolean);
-  const segsB = cleanB.split(/[\.\-_/\\:,;\s]+/).filter(Boolean);
-
-  const minLen = Math.min(segsA.length, segsB.length);
-
-  for (let i = 0; i < minLen; i++) {
-    const sA = segsA[i];
-    const sB = segsB[i];
-
-    const isNumA = /^\d+$/.test(sA);
-    const isNumB = /^\d+$/.test(sB);
-
-    if (isNumA && isNumB) {
-      const numA = parseInt(sA, 10);
-      const numB = parseInt(sB, 10);
-      if (numA !== numB) {
-        return numA - numB;
-      }
-      // Same numeric value (e.g. "01" vs "1"), sort shorter/padded string first
-      if (sA.length !== sB.length) {
-        return sA.length - sB.length;
-      }
-    } else {
-      const cmp = sA.localeCompare(sB, undefined, { numeric: true, sensitivity: 'base' });
-      if (cmp !== 0) return cmp;
-    }
-  }
-
-  if (segsA.length !== segsB.length) {
-    return segsA.length - segsB.length;
-  }
-
-  return cleanA.localeCompare(cleanB, undefined, { numeric: true, sensitivity: 'base' });
 }
 
 /**
@@ -667,90 +512,6 @@ export function matchDetailToScannedCode(
 }
 
 /**
- * Robust Package QR/Barcode & Manual ID Matcher.
- * Matches packages on Shipping/Dispatch and Packaging stages against:
- * - Scanned URLs (e.g. https://domain.com/p/PKG-%D0%97%D0%B0%D0%BA%D0%B0%D0%B71-1 or http://.../p/PKG-101-1)
- * - Direct package codes (e.g. PKG-Заказ1-1, ERP-Заказ1-M1, PKG-101-1)
- * - Package IDs (e.g. pkg-172583910-1)
- * - Package numbers (e.g. "1", "M1", "М1", "Место 1", "Место №1")
- * - Layout-swapped input (e.g. EN <-> RU keyboard layout)
- */
-export function matchPackageToScannedCode(
-  scannedCode: string,
-  pkg: any,
-  order?: any
-): boolean {
-  if (!scannedCode || !pkg) return false;
-
-  let raw = String(scannedCode).trim();
-  if (!raw) return false;
-
-  // Extract path from URL if a full URL was scanned by QR code camera
-  if (raw.includes('/p/')) {
-    const afterP = raw.split('/p/')[1] || '';
-    raw = afterP.split('?')[0].split('#')[0] || raw;
-  } else if (raw.includes('http://') || raw.includes('https://')) {
-    const lastPart = raw.split('/').pop() || '';
-    raw = lastPart.split('?')[0].split('#')[0] || raw;
-  }
-
-  // URL decode if URL encoded (e.g. %D0%97%D0%B0...)
-  try {
-    raw = decodeURIComponent(raw);
-  } catch (e) {
-    // ignore
-  }
-
-  const clean = cleanRawScannedString(raw);
-  if (!clean) return false;
-
-  const lowerRaw = clean.toLowerCase();
-  const ruConverted = convertEnToRuLayout(clean).toLowerCase();
-  const enConverted = convertRuToEnLayout(clean).toLowerCase();
-
-  // Possible candidate strings representing the scan input
-  const candidates = Array.from(new Set([
-    lowerRaw,
-    ruConverted,
-    enConverted
-  ])).filter(Boolean);
-
-  // Targets to match against for this package
-  const pkgCode = (pkg.code || '').toLowerCase();
-  const pkgId = (pkg.id || '').toLowerCase();
-  const pkgNum = String(pkg.packageNumber || '').toLowerCase();
-  const pkgName = (pkg.name || '').toLowerCase();
-
-  const orderNum = (order?.orderNumber || '').toLowerCase();
-
-  const targets = Array.from(new Set([
-    pkgCode,
-    pkgId,
-    pkgNum,
-    pkgName,
-    `m${pkgNum}`,
-    `м${pkgNum}`,
-    `место ${pkgNum}`,
-    `место №${pkgNum}`,
-    `место№${pkgNum}`,
-    orderNum ? `pkg-${orderNum}-${pkgNum}` : '',
-    orderNum ? `erp-${orderNum}-m${pkgNum}` : ''
-  ])).filter(Boolean);
-
-  for (const cand of candidates) {
-    for (const tgt of targets) {
-      if (!tgt || !cand) continue;
-      if (cand === tgt) return true;
-      if (cand.length >= 3 && tgt.length >= 3) {
-        if (cand.includes(tgt) || tgt.includes(cand)) return true;
-      }
-    }
-  }
-
-  return false;
-}
-
-/**
  * Diagnostics & Decomposition helper for testing barcode parsing in UI & Settings.
  */
 export interface DecomposedBarcodeResult {
@@ -818,33 +579,17 @@ export function processQRCommand(
     onReportDefect?: () => void;
     onNextStage?: () => void;
     onPrintAct?: () => void;
-    onClearScan?: () => void;
-    onPauseWork?: () => void;
-    onPrintLabels?: () => void;
-    onForceFinish?: () => void;
   }
 ): QRCommandResult {
-  if (!rawCode) return { isCommand: false };
-
   const rawClean = cleanRawScannedString(rawCode).toUpperCase();
   const clean = rawClean.replace(/[\s\-_.:/\\#]/g, '');
   const enLayout = convertRuToEnLayout(rawCode).toUpperCase().replace(/[\s\-_.:/\\#]/g, '');
-  const ruLayout = convertEnToRuLayout(rawCode).toUpperCase().replace(/[\s\-_.:/\\#]/g, '');
-
-  if (!clean && !enLayout && !ruLayout) return { isCommand: false };
+  if (!clean && !enLayout) return { isCommand: false };
 
   const matches = (keywords: string[]) => {
     return keywords.some(kw => {
       const cleanKw = kw.toUpperCase().replace(/[\s\-_.:/\\#]/g, '');
-      const enKw = convertRuToEnLayout(kw).toUpperCase().replace(/[\s\-_.:/\\#]/g, '');
-      const ruKw = convertEnToRuLayout(kw).toUpperCase().replace(/[\s\-_.:/\\#]/g, '');
-
-      return clean.includes(cleanKw) || 
-             enLayout.includes(cleanKw) || 
-             ruLayout.includes(cleanKw) ||
-             (enKw && clean.includes(enKw)) ||
-             (enKw && enLayout.includes(enKw)) ||
-             (ruKw && ruLayout.includes(ruKw));
+      return clean.includes(cleanKw) || enLayout.includes(cleanKw);
     });
   };
 
@@ -866,17 +611,10 @@ export function processQRCommand(
       'CLOSE_PLACE',
       'FINISH_PLACE',
       'ЗАКРЫТЬКОРОБКУ',
-      'ЗАКРЫТЬ_КОРОБКУ',
       'ЗАКРЫТЬМЕСТО',
-      'ЗАКРЫТЬ_МЕСТО',
+      'ЗАКРЫТЬМЕСТРО',
       'ЗАКРЫТЬУПАКОВКУ',
-      'ЗАКРЫТЬ_УПАКОВКУ',
       'ЗАКРЫТЬКОРОБКУМЕСТО',
-      'ЗАВЕРШИТЬКОРОБКУ',
-      'ЗАВЕРШИТЬ_КОРОБКУ',
-      'ЗАВЕРШИТЬМЕСТО',
-      'ЗАВЕРШИТЬ_МЕСТО',
-      'ЗАВЕРШИТЬУПАКОВКУ',
       'ЗАПЕЧАТАТЬКОРОБКУ',
       'ЗАПЕЧАТАТЬМЕСТО',
       'ЗАПЕЧАТАТЬУПАКОВКУ',
@@ -884,14 +622,17 @@ export function processQRCommand(
       'КОРОБКАЗАКРЫТЬ',
       'МЕСТОЗАКРЫТЬ',
       'УПАКОВКАЗАКРЫТЬ',
-      'СЛЕДУЮЩАЯКОРОБКА',
-      'СЛЕДУЮЩЕЕМЕСТО'
+      'ЗАВЕРШИТЬКОРОБКУ',
+      'ЗАВЕРШИТЬМЕСТО',
+      'ЗАВЕРШИТЬУПАКОВКУ',
+      'PFRHSNMKHJHARE', // закрыть коробку
+      'PFRHSNBMTCNJ', // закрыть место
+      'PFRHSNBMTCnhj', // закрыть местро
+      'PFRHSNBENFRJBRE' // закрыть упаковку
     ])
   ) {
     if (callbacks?.onFinishPackage) {
       callbacks.onFinishPackage();
-    } else if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('erp_cmd_close_box'));
     }
     return { isCommand: true, commandKey: 'CMD_FINISH_PACKAGE', message: 'Команда: Закрыть коробку / место' };
   }
@@ -903,18 +644,11 @@ export function processQRCommand(
       'CMDSTARTSHIFT',
       'START_SHIFT',
       'STARTSHIFT',
-      'START_WORK',
-      'STARTWORK',
       'НАЧАТЬСМЕНУ',
-      'НАЧАТЬ_СМЕНУ',
       'ОТКРЫТЬСМЕНУ',
-      'ОТКРЫТЬ_СМЕНУ',
       'НАЧАТЬРАБОЧУЮСМЕНУ',
-      'НАЧАТЬРАБОТУ',
       'СТАРТСМЕНЫ',
-      'СМЕНАНАЧАТЬ',
-      'НАЧАТЬ',
-      'ОТКРЫТЬ'
+      'СМЕНАНАЧАТЬ'
     ])
   ) {
     if (callbacks?.onStartShift) {
@@ -935,12 +669,8 @@ export function processQRCommand(
       'CMDFINISHSHIFT',
       'END_SHIFT',
       'FINISH_SHIFT',
-      'ENDSHIFT',
-      'FINISHSHIFT',
       'ЗАВЕРШИТЬСМЕНУ',
-      'ЗАВЕРШИТЬ_СМЕНУ',
       'ЗАКРЫТЬСМЕНУ',
-      'ЗАКРЫТЬ_СМЕНУ',
       'ИТОГИСМЕНЫ',
       'ОТЧЕТСМЕНЫ',
       'СМЕНАЗАКРЫТЬ'
@@ -974,30 +704,13 @@ export function processQRCommand(
     return { isCommand: true, commandKey: 'CMD_REPORT_DEFECT', message: 'Команда: Фиксация брака' };
   }
 
-  // 5. Next stage / Complete stage ("Завершить этап", "Завершить", "Следующий участок")
+  // 5. Next stage
   if (
     matches([
       'CMD_NEXT_STAGE',
       'CMDNEXTSTAGE',
-      'CMD_FINISH_STAGE',
-      'CMDFINISHSTAGE',
       'NEXT_STAGE',
-      'FINISH_STAGE',
-      'NEXT_STEP',
-      'FINISH_STEP',
-      'СЛЕДУЮЩИЙУЧАСТОК',
-      'СЛЕДУЮЩИЙ_УЧАСТОК',
-      'СЛЕДУЮЩИЙЭТАП',
-      'СЛЕДУЮЩИЙ_ЭТАП',
-      'ЗАВЕРШИТЬЭТАП',
-      'ЗАВЕРШИТЬ_ЭТАП',
-      'ЗАВЕРШИТЬУЧАСТОК',
-      'ЗАВЕРШИТЬ_УЧАСТОК',
-      'ЗАВЕРШИТЬРАБОТУ',
-      'ЗАВЕРШИТЬ',
-      'ЗАКРЫТЬЭТАП',
-      'ЗАКРЫТЬУЧАСТОК',
-      'ЭТАПЗАВЕРШЕН'
+      'СЛЕДУЮЩИЙУЧАСТОК'
     ])
   ) {
     if (callbacks?.onNextStage) {
@@ -1005,8 +718,8 @@ export function processQRCommand(
     } else if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('erp_cmd_next_stage'));
     }
-    speakText('Этап завершен');
-    return { isCommand: true, commandKey: 'CMD_NEXT_STAGE', message: 'Команда: Завершение этапа' };
+    speakText('Передано на следующий участок');
+    return { isCommand: true, commandKey: 'CMD_NEXT_STAGE', message: 'Команда: Переход на следующий участок' };
   }
 
   // 6. Print act
@@ -1027,96 +740,8 @@ export function processQRCommand(
     return { isCommand: true, commandKey: 'CMD_PRINT_ACT', message: 'Команда: Открыта печать акта' };
   }
 
-  // 7. Clear scan
-  if (
-    matches([
-      'CMD_CLEAR_SCAN',
-      'CMDCLEARSCAN',
-      'CMD_CLEAR',
-      'CMDCLEAR',
-      'CLEAR_SCAN',
-      'CLEARSCAN',
-      'СБРОСИТЬСКАН',
-      'СБРОСИТЬ_СКАН',
-      'ОЧИСТИТЬСКАН',
-      'ОЧИСТИТЬ_СКАН',
-      'СБРОС'
-    ])
-  ) {
-    if (callbacks?.onClearScan) {
-      callbacks.onClearScan();
-    } else if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('erp_cmd_clear_scan'));
-    }
-    speakText('Сброс сканирования');
-    return { isCommand: true, commandKey: 'CMD_CLEAR_SCAN', message: 'Команда: Сброс отметок деталей' };
-  }
-
-  // 8. Pause work
-  if (
-    matches([
-      'CMD_PAUSE_WORK',
-      'CMDPAUSEWORK',
-      'CMD_PAUSE',
-      'CMDPAUSE',
-      'PAUSE_WORK',
-      'PAUSE',
-      'ПАУЗА',
-      'ПАУЗАРАБОТЫ',
-      'ПАУЗА_РАБОТЫ',
-      'ПЕРЕРЫВ'
-    ])
-  ) {
-    if (callbacks?.onPauseWork) {
-      callbacks.onPauseWork();
-    } else if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('erp_cmd_pause_work'));
-    }
-    speakText('Пауза в работе');
-    return { isCommand: true, commandKey: 'CMD_PAUSE_WORK', message: 'Команда: Перерыв / Пауза смены' };
-  }
-
-  // 9. Print labels
-  if (
-    matches([
-      'CMD_PRINT_LABELS',
-      'CMDPRINTLABELS',
-      'PRINT_LABELS',
-      'ПЕЧАТЬЭТИКЕТОК',
-      'ПЕЧАТЬ_ЭТИКЕТОК',
-      'ЭТИКЕТКИ'
-    ])
-  ) {
-    if (callbacks?.onPrintLabels) {
-      callbacks.onPrintLabels();
-    } else if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('erp_cmd_print_labels'));
-    }
-    speakText('Печать этикеток');
-    return { isCommand: true, commandKey: 'CMD_PRINT_LABELS', message: 'Команда: Печать этикеток' };
-  }
-
-  // 10. Force finish stage
-  if (
-    matches([
-      'CMD_FORCE_FINISH',
-      'CMDFORCEFINISH',
-      'FORCE_FINISH',
-      'ПРИНУДИТЕЛЬНО',
-      'ВЕСЬЭТАП'
-    ])
-  ) {
-    if (callbacks?.onForceFinish) {
-      callbacks.onForceFinish();
-    } else if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('erp_cmd_force_finish'));
-    }
-    speakText('Принудительное завершение');
-    return { isCommand: true, commandKey: 'CMD_FORCE_FINISH', message: 'Команда: Принудительное завершение этапа' };
-  }
-
-  if (clean.startsWith('CMD') || enLayout.startsWith('CMD') || ruLayout.startsWith('CMD')) {
-    return { isCommand: true, commandKey: clean || enLayout || ruLayout, message: `Выполнена команда ${clean || enLayout || ruLayout}` };
+  if (clean.startsWith('CMD') || enLayout.startsWith('CMD')) {
+    return { isCommand: true, commandKey: clean || enLayout, message: `Выполнена команда ${clean || enLayout}` };
   }
 
   return { isCommand: false };
@@ -1441,7 +1066,12 @@ export function isStageTaskStarted(order: ProductionOrder, stageId: ProductionSt
     return true;
   }
 
-  // 4. Packages created on kitting/packing/shipping
+  // 4. Current active stage with in_progress status
+  if (order.currentStage === stageId && order.status === 'in_progress') {
+    return true;
+  }
+
+  // 5. Packages created on kitting/packing/shipping
   if (order.packages && order.packages.length > 0) {
     if (stageId === 'kitting' && order.packages.some(p => p.type === 'kitting')) return true;
     if (stageId === 'packing' && order.packages.some(p => p.type === 'details' || p.type === 'custom')) return true;

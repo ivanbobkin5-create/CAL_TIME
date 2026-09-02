@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   Truck, 
   Search, 
@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, ERPEmployee, ERPCompanySettings, OrderPackage, DriverInfo } from '../types';
 import { MobileCameraScannerModal } from '../components/MobileCameraScannerModal';
-import { speakText, normalizeBarcodeScan, matchPackageToScannedCode } from '../utils';
+import { speakText, normalizeBarcodeScan } from '../utils';
 
 interface ERPDispatchViewProps {
   orders: ProductionOrder[];
@@ -368,9 +368,6 @@ const ERPDispatchWorkspaceModal: React.FC<ERPDispatchWorkspaceModalProps> = ({
   const [scanInput, setScanInput] = useState('');
   const [scanMessage, setScanMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showCameraScanner, setShowCameraScanner] = useState(false);
-  const scannerInputRef = useRef<HTMLInputElement>(null);
-  const barcodeBufferRef = useRef<string>('');
-  const lastKeyTimeRef = useRef<number>(0);
 
   // Driver & Vehicle form
   const [driverName, setDriverName] = useState(order.driverInfo?.driverName || '');
@@ -382,31 +379,30 @@ const ERPDispatchWorkspaceModal: React.FC<ERPDispatchWorkspaceModalProps> = ({
 
   // Handle Scan package code
   const handleScanPackageCode = (rawCode: string) => {
-    if (!rawCode || !rawCode.trim()) return;
+    const clean = normalizeBarcodeScan(rawCode);
+    if (!clean) return;
 
     // Find package matching code
-    const matchingPkg = pkgs.find(p => matchPackageToScannedCode(rawCode, p, order));
+    const matchingPkg = pkgs.find(p => p.code.toLowerCase() === clean.toLowerCase() || p.id === clean || p.packageNumber.toString() === clean);
 
     if (!matchingPkg) {
-      setScanMessage({ type: 'error', text: `Штрихкод / место "${rawCode}" не найдено в упаковочных местах этого заказа!` });
+      setScanMessage({ type: 'error', text: `Штрихкод "${clean}" не найден в упаковочных местах этого заказа!` });
       speakText('Ошибка штрихкода');
       return;
     }
 
-    const isAlreadyScanned = scannedCodes.includes(matchingPkg.id) || scannedCodes.includes(matchingPkg.code) || matchingPkg.isShipped;
-
-    if (isAlreadyScanned) {
-      setScanMessage({ type: 'success', text: `Место №${matchingPkg.packageNumber} ("${matchingPkg.name}") уже было отсканировано!` });
+    if (scannedCodes.includes(matchingPkg.code)) {
+      setScanMessage({ type: 'success', text: `Место #${matchingPkg.packageNumber} уже отсканировано!` });
       return;
     }
 
-    const nextCodes = Array.from(new Set([...scannedCodes, matchingPkg.id, matchingPkg.code]));
+    const nextCodes = [...scannedCodes, matchingPkg.code];
     setScannedCodes(nextCodes);
-    setScanMessage({ type: 'success', text: `Место №${matchingPkg.packageNumber} (${matchingPkg.name}) отсканировано!` });
+    setScanMessage({ type: 'success', text: `Место #${matchingPkg.packageNumber} (${matchingPkg.name}) отсканировано!` });
     speakText(`Место ${matchingPkg.packageNumber} принято`);
 
     // Auto update packages status in order
-    const updatedPkgs = pkgs.map(p => (p.id === matchingPkg.id || p.code === matchingPkg.code) ? { ...p, isShipped: true, shippedAt: new Date().toISOString() } : p);
+    const updatedPkgs = pkgs.map(p => p.code === matchingPkg.code ? { ...p, isShipped: true, shippedAt: new Date().toISOString() } : p);
     onUpdateOrder({ ...order, packages: updatedPkgs });
   };
 
@@ -416,64 +412,6 @@ const ERPDispatchWorkspaceModal: React.FC<ERPDispatchWorkspaceModalProps> = ({
     handleScanPackageCode(scanInput.trim());
     setScanInput('');
   };
-
-  // Hardware Scanner Listener
-  useEffect(() => {
-    const handleGlobalKeyDown = (e: KeyboardEvent) => {
-      if (showCameraScanner) return;
-
-      const activeEl = document.activeElement as HTMLElement | null;
-      const target = e.target as HTMLElement | null;
-      const isScannerInput = target === scannerInputRef.current || activeEl === scannerInputRef.current;
-
-      const isOtherInput = (target && (
-        (target.tagName === 'INPUT' && target !== scannerInputRef.current) ||
-        target.tagName === 'TEXTAREA' ||
-        target.tagName === 'SELECT' ||
-        target.isContentEditable
-      )) || (activeEl && (
-        (activeEl.tagName === 'INPUT' && activeEl !== scannerInputRef.current) ||
-        activeEl.tagName === 'TEXTAREA' ||
-        activeEl.tagName === 'SELECT' ||
-        activeEl.isContentEditable
-      ));
-
-      if (isOtherInput) return;
-
-      if (e.key === 'Enter') {
-        const rawCode = isScannerInput
-          ? (scanInput.trim() || (scannerInputRef.current?.value || '').trim())
-          : (barcodeBufferRef.current.trim() || scanInput.trim() || (scannerInputRef.current?.value || '').trim());
-        if (rawCode) {
-          e.preventDefault();
-          barcodeBufferRef.current = '';
-          handleScanPackageCode(rawCode);
-          setScanInput('');
-          if (scannerInputRef.current) scannerInputRef.current.value = '';
-        }
-        return;
-      }
-
-      if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        if (isScannerInput) return;
-
-        const now = Date.now();
-        if (now - lastKeyTimeRef.current > 1200) {
-          barcodeBufferRef.current = '';
-        }
-        lastKeyTimeRef.current = now;
-        barcodeBufferRef.current += e.key;
-
-        setScanInput(barcodeBufferRef.current);
-        scannerInputRef.current?.focus();
-      }
-    };
-
-    window.addEventListener('keydown', handleGlobalKeyDown, true);
-    return () => {
-      window.removeEventListener('keydown', handleGlobalKeyDown, true);
-    };
-  }, [showCameraScanner, scanInput, scannedCodes, pkgs, order]);
 
   // Toggle all packages scanned manually
   const handleScanAllManually = () => {
@@ -505,19 +443,6 @@ const ERPDispatchWorkspaceModal: React.FC<ERPDispatchWorkspaceModalProps> = ({
         address: clientAddress,
         clientPhone: clientPhone,
         deliveryPrice: deliveryPrice
-      },
-      stageProgress: {
-        ...(order.stageProgress || {}),
-        shipping: {
-          status: 'done',
-          completedAt: new Date().toISOString(),
-          completedBy: driverName || 'Склад / Отгрузка'
-        },
-        ready: {
-          status: 'done',
-          completedAt: new Date().toISOString(),
-          completedBy: driverName || 'Склад / Отгрузка'
-        }
       }
     };
 
@@ -603,7 +528,6 @@ const ERPDispatchWorkspaceModal: React.FC<ERPDispatchWorkspaceModalProps> = ({
             {/* USB Barcode Input */}
             <form onSubmit={handleScanSubmit} className="flex items-center gap-2">
               <input
-                ref={scannerInputRef}
                 type="text"
                 placeholder="Считайте сканером штрихкод упаковки..."
                 value={scanInput}

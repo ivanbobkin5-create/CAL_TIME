@@ -23,7 +23,7 @@ import { PackageLabelPrintModal } from './PackageLabelPrintModal';
 import { ShippingActPrintModal } from './ShippingActPrintModal';
 import { ShippingTTNPrintModal } from './ShippingTTNPrintModal';
 import { QuickAddDriverModal } from './QuickAddDriverModal';
-import { convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, matchPackageToScannedCode } from '../utils';
+import { convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan } from '../utils';
 
 interface ERPShippingTabProps {
   order: ProductionOrder;
@@ -104,12 +104,36 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
       scannerInputRef.current.value = '';
     }
 
-    if (!code || !code.trim()) return;
+    const clean = code.trim();
+    if (!clean) return;
 
-    const foundPkg = allPackages.find(p => matchPackageToScannedCode(code, p, order));
+    const enClean = normalizeBarcodeScan(clean);
+
+    // Match by code, packageNumber (e.g. M1, 1), name, or partial QR payload
+    const foundPkg = allPackages.find(p => {
+      const pCodeLower = p.code.toLowerCase();
+      const pIdLower = p.id.toLowerCase();
+      const pNameLower = p.name.toLowerCase();
+      const cleanLower = clean.toLowerCase();
+      const enLower = enClean.toLowerCase();
+
+      return pCodeLower === cleanLower ||
+             pCodeLower === enLower ||
+             pIdLower === cleanLower ||
+             pIdLower === enLower ||
+             pNameLower.includes(cleanLower) ||
+             pNameLower.includes(enLower) ||
+             cleanLower.includes(pCodeLower) ||
+             enLower.includes(pCodeLower) ||
+             `m${p.packageNumber}` === cleanLower ||
+             `m${p.packageNumber}` === enLower ||
+             `место ${p.packageNumber}` === cleanLower ||
+             `место ${p.packageNumber}` === enLower ||
+             String(p.packageNumber) === clean;
+    });
 
     if (!foundPkg) {
-      showFeedback(`Упаковка с QR-кодом / штрихкодом "${code}" не найдена в этом заказе!`, 'error');
+      showFeedback(`Упаковка с QR-кодом "${clean}" не найдена в этом заказе!`, 'error');
       return;
     }
 
@@ -168,7 +192,8 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
           barcodeBufferRef.current = '';
         }
         lastKeyTimeRef.current = now;
-        barcodeBufferRef.current += e.key;
+        const enChar = convertRuCharToEn(e.key);
+        barcodeBufferRef.current += enChar;
 
         setScanInput(barcodeBufferRef.current);
         scannerInputRef.current?.focus();

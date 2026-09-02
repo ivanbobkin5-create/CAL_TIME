@@ -109,21 +109,13 @@ export function parseBirFileText(text: string, customMapping?: Record<string, st
         keywords.some(k => h.includes(k.toLowerCase())) && !excludeKeywords.some(ek => h.includes(ek.toLowerCase()))
       );
 
-    const orderExclusions = ['зак', 'order', 'проект', 'сделка', 'договор', 'дог'];
-
     // Order index first (Заказ / Order / Проект)
-    const orderIdx = findIndex(mapping.orderNumber || ['зак', 'order', 'проект', 'сделка', 'договор']);
+    const orderIdx = findIndex(mapping.orderNumber || ['зак', 'order', 'проект']);
 
-    // Part number index (№ детали / Позиция) - prioritized with order keyword exclusions
-    let posIdx = findIndex(
-      mapping.pos || ['№ дет', 'номер дет', 'деталь №', 'деталь номер', 'поз', 'позиц', '№ бирк', 'код дет', 'part_no', 'item_no', 'label', 'позиция', 'обозначение'],
-      orderExclusions
-    );
+    // Part number index (№ детали / Позиция) - prioritized
+    let posIdx = findIndex(mapping.pos || ['№ дет', 'поз', 'позиц', '№ бирк', 'код дет', 'part_no', 'item_no', 'label']);
     if (posIdx === -1) {
-      posIdx = findIndex(
-        ['№', 'номер', 'pos', 'id', 'код'],
-        ['зак', 'order', 'проект', 'издел', 'наим', 'назв', 'имя', 'длин', 'шир', 'толщ', 'кол', 'сделка', 'договор', 'матер', 'кромк']
-      );
+      posIdx = findIndex(['№', 'номер', 'pos', 'id'], ['зак', 'order', 'проект', 'издел', 'наим', 'назв', 'имя', 'длин', 'шир', 'толщ', 'кол']);
     }
     // Prevent overlap if order column was matched
     if (posIdx !== -1 && posIdx === orderIdx) {
@@ -167,12 +159,7 @@ export function parseBirFileText(text: string, customMapping?: Record<string, st
       const thickness = thkIdx !== -1 && cols[thkIdx] ? parseFloat(cols[thkIdx].replace(',', '.')) : 16;
       const material = matIdx !== -1 && cols[matIdx] ? cols[matIdx] : 'ЛДСП 16 мм';
       const quantity = qtyIdx !== -1 && cols[qtyIdx] ? parseInt(cols[qtyIdx], 10) || 1 : 1;
-      let rawPos = posIdx !== -1 && cols[posIdx] ? cols[posIdx] : '';
-      if (!rawPos) {
-        const posMatch = (cols[0] || '').match(/^([0-9]+(?:[\.\-_/\\:,;][0-9]+)+)/) ||
-                         (cols[0] || '').match(/^(?:поз\.?|дет\.?|позиция|деталь|№)?\s*([0-9]+(?:[\.\-_/\\:,;][0-9]+)+)/i);
-        rawPos = posMatch ? posMatch[1] : String(i - headerLineIndex);
-      }
+      const rawPos = posIdx !== -1 && cols[posIdx] ? cols[posIdx] : String(i - headerLineIndex);
       // Clean label number (remove leading #, №, words like "Поз.", "Позиция", "Деталь" while preserving "00.00", "00.00.00", etc.)
       const labelNumber = rawPos
         .replace(/^[#№\s]+/, '')
@@ -320,13 +307,9 @@ export function parseBirFileText(text: string, customMapping?: Record<string, st
         if (line.toLowerCase().includes('мдф')) mat = 'МДФ 18 мм';
         if (line.toLowerCase().includes('хдф') || line.toLowerCase().includes('двп')) mat = 'ХДФ 3 мм';
 
-        const posMatch = line.match(/^([0-9]+(?:[\.\-_/\\:,;][0-9]+)+)/) ||
-                         line.match(/^(?:поз\.?|дет\.?|позиция|деталь|№)?\s*([0-9]+(?:[\.\-_/\\:,;][0-9]+)+)/i);
-        const extractedPos = posMatch ? posMatch[1] : String(idx + 1);
-
         details.push({
           id: `det_regex_${idx}_${Math.random().toString(36).substring(2, 7)}`,
-          labelNumber: extractedPos,
+          labelNumber: String(idx + 1),
           name: line.split(/[\t;,]/)[0] || `Деталь ${idx + 1}`,
           length,
           width,

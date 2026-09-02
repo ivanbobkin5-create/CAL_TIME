@@ -34,13 +34,11 @@ import {
   UserX,
   ShieldAlert,
   ArrowRight,
-  ArrowUpDown,
-  Lock,
-  PauseCircle
+  Lock
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee, MaterialResidual } from '../types';
 import { parseBirkaFile, BirkaParseResult, BirkaDetail, consolidateDetails } from '../utils/birkaParser';
-import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, getStageNameRussian, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, speakText, matchDetailToScannedCode, cleanRawScannedString, processQRCommand, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, getSmartOrderDisplay, getDetailPositionDisplay } from '../utils';
+import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, getStageNameRussian, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, speakText, matchDetailToScannedCode, cleanRawScannedString, processQRCommand, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, getSmartOrderDisplay } from '../utils';
 import { CuttingOffcutsModal } from '../components/CuttingOffcutsModal';
 import { EdgingRemainsModal } from '../components/EdgingRemainsModal';
 import { detailRequiresPrisadka, getDetailAvailabilityForStage, getScannedCountForDetail, isDetailFullyScanned } from '../utils/stageReadiness';
@@ -210,7 +208,6 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   const [showShiftRequiredModal, setShowShiftRequiredModal] = useState<boolean>(false);
   const [defectTargetDetail, setDefectTargetDetail] = useState<any | null>(null);
   const [isIdentityConfirmed, setIsIdentityConfirmed] = useState<boolean>(false);
-  const [isPaused, setIsPaused] = useState<boolean>(false);
 
   const scannerInputRef = useRef<HTMLInputElement | null>(null);
   const barcodeBufferRef = useRef<string>('');
@@ -392,116 +389,25 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     return consolidateDetails(localOrder.birkaData?.details || []);
   }, [localOrder.birkaData]);
 
-  // Details for selected material
+  // Details for selected material (for current stage)
   const allMaterialDetails = useMemo(() => {
     return consolidatedOrderDetails.filter(d => 
       (d.material || 'Без указания материала') === selectedMaterial
     );
   }, [consolidatedOrderDetails, selectedMaterial]);
 
-  // All details of selected material are available across all processing stages
-  const currentMaterialDetails = allMaterialDetails;
-
-  // Filtered and sorted details for display
-  const sortedAndFilteredDetails = useMemo(() => {
-    const filtered = currentMaterialDetails.filter(d => {
-      if (!searchPartsQuery) return true;
-      const q = searchPartsQuery.toLowerCase();
-      const birkaOrder = (d.orderNumber || order.orderNumber || '').toLowerCase();
-      const fullQr = `${birkaOrder}_${d.labelNumber}`.toLowerCase();
-      return d.name.toLowerCase().includes(q) ||
-             d.labelNumber.toLowerCase().includes(q) ||
-             (d.orderNumber && d.orderNumber.toLowerCase().includes(q)) ||
-             d.id.toLowerCase().includes(q) ||
-             fullQr.includes(q) ||
-             (d.barcode && d.barcode.toLowerCase().includes(q)) ||
-             (d.notes && d.notes.toLowerCase().includes(q));
-    });
-
-    return filtered;
-  }, [currentMaterialDetails, searchPartsQuery, order.orderNumber]);
-
-  // Quick Actions & QR Command Buttons Execution Handler
-  const handleExecuteCommand = (cmd: string) => {
-    const upper = cmd.toUpperCase().trim();
-
-    if (upper === 'FINISH_STAGE' || upper === 'CMD_FINISH_STAGE' || upper === 'CMD_NEXT_STAGE' || upper === 'NEXT_STAGE') {
-      if (isStageFullyScanned) {
-        setScanSuccessMsg(`✅ Команда «Завершить этап»: этап ${stageMeta.shortName} успешно завершен!`);
-        speakText(`Этап ${stageMeta.shortName} завершен`);
-        handleCompleteCurrentStageAndExit();
-      } else {
-        setScanErrorMsg(`⚠️ Не все детали отсканированы (${totalStageScannedParts}/${totalOrderParts}). Подтвердите принудительное завершение.`);
-        speakText('Не все детали отсканированы');
-        setShowForceCompleteModal(true);
-      }
-      return;
+  // Stage filtering:
+  // - On edging: only show parts that need edge banding
+  // - On prisadka/cnc: only show parts that require drilling (considering nesting equipment settings and hole counts)
+  const currentMaterialDetails = useMemo(() => {
+    if (currentStage === 'edging') {
+      return allMaterialDetails.filter(d => partNeedsEdge(d));
     }
-
-    if (upper === 'REPORT_DEFECT' || upper === 'CMD_REPORT_DEFECT' || upper === 'DEFECT') {
-      const allDetails = consolidateDetails(localOrder.birkaData?.details || []);
-      if (allDetails.length > 0) {
-        setDefectTargetDetail(allDetails[0]);
-        setScanSuccessMsg(`⚠️ Режим фиксации брака. Выберите деталь для переделки.`);
-      } else {
-        setScanErrorMsg(`В заказе нет деталей для фиксации брака`);
-      }
-      return;
+    if ((currentStage as string) === 'prisadka' || currentStage === 'cnc') {
+      return allMaterialDetails.filter(d => detailRequiresPrisadka(d, settings));
     }
-
-    if (upper === 'CLEAR_SCAN' || upper === 'CMD_CLEAR_SCAN' || upper === 'CLEAR') {
-      const currentOrder = localOrderRef.current;
-      const mat = selectedMaterial || 'Без указания материала';
-      const updatedScanning = { ...(currentOrder.stageScanningProgress || {}) };
-      if (updatedScanning[currentStage]) {
-        updatedScanning[currentStage] = {
-          ...updatedScanning[currentStage],
-          [mat]: { scannedPartIds: [], isCompleted: false }
-        };
-      }
-      const updatedOrder = {
-        ...currentOrder,
-        stageScanningProgress: updatedScanning
-      };
-      localOrderRef.current = updatedOrder;
-      setLocalOrder(updatedOrder);
-      onUpdateOrder(updatedOrder);
-      setScanSuccessMsg(`🔄 Отметки деталей для материала "${mat}" успешно сброшены.`);
-      speakText('Скан сброшен');
-      playSoundEffect('alert');
-      return;
-    }
-
-    if (upper === 'PAUSE_WORK' || upper === 'CMD_PAUSE_WORK' || upper === 'PAUSE' || upper === 'CMD_PAUSE') {
-      setIsPaused(prev => {
-        const next = !prev;
-        if (next) {
-          setScanSuccessMsg('⏸️ Смена приостановлена (пауза)');
-          speakText('Пауза смены');
-        } else {
-          setScanSuccessMsg('▶️ Смена возобновлена');
-          speakText('Работа возобновлена');
-        }
-        return next;
-      });
-      playSoundEffect('success');
-      return;
-    }
-
-    if (upper === 'PRINT_LABELS' || upper === 'CMD_PRINT_LABELS' || upper === 'CMD_PRINT_ACT' || upper === 'PRINT') {
-      setScanSuccessMsg('🖨️ Запуск печати...');
-      speakText('Печать');
-      window.print();
-      return;
-    }
-
-    if (upper === 'FORCE_FINISH' || upper === 'CMD_FORCE_FINISH') {
-      setShowForceCompleteModal(true);
-      return;
-    }
-
-    setScanSuccessMsg(`Выполнена команда: ${cmd}`);
-  };
+    return allMaterialDetails;
+  }, [currentStage, allMaterialDetails, settings]);
 
   // Handle Scanning or Marking a Part
   const handleScanCode = (codeToScan: string) => {
@@ -545,13 +451,10 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
           playSoundEffect('error');
         }
       },
-      onNextStage: () => handleExecuteCommand('finish_stage'),
-      onReportDefect: () => handleExecuteCommand('report_defect'),
-      onClearScan: () => handleExecuteCommand('clear_scan'),
-      onPauseWork: () => handleExecuteCommand('pause_work'),
-      onPrintLabels: () => handleExecuteCommand('print_labels'),
-      onForceFinish: () => handleExecuteCommand('force_finish'),
-      onPrintAct: () => handleExecuteCommand('print_labels')
+      onPrintAct: () => {
+        setScanSuccessMsg('🖨️ Запуск печати акта сдачи...');
+        window.print();
+      }
     });
 
     if (cmdResult.isCommand) {
@@ -624,7 +527,19 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     }
 
     const targetMaterialDetails = allOrderDetails.filter(d => (d.material || 'Без указания материала') === targetMaterial);
-    const effectiveStageDetails = targetMaterialDetails;
+    const effectiveStageDetails = currentStage === 'edging' 
+      ? targetMaterialDetails.filter(partNeedsEdge) 
+      : ((currentStage as string) === 'prisadka' || currentStage === 'cnc')
+      ? targetMaterialDetails.filter(d => detailRequiresPrisadka(d, settings))
+      : targetMaterialDetails;
+
+    // Check if this part doesn't need edging on the edging stage
+    if (currentStage === 'edging' && !partNeedsEdge(foundPart)) {
+      playSoundEffect('success');
+      speakText('Деталь без кромки');
+      setScanSuccessMsg(`ℹ️ Деталь №${foundPart.labelNumber} (${foundPart.name}) не требует кромления.`);
+      return;
+    }
 
     // Check if detail is unlocked/available for this stage in live mode
     const availability = getDetailAvailabilityForStage(foundPart, currentOrder, currentStage, settings);
@@ -782,7 +697,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
         }
         lastKeyTimeRef.current = now;
 
-        barcodeBufferRef.current += e.key;
+        const enChar = convertRuCharToEn(e.key);
+        barcodeBufferRef.current += enChar;
 
         setScanInput(barcodeBufferRef.current);
 
@@ -837,8 +753,12 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       playSoundEffect('success');
     }
 
-    const allMatDetails = consolidateDetails(currentOrder.birkaData?.details || []).filter(d => (d.material || 'Без указания материала') === mat);
-    const effectiveMatDetails = allMatDetails;
+    const allMatDetails = currentOrder.birkaData?.details.filter(d => (d.material || 'Без указания материала') === mat) || [];
+    const effectiveMatDetails = currentStage === 'edging'
+      ? allMatDetails.filter(partNeedsEdge)
+      : ((currentStage as string) === 'prisadka' || currentStage === 'cnc')
+      ? allMatDetails.filter(d => detailRequiresPrisadka(d, settings))
+      : allMatDetails;
 
     const isAllScanned = effectiveMatDetails.length > 0
       ? effectiveMatDetails.every(d => isDetailFullyScanned(newScannedIds, d))
@@ -931,8 +851,10 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     // Compute unscanned parts if forced
     const updatedForcedStageCompletions = { ...(order.forcedStageCompletions || {}) };
     if (isForced) {
-      const allOrderDetails = consolidateDetails(order.birkaData?.details || []);
-      const stageRelevantDetails = allOrderDetails;
+      const allOrderDetails = order.birkaData?.details || [];
+      const stageRelevantDetails = currentStage === 'edging'
+        ? allOrderDetails.filter(partNeedsEdge)
+        : allOrderDetails;
       
       const unscannedIds = stageRelevantDetails
         .filter(d => !allScannedPartIds.has(d.id))
@@ -1020,8 +942,11 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   // Total stage completion status
   const allMaterialGroups = order.birkaData?.materialGroups || [];
   const stageEffectiveDetails = useMemo(() => {
-    return consolidatedOrderDetails;
-  }, [consolidatedOrderDetails]);
+    const all = consolidatedOrderDetails;
+    if (currentStage === 'edging') return all.filter(partNeedsEdge);
+    if ((currentStage as string) === 'prisadka' || currentStage === 'cnc') return all.filter(d => detailRequiresPrisadka(d, settings));
+    return all;
+  }, [consolidatedOrderDetails, currentStage, settings]);
 
   const totalOrderParts = useMemo(() => {
     if (stageEffectiveDetails.length > 0) {
@@ -1031,53 +956,15 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   }, [stageEffectiveDetails, order.partsCount]);
 
   const totalStageScannedParts = useMemo(() => {
-    if (currentStage === 'packing') {
-      const packedCount = (order.packages || []).reduce((sum, pkg) => {
-        return sum + (pkg.parts?.reduce((pSum, pt) => pSum + Math.max(1, pt.quantity || 1), 0) || 0);
-      }, 0);
-      return Math.min(packedCount, totalOrderParts);
-    }
-    if (currentStage === 'kitting') {
-      const kittingPkgs = (order.packages || []).filter(p => p.type === 'kitting');
-      if (kittingPkgs.length > 0) return totalOrderParts;
-      return 0;
-    }
-    if (currentStage === 'shipping') {
-      const pkgs = order.packages || [];
-      if (pkgs.length === 0) return totalOrderParts;
-      const shipped = pkgs.filter(p => p.isShipped);
-      if (shipped.length >= pkgs.length) return totalOrderParts;
-      return Math.round((shipped.length / pkgs.length) * totalOrderParts);
-    }
     if (stageEffectiveDetails.length === 0) return allStageScannedIds.length;
     return stageEffectiveDetails.reduce((sum, d) => {
       const count = getScannedCountForDetail(allStageScannedIds, d.id);
       return sum + Math.min(count, d.quantity || 1);
     }, 0);
-  }, [currentStage, stageEffectiveDetails, allStageScannedIds, order.packages, totalOrderParts]);
+  }, [stageEffectiveDetails, allStageScannedIds]);
 
   const isStageFullyScanned = totalStageScannedParts >= totalOrderParts && totalOrderParts > 0;
   const missingPartsCount = Math.max(0, totalOrderParts - totalStageScannedParts);
-
-  // Listen to erp_cmd_next_stage event triggered by QR scanner
-  useEffect(() => {
-    const handleNextStageEvent = () => {
-      if (isStageFullyScanned) {
-        setScanSuccessMsg(`✅ Команда «Завершить этап»: этап ${stageMeta.shortName} успешно завершен!`);
-        speakText(`Этап ${stageMeta.shortName} завершен`);
-        handleCompleteCurrentStageAndExit();
-      } else {
-        setScanErrorMsg(`⚠️ Не все детали отсканированы (${totalStageScannedParts}/${totalOrderParts}). Подтвердите завершение.`);
-        speakText('Не все детали отсканированы. Требуется подтверждение');
-        setShowForceCompleteModal(true);
-      }
-    };
-
-    window.addEventListener('erp_cmd_next_stage', handleNextStageEvent);
-    return () => {
-      window.removeEventListener('erp_cmd_next_stage', handleNextStageEvent);
-    };
-  }, [isStageFullyScanned, stageMeta.shortName, totalStageScannedParts, totalOrderParts]);
 
   return (
     <div className="space-y-6 animate-fade-in pb-12">
@@ -1148,6 +1035,9 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                 return (
                   <>
                     Клиент: <strong className="text-white font-bold">{clientNameClean || projectNameClean || 'Частный заказчик'}</strong>
+                    {projectNameClean && clientNameClean && (
+                      <> • Проект: <strong className="text-white font-bold">{projectNameClean}</strong></>
+                    )}
                   </>
                 );
               })()}
@@ -1340,7 +1230,12 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                   <div className="space-y-2">
                     {order.birkaData.materialGroups.map((mg) => {
                       const matName = mg.materialName;
-                      const matDetails = consolidateDetails(order.birkaData?.details || []).filter(d => (d.material || 'Без указания материала') === matName);
+                      let matDetails = order.birkaData?.details.filter(d => (d.material || 'Без указания материала') === matName) || [];
+                      if (currentStage === 'edging') {
+                        matDetails = matDetails.filter(partNeedsEdge);
+                      } else if ((currentStage as string) === 'prisadka' || currentStage === 'cnc') {
+                        matDetails = matDetails.filter(d => detailRequiresPrisadka(d, settings));
+                      }
 
                       const isSelected = selectedMaterial === matName;
                       const matTotalPieces = matDetails.reduce((sum, d) => sum + (d.quantity || 1), 0);
@@ -1453,7 +1348,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                   )}
 
                   {/* Finish Station Button */}
-                  <div className="pt-1">
+                  <div className="pt-2">
                     <button
                       onClick={handleCompleteCurrentStageAndExit}
                       className="w-full py-3.5 px-4 rounded-2xl font-black text-xs transition-all flex items-center justify-center gap-2 cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20"
@@ -1537,18 +1432,16 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                     </p>
                   </div>
 
-                  {/* Search controls */}
-                  <div className="flex items-center gap-2">
-                    <div className="relative min-w-[200px]">
-                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                      <input
-                        type="text"
-                        placeholder="Поиск по № или названию..."
-                        value={searchPartsQuery}
-                        onChange={(e) => setSearchPartsQuery(e.target.value)}
-                        className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
+                  {/* Search inside parts list */}
+                  <div className="relative min-w-[200px]">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="Поиск по № или названию..."
+                      value={searchPartsQuery}
+                      onChange={(e) => setSearchPartsQuery(e.target.value)}
+                      className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
                   </div>
                 </div>
 
@@ -1569,8 +1462,21 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-xs">
-                      {sortedAndFilteredDetails
-                        .map((detail, idx) => {
+                      {currentMaterialDetails
+                        .filter(d => {
+                          if (!searchPartsQuery) return true;
+                          const q = searchPartsQuery.toLowerCase();
+                          const birkaOrder = (d.orderNumber || order.orderNumber || '').toLowerCase();
+                          const fullQr = `${birkaOrder}_${d.labelNumber}`.toLowerCase();
+                          return d.name.toLowerCase().includes(q) ||
+                                 d.labelNumber.toLowerCase().includes(q) ||
+                                 (d.orderNumber && d.orderNumber.toLowerCase().includes(q)) ||
+                                 d.id.toLowerCase().includes(q) ||
+                                 fullQr.includes(q) ||
+                                 (d.barcode && d.barcode.toLowerCase().includes(q)) ||
+                                 (d.notes && d.notes.toLowerCase().includes(q));
+                        })
+                        .map((detail) => {
                           const reqQty = Math.max(1, detail.quantity || 1);
                           const scannedQty = getScannedCountForDetail(allStageScannedIds, detail.id);
                           const isFullyScanned = scannedQty >= reqQty;
@@ -1600,7 +1506,6 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                           const availability = getDetailAvailabilityForStage(detail, localOrder, currentStage, settings);
                           const isLocked = !availability.isAvailable;
                           const isRecentlyScanned = detail.id === recentlyScannedPartId;
-                          const displayPosNum = getDetailPositionDisplay(detail.labelNumber, order.orderNumber, idx + 1);
 
                           return (
                             <tr
@@ -1651,7 +1556,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                               {/* Label Number */}
                               <td className="py-2.5 px-3 font-mono font-bold text-slate-900">
                                 <div className="flex items-center gap-1.5 flex-wrap">
-                                  <span>{displayPosNum}</span>
+                                  <span>{detail.labelNumber}</span>
                                   {isRecentlyScanned && (
                                     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-600 text-white text-[10px] font-black uppercase tracking-wider shadow-xs animate-bounce">
                                       <CheckCircle2 className="w-3 h-3" />

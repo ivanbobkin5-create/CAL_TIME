@@ -227,7 +227,7 @@ export async function printPackageLabelDirect(
                   </div>
                 </div>
                 <div style="text-align: right;">
-                  <div class="badge">МЕСТО № ${pkg.packageNumber}</div>
+                  <div class="badge">МЕСТО ${pkg.packageNumber}${totalPackagesCount > 1 ? ` / ${totalPackagesCount}` : ''}</div>
                   <div style="font-size: 8.5px; font-family: monospace; color: #000000; margin-top: 1px; font-weight: 900;">
                     ${pkg.type === 'kitting' ? 'КОМПЛЕКТАЦИЯ' : 'УПАКОВКА'}
                   </div>
