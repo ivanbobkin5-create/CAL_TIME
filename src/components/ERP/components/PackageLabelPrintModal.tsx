@@ -217,7 +217,7 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
                       </div>
                     </div>
                     <div style="text-align: right;">
-                      <div class="badge">МЕСТО ${pkg.packageNumber}${totalPackagesCount > 1 ? ` / ${totalPackagesCount}` : ''}</div>
+                      <div class="badge">МЕСТО № ${pkg.packageNumber}</div>
                       <div style="font-size: 8.5px; font-family: monospace; color: #000000; margin-top: 1px; font-weight: 900;">
                         ${pkg.type === 'kitting' ? 'КОМПЛЕКТАЦИЯ' : 'УПАКОВКА'}
                       </div>
@@ -357,7 +357,7 @@ export const PackageLabelPrintModal: React.FC<PackageLabelPrintModalProps> = ({
               Заказ {order.orderNumber}
             </span>
             <span className="px-2.5 py-1 rounded-xl bg-orange-100 text-orange-800">
-              Место № {pkg.packageNumber} {totalPackagesCount > 1 ? `из ${totalPackagesCount}` : ''}
+              Место № {pkg.packageNumber}
             </span>
           </div>
 

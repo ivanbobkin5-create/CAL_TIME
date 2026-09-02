@@ -642,18 +642,28 @@ export function processQRCommand(
     matches([
       'CMD_START_SHIFT',
       'CMDSTARTSHIFT',
+      'CMD-START-SHIFT',
       'START_SHIFT',
       'STARTSHIFT',
+      'START-SHIFT',
       'НАЧАТЬСМЕНУ',
+      'НАЧАТЬ_СМЕНУ',
+      'НАЧАТЬ-СМЕНУ',
       'ОТКРЫТЬСМЕНУ',
+      'ОТКРЫТЬ_СМЕНУ',
       'НАЧАТЬРАБОЧУЮСМЕНУ',
       'СТАРТСМЕНЫ',
-      'СМЕНАНАЧАТЬ'
+      'СМЕНАНАЧАТЬ',
+      'HFXFSNBCNAIE', // начать смену в английской раскладке
+      'HFGFNBCNAIE', // открыть смену в английской раскладке
+      'STARTSHIFTCMD'
     ])
   ) {
     if (callbacks?.onStartShift) {
       callbacks.onStartShift();
-    } else if (typeof window !== 'undefined') {
+    }
+    // Always dispatch window event for global app listener
+    if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('erp_cmd_start_shift'));
     }
     speakText('Смена начата');

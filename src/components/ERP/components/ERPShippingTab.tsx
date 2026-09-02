@@ -109,22 +109,53 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
 
     const enClean = normalizeBarcodeScan(clean);
 
+    // Extract query parameters if scanned text is a URL or contains url query
+    let extractedPkgParam = '';
+    try {
+      if (clean.includes('http://') || clean.includes('https://') || clean.includes('pkg=')) {
+        const rawUrl = clean.startsWith('http') ? clean : `https://dummy.com/${clean.replace(/^\/+/, '')}`;
+        const urlObj = new URL(rawUrl);
+        extractedPkgParam = urlObj.searchParams.get('pkg') || urlObj.searchParams.get('package') || urlObj.searchParams.get('id') || '';
+      }
+    } catch (e) {
+      // ignore URL parse errors
+    }
+
     // Match by code, packageNumber (e.g. M1, 1), name, or partial QR payload
     const foundPkg = allPackages.find(p => {
-      const pCodeLower = p.code.toLowerCase();
-      const pIdLower = p.id.toLowerCase();
-      const pNameLower = p.name.toLowerCase();
+      const pCodeLower = (p.code || '').toLowerCase();
+      const pIdLower = (p.id || '').toLowerCase();
+      const pNameLower = (p.name || '').toLowerCase();
+
       const cleanLower = clean.toLowerCase();
       const enLower = enClean.toLowerCase();
+      const paramLower = extractedPkgParam.toLowerCase();
 
-      return pCodeLower === cleanLower ||
-             pCodeLower === enLower ||
-             pIdLower === cleanLower ||
-             pIdLower === enLower ||
-             pNameLower.includes(cleanLower) ||
+      // 1. Check if extracted URL query parameter matches package code or ID
+      if (paramLower) {
+        if (pCodeLower === paramLower || pIdLower === paramLower || pCodeLower.includes(paramLower) || paramLower.includes(pCodeLower)) {
+          return true;
+        }
+      }
+
+      // 2. Exact or partial code matches
+      if (pCodeLower && (pCodeLower === cleanLower || pCodeLower === enLower || cleanLower.includes(pCodeLower) || enLower.includes(pCodeLower))) {
+        return true;
+      }
+
+      if (pIdLower && (pIdLower === cleanLower || pIdLower === enLower || cleanLower.includes(pIdLower) || enLower.includes(pIdLower))) {
+        return true;
+      }
+
+      // 3. Package number matching (e.g., M1, 1, Место 1, PKG-123-1)
+      const numMatch = cleanLower.match(/(?:m|м|место|pkg)?\s*[-_:]?\s*(\d+)/i);
+      if (numMatch && parseInt(numMatch[1], 10) === p.packageNumber) {
+        return true;
+      }
+
+      // 4. Standard name or number string
+      return pNameLower.includes(cleanLower) ||
              pNameLower.includes(enLower) ||
-             cleanLower.includes(pCodeLower) ||
-             enLower.includes(pCodeLower) ||
              `m${p.packageNumber}` === cleanLower ||
              `m${p.packageNumber}` === enLower ||
              `место ${p.packageNumber}` === cleanLower ||

@@ -24,7 +24,7 @@ import {
   Tag
 } from 'lucide-react';
 import { ProductionOrder, ERPEmployee, OrderPackage } from '../types';
-import { formatDeadlineDate, formatDateTimeSafe, formatDateSafe } from '../utils';
+import { formatDeadlineDate, formatDateTimeSafe, formatDateSafe, getStageNameRussian } from '../utils';
 import { printArchiveOrderPassport } from '../utils/archivePassportPrinter';
 import { printPackageLabelDirect } from '../utils/packageLabelPrinter';
 
@@ -97,12 +97,16 @@ export const ERPArchiveOrderModal: React.FC<ERPArchiveOrderModalProps> = ({
   const stageNames: Record<string, { label: string; color: string }> = {
     queue: { label: 'Планирование', color: 'bg-slate-100 text-slate-700 border-slate-200' },
     cutting: { label: 'Распил', color: 'bg-amber-100 text-amber-800 border-amber-200' },
-    edging: { label: 'Кромка', color: 'bg-blue-100 text-blue-800 border-blue-200' },
+    edging: { label: 'Кромкооблицовка', color: 'bg-blue-100 text-blue-800 border-blue-200' },
+    cnc: { label: 'Присадка / ЧПУ', color: 'bg-purple-100 text-purple-800 border-purple-200' },
     milling: { label: 'Присадка / ЧПУ', color: 'bg-purple-100 text-purple-800 border-purple-200' },
     facades: { label: 'Фасады', color: 'bg-pink-100 text-pink-800 border-pink-200' },
     assembly: { label: 'Сборка', color: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
     kitting: { label: 'Комплектовка', color: 'bg-cyan-100 text-cyan-800 border-cyan-200' },
+    qc: { label: 'Контроль ОТК', color: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
+    packing: { label: 'Упаковка', color: 'bg-orange-100 text-orange-800 border-orange-200' },
     packaging: { label: 'Упаковка', color: 'bg-orange-100 text-orange-800 border-orange-200' },
+    ready: { label: 'Готово к отгрузке', color: 'bg-teal-100 text-teal-800 border-teal-200' },
     shipping: { label: 'Отгрузка', color: 'bg-emerald-100 text-emerald-800 border-emerald-200' }
   };
 
@@ -619,8 +623,14 @@ export const ERPArchiveOrderModal: React.FC<ERPArchiveOrderModalProps> = ({
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {Object.entries(stageNames).map(([stageKey, meta]) => {
                     const stData = stageProgress[stageKey as keyof typeof stageProgress];
-                    const isDone = stData?.status === 'done';
-                    const isInProgress = stData?.status === 'in_progress';
+                    const isDone = stData?.status === 'done' || 
+                                   (stageKey === 'shipping' && (isFullyShipped || order.status === 'shipped' || !!order.shippedAt)) ||
+                                   (stageKey === 'packing' && (isFullyShipped || order.status === 'shipped' || order.currentStage === 'shipping' || order.currentStage === 'ready'));
+                    const isInProgress = !isDone && (
+                      stData?.status === 'in_progress' || 
+                      (stageKey === 'shipping' && order.currentStage === 'shipping' && !isFullyShipped) ||
+                      (stageKey === 'packing' && order.currentStage === 'packing' && !isDone)
+                    );
                     const forced = forcedStages[stageKey];
 
                     return (
@@ -691,7 +701,7 @@ export const ERPArchiveOrderModal: React.FC<ERPArchiveOrderModalProps> = ({
                         {workLogs.map((log, idx) => (
                           <tr key={idx} className="hover:bg-slate-50/80">
                             <td className="p-3 font-bold text-slate-900">{log.employeeName}</td>
-                            <td className="p-3 text-slate-600">{stageNames[log.stageId]?.label || log.stageId}</td>
+                            <td className="p-3 text-slate-600">{stageNames[log.stageId]?.label || getStageNameRussian(log.stageId)}</td>
                             <td className="p-3 font-mono text-slate-500">{formatDateTimeSafe(log.startTime)}</td>
                             <td className="p-3 font-mono text-slate-500">{formatDateTimeSafe(log.endTime, 'В процессе')}</td>
                             <td className="p-3 text-right font-black text-slate-900">

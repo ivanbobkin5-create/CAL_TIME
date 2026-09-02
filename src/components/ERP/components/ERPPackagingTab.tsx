@@ -84,22 +84,68 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
   // All details from specification
   const allDetails = order.birkaData?.details || [];
 
-  // Detail IDs already packed in completed packages
+  // Helper to count how many instances of a detail have been packed across all finished packages
+  const getPackedCountForDetail = (detailId: string): number => {
+    let count = 0;
+    existingPackages.forEach(pkg => {
+      (pkg.parts || []).forEach(p => {
+        const pId = p.detailId || '';
+        const origId = (p as any).originalDetailId || pId.split('#')[0];
+        if (origId === detailId) {
+          count += (p.quantity || 1);
+        }
+      });
+    });
+    return count;
+  };
+
+  // Helper to count how many instances of a detail are in the currently forming buffer
+  const getBufferCountForDetail = (detailId: string): number => {
+    let count = 0;
+    currentBufferParts.forEach(p => {
+      const pId = p.detailId || '';
+      const origId = (p as any).originalDetailId || pId.split('#')[0];
+      if (origId === detailId) {
+        count += (p.quantity || 1);
+      }
+    });
+    return count;
+  };
+
+  // Total required pieces across all details
+  const totalRequiredPartsCount = useMemo(() => {
+    return allDetails.reduce((sum, d) => sum + Math.max(1, d.quantity || 1), 0);
+  }, [allDetails]);
+
+  // Total packed pieces across all finished packages
+  const totalPackedUnitsCount = useMemo(() => {
+    return existingPackages.reduce((sum, pkg) => {
+      return sum + (pkg.parts || []).reduce((pSum, p) => pSum + (p.quantity || 1), 0);
+    }, 0);
+  }, [existingPackages]);
+
+  // Set of detail IDs that are 100% packed
   const packedDetailIds = new Set(
-    existingPackages.flatMap(pkg => pkg.parts.map(p => p.detailId))
+    allDetails.filter(d => getPackedCountForDetail(d.id) >= Math.max(1, d.quantity || 1)).map(d => d.id)
   );
 
-  // Detail IDs in the currently forming buffer
-  const bufferDetailIds = new Set(currentBufferParts.map(p => p.detailId));
+  // Set of detail IDs in buffer
+  const bufferDetailIds = new Set(
+    allDetails.filter(d => getBufferCountForDetail(d.id) > 0).map(d => d.id)
+  );
 
   // Stage readiness calculations for Online Packaging
   const isPreviousStagesCompleted = arePrecedingStagesCompleted(order, settings);
   const readinessStats = getPackagingReadinessStats(order, settings);
 
-  // Available unpacked details (not in existing packages & not in active buffer)
-  const rawUnpackedDetails = allDetails.filter(d => !packedDetailIds.has(d.id) && !bufferDetailIds.has(d.id));
+  // Available unpacked details (that still have remaining instances to pack)
+  const rawUnpackedDetails = allDetails.filter(d => {
+    const reqQty = Math.max(1, d.quantity || 1);
+    const packedCount = getPackedCountForDetail(d.id);
+    const bufferCount = getBufferCountForDetail(d.id);
+    return (packedCount + bufferCount) < reqQty;
+  });
 
-  // Display all unpacked details (ready & pending previous processing stages)
   const unpackedDetails = rawUnpackedDetails;
 
   // Materials list for filter
@@ -115,9 +161,8 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
     return matMatches && searchMatches;
   });
 
-  const totalDetailsCount = allDetails.length;
-  const totalPackedCount = packedDetailIds.size + currentBufferParts.length;
-  const isAllDetailsPacked = totalDetailsCount > 0 && packedDetailIds.size >= totalDetailsCount;
+  const totalDetailsCount = totalRequiredPartsCount;
+  const isAllDetailsPacked = totalRequiredPartsCount > 0 && totalPackedUnitsCount >= totalRequiredPartsCount;
 
   // Feedback timer helper
   const showFeedback = (text: string, type: 'success' | 'error' | 'info') => {
@@ -127,36 +172,44 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
     }, 4000);
   };
 
-  // Add detail to current active package
+  // Add detail instance to current active package
   const handleAddDetailToCurrentPackage = (detail: any) => {
     if (!isDetailReadyForPackaging(detail, order, settings)) {
       showFeedback(`Деталь №${detail.labelNumber} ("${detail.name}") еще проходит кромление/присадку на пред. этапе и пока не готова к упаковке!`, 'error');
       return;
     }
 
-    if (packedDetailIds.has(detail.id)) {
-      showFeedback(`Деталь №${detail.labelNumber} уже находится в другой упаковке!`, 'error');
+    const reqQty = Math.max(1, detail.quantity || 1);
+    const packedCount = getPackedCountForDetail(detail.id);
+    const bufferCount = getBufferCountForDetail(detail.id);
+    const totalCount = packedCount + bufferCount;
+
+    if (totalCount >= reqQty) {
+      if (packedCount >= reqQty) {
+        showFeedback(`Все ${reqQty} шт. детали №${detail.labelNumber} ("${detail.name}") уже упакованы в сформированные места!`, 'info');
+      } else {
+        showFeedback(`Все доступные ${reqQty} шт. детали №${detail.labelNumber} уже добавлены в текущее место.`, 'info');
+      }
       return;
     }
 
-    if (bufferDetailIds.has(detail.id)) {
-      showFeedback(`Деталь №${detail.labelNumber} уже добавлена в текущее место.`, 'info');
-      return;
-    }
+    const instanceIndex = totalCount + 1;
+    const instancePartId = reqQty > 1 ? `${detail.id}#${instanceIndex}` : detail.id;
 
     const newPart: OrderPackagePart = {
-      detailId: detail.id,
+      detailId: instancePartId,
+      originalDetailId: detail.id,
       labelNumber: detail.labelNumber,
-      name: detail.name,
+      name: reqQty > 1 ? `${detail.name} (${instanceIndex}/${reqQty} шт.)` : detail.name,
       material: detail.material,
       length: detail.length,
       width: detail.width,
       thickness: detail.thickness,
-      quantity: detail.quantity || 1
-    };
+      quantity: 1
+    } as any;
 
     setCurrentBufferParts(prev => [...prev, newPart]);
-    showFeedback(`Деталь №${detail.labelNumber} ("${detail.name}") добавлена в ${packageNameInput}`, 'success');
+    showFeedback(`Деталь №${detail.labelNumber} ("${detail.name}") [${instanceIndex}/${reqQty} шт.] добавлена в ${packageNameInput}`, 'success');
   };
 
   // Remove detail from active buffer
@@ -167,16 +220,28 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
   // Add ALL currently filtered unpacked details to package
   const handleAddAllFilteredToBuffer = () => {
     if (filteredUnpacked.length === 0) return;
-    const newParts: OrderPackagePart[] = filteredUnpacked.map(d => ({
-      detailId: d.id,
-      labelNumber: d.labelNumber,
-      name: d.name,
-      material: d.material,
-      length: d.length,
-      width: d.width,
-      thickness: d.thickness,
-      quantity: d.quantity || 1
-    }));
+    const newParts: OrderPackagePart[] = [];
+    filteredUnpacked.forEach(d => {
+      const reqQty = Math.max(1, d.quantity || 1);
+      const packedCount = getPackedCountForDetail(d.id);
+      const bufferCount = getBufferCountForDetail(d.id);
+      const remaining = reqQty - (packedCount + bufferCount);
+
+      for (let i = 0; i < remaining; i++) {
+        const instIdx = packedCount + bufferCount + i + 1;
+        newParts.push({
+          detailId: reqQty > 1 ? `${d.id}#${instIdx}` : d.id,
+          originalDetailId: d.id,
+          labelNumber: d.labelNumber,
+          name: reqQty > 1 ? `${d.name} (${instIdx}/${reqQty} шт.)` : d.name,
+          material: d.material,
+          length: d.length,
+          width: d.width,
+          thickness: d.thickness,
+          quantity: 1
+        } as any);
+      }
+    });
     setCurrentBufferParts(prev => [...prev, ...newParts]);
     showFeedback(`Добавлено ${newParts.length} деталей в текущую упаковку`, 'success');
   };

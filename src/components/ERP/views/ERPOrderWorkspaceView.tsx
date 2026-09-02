@@ -1035,9 +1035,6 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                 return (
                   <>
                     Клиент: <strong className="text-white font-bold">{clientNameClean || projectNameClean || 'Частный заказчик'}</strong>
-                    {projectNameClean && clientNameClean && (
-                      <> • Проект: <strong className="text-white font-bold">{projectNameClean}</strong></>
-                    )}
                   </>
                 );
               })()}
