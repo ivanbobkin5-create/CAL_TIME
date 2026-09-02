@@ -108,16 +108,30 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
     return 'future';
   };
 
+  const STAGE_ORDER: ProductionStageId[] = ['queue', 'cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing', 'shipping', 'ready'];
+
   // Helper to check if order belongs to a specific production stage
   const isOrderOnStage = (order: ProductionOrder, stageId: ProductionStageId): boolean => {
     // Completed or shipped orders are no longer active on production stations
-    if (order.status === 'shipped' || order.status === 'completed') {
+    if (order.status === 'shipped' || order.status === 'completed' || order.isDeleted) {
       return false;
     }
     // If this specific stage is already marked as done on the order, it should not be listed on this stage
     if (order.stageProgress?.[stageId]?.status === 'done') {
       return false;
     }
+
+    const currentIdx = STAGE_ORDER.indexOf(order.currentStage);
+    const targetIdx = STAGE_ORDER.indexOf(stageId);
+
+    // If order's current stage has already moved beyond stageId in the production flow,
+    // this stage is completed and must not be listed as an active task on this workstation!
+    if (currentIdx !== -1 && targetIdx !== -1 && currentIdx > targetIdx) {
+      if (stageId !== 'kitting' && stageId !== 'packing') {
+        return false;
+      }
+    }
+
     if (order.currentStage === 'shipping' || order.currentStage === 'ready') {
       return stageId === 'shipping' || stageId === 'ready';
     }
@@ -128,8 +142,13 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
         return true;
       }
     }
-    if (order.stagePlannedDates && order.stagePlannedDates[stageId]) return true;
-    if (stageId === 'cutting' && !!order.plannedCuttingDate) return true;
+    // Only consider planned date if stage is not done and order has not progressed past it
+    if (order.stagePlannedDates && order.stagePlannedDates[stageId] && (currentIdx === -1 || targetIdx >= currentIdx)) {
+      return true;
+    }
+    if (stageId === 'cutting' && !!order.plannedCuttingDate && (currentIdx <= STAGE_ORDER.indexOf('cutting'))) {
+      return true;
+    }
 
     return false;
   };

@@ -790,7 +790,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
   const handleUpdateOrderStatus = async (orderId: string, nextStage: ProductionStageId, isExplicitlyCompleted?: boolean) => {
     const isCompleted = isExplicitlyCompleted || nextStage === 'ready';
     const newStatus: ProductionOrder['status'] = isCompleted ? 'completed' : 'in_progress';
-    
+    const todayStr = new Date().toISOString().split('T')[0];
     const displayUserName = authUser?.name || 'Сотрудник цеха';
 
     // Instant UI update
@@ -799,25 +799,37 @@ export const ERPApp: React.FC<ERPAppProps> = ({
       const nextList = prev.map(o => {
         if (o.id === orderId) {
           const prevStage = o.currentStage;
-          const updated = {
+          const updatedStageDates = {
+            ...(o.stagePlannedDates || {}),
+            ...(nextStage && nextStage !== 'ready' && !o.stagePlannedDates?.[nextStage] ? { [nextStage]: todayStr } : {})
+          };
+
+          const updatedStageProgress = {
+            ...(o.stageProgress || {})
+          };
+
+          if (prevStage && prevStage !== nextStage) {
+            updatedStageProgress[prevStage] = {
+              status: 'done' as const,
+              completedBy: o.stageProgress?.[prevStage]?.completedBy || displayUserName,
+              completedAt: o.stageProgress?.[prevStage]?.completedAt || new Date().toISOString()
+            };
+          }
+
+          if (nextStage && nextStage !== 'ready') {
+            updatedStageProgress[nextStage] = {
+              status: isCompleted ? ('done' as const) : ('in_progress' as const),
+              completedBy: isCompleted ? (displayUserName || undefined) : undefined,
+              completedAt: isCompleted ? new Date().toISOString() : undefined
+            };
+          }
+
+          const updated: ProductionOrder = {
             ...o,
             currentStage: nextStage,
             status: newStatus,
-            stageProgress: {
-              ...o.stageProgress,
-              ...(prevStage && prevStage !== nextStage ? {
-                [prevStage]: {
-                  status: 'done' as const,
-                  completedBy: displayUserName || undefined,
-                  completedAt: new Date().toISOString()
-                }
-              } : {}),
-              [nextStage]: {
-                status: isCompleted ? ('done' as const) : ('in_progress' as const),
-                completedBy: isCompleted ? (displayUserName || undefined) : undefined,
-                completedAt: isCompleted ? new Date().toISOString() : undefined
-              }
-            }
+            stagePlannedDates: updatedStageDates,
+            stageProgress: updatedStageProgress
           };
           updatedOrderObj = updated;
           return updated;
@@ -834,7 +846,11 @@ export const ERPApp: React.FC<ERPAppProps> = ({
       setSelectedOrderForWorkspace(prev => prev ? {
         ...prev,
         currentStage: nextStage,
-        status: newStatus
+        status: newStatus,
+        stagePlannedDates: {
+          ...(prev.stagePlannedDates || {}),
+          ...(nextStage && nextStage !== 'ready' && !prev.stagePlannedDates?.[nextStage] ? { [nextStage]: todayStr } : {})
+        }
       } : null);
     }
 
@@ -847,7 +863,8 @@ export const ERPApp: React.FC<ERPAppProps> = ({
           body: JSON.stringify({
             currentStage: nextStage,
             status: newStatus,
-            completedByEmployeeId: matchedEmp?.id || '',
+            completedByEmployeeId: authUser?.id || '',
+            stagePlannedDates: updatedOrderObj?.stagePlannedDates || undefined,
             stageProgress: updatedOrderObj?.stageProgress || {
               [nextStage]: { 
                 status: isCompleted ? 'done' : 'in_progress',

@@ -872,6 +872,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     }
 
     const isOrderFullyCompleted = !nextSt || nextSt === 'ready';
+    const todayYmd = new Date().toISOString().split('T')[0];
+
     const updatedStageProgress = {
       ...(order.stageProgress || {}),
       [currentStage]: {
@@ -886,11 +888,17 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       };
     }
 
+    const updatedStageDates = {
+      ...(order.stagePlannedDates || {}),
+      ...(nextSt && nextSt !== 'ready' && !order.stagePlannedDates?.[nextSt] ? { [nextSt]: todayYmd } : {})
+    };
+
     const updatedOrder: ProductionOrder = {
       ...order,
       currentStage: nextSt || currentStage,
       status: isOrderFullyCompleted ? 'completed' : 'in_progress',
       stageProgress: updatedStageProgress,
+      stagePlannedDates: updatedStageDates,
       workLogs: updatedLogs,
       forcedStageCompletions: updatedForcedStageCompletions
     };
