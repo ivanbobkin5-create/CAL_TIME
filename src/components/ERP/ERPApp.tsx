@@ -788,11 +788,10 @@ export const ERPApp: React.FC<ERPAppProps> = ({
   };
 
   const handleUpdateOrderStatus = async (orderId: string, nextStage: ProductionStageId, isExplicitlyCompleted?: boolean) => {
-    const isCompleted = isExplicitlyCompleted || nextStage === 'ready' || nextStage === 'shipping';
+    const isCompleted = isExplicitlyCompleted || nextStage === 'ready';
     const newStatus: ProductionOrder['status'] = isCompleted ? 'completed' : 'in_progress';
     
-    const matchedEmp = employees.find(e => e.id === activeEmployeeKey || e.barcode === activeEmployeeKey);
-    const displayUserName = matchedEmp ? `${matchedEmp.lastName || ''} ${matchedEmp.firstName || ''}`.trim() : activeEmployeeKey;
+    const displayUserName = authUser?.name || 'Сотрудник цеха';
 
     // Instant UI update
     let updatedOrderObj: ProductionOrder | null = null;

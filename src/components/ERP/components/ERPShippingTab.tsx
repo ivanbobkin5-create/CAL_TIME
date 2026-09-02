@@ -23,7 +23,7 @@ import { PackageLabelPrintModal } from './PackageLabelPrintModal';
 import { ShippingActPrintModal } from './ShippingActPrintModal';
 import { ShippingTTNPrintModal } from './ShippingTTNPrintModal';
 import { QuickAddDriverModal } from './QuickAddDriverModal';
-import { convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan } from '../utils';
+import { convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, extractPackageCodeFromScan } from '../utils';
 
 interface ERPShippingTabProps {
   order: ProductionOrder;
@@ -104,58 +104,62 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
       scannerInputRef.current.value = '';
     }
 
-    const clean = code.trim();
-    if (!clean) return;
+    const rawInput = (code || '').trim();
+    if (!rawInput) return;
 
+    // Extract inner package code/identifier if the scanned text is a full passport URL
+    const extractedPkgParam = extractPackageCodeFromScan(rawInput);
+    const clean = (extractedPkgParam || rawInput).trim();
     const enClean = normalizeBarcodeScan(clean);
-
-    // Extract query parameters if scanned text is a URL or contains url query
-    let extractedPkgParam = '';
-    try {
-      if (clean.includes('http://') || clean.includes('https://') || clean.includes('pkg=')) {
-        const rawUrl = clean.startsWith('http') ? clean : `https://dummy.com/${clean.replace(/^\/+/, '')}`;
-        const urlObj = new URL(rawUrl);
-        extractedPkgParam = urlObj.searchParams.get('pkg') || urlObj.searchParams.get('package') || urlObj.searchParams.get('id') || '';
-      }
-    } catch (e) {
-      // ignore URL parse errors
-    }
+    const rawEnClean = normalizeBarcodeScan(rawInput);
 
     // Match by code, packageNumber (e.g. M1, 1), name, or partial QR payload
     const foundPkg = allPackages.find(p => {
-      const pCodeLower = (p.code || '').toLowerCase();
-      const pIdLower = (p.id || '').toLowerCase();
-      const pNameLower = (p.name || '').toLowerCase();
+      const pCodeLower = (p.code || '').toLowerCase().trim();
+      const pIdLower = (p.id || '').toLowerCase().trim();
+      const pNameLower = (p.name || '').toLowerCase().trim();
 
       const cleanLower = clean.toLowerCase();
       const enLower = enClean.toLowerCase();
-      const paramLower = extractedPkgParam.toLowerCase();
+      const rawLower = rawInput.toLowerCase();
+      const rawEnLower = rawEnClean.toLowerCase();
 
-      // 1. Check if extracted URL query parameter matches package code or ID
-      if (paramLower) {
-        if (pCodeLower === paramLower || pIdLower === paramLower || pCodeLower.includes(paramLower) || paramLower.includes(pCodeLower)) {
-          return true;
-        }
+      // Generated standard package code: e.g. PKG-1045-1
+      const stdCode = `pkg-${order.orderNumber}-${p.packageNumber}`.toLowerCase();
+
+      // 1. Direct code, id, or standard code matches
+      if (pCodeLower && (pCodeLower === cleanLower || pCodeLower === enLower || pCodeLower === rawLower || pCodeLower === rawEnLower)) {
+        return true;
       }
-
-      // 2. Exact or partial code matches
-      if (pCodeLower && (pCodeLower === cleanLower || pCodeLower === enLower || cleanLower.includes(pCodeLower) || enLower.includes(pCodeLower))) {
+      if (pIdLower && (pIdLower === cleanLower || pIdLower === enLower || pIdLower === rawLower || pIdLower === rawEnLower)) {
+        return true;
+      }
+      if (stdCode === cleanLower || stdCode === enLower || stdCode === rawLower || stdCode === rawEnLower) {
         return true;
       }
 
-      if (pIdLower && (pIdLower === cleanLower || pIdLower === enLower || cleanLower.includes(pIdLower) || enLower.includes(pIdLower))) {
+      // 2. Substring match (e.g. URL contains package ID or code)
+      if (pCodeLower && (cleanLower.includes(pCodeLower) || rawLower.includes(pCodeLower) || pCodeLower.includes(cleanLower))) {
+        return true;
+      }
+      if (pIdLower && (cleanLower.includes(pIdLower) || rawLower.includes(pIdLower) || pIdLower.includes(cleanLower))) {
+        return true;
+      }
+      if (rawLower.includes(stdCode) || rawEnLower.includes(stdCode)) {
         return true;
       }
 
       // 3. Package number matching (e.g., M1, 1, Место 1, PKG-123-1)
-      const numMatch = cleanLower.match(/(?:m|м|место|pkg)?\s*[-_:]?\s*(\d+)/i);
+      const numMatch = cleanLower.match(/(?:m|м|место|pkg)?\s*[-_:]?\s*(\d+)$/i) || 
+                       cleanLower.match(/(?:pkg-[^-]+-)(\d+)$/i);
       if (numMatch && parseInt(numMatch[1], 10) === p.packageNumber) {
         return true;
       }
 
       // 4. Standard name or number string
-      return pNameLower.includes(cleanLower) ||
-             pNameLower.includes(enLower) ||
+      return pNameLower === cleanLower ||
+             pNameLower === enLower ||
+             pNameLower.includes(cleanLower) ||
              `m${p.packageNumber}` === cleanLower ||
              `m${p.packageNumber}` === enLower ||
              `место ${p.packageNumber}` === cleanLower ||
@@ -164,7 +168,7 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
     });
 
     if (!foundPkg) {
-      showFeedback(`Упаковка с QR-кодом "${clean}" не найдена в этом заказе!`, 'error');
+      showFeedback(`Упаковка с QR-кодом "${clean || rawInput}" не найдена в этом заказе!`, 'error');
       return;
     }
 

@@ -35,6 +35,7 @@ interface ERPPackagingTabProps {
   onUpdateOrder: (updatedOrder: ProductionOrder) => void;
   onUpdateOrderStatus: (orderId: string, nextStage: ProductionStageId) => void;
   onOpenScannerModal?: () => void;
+  onExit?: () => void;
 }
 
 export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
@@ -43,7 +44,8 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
   currentUser,
   onUpdateOrder,
   onUpdateOrderStatus,
-  onOpenScannerModal
+  onOpenScannerModal,
+  onExit
 }) => {
   const [selectedPrintPkg, setSelectedPrintPkg] = useState<OrderPackage | null>(null);
   const [showPrintModal, setShowPrintModal] = useState<boolean>(false);
@@ -254,16 +256,17 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
       scannerInputRef.current.value = '';
     }
 
-    const cleanCode = code.trim().replace(/^#/, '');
-    if (!cleanCode) return;
+    const raw = (code || '').trim();
+    const cleanCode = raw.replace(/^#/, '');
+    if (!cleanCode && !raw) return;
 
-    // Check if it's a QR Command
-    const cmdResult = processQRCommand(cleanCode, {
+    // Check if it's a QR Command (test both raw input and clean code)
+    const cmdResult = processQRCommand(cleanCode || raw, {
       onFinishPackage: () => {
         if (currentBufferParts.length > 0) {
           handleSealPackage(false);
         } else {
-          showFeedback('В формируемой коробке пока нет деталей!', 'error');
+          showFeedback('В формируемой коробке пока нет деталей! Отсканируйте деталь для добавления.', 'error');
         }
       }
     });
@@ -273,18 +276,17 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
       return;
     }
 
-    const enCode = normalizeBarcodeScan(cleanCode);
-
     const template = settings?.birkaQrFormatTemplate;
     const orderNum = order.orderNumber || '';
 
     // Find detail matching using custom template & standard aliases
     const found = allDetails.find(d => {
-      return matchDetailToScannedCode(cleanCode, d, template, orderNum, settings?.birkaQrMatchingMode);
+      return matchDetailToScannedCode(cleanCode, d, template, orderNum, settings?.birkaQrMatchingMode) ||
+             matchDetailToScannedCode(raw, d, template, orderNum, settings?.birkaQrMatchingMode);
     });
 
     if (!found) {
-      showFeedback(`Деталь с кодом/номером "${cleanCode}" не найдена в заказе!`, 'error');
+      showFeedback(`Деталь с кодом/номером "${cleanCode || raw}" не найдена в заказе!`, 'error');
       return;
     }
 
@@ -298,6 +300,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
 
       const activeEl = document.activeElement as HTMLElement | null;
       const target = e.target as HTMLElement | null;
+      const targetEl = (target || activeEl) as HTMLInputElement | HTMLTextAreaElement | null;
       const isScannerInput = target === scannerInputRef.current || activeEl === scannerInputRef.current;
 
       const isOtherInput = (target && (
@@ -312,8 +315,6 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
         activeEl.isContentEditable
       ));
 
-      if (isOtherInput) return;
-
       if (e.key === 'F8') {
         e.preventDefault();
         if (currentBufferParts.length > 0) {
@@ -325,9 +326,41 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
       }
 
       if (e.key === 'Enter') {
+        const inputVal = targetEl && typeof targetEl.value === 'string' ? targetEl.value.trim() : '';
+        const bufferVal = barcodeBufferRef.current.trim();
+        const scanInputVal = scanInput.trim();
+        const scannerInputVal = (scannerInputRef.current?.value || '').trim();
         const rawCode = isScannerInput
-          ? (scanInput.trim() || (scannerInputRef.current?.value || '').trim())
-          : (barcodeBufferRef.current.trim() || scanInput.trim() || (scannerInputRef.current?.value || '').trim());
+          ? (scanInputVal || scannerInputVal || bufferVal || inputVal)
+          : (bufferVal || inputVal || scanInputVal || scannerInputVal);
+
+        if (!rawCode) return;
+
+        // 1. Check if the scanned string is a command regardless of where cursor is
+        const cmdCheck = processQRCommand(rawCode, {
+          onFinishPackage: () => {
+            if (currentBufferParts.length > 0) {
+              handleSealPackage(false);
+            } else {
+              showFeedback('В формируемой коробке пока нет деталей! Отсканируйте деталь для добавления.', 'error');
+            }
+          }
+        });
+
+        if (cmdCheck.isCommand) {
+          e.preventDefault();
+          if (targetEl) targetEl.value = '';
+          if (scannerInputRef.current) scannerInputRef.current.value = '';
+          setScanInput('');
+          barcodeBufferRef.current = '';
+          showFeedback(cmdCheck.message || 'Выполнена команда QR-кода', 'success');
+          return;
+        }
+
+        if (isOtherInput) {
+          return;
+        }
+
         const bufferedCode = normalizeBarcodeScan(rawCode);
         if (bufferedCode) {
           e.preventDefault();
@@ -567,8 +600,35 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
       return;
     }
 
+    const nowIso = new Date().toISOString();
+    const empName = currentUser?.name || order.responsibleEmployeeName || 'Упаковщик';
+
+    const updatedOrder: ProductionOrder = {
+      ...order,
+      currentStage: 'shipping',
+      status: 'in_progress',
+      stageProgress: {
+        ...(order.stageProgress || {}),
+        packing: {
+          status: 'done',
+          completedBy: empName,
+          completedAt: nowIso
+        },
+        shipping: {
+          status: 'in_progress'
+        }
+      }
+    };
+
+    onUpdateOrder(updatedOrder);
     onUpdateOrderStatus(order.id, 'shipping');
     showFeedback('Участок упаковки успешно завершен! Заказ передан на участок отгрузки.', 'success');
+
+    if (onExit) {
+      setTimeout(() => {
+        onExit();
+      }, 600);
+    }
   };
 
   return (

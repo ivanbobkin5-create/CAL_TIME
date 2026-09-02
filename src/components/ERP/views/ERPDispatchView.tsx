@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, ERPEmployee, ERPCompanySettings, OrderPackage, DriverInfo } from '../types';
 import { MobileCameraScannerModal } from '../components/MobileCameraScannerModal';
-import { speakText, normalizeBarcodeScan } from '../utils';
+import { speakText, normalizeBarcodeScan, extractPackageCodeFromScan } from '../utils';
 
 interface ERPDispatchViewProps {
   orders: ProductionOrder[];
@@ -379,30 +379,62 @@ const ERPDispatchWorkspaceModal: React.FC<ERPDispatchWorkspaceModalProps> = ({
 
   // Handle Scan package code
   const handleScanPackageCode = (rawCode: string) => {
-    const clean = normalizeBarcodeScan(rawCode);
-    if (!clean) return;
+    const rawInput = (rawCode || '').trim();
+    if (!rawInput) return;
+
+    const extractedCode = extractPackageCodeFromScan(rawInput);
+    const clean = (extractedCode || rawInput).trim();
+    const enClean = normalizeBarcodeScan(clean);
+    const rawEnClean = normalizeBarcodeScan(rawInput);
 
     // Find package matching code
-    const matchingPkg = pkgs.find(p => p.code.toLowerCase() === clean.toLowerCase() || p.id === clean || p.packageNumber.toString() === clean);
+    const matchingPkg = pkgs.find(p => {
+      const pCodeLower = (p.code || '').toLowerCase().trim();
+      const pIdLower = (p.id || '').toLowerCase().trim();
+      const pNameLower = (p.name || '').toLowerCase().trim();
+
+      const cleanLower = clean.toLowerCase();
+      const enLower = enClean.toLowerCase();
+      const rawLower = rawInput.toLowerCase();
+      const rawEnLower = rawEnClean.toLowerCase();
+      const stdCode = `pkg-${order.orderNumber}-${p.packageNumber}`.toLowerCase();
+
+      // Exact matches
+      if (pCodeLower && (pCodeLower === cleanLower || pCodeLower === enLower || pCodeLower === rawLower || pCodeLower === rawEnLower)) return true;
+      if (pIdLower && (pIdLower === cleanLower || pIdLower === enLower || pIdLower === rawLower || pIdLower === rawEnLower)) return true;
+      if (stdCode === cleanLower || stdCode === enLower || stdCode === rawLower || stdCode === rawEnLower) return true;
+
+      // Substring matches
+      if (pCodeLower && (cleanLower.includes(pCodeLower) || rawLower.includes(pCodeLower) || pCodeLower.includes(cleanLower))) return true;
+      if (pIdLower && (cleanLower.includes(pIdLower) || rawLower.includes(pIdLower) || pIdLower.includes(cleanLower))) return true;
+      if (rawLower.includes(stdCode) || rawEnLower.includes(stdCode)) return true;
+
+      // Number match
+      const numMatch = cleanLower.match(/(?:m|м|место|pkg)?\s*[-_:]?\s*(\d+)$/i) || 
+                       cleanLower.match(/(?:pkg-[^-]+-)(\d+)$/i);
+      if (numMatch && parseInt(numMatch[1], 10) === p.packageNumber) return true;
+
+      return pNameLower === cleanLower || pNameLower === enLower || pNameLower.includes(cleanLower) || String(p.packageNumber) === clean;
+    });
 
     if (!matchingPkg) {
-      setScanMessage({ type: 'error', text: `Штрихкод "${clean}" не найден в упаковочных местах этого заказа!` });
+      setScanMessage({ type: 'error', text: `Штрихкод "${clean || rawInput}" не найден в упаковочных местах этого заказа!` });
       speakText('Ошибка штрихкода');
       return;
     }
 
-    if (scannedCodes.includes(matchingPkg.code)) {
+    if (scannedCodes.includes(matchingPkg.code) || scannedCodes.includes(matchingPkg.id)) {
       setScanMessage({ type: 'success', text: `Место #${matchingPkg.packageNumber} уже отсканировано!` });
       return;
     }
 
-    const nextCodes = [...scannedCodes, matchingPkg.code];
+    const nextCodes = [...scannedCodes, matchingPkg.code, matchingPkg.id];
     setScannedCodes(nextCodes);
     setScanMessage({ type: 'success', text: `Место #${matchingPkg.packageNumber} (${matchingPkg.name}) отсканировано!` });
     speakText(`Место ${matchingPkg.packageNumber} принято`);
 
     // Auto update packages status in order
-    const updatedPkgs = pkgs.map(p => p.code === matchingPkg.code ? { ...p, isShipped: true, shippedAt: new Date().toISOString() } : p);
+    const updatedPkgs = pkgs.map(p => (p.code === matchingPkg.code || p.id === matchingPkg.id) ? { ...p, isShipped: true, shippedAt: new Date().toISOString() } : p);
     onUpdateOrder({ ...order, packages: updatedPkgs });
   };
 

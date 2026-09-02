@@ -52,11 +52,11 @@ export function getNextRequiredStage(
   enabledStages?: ProductionStageId[]
 ): ProductionStageId | null {
   const hasEdge = orderRequiresEdging(order);
-  const defaultSequence: ProductionStageId[] = ['queue', 'cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing', 'ready'];
+  const defaultSequence: ProductionStageId[] = ['queue', 'cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing', 'shipping'];
   
   // Build active sequence maintaining custom user order if configured
   const activeSequence: ProductionStageId[] = (enabledStages && enabledStages.length > 0)
-    ? ['queue', ...enabledStages.filter(s => s !== 'queue' && s !== 'ready' && s !== 'shipping'), 'ready']
+    ? ['queue', ...enabledStages.filter(s => s !== 'queue' && s !== 'ready' && s !== 'shipping'), 'shipping']
     : defaultSequence;
 
   const currentIndex = activeSequence.indexOf(currentStage);
@@ -104,6 +104,17 @@ const RU_TO_EN_MAP: Record<string, string> = {
   '№': '#'
 };
 
+// English QWERTY to Russian ЙЦУКЕН key mapping dictionary
+const EN_TO_RU_MAP: Record<string, string> = {
+  'q': 'й', 'w': 'ц', 'e': 'у', 'r': 'к', 't': 'е', 'y': 'н', 'u': 'г', 'i': 'ш', 'o': 'щ', 'p': 'з', '[': 'х', ']': 'ъ',
+  'a': 'ф', 's': 'ы', 'd': 'в', 'f': 'а', 'g': 'п', 'h': 'р', 'j': 'о', 'k': 'л', 'l': 'д', ';': 'ж', "'": 'э',
+  'z': 'я', 'x': 'ч', 'c': 'с', 'v': 'м', 'b': 'и', 'n': 'т', 'm': 'ь', ',': 'б', '.': 'ю', '`': 'ё',
+  'Q': 'Й', 'W': 'Ц', 'E': 'У', 'R': 'К', 'T': 'Е', 'Y': 'Н', 'U': 'Г', 'I': 'Ш', 'O': 'Щ', 'P': 'З', '{': 'Х', '}': 'Ъ',
+  'A': 'Ф', 'S': 'Ы', 'D': 'В', 'F': 'А', 'G': 'П', 'H': 'Р', 'J': 'О', 'K': 'Л', 'L': 'Д', ':': 'Ж', '"': 'Э',
+  'Z': 'Я', 'X': 'Ч', 'C': 'С', 'V': 'М', 'B': 'И', 'N': 'Т', 'M': 'Ь', '<': 'Б', '>': 'Ю', '~': 'Ё',
+  '#': '№'
+};
+
 /**
  * Converts a single character or key from Russian keyboard layout to English QWERTY.
  */
@@ -129,12 +140,70 @@ export function convertRuToEnLayout(text: string): string {
 }
 
 /**
+ * Converts an entire string from English keyboard layout to Russian ЙЦУКЕН.
+ */
+export function convertEnToRuLayout(text: string): string {
+  if (!text) return '';
+  let result = '';
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    result += EN_TO_RU_MAP[ch] || ch;
+  }
+  return result;
+}
+
+/**
  * Normalizes scanned barcodes or QR text by trimming, cleaning and converting layout.
  */
 export function normalizeBarcodeScan(code: string): string {
   if (!code) return '';
   const clean = code.trim();
   return convertRuToEnLayout(clean);
+}
+
+/**
+ * Extracts a package identifier or code from any scanned string or URL.
+ * Package labels encode public URLs (e.g., https://domain.com/p/PKG-1045-1 or /p/pkg_xyz).
+ * This utility extracts the inner package code (PKG-1045-1) for matching inside ERP shipping/dispatch stations.
+ */
+export function extractPackageCodeFromScan(raw: string): string {
+  if (!raw) return '';
+  let clean = raw.trim();
+
+  // If it's a full URL or contains URL path like /p/, /package/, /pkg/, or /passport/
+  if (clean.includes('/p/')) {
+    clean = clean.split('/p/').pop()?.split(/[?#]/)[0] || clean;
+  } else if (clean.includes('/package/')) {
+    clean = clean.split('/package/').pop()?.split(/[?#]/)[0] || clean;
+  } else if (clean.includes('/pkg/')) {
+    clean = clean.split('/pkg/').pop()?.split(/[?#]/)[0] || clean;
+  } else if (clean.includes('/passport/')) {
+    clean = clean.split('/passport/').pop()?.split(/[?#]/)[0] || clean;
+  } else if (clean.includes('http://') || clean.includes('https://')) {
+    try {
+      const rawUrl = clean.startsWith('http') ? clean : `https://dummy.com/${clean.replace(/^\/+/, '')}`;
+      const urlObj = new URL(rawUrl);
+      const pkgParam = urlObj.searchParams.get('pkg') || urlObj.searchParams.get('package') || urlObj.searchParams.get('id') || urlObj.searchParams.get('code');
+      if (pkgParam) {
+        clean = pkgParam;
+      } else {
+        const lastSegment = urlObj.pathname.split('/').filter(Boolean).pop();
+        if (lastSegment) {
+          clean = lastSegment;
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  try {
+    clean = decodeURIComponent(clean);
+  } catch {
+    // ignore
+  }
+
+  return clean.trim();
 }
 
 /**
@@ -581,15 +650,29 @@ export function processQRCommand(
     onPrintAct?: () => void;
   }
 ): QRCommandResult {
+  if (!rawCode) return { isCommand: false };
+
   const rawClean = cleanRawScannedString(rawCode).toUpperCase();
-  const clean = rawClean.replace(/[\s\-_.:/\\#]/g, '');
-  const enLayout = convertRuToEnLayout(rawCode).toUpperCase().replace(/[\s\-_.:/\\#]/g, '');
-  if (!clean && !enLayout) return { isCommand: false };
+  const cleanRaw = rawClean.replace(/[^A-ZА-Я0-9]/g, '');
+  const enLayout = convertRuToEnLayout(rawCode).toUpperCase();
+  const cleanEn = enLayout.replace(/[^A-Z0-9]/g, '');
+  const ruLayout = convertEnToRuLayout(rawCode).toUpperCase();
+  const cleanRu = ruLayout.replace(/[^А-Я0-9]/g, '');
+
+  if (!cleanRaw && !cleanEn && !cleanRu) return { isCommand: false };
 
   const matches = (keywords: string[]) => {
     return keywords.some(kw => {
-      const cleanKw = kw.toUpperCase().replace(/[\s\-_.:/\\#]/g, '');
-      return clean.includes(cleanKw) || enLayout.includes(cleanKw);
+      const kwUpper = kw.toUpperCase();
+      const kwClean = kwUpper.replace(/[^A-ZА-Я0-9]/g, '');
+      const kwEn = convertRuToEnLayout(kwUpper).replace(/[^A-Z0-9]/g, '');
+      const kwRu = convertEnToRuLayout(kwUpper).replace(/[^А-Я0-9]/g, '');
+
+      return (
+        (kwClean && (cleanRaw.includes(kwClean) || cleanEn.includes(kwClean) || cleanRu.includes(kwClean))) ||
+        (kwEn && (cleanEn.includes(kwEn) || cleanRaw.includes(kwEn))) ||
+        (kwRu && (cleanRu.includes(kwRu) || cleanRaw.includes(kwRu)))
+      );
     });
   };
 
@@ -600,6 +683,14 @@ export function processQRCommand(
       'CMDFINISHPACKAGE',
       'CMD_CLOSE_BOX',
       'CMDCLOSEBOX',
+      'CMD_CLOSE_PKG',
+      'CMDCLOSEPKG',
+      'CLOSE_PKG',
+      'CLOSEPKG',
+      'CMD_SEAL_BOX',
+      'CMDSEALBOX',
+      'SEAL_BOX',
+      'SEALBOX',
       'CMD_FINISH_BOX',
       'CMDFINISHBOX',
       'CMD_CLOSE_PLACE',
@@ -628,7 +719,12 @@ export function processQRCommand(
       'PFRHSNMKHJHARE', // закрыть коробку
       'PFRHSNBMTCNJ', // закрыть место
       'PFRHSNBMTCnhj', // закрыть местро
-      'PFRHSNBENFRJBRE' // закрыть упаковку
+      'PFRHSNBENFRJBRE', // закрыть упаковку
+      'ПРМСДЩЫЕВПУ', // CMD_CLOSE_BOX in russian layout
+      'ПРМ_СДЩЫЕ_ВПУ',
+      'ПРМСДЩЫЕВКФ',
+      'ПРМ_СДЩЫЕ_ВКФ',
+      'СФВСДЩЫУИЩЧ'
     ])
   ) {
     if (callbacks?.onFinishPackage) {
@@ -750,8 +846,8 @@ export function processQRCommand(
     return { isCommand: true, commandKey: 'CMD_PRINT_ACT', message: 'Команда: Открыта печать акта' };
   }
 
-  if (clean.startsWith('CMD') || enLayout.startsWith('CMD')) {
-    return { isCommand: true, commandKey: clean || enLayout, message: `Выполнена команда ${clean || enLayout}` };
+  if (cleanRaw.startsWith('CMD') || cleanEn.startsWith('CMD')) {
+    return { isCommand: true, commandKey: cleanRaw || cleanEn, message: `Выполнена команда ${cleanRaw || cleanEn}` };
   }
 
   return { isCommand: false };

@@ -63,7 +63,7 @@ interface ERPOrderWorkspaceViewProps {
   onToggleSidebar?: () => void;
   onBack: () => void;
   onUpdateOrder: (updatedOrder: ProductionOrder) => void;
-  onUpdateOrderStatus: (orderId: string, nextStage: ProductionStageId) => void;
+  onUpdateOrderStatus: (orderId: string, nextStage: ProductionStageId, isExplicitlyCompleted?: boolean) => void;
   onAddEmployee?: (emp: Partial<ERPEmployee>) => void;
   onAddMaterialResiduals?: (residuals: MaterialResidual[]) => void;
   sourceSection?: string;
@@ -1086,35 +1086,37 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
           </div>
         </div>
 
-        {/* Right Actions: Finish Stage & Return to Production */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0 self-end md:self-auto">
-          {/* Main regular Finish Stage button (enabled when 100% or warning if not) */}
-          <button
-            onClick={handleCompleteCurrentStageAndExit}
-            disabled={!isStageFullyScanned}
-            className={`px-5 py-2.5 rounded-2xl font-black text-xs shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
-              isStageFullyScanned 
-                ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30 ring-2 ring-emerald-400/40 animate-pulse' 
-                : 'bg-slate-800 text-slate-400 border border-slate-700 cursor-not-allowed opacity-60'
-            }`}
-            title={isStageFullyScanned ? "Все детали отмечены. Завершить этап и передать дальше" : `Не все детали отмечены (${totalStageScannedParts}/${totalOrderParts})`}
-          >
-            <CheckCircle2 className="w-4 h-4" />
-            <span>Завершить {stageMeta.shortName} и передать</span>
-          </button>
-
-          {/* Small Force Complete Button if not all parts scanned */}
-          {!isStageFullyScanned && (
+        {/* Right Actions: Finish Stage & Return to Production (only for standard machine/part stages) */}
+        {currentStage !== 'packing' && currentStage !== 'kitting' && currentStage !== 'shipping' && (
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0 self-end md:self-auto">
+            {/* Main regular Finish Stage button (enabled when 100% or warning if not) */}
             <button
-              onClick={() => setShowForceCompleteModal(true)}
-              className="px-3.5 py-2 rounded-xl bg-rose-950/80 hover:bg-rose-900/90 text-rose-300 hover:text-rose-100 font-bold text-[11px] border border-rose-800 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
-              title="Принудительно передать заказ дальше. Неотмеченные детали будут подсвечены на следующем этапе"
+              onClick={handleCompleteCurrentStageAndExit}
+              disabled={!isStageFullyScanned}
+              className={`px-5 py-2.5 rounded-2xl font-black text-xs shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                isStageFullyScanned 
+                  ? 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30 ring-2 ring-emerald-400/40 animate-pulse' 
+                  : 'bg-slate-800 text-slate-400 border border-slate-700 cursor-not-allowed opacity-60'
+              }`}
+              title={isStageFullyScanned ? "Все детали отмечены. Завершить этап и передать дальше" : `Не все детали отмечены (${totalStageScannedParts}/${totalOrderParts})`}
             >
-              <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
-              <span>Всё равно завершить этап ({missingPartsCount} не отсканировано)</span>
+              <CheckCircle2 className="w-4 h-4" />
+              <span>Завершить {stageMeta.shortName} и передать</span>
             </button>
-          )}
-        </div>
+
+            {/* Small Force Complete Button if not all parts scanned */}
+            {!isStageFullyScanned && (
+              <button
+                onClick={() => setShowForceCompleteModal(true)}
+                className="px-3.5 py-2 rounded-xl bg-rose-950/80 hover:bg-rose-900/90 text-rose-300 hover:text-rose-100 font-bold text-[11px] border border-rose-800 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                title="Принудительно передать заказ дальше. Неотмеченные детали будут подсвечены на следующем этапе"
+              >
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-400" />
+                <span>Всё равно завершить этап ({missingPartsCount} не отсканировано)</span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* SPECIALIZED WORKSTATION VIEW SWITCHING */}
@@ -1158,23 +1160,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
             onUpdateOrder={onUpdateOrder}
             onUpdateOrderStatus={onUpdateOrderStatus}
             onOpenScannerModal={() => setShowCameraScannerModal(true)}
+            onExit={onBack}
           />
-
-          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div>
-              <h4 className="font-black text-slate-900 text-sm">Все места упакованы и промаркированы?</h4>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Заказ будет переведен в готовность к отгрузке, а вы вернетесь к выбору следующего заказа.
-              </p>
-            </div>
-            <button
-              onClick={handleCompleteCurrentStageAndExit}
-              className="px-6 py-3 rounded-2xl bg-orange-600 hover:bg-orange-500 text-white font-black text-xs shadow-md shadow-orange-600/20 transition-all flex items-center gap-2 cursor-pointer shrink-0"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Завершить упаковку и вернуться в цех</span>
-            </button>
-          </div>
         </div>
       )}
 
