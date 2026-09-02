@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, ERPEmployee, ERPCompanySettings, OrderPackage, DriverInfo } from '../types';
 import { MobileCameraScannerModal } from '../components/MobileCameraScannerModal';
-import { speakText, normalizeBarcodeScan } from '../utils';
+import { speakText, normalizeBarcodeScan, matchPackageToScannedCode } from '../utils';
 
 interface ERPDispatchViewProps {
   orders: ProductionOrder[];
@@ -379,30 +379,31 @@ const ERPDispatchWorkspaceModal: React.FC<ERPDispatchWorkspaceModalProps> = ({
 
   // Handle Scan package code
   const handleScanPackageCode = (rawCode: string) => {
-    const clean = normalizeBarcodeScan(rawCode);
-    if (!clean) return;
+    if (!rawCode || !rawCode.trim()) return;
 
     // Find package matching code
-    const matchingPkg = pkgs.find(p => p.code.toLowerCase() === clean.toLowerCase() || p.id === clean || p.packageNumber.toString() === clean);
+    const matchingPkg = pkgs.find(p => matchPackageToScannedCode(rawCode, p, order));
 
     if (!matchingPkg) {
-      setScanMessage({ type: 'error', text: `Штрихкод "${clean}" не найден в упаковочных местах этого заказа!` });
+      setScanMessage({ type: 'error', text: `Штрихкод / место "${rawCode}" не найдено в упаковочных местах этого заказа!` });
       speakText('Ошибка штрихкода');
       return;
     }
 
-    if (scannedCodes.includes(matchingPkg.code)) {
-      setScanMessage({ type: 'success', text: `Место #${matchingPkg.packageNumber} уже отсканировано!` });
+    const isAlreadyScanned = scannedCodes.includes(matchingPkg.id) || scannedCodes.includes(matchingPkg.code) || matchingPkg.isShipped;
+
+    if (isAlreadyScanned) {
+      setScanMessage({ type: 'success', text: `Место №${matchingPkg.packageNumber} ("${matchingPkg.name}") уже было отсканировано!` });
       return;
     }
 
-    const nextCodes = [...scannedCodes, matchingPkg.code];
+    const nextCodes = Array.from(new Set([...scannedCodes, matchingPkg.id, matchingPkg.code]));
     setScannedCodes(nextCodes);
-    setScanMessage({ type: 'success', text: `Место #${matchingPkg.packageNumber} (${matchingPkg.name}) отсканировано!` });
+    setScanMessage({ type: 'success', text: `Место №${matchingPkg.packageNumber} (${matchingPkg.name}) отсканировано!` });
     speakText(`Место ${matchingPkg.packageNumber} принято`);
 
     // Auto update packages status in order
-    const updatedPkgs = pkgs.map(p => p.code === matchingPkg.code ? { ...p, isShipped: true, shippedAt: new Date().toISOString() } : p);
+    const updatedPkgs = pkgs.map(p => (p.id === matchingPkg.id || p.code === matchingPkg.code) ? { ...p, isShipped: true, shippedAt: new Date().toISOString() } : p);
     onUpdateOrder({ ...order, packages: updatedPkgs });
   };
 

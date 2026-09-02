@@ -58,7 +58,8 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
 }) => {
   const existingPackages = order.packages || [];
   const kittingPackages = existingPackages.filter(p => p.type === 'kitting');
-  const nextNumber = existingPackages.length + 1;
+  const maxPkgNum = existingPackages.reduce((max, p) => Math.max(max, p.packageNumber || 0), 0);
+  const nextNumber = Math.max(existingPackages.length, maxPkgNum) + 1;
 
   // Selected hardware items to be put into the current box being prepared
   // Map of hardwareId -> quantity to put in this box

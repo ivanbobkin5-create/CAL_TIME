@@ -23,7 +23,7 @@ import { PackageLabelPrintModal } from './PackageLabelPrintModal';
 import { ShippingActPrintModal } from './ShippingActPrintModal';
 import { ShippingTTNPrintModal } from './ShippingTTNPrintModal';
 import { QuickAddDriverModal } from './QuickAddDriverModal';
-import { convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan } from '../utils';
+import { convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, matchPackageToScannedCode } from '../utils';
 
 interface ERPShippingTabProps {
   order: ProductionOrder;
@@ -104,36 +104,12 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
       scannerInputRef.current.value = '';
     }
 
-    const clean = code.trim();
-    if (!clean) return;
+    if (!code || !code.trim()) return;
 
-    const enClean = normalizeBarcodeScan(clean);
-
-    // Match by code, packageNumber (e.g. M1, 1), name, or partial QR payload
-    const foundPkg = allPackages.find(p => {
-      const pCodeLower = p.code.toLowerCase();
-      const pIdLower = p.id.toLowerCase();
-      const pNameLower = p.name.toLowerCase();
-      const cleanLower = clean.toLowerCase();
-      const enLower = enClean.toLowerCase();
-
-      return pCodeLower === cleanLower ||
-             pCodeLower === enLower ||
-             pIdLower === cleanLower ||
-             pIdLower === enLower ||
-             pNameLower.includes(cleanLower) ||
-             pNameLower.includes(enLower) ||
-             cleanLower.includes(pCodeLower) ||
-             enLower.includes(pCodeLower) ||
-             `m${p.packageNumber}` === cleanLower ||
-             `m${p.packageNumber}` === enLower ||
-             `место ${p.packageNumber}` === cleanLower ||
-             `место ${p.packageNumber}` === enLower ||
-             String(p.packageNumber) === clean;
-    });
+    const foundPkg = allPackages.find(p => matchPackageToScannedCode(code, p, order));
 
     if (!foundPkg) {
-      showFeedback(`Упаковка с QR-кодом "${clean}" не найдена в этом заказе!`, 'error');
+      showFeedback(`Упаковка с QR-кодом / штрихкодом "${code}" не найдена в этом заказе!`, 'error');
       return;
     }
 

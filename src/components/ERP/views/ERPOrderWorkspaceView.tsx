@@ -467,6 +467,17 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
           playSoundEffect('error');
         }
       },
+      onNextStage: () => {
+        if (isStageFullyScanned) {
+          setScanSuccessMsg(`✅ Команда «Завершить этап»: этап ${stageMeta.shortName} успешно завершен!`);
+          speakText(`Этап ${stageMeta.shortName} завершен`);
+          handleCompleteCurrentStageAndExit();
+        } else {
+          setScanErrorMsg(`⚠️ Не все детали отсканированы (${totalStageScannedParts}/${totalOrderParts}). Подтвердите завершение.`);
+          speakText('Не все детали отсканированы. Требуется подтверждение');
+          setShowForceCompleteModal(true);
+        }
+      },
       onPrintAct: () => {
         setScanSuccessMsg('🖨️ Запуск печати акта сдачи...');
         window.print();
@@ -951,15 +962,53 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   }, [stageEffectiveDetails, order.partsCount]);
 
   const totalStageScannedParts = useMemo(() => {
+    if (currentStage === 'packing') {
+      const packedCount = (order.packages || []).reduce((sum, pkg) => {
+        return sum + (pkg.parts?.reduce((pSum, pt) => pSum + Math.max(1, pt.quantity || 1), 0) || 0);
+      }, 0);
+      return Math.min(packedCount, totalOrderParts);
+    }
+    if (currentStage === 'kitting') {
+      const kittingPkgs = (order.packages || []).filter(p => p.type === 'kitting');
+      if (kittingPkgs.length > 0) return totalOrderParts;
+      return 0;
+    }
+    if (currentStage === 'shipping') {
+      const pkgs = order.packages || [];
+      if (pkgs.length === 0) return totalOrderParts;
+      const shipped = pkgs.filter(p => p.isShipped);
+      if (shipped.length >= pkgs.length) return totalOrderParts;
+      return Math.round((shipped.length / pkgs.length) * totalOrderParts);
+    }
     if (stageEffectiveDetails.length === 0) return allStageScannedIds.length;
     return stageEffectiveDetails.reduce((sum, d) => {
       const count = getScannedCountForDetail(allStageScannedIds, d.id);
       return sum + Math.min(count, d.quantity || 1);
     }, 0);
-  }, [stageEffectiveDetails, allStageScannedIds]);
+  }, [currentStage, stageEffectiveDetails, allStageScannedIds, order.packages, totalOrderParts]);
 
   const isStageFullyScanned = totalStageScannedParts >= totalOrderParts && totalOrderParts > 0;
   const missingPartsCount = Math.max(0, totalOrderParts - totalStageScannedParts);
+
+  // Listen to erp_cmd_next_stage event triggered by QR scanner
+  useEffect(() => {
+    const handleNextStageEvent = () => {
+      if (isStageFullyScanned) {
+        setScanSuccessMsg(`✅ Команда «Завершить этап»: этап ${stageMeta.shortName} успешно завершен!`);
+        speakText(`Этап ${stageMeta.shortName} завершен`);
+        handleCompleteCurrentStageAndExit();
+      } else {
+        setScanErrorMsg(`⚠️ Не все детали отсканированы (${totalStageScannedParts}/${totalOrderParts}). Подтвердите завершение.`);
+        speakText('Не все детали отсканированы. Требуется подтверждение');
+        setShowForceCompleteModal(true);
+      }
+    };
+
+    window.addEventListener('erp_cmd_next_stage', handleNextStageEvent);
+    return () => {
+      window.removeEventListener('erp_cmd_next_stage', handleNextStageEvent);
+    };
+  }, [isStageFullyScanned, stageMeta.shortName, totalStageScannedParts, totalOrderParts]);
 
   return (
     <div className="space-y-6 animate-fade-in pb-12">

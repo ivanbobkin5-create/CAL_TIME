@@ -110,15 +110,46 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
 
   // Helper to check if order belongs to a specific production stage
   const isOrderOnStage = (order: ProductionOrder, stageId: ProductionStageId): boolean => {
+    if (order.status === 'completed' || order.status === 'shipped') return false;
+
+    const stageSequence: ProductionStageId[] = ['queue', 'cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing', 'shipping', 'ready'];
+    const currentIdx = stageSequence.indexOf(order.currentStage);
+    const targetIdx = stageSequence.indexOf(stageId);
+
+    // If order has already advanced beyond this stage (e.g. currentStage is 'shipping' or 'ready' and stageId is 'packing')
+    if (currentIdx > targetIdx) {
+      return false;
+    }
+
     if (order.currentStage === stageId) return true;
-    if (order.stagePlannedDates && order.stagePlannedDates[stageId]) return true;
-    if (stageId === 'cutting' && !!order.plannedCuttingDate) return true;
+
     if (stageId === 'kitting' || stageId === 'packing') {
-      const startedEdgingStages: ProductionStageId[] = ['edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing'];
-      if (startedEdgingStages.includes(order.currentStage)) {
+      const precedingStages: ProductionStageId[] = ['edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing'];
+      if (precedingStages.includes(order.currentStage) && currentIdx <= targetIdx) {
+        // Check if packaging is already 100% completed
+        if (stageId === 'packing') {
+          const allDetails = order.birkaData?.details || [];
+          const totalPieces = allDetails.reduce((sum, d) => sum + Math.max(1, d.quantity || 1), 0);
+          const packedPieces = (order.packages || []).reduce((sum, pkg) => {
+            return sum + (pkg.parts?.reduce((pSum, pt) => pSum + Math.max(1, pt.quantity || 1), 0) || 0);
+          }, 0);
+          const isFullyPacked = totalPieces > 0 && packedPieces >= totalPieces;
+          if (isFullyPacked && order.currentStage !== 'packing') {
+            return false;
+          }
+        }
         return true;
       }
     }
+
+    if (order.stagePlannedDates && order.stagePlannedDates[stageId] && currentIdx <= targetIdx) {
+      return true;
+    }
+
+    if (stageId === 'cutting' && !!order.plannedCuttingDate && currentIdx <= targetIdx) {
+      return true;
+    }
+
     return false;
   };
 
