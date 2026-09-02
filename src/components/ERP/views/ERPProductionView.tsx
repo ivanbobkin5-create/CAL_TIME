@@ -148,6 +148,35 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
     });
   };
 
+  const resolveEmployeeName = (idOrName?: string | null, fallbackOrder?: ProductionOrder, stageId?: ProductionStageId): string => {
+    if (idOrName && idOrName.trim() && idOrName !== 'Сотрудник') {
+      const found = employees.find(e => e.id === idOrName || e.name.toLowerCase() === idOrName.toLowerCase());
+      if (found) return found.name;
+      return idOrName;
+    }
+    if (fallbackOrder) {
+      if (stageId && fallbackOrder.stageProgress?.[stageId]?.completedBy) {
+        const by = fallbackOrder.stageProgress[stageId].completedBy;
+        const found = employees.find(e => e.id === by || e.name.toLowerCase() === by.toLowerCase());
+        if (found) return found.name;
+        if (by && by !== 'Сотрудник') return by;
+      }
+      if (fallbackOrder.responsibleEmployeeName && fallbackOrder.responsibleEmployeeName !== 'Сотрудник') {
+        const found = employees.find(e => e.id === fallbackOrder.responsibleEmployeeName || e.name.toLowerCase() === fallbackOrder.responsibleEmployeeName.toLowerCase());
+        if (found) return found.name;
+        return fallbackOrder.responsibleEmployeeName;
+      }
+      if (stageId) {
+        const stageWorker = employees.find(e => e.department === stageId || e.role === stageId || e.productionRole === stageId || e.role?.toLowerCase().includes('мастер') || e.role?.toLowerCase().includes('оператор'));
+        if (stageWorker) return stageWorker.name;
+      }
+      if (employees.length > 0) {
+        return employees[0].name;
+      }
+    }
+    return currentUser?.name || employees?.[0]?.name || 'Мастер смены';
+  };
+
   const STAGE_ORDER: ProductionStageId[] = ['queue', 'cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing', 'shipping', 'ready'];
 
   // Helper to check if order belongs to a specific production stage
@@ -728,9 +757,10 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                           const prevLogs = (order.workLogs || []).filter(l => l.stageId === prevStageId);
 
                           if (prevLogs.length > 0) {
-                            const formattedWorkers = prevLogs.map(l => 
-                              `${l.employeeName || order.stageProgress?.[prevStageId]?.completedBy || order.responsibleEmployeeName || 'Сотрудник'}, ${l.scannedPartsCount || order.partsCount} деталей в объеме ${(l.scannedAreaM2 || order.totalAreaM2).toFixed(1)} м², ${l.endTime || l.startTime || 'сегодня'}`
-                            );
+                            const formattedWorkers = prevLogs.map(l => {
+                              const empName = resolveEmployeeName(l.employeeName || order.stageProgress?.[prevStageId]?.completedBy, order, prevStageId);
+                              return `${empName}, ${l.scannedPartsCount || order.partsCount} деталей в объеме ${(l.scannedAreaM2 || order.totalAreaM2).toFixed(1)} м², ${l.endTime || l.startTime || 'сегодня'}`;
+                            });
                             const text = formattedWorkers.length > 1
                               ? `${prevStageName} выполнили: ${formattedWorkers[0]} совместно с ${formattedWorkers.slice(1).join(', ')}`
                               : `${prevStageName} выполнил: ${formattedWorkers[0]}`;
@@ -744,7 +774,7 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                           }
 
                           const prevScanning = order.stageScanningProgress?.[prevStageId];
-                          const completedByName = order.stageProgress?.[prevStageId]?.completedBy || order.responsibleEmployeeName || 'Сотрудник';
+                          const completedByName = resolveEmployeeName(order.stageProgress?.[prevStageId]?.completedBy, order, prevStageId);
                           if (prevScanning && Object.keys(prevScanning).length > 0) {
                             return (
                               <div className="mt-2 text-[11px] font-semibold text-slate-800 bg-emerald-50/90 p-2.5 rounded-2xl border border-emerald-200/90 flex items-center gap-2">

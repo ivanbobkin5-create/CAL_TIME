@@ -75,20 +75,23 @@ export async function printPackageLabelDirect(
         <span>Вложенные детали:</span>
         <span style="font-family: monospace; font-weight: 900;">${pkg.parts.length} шт.</span>
       </div>
-      <div style="max-height: 85px; overflow: hidden;">
-        ${pkg.parts.slice(0, 5).map((p: any) => `
-          <div class="part-item">
-            <span style="font-weight: 700; max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #000000;">
-              #${p.labelNumber} ${p.name}
-            </span>
-            <span style="font-family: monospace; font-size: 9px; color: #000000; font-weight: bold; flex-shrink: 0;">
-              ${p.length && p.width ? `${p.length}×${p.width}` : ''}
-            </span>
-          </div>
-        `).join('')}
-        ${pkg.parts.length > 5 ? `
-          <div style="font-size: 8.5px; font-weight: 900; color: #000000; font-style: italic; margin-top: 1px;">
-            + еще ${pkg.parts.length - 5} дет. (всего ${pkg.parts.length} шт)
+      <div style="max-height: 88px; overflow: hidden;">
+        ${pkg.parts.slice(0, 4).map((p: any) => {
+          const num = (p.labelNumber || '').toString().trim().replace(/^#+/, '');
+          return `
+            <div class="part-item">
+              <span style="font-weight: 700; max-width: 140px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #000000;">
+                #${num} ${p.name}
+              </span>
+              <span style="font-family: monospace; font-size: 9px; color: #000000; font-weight: bold; flex-shrink: 0;">
+                ${p.length && p.width ? `${p.length}×${p.width}` : ''}
+              </span>
+            </div>
+          `;
+        }).join('')}
+        ${pkg.parts.length > 4 ? `
+          <div style="font-size: 8px; font-weight: 700; color: #000000; line-height: 1.15; margin-top: 2px; word-break: break-word;">
+            и еще ${pkg.parts.slice(4).map((p: any) => (p.labelNumber || p.name || '').toString().trim().replace(/^#+/, '')).filter(Boolean).join(', ')}
           </div>
         ` : ''}
       </div>

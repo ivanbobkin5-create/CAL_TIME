@@ -39,7 +39,7 @@ import {
   Undo2
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPEmployee, ERPCompanySettings, AdditionalWorks } from '../types';
-import { formatDeadlineDate, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, isStageTaskStarted } from '../utils';
+import { formatDeadlineDate, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, isStageTaskStarted, getSmartOrderDisplay } from '../utils';
 import { parseBirkaFile, consolidateDetails } from '../utils/birkaParser';
 import { parseHardwareFile } from '../utils/hardwareParser';
 import { getScannedPartIdsForStage, getScannedCountForDetail, detailRequiresPrisadka } from '../utils/stageReadiness';
@@ -417,28 +417,42 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
   };
 
   const getOrderDisplayParts = (order: ProductionOrder) => {
-    const cleanNum = cleanOrderNumber(order.orderNumber, order.id);
-    let client = (order.clientName || order.projectName || '').trim();
+    const smart = getSmartOrderDisplay(order);
+    const cleanNum = smart.orderNumber || cleanOrderNumber(order.orderNumber, order.id);
 
-    if (client) {
-      if (
-        client.toLowerCase() === cleanNum.toLowerCase() ||
-        client.toLowerCase() === `№${cleanNum.toLowerCase()}` ||
-        client.toLowerCase() === (order.orderNumber || '').toLowerCase()
-      ) {
-        client = '';
+    // Приоритеты: вычищенный клиент -> вычищенный проект -> исходное поле -> birkaData -> comments
+    let client = smart.clientName || smart.projectName || (order.clientName || order.projectName || '').trim();
+
+    const isGeneric = (val: string) => {
+      const s = (val || '').toLowerCase().trim();
+      if (!s || s === 'заказчик' || s === 'клиент' || s === 'заказ' || s === 'проект' || s === 'без названия') return true;
+      if (/^(?:сделка|заказ|клиент|проект|deal|order)[\s№#:]*\d+$/i.test(s)) return true;
+      if (/^b24_\d+$/i.test(s)) return true;
+      if (/^\d+$/.test(s)) return true;
+      return false;
+    };
+
+    if (isGeneric(client) || client.toLowerCase() === cleanNum.toLowerCase() || client.toLowerCase() === `№${cleanNum.toLowerCase()}`) {
+      if (order.projectName && !isGeneric(order.projectName) && order.projectName !== cleanNum) {
+        client = order.projectName;
+      } else if (order.birkaData?.fileName) {
+        const cleanFile = order.birkaData.fileName.replace(/\.(bir|csv|xlsx|xls|txt)$/i, '');
+        const parts = cleanFile.split(/[_\-–—]/).filter(Boolean);
+        client = parts[0]?.trim() || cleanFile;
+      } else if (order.salonName && !isGeneric(order.salonName)) {
+        client = order.salonName;
+      } else if (order.comments && order.comments.length > 2 && order.comments.length < 50 && !/^(https?:\/\/|b24_)/i.test(order.comments)) {
+        client = order.comments;
+      } else if (order.bitrixStageName) {
+        client = order.bitrixStageName;
       } else {
-        if (cleanNum) {
-          const escaped = cleanNum.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
-          const regex = new RegExp(`^[№#\\s]*${escaped}[\\s:·\\-_–—/]*`, 'i');
-          client = client.replace(regex, '').trim();
-        }
-        if (order.orderNumber) {
-          const escapedRaw = order.orderNumber.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
-          const regexRaw = new RegExp(`^[№#\\s]*${escapedRaw}[\\s:·\\-_–—/]*`, 'i');
-          client = client.replace(regexRaw, '').trim();
-        }
+        client = '';
       }
+    }
+
+    if (client && cleanNum) {
+      const escaped = cleanNum.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+      client = client.replace(new RegExp(`^[№#\\s]*${escaped}[\\s:·\\-_–—/]*`, 'i'), '').trim();
     }
 
     return {
@@ -828,19 +842,33 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
 
     setUploadingOrderId(order.id);
     try {
-      const textContent = await file.text();
+      const isPdfFile = file.name.toLowerCase().endsWith('.pdf') || file.type === 'application/pdf';
+      let fileContent = '';
+
+      if (isPdfFile) {
+        fileContent = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      } else {
+        const textContent = await file.text();
+        fileContent = textContent.substring(0, 500000);
+      }
+
       const updatedOrder: ProductionOrder = {
         ...order,
         assemblyFileData: {
           fileName: file.name,
           fileSize: file.size,
           uploadedAt: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('ru-RU'),
-          fileContent: textContent.substring(0, 100000)
+          fileContent: fileContent
         }
       };
 
       onUpdateOrder(updatedOrder);
-      alert(`Файл Сборка "${file.name}" прикреплен к заказу ${order.orderNumber}`);
+      alert(`Файл Сборка "${file.name}" успешно прикреплен к заказу ${order.orderNumber}`);
     } catch (err: any) {
       alert(err.message || 'Ошибка прикрепления файла Сборка');
     } finally {
@@ -1090,8 +1118,8 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                   {clientName}
                                 </span>
                               ) : (
-                                <span className="text-[9px] text-slate-400 italic leading-tight mt-0.5">
-                                  Без названия
+                                <span className="text-[10px] text-slate-500 font-medium leading-tight mt-0.5 truncate" title={order.projectName || order.bitrixStageName || 'Заказ'}>
+                                  {order.projectName || (order.birkaData?.fileName ? order.birkaData.fileName.replace(/\.[^/.]+$/, '') : (order.bitrixStageName ? `Стадия: ${order.bitrixStageName}` : 'Заказ в работе'))}
                                 </span>
                               )}
                             </div>
@@ -1810,49 +1838,69 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                         return (
                                           <div
                                             key={day.dateStr}
-                                            onDragOver={(e) => e.preventDefault()}
+                                            onClick={() => {
+                                              if (isAssignedToThisDay) {
+                                                setViewingBirkaModalOrder(order);
+                                              } else {
+                                                handleAssignStageTaskToDate(order.id, st.id, day.dateStr);
+                                              }
+                                            }}
+                                            onDragOver={(e) => {
+                                              e.preventDefault();
+                                              e.dataTransfer.dropEffect = 'move';
+                                            }}
                                             onDrop={(e) => {
                                               e.preventDefault();
+                                              e.stopPropagation();
                                               if (draggedStageTask) {
                                                 handleAssignStageTaskToDate(draggedStageTask.orderId, draggedStageTask.stageId, day.dateStr);
                                                 setDraggedStageTask(null);
                                               }
                                             }}
-                                            className={`p-0.5 border-r border-slate-200 last:border-r-0 flex items-center justify-center transition-colors min-w-0 ${
-                                              isAssignedToThisDay ? 'bg-slate-50/50' : ''
+                                            className={`p-0.5 border-r border-slate-200 last:border-r-0 flex items-center justify-center transition-colors min-w-0 cursor-pointer ${
+                                              isAssignedToThisDay ? 'bg-blue-50/30' : 'hover:bg-blue-50/40'
                                             }`}
+                                            title={
+                                              isAssignedToThisDay 
+                                                ? `${st.name} запланирован на ${day.dateStr} (клик для деталей, перетащите для переноса)`
+                                                : `Кликните, чтобы назначить «${st.name}» заказа №${orderNumber} на ${day.dateStr}`
+                                            }
                                           >
                                             {isAssignedToThisDay && (
                                               <div
                                                 draggable={true}
-                                                onDragStart={() => setDraggedStageTask({ orderId: order.id, stageId: st.id })}
-                                                onClick={() => setViewingBirkaModalOrder(order)}
-                                                className={`group relative px-2 py-1.5 rounded-xl border min-h-[44px] flex flex-col justify-center gap-0.5 w-full shadow-2xs cursor-pointer hover:ring-1 hover:ring-blue-400 overflow-hidden ${
+                                                onDragStart={(e) => {
+                                                  e.stopPropagation();
+                                                  setDraggedStageTask({ orderId: order.id, stageId: st.id });
+                                                }}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setViewingBirkaModalOrder(order);
+                                                }}
+                                                className={`group relative p-1 rounded-lg border min-h-[28px] w-full flex items-center justify-center gap-1 shadow-2xs cursor-grab active:cursor-grabbing hover:ring-2 hover:ring-blue-400 transition-all ${
                                                   isStageDone 
-                                                    ? 'bg-emerald-50/90 border-emerald-300 text-emerald-950 opacity-80' 
+                                                    ? 'bg-emerald-100 border-emerald-300 text-emerald-900' 
                                                     : `${orderColor.bg} ${orderColor.border} ${orderColor.text}`
                                                 }`}
+                                                title={`Заказ №${orderNumber} • ${clientName || ''}\nЭтап: ${st.name} ${isStageDone ? '[Выполнен]' : ''}\nДата: ${day.dateStr}\n(Перетащите или кликните в другую ячейку для переноса)`}
                                               >
-                                                <div className="flex items-center justify-between gap-1 w-full min-w-0">
-                                                  <span className="truncate font-mono font-black text-[11px] sm:text-xs leading-none">
-                                                    №{orderNumber}{isStageDone ? ' ✓' : isAutoAssignedToday ? ' ⚡' : ''}
-                                                  </span>
-                                                  <button
-                                                    onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      handleAssignStageTaskToDate(order.id, st.id, null);
-                                                    }}
-                                                    className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-black/10 text-slate-500 hover:text-red-700 transition-opacity cursor-pointer shrink-0"
-                                                    title="Снять с даты"
-                                                  >
-                                                    <X className="w-3 h-3" />
-                                                  </button>
-                                                </div>
-                                                {clientName && (
-                                                  <div className="text-[9.5px] font-bold text-slate-800 leading-tight truncate opacity-90" title={clientName}>
-                                                    {clientName}
-                                                  </div>
-                                                )}
+                                                <StIcon className={`w-3.5 h-3.5 shrink-0 ${isStageDone ? 'text-emerald-700' : st.color}`} />
+                                                {isStageDone ? (
+                                                  <span className="text-[8.5px] font-black text-emerald-800 leading-none">✓</span>
+                                                ) : isAutoAssignedToday ? (
+                                                  <span className="text-[8px] font-black text-blue-700 leading-none">⚡</span>
+                                                ) : null}
+
+                                                <button
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleAssignStageTaskToDate(order.id, st.id, null);
+                                                  }}
+                                                  className="opacity-0 group-hover:opacity-100 absolute -top-1 -right-1 p-0.5 rounded-full bg-red-600 text-white hover:bg-red-700 shadow-xs transition-opacity cursor-pointer z-10"
+                                                  title="Снять с даты"
+                                                >
+                                                  <X className="w-2.5 h-2.5" />
+                                                </button>
                                               </div>
                                             )}
                                           </div>

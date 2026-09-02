@@ -533,6 +533,10 @@ export interface ERPCompanySettings {
 
   // Сопоставление стадий ERP и Битрикс24
   bitrix24WebhookUrl?: string;
+  bitrix24CategoryId?: string;
+  bitrix24StartStageId?: string;
+  bitrix24DoneStageId?: string;
+  bitrix24ExcludeClosedDeals?: boolean;
   bitrix24StageMapping?: Record<string, string>;
   bitrix24RestoreAction?: 'do_nothing' | 'restore_to_stage';
   bitrix24RestoreStageId?: string;

@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, ERPEmployee, ERPCompanySettings, OrderPackage, DriverInfo } from '../types';
 import { MobileCameraScannerModal } from '../components/MobileCameraScannerModal';
-import { speakText, normalizeBarcodeScan, extractPackageCodeFromScan } from '../utils';
+import { speakText, normalizeBarcodeScan, extractPackageCodeFromScan, printShippingActDocumentA4 } from '../utils';
 
 interface ERPDispatchViewProps {
   orders: ProductionOrder[];
@@ -332,6 +332,7 @@ export const ERPDispatchView: React.FC<ERPDispatchViewProps> = ({
           order={selectedOrderForPrintDoc.order}
           docType={selectedOrderForPrintDoc.docType}
           companyName={companyName}
+          settings={settings}
           onClose={() => setSelectedOrderForPrintDoc(null)}
         />
       )}
@@ -770,16 +771,22 @@ interface PrintableShippingDocumentModalProps {
   order: ProductionOrder;
   docType: 'act' | 'ttn' | 'sticker';
   companyName: string;
+  settings?: ERPCompanySettings;
   onClose: () => void;
 }
 
 const PrintableShippingDocumentModal: React.FC<PrintableShippingDocumentModalProps> = ({
   order,
   companyName,
+  settings,
   onClose
 }) => {
   const pkgs = order.packages || [];
   const todayFormatted = new Date().toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', year: 'numeric' });
+
+  const handleDirectA4Print = () => {
+    printShippingActDocumentA4(order, settings, companyName);
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-6 overflow-y-auto">
@@ -794,10 +801,12 @@ const PrintableShippingDocumentModal: React.FC<PrintableShippingDocumentModalPro
 
           <div className="flex items-center gap-2">
             <button
-              onClick={() => window.print()}
-              className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors cursor-pointer"
+              onClick={handleDirectA4Print}
+              className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs transition-colors cursor-pointer flex items-center gap-1.5 shadow-sm"
+              title="Печать чистого бланка А4 без браузерных колонтитулов"
             >
-              Печать (Ctrl+P)
+              <Printer className="w-3.5 h-3.5" />
+              Печать А4 (Документ)
             </button>
             <button
               onClick={onClose}

@@ -269,6 +269,10 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
     ...settings,
     filterPrisadkaParts: settings.filterPrisadkaParts !== false,
     bitrix24WebhookUrl: settings.bitrix24WebhookUrl || companyData?.bitrix24?.webhookUrl || companyData?.erpConfig?.bitrix24WebhookUrl || '',
+    bitrix24CategoryId: settings.bitrix24CategoryId || companyData?.bitrix24?.categoryId || companyData?.erpConfig?.bitrix24CategoryId || '',
+    bitrix24StartStageId: settings.bitrix24StartStageId || (settings as any).bitrix24StageId || companyData?.bitrix24?.startStageId || companyData?.bitrix24?.stageId || companyData?.erpConfig?.bitrix24StartStageId || companyData?.erpConfig?.bitrix24StageId || '',
+    bitrix24DoneStageId: settings.bitrix24DoneStageId || companyData?.bitrix24?.doneStageId || companyData?.bitrix24?.finalStageId || companyData?.erpConfig?.bitrix24DoneStageId || '',
+    bitrix24ExcludeClosedDeals: settings.bitrix24ExcludeClosedDeals !== false,
     enabledStages: settings.enabledStages || defaultStageIds,
     equipmentList: (settings.equipmentList && settings.equipmentList.length > 0) 
       ? settings.equipmentList 
@@ -286,7 +290,9 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
   // Bitrix24 Stage Auto-fetching State
   const [b24Categories, setB24Categories] = useState<{ id: string; name: string }[]>([]);
   const [b24Stages, setB24Stages] = useState<{ id: string; name: string; categoryId?: string; categoryName?: string }[]>([]);
-  const [selectedB24Category, setSelectedB24Category] = useState<string>('all');
+  const [selectedB24Category, setSelectedB24Category] = useState<string>(() => {
+    return settings.bitrix24CategoryId || companyData?.bitrix24?.categoryId || companyData?.erpConfig?.bitrix24CategoryId || 'all';
+  });
   const [isFetchingB24Stages, setIsFetchingB24Stages] = useState(false);
   const [b24FetchStatus, setB24FetchStatus] = useState<string | null>(null);
   const [manualStageInputMode, setManualStageInputMode] = useState<boolean>(false);
@@ -3326,7 +3332,14 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                       </label>
                       <select
                         value={selectedB24Category}
-                        onChange={(e) => setSelectedB24Category(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setSelectedB24Category(val);
+                          setFormData(prev => ({
+                            ...prev,
+                            bitrix24CategoryId: val === 'all' ? '' : val
+                          }));
+                        }}
                         className="px-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500"
                       >
                         <option value="all">Все направления ({b24Stages.length})</option>
@@ -3366,6 +3379,119 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                   <span>{b24FetchStatus}</span>
                 </div>
               )}
+            </div>
+
+            {/* Stage Range for Production Planning Card */}
+            <div className="p-5 bg-gradient-to-br from-indigo-50/70 via-slate-50 to-purple-50/50 border border-indigo-200/80 rounded-2xl space-y-4 shadow-2xs">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-indigo-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-indigo-600 text-white rounded-xl shadow-xs">
+                    <Calendar className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="font-black text-xs text-slate-900 uppercase tracking-wider">
+                      Диапазон стадий сделок для планирования цеха
+                    </h4>
+                    <p className="text-[11px] text-slate-600">
+                      Укажите, с какой и по какую стадию сделки из Битрикс24 должны попадать в производство
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Start stage */}
+                <div className="space-y-1.5 bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs">
+                  <label className="block text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                    С какой стадии загружать в планирование:
+                  </label>
+                  {!manualStageInputMode && (b24Stages.length > 0 || isFetchingB24Stages) ? (
+                    <select
+                      value={formData.bitrix24StartStageId || ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, bitrix24StartStageId: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 hover:bg-white border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer"
+                    >
+                      <option value="">-- С первой стадии воронки --</option>
+                      {formData.bitrix24StartStageId && !filteredB24Stages.some(s => s.id === formData.bitrix24StartStageId) && (
+                        <option value={formData.bitrix24StartStageId}>⚠️ {formData.bitrix24StartStageId} (текущая)</option>
+                      )}
+                      {filteredB24Stages.map(st => (
+                        <option key={`start-${st.categoryId}-${st.id}`} value={st.id}>
+                          {st.name} [{st.id}] {b24Categories.length > 2 && st.categoryName ? `(${st.categoryName})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder="Например: C1:PREPARATION или EXECUTING"
+                      value={formData.bitrix24StartStageId || ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, bitrix24StartStageId: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  )}
+                  <p className="text-[10px] text-slate-500">
+                    Сделки до этой стадии (новые заявки, замеры, просчеты) не будут отображаться в цехе.
+                  </p>
+                </div>
+
+                {/* Done stage */}
+                <div className="space-y-1.5 bg-white p-3.5 rounded-xl border border-slate-200/90 shadow-2xs">
+                  <label className="block text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                    По какую стадию отображать в планировании:
+                  </label>
+                  {!manualStageInputMode && (b24Stages.length > 0 || isFetchingB24Stages) ? (
+                    <select
+                      value={formData.bitrix24DoneStageId || ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, bitrix24DoneStageId: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 hover:bg-white border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 transition-all cursor-pointer"
+                    >
+                      <option value="">-- До завершения воронки (все активные) --</option>
+                      {formData.bitrix24DoneStageId && !filteredB24Stages.some(s => s.id === formData.bitrix24DoneStageId) && (
+                        <option value={formData.bitrix24DoneStageId}>⚠️ {formData.bitrix24DoneStageId} (текущая)</option>
+                      )}
+                      {filteredB24Stages.map(st => (
+                        <option key={`done-${st.categoryId}-${st.id}`} value={st.id}>
+                          {st.name} [{st.id}] {b24Categories.length > 2 && st.categoryName ? `(${st.categoryName})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      type="text"
+                      placeholder="Например: C1:FINAL_INVOICE или WON"
+                      value={formData.bitrix24DoneStageId || ''}
+                      onChange={(e) => setFormData(prev => ({ ...prev, bitrix24DoneStageId: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  )}
+                  <p className="text-[10px] text-slate-500">
+                    Сделки после этой стадии считаются изготовленными и исключаются из плана производства.
+                  </p>
+                </div>
+              </div>
+
+              {/* Exclude closed deals toggle */}
+              <div className="pt-2 border-t border-indigo-100/80">
+                <label className="flex items-center gap-3 p-3 bg-white/80 hover:bg-white rounded-xl border border-indigo-100 cursor-pointer transition-all">
+                  <input
+                    type="checkbox"
+                    checked={formData.bitrix24ExcludeClosedDeals !== false}
+                    onChange={(e) => setFormData(prev => ({ ...prev, bitrix24ExcludeClosedDeals: e.target.checked }))}
+                    className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500 border-slate-300 cursor-pointer"
+                  />
+                  <div>
+                    <span className="text-xs font-bold text-slate-800 block">
+                      Исключать закрытые и завершенные сделки (WON / Успех, LOSE / Провал)
+                    </span>
+                    <span className="text-[11px] text-slate-500 block">
+                      Гарантирует, что сделки, закрытые в CRM, моментально исчезнут из очереди планирования и цеха.
+                    </span>
+                  </div>
+                </label>
+              </div>
             </div>
 
             <div className="space-y-4">

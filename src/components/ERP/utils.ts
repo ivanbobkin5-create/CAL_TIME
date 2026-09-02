@@ -154,11 +154,27 @@ export function convertEnToRuLayout(text: string): string {
 
 /**
  * Normalizes scanned barcodes or QR text by trimming, cleaning and converting layout.
+ * Accurately handles cases when the scanner typed with Russian layout enabled.
  */
 export function normalizeBarcodeScan(code: string): string {
   if (!code) return '';
-  const clean = code.trim();
-  return convertRuToEnLayout(clean);
+  let clean = code.trim();
+  
+  // Convert any Russian layout characters
+  clean = convertRuToEnLayout(clean);
+
+  // If scanner typed a URL under Russian layout:
+  // On Russian keyboard, '/' key produces '.', and 'Shift+;' produces ':'
+  // e.g. "http:..domain.ru.p.PKG-1" -> "http://domain.ru/p/PKG-1"
+  if (/^https?:/i.test(clean) || clean.includes('/p/') || clean.includes('.p.') || clean.includes(':..')) {
+    clean = clean
+      .replace(/:(\.{2})/g, '://')
+      .replace(/\.p\./gi, '/p/')
+      .replace(/\.pkg\./gi, '/pkg/')
+      .replace(/\.package\./gi, '/package/');
+  }
+
+  return clean;
 }
 
 /**
@@ -169,6 +185,12 @@ export function normalizeBarcodeScan(code: string): string {
 export function extractPackageCodeFromScan(raw: string): string {
   if (!raw) return '';
   let clean = raw.trim();
+
+  // First normalize against Russian keyboard input
+  const normalized = normalizeBarcodeScan(clean);
+  if (normalized && normalized !== clean) {
+    clean = normalized;
+  }
 
   // If it's a full URL or contains URL path like /p/, /package/, /pkg/, or /passport/
   if (clean.includes('/p/')) {
@@ -1186,3 +1208,6 @@ export function isStageTaskStarted(order: ProductionOrder, stageId: ProductionSt
 
   return false;
 }
+
+export { printShippingActDocumentA4 } from './utils/shippingActPrinter';
+

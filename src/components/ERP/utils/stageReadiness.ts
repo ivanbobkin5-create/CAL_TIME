@@ -510,14 +510,32 @@ export function getStageTaskReadinessInfo(
   // Packing: accessible immediately, but shows stats
   if (stageId === 'packing') {
     let readyCount = 0;
+    let blockedByPrecedingStages = 0;
     details.forEach(d => {
-      if (getDetailAvailabilityForStage(d, order, 'packing', settings).isAvailable) {
+      const avail = getDetailAvailabilityForStage(d, order, 'packing', settings);
+      if (avail.isAvailable) {
         readyCount++;
+      } else if (avail.requiredPrecedingStage) {
+        blockedByPrecedingStages++;
       }
     });
+
+    let statusText = '';
+    if (totalPartsCount === 0) {
+      statusText = 'Доступна в работу';
+    } else if (readyCount === totalPartsCount) {
+      statusText = '100% готов к упаковке';
+    } else if (readyCount === 0) {
+      statusText = blockedByPrecedingStages > 0 
+        ? 'Ожидает готовности деталей на участках' 
+        : `Готово 0 из ${totalPartsCount} деталей`;
+    } else {
+      statusText = `Готово ${readyCount} из ${totalPartsCount} деталей`;
+    }
+
     return {
       isLocked: false,
-      statusText: readyCount === totalPartsCount ? '100% готов к упаковке' : `Готово ${readyCount} из ${totalPartsCount} деталей`,
+      statusText,
       readyPartsCount: readyCount,
       totalPartsCount
     };

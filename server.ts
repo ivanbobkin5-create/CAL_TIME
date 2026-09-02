@@ -645,7 +645,13 @@ function transliterate(str: string): string {
           deadlineDate: matchedOrder.deadlineDate,
           totalPackagesCount: (matchedOrder.packages || []).length,
           status: matchedOrder.status,
-          currentStage: matchedOrder.currentStage
+          currentStage: matchedOrder.currentStage,
+          assemblyFileData: matchedOrder.assemblyFileData ? {
+            fileName: matchedOrder.assemblyFileData.fileName,
+            fileSize: matchedOrder.assemblyFileData.fileSize,
+            fileContent: matchedOrder.assemblyFileData.fileContent,
+            uploadedAt: matchedOrder.assemblyFileData.uploadedAt
+          } : undefined
         },
         package: {
           id: matchedPackage.id,
@@ -666,6 +672,105 @@ function transliterate(str: string): string {
     } catch (e: any) {
       console.error("Public package passport error:", e);
       res.status(500).json({ success: false, error: "Ошибка сервера при получении данных упаковки" });
+    }
+  });
+
+  // Public route to view / download the assembly drawings (PDF/text)
+  app.get("/api/public/package/:packageCode/assembly-pdf", async (req, res) => {
+    try {
+      let rawInput = decodeURIComponent(req.params.packageCode || '').trim();
+      if (rawInput.includes('/p/')) {
+        rawInput = rawInput.split('/p/').pop()?.split('?')[0] || rawInput;
+      } else if (rawInput.includes('/package/')) {
+        rawInput = rawInput.split('/package/').pop()?.split('?')[0] || rawInput;
+      }
+      const packageCode = rawInput.trim();
+      if (!packageCode) {
+        return res.status(400).send("Код упаковки не указан");
+      }
+
+      const allOrderDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+        where: {
+          OR: [
+            { collection: { contains: 'erp_orders' } },
+            { path: { contains: 'erp_orders' } }
+          ]
+        }
+      }));
+
+      let matchedOrder: any = null;
+      const normalizedSearchCode = packageCode.toLowerCase().replace(/[^a-zа-я0-9_-]/gi, '');
+      const pureAlphanumericSearch = packageCode.toLowerCase().replace(/[^a-zа-я0-9]/gi, '');
+
+      for (const doc of allOrderDocs) {
+        try {
+          const order = JSON.parse(doc.data);
+          const packages = order.packages || [];
+          for (const pkg of packages) {
+            const pCode = (pkg.code || '').toLowerCase().replace(/[^a-zа-я0-9_-]/gi, '');
+            const pId = (pkg.id || '').toLowerCase().replace(/[^a-zа-я0-9_-]/gi, '');
+            const fallbackCode = `pkg-${order.orderNumber}-${pkg.packageNumber}`.toLowerCase().replace(/[^a-zа-я0-9_-]/gi, '');
+            const fallbackCodeM = `pkg-${order.orderNumber}-m${pkg.packageNumber}`.toLowerCase().replace(/[^a-zа-я0-9_-]/gi, '');
+            const purePCode = (pkg.code || '').toLowerCase().replace(/[^a-zа-я0-9]/gi, '');
+            const purePId = (pkg.id || '').toLowerCase().replace(/[^a-zа-я0-9]/gi, '');
+
+            if (
+              pCode === normalizedSearchCode ||
+              pId === normalizedSearchCode ||
+              fallbackCode === normalizedSearchCode ||
+              fallbackCodeM === normalizedSearchCode ||
+              purePCode === pureAlphanumericSearch ||
+              purePId === pureAlphanumericSearch ||
+              (pkg.code && pkg.code.toLowerCase() === packageCode.toLowerCase()) ||
+              (pkg.id && pkg.id.toLowerCase() === packageCode.toLowerCase())
+            ) {
+              matchedOrder = order;
+              break;
+            }
+          }
+          if (matchedOrder) break;
+        } catch (e) {}
+      }
+
+      if (!matchedOrder) {
+        const match = packageCode.match(/(?:PKG-)?([A-Za-z0-9_-]+?)-(?:M|KIT-)?(\d+)/i);
+        if (match) {
+          const [, parsedOrderNum] = match;
+          for (const doc of allOrderDocs) {
+            try {
+              const order = JSON.parse(doc.data);
+              if (String(order.orderNumber).toLowerCase() === parsedOrderNum.toLowerCase()) {
+                matchedOrder = order;
+                break;
+              }
+            } catch (e) {}
+          }
+        }
+      }
+
+      if (!matchedOrder || !matchedOrder.assemblyFileData) {
+        return res.status(404).send("Файл чертежей (Сборка) не прикреплен к данному заказу");
+      }
+
+      const af = matchedOrder.assemblyFileData;
+      const content = af.fileContent || '';
+      const fileName = af.fileName || 'assembly.pdf';
+
+      if (content.startsWith('data:')) {
+        const parts = content.split(';base64,');
+        const contentType = parts[0].replace('data:', '') || 'application/pdf';
+        const buffer = Buffer.from(parts[1] || '', 'base64');
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(fileName)}"`);
+        return res.send(buffer);
+      } else {
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+        res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(fileName)}"`);
+        return res.send(content);
+      }
+    } catch (e: any) {
+      console.error("Assembly PDF direct view error:", e);
+      res.status(500).send("Ошибка открытия чертежей");
     }
   });
 
@@ -1591,9 +1696,10 @@ function transliterate(str: string): string {
               ? String(companyData.bitrix24.categoryId)
               : "0");
 
-        const startStageId = erpConfig.bitrix24StageId 
-          || companyData.bitrix24?.stageId 
+        const startStageId = erpConfig.bitrix24StartStageId
+          || erpConfig.bitrix24StageId 
           || companyData.bitrix24?.startStageId 
+          || companyData.bitrix24?.stageId 
           || "";
 
         const doneStageId = erpConfig.bitrix24DoneStageId 
@@ -1601,6 +1707,8 @@ function transliterate(str: string): string {
           || companyData.bitrix24?.finalStageId 
           || companyData.bitrix24?.procurementFinalStageId 
           || "";
+
+        const excludeClosedDeals = erpConfig.bitrix24ExcludeClosedDeals !== false;
 
         const isSameStage = (st1: string, st2: string, catId: string) => {
           if (!st1 || !st2) return false;
@@ -1667,6 +1775,9 @@ function transliterate(str: string): string {
           const maxIdx = Math.max(startIndex, calcEnd);
           const slice = stageIdsInOrder.slice(minIdx, maxIdx + 1);
           allowedStageIds = new Set(slice);
+        } else if (endIndex >= 0) {
+          const slice = stageIdsInOrder.slice(0, endIndex + 1);
+          allowedStageIds = new Set(slice);
         }
 
         // 2. Fetch Deals from Bitrix24
@@ -1682,7 +1793,7 @@ function transliterate(str: string): string {
             order: { DATE_CREATE: "DESC" },
             filter: dealsFilter,
             select: [
-              "*", "UF_*", "CONTACT_FORMATTED_NAME", "COMPANY_TITLE"
+              "*", "UF_*", "CONTACT_FORMATTED_NAME", "COMPANY_TITLE", "CONTACT_PHONE", "CONTACT_EMAIL"
             ]
           })
         });
@@ -1715,18 +1826,17 @@ function transliterate(str: string): string {
             if (!isSameStage(dealStageId, startStageId, categoryId)) {
               continue;
             }
-          } else {
-            if (isClosedInB24) {
-              continue;
-            }
           }
 
-          if (isClosedInB24 && doneStageId) {
-            if (!isSameStage(dealStageId, doneStageId, categoryId)) {
+          // If deal is closed in CRM
+          if (isClosedInB24) {
+            if (excludeClosedDeals) {
+              if (!doneStageId || !isSameStage(dealStageId, doneStageId, categoryId)) {
+                continue;
+              }
+            } else if (!allowedStageIds && !doneStageId) {
               continue;
             }
-          } else if (isClosedInB24 && !doneStageId && !allowedStageIds) {
-            continue;
           }
 
           const orderId = `b24_${deal.ID}`;
@@ -1754,13 +1864,69 @@ function transliterate(str: string): string {
 
           const dealLink = portalBase ? `${portalBase}/crm/deal/details/${deal.ID}/` : undefined;
 
-          // Smart extraction of order number, client name, and project name from deal title, custom fields, and contacts
-          const customClientField = erpConfig.bitrix24FieldMapping?.clientNameField;
+          // 3. Extract CRM Custom Fields according to bitrix24FieldMapping
+          const fieldMapping = erpConfig.bitrix24FieldMapping || {};
+
+          // Client name
+          const customClientField = fieldMapping.clientNameField;
           let customClientVal = '';
           if (customClientField && deal[customClientField]) {
             customClientVal = String(deal[customClientField]).trim();
           }
 
+          // Delivery Address
+          const addressField = fieldMapping.deliveryAddressField;
+          let crmDeliveryAddress = '';
+          if (addressField && deal[addressField]) {
+            crmDeliveryAddress = String(deal[addressField]).trim();
+          }
+
+          // Client Phone
+          const phoneField = fieldMapping.clientPhoneField;
+          let crmClientPhone = '';
+          if (phoneField && deal[phoneField]) {
+            crmClientPhone = String(deal[phoneField]).trim();
+          } else if (deal.CONTACT_PHONE) {
+            crmClientPhone = String(deal.CONTACT_PHONE).trim();
+          }
+
+          // Delivery Price
+          const priceField = fieldMapping.deliveryPriceField;
+          let crmDeliveryPrice = 0;
+          if (priceField && deal[priceField] !== undefined && deal[priceField] !== null && deal[priceField] !== '') {
+            crmDeliveryPrice = Number(deal[priceField]) || 0;
+          }
+
+          // Assembly Price
+          const assemblyField = fieldMapping.assemblyPriceField;
+          let crmAssemblyPrice = 0;
+          if (assemblyField && deal[assemblyField] !== undefined && deal[assemblyField] !== null && deal[assemblyField] !== '') {
+            crmAssemblyPrice = Number(deal[assemblyField]) || 0;
+          }
+
+          // Floor
+          const floorField = fieldMapping.floorField;
+          let crmFloor = '';
+          if (floorField && deal[floorField]) {
+            crmFloor = String(deal[floorField]).trim();
+          }
+
+          // Elevator
+          const elevatorField = fieldMapping.elevatorField;
+          let crmElevator: boolean | undefined = undefined;
+          if (elevatorField && deal[elevatorField] !== undefined && deal[elevatorField] !== null) {
+            const elVal = String(deal[elevatorField]).trim().toLowerCase();
+            crmElevator = elVal === 'y' || elVal === 'yes' || elVal === '1' || elVal === 'да' || elVal === 'есть' || elVal === 'true';
+          }
+
+          // Delivery Comment
+          const commentField = fieldMapping.deliveryCommentField;
+          let crmDeliveryComment = '';
+          if (commentField && deal[commentField]) {
+            crmDeliveryComment = String(deal[commentField]).trim();
+          }
+
+          // 4. Smart extraction of order number, client name, and project name from deal title
           const rawTitle = (deal.TITLE || '').trim();
           let parsedNumber = deal.ID;
           let parsedClient = customClientVal || (deal.CONTACT_FORMATTED_NAME || deal.COMPANY_TITLE || '').trim();
@@ -1805,7 +1971,7 @@ function transliterate(str: string): string {
           }
 
           const isGenericVal = (v: string) => {
-            const s = v.toLowerCase().trim();
+            const s = (v || '').toLowerCase().trim();
             if (!s || s === 'заказчик' || s === 'клиент' || s === 'заказ' || s === 'проект' || s === 'без названия') return true;
             if (/^(?:сделка|заказ|клиент|проект|deal|order)[\s№#:]*\d+$/i.test(s)) return true;
             if (/^b24_\d+$/i.test(s)) return true;
@@ -1818,6 +1984,10 @@ function transliterate(str: string): string {
           if (isGenericVal(parsedClient)) {
             if (local.clientName && !isGenericVal(local.clientName)) {
               parsedClient = local.clientName;
+            } else if (parsedProject && !isGenericVal(parsedProject)) {
+              parsedClient = parsedProject;
+            } else if (rawTitle && !isGenericVal(rawTitle)) {
+              parsedClient = rawTitle;
             } else if (local.birkaData?.fileName) {
               const baseName = local.birkaData.fileName.replace(/\.(bir|csv|xlsx|xls|txt)$/i, '');
               const parts = baseName.split(/[_\-–—]/).filter(Boolean);
@@ -1830,6 +2000,8 @@ function transliterate(str: string): string {
           if (isGenericVal(parsedProject)) {
             if (local.projectName && !isGenericVal(local.projectName)) {
               parsedProject = local.projectName;
+            } else if (rawTitle && !isGenericVal(rawTitle) && rawTitle !== parsedClient) {
+              parsedProject = rawTitle;
             } else if (local.birkaData?.fileName) {
               parsedProject = local.birkaData.fileName.replace(/\.(bir|csv|xlsx|xls|txt)$/i, '');
             } else {
@@ -1837,12 +2009,30 @@ function transliterate(str: string): string {
             }
           }
 
+          // If local orderNumber was purely an ID or empty, preserve clean parsed number
+          const finalOrderNumber = (local.orderNumber && !isGenericVal(local.orderNumber))
+            ? local.orderNumber
+            : (parsedNumber || deal.ID || `Сделка #${deal.ID}`);
+
           orders.push({
             ...local,
             id: orderId,
-            orderNumber: local.orderNumber || parsedNumber || deal.TITLE || `Сделка #${deal.ID}`,
+            orderNumber: finalOrderNumber,
             clientName: (local.clientName && !isGenericVal(local.clientName)) ? local.clientName : parsedClient,
             projectName: (local.projectName && !isGenericVal(local.projectName)) ? local.projectName : parsedProject,
+            clientPhone: (local.clientPhone && local.clientPhone.trim()) ? local.clientPhone : (crmClientPhone || local.clientPhone || ''),
+            clientAddress: (local.clientAddress && local.clientAddress.trim()) ? local.clientAddress : (crmDeliveryAddress || local.clientAddress || ''),
+            deliveryData: {
+              ...(local.deliveryData || {}),
+              address: (local.deliveryData?.address && local.deliveryData.address.trim()) ? local.deliveryData.address : (crmDeliveryAddress || local.deliveryData?.address || ''),
+              clientPhone: (local.deliveryData?.clientPhone && local.deliveryData.clientPhone.trim()) ? local.deliveryData.clientPhone : (crmClientPhone || local.deliveryData?.clientPhone || ''),
+              clientName: (local.deliveryData?.clientName && local.deliveryData.clientName.trim()) ? local.deliveryData.clientName : (customClientVal || parsedClient || ''),
+              deliveryPrice: (local.deliveryData?.deliveryPrice !== undefined && local.deliveryData.deliveryPrice !== null && local.deliveryData.deliveryPrice > 0) ? local.deliveryData.deliveryPrice : (crmDeliveryPrice || local.deliveryData?.deliveryPrice || 0),
+              assemblyPrice: (local.deliveryData?.assemblyPrice !== undefined && local.deliveryData.assemblyPrice !== null && local.deliveryData.assemblyPrice > 0) ? local.deliveryData.assemblyPrice : (crmAssemblyPrice || local.deliveryData?.assemblyPrice || 0),
+              floor: local.deliveryData?.floor || crmFloor || '',
+              hasElevator: local.deliveryData?.hasElevator !== undefined ? local.deliveryData.hasElevator : crmElevator,
+              comment: local.deliveryData?.comment || crmDeliveryComment || ''
+            },
             createdAt: deal.DATE_CREATE ? deal.DATE_CREATE.substring(0, 10) : new Date().toISOString().substring(0, 10),
             deadlineDate: deal.CLOSEDATE ? deal.CLOSEDATE.substring(0, 10) : (deal.BEGINDATE ? deal.BEGINDATE.substring(0, 10) : new Date(Date.now() + 7 * 86400000).toISOString().substring(0, 10)),
             currentStage: local.currentStage || 'queue',
