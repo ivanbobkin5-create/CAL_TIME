@@ -1,27 +1,5 @@
 import { ProductionOrder, ProductionStageId } from './types';
 
-export function formatPositionNumber(rawPos: string | number | undefined | null): string {
-  if (rawPos === undefined || rawPos === null || rawPos === '') return '00.00';
-  const str = String(rawPos).trim();
-  if (!str) return '00.00';
-
-  const parts = str.split(/[\.\-_/\\:]+/).filter(Boolean);
-  if (parts.length === 0) return '00.00';
-
-  const formattedParts = parts.map(p => {
-    if (/^\d+$/.test(p)) {
-      return p.padStart(2, '0');
-    }
-    return p;
-  });
-
-  if (formattedParts.length === 1) {
-    return `${formattedParts[0]}.00`;
-  }
-
-  return formattedParts.join('.');
-}
-
 export function formatDeadlineDate(dateStr?: string): string {
   if (!dateStr) return '—';
   const cleanStr = String(dateStr).trim();
@@ -1415,12 +1393,7 @@ export function isStageTaskStarted(order: ProductionOrder, stageId: ProductionSt
     return true;
   }
 
-  // 4. Current active stage with in_progress status
-  if (order.currentStage === stageId && order.status === 'in_progress') {
-    return true;
-  }
-
-  // 5. Packages created on kitting/packing/shipping
+  // 4. Packages created on kitting/packing/shipping
   if (order.packages && order.packages.length > 0) {
     if (stageId === 'kitting' && order.packages.some(p => p.type === 'kitting')) return true;
     if (stageId === 'packing' && order.packages.some(p => p.type === 'details' || p.type === 'custom')) return true;
