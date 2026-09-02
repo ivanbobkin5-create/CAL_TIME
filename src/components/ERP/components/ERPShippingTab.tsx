@@ -168,8 +168,7 @@ export const ERPShippingTab: React.FC<ERPShippingTabProps> = ({
           barcodeBufferRef.current = '';
         }
         lastKeyTimeRef.current = now;
-        const enChar = convertRuCharToEn(e.key);
-        barcodeBufferRef.current += enChar;
+        barcodeBufferRef.current += e.key;
 
         setScanInput(barcodeBufferRef.current);
         scannerInputRef.current?.focus();

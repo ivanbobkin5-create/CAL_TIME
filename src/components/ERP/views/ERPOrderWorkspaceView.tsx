@@ -39,7 +39,7 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee, MaterialResidual } from '../types';
 import { parseBirkaFile, BirkaParseResult, BirkaDetail, consolidateDetails } from '../utils/birkaParser';
-import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, getStageNameRussian, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, speakText, matchDetailToScannedCode, cleanRawScannedString, processQRCommand, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, getSmartOrderDisplay } from '../utils';
+import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, getStageNameRussian, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, speakText, matchDetailToScannedCode, cleanRawScannedString, processQRCommand, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, getSmartOrderDisplay, comparePositionNumbers } from '../utils';
 import { CuttingOffcutsModal } from '../components/CuttingOffcutsModal';
 import { EdgingRemainsModal } from '../components/EdgingRemainsModal';
 import { detailRequiresPrisadka, getDetailAvailabilityForStage, getScannedCountForDetail, isDetailFullyScanned } from '../utils/stageReadiness';
@@ -418,9 +418,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     });
 
     return [...filtered].sort((a, b) => {
-      const numA = a.labelNumber || '';
-      const numB = b.labelNumber || '';
-      const cmp = numA.localeCompare(numB, undefined, { numeric: true, sensitivity: 'base' });
+      const cmp = comparePositionNumbers(a.labelNumber, b.labelNumber);
       return positionSortOrder === 'asc' ? cmp : -cmp;
     });
   }, [currentMaterialDetails, searchPartsQuery, order.orderNumber, positionSortOrder]);
@@ -712,8 +710,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
         }
         lastKeyTimeRef.current = now;
 
-        const enChar = convertRuCharToEn(e.key);
-        barcodeBufferRef.current += enChar;
+        barcodeBufferRef.current += e.key;
 
         setScanInput(barcodeBufferRef.current);
 

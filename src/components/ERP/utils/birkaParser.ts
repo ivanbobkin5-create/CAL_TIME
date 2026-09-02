@@ -159,7 +159,12 @@ export function parseBirFileText(text: string, customMapping?: Record<string, st
       const thickness = thkIdx !== -1 && cols[thkIdx] ? parseFloat(cols[thkIdx].replace(',', '.')) : 16;
       const material = matIdx !== -1 && cols[matIdx] ? cols[matIdx] : 'ЛДСП 16 мм';
       const quantity = qtyIdx !== -1 && cols[qtyIdx] ? parseInt(cols[qtyIdx], 10) || 1 : 1;
-      const rawPos = posIdx !== -1 && cols[posIdx] ? cols[posIdx] : String(i - headerLineIndex);
+      let rawPos = posIdx !== -1 && cols[posIdx] ? cols[posIdx] : '';
+      if (!rawPos) {
+        const posMatch = (cols[0] || '').match(/^([0-9]+(?:[\.\-_/\\:,;][0-9]+)+)/) ||
+                         (cols[0] || '').match(/^(?:поз\.?|дет\.?|позиция|деталь|№)?\s*([0-9]+(?:[\.\-_/\\:,;][0-9]+)+)/i);
+        rawPos = posMatch ? posMatch[1] : String(i - headerLineIndex);
+      }
       // Clean label number (remove leading #, №, words like "Поз.", "Позиция", "Деталь" while preserving "00.00", "00.00.00", etc.)
       const labelNumber = rawPos
         .replace(/^[#№\s]+/, '')
@@ -307,9 +312,13 @@ export function parseBirFileText(text: string, customMapping?: Record<string, st
         if (line.toLowerCase().includes('мдф')) mat = 'МДФ 18 мм';
         if (line.toLowerCase().includes('хдф') || line.toLowerCase().includes('двп')) mat = 'ХДФ 3 мм';
 
+        const posMatch = line.match(/^([0-9]+(?:[\.\-_/\\:,;][0-9]+)+)/) ||
+                         line.match(/^(?:поз\.?|дет\.?|позиция|деталь|№)?\s*([0-9]+(?:[\.\-_/\\:,;][0-9]+)+)/i);
+        const extractedPos = posMatch ? posMatch[1] : String(idx + 1);
+
         details.push({
           id: `det_regex_${idx}_${Math.random().toString(36).substring(2, 7)}`,
-          labelNumber: String(idx + 1),
+          labelNumber: extractedPos,
           name: line.split(/[\t;,]/)[0] || `Деталь ${idx + 1}`,
           length,
           width,

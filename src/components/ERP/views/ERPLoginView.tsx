@@ -213,7 +213,7 @@ export const ERPLoginView: React.FC<ERPLoginViewProps> = ({
           barcodeBufferRef.current = '';
         }
       } else if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-        barcodeBufferRef.current += convertRuCharToEn(e.key);
+        barcodeBufferRef.current += e.key;
       }
     };
 

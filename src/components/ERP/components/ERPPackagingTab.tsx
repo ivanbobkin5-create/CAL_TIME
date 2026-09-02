@@ -336,8 +336,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
           barcodeBufferRef.current = '';
         }
         lastKeyTimeRef.current = now;
-        const enChar = convertRuCharToEn(e.key);
-        barcodeBufferRef.current += enChar;
+        barcodeBufferRef.current += e.key;
 
         setScanInput(barcodeBufferRef.current);
         scannerInputRef.current?.focus();
@@ -1082,7 +1081,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
 
           {existingPackages.length > 0 && (
             <div className="text-xs font-bold text-slate-700 bg-slate-100 px-3.5 py-1.5 rounded-xl self-start sm:self-auto">
-              Всего упаковано: {packedDetailIds.size} деталей
+              Всего упаковано: {totalPackedPiecesInPackages} деталей
             </div>
           )}
         </div>
@@ -1248,7 +1247,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
           <div className="text-base font-black">
             {isAllDetailsPacked ? (
               <span className="text-emerald-400 flex items-center gap-2">
-                <CheckCircle2 className="w-5 h-5" /> Все детали упакованы ({totalPackedCount} из {totalDetailsCount}) в {existingPackages.length} мест
+                <CheckCircle2 className="w-5 h-5" /> Все детали упакованы ({totalPackedPieces} из {totalDetailsPieces}) в {existingPackages.length} мест
               </span>
             ) : (
               <span className="text-amber-400 flex items-center gap-2">

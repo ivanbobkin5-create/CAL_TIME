@@ -153,12 +153,39 @@ export function convertRuToEnLayout(text: string): string {
 }
 
 /**
- * Normalizes scanned barcodes or QR text by trimming, cleaning and converting layout.
+ * Normalizes scanned barcodes or QR text from cameras or hardware scanners.
+ * Extracts payload from passport URLs (e.g. https://domain.com/p/PKG-123),
+ * handles URL decoding, strips scanner control characters, and cleans the code.
  */
 export function normalizeBarcodeScan(code: string): string {
   if (!code) return '';
-  const clean = code.trim();
-  return convertRuToEnLayout(clean);
+  let clean = String(code).trim();
+  if (!clean) return '';
+
+  // Extract path payload if it's a passport URL (e.g. http://.../p/PKG-123 or https://.../p/PKG-%D0%97...)
+  if (clean.includes('/p/')) {
+    const afterP = clean.split('/p/')[1] || '';
+    clean = afterP.split('?')[0].split('#')[0] || clean;
+  } else if (clean.includes('/passport/')) {
+    const afterPass = clean.split('/passport/')[1] || '';
+    clean = afterPass.split('?')[0].split('#')[0] || clean;
+  } else if (clean.includes('http://') || clean.includes('https://')) {
+    const lastPart = clean.split('/').pop() || '';
+    clean = lastPart.split('?')[0].split('#')[0] || clean;
+  }
+
+  // Handle URL-encoded characters (e.g. %D0%97%D0%B0%D0%BA%D0%B0%D0%B7)
+  try {
+    if (clean.includes('%')) {
+      clean = decodeURIComponent(clean);
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  clean = cleanRawScannedString(clean);
+
+  return clean;
 }
 
 /**
@@ -376,7 +403,7 @@ export function cleanRawScannedString(str: string): string {
     // Remove leading hashes, №, words like "Поз.", "Деталь", "Позиция", "Item", "Part"
     .replace(/^[#№\s]+/, '')
     .replace(/^(поз\.?|дет\.?|позиция|деталь|номер|item|pos|part|поз|дет)\s*[:#№\-_\s]*/i, '')
-    // Replace commas, semicolons, and slashes between digits with dot (e.g. 20,02 -> 20.02, 20/02 -> 20.02)
+    // Replace commas and semicolons between digits with dot (e.g. 20,02 -> 20.02)
     .replace(/(\d+)[,;](\d+)/g, '$1.$2')
     .trim();
 }
@@ -400,6 +427,62 @@ export function getPartNumberSegments(str: string): number[] | null {
     return parts.map(p => parseInt(p, 10));
   }
   return null;
+}
+
+/**
+ * Compares two position numbers/labels hierarchically.
+ * Priority 1: First numeric segment (e.g. "01" vs "02")
+ * Priority 2: Second numeric segment (e.g. "01" vs "02")
+ * Priority 3: Third numeric segment if exists
+ * Handles dotted numbers like "01.01", "01.02", "02.01", "02.02", "1.1", "1.2", "01.09", "01.10", "20.01".
+ * If segments are equal, falls back to string locale comparison.
+ */
+export function comparePositionNumbers(aStr: string | undefined | null, bStr: string | undefined | null): number {
+  const rawA = String(aStr || '').trim();
+  const rawB = String(bStr || '').trim();
+
+  if (!rawA && !rawB) return 0;
+  if (!rawA) return 1;
+  if (!rawB) return -1;
+  if (rawA === rawB) return 0;
+
+  const cleanA = cleanRawScannedString(rawA);
+  const cleanB = cleanRawScannedString(rawB);
+
+  // Split into segments by standard delimiters: dot, hyphen, underscore, slash, colon, comma, space
+  const segsA = cleanA.split(/[\.\-_/\\:,;\s]+/).filter(Boolean);
+  const segsB = cleanB.split(/[\.\-_/\\:,;\s]+/).filter(Boolean);
+
+  const minLen = Math.min(segsA.length, segsB.length);
+
+  for (let i = 0; i < minLen; i++) {
+    const sA = segsA[i];
+    const sB = segsB[i];
+
+    const isNumA = /^\d+$/.test(sA);
+    const isNumB = /^\d+$/.test(sB);
+
+    if (isNumA && isNumB) {
+      const numA = parseInt(sA, 10);
+      const numB = parseInt(sB, 10);
+      if (numA !== numB) {
+        return numA - numB;
+      }
+      // Same numeric value (e.g. "01" vs "1"), sort shorter/padded string first
+      if (sA.length !== sB.length) {
+        return sA.length - sB.length;
+      }
+    } else {
+      const cmp = sA.localeCompare(sB, undefined, { numeric: true, sensitivity: 'base' });
+      if (cmp !== 0) return cmp;
+    }
+  }
+
+  if (segsA.length !== segsB.length) {
+    return segsA.length - segsB.length;
+  }
+
+  return cleanA.localeCompare(cleanB, undefined, { numeric: true, sensitivity: 'base' });
 }
 
 /**

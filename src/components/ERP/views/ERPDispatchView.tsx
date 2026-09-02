@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Truck, 
   Search, 
@@ -368,6 +368,9 @@ const ERPDispatchWorkspaceModal: React.FC<ERPDispatchWorkspaceModalProps> = ({
   const [scanInput, setScanInput] = useState('');
   const [scanMessage, setScanMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showCameraScanner, setShowCameraScanner] = useState(false);
+  const scannerInputRef = useRef<HTMLInputElement>(null);
+  const barcodeBufferRef = useRef<string>('');
+  const lastKeyTimeRef = useRef<number>(0);
 
   // Driver & Vehicle form
   const [driverName, setDriverName] = useState(order.driverInfo?.driverName || '');
@@ -414,6 +417,64 @@ const ERPDispatchWorkspaceModal: React.FC<ERPDispatchWorkspaceModalProps> = ({
     setScanInput('');
   };
 
+  // Hardware Scanner Listener
+  useEffect(() => {
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (showCameraScanner) return;
+
+      const activeEl = document.activeElement as HTMLElement | null;
+      const target = e.target as HTMLElement | null;
+      const isScannerInput = target === scannerInputRef.current || activeEl === scannerInputRef.current;
+
+      const isOtherInput = (target && (
+        (target.tagName === 'INPUT' && target !== scannerInputRef.current) ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable
+      )) || (activeEl && (
+        (activeEl.tagName === 'INPUT' && activeEl !== scannerInputRef.current) ||
+        activeEl.tagName === 'TEXTAREA' ||
+        activeEl.tagName === 'SELECT' ||
+        activeEl.isContentEditable
+      ));
+
+      if (isOtherInput) return;
+
+      if (e.key === 'Enter') {
+        const rawCode = isScannerInput
+          ? (scanInput.trim() || (scannerInputRef.current?.value || '').trim())
+          : (barcodeBufferRef.current.trim() || scanInput.trim() || (scannerInputRef.current?.value || '').trim());
+        if (rawCode) {
+          e.preventDefault();
+          barcodeBufferRef.current = '';
+          handleScanPackageCode(rawCode);
+          setScanInput('');
+          if (scannerInputRef.current) scannerInputRef.current.value = '';
+        }
+        return;
+      }
+
+      if (e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (isScannerInput) return;
+
+        const now = Date.now();
+        if (now - lastKeyTimeRef.current > 1200) {
+          barcodeBufferRef.current = '';
+        }
+        lastKeyTimeRef.current = now;
+        barcodeBufferRef.current += e.key;
+
+        setScanInput(barcodeBufferRef.current);
+        scannerInputRef.current?.focus();
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown, true);
+    };
+  }, [showCameraScanner, scanInput, scannedCodes, pkgs, order]);
+
   // Toggle all packages scanned manually
   const handleScanAllManually = () => {
     const allCodes = pkgs.map(p => p.code);
@@ -444,6 +505,19 @@ const ERPDispatchWorkspaceModal: React.FC<ERPDispatchWorkspaceModalProps> = ({
         address: clientAddress,
         clientPhone: clientPhone,
         deliveryPrice: deliveryPrice
+      },
+      stageProgress: {
+        ...(order.stageProgress || {}),
+        shipping: {
+          status: 'done',
+          completedAt: new Date().toISOString(),
+          completedBy: driverName || 'Склад / Отгрузка'
+        },
+        ready: {
+          status: 'done',
+          completedAt: new Date().toISOString(),
+          completedBy: driverName || 'Склад / Отгрузка'
+        }
       }
     };
 
@@ -529,6 +603,7 @@ const ERPDispatchWorkspaceModal: React.FC<ERPDispatchWorkspaceModalProps> = ({
             {/* USB Barcode Input */}
             <form onSubmit={handleScanSubmit} className="flex items-center gap-2">
               <input
+                ref={scannerInputRef}
                 type="text"
                 placeholder="Считайте сканером штрихкод упаковки..."
                 value={scanInput}

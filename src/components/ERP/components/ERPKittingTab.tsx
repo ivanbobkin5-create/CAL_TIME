@@ -707,7 +707,7 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
           barcodeBufferRef.current = '';
         }
         lastKeyTimeRef.current = now;
-        barcodeBufferRef.current += convertRuCharToEn(e.key);
+        barcodeBufferRef.current += e.key;
       }
     };
 

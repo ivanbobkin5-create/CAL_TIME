@@ -1,5 +1,5 @@
 import { ProductionOrder, ERPEmployee } from '../types';
-import { formatDeadlineDate, formatDateTimeSafe } from '../utils';
+import { formatDeadlineDate, formatDateTimeSafe, getStageNameRussian } from '../utils';
 
 /**
  * Generates and prints a full A4 Archive Order Dossier / Passport (Паспорт заказа и история выполнения)
@@ -29,12 +29,18 @@ export function printArchiveOrderPassport(order: ProductionOrder, employees: ERP
   const stageNames: Record<string, string> = {
     queue: 'Очередь / Планирование',
     cutting: 'Распил',
+    cut: 'Распил',
     edging: 'Кромкооблицовка',
+    edge: 'Кромкооблицовка',
     milling: 'Присадка / ЧПУ',
+    cnc: 'Присадка / ЧПУ',
     facades: 'Фасады',
     assembly: 'Сборка',
     kitting: 'Комплектовка фурнитуры',
+    qc: 'Контроль ОТК',
+    packing: 'Упаковка деталей',
     packaging: 'Упаковка деталей',
+    ready: 'Готово к отгрузке',
     shipping: 'Отгрузка водителю'
   };
 
@@ -155,12 +161,23 @@ export function printArchiveOrderPassport(order: ProductionOrder, employees: ERP
   }
 
   // Stages & Participants
-  const stagesHtml = Object.entries(stageProgress).map(([stId, stData]: [string, any]) => {
+  const stagesToRender = { ...stageProgress };
+  if (order.status === 'shipped' || order.status === 'completed' || !!order.shippedAt) {
+    stagesToRender.shipping = {
+      status: 'done',
+      completedBy: stageProgress.shipping?.completedBy || order.shippedByEmployeeName || order.driverInfo?.driverName || 'Экспедитор',
+      completedAt: stageProgress.shipping?.completedAt || order.shippedAt || new Date().toISOString()
+    };
+  }
+
+  const stagesHtml = Object.entries(stagesToRender).map(([stId, stData]: [string, any]) => {
+    const isDone = stData?.status === 'done';
+    const isInProgress = stData?.status === 'in_progress';
     return `
       <tr style="border-bottom: 1px solid #e2e8f0;">
-        <td style="padding: 4px 6px; font-weight: bold;">${stageNames[stId] || stId}</td>
-        <td style="padding: 4px 6px; color: ${stData?.status === 'done' ? '#166534' : '#0369a1'}; font-weight: bold;">
-          ${stData?.status === 'done' ? '✓ Выполнен' : (stData?.status === 'in_progress' ? 'В работе' : 'Ожидание')}
+        <td style="padding: 4px 6px; font-weight: bold;">${stageNames[stId] || getStageNameRussian(stId)}</td>
+        <td style="padding: 4px 6px; color: ${isDone ? '#166534' : (isInProgress ? '#0369a1' : '#64748b')}; font-weight: bold;">
+          ${isDone ? '✓ Выполнен' : (isInProgress ? 'В работе' : 'Ожидание')}
         </td>
         <td style="padding: 4px 6px;">${stData?.completedBy || '—'}</td>
         <td style="padding: 4px 6px; font-family: monospace;">${formatDateTimeSafe(stData?.completedAt)}</td>
@@ -187,7 +204,7 @@ export function printArchiveOrderPassport(order: ProductionOrder, employees: ERP
           ${workLogs.map(log => `
             <tr style="border-bottom: 1px solid #e2e8f0;">
               <td style="padding: 4px 6px; font-weight: bold;">${log.employeeName || 'Сотрудник'}</td>
-              <td style="padding: 4px 6px;">${stageNames[log.stageId] || log.stageId}</td>
+              <td style="padding: 4px 6px;">${stageNames[log.stageId] || getStageNameRussian(log.stageId)}</td>
               <td style="padding: 4px 6px; font-family: monospace;">${formatDateTimeSafe(log.startTime)}</td>
               <td style="padding: 4px 6px; font-family: monospace;">${formatDateTimeSafe(log.endTime, 'В процессе')}</td>
               <td style="padding: 4px 6px; text-align: right; font-weight: bold;">
