@@ -770,6 +770,10 @@ export function processQRCommand(
     onReportDefect?: () => void;
     onNextStage?: () => void;
     onPrintAct?: () => void;
+    onClearScan?: () => void;
+    onPauseWork?: () => void;
+    onPrintLabels?: () => void;
+    onForceFinish?: () => void;
   }
 ): QRCommandResult {
   if (!rawCode) return { isCommand: false };
@@ -973,6 +977,94 @@ export function processQRCommand(
     }
     speakText('Печать акта');
     return { isCommand: true, commandKey: 'CMD_PRINT_ACT', message: 'Команда: Открыта печать акта' };
+  }
+
+  // 7. Clear scan
+  if (
+    matches([
+      'CMD_CLEAR_SCAN',
+      'CMDCLEARSCAN',
+      'CMD_CLEAR',
+      'CMDCLEAR',
+      'CLEAR_SCAN',
+      'CLEARSCAN',
+      'СБРОСИТЬСКАН',
+      'СБРОСИТЬ_СКАН',
+      'ОЧИСТИТЬСКАН',
+      'ОЧИСТИТЬ_СКАН',
+      'СБРОС'
+    ])
+  ) {
+    if (callbacks?.onClearScan) {
+      callbacks.onClearScan();
+    } else if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('erp_cmd_clear_scan'));
+    }
+    speakText('Сброс сканирования');
+    return { isCommand: true, commandKey: 'CMD_CLEAR_SCAN', message: 'Команда: Сброс отметок деталей' };
+  }
+
+  // 8. Pause work
+  if (
+    matches([
+      'CMD_PAUSE_WORK',
+      'CMDPAUSEWORK',
+      'CMD_PAUSE',
+      'CMDPAUSE',
+      'PAUSE_WORK',
+      'PAUSE',
+      'ПАУЗА',
+      'ПАУЗАРАБОТЫ',
+      'ПАУЗА_РАБОТЫ',
+      'ПЕРЕРЫВ'
+    ])
+  ) {
+    if (callbacks?.onPauseWork) {
+      callbacks.onPauseWork();
+    } else if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('erp_cmd_pause_work'));
+    }
+    speakText('Пауза в работе');
+    return { isCommand: true, commandKey: 'CMD_PAUSE_WORK', message: 'Команда: Перерыв / Пауза смены' };
+  }
+
+  // 9. Print labels
+  if (
+    matches([
+      'CMD_PRINT_LABELS',
+      'CMDPRINTLABELS',
+      'PRINT_LABELS',
+      'ПЕЧАТЬЭТИКЕТОК',
+      'ПЕЧАТЬ_ЭТИКЕТОК',
+      'ЭТИКЕТКИ'
+    ])
+  ) {
+    if (callbacks?.onPrintLabels) {
+      callbacks.onPrintLabels();
+    } else if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('erp_cmd_print_labels'));
+    }
+    speakText('Печать этикеток');
+    return { isCommand: true, commandKey: 'CMD_PRINT_LABELS', message: 'Команда: Печать этикеток' };
+  }
+
+  // 10. Force finish stage
+  if (
+    matches([
+      'CMD_FORCE_FINISH',
+      'CMDFORCEFINISH',
+      'FORCE_FINISH',
+      'ПРИНУДИТЕЛЬНО',
+      'ВЕСЬЭТАП'
+    ])
+  ) {
+    if (callbacks?.onForceFinish) {
+      callbacks.onForceFinish();
+    } else if (typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('erp_cmd_force_finish'));
+    }
+    speakText('Принудительное завершение');
+    return { isCommand: true, commandKey: 'CMD_FORCE_FINISH', message: 'Команда: Принудительное завершение этапа' };
   }
 
   if (clean.startsWith('CMD') || enLayout.startsWith('CMD') || ruLayout.startsWith('CMD')) {

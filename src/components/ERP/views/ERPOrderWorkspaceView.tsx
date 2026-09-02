@@ -35,7 +35,8 @@ import {
   ShieldAlert,
   ArrowRight,
   ArrowUpDown,
-  Lock
+  Lock,
+  PauseCircle
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee, MaterialResidual } from '../types';
 import { parseBirkaFile, BirkaParseResult, BirkaDetail, consolidateDetails } from '../utils/birkaParser';
@@ -210,6 +211,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   const [defectTargetDetail, setDefectTargetDetail] = useState<any | null>(null);
   const [isIdentityConfirmed, setIsIdentityConfirmed] = useState<boolean>(false);
   const [positionSortOrder, setPositionSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [isPaused, setIsPaused] = useState<boolean>(false);
 
   const scannerInputRef = useRef<HTMLInputElement | null>(null);
   const barcodeBufferRef = useRef<string>('');
@@ -423,6 +425,88 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     });
   }, [currentMaterialDetails, searchPartsQuery, order.orderNumber, positionSortOrder]);
 
+  // Quick Actions & QR Command Buttons Execution Handler
+  const handleExecuteCommand = (cmd: string) => {
+    const upper = cmd.toUpperCase().trim();
+
+    if (upper === 'FINISH_STAGE' || upper === 'CMD_FINISH_STAGE' || upper === 'CMD_NEXT_STAGE' || upper === 'NEXT_STAGE') {
+      if (isStageFullyScanned) {
+        setScanSuccessMsg(`✅ Команда «Завершить этап»: этап ${stageMeta.shortName} успешно завершен!`);
+        speakText(`Этап ${stageMeta.shortName} завершен`);
+        handleCompleteCurrentStageAndExit();
+      } else {
+        setScanErrorMsg(`⚠️ Не все детали отсканированы (${totalStageScannedParts}/${totalOrderParts}). Подтвердите принудительное завершение.`);
+        speakText('Не все детали отсканированы');
+        setShowForceCompleteModal(true);
+      }
+      return;
+    }
+
+    if (upper === 'REPORT_DEFECT' || upper === 'CMD_REPORT_DEFECT' || upper === 'DEFECT') {
+      const allDetails = consolidateDetails(localOrder.birkaData?.details || []);
+      if (allDetails.length > 0) {
+        setDefectTargetDetail(allDetails[0]);
+        setScanSuccessMsg(`⚠️ Режим фиксации брака. Выберите деталь для переделки.`);
+      } else {
+        setScanErrorMsg(`В заказе нет деталей для фиксации брака`);
+      }
+      return;
+    }
+
+    if (upper === 'CLEAR_SCAN' || upper === 'CMD_CLEAR_SCAN' || upper === 'CLEAR') {
+      const currentOrder = localOrderRef.current;
+      const mat = selectedMaterial || 'Без указания материала';
+      const updatedScanning = { ...(currentOrder.stageScanningProgress || {}) };
+      if (updatedScanning[currentStage]) {
+        updatedScanning[currentStage] = {
+          ...updatedScanning[currentStage],
+          [mat]: { scannedPartIds: [], isCompleted: false }
+        };
+      }
+      const updatedOrder = {
+        ...currentOrder,
+        stageScanningProgress: updatedScanning
+      };
+      localOrderRef.current = updatedOrder;
+      setLocalOrder(updatedOrder);
+      onUpdateOrder(updatedOrder);
+      setScanSuccessMsg(`🔄 Отметки деталей для материала "${mat}" успешно сброшены.`);
+      speakText('Скан сброшен');
+      playSoundEffect('alert');
+      return;
+    }
+
+    if (upper === 'PAUSE_WORK' || upper === 'CMD_PAUSE_WORK' || upper === 'PAUSE' || upper === 'CMD_PAUSE') {
+      setIsPaused(prev => {
+        const next = !prev;
+        if (next) {
+          setScanSuccessMsg('⏸️ Смена приостановлена (пауза)');
+          speakText('Пауза смены');
+        } else {
+          setScanSuccessMsg('▶️ Смена возобновлена');
+          speakText('Работа возобновлена');
+        }
+        return next;
+      });
+      playSoundEffect('success');
+      return;
+    }
+
+    if (upper === 'PRINT_LABELS' || upper === 'CMD_PRINT_LABELS' || upper === 'CMD_PRINT_ACT' || upper === 'PRINT') {
+      setScanSuccessMsg('🖨️ Запуск печати...');
+      speakText('Печать');
+      window.print();
+      return;
+    }
+
+    if (upper === 'FORCE_FINISH' || upper === 'CMD_FORCE_FINISH') {
+      setShowForceCompleteModal(true);
+      return;
+    }
+
+    setScanSuccessMsg(`Выполнена команда: ${cmd}`);
+  };
+
   // Handle Scanning or Marking a Part
   const handleScanCode = (codeToScan: string) => {
     // Reset inputs immediately
@@ -465,21 +549,13 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
           playSoundEffect('error');
         }
       },
-      onNextStage: () => {
-        if (isStageFullyScanned) {
-          setScanSuccessMsg(`✅ Команда «Завершить этап»: этап ${stageMeta.shortName} успешно завершен!`);
-          speakText(`Этап ${stageMeta.shortName} завершен`);
-          handleCompleteCurrentStageAndExit();
-        } else {
-          setScanErrorMsg(`⚠️ Не все детали отсканированы (${totalStageScannedParts}/${totalOrderParts}). Подтвердите завершение.`);
-          speakText('Не все детали отсканированы. Требуется подтверждение');
-          setShowForceCompleteModal(true);
-        }
-      },
-      onPrintAct: () => {
-        setScanSuccessMsg('🖨️ Запуск печати акта сдачи...');
-        window.print();
-      }
+      onNextStage: () => handleExecuteCommand('finish_stage'),
+      onReportDefect: () => handleExecuteCommand('report_defect'),
+      onClearScan: () => handleExecuteCommand('clear_scan'),
+      onPauseWork: () => handleExecuteCommand('pause_work'),
+      onPrintLabels: () => handleExecuteCommand('print_labels'),
+      onForceFinish: () => handleExecuteCommand('force_finish'),
+      onPrintAct: () => handleExecuteCommand('print_labels')
     });
 
     if (cmdResult.isCommand) {
@@ -1380,8 +1456,66 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                     </div>
                   )}
 
+                  {/* Quick Action Commands & Buttons Grid */}
+                  <div className="pt-2 border-t border-slate-800 space-y-2">
+                    <div className="text-[11px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                      <span>Быстрые действия и QR-команды</span>
+                      <span className="text-[10px] text-slate-500 font-normal hidden sm:inline">Нажмите или отсканируйте</span>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleExecuteCommand('finish_stage')}
+                        className="p-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md shadow-emerald-950/40"
+                      >
+                        <CheckCircle2 className="w-4 h-4 shrink-0 text-emerald-200" />
+                        <span className="truncate">Завершить этап</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleExecuteCommand('report_defect')}
+                        className="p-2.5 rounded-xl bg-amber-600 hover:bg-amber-500 active:scale-95 text-white text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md shadow-amber-950/40"
+                      >
+                        <AlertTriangle className="w-4 h-4 shrink-0 text-amber-200" />
+                        <span className="truncate">Брак / Переделка</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleExecuteCommand('pause_work')}
+                        className={`p-2.5 rounded-xl active:scale-95 text-xs font-bold transition-all flex items-center gap-2 cursor-pointer border ${
+                          isPaused
+                            ? 'bg-amber-500 text-slate-950 border-amber-400 font-black'
+                            : 'bg-slate-800 hover:bg-slate-700 text-slate-200 border-slate-700'
+                        }`}
+                      >
+                        <PauseCircle className="w-4 h-4 shrink-0" />
+                        <span className="truncate">{isPaused ? '▶️ Снять паузу' : '⏸️ Пауза смены'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleExecuteCommand('clear_scan')}
+                        className="p-2.5 rounded-xl bg-rose-900/60 hover:bg-rose-800 text-rose-100 border border-rose-700/60 active:scale-95 text-xs font-bold transition-all flex items-center gap-2 cursor-pointer"
+                      >
+                        <RefreshCw className="w-4 h-4 shrink-0 text-rose-300" />
+                        <span className="truncate">Сбросить скан</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleExecuteCommand('print_labels')}
+                        className="p-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md shadow-indigo-950/40 col-span-2"
+                      >
+                        <Printer className="w-4 h-4 shrink-0 text-indigo-200" />
+                        <span className="truncate">Печать этикеток / листа заказа</span>
+                      </button>
+                    </div>
+                  </div>
+
                   {/* Finish Station Button */}
-                  <div className="pt-2">
+                  <div className="pt-1">
                     <button
                       onClick={handleCompleteCurrentStageAndExit}
                       className="w-full py-3.5 px-4 rounded-2xl font-black text-xs transition-all flex items-center justify-center gap-2 cursor-pointer bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-600/20"
