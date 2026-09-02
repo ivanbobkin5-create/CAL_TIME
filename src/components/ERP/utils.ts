@@ -1,5 +1,53 @@
 import { ProductionOrder, ProductionStageId } from './types';
 
+export function getDetailPositionDisplay(
+  rawLabelNumber: string | number | undefined | null,
+  orderNumber?: string,
+  fallbackIndex?: number
+): string {
+  if (rawLabelNumber === undefined || rawLabelNumber === null || rawLabelNumber === '') {
+    return fallbackIndex !== undefined ? String(fallbackIndex) : '—';
+  }
+
+  let str = String(rawLabelNumber).trim()
+    .replace(/^[#№\s]+/, '')
+    .replace(/^(поз\.?|дет\.?|позиция|деталь|номер|item|pos)\s*/i, '')
+    .trim();
+
+  if (!str) {
+    return fallbackIndex !== undefined ? String(fallbackIndex) : '—';
+  }
+
+  if (orderNumber) {
+    const rawOrd = String(orderNumber).trim();
+    const cleanOrd = rawOrd
+      .replace(/^[#№\s]+/, '')
+      .replace(/^(зак|order|проект|№|номер)\s*/i, '')
+      .trim();
+
+    const candidates = Array.from(new Set([rawOrd, cleanOrd].filter(Boolean)));
+
+    for (const cand of candidates) {
+      const lowerCand = cand.toLowerCase();
+      const lowerStr = str.toLowerCase();
+
+      if (lowerStr === lowerCand) {
+        return fallbackIndex !== undefined ? String(fallbackIndex) : '1';
+      }
+
+      for (const sep of ['_', '-', '/', '.', ' ']) {
+        const prefix = lowerCand + sep;
+        if (lowerStr.startsWith(prefix)) {
+          str = str.substring(prefix.length).trim();
+          break;
+        }
+      }
+    }
+  }
+
+  return str || (fallbackIndex !== undefined ? String(fallbackIndex) : '—');
+}
+
 export function formatDeadlineDate(dateStr?: string): string {
   if (!dateStr) return '—';
   const cleanStr = String(dateStr).trim();

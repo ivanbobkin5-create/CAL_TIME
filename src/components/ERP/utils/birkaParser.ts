@@ -109,13 +109,21 @@ export function parseBirFileText(text: string, customMapping?: Record<string, st
         keywords.some(k => h.includes(k.toLowerCase())) && !excludeKeywords.some(ek => h.includes(ek.toLowerCase()))
       );
 
-    // Order index first (Заказ / Order / Проект)
-    const orderIdx = findIndex(mapping.orderNumber || ['зак', 'order', 'проект']);
+    const orderExclusions = ['зак', 'order', 'проект', 'сделка', 'договор', 'дог'];
 
-    // Part number index (№ детали / Позиция) - prioritized
-    let posIdx = findIndex(mapping.pos || ['№ дет', 'поз', 'позиц', '№ бирк', 'код дет', 'part_no', 'item_no', 'label']);
+    // Order index first (Заказ / Order / Проект)
+    const orderIdx = findIndex(mapping.orderNumber || ['зак', 'order', 'проект', 'сделка', 'договор']);
+
+    // Part number index (№ детали / Позиция) - prioritized with order keyword exclusions
+    let posIdx = findIndex(
+      mapping.pos || ['№ дет', 'номер дет', 'деталь №', 'деталь номер', 'поз', 'позиц', '№ бирк', 'код дет', 'part_no', 'item_no', 'label', 'позиция', 'обозначение'],
+      orderExclusions
+    );
     if (posIdx === -1) {
-      posIdx = findIndex(['№', 'номер', 'pos', 'id'], ['зак', 'order', 'проект', 'издел', 'наим', 'назв', 'имя', 'длин', 'шир', 'толщ', 'кол']);
+      posIdx = findIndex(
+        ['№', 'номер', 'pos', 'id', 'код'],
+        ['зак', 'order', 'проект', 'издел', 'наим', 'назв', 'имя', 'длин', 'шир', 'толщ', 'кол', 'сделка', 'договор', 'матер', 'кромк']
+      );
     }
     // Prevent overlap if order column was matched
     if (posIdx !== -1 && posIdx === orderIdx) {
