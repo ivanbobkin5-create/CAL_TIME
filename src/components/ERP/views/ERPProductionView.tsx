@@ -716,14 +716,32 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
                       {/* Right: Actions */}
                       <div className="flex items-center gap-3 shrink-0 justify-end">
                         <button
+                          disabled={taskReadiness.isLocked}
                           onClick={(e) => {
                             e.stopPropagation();
+                            if (taskReadiness.isLocked) {
+                              alert(`🔒 Задача по заказу ${order.orderNumber} заблокирована!\n\nПричина: ${taskReadiness.blockingReason}\n\nСотрудник на предыдущем участке еще не начал обработку деталей. Как только первая деталь будет отсканирована на прошлом участке, задание автоматически станет доступным.`);
+                              return;
+                            }
                             onSelectOrder(order, selectedStageId || order.currentStage);
                           }}
-                          className="px-5 py-2.5 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs shadow-md shadow-blue-600/20 transition-all flex items-center gap-2 cursor-pointer"
+                          className={`px-5 py-2.5 rounded-2xl font-extrabold text-xs transition-all flex items-center gap-2 ${
+                            taskReadiness.isLocked
+                              ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                              : 'bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-600/20 cursor-pointer'
+                          }`}
                         >
-                          <Play className="w-4 h-4 fill-current" />
-                          <span>Взять в работу</span>
+                          {taskReadiness.isLocked ? (
+                            <>
+                              <Lock className="w-4 h-4" />
+                              <span>Ожидает детали</span>
+                            </>
+                          ) : (
+                            <>
+                              <Play className="w-4 h-4 fill-current" />
+                              <span>Взять в работу</span>
+                            </>
+                          )}
                         </button>
                       </div>
                     </div>

@@ -98,32 +98,86 @@ export const ERPLoginView: React.FC<ERPLoginViewProps> = ({
         }
       }
 
-      // Parse payload: ERP_BADGE:<empId>:<companyId>:<badgeCode> or raw empId or badgeCode
+      // Parse payload: ERP_BADGE:<empId>:<companyId>:<badgeCode> or raw empId or badgeCode or phone or URL
       let empId = '';
       let badgeCodePart = '';
+      let parsedCompanyId = '';
 
-      if (cleanCode.startsWith('ERP_BADGE:')) {
-        const parts = cleanCode.split(':');
-        empId = parts[1] || '';
-        badgeCodePart = parts[3] || '';
-      } else {
-        empId = cleanCode;
-        badgeCodePart = cleanCode;
+      let payload = cleanCode;
+      if (payload.includes('/badge/')) {
+        payload = payload.split('/badge/').pop()?.split('?')[0] || payload;
       }
 
-      // Find matching employee
-      let matched = companyEmployees.find(e => 
-        (empId && e.id === empId) ||
-        (badgeCodePart && e.badgeCode === badgeCodePart) ||
-        e.id === cleanCode ||
-        e.badgeCode === cleanCode ||
-        (e.phone && e.phone.replace(/\D/g, '') === cleanCode.replace(/\D/g, ''))
-      );
+      if (payload.startsWith('ERP_BADGE:')) {
+        const parts = payload.split(':');
+        empId = parts[1] || '';
+        parsedCompanyId = parts[2] || '';
+        badgeCodePart = parts[3] || '';
+      } else {
+        empId = payload;
+        badgeCodePart = payload;
+      }
 
-      // If no employee exists in list yet and it's a test or first login
-      if (!matched && (cleanCode.startsWith('ERP_BADGE:') || cleanCode.startsWith('EMP_'))) {
+      const cleanLower = cleanCode.toLowerCase();
+      const payloadLower = payload.toLowerCase();
+      const empIdLower = empId.toLowerCase();
+      const badgePartLower = badgeCodePart.toLowerCase();
+
+      // Find matching employee by all possible identifiers
+      let matched = companyEmployees.find(e => {
+        if (!e) return false;
+        const eIdLower = (e.id || '').toLowerCase();
+        const eBadgeLower = (e.badgeCode || '').toLowerCase();
+        const eUserIdLower = (e.userId || '').toLowerCase();
+        const eEmailLower = (e.email || '').toLowerCase();
+        const eNameLower = (e.name || '').toLowerCase();
+        const ePhoneDigits = (e.phone || '').replace(/\D/g, '');
+        const codeDigits = cleanCode.replace(/\D/g, '');
+
+        return (
+          (empId && eIdLower === empIdLower) ||
+          (badgeCodePart && eBadgeLower === badgePartLower) ||
+          eIdLower === payloadLower ||
+          eIdLower === cleanLower ||
+          eBadgeLower === payloadLower ||
+          eBadgeLower === cleanLower ||
+          (eBadgeLower && cleanLower.includes(eBadgeLower)) ||
+          (eIdLower && cleanLower.includes(eIdLower)) ||
+          (eUserIdLower && eUserIdLower === cleanLower) ||
+          (eEmailLower && eEmailLower === cleanLower) ||
+          (codeDigits.length >= 4 && ePhoneDigits.length >= 4 && (ePhoneDigits.endsWith(codeDigits) || codeDigits.endsWith(ePhoneDigits))) ||
+          (payloadLower.length >= 3 && eNameLower.includes(payloadLower))
+        );
+      });
+
+      // If no match in fetched company list, check any cached employees in localStorage
+      if (!matched) {
+        try {
+          const cachedKeys = Object.keys(localStorage).filter(k => k.startsWith('erp_employees_') || k.startsWith('erp_schedule_'));
+          for (const k of cachedKeys) {
+            const rawCache = localStorage.getItem(k);
+            if (rawCache) {
+              const parsed = JSON.parse(rawCache);
+              const list: ERPEmployee[] = Array.isArray(parsed) ? parsed : (parsed.employees || []);
+              const foundInCache = list.find(e => 
+                (empId && e.id?.toLowerCase() === empIdLower) ||
+                (badgeCodePart && e.badgeCode?.toLowerCase() === badgePartLower) ||
+                e.id?.toLowerCase() === cleanLower ||
+                e.badgeCode?.toLowerCase() === cleanLower
+              );
+              if (foundInCache) {
+                matched = foundInCache;
+                break;
+              }
+            }
+          }
+        } catch (cacheErr) {}
+      }
+
+      // If still no employee exists in list (e.g. test or first badge creation)
+      if (!matched && (cleanCode.startsWith('ERP_BADGE:') || cleanCode.startsWith('EMP_') || cleanCode.startsWith('emp_'))) {
         // Fallback: check if we can synthesize profile from code
-        const fallbackName = empId ? `Сотрудник #${empId}` : 'Сотрудник цеха';
+        const fallbackName = empId ? `Сотрудник #${empId.replace(/^emp[-_]?/i, '')}` : 'Сотрудник цеха';
         matched = {
           id: empId || `emp-${Date.now()}`,
           name: fallbackName,
@@ -139,7 +193,7 @@ export const ERPLoginView: React.FC<ERPLoginViewProps> = ({
       }
 
       if (!matched) {
-        setErrorMsg(`Сотрудник по данному QR-коду бейджа не найден (${cleanCode}). Обратитесь к начальнику цеха для выпуска карточки.`);
+        setErrorMsg(`Сотрудник не найден по коду: "${cleanCode}". Проверьте карточку в разделе «Сотрудники» или обратитесь к руководителю цеха.`);
         setIsLoading(false);
         return;
       }
