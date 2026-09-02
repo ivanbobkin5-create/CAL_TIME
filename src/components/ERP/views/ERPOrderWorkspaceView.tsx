@@ -34,6 +34,7 @@ import {
   UserX,
   ShieldAlert,
   ArrowRight,
+  ArrowUpDown,
   Lock
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee, MaterialResidual } from '../types';
@@ -208,6 +209,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   const [showShiftRequiredModal, setShowShiftRequiredModal] = useState<boolean>(false);
   const [defectTargetDetail, setDefectTargetDetail] = useState<any | null>(null);
   const [isIdentityConfirmed, setIsIdentityConfirmed] = useState<boolean>(false);
+  const [positionSortOrder, setPositionSortOrder] = useState<'asc' | 'desc'>('asc');
 
   const scannerInputRef = useRef<HTMLInputElement | null>(null);
   const barcodeBufferRef = useRef<string>('');
@@ -389,25 +391,39 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     return consolidateDetails(localOrder.birkaData?.details || []);
   }, [localOrder.birkaData]);
 
-  // Details for selected material (for current stage)
+  // Details for selected material
   const allMaterialDetails = useMemo(() => {
     return consolidatedOrderDetails.filter(d => 
       (d.material || 'Без указания материала') === selectedMaterial
     );
   }, [consolidatedOrderDetails, selectedMaterial]);
 
-  // Stage filtering:
-  // - On edging: only show parts that need edge banding
-  // - On prisadka/cnc: only show parts that require drilling (considering nesting equipment settings and hole counts)
-  const currentMaterialDetails = useMemo(() => {
-    if (currentStage === 'edging') {
-      return allMaterialDetails.filter(d => partNeedsEdge(d));
-    }
-    if ((currentStage as string) === 'prisadka' || currentStage === 'cnc') {
-      return allMaterialDetails.filter(d => detailRequiresPrisadka(d, settings));
-    }
-    return allMaterialDetails;
-  }, [currentStage, allMaterialDetails, settings]);
+  // All details of selected material are available across all processing stages
+  const currentMaterialDetails = allMaterialDetails;
+
+  // Filtered and sorted details for display
+  const sortedAndFilteredDetails = useMemo(() => {
+    const filtered = currentMaterialDetails.filter(d => {
+      if (!searchPartsQuery) return true;
+      const q = searchPartsQuery.toLowerCase();
+      const birkaOrder = (d.orderNumber || order.orderNumber || '').toLowerCase();
+      const fullQr = `${birkaOrder}_${d.labelNumber}`.toLowerCase();
+      return d.name.toLowerCase().includes(q) ||
+             d.labelNumber.toLowerCase().includes(q) ||
+             (d.orderNumber && d.orderNumber.toLowerCase().includes(q)) ||
+             d.id.toLowerCase().includes(q) ||
+             fullQr.includes(q) ||
+             (d.barcode && d.barcode.toLowerCase().includes(q)) ||
+             (d.notes && d.notes.toLowerCase().includes(q));
+    });
+
+    return [...filtered].sort((a, b) => {
+      const numA = a.labelNumber || '';
+      const numB = b.labelNumber || '';
+      const cmp = numA.localeCompare(numB, undefined, { numeric: true, sensitivity: 'base' });
+      return positionSortOrder === 'asc' ? cmp : -cmp;
+    });
+  }, [currentMaterialDetails, searchPartsQuery, order.orderNumber, positionSortOrder]);
 
   // Handle Scanning or Marking a Part
   const handleScanCode = (codeToScan: string) => {
@@ -527,19 +543,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     }
 
     const targetMaterialDetails = allOrderDetails.filter(d => (d.material || 'Без указания материала') === targetMaterial);
-    const effectiveStageDetails = currentStage === 'edging' 
-      ? targetMaterialDetails.filter(partNeedsEdge) 
-      : ((currentStage as string) === 'prisadka' || currentStage === 'cnc')
-      ? targetMaterialDetails.filter(d => detailRequiresPrisadka(d, settings))
-      : targetMaterialDetails;
-
-    // Check if this part doesn't need edging on the edging stage
-    if (currentStage === 'edging' && !partNeedsEdge(foundPart)) {
-      playSoundEffect('success');
-      speakText('Деталь без кромки');
-      setScanSuccessMsg(`ℹ️ Деталь №${foundPart.labelNumber} (${foundPart.name}) не требует кромления.`);
-      return;
-    }
+    const effectiveStageDetails = targetMaterialDetails;
 
     // Check if detail is unlocked/available for this stage in live mode
     const availability = getDetailAvailabilityForStage(foundPart, currentOrder, currentStage, settings);
@@ -753,12 +757,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       playSoundEffect('success');
     }
 
-    const allMatDetails = currentOrder.birkaData?.details.filter(d => (d.material || 'Без указания материала') === mat) || [];
-    const effectiveMatDetails = currentStage === 'edging'
-      ? allMatDetails.filter(partNeedsEdge)
-      : ((currentStage as string) === 'prisadka' || currentStage === 'cnc')
-      ? allMatDetails.filter(d => detailRequiresPrisadka(d, settings))
-      : allMatDetails;
+    const allMatDetails = consolidateDetails(currentOrder.birkaData?.details || []).filter(d => (d.material || 'Без указания материала') === mat);
+    const effectiveMatDetails = allMatDetails;
 
     const isAllScanned = effectiveMatDetails.length > 0
       ? effectiveMatDetails.every(d => isDetailFullyScanned(newScannedIds, d))
@@ -851,10 +851,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     // Compute unscanned parts if forced
     const updatedForcedStageCompletions = { ...(order.forcedStageCompletions || {}) };
     if (isForced) {
-      const allOrderDetails = order.birkaData?.details || [];
-      const stageRelevantDetails = currentStage === 'edging'
-        ? allOrderDetails.filter(partNeedsEdge)
-        : allOrderDetails;
+      const allOrderDetails = consolidateDetails(order.birkaData?.details || []);
+      const stageRelevantDetails = allOrderDetails;
       
       const unscannedIds = stageRelevantDetails
         .filter(d => !allScannedPartIds.has(d.id))
@@ -942,11 +940,8 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   // Total stage completion status
   const allMaterialGroups = order.birkaData?.materialGroups || [];
   const stageEffectiveDetails = useMemo(() => {
-    const all = consolidatedOrderDetails;
-    if (currentStage === 'edging') return all.filter(partNeedsEdge);
-    if ((currentStage as string) === 'prisadka' || currentStage === 'cnc') return all.filter(d => detailRequiresPrisadka(d, settings));
-    return all;
-  }, [consolidatedOrderDetails, currentStage, settings]);
+    return consolidatedOrderDetails;
+  }, [consolidatedOrderDetails]);
 
   const totalOrderParts = useMemo(() => {
     if (stageEffectiveDetails.length > 0) {
@@ -1035,9 +1030,6 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                 return (
                   <>
                     Клиент: <strong className="text-white font-bold">{clientNameClean || projectNameClean || 'Частный заказчик'}</strong>
-                    {projectNameClean && clientNameClean && (
-                      <> • Проект: <strong className="text-white font-bold">{projectNameClean}</strong></>
-                    )}
                   </>
                 );
               })()}
@@ -1230,12 +1222,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                   <div className="space-y-2">
                     {order.birkaData.materialGroups.map((mg) => {
                       const matName = mg.materialName;
-                      let matDetails = order.birkaData?.details.filter(d => (d.material || 'Без указания материала') === matName) || [];
-                      if (currentStage === 'edging') {
-                        matDetails = matDetails.filter(partNeedsEdge);
-                      } else if ((currentStage as string) === 'prisadka' || currentStage === 'cnc') {
-                        matDetails = matDetails.filter(d => detailRequiresPrisadka(d, settings));
-                      }
+                      const matDetails = consolidateDetails(order.birkaData?.details || []).filter(d => (d.material || 'Без указания материала') === matName);
 
                       const isSelected = selectedMaterial === matName;
                       const matTotalPieces = matDetails.reduce((sum, d) => sum + (d.quantity || 1), 0);
@@ -1432,16 +1419,27 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                     </p>
                   </div>
 
-                  {/* Search inside parts list */}
-                  <div className="relative min-w-[200px]">
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      placeholder="Поиск по № или названию..."
-                      value={searchPartsQuery}
-                      onChange={(e) => setSearchPartsQuery(e.target.value)}
-                      className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                    />
+                  {/* Search and Sort controls */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPositionSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-xs font-bold text-slate-700 transition-colors cursor-pointer shrink-0"
+                      title="Нажмите для смены порядка сортировки по № позиции"
+                    >
+                      <ArrowUpDown className="w-3.5 h-3.5 text-blue-600" />
+                      <span>№ {positionSortOrder === 'asc' ? '1 → 9' : '9 → 1'}</span>
+                    </button>
+                    <div className="relative min-w-[200px]">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="Поиск по № или названию..."
+                        value={searchPartsQuery}
+                        onChange={(e) => setSearchPartsQuery(e.target.value)}
+                        className="w-full pl-9 pr-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-medium text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -1451,7 +1449,18 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                     <thead>
                       <tr className="border-b border-slate-200 text-[11px] font-mono text-slate-400 uppercase tracking-wider bg-slate-50">
                         <th className="py-2.5 px-3">Статус</th>
-                        <th className="py-2.5 px-3">№ позиции</th>
+                        <th 
+                          onClick={() => setPositionSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                          className="py-2.5 px-3 cursor-pointer select-none hover:bg-slate-100 text-slate-800 transition-colors"
+                          title="Кликните для переключения сортировки по № позиции (от меньшего или от большего)"
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>№ позиции</span>
+                            <span className="text-blue-600 font-extrabold text-xs">
+                              {positionSortOrder === 'asc' ? '↑' : '↓'}
+                            </span>
+                          </div>
+                        </th>
                         <th className="py-2.5 px-3">Наименование</th>
                         <th className="py-2.5 px-3 text-center">Кол-во</th>
                         <th className="py-2.5 px-3">Размер (мм)</th>
@@ -1462,20 +1471,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-xs">
-                      {currentMaterialDetails
-                        .filter(d => {
-                          if (!searchPartsQuery) return true;
-                          const q = searchPartsQuery.toLowerCase();
-                          const birkaOrder = (d.orderNumber || order.orderNumber || '').toLowerCase();
-                          const fullQr = `${birkaOrder}_${d.labelNumber}`.toLowerCase();
-                          return d.name.toLowerCase().includes(q) ||
-                                 d.labelNumber.toLowerCase().includes(q) ||
-                                 (d.orderNumber && d.orderNumber.toLowerCase().includes(q)) ||
-                                 d.id.toLowerCase().includes(q) ||
-                                 fullQr.includes(q) ||
-                                 (d.barcode && d.barcode.toLowerCase().includes(q)) ||
-                                 (d.notes && d.notes.toLowerCase().includes(q));
-                        })
+                      {sortedAndFilteredDetails
                         .map((detail) => {
                           const reqQty = Math.max(1, detail.quantity || 1);
                           const scannedQty = getScannedCountForDetail(allStageScannedIds, detail.id);
