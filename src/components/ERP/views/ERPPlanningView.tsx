@@ -1105,8 +1105,8 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                             <div className="min-w-0 flex flex-col flex-1">
                               {/* Line 1: Order Number */}
                               <div className="flex items-center gap-1">
-                                <span className="text-[12px] font-mono font-black text-slate-900 leading-tight truncate">
-                                  {orderNumber}
+                                <span className="text-[12px] font-mono font-black text-slate-900 leading-tight whitespace-nowrap">
+                                  №{orderNumber}
                                 </span>
                               </div>
                               {/* Line 2: Client / Project Name - 2 lines clean display */}
@@ -1504,7 +1504,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
             {/* Matrix Calendar Grid - Fluid and auto-adapting */}
             <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm overflow-hidden">
               <div className="w-full overflow-x-auto">
-                <div className="min-w-[650px] w-full">
+                <div className={`w-full ${periodRange === '1week' ? 'min-w-[780px]' : 'min-w-[1300px]'}`}>
                   {/* Table Header: Date Columns */}
                   <div className="flex border-b border-slate-200 bg-slate-100/90 sticky top-0 z-20 text-xs font-black text-slate-700">
                     <div className="w-32 sm:w-36 p-2 shrink-0 border-r border-slate-200 flex items-center gap-1.5 bg-slate-100">
@@ -1569,7 +1569,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                         const stCap = settings?.stageDailyCapacities?.[st.id];
 
                         return (
-                          <div key={st.id} className="flex min-h-[75px] hover:bg-slate-50/40 transition-colors">
+                          <div key={st.id} className="flex min-h-[96px] hover:bg-slate-50/40 transition-colors">
                             {/* Stage Row Header */}
                             <div className="w-32 sm:w-36 p-2 shrink-0 border-r border-slate-200 flex flex-col justify-center bg-slate-50/80">
                               <div className="flex items-center gap-1 font-black text-slate-900 text-xs">
@@ -1615,7 +1615,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                         setDraggedStageTask(null);
                                       }
                                     }}
-                                    className={`p-1 border-r border-slate-200 last:border-r-0 space-y-1 overflow-y-auto max-h-[175px] transition-colors min-w-0 flex flex-col ${
+                                    className={`p-1.5 border-r border-slate-200 last:border-r-0 space-y-1.5 transition-colors min-w-0 flex flex-col justify-start ${
                                       day.isToday ? 'bg-blue-50/20' : day.isWeekend ? 'bg-slate-50/30' : ''
                                     }`}
                                   >
@@ -1662,39 +1662,24 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                           draggable={true}
                                           onDragStart={() => setDraggedStageTask({ orderId: order.id, stageId: st.id })}
                                           onClick={() => setViewingBirkaModalOrder(order)}
-                                          className={`group relative p-1.5 min-h-[48px] rounded-xl border text-left shadow-2xs hover:shadow-md transition-all cursor-pointer hover:ring-1 hover:ring-blue-400 w-full flex flex-col justify-between gap-0.5 ${orderColor.bg} ${orderColor.border} ${
+                                          className={`group relative p-2 min-h-[82px] sm:min-h-[90px] rounded-2xl border text-left shadow-2xs hover:shadow-md transition-all cursor-pointer hover:ring-2 hover:ring-blue-400 w-full flex flex-col justify-between gap-1 ${orderColor.bg} ${orderColor.border} ${
                                             order.priority === 'urgent' ? 'ring-2 ring-red-400' : ''
-                                          } ${isStageDone ? 'opacity-70 bg-slate-100/90 border-slate-300' : ''}`}
+                                          } ${isStageDone ? 'opacity-75 bg-slate-100/90 border-slate-300' : ''}`}
                                           title={`Заказ №${order.orderNumber}\nКлиент: ${clientName || '—'}\nСрок: ${formatDeadlineDate(order.deadlineDate)}\nДеталей: ${order.partsCount || 0} шт (${order.totalAreaM2 || 0} м²)\nКромка: ${order.totalEdgeM || 0} п.м.\nСтатус: ${isStageDone ? '✓ Готово' : scannedCount > 0 ? `В работе (${scannedCount}/${totalCount} шт.)` : 'В плане'}`}
                                         >
-                                          {/* Line 1: Order Number + Compact Badges + Unassign button */}
+                                          {/* Line 1: Order Number (Entirely on 1 line, never truncated, irrespective of zoom) + Urgent badge + Unassign button */}
                                           <div className="flex items-center justify-between gap-1 w-full min-w-0">
-                                            <div className="flex items-center gap-1 min-w-0 flex-1 overflow-hidden">
-                                              <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: isStageDone ? '#10b981' : orderColor.bar }} />
-                                              <span className={`font-mono font-black text-[11px] sm:text-xs leading-none truncate ${isStageDone ? 'text-slate-600 line-through' : orderColor.text}`}>
+                                            <div className="flex items-center gap-1.5 min-w-0">
+                                              <span className="w-2 h-2 rounded-full shrink-0 shadow-2xs" style={{ backgroundColor: isStageDone ? '#10b981' : orderColor.bar }} />
+                                              <span className={`font-mono font-black text-xs sm:text-[13px] leading-tight whitespace-nowrap ${isStageDone ? 'text-slate-600 line-through' : orderColor.text}`}>
                                                 №{orderNumber}
                                               </span>
                                             </div>
 
-                                            <div className="flex items-center gap-0.5 shrink-0">
+                                            <div className="flex items-center gap-1 shrink-0">
                                               {order.priority === 'urgent' && !isStageDone && (
-                                                <span className="px-1 py-0.2 rounded bg-red-600 text-white font-black text-[7px] uppercase" title="Срочный заказ!">
+                                                <span className="px-1.5 py-0.2 rounded bg-red-600 text-white font-black text-[7.5px] uppercase shadow-2xs" title="Срочный заказ!">
                                                   !
-                                                </span>
-                                              )}
-                                              {isStageDone && (
-                                                <span className="px-1 py-0.2 rounded bg-emerald-100 text-emerald-800 font-bold text-[7.5px]" title="Этап выполнен">
-                                                  ✓
-                                                </span>
-                                              )}
-                                              {!isStageDone && scannedCount > 0 && totalCount > 0 && (
-                                                <span className="px-1 py-0.2 rounded bg-blue-100 text-blue-800 font-bold text-[7.5px]" title={`Отсканировано: ${scannedCount} из ${totalCount} шт.`}>
-                                                  ⚡{scannedCount}/{totalCount}
-                                                </span>
-                                              )}
-                                              {isAutoAssignedToday && !isStageDone && scannedCount === 0 && (
-                                                <span className="px-1 py-0.2 rounded bg-blue-100 text-blue-800 font-bold text-[7.5px]" title="В работе сегодня">
-                                                  ⚡
                                                 </span>
                                               )}
                                               <button
@@ -1705,19 +1690,40 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                                 className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-black/10 text-slate-500 hover:text-red-700 transition-opacity cursor-pointer"
                                                 title="Снять с даты"
                                               >
-                                                <X className="w-2.5 h-2.5" />
+                                                <X className="w-3 h-3" />
                                               </button>
                                             </div>
                                           </div>
 
                                           {/* Line 2: Client / Project Name (Legible multi-line with clamp) */}
-                                          <div className="text-[9.5px] sm:text-[10px] font-bold leading-tight line-clamp-2 text-slate-800 break-words" title={clientName}>
+                                          <div className="text-[10px] sm:text-[10.5px] font-bold leading-snug line-clamp-2 text-slate-800 break-words flex-1 my-0.5" title={clientName || '—'}>
                                             {clientName || '—'}
                                           </div>
 
-                                          {/* Line 3: Volume & Parts Footnote */}
-                                          <div className="flex items-center justify-between text-[7.5px] sm:text-[8px] font-semibold text-slate-500 pt-0.5 border-t border-black/5">
-                                            <span>{order.partsCount || 0} дет.</span>
+                                          {/* Line 3: Stage Completion Status / Progress Badge */}
+                                          <div className="flex items-center gap-1 flex-wrap min-w-0">
+                                            {isStageDone ? (
+                                              <span className="px-1.5 py-0.5 rounded bg-emerald-100/90 text-emerald-800 font-extrabold text-[8px] flex items-center gap-0.5 border border-emerald-300/60" title="Этап выполнен">
+                                                <span>✓ Готово</span>
+                                              </span>
+                                            ) : scannedCount > 0 && totalCount > 0 ? (
+                                              <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-900 font-black text-[8px] flex items-center gap-0.5 border border-blue-300/60" title={`Отсканировано: ${scannedCount} из ${totalCount} шт.`}>
+                                                <span>⚡ {scannedCount}/{totalCount} шт</span>
+                                              </span>
+                                            ) : isAutoAssignedToday && scannedCount === 0 ? (
+                                              <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 font-bold text-[8px] flex items-center gap-0.5 border border-blue-200" title="В работе сегодня">
+                                                <span>⚡ В работе</span>
+                                              </span>
+                                            ) : (
+                                              <span className="text-[8px] font-bold text-slate-500">
+                                                В плане
+                                              </span>
+                                            )}
+                                          </div>
+
+                                          {/* Line 4: Volume & Parts Footnote */}
+                                          <div className="flex items-center justify-between text-[8px] sm:text-[8.5px] font-semibold text-slate-500 pt-1 border-t border-black/5 w-full">
+                                            <span className="font-bold">{order.partsCount || 0} дет.</span>
                                             <span>{order.totalAreaM2 ? `${order.totalAreaM2} м²` : ''}</span>
                                           </div>
                                         </div>
@@ -1757,7 +1763,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                     {isExpanded ? <ChevronUp className="w-3 h-3 text-slate-500 mt-0.5" /> : <ChevronDown className="w-3 h-3 text-slate-500 mt-0.5" />}
                                     <span className="w-2 h-2 mt-1 rounded-full shrink-0" style={{ backgroundColor: orderColor.bar }} />
                                     <div className="min-w-0 flex flex-col">
-                                      <span className="truncate text-slate-900 font-mono font-black text-[10.5px] leading-tight">
+                                      <span className="whitespace-nowrap text-slate-900 font-mono font-black text-[10.5px] leading-tight">
                                         №{orderNumber}
                                       </span>
                                       {clientName && (

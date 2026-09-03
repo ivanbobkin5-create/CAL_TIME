@@ -236,81 +236,173 @@ export function detailRequiresPrisadka(
   return false;
 }
 
+export interface DetailPackagingPieceStats {
+  reqQty: number;
+  readyPiecesCount: number;
+  unreadyPiecesCount: number;
+  isFullyReady: boolean;
+  hasAnyReady: boolean;
+  missingStages: { id: string; name: string; shortName: string; readyCount: number; totalCount: number }[];
+  reason: string;
+}
+
 export interface DetailPackagingReadiness {
-  isReady: boolean;
-  missingStages: { id: string; name: string; shortName: string }[];
+  isReady: boolean; // Полностью ли готовы ВСЕ штуки детали (readyPiecesCount >= reqQty)
+  hasAnyReady: boolean; // Готова ли хотя бы одна штука
+  readyPiecesCount: number; // Сколько штук готово (прошли все нужные участки)
+  unreadyPiecesCount: number; // Сколько еще не готово
+  reqQty: number; // Всего требуется штук
+  missingStages: { id: string; name: string; shortName: string; readyCount: number; totalCount: number }[];
   reason: string;
 }
 
 /**
-  * Check if a specific detail is ready to be packed into a package with detailed missing stages
-  */
+ * Get how many pieces of a specific detail are completed on a specific stage
+ */
+export function getDetailPieceCountForStage(
+  order: ProductionOrder,
+  stageId: string,
+  detail: BirkaDetailItem,
+  settings?: ERPCompanySettings
+): number {
+  const reqQty = Math.max(1, detail.quantity || 1);
+  if (!order) return reqQty;
+
+  // If stage is disabled in settings, all pieces are considered passed
+  if (!isStageEnabled(settings, stageId)) {
+    return reqQty;
+  }
+
+  // If detail does not require this stage
+  if (stageId === 'edging' || stageId === 'kromka') {
+    const hasEdges = !!(detail.edgeL1 || detail.edgeL2 || detail.edgeW1 || detail.edgeW2);
+    if (!hasEdges) return reqQty;
+  }
+
+  if (stageId === 'cnc' || stageId === 'prisadka') {
+    const needsPrisadka = detailRequiresPrisadka(detail, settings);
+    if (!needsPrisadka) return reqQty;
+  }
+
+  // Whole-stage completions
+  const isStageCompleted =
+    (order.stageProgress as any)?.[stageId]?.status === 'done' ||
+    (stageId === 'cutting' && (order.stageProgress as any)?.raskroy?.status === 'done') ||
+    (stageId === 'edging' && (order.stageProgress as any)?.kromka?.status === 'done') ||
+    (stageId === 'cnc' && (order.stageProgress as any)?.prisadka?.status === 'done');
+
+  if (isStageCompleted) {
+    return reqQty;
+  }
+
+  // Forced completion for stage
+  const forced =
+    order.forcedStageCompletions?.[stageId] ||
+    (stageId === 'cutting' ? order.forcedStageCompletions?.raskroy : undefined) ||
+    (stageId === 'edging' ? order.forcedStageCompletions?.kromka : undefined) ||
+    (stageId === 'cnc' ? order.forcedStageCompletions?.prisadka : undefined);
+
+  if (forced && !forced.unscannedPartIds?.includes(detail.id)) {
+    return reqQty;
+  }
+
+  // Count scanned pieces from stage scanning progress
+  const scannedSet = getScannedPartIdsForStage(order, stageId);
+  const scannedList = Array.from(scannedSet);
+  const scannedCount = getScannedCountForDetail(scannedList, detail.id);
+
+  return Math.min(reqQty, scannedCount);
+}
+
+/**
+ * Get detailed piece-by-piece stats for packaging readiness
+ */
+export function getDetailPackagingPieceStats(
+  detail: BirkaDetailItem,
+  order: ProductionOrder,
+  settings?: ERPCompanySettings
+): DetailPackagingPieceStats {
+  const reqQty = Math.max(1, detail.quantity || 1);
+  if (!order) {
+    return {
+      reqQty,
+      readyPiecesCount: reqQty,
+      unreadyPiecesCount: 0,
+      isFullyReady: true,
+      hasAnyReady: true,
+      missingStages: [],
+      reason: ''
+    };
+  }
+
+  const hasEdges = !!(detail.edgeL1 || detail.edgeL2 || detail.edgeW1 || detail.edgeW2);
+  const needsPrisadka = detailRequiresPrisadka(detail, settings);
+
+  const cuttingCount = getDetailPieceCountForStage(order, 'cutting', detail, settings);
+  const edgingCount = getDetailPieceCountForStage(order, 'edging', detail, settings);
+  const cncCount = getDetailPieceCountForStage(order, 'cnc', detail, settings);
+
+  // Ready pieces are limited by the bottleneck among preceding stages
+  const readyPiecesCount = Math.min(cuttingCount, edgingCount, cncCount);
+  const unreadyPiecesCount = Math.max(0, reqQty - readyPiecesCount);
+  const isFullyReady = readyPiecesCount >= reqQty;
+  const hasAnyReady = readyPiecesCount > 0;
+
+  const missingStages: { id: string; name: string; shortName: string; readyCount: number; totalCount: number }[] = [];
+
+  if (cuttingCount < reqQty && isStageEnabled(settings, 'cutting')) {
+    missingStages.push({ id: 'cutting', name: 'Раскрой (распил)', shortName: 'Распил', readyCount: cuttingCount, totalCount: reqQty });
+  }
+
+  if (hasEdges && edgingCount < reqQty && isStageEnabled(settings, 'edging')) {
+    missingStages.push({ id: 'edging', name: 'Кромкооблицовка', shortName: 'Кромка', readyCount: edgingCount, totalCount: reqQty });
+  }
+
+  if (needsPrisadka && cncCount < reqQty && isStageEnabled(settings, 'cnc')) {
+    missingStages.push({ id: 'cnc', name: 'Присадка (ЧПУ)', shortName: 'Присадка', readyCount: cncCount, totalCount: reqQty });
+  }
+
+  let reason = '';
+  if (missingStages.length > 0) {
+    reason = `Ожидает: ${missingStages.map(m => `${m.shortName} (${m.readyCount}/${m.totalCount} шт.)`).join(', ')}`;
+  }
+
+  return {
+    reqQty,
+    readyPiecesCount,
+    unreadyPiecesCount,
+    isFullyReady,
+    hasAnyReady,
+    missingStages,
+    reason
+  };
+}
+
+/**
+ * Check if a specific detail is ready to be packed into a package with detailed missing stages
+ * NOTE: isReady is TRUE only when ALL required pieces of this detail are ready (readyPiecesCount >= reqQty).
+ * If 1 of 10 pieces is ready, isReady is FALSE, but hasAnyReady is TRUE and readyPiecesCount is 1.
+ */
 export function getDetailPackagingReadiness(
   detail: BirkaDetailItem,
   order: ProductionOrder,
   settings?: ERPCompanySettings
 ): DetailPackagingReadiness {
-  if (!order) return { isReady: true, missingStages: [], reason: '' };
-
-  const missing: { id: string; name: string; shortName: string }[] = [];
-
-  // Whole-stage completions
-  const isCuttingStageCompleted = (order.stageProgress as any)?.cutting?.status === 'done' || (order.stageProgress as any)?.raskroy?.status === 'done';
-  const isEdgingStageCompleted = (order.stageProgress as any)?.edging?.status === 'done' || (order.stageProgress as any)?.kromka?.status === 'done';
-  const isCncStageCompleted = (order.stageProgress as any)?.cnc?.status === 'done' || (order.stageProgress as any)?.prisadka?.status === 'done';
-
-  const raskroyScanned = getScannedPartIdsForStage(order, 'cutting');
-  const kromkaScanned = getScannedPartIdsForStage(order, 'edging');
-  const prisadkaScanned = getScannedPartIdsForStage(order, 'cnc');
-
-  const raskroyList = Array.from(raskroyScanned);
-  const kromkaList = Array.from(kromkaScanned);
-  const prisadkaList = Array.from(prisadkaScanned);
-
-  const hasEdges = !!(detail.edgeL1 || detail.edgeL2 || detail.edgeW1 || detail.edgeW2);
-  const needsPrisadka = detailRequiresPrisadka(detail, settings);
-
-  // Forced completions
-  const forcedCutting = order.forcedStageCompletions?.cutting || order.forcedStageCompletions?.raskroy;
-  const forcedEdging = order.forcedStageCompletions?.edging || order.forcedStageCompletions?.kromka;
-  const forcedCnc = order.forcedStageCompletions?.cnc || order.forcedStageCompletions?.prisadka;
-
-  // 1. Raskroy / Cutting check
-  if (isStageEnabled(settings, 'cutting')) {
-    const isCuttingForcedOk = forcedCutting && !forcedCutting.unscannedPartIds?.includes(detail.id);
-    const isRaskroyDone = isCuttingStageCompleted || isCuttingForcedOk || raskroyScanned.has(detail.id) || isDetailFullyScanned(raskroyList, detail);
-    if (!isRaskroyDone) {
-      missing.push({ id: 'cutting', name: 'Раскрой (распил)', shortName: 'Распил' });
-    }
-  }
-
-  // 2. Kromka / Edging check (if detail has edge banding)
-  if (hasEdges && isStageEnabled(settings, 'edging')) {
-    const isEdgingForcedOk = forcedEdging && !forcedEdging.unscannedPartIds?.includes(detail.id);
-    const isKromkaDone = isEdgingStageCompleted || isEdgingForcedOk || kromkaScanned.has(detail.id) || isDetailFullyScanned(kromkaList, detail);
-    if (!isKromkaDone) {
-      missing.push({ id: 'edging', name: 'Кромкооблицовка', shortName: 'Кромка' });
-    }
-  }
-
-  // 3. Prisadka / CNC check (if detail requires drilling)
-  if (needsPrisadka && isStageEnabled(settings, 'cnc')) {
-    const isCncForcedOk = forcedCnc && !forcedCnc.unscannedPartIds?.includes(detail.id);
-    const isPrisadkaDone = isCncStageCompleted || isCncForcedOk || prisadkaScanned.has(detail.id) || isDetailFullyScanned(prisadkaList, detail);
-    if (!isPrisadkaDone) {
-      missing.push({ id: 'cnc', name: 'Присадка (ЧПУ)', shortName: 'Присадка' });
-    }
-  }
-
-  const isReady = missing.length === 0;
-  const reason = isReady ? '' : `Ожидает: ${missing.map(m => m.shortName).join(', ')}`;
-
-  return { isReady, missingStages: missing, reason };
+  const stats = getDetailPackagingPieceStats(detail, order, settings);
+  return {
+    isReady: stats.isFullyReady,
+    hasAnyReady: stats.hasAnyReady,
+    readyPiecesCount: stats.readyPiecesCount,
+    unreadyPiecesCount: stats.unreadyPiecesCount,
+    reqQty: stats.reqQty,
+    missingStages: stats.missingStages,
+    reason: stats.reason
+  };
 }
 
 /**
-  * Check if a specific detail is ready to be packed into a package
-  */
+ * Check if a specific detail is fully ready (all pieces completed on preceding stages)
+ */
 export function isDetailReadyForPackaging(
   detail: BirkaDetailItem,
   order: ProductionOrder,
@@ -320,8 +412,8 @@ export function isDetailReadyForPackaging(
 }
 
 /**
-  * Check if all preceding processing stages (raskroy, kromka, prisadka) are 100% completed for all details in the order
-  */
+ * Check if all preceding processing stages (raskroy, kromka, prisadka) are 100% completed for all details in the order
+ */
 export function arePrecedingStagesCompleted(order: ProductionOrder, settings?: ERPCompanySettings): boolean {
   const raw = order.birkaData?.details || [];
   const details = consolidateDetails(raw as BirkaDetail[]);
@@ -337,27 +429,41 @@ export function arePrecedingStagesCompleted(order: ProductionOrder, settings?: E
 }
 
 /**
-  * Count how many details are ready for packaging out of total details
-  */
-export function getPackagingReadinessStats(order: ProductionOrder, settings?: ERPCompanySettings): { readyCount: number; totalCount: number; isFullyReady: boolean } {
+ * Count how many details and pieces are ready for packaging out of total
+ */
+export function getPackagingReadinessStats(order: ProductionOrder, settings?: ERPCompanySettings): {
+  readyCount: number; // Полностью готовые позиции
+  totalCount: number; // Всего позиций
+  readyPiecesCount: number; // Готовые штуки
+  totalPiecesCount: number; // Всего штук
+  isFullyReady: boolean;
+} {
   const raw = order.birkaData?.details || [];
   const details = consolidateDetails(raw as BirkaDetail[]);
   if (details.length === 0) {
-    return { readyCount: 0, totalCount: 0, isFullyReady: true };
+    return { readyCount: 0, totalCount: 0, readyPiecesCount: 0, totalPiecesCount: 0, isFullyReady: true };
   }
 
   let readyCount = 0;
+  let readyPiecesCount = 0;
+  let totalPiecesCount = 0;
+
   for (const d of details) {
-    if (isDetailReadyForPackaging(d, order, settings)) {
+    const stats = getDetailPackagingPieceStats(d, order, settings);
+    totalPiecesCount += stats.reqQty;
+    readyPiecesCount += stats.readyPiecesCount;
+    if (stats.isFullyReady) {
       readyCount++;
     }
   }
 
-  const isFullyReady = readyCount >= details.length;
+  const isFullyReady = readyPiecesCount >= totalPiecesCount;
 
   return {
     readyCount,
     totalCount: details.length,
+    readyPiecesCount,
+    totalPiecesCount,
     isFullyReady
   };
 }
@@ -375,6 +481,8 @@ export interface DetailStageStatus {
 export function getDetailAvailabilityForStage(
   detail: {
     id: string;
+    quantity?: number;
+    labelNumber?: string;
     edgeL1?: string;
     edgeL2?: string;
     edgeW1?: string;
@@ -384,6 +492,7 @@ export function getDetailAvailabilityForStage(
     holesEnd?: number;
     holesFace?: number;
     holesCount?: number;
+    [key: string]: any;
   },
   order: ProductionOrder,
   targetStageId: string,
@@ -421,29 +530,39 @@ export function getDetailAvailabilityForStage(
     };
   }
 
-  const raskroyScanned = getScannedPartIdsForStage(order, 'cutting');
-  const kromkaScanned = getScannedPartIdsForStage(order, 'edging');
-  const prisadkaScanned = getScannedPartIdsForStage(order, 'cnc');
+  const reqQty = Math.max(1, detail.quantity || 1);
+  const raskroyPieces = getDetailPieceCountForStage(order, 'cutting', detail as any, settings);
+  const isRaskroyDone = raskroyPieces >= reqQty;
 
-  const raskroyList = Array.from(raskroyScanned);
-  const kromkaList = Array.from(kromkaScanned);
-  const prisadkaList = Array.from(prisadkaScanned);
+  const kromkaPieces = getDetailPieceCountForStage(order, 'edging', detail as any, settings);
+  const hasEdges = !!(detail.edgeL1 || detail.edgeL2 || detail.edgeW1 || detail.edgeW2);
+  const isKromkaDone = !hasEdges || kromkaPieces >= reqQty;
 
-  const isCuttingStageCompleted = (order.stageProgress as any)?.cutting?.status === 'done' || (order.stageProgress as any)?.raskroy?.status === 'done';
-  const isEdgingStageCompleted = (order.stageProgress as any)?.edging?.status === 'done' || (order.stageProgress as any)?.kromka?.status === 'done';
-  const isCncStageCompleted = (order.stageProgress as any)?.cnc?.status === 'done' || (order.stageProgress as any)?.prisadka?.status === 'done';
+  const prisadkaPieces = getDetailPieceCountForStage(order, 'cnc', detail as any, settings);
+  const needsPrisadka = detailRequiresPrisadka(detail as any, settings);
+  const isPrisadkaDone = !needsPrisadka || prisadkaPieces >= reqQty;
 
-  const forcedCutting = order.forcedStageCompletions?.cutting || order.forcedStageCompletions?.raskroy;
-  const isCuttingForcedOk = forcedCutting && !forcedCutting.unscannedPartIds?.includes(detail.id);
-  const isRaskroyDone = !isStageEnabled(settings, 'cutting') || isCuttingStageCompleted || isCuttingForcedOk || raskroyScanned.has(detail.id) || isDetailFullyScanned(raskroyList, detail);
+  const kromkaScannedList = Array.from(getScannedPartIdsForStage(order, 'edging'));
+  const currentEdgingScannedCount = getScannedCountForDetail(kromkaScannedList, detail.id);
+
+  const prisadkaScannedList = Array.from(getScannedPartIdsForStage(order, 'cnc'));
+  const currentPrisadkaScannedCount = getScannedCountForDetail(prisadkaScannedList, detail.id);
 
   // 3. Kromka (Edging): requires Raskroy
   if (normStage === 'edging') {
-    if (!isRaskroyDone) {
+    if (raskroyPieces === 0) {
       return {
         isAvailable: false,
         isScannedOnCurrentStage,
         blockingReason: 'Деталь еще не распилена на участке Распил',
+        requiredPrecedingStage: 'cutting'
+      };
+    }
+    if (currentEdgingScannedCount >= raskroyPieces && raskroyPieces < reqQty) {
+      return {
+        isAvailable: false,
+        isScannedOnCurrentStage,
+        blockingReason: `На распиле готово только ${raskroyPieces} из ${reqQty} шт. Распилите следующую деталь перед кромлением.`,
         requiredPrecedingStage: 'cutting'
       };
     }
@@ -453,14 +572,9 @@ export function getDetailAvailabilityForStage(
     };
   }
 
-  const hasEdges = !!(detail.edgeL1 || detail.edgeL2 || detail.edgeW1 || detail.edgeW2);
-  const forcedEdging = order.forcedStageCompletions?.edging || order.forcedStageCompletions?.kromka;
-  const isEdgingForcedOk = forcedEdging && !forcedEdging.unscannedPartIds?.includes(detail.id);
-  const isKromkaDone = !hasEdges || !isStageEnabled(settings, 'edging') || isEdgingStageCompleted || isEdgingForcedOk || kromkaScanned.has(detail.id) || isDetailFullyScanned(kromkaList, detail);
-
   // 4. Prisadka / CNC: requires Raskroy AND Kromka (if detail has edge banding)
   if (normStage === 'cnc') {
-    if (!isRaskroyDone) {
+    if (raskroyPieces === 0) {
       return {
         isAvailable: false,
         isScannedOnCurrentStage,
@@ -468,12 +582,22 @@ export function getDetailAvailabilityForStage(
         requiredPrecedingStage: 'cutting'
       };
     }
-    if (!isKromkaDone) {
+    if (hasEdges && kromkaPieces === 0) {
       return {
         isAvailable: false,
         isScannedOnCurrentStage,
         blockingReason: 'Деталь еще не прошла обработку на участке Кромка',
         requiredPrecedingStage: 'edging'
+      };
+    }
+    const maxAvailableToPrisadka = hasEdges ? Math.min(raskroyPieces, kromkaPieces) : raskroyPieces;
+    if (currentPrisadkaScannedCount >= maxAvailableToPrisadka && maxAvailableToPrisadka < reqQty) {
+      const stageName = hasEdges && kromkaPieces <= raskroyPieces ? 'кромления' : 'распила';
+      return {
+        isAvailable: false,
+        isScannedOnCurrentStage,
+        blockingReason: `Ожидает завершения ${stageName} для следующей детали (${maxAvailableToPrisadka}/${reqQty} шт. готово)`,
+        requiredPrecedingStage: hasEdges && kromkaPieces <= raskroyPieces ? 'edging' : 'cutting'
       };
     }
     return {
@@ -483,17 +607,12 @@ export function getDetailAvailabilityForStage(
   }
 
   // 5. Assembly (Сборка)
-  const needsPrisadka = detailRequiresPrisadka(detail, settings);
-  const forcedCnc = order.forcedStageCompletions?.cnc || order.forcedStageCompletions?.prisadka;
-  const isCncForcedOk = forcedCnc && !forcedCnc.unscannedPartIds?.includes(detail.id);
-  const isPrisadkaDone = !needsPrisadka || !isStageEnabled(settings, 'cnc') || isCncStageCompleted || isCncForcedOk || prisadkaScanned.has(detail.id) || isDetailFullyScanned(prisadkaList, detail);
-
   if (normStage === 'assembly') {
     if (!isRaskroyDone) {
       return {
         isAvailable: false,
         isScannedOnCurrentStage,
-        blockingReason: 'Ожидает распила',
+        blockingReason: `Ожидает распила (${raskroyPieces}/${reqQty} шт.)`,
         requiredPrecedingStage: 'cutting'
       };
     }
@@ -501,7 +620,7 @@ export function getDetailAvailabilityForStage(
       return {
         isAvailable: false,
         isScannedOnCurrentStage,
-        blockingReason: 'Ожидает кромкооблицовки',
+        blockingReason: `Ожидает кромкооблицовки (${kromkaPieces}/${reqQty} шт.)`,
         requiredPrecedingStage: 'edging'
       };
     }
@@ -509,7 +628,7 @@ export function getDetailAvailabilityForStage(
       return {
         isAvailable: false,
         isScannedOnCurrentStage,
-        blockingReason: 'Ожидает присадки (ЧПУ)',
+        blockingReason: `Ожидает присадки (ЧПУ) (${prisadkaPieces}/${reqQty} шт.)`,
         requiredPrecedingStage: 'cnc'
       };
     }
@@ -521,28 +640,13 @@ export function getDetailAvailabilityForStage(
 
   // 6. Packing (Упаковка)
   if (normStage === 'packing') {
-    if (!isRaskroyDone) {
+    const packStats = getDetailPackagingPieceStats(detail as any, order, settings);
+    if (packStats.readyPiecesCount === 0) {
       return {
         isAvailable: false,
         isScannedOnCurrentStage,
-        blockingReason: 'Ожидает распила',
-        requiredPrecedingStage: 'cutting'
-      };
-    }
-    if (!isKromkaDone) {
-      return {
-        isAvailable: false,
-        isScannedOnCurrentStage,
-        blockingReason: 'Ожидает кромкооблицовки',
-        requiredPrecedingStage: 'edging'
-      };
-    }
-    if (!isPrisadkaDone) {
-      return {
-        isAvailable: false,
-        isScannedOnCurrentStage,
-        blockingReason: 'Ожидает присадки (ЧПУ)',
-        requiredPrecedingStage: 'cnc'
+        blockingReason: packStats.reason || 'Ожидает предшествующие этапы',
+        requiredPrecedingStage: packStats.missingStages[0]?.id
       };
     }
     return {
@@ -597,37 +701,25 @@ export function getStageTaskReadinessInfo(
     };
   }
 
-  // Packing: accessible immediately, but shows stats
+  // Packing: accessible immediately, but shows piece-accurate stats
   if (stageId === 'packing') {
-    let readyCount = 0;
-    let blockedByPrecedingStages = 0;
-    details.forEach(d => {
-      const avail = getDetailAvailabilityForStage(d, order, 'packing', settings);
-      if (avail.isAvailable) {
-        readyCount++;
-      } else if (avail.requiredPrecedingStage) {
-        blockedByPrecedingStages++;
-      }
-    });
-
+    const packStats = getPackagingReadinessStats(order, settings);
     let statusText = '';
-    if (totalPartsCount === 0) {
+    if (packStats.totalPiecesCount === 0) {
       statusText = 'Доступна в работу';
-    } else if (readyCount === totalPartsCount) {
+    } else if (packStats.isFullyReady) {
       statusText = '100% готов к упаковке';
-    } else if (readyCount === 0) {
-      statusText = blockedByPrecedingStages > 0 
-        ? 'Ожидает готовности деталей на участках' 
-        : `Готово 0 из ${totalPartsCount} деталей`;
+    } else if (packStats.readyPiecesCount === 0) {
+      statusText = 'Ожидает готовности деталей на участках';
     } else {
-      statusText = `Готово ${readyCount} из ${totalPartsCount} деталей`;
+      statusText = `Готово ${packStats.readyPiecesCount} из ${packStats.totalPiecesCount} шт.`;
     }
 
     return {
       isLocked: false,
       statusText,
-      readyPartsCount: readyCount,
-      totalPartsCount
+      readyPartsCount: packStats.readyPiecesCount,
+      totalPartsCount: packStats.totalPiecesCount || totalPartsCount
     };
   }
 

@@ -25,7 +25,13 @@ import {
 import { ProductionOrder, OrderPackage, OrderPackagePart, ERPCompanySettings, ERPEmployee, ProductionStageId } from '../types';
 import { PackageLabelPrintModal } from './PackageLabelPrintModal';
 import { convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, matchDetailToScannedCode, processQRCommand } from '../utils';
-import { isDetailReadyForPackaging, getDetailPackagingReadiness, arePrecedingStagesCompleted, getPackagingReadinessStats } from '../utils/stageReadiness';
+import { 
+  isDetailReadyForPackaging, 
+  getDetailPackagingReadiness, 
+  getDetailPackagingPieceStats,
+  arePrecedingStagesCompleted, 
+  getPackagingReadinessStats 
+} from '../utils/stageReadiness';
 import { printPackageLabelDirect } from '../utils/packageLabelPrinter';
 
 interface ERPPackagingTabProps {
@@ -141,6 +147,14 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
   const isPreviousStagesCompleted = arePrecedingStagesCompleted(order, settings);
   const readinessStats = getPackagingReadinessStats(order, settings);
 
+  // Helper to count how many instances of a detail are ready in workshop AND available to pack right now
+  const getAvailableReadyPiecesForDetail = (d: any): number => {
+    const stats = getDetailPackagingPieceStats(d, order, settings);
+    const packedCount = getPackedCountForDetail(d.id);
+    const bufferCount = getBufferCountForDetail(d.id);
+    return Math.max(0, stats.readyPiecesCount - (packedCount + bufferCount));
+  };
+
   // Available unpacked details (that still have remaining instances to pack)
   const rawUnpackedDetails = allDetails.filter(d => {
     const reqQty = Math.max(1, d.quantity || 1);
@@ -151,21 +165,26 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
 
   const unpackedDetails = rawUnpackedDetails;
 
-  // Counts of ready vs locked among unpacked
-  const readyUnpackedCount = useMemo(() => {
-    return unpackedDetails.filter(d => isDetailReadyForPackaging(d, order, settings)).length;
-  }, [unpackedDetails, order, settings]);
+  // Counts of ready pieces vs locked positions among unpacked
+  const readyUnpackedPiecesCount = useMemo(() => {
+    return unpackedDetails.reduce((sum, d) => sum + getAvailableReadyPiecesForDetail(d), 0);
+  }, [unpackedDetails, order, settings, currentBufferParts, existingPackages]);
 
-  const lockedUnpackedCount = unpackedDetails.length - readyUnpackedCount;
+  const readyUnpackedPositionsCount = useMemo(() => {
+    return unpackedDetails.filter(d => getAvailableReadyPiecesForDetail(d) > 0).length;
+  }, [unpackedDetails, order, settings, currentBufferParts, existingPackages]);
+
+  const lockedUnpackedPositionsCount = unpackedDetails.length - readyUnpackedPositionsCount;
 
   // Materials list for filter
   const materialList = Array.from(new Set(allDetails.map(d => d.material || 'Без материала'))).filter(Boolean);
 
   // Filtered unpacked details for display
   const filteredUnpacked = unpackedDetails.filter(d => {
-    const isReady = isDetailReadyForPackaging(d, order, settings);
-    if (readinessFilter === 'ready' && !isReady) return false;
-    if (readinessFilter === 'locked' && isReady) return false;
+    const availablePieces = getAvailableReadyPiecesForDetail(d);
+    const hasAvailableReady = availablePieces > 0;
+    if (readinessFilter === 'ready' && !hasAvailableReady) return false;
+    if (readinessFilter === 'locked' && hasAvailableReady) return false;
 
     const matMatches = selectedMaterialFilter === 'all' || (d.material || 'Без материала') === selectedMaterialFilter;
     const searchMatches = !searchUnpacked || 
@@ -188,22 +207,27 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
 
   // Add detail instance to current active package
   const handleAddDetailToCurrentPackage = (detail: any) => {
-    const readiness = getDetailPackagingReadiness(detail, order, settings);
-    if (!readiness.isReady) {
-      showFeedback(`⛔ Деталь №${detail.labelNumber} («${detail.name}») еще не готова к упаковке! ${readiness.reason}. Завершите обработку на предыдущих участках.`, 'error');
-      return;
-    }
-
-    const reqQty = Math.max(1, detail.quantity || 1);
+    const stats = getDetailPackagingPieceStats(detail, order, settings);
+    const reqQty = stats.reqQty;
     const packedCount = getPackedCountForDetail(detail.id);
     const bufferCount = getBufferCountForDetail(detail.id);
     const totalCount = packedCount + bufferCount;
+    const availableToPack = Math.max(0, stats.readyPiecesCount - totalCount);
 
     if (totalCount >= reqQty) {
       if (packedCount >= reqQty) {
         showFeedback(`Все ${reqQty} шт. детали №${detail.labelNumber} ("${detail.name}") уже упакованы в сформированные места!`, 'info');
       } else {
-        showFeedback(`Все доступные ${reqQty} шт. детали №${detail.labelNumber} уже добавлены в текущее место.`, 'info');
+        showFeedback(`Все требуемые ${reqQty} шт. детали №${detail.labelNumber} уже добавлены в текущее место.`, 'info');
+      }
+      return;
+    }
+
+    if (availableToPack <= 0) {
+      if (stats.readyPiecesCount === 0) {
+        showFeedback(`⛔ Деталь №${detail.labelNumber} («${detail.name}») еще не готова к упаковке! ${stats.reason}. Завершите обработку на предыдущих участках.`, 'error');
+      } else {
+        showFeedback(`⛔ Все готовые штуки детали №${detail.labelNumber} (${stats.readyPiecesCount} из ${reqQty} шт.) уже добавлены/упакованы! Оставшиеся ${stats.unreadyPiecesCount} шт. еще не готовы в цеху: ${stats.reason}`, 'error');
       }
       return;
     }
@@ -224,7 +248,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
     } as any;
 
     setCurrentBufferParts(prev => [...prev, newPart]);
-    showFeedback(`Деталь №${detail.labelNumber} ("${detail.name}") [${instanceIndex}/${reqQty} шт.] добавлена в ${packageNameInput}`, 'success');
+    showFeedback(`Деталь №${detail.labelNumber} ("${detail.name}") [${instanceIndex}/${reqQty} шт.] добавлена в ${packageNameInput}${availableToPack > 1 ? ` (доступно еще ${availableToPack - 1} шт.)` : ''}`, 'success');
   };
 
   // Remove detail from active buffer
@@ -232,26 +256,27 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
     setCurrentBufferParts(prev => prev.filter(p => p.detailId !== detailId));
   };
 
-  // Add ALL currently filtered unpacked details to package
+  // Add ALL currently filtered unpacked details to package (only truly completed pieces)
   const handleAddAllFilteredToBuffer = () => {
     if (filteredUnpacked.length === 0) return;
-    const readyDetails = filteredUnpacked.filter(d => isDetailReadyForPackaging(d, order, settings));
-    const lockedCount = filteredUnpacked.length - readyDetails.length;
-
-    if (readyDetails.length === 0) {
-      showFeedback('Все выбранные детали еще не готовы (ожидают распила, кромления или присадки)!', 'error');
-      return;
-    }
 
     const newParts: OrderPackagePart[] = [];
-    readyDetails.forEach(d => {
-      const reqQty = Math.max(1, d.quantity || 1);
+    let addedPieces = 0;
+    let skippedLockedPieces = 0;
+
+    filteredUnpacked.forEach(d => {
+      const stats = getDetailPackagingPieceStats(d, order, settings);
+      const reqQty = stats.reqQty;
       const packedCount = getPackedCountForDetail(d.id);
       const bufferCount = getBufferCountForDetail(d.id);
-      const remaining = reqQty - (packedCount + bufferCount);
+      const totalCount = packedCount + bufferCount;
+      const availableToPack = Math.max(0, stats.readyPiecesCount - totalCount);
+      const unreadyPieces = Math.max(0, reqQty - stats.readyPiecesCount);
 
-      for (let i = 0; i < remaining; i++) {
-        const instIdx = packedCount + bufferCount + i + 1;
+      skippedLockedPieces += unreadyPieces;
+
+      for (let i = 0; i < availableToPack; i++) {
+        const instIdx = totalCount + i + 1;
         newParts.push({
           detailId: reqQty > 1 ? `${d.id}#${instIdx}` : d.id,
           originalDetailId: d.id,
@@ -263,13 +288,20 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
           thickness: d.thickness,
           quantity: 1
         } as any);
+        addedPieces++;
       }
     });
+
+    if (addedPieces === 0) {
+      showFeedback('Все выбранные детали еще не готовы на станках (ожидают распила, кромления или присадки)!', 'error');
+      return;
+    }
+
     setCurrentBufferParts(prev => [...prev, ...newParts]);
-    if (lockedCount > 0) {
-      showFeedback(`Добавлено ${newParts.length} готовых деталей. Пропущено ${lockedCount} не готовых деталей.`, 'info');
+    if (skippedLockedPieces > 0) {
+      showFeedback(`Добавлено ${addedPieces} готовых штук деталей. Пропущено ${skippedLockedPieces} не готовых штук (ждут станки).`, 'info');
     } else {
-      showFeedback(`Добавлено ${newParts.length} деталей в текущую упаковку`, 'success');
+      showFeedback(`Добавлено ${addedPieces} готовых штук деталей в текущее место`, 'success');
     }
   };
 
@@ -440,27 +472,35 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
       return;
     }
 
-    // Strict validation: check that all parts inside the buffer are 100% ready
+    // Strict piece-by-piece validation: check that no detail in buffer exceeds its completed pieces count in workshop
     const unreadyParts: { label: string; name: string; reason: string }[] = [];
+    const bufferCountByDetailId = new Map<string, number>();
     currentBufferParts.forEach(p => {
       const origId = (p as any).originalDetailId || (p.detailId || '').split('#')[0];
+      bufferCountByDetailId.set(origId, (bufferCountByDetailId.get(origId) || 0) + (p.quantity || 1));
+    });
+
+    bufferCountByDetailId.forEach((countInBuffer, origId) => {
       const origDetail = allDetails.find(d => d.id === origId);
       if (origDetail) {
-        const readiness = getDetailPackagingReadiness(origDetail, order, settings);
-        if (!readiness.isReady) {
+        const stats = getDetailPackagingPieceStats(origDetail, order, settings);
+        const packedInOtherPackages = getPackedCountForDetail(origId);
+        const totalPacking = packedInOtherPackages + countInBuffer;
+        if (totalPacking > stats.readyPiecesCount) {
+          const excess = totalPacking - stats.readyPiecesCount;
           unreadyParts.push({
             label: origDetail.labelNumber,
             name: origDetail.name,
-            reason: readiness.reason || 'Ожидает предшествующие этапы'
+            reason: `В цеху изготовлено только ${stats.readyPiecesCount} из ${stats.reqQty} шт. Лишние ${excess} шт. в месте еще не готовы (${stats.reason || 'ожидают станки'})`
           });
         }
       }
     });
 
     if (unreadyParts.length > 0) {
-      const errorMsg = `⛔ Нельзя упаковать то, что еще не готово!\n\nСледующие детали в месте еще не завершили прошлые участки:\n${unreadyParts.map(u => `• №${u.label} «${u.name}» (${u.reason})`).join('\n')}\n\nУдалите эти детали из коробки. Они должны пройти прошлые этапы в цеху.`;
+      const errorMsg = `⛔ Нельзя упаковать то, что еще не готово в цеху!\n\nСледующие детали в месте превышают фактически изготовленное количество:\n${unreadyParts.map(u => `• №${u.label} «${u.name}» (${u.reason})`).join('\n')}\n\nУдалите не готовые штуки из упаковки. Они должны пройти прошлые этапы в цеху.`;
       alert(errorMsg);
-      showFeedback(`⛔ В коробке есть ${unreadyParts.length} не готовых дет.! Упаковка заблокирована.`, 'error');
+      showFeedback(`⛔ В упаковке есть ${unreadyParts.length} не готовых деталей! Формирование места заблокировано.`, 'error');
       return;
     }
 
@@ -713,9 +753,12 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
             </div>
 
             <div className="bg-indigo-950/80 border border-indigo-700/80 rounded-2xl px-4 py-2.5 shrink-0 text-center sm:text-right">
-              <div className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider">Готово к упаковке</div>
+              <div className="text-[10px] font-bold text-indigo-300 uppercase tracking-wider">Готово к упаковке в цеху</div>
               <div className="text-xl font-black text-emerald-400 font-mono mt-0.5">
-                {readinessStats.readyCount} <span className="text-xs font-normal text-indigo-200">из {readinessStats.totalCount} дет.</span>
+                {readinessStats.readyPiecesCount ?? readinessStats.readyCount} <span className="text-xs font-normal text-indigo-200">из {readinessStats.totalPiecesCount ?? readinessStats.totalCount} шт.</span>
+              </div>
+              <div className="text-[10px] text-indigo-300 font-mono mt-0.5">
+                ({readinessStats.readyCount} из {readinessStats.totalCount} поз. готовы целиком)
               </div>
             </div>
           </div>
@@ -1077,11 +1120,11 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                 <button
                   type="button"
                   onClick={handleAddAllFilteredToBuffer}
-                  disabled={filteredUnpacked.filter(d => isDetailReadyForPackaging(d, order, settings)).length === 0}
+                  disabled={readyUnpackedPiecesCount === 0}
                   className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-orange-50 hover:text-orange-900 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-xs transition-colors flex items-center gap-1.5 self-start sm:self-auto cursor-pointer"
                 >
                   <Plus className="w-3.5 h-3.5 text-orange-600" />
-                  <span>Добавить все готовые ({filteredUnpacked.filter(d => isDetailReadyForPackaging(d, order, settings)).length})</span>
+                  <span>Добавить все готовые ({readyUnpackedPiecesCount} шт.)</span>
                 </button>
               )}
             </div>
@@ -1115,7 +1158,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 <span>Готовы к упаковке</span>
                 <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono font-bold ${readinessFilter === 'ready' ? 'bg-emerald-700 text-white' : 'bg-emerald-200 text-emerald-900'}`}>
-                  {readyUnpackedCount}
+                  {readyUnpackedPiecesCount} шт.
                 </span>
               </button>
 
@@ -1129,9 +1172,9 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                 }`}
               >
                 <Lock className="w-3.5 h-3.5" />
-                <span>Еще не готовы</span>
+                <span>Ожидают станки</span>
                 <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-mono font-bold ${readinessFilter === 'locked' ? 'bg-rose-700 text-white' : 'bg-rose-200 text-rose-900'}`}>
-                  {lockedUnpackedCount}
+                  {lockedUnpackedPositionsCount} поз.
                 </span>
               </button>
             </div>
@@ -1177,44 +1220,51 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                 </div>
               ) : filteredUnpacked.length === 0 ? (
                 <div className="p-8 text-center text-slate-400 text-xs">
-                  {readinessFilter === 'ready' && lockedUnpackedCount > 0
-                    ? `Готовых деталей для упаковки пока нет. Все ${lockedUnpackedCount} оставшихся деталей еще ожидают обработки на предыдущих станках.`
+                  {readinessFilter === 'ready' && lockedUnpackedPositionsCount > 0
+                    ? `Готовых деталей для упаковки пока нет. Все ${lockedUnpackedPositionsCount} позиций еще ожидают обработки на станках в цеху.`
                     : readinessFilter === 'locked'
                     ? 'Все оставшиеся детали уже готовы к упаковке!'
                     : 'По заданному поисковому фильтру ничего не найдено.'}
                 </div>
               ) : (
                 filteredUnpacked.map(detail => {
-                  const readiness = getDetailPackagingReadiness(detail, order, settings);
-                  const isReady = readiness.isReady;
-                  const reqQty = Math.max(1, detail.quantity || 1);
+                  const stats = getDetailPackagingPieceStats(detail, order, settings);
+                  const reqQty = stats.reqQty;
                   const packedCount = getPackedCountForDetail(detail.id);
                   const bufferCount = getBufferCountForDetail(detail.id);
-                  const remainingForDetail = Math.max(0, reqQty - (packedCount + bufferCount));
+                  const alreadyPacked = packedCount + bufferCount;
+                  const remainingForDetail = Math.max(0, reqQty - alreadyPacked);
+                  const availableToPack = Math.max(0, stats.readyPiecesCount - alreadyPacked);
+                  const isAvailable = availableToPack > 0;
+                  const isFullyWorkshopReady = stats.isFullyReady;
 
                   return (
                     <div
                       key={detail.id}
                       onClick={() => {
-                        if (!isReady) {
-                          showFeedback(`⛔ Деталь №${detail.labelNumber} («${detail.name}») еще не готова к упаковке! ${readiness.reason}. Сначала завершите предыдущие этапы в цеху.`, 'error');
+                        if (!isAvailable) {
+                          if (stats.readyPiecesCount === 0) {
+                            showFeedback(`⛔ Деталь №${detail.labelNumber} («${detail.name}») еще не готова к упаковке! ${stats.reason}. Сначала завершите предыдущие этапы в цеху.`, 'error');
+                          } else {
+                            showFeedback(`⛔ Все готовые штуки детали №${detail.labelNumber} (${stats.readyPiecesCount} из ${reqQty} шт.) уже добавлены/упакованы! Оставшиеся ${stats.unreadyPiecesCount} шт. еще не готовы: ${stats.reason}`, 'error');
+                          }
                           return;
                         }
                         handleAddDetailToCurrentPackage(detail);
                       }}
                       className={`p-3 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
-                        isReady
+                        isAvailable
                           ? 'bg-white hover:bg-orange-50/70 border-slate-200/90 hover:border-orange-300 cursor-pointer group shadow-xs hover:shadow'
                           : 'bg-rose-50/60 border-rose-200 cursor-not-allowed'
                       }`}
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         <div className={`w-9 h-9 rounded-xl font-black font-mono text-xs flex items-center justify-center transition-colors shrink-0 ${
-                          isReady 
+                          isAvailable 
                             ? 'bg-slate-100 group-hover:bg-orange-500 group-hover:text-white text-slate-800' 
                             : 'bg-rose-100 text-rose-800 border border-rose-200'
                         }`}>
-                          {isReady ? (
+                          {isAvailable ? (
                             detail.labelNumber
                           ) : (
                             <div className="flex flex-col items-center justify-center">
@@ -1226,14 +1276,31 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
 
                         <div className="min-w-0">
                           <div className="font-black text-slate-900 text-xs truncate flex items-center gap-1.5 flex-wrap">
-                            <span className={!isReady ? 'text-slate-800' : ''}>{detail.name}</span>
+                            <span className={!isAvailable ? 'text-slate-800' : ''}>{detail.name}</span>
+                            
                             <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-800 text-[10px] font-mono font-black border border-slate-200">
-                              Осталось: {remainingForDetail} из {reqQty} шт.
+                              Осталось упаковать: {remainingForDetail} из {reqQty} шт.
                             </span>
-                            {!isReady && (
-                              <span className="px-2.5 py-0.5 rounded-md bg-rose-100 text-rose-900 text-[11px] font-black border border-rose-300 flex items-center gap-1 shadow-2xs">
-                                <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0" />
-                                <span>⛔ Еще не готова ({readiness.reason || 'Ожидает пред. этапы'})</span>
+
+                            {isAvailable && (
+                              <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-900 text-[10px] font-mono font-black border border-emerald-300 flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                                <span>Доступно к упаковке: {availableToPack} шт.</span>
+                              </span>
+                            )}
+
+                            {!isFullyWorkshopReady && (
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-mono font-medium border flex items-center gap-1 ${
+                                isAvailable
+                                  ? 'bg-amber-50 text-amber-900 border-amber-200'
+                                  : 'bg-rose-100 text-rose-900 border-rose-300 font-black shadow-2xs'
+                              }`}>
+                                <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                                <span>
+                                  {isAvailable 
+                                    ? `Остальные ${stats.unreadyPiecesCount} шт. в цеху: ${stats.reason}` 
+                                    : `⛔ В цеху готово ${stats.readyPiecesCount} из ${reqQty} шт. (все уже в коробках). Остальные ${stats.unreadyPiecesCount} шт. ждут: ${stats.reason}`}
+                                </span>
                               </span>
                             )}
                           </div>
@@ -1244,6 +1311,11 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
                             {packedCount > 0 && (
                               <span className="text-emerald-700 font-bold">
                                 (уже упаковано: {packedCount} шт.)
+                              </span>
+                            )}
+                            {bufferCount > 0 && (
+                              <span className="text-orange-700 font-bold">
+                                (в текущей коробке: {bufferCount} шт.)
                               </span>
                             )}
                             {detail.notes && (
@@ -1257,23 +1329,27 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
 
                       <button
                         type="button"
-                        disabled={!isReady}
+                        disabled={!isAvailable}
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (!isReady) {
-                            showFeedback(`⛔ Деталь №${detail.labelNumber} («${detail.name}») еще не готова! ${readiness.reason}.`, 'error');
+                          if (!isAvailable) {
+                            if (stats.readyPiecesCount === 0) {
+                              showFeedback(`⛔ Деталь №${detail.labelNumber} («${detail.name}») еще не готова! ${stats.reason}.`, 'error');
+                            } else {
+                              showFeedback(`⛔ Все готовые ${stats.readyPiecesCount} шт. детали №${detail.labelNumber} уже упакованы! Оставшиеся ${stats.unreadyPiecesCount} шт. еще не готовы: ${stats.reason}`, 'error');
+                            }
                             return;
                           }
                           handleAddDetailToCurrentPackage(detail);
                         }}
                         className={`px-3 py-1.5 rounded-xl font-black text-xs transition-colors flex items-center gap-1.5 shrink-0 ${
-                          isReady 
+                          isAvailable 
                             ? 'bg-slate-100 group-hover:bg-orange-600 group-hover:text-white text-slate-700 cursor-pointer' 
                             : 'bg-rose-100 text-rose-700 border border-rose-300 cursor-not-allowed opacity-90'
                         }`}
                       >
-                        {isReady ? <Plus className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5 text-rose-600" />}
-                        <span>{isReady ? 'Вложить' : 'Заблокировано'}</span>
+                        {isAvailable ? <Plus className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5 text-rose-600" />}
+                        <span>{isAvailable ? `Вложить (+1)` : 'Заблокировано'}</span>
                       </button>
                     </div>
                   );
