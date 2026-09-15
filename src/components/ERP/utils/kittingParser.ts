@@ -125,23 +125,37 @@ export function detectCategoryByName(name: string, fallbackCategory: string = '�
 export function isMaterialOrFacadeItem(
   name: string,
   excludeKeywords?: string[],
-  reviewKeywords?: string[]
+  reviewKeywords?: string[],
+  article?: string
 ): boolean {
+  // If item has a specific SKU / Article number, it's a specific product/hardware item, NOT a raw sheet material
+  if (article && article.trim().length > 0) {
+    return false;
+  }
+
   const lower = name.toLowerCase();
-  if (lower.includes('стяжк') || lower.includes('петл') || lower.includes('крепеж') || lower.includes('уголок') || lower.includes('ручк')) {
+
+  // Explicit hardware / fittings terms that should never be flagged as sheet material or facade plate
+  const HARDWARE_FITTINGS_TERMS = [
+    'толкатель', 'нажимной', 'петл', 'стяжк', 'крепеж', 'уголок', 'ручк', 'доводчик',
+    'защелк', 'механизм', 'подъемник', 'направляющ', 'опор', 'держатель', 'амортизатор',
+    'демпфер', 'клипс', 'фиксатор', 'заглушк', 'эксцентрик', 'евровинт', 'конфирмат'
+  ];
+
+  if (HARDWARE_FITTINGS_TERMS.some(term => lower.includes(term))) {
     return false;
   }
 
   // 1. Check custom review keywords configured in settings (e.g. Двери, Купе, Стекло, Двери RIAL, Зеркало, Фасады)
   if (reviewKeywords && reviewKeywords.length > 0) {
-    if (reviewKeywords.some(kw => kw && lower.includes(kw.toLowerCase().trim()))) {
+    if (reviewKeywords.some(kw => kw && kw.trim() && lower.includes(kw.toLowerCase().trim()))) {
       return true;
     }
   }
 
   // 2. Check custom exclude keywords
   if (excludeKeywords && excludeKeywords.length > 0) {
-    if (excludeKeywords.some(kw => kw && lower.includes(kw.toLowerCase().trim()))) {
+    if (excludeKeywords.some(kw => kw && kw.trim() && lower.includes(kw.toLowerCase().trim()))) {
       return true;
     }
   }
@@ -240,8 +254,8 @@ export async function parseHardwareFile(
     const cleanName = item.name.trim();
     if (!cleanName || cleanName.length < 2) continue;
 
-    const isMaterial = isMaterialOrFacadeItem(cleanName, excludeKeywords, reviewKeywords);
     const cleanArticle = (item.article || '').trim();
+    const isMaterial = isMaterialOrFacadeItem(cleanName, excludeKeywords, reviewKeywords, cleanArticle);
     const key = `${cleanArticle}:::${cleanName.toLowerCase()}`;
     const qty = Math.max(1, Number(item.quantity) || 1);
     const unit = (item.unit || 'шт').trim() || 'шт';

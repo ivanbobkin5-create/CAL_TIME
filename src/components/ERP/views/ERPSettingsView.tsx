@@ -54,6 +54,7 @@ import { DEFAULT_BIRKA_COLUMN_MAPPING } from '../utils/birkaParser';
 import { DEFAULT_HARDWARE_COLUMN_MAPPING } from '../utils/hardwareParser';
 import { WarehouseCatalogPickerModal } from '../components/WarehouseCatalogPickerModal';
 import { PrintQrCommandsModal } from '../components/PrintQrCommandsModal';
+import { CommaSeparatedInput } from '../components/CommaSeparatedInput';
 import { evaluateBirkaQrTemplate, matchDetailToScannedCode, decomposeBarcodeForDiagnostics } from '../utils';
 import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
@@ -1712,10 +1713,17 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                         <label className="block text-[10px] font-bold text-slate-600 uppercase">
                           Распознаваемые имена колонок в файле (через запятую)
                         </label>
-                        <input
-                          type="text"
-                          value={currentAliases.join(', ')}
-                          onChange={(e) => handleUpdateBirkaMapping(param.key, e.target.value)}
+                        <CommaSeparatedInput
+                          valueArray={currentAliases}
+                          onChangeArray={(newAliases) => {
+                            setFormData(prev => ({
+                              ...prev,
+                              birkaColumnMapping: {
+                                ...(prev.birkaColumnMapping || DEFAULT_BIRKA_COLUMN_MAPPING),
+                                [param.key]: newAliases
+                              }
+                            }));
+                          }}
                           placeholder="Например: наименование, название, деталь"
                           className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 font-mono text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-blue-500 outline-none"
                         />
@@ -1805,10 +1813,17 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                         <label className="block text-[10px] font-bold text-slate-600 uppercase">
                           Распознаваемые имена колонок в файле (через запятую)
                         </label>
-                        <input
-                          type="text"
-                          value={currentAliases.join(', ')}
-                          onChange={(e) => handleUpdateHardwareMapping(param.key, e.target.value)}
+                        <CommaSeparatedInput
+                          valueArray={currentAliases}
+                          onChangeArray={(newAliases) => {
+                            setFormData(prev => ({
+                              ...prev,
+                              hardwareColumnMapping: {
+                                ...(prev.hardwareColumnMapping || DEFAULT_HARDWARE_COLUMN_MAPPING),
+                                [param.key]: newAliases
+                              }
+                            }));
+                          }}
                           placeholder="Например: наименование, номенклатура, товар"
                           className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 font-mono text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-cyan-500 outline-none"
                         />
@@ -1827,6 +1842,77 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                   </div>
                 );
               })}
+            </div>
+
+            {/* Keywords for Exception & Review */}
+            <div className="pt-4 border-t border-slate-200/80 space-y-4">
+              <div className="p-4 bg-amber-50/80 rounded-2xl border border-amber-200/90 space-y-3">
+                <div className="flex items-center gap-2">
+                  <ListFilter className="w-5 h-5 text-amber-600" />
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-xs">
+                      Позиции для проверки и подтверждения при загрузке (через запятую)
+                    </h4>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      Если название товара содержит одно из этих слов (например: Двери, Стекло, Фасад, Столешница), программа выведет предупреждение при загрузке и предложит исключить либо подтвердить заказной материал.
+                    </p>
+                  </div>
+                </div>
+
+                <CommaSeparatedInput
+                  valueArray={formData.hardwareReviewKeywords || ['Двери', 'Купе', 'Стекло', 'Двери RIAL', 'Зеркало', 'Фасады', 'Фасад', 'Столешница']}
+                  onChangeArray={(newKeywords) => {
+                    setFormData(prev => ({
+                      ...prev,
+                      hardwareReviewKeywords: newKeywords
+                    }));
+                  }}
+                  placeholder="Например: Двери, Купе, Стекло, Фасад, Столешница"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 font-mono text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-amber-500 outline-none"
+                />
+
+                <div className="flex flex-wrap gap-1">
+                  {(formData.hardwareReviewKeywords || ['Двери', 'Купе', 'Стекло', 'Двери RIAL', 'Зеркало', 'Фасады', 'Фасад', 'Столешница']).map((word, idx) => (
+                    <span key={idx} className="px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 font-mono text-[10px] font-bold">
+                      {word}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-4 bg-rose-50/80 rounded-2xl border border-rose-200/90 space-y-3">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-5 h-5 text-rose-600" />
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-xs">
+                      Ключевые слова для исключения плит и материалов (не считаются фурнитурой)
+                    </h4>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      Если название совпадает с ключевыми словами ниже (например: ЛДСП, МДФ, Кромка) и не имеет артикула, то оно считается материалом и автоматически отсеивается.
+                    </p>
+                  </div>
+                </div>
+
+                <CommaSeparatedInput
+                  valueArray={formData.hardwareExcludeKeywords || ['ЛДСП', 'МДФ', 'ХДФ', 'Кромка', 'ДВП', 'Плита', 'Пластик']}
+                  onChangeArray={(newKeywords) => {
+                    setFormData(prev => ({
+                      ...prev,
+                      hardwareExcludeKeywords: newKeywords
+                    }));
+                  }}
+                  placeholder="Например: ЛДСП, МДФ, ХДФ, Кромка, ДВП"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 font-mono text-xs font-semibold text-slate-900 focus:ring-2 focus:ring-rose-500 outline-none"
+                />
+
+                <div className="flex flex-wrap gap-1">
+                  {(formData.hardwareExcludeKeywords || ['ЛДСП', 'МДФ', 'ХДФ', 'Кромка', 'ДВП', 'Плита', 'Пластик']).map((word, idx) => (
+                    <span key={idx} className="px-2 py-0.5 rounded-md bg-rose-100 text-rose-900 font-mono text-[10px] font-bold">
+                      {word}
+                    </span>
+                  ))}
+                </div>
+              </div>
             </div>
           </div>
         </div>

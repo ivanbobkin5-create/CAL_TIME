@@ -46,6 +46,7 @@ import { parseHardwareFile } from '../utils/hardwareParser';
 import { getScannedPartIdsForStage, getScannedCountForDetail, detailRequiresPrisadka } from '../utils/stageReadiness';
 import { HardwareSpecificationModal } from '../components/HardwareSpecificationModal';
 import { AssemblyFileModal } from '../components/AssemblyFileModal';
+import { AdditionalWorksModal } from '../components/AdditionalWorksModal';
 
 interface ERPPlanningViewProps {
   orders: ProductionOrder[];
@@ -76,6 +77,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
   const [viewingBirkaModalOrder, setViewingBirkaModalOrder] = useState<ProductionOrder | null>(null);
   const [viewingHardwareModalOrder, setViewingHardwareModalOrder] = useState<ProductionOrder | null>(null);
   const [viewingAssemblyModalOrder, setViewingAssemblyModalOrder] = useState<ProductionOrder | null>(null);
+  const [viewingAdditionalWorksModalOrder, setViewingAdditionalWorksModalOrder] = useState<ProductionOrder | null>(null);
   const [launchedModalOrder, setLaunchedModalOrder] = useState<{ order: ProductionOrder; plannedDate: string } | null>(null);
   const [birkaSearchQuery, setBirkaSearchQuery] = useState('');
   const [hardwareSearchQuery, setHardwareSearchQuery] = useState('');
@@ -1268,6 +1270,27 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                 }}
                               />
                             </label>
+                          )}
+
+                          {/* 3.5. Additional Works Button */}
+                          {order.additionalWorks && (order.additionalWorks.countertopCutting || order.additionalWorks.wallPanelCutting || order.additionalWorks.barCutting || order.additionalWorks.plinthCutting) ? (
+                            <button
+                              onClick={() => setViewingAdditionalWorksModalOrder(order)}
+                              className="px-1.5 py-0.5 rounded bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 text-[8.5px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                              title="Дополнительные работы (столешница, стеновая, штанга, цоколь)"
+                            >
+                              <Wrench className="w-2.5 h-2.5 text-amber-600" />
+                              <span>Работы</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => setViewingAdditionalWorksModalOrder(order)}
+                              className="px-1.5 py-0.5 rounded bg-slate-100 hover:bg-amber-50 text-slate-600 hover:text-amber-700 border border-slate-200 hover:border-amber-300 text-[8.5px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                              title="Указать дополнительные работы (столешница, стеновая, штанга, цоколь)"
+                            >
+                              <Plus className="w-2.5 h-2.5" />
+                              <span>+ Работы</span>
+                            </button>
                           )}
 
                           {/* 4. Delete / Restore Button */}
@@ -2817,6 +2840,19 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
           onUpdateOrder={(updated) => {
             onUpdateOrder(updated);
             setViewingAssemblyModalOrder(updated);
+          }}
+        />
+      )}
+
+      {/* Additional Works Modal */}
+      {viewingAdditionalWorksModalOrder && (
+        <AdditionalWorksModal
+          order={viewingAdditionalWorksModalOrder}
+          isOpen={!!viewingAdditionalWorksModalOrder}
+          onClose={() => setViewingAdditionalWorksModalOrder(null)}
+          onUpdateOrder={(updated) => {
+            onUpdateOrder(updated);
+            setViewingAdditionalWorksModalOrder(updated);
           }}
         />
       )}

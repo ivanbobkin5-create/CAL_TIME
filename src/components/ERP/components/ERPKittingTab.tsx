@@ -123,48 +123,98 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
     'Инструкция и паспорт изделия'
   ];
 
+  const [pendingParsedData, setPendingParsedData] = useState<any | null>(null);
+  const [selectedMaterialIds, setSelectedMaterialIds] = useState<Record<string, boolean>>({});
+
+  const applyParsedDataToOrder = (finalItems: OrderHardwareItem[], fileName: string, uploadedAt: string) => {
+    // Re-calculate already packed quantities if packages were already created earlier
+    const itemsWithPacked = finalItems.map(item => {
+      let packed = 0;
+      kittingPackages.forEach(pkg => {
+        pkg.hardwareItems?.forEach(hi => {
+          if (hi.name.toLowerCase() === item.name.toLowerCase() || (hi.article && hi.article === item.article)) {
+            packed += hi.quantity;
+          }
+        });
+      });
+      return {
+        ...item,
+        packedQuantity: Math.min(item.quantity, packed)
+      };
+    });
+
+    const catMap = new Map<string, { count: number; totalQuantity: number }>();
+    let totalQty = 0;
+    itemsWithPacked.forEach(it => {
+      totalQty += it.quantity;
+      const cat = it.category || 'Разное';
+      const curr = catMap.get(cat) || { count: 0, totalQuantity: 0 };
+      curr.count += 1;
+      curr.totalQuantity += it.quantity;
+      catMap.set(cat, curr);
+    });
+
+    const categoriesSummary = Array.from(catMap.entries()).map(([category, stats]) => ({
+      category,
+      count: stats.count,
+      totalQuantity: stats.totalQuantity
+    }));
+
+    onUpdateOrder({
+      ...order,
+      hardwareData: {
+        fileName,
+        uploadedAt,
+        items: itemsWithPacked,
+        totalItemsCount: itemsWithPacked.length,
+        totalQuantity: totalQty,
+        categoriesSummary
+      }
+    });
+
+    setPendingParsedData(null);
+    setFeedbackMsg(`Комплектовочная ведомость "${fileName}" успешно загружена (${itemsWithPacked.length} поз.)!`);
+    setTimeout(() => setFeedbackMsg(null), 4000);
+  };
+
+  const handleConfirmMaterialsChoice = () => {
+    if (!pendingParsedData) return;
+    const chosenMaterials = (pendingParsedData.detectedMaterials || []).filter(
+      (m: OrderHardwareItem) => selectedMaterialIds[m.id]
+    );
+
+    const mergedItems = [...pendingParsedData.items, ...chosenMaterials];
+    applyParsedDataToOrder(mergedItems, pendingParsedData.fileName, pendingParsedData.uploadedAt);
+  };
+
   // Handle uploading Kitting file directly on this stage if missing or replacing
   const handleUploadKittingFile = async (file: File) => {
     setIsUploading(true);
     setUploadError(null);
     try {
-      const parsed = await parseHardwareFile(file, settings?.hardwareColumnMapping);
-      if (parsed.items.length === 0) {
+      const parsed = await parseHardwareFile(
+        file,
+        settings?.hardwareColumnMapping,
+        settings?.hardwareExcludeKeywords,
+        settings?.hardwareReviewKeywords
+      );
+      if (parsed.items.length === 0 && (!parsed.detectedMaterials || parsed.detectedMaterials.length === 0)) {
         setUploadError('В файле не найдено строк с фурнитурой или неподдерживаемый формат.');
         setIsUploading(false);
         return;
       }
 
-      // Re-calculate already packed quantities if packages were already created earlier
-      const itemsWithPacked = parsed.items.map(item => {
-        let packed = 0;
-        kittingPackages.forEach(pkg => {
-          pkg.hardwareItems?.forEach(hi => {
-            if (hi.name.toLowerCase() === item.name.toLowerCase() || (hi.article && hi.article === item.article)) {
-              packed += hi.quantity;
-            }
-          });
+      if (parsed.detectedMaterials && parsed.detectedMaterials.length > 0) {
+        const initialSelected: Record<string, boolean> = {};
+        parsed.detectedMaterials.forEach(m => {
+          const isFacadeOrCustom = /фасад|столешниц|зеркало|стекло|профиль/i.test(m.name);
+          initialSelected[m.id] = isFacadeOrCustom;
         });
-        return {
-          ...item,
-          packedQuantity: Math.min(item.quantity, packed)
-        };
-      });
-
-      onUpdateOrder({
-        ...order,
-        hardwareData: {
-          fileName: parsed.fileName,
-          uploadedAt: parsed.uploadedAt,
-          items: itemsWithPacked,
-          totalItemsCount: itemsWithPacked.length,
-          totalQuantity: parsed.totalQuantity,
-          categoriesSummary: parsed.categoriesSummary
-        }
-      });
-
-      setFeedbackMsg(`Комплектовочная ведомость "${parsed.fileName}" успешно загружена (${itemsWithPacked.length} поз.)!`);
-      setTimeout(() => setFeedbackMsg(null), 4000);
+        setSelectedMaterialIds(initialSelected);
+        setPendingParsedData(parsed);
+      } else {
+        applyParsedDataToOrder(parsed.items, parsed.fileName, parsed.uploadedAt);
+      }
     } catch (e: any) {
       console.error(e);
       setUploadError('Ошибка разбора ведомости: ' + (e?.message || 'проверьте файл'));
@@ -886,6 +936,102 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
         <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2 animate-fade-in">
           <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
           <span>{uploadError}</span>
+        </div>
+      )}
+
+      {/* Pending Materials / Exceptions Review Banner */}
+      {pendingParsedData && pendingParsedData.detectedMaterials?.length > 0 && (
+        <div className="p-5 rounded-3xl bg-amber-50/90 border-2 border-amber-300 space-y-4 shadow-sm animate-fade-in">
+          <div className="flex items-start justify-between gap-3">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2 text-amber-900 font-black text-sm">
+                <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>В файле обнаружены Исключения и материалы ({pendingParsedData.detectedMaterials.length} поз.)</span>
+              </div>
+              <p className="text-xs text-amber-800/90">
+                Отметьте галочками заказные фасады, стекло или элементы, которые нужно включить в список комплектации:
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const allOn: Record<string, boolean> = {};
+                  pendingParsedData.detectedMaterials.forEach((m: any) => { allOn[m.id] = true; });
+                  setSelectedMaterialIds(allOn);
+                }}
+                className="text-[11px] text-amber-900 hover:underline font-bold cursor-pointer"
+              >
+                Выбрать все
+              </button>
+              <span className="text-amber-400">•</span>
+              <button
+                type="button"
+                onClick={() => setSelectedMaterialIds({})}
+                className="text-[11px] text-amber-900 hover:underline font-bold cursor-pointer"
+              >
+                Снять все
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-56 overflow-y-auto p-1">
+            {pendingParsedData.detectedMaterials.map((mat: any) => {
+              const isChecked = !!selectedMaterialIds[mat.id];
+              return (
+                <label
+                  key={mat.id}
+                  className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 text-xs font-medium ${
+                    isChecked 
+                      ? 'bg-white border-amber-500 shadow-xs ring-1 ring-amber-500/30' 
+                      : 'bg-amber-100/40 border-amber-200/80 hover:bg-white text-slate-600'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={(e) => {
+                        setSelectedMaterialIds({
+                          ...selectedMaterialIds,
+                          [mat.id]: e.target.checked
+                        });
+                      }}
+                      className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 cursor-pointer"
+                    />
+                    <div className="min-w-0">
+                      <div className="font-bold text-slate-900 truncate">{mat.name}</div>
+                      <div className="text-[10px] text-slate-500 flex items-center gap-2 font-mono mt-0.5">
+                        <span>{mat.category || 'Материал'}</span>
+                        {mat.article && <span>• Арт. {mat.article}</span>}
+                      </div>
+                    </div>
+                  </div>
+                  <span className="font-mono font-bold text-slate-800 text-xs shrink-0">
+                    {mat.quantity} {mat.unit || 'шт'}
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2 border-t border-amber-200">
+            <button
+              type="button"
+              onClick={() => setPendingParsedData(null)}
+              className="px-4 py-2 rounded-xl bg-white hover:bg-amber-100 text-amber-900 font-bold text-xs border border-amber-300 transition-colors cursor-pointer"
+            >
+              Отмена
+            </button>
+            <button
+              type="button"
+              onClick={handleConfirmMaterialsChoice}
+              className="px-5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-black text-xs shadow-md transition-all cursor-pointer flex items-center gap-1.5"
+            >
+              <Check className="w-4 h-4" />
+              <span>Подтвердить выбор и применить ведомость</span>
+            </button>
+          </div>
         </div>
       )}
 

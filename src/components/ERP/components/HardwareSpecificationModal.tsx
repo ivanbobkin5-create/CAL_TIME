@@ -14,11 +14,12 @@ import {
   Check, 
   AlertCircle 
 } from 'lucide-react';
-import { ProductionOrder, OrderHardwareItem } from '../types';
+import { ProductionOrder, OrderHardwareItem, ERPCompanySettings } from '../types';
 import { parseHardwareFile } from '../utils/kittingParser';
 
 interface HardwareSpecificationModalProps {
   order: ProductionOrder;
+  settings?: ERPCompanySettings;
   isOpen: boolean;
   onClose: () => void;
   onUpdateOrder: (updatedOrder: ProductionOrder) => void;
@@ -26,6 +27,7 @@ interface HardwareSpecificationModalProps {
 
 export const HardwareSpecificationModal: React.FC<HardwareSpecificationModalProps> = ({
   order,
+  settings,
   isOpen,
   onClose,
   onUpdateOrder
@@ -48,7 +50,12 @@ export const HardwareSpecificationModal: React.FC<HardwareSpecificationModalProp
     setIsUploading(true);
     setUploadError(null);
     try {
-      const parsed = await parseHardwareFile(file);
+      const parsed = await parseHardwareFile(
+        file,
+        settings?.hardwareColumnMapping,
+        settings?.hardwareExcludeKeywords,
+        settings?.hardwareReviewKeywords
+      );
       if (parsed.items.length === 0 && (!parsed.detectedMaterials || parsed.detectedMaterials.length === 0)) {
         setUploadError('В файле не найдено строк с фурнитурой или материалами.');
         setIsUploading(false);
