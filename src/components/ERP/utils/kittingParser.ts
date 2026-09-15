@@ -122,11 +122,31 @@ export function detectCategoryByName(name: string, fallbackCategory: string = '�
   return fallbackCategory;
 }
 
-export function isMaterialOrFacadeItem(name: string): boolean {
+export function isMaterialOrFacadeItem(
+  name: string,
+  excludeKeywords?: string[],
+  reviewKeywords?: string[]
+): boolean {
   const lower = name.toLowerCase();
   if (lower.includes('стяжк') || lower.includes('петл') || lower.includes('крепеж') || lower.includes('уголок') || lower.includes('ручк')) {
     return false;
   }
+
+  // 1. Check custom review keywords configured in settings (e.g. Двери, Купе, Стекло, Двери RIAL, Зеркало, Фасады)
+  if (reviewKeywords && reviewKeywords.length > 0) {
+    if (reviewKeywords.some(kw => kw && lower.includes(kw.toLowerCase().trim()))) {
+      return true;
+    }
+  }
+
+  // 2. Check custom exclude keywords
+  if (excludeKeywords && excludeKeywords.length > 0) {
+    if (excludeKeywords.some(kw => kw && lower.includes(kw.toLowerCase().trim()))) {
+      return true;
+    }
+  }
+
+  // 3. Fallback built-in patterns
   return SHEET_AND_FACADE_PATTERNS.some(pat => pat.test(lower));
 }
 
@@ -139,7 +159,9 @@ export function isExcludedSheetMaterial(name: string): boolean {
  */
 export async function parseHardwareFile(
   file: File,
-  customMapping?: Record<string, string[]>
+  customMapping?: Record<string, string[]>,
+  excludeKeywords?: string[],
+  reviewKeywords?: string[]
 ): Promise<HardwareParseResult> {
   const mapping = { ...DEFAULT_HARDWARE_COLUMN_MAPPING, ...(customMapping || {}) };
   const fileName = file.name;
@@ -218,7 +240,7 @@ export async function parseHardwareFile(
     const cleanName = item.name.trim();
     if (!cleanName || cleanName.length < 2) continue;
 
-    const isMaterial = isMaterialOrFacadeItem(cleanName);
+    const isMaterial = isMaterialOrFacadeItem(cleanName, excludeKeywords, reviewKeywords);
     const cleanArticle = (item.article || '').trim();
     const key = `${cleanArticle}:::${cleanName.toLowerCase()}`;
     const qty = Math.max(1, Number(item.quantity) || 1);

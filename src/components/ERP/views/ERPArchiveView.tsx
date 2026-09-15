@@ -15,7 +15,7 @@ import {
   Printer,
   History
 } from 'lucide-react';
-import { ProductionOrder, ERPEmployee } from '../types';
+import { ProductionOrder, ERPEmployee, ERPCompanySettings } from '../types';
 import { formatDeadlineDate } from '../utils';
 import { ERPArchiveOrderModal } from '../components/ERPArchiveOrderModal';
 import { printArchiveOrderPassport } from '../utils/archivePassportPrinter';
@@ -23,6 +23,7 @@ import { printArchiveOrderPassport } from '../utils/archivePassportPrinter';
 interface ERPArchiveViewProps {
   orders: ProductionOrder[];
   employees?: ERPEmployee[];
+  settings?: ERPCompanySettings;
   onSelectOrder?: (order: ProductionOrder) => void;
   onRestoreOrder?: (orderId: string) => void;
 }
@@ -30,6 +31,7 @@ interface ERPArchiveViewProps {
 export const ERPArchiveView: React.FC<ERPArchiveViewProps> = ({
   orders,
   employees = [],
+  settings,
   onSelectOrder,
   onRestoreOrder
 }) => {
@@ -387,6 +389,7 @@ export const ERPArchiveView: React.FC<ERPArchiveViewProps> = ({
         <ERPArchiveOrderModal
           order={viewingArchiveOrder}
           employees={employees}
+          settings={settings}
           onClose={() => setViewingArchiveOrder(null)}
           onRestoreOrder={onRestoreOrder}
         />

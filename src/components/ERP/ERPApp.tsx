@@ -1838,6 +1838,11 @@ export const ERPApp: React.FC<ERPAppProps> = ({
                   orders={orders} 
                   employees={employees} 
                   settings={settings}
+                  currentEmployee={matchedEmp}
+                  currentUser={{
+                    id: matchedEmp?.id || authUser?.id || authUser?.uid || 'user',
+                    name: displayUserName
+                  }}
                   onUpdateOrder={handleUpdateOrder}
                   onSelectOrder={(order) => {
                     setSelectedOrderForWorkspace(order);
@@ -1910,6 +1915,8 @@ export const ERPApp: React.FC<ERPAppProps> = ({
               {activeSection === 'archive' && (
                 <ERPArchiveView 
                   orders={orders} 
+                  employees={employees}
+                  settings={settings}
                   onSelectOrder={(order) => {
                     setSelectedOrderForWorkspace(order);
                     setWorkspaceStageId(order.currentStage || 'shipping');
@@ -1936,6 +1943,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
                   onDeleteAdjustment={handleDeleteAdjustment}
                   orders={orders}
                   shiftLogs={shiftLogs}
+                  scheduleEntries={scheduleEntries}
                   settings={settings}
                 />
               )}

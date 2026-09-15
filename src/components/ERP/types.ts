@@ -130,6 +130,9 @@ export interface ProductionOrder {
   plannedStartDate?: string;
   plannedCuttingDate?: string; // Выбранный день распила YYYY-MM-DD
   stagePlannedDates?: Record<string, string>; // Плановые даты по участкам { [stageId]: "YYYY-MM-DD" }
+  plannedByEmployeeId?: string; // Кто поставил в план заказ
+  plannedByEmployeeName?: string; // Имя того, кто поставил в план заказ
+  plannedAt?: string; // Дата и время постановки в план
   isReadyForProduction?: boolean; // Отметка "Готов к началу" в планировании
   currentStage: ProductionStageId;
   priority: 'low' | 'normal' | 'high' | 'urgent';
@@ -368,7 +371,7 @@ export interface ERPEmployee {
   tempPassword?: string;
   carPlate?: string; // Госномер автомобиля для водителей
   carModel?: string; // Марка / модель ТС
-  rateType: 'hourly' | 'piecework' | 'salary' | 'mixed';
+  rateType: 'hourly' | 'piecework' | 'salary' | 'shift' | 'mixed';
   baseRate: number; // руб в час или базовая ставка
   pieceworkRates?: {
     cuttingPerM2?: number;
@@ -528,6 +531,7 @@ export interface ERPCompanySettings {
 
   // Настройки загрузки и фильтрации фурнитуры
   hardwareExcludeKeywords?: string[]; // Исключать из ведомости фурнитуры ключевые слова (ЛДСП, ДСП, МДФ, ХДФ, Кромка, ПВХ и т.д.)
+  hardwareReviewKeywords?: string[]; // Позиции для подтверждения пользователем при загрузке (Двери, Купе, Стекло, Двери RIAL, Зеркало, Фасады и т.д.)
   requiredKittingDocuments?: Array<{ id: string; name: string; enabled: boolean }>; // Обязательные документы для укладки в коробки (Чертежи, Акт приема-передачи)
 
   // QR-Команды управления цехом

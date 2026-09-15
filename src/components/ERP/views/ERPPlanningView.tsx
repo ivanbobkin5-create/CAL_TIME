@@ -36,7 +36,8 @@ import {
   ShieldCheck,
   AlertTriangle,
   Trash2,
-  Undo2
+  Undo2,
+  User
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPEmployee, ERPCompanySettings, AdditionalWorks } from '../types';
 import { formatDeadlineDate, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, isStageTaskStarted, getSmartOrderDisplay } from '../utils';
@@ -50,6 +51,8 @@ interface ERPPlanningViewProps {
   orders: ProductionOrder[];
   employees: ERPEmployee[];
   settings?: ERPCompanySettings;
+  currentEmployee?: ERPEmployee;
+  currentUser?: { id?: string; name?: string };
   onUpdateOrder: (order: ProductionOrder) => void;
   onSelectOrder: (order: ProductionOrder) => void;
 }
@@ -58,6 +61,8 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
   orders,
   employees,
   settings,
+  currentEmployee,
+  currentUser,
   onUpdateOrder,
   onSelectOrder
 }) => {
@@ -698,13 +703,20 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
       nextCurrentStage = firstProdStage;
     }
 
+    const plannerName = currentEmployee?.name || currentUser?.name || 'Планировщик';
+    const plannerId = currentEmployee?.id || currentUser?.id;
+    const nowIso = new Date().toISOString();
+
     const updatedOrder: ProductionOrder = {
       ...order,
       stagePlannedDates: updatedStageDates,
       plannedCuttingDate: plannedCuttingDate || undefined,
       currentStage: nextCurrentStage,
       isReadyForProduction: hasAnyPlannedDate ? true : order.isReadyForProduction,
-      status: (hasAnyPlannedDate && (order.status === 'planned' || !order.status)) ? 'in_progress' : order.status
+      status: (hasAnyPlannedDate && (order.status === 'planned' || !order.status)) ? 'in_progress' : order.status,
+      plannedByEmployeeId: hasAnyPlannedDate ? (order.plannedByEmployeeId || plannerId) : order.plannedByEmployeeId,
+      plannedByEmployeeName: hasAnyPlannedDate ? (order.plannedByEmployeeName || plannerName) : order.plannedByEmployeeName,
+      plannedAt: hasAnyPlannedDate ? (order.plannedAt || nowIso) : order.plannedAt
     };
 
     onUpdateOrder(updatedOrder);
@@ -1569,17 +1581,17 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                         const stCap = settings?.stageDailyCapacities?.[st.id];
 
                         return (
-                          <div key={st.id} className="flex min-h-[96px] hover:bg-slate-50/40 transition-colors">
+                          <div key={st.id} className="flex min-h-[110px] h-auto hover:bg-slate-50/40 transition-colors">
                             {/* Stage Row Header */}
-                            <div className="w-32 sm:w-36 p-2 shrink-0 border-r border-slate-200 flex flex-col justify-center bg-slate-50/80">
-                              <div className="flex items-center gap-1 font-black text-slate-900 text-xs">
-                                <div className={`p-1 rounded-lg border ${st.bg} shrink-0`}>
-                                  <StIcon className={`w-3 h-3 sm:w-3.5 sm:h-3.5 ${st.color}`} />
+                            <div className="w-32 sm:w-36 p-2.5 shrink-0 border-r border-slate-200 flex flex-col justify-center bg-slate-50/80">
+                              <div className="flex items-center gap-1.5 font-black text-slate-900 text-xs">
+                                <div className={`p-1.5 rounded-xl border ${st.bg} shrink-0`}>
+                                  <StIcon className={`w-3.5 h-3.5 sm:w-4 sm:h-4 ${st.color}`} />
                                 </div>
-                                <span className="text-[10.5px] sm:text-[11px] font-black truncate">{st.name}</span>
+                                <span className="text-[11px] sm:text-xs font-black truncate">{st.name}</span>
                               </div>
                               {stCap && stCap.enabled !== false && (
-                                <div className="text-[8.5px] text-slate-500 font-semibold truncate mt-1 pl-1 border-l-2 border-slate-300" title="Установленная дневная норма выработки">
+                                <div className="text-[8.5px] text-slate-500 font-semibold truncate mt-1.5 pl-1.5 border-l-2 border-slate-300" title="Установленная дневная норма выработки">
                                   {st.id === 'cutting' && `Норма: ${stCap.dailyLimitSheets ?? 20}л`}
                                   {st.id === 'edging' && `Норма: ${stCap.dailyLimitEdgeM ?? 1500}м`}
                                   {st.id === 'cnc' && `Норма: ${stCap.dailyLimitHoles ?? 3000}отв.`}
@@ -1615,14 +1627,14 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                         setDraggedStageTask(null);
                                       }
                                     }}
-                                    className={`p-1.5 border-r border-slate-200 last:border-r-0 space-y-1.5 transition-colors min-w-0 flex flex-col justify-start ${
+                                    className={`p-1.5 border-r border-slate-200 last:border-r-0 space-y-1.5 transition-colors min-w-0 flex flex-col justify-start h-auto overflow-visible ${
                                       day.isToday ? 'bg-blue-50/20' : day.isWeekend ? 'bg-slate-50/30' : ''
                                     }`}
                                   >
                                     {/* Cell Load Summary Indicator */}
                                     {tasksInCell.length > 0 && cellStatus.badgeText && (
                                       <div
-                                        className={`px-1 py-0.5 rounded-lg text-[8px] font-black tracking-tight flex items-center justify-between gap-0.5 border transition-colors shrink-0 ${
+                                        className={`px-1.5 py-0.5 rounded-lg text-[8.5px] font-black tracking-tight flex items-center justify-between gap-0.5 border transition-colors shrink-0 ${
                                           cellStatus.isOverloaded
                                             ? 'bg-rose-100 text-rose-900 border-rose-300'
                                             : 'bg-slate-100/90 text-slate-700 border-slate-200'
@@ -1662,16 +1674,16 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                           draggable={true}
                                           onDragStart={() => setDraggedStageTask({ orderId: order.id, stageId: st.id })}
                                           onClick={() => setViewingBirkaModalOrder(order)}
-                                          className={`group relative p-2 min-h-[82px] sm:min-h-[90px] rounded-2xl border text-left shadow-2xs hover:shadow-md transition-all cursor-pointer hover:ring-2 hover:ring-blue-400 w-full flex flex-col justify-between gap-1 ${orderColor.bg} ${orderColor.border} ${
+                                          className={`group relative p-2.5 min-h-[96px] rounded-2xl border text-left shadow-2xs hover:shadow-md transition-all cursor-pointer hover:ring-2 hover:ring-blue-400 w-full flex flex-col justify-between gap-1.5 shrink-0 ${orderColor.bg} ${orderColor.border} ${
                                             order.priority === 'urgent' ? 'ring-2 ring-red-400' : ''
                                           } ${isStageDone ? 'opacity-75 bg-slate-100/90 border-slate-300' : ''}`}
                                           title={`Заказ №${order.orderNumber}\nКлиент: ${clientName || '—'}\nСрок: ${formatDeadlineDate(order.deadlineDate)}\nДеталей: ${order.partsCount || 0} шт (${order.totalAreaM2 || 0} м²)\nКромка: ${order.totalEdgeM || 0} п.м.\nСтатус: ${isStageDone ? '✓ Готово' : scannedCount > 0 ? `В работе (${scannedCount}/${totalCount} шт.)` : 'В плане'}`}
                                         >
-                                          {/* Line 1: Order Number (Entirely on 1 line, never truncated, irrespective of zoom) + Urgent badge + Unassign button */}
+                                          {/* Line 1: Order Number (Entirely on 1 line, never broken/truncated, whitespace-nowrap) */}
                                           <div className="flex items-center justify-between gap-1 w-full min-w-0">
-                                            <div className="flex items-center gap-1.5 min-w-0">
+                                            <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
                                               <span className="w-2 h-2 rounded-full shrink-0 shadow-2xs" style={{ backgroundColor: isStageDone ? '#10b981' : orderColor.bar }} />
-                                              <span className={`font-mono font-black text-xs sm:text-[13px] leading-tight whitespace-nowrap ${isStageDone ? 'text-slate-600 line-through' : orderColor.text}`}>
+                                              <span className={`font-mono font-black text-xs sm:text-[13px] leading-tight whitespace-nowrap shrink-0 ${isStageDone ? 'text-slate-600 line-through' : orderColor.text}`}>
                                                 №{orderNumber}
                                               </span>
                                             </div>
@@ -1696,33 +1708,33 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                           </div>
 
                                           {/* Line 2: Client / Project Name (Legible multi-line with clamp) */}
-                                          <div className="text-[10px] sm:text-[10.5px] font-bold leading-snug line-clamp-2 text-slate-800 break-words flex-1 my-0.5" title={clientName || '—'}>
+                                          <div className="text-[10px] sm:text-[11px] font-bold leading-snug line-clamp-2 text-slate-800 break-words flex-1" title={clientName || '—'}>
                                             {clientName || '—'}
                                           </div>
 
                                           {/* Line 3: Stage Completion Status / Progress Badge */}
                                           <div className="flex items-center gap-1 flex-wrap min-w-0">
                                             {isStageDone ? (
-                                              <span className="px-1.5 py-0.5 rounded bg-emerald-100/90 text-emerald-800 font-extrabold text-[8px] flex items-center gap-0.5 border border-emerald-300/60" title="Этап выполнен">
+                                              <span className="px-1.5 py-0.5 rounded-lg bg-emerald-100/90 text-emerald-800 font-extrabold text-[8.5px] flex items-center gap-0.5 border border-emerald-300/60" title="Этап выполнен">
                                                 <span>✓ Готово</span>
                                               </span>
                                             ) : scannedCount > 0 && totalCount > 0 ? (
-                                              <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-900 font-black text-[8px] flex items-center gap-0.5 border border-blue-300/60" title={`Отсканировано: ${scannedCount} из ${totalCount} шт.`}>
+                                              <span className="px-1.5 py-0.5 rounded-lg bg-blue-100 text-blue-900 font-black text-[8.5px] flex items-center gap-0.5 border border-blue-300/60" title={`Отсканировано: ${scannedCount} из ${totalCount} шт.`}>
                                                 <span>⚡ {scannedCount}/{totalCount} шт</span>
                                               </span>
                                             ) : isAutoAssignedToday && scannedCount === 0 ? (
-                                              <span className="px-1.5 py-0.5 rounded bg-blue-50 text-blue-800 font-bold text-[8px] flex items-center gap-0.5 border border-blue-200" title="В работе сегодня">
+                                              <span className="px-1.5 py-0.5 rounded-lg bg-blue-50 text-blue-800 font-bold text-[8.5px] flex items-center gap-0.5 border border-blue-200" title="В работе сегодня">
                                                 <span>⚡ В работе</span>
                                               </span>
                                             ) : (
-                                              <span className="text-[8px] font-bold text-slate-500">
+                                              <span className="text-[8.5px] font-bold text-slate-500">
                                                 В плане
                                               </span>
                                             )}
                                           </div>
 
                                           {/* Line 4: Volume & Parts Footnote */}
-                                          <div className="flex items-center justify-between text-[8px] sm:text-[8.5px] font-semibold text-slate-500 pt-1 border-t border-black/5 w-full">
+                                          <div className="flex items-center justify-between text-[8px] sm:text-[9px] font-semibold text-slate-500 pt-1 border-t border-black/5 w-full">
                                             <span className="font-bold">{order.partsCount || 0} дет.</span>
                                             <span>{order.totalAreaM2 ? `${order.totalAreaM2} м²` : ''}</span>
                                           </div>
@@ -2083,6 +2095,13 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                       </span>
                     )}
 
+                    {order.plannedByEmployeeName && (
+                      <span className="px-2.5 py-1 rounded-lg text-[11px] font-bold text-blue-800 bg-blue-50 border border-blue-200 flex items-center gap-1 shrink-0" title={`Спланировал(а): ${order.plannedByEmployeeName}`}>
+                        <User className="w-3 h-3 text-blue-600" />
+                        <span>План: {order.plannedByEmployeeName}</span>
+                      </span>
+                    )}
+
                     {/* Delete / Restore Actions */}
                     {order.isDeleted ? (
                       <button
@@ -2216,12 +2235,18 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                             const newDate = e.target.value;
                             const hasDate = !!newDate;
                             const firstProdStage = settings?.enabledStages?.find(s => s !== 'queue' && s !== 'ready') || 'cutting';
+                            const plannerName = currentEmployee?.name || currentUser?.name || 'Планировщик';
+                            const plannerId = currentEmployee?.id || currentUser?.id;
+                            const nowIso = new Date().toISOString();
                             onUpdateOrder({
                               ...order,
                               plannedCuttingDate: newDate,
                               isReadyForProduction: hasDate ? true : order.isReadyForProduction,
                               status: (hasDate && (order.status === 'planned' || !order.status)) ? 'in_progress' : order.status,
-                              currentStage: (!order.currentStage || order.currentStage === 'queue') && hasDate ? firstProdStage : order.currentStage
+                              currentStage: (!order.currentStage || order.currentStage === 'queue') && hasDate ? firstProdStage : order.currentStage,
+                              plannedByEmployeeId: hasDate ? (order.plannedByEmployeeId || plannerId) : order.plannedByEmployeeId,
+                              plannedByEmployeeName: hasDate ? (order.plannedByEmployeeName || plannerName) : order.plannedByEmployeeName,
+                              plannedAt: hasDate ? (order.plannedAt || nowIso) : order.plannedAt
                             });
                           }}
                           className="bg-transparent font-bold text-slate-800 text-xs focus:outline-none cursor-pointer mt-0.5"

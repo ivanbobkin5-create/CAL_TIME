@@ -23,14 +23,16 @@ import {
   ExternalLink,
   Tag
 } from 'lucide-react';
-import { ProductionOrder, ERPEmployee, OrderPackage } from '../types';
+import { ProductionOrder, ERPEmployee, OrderPackage, ERPCompanySettings } from '../types';
 import { formatDeadlineDate, formatDateTimeSafe, formatDateSafe, getStageNameRussian } from '../utils';
+import { isStageEnabled } from '../utils/stageReadiness';
 import { printArchiveOrderPassport } from '../utils/archivePassportPrinter';
 import { printPackageLabelDirect } from '../utils/packageLabelPrinter';
 
 interface ERPArchiveOrderModalProps {
   order: ProductionOrder;
   employees?: ERPEmployee[];
+  settings?: ERPCompanySettings;
   onClose: () => void;
   onRestoreOrder?: (orderId: string) => void;
 }
@@ -40,6 +42,7 @@ type ArchiveTab = 'packages' | 'hardware' | 'stages' | 'deviations' | 'birka';
 export const ERPArchiveOrderModal: React.FC<ERPArchiveOrderModalProps> = ({
   order,
   employees = [],
+  settings,
   onClose,
   onRestoreOrder
 }) => {
@@ -93,19 +96,17 @@ export const ERPArchiveOrderModal: React.FC<ERPArchiveOrderModalProps> = ({
     return matchesName || matchesCode || matchesParts || matchesHw;
   });
 
-  // Stage names dictionary
+  // Stage names dictionary (deduplicated)
   const stageNames: Record<string, { label: string; color: string }> = {
     queue: { label: 'Планирование', color: 'bg-slate-100 text-slate-700 border-slate-200' },
     cutting: { label: 'Распил', color: 'bg-amber-100 text-amber-800 border-amber-200' },
     edging: { label: 'Кромкооблицовка', color: 'bg-blue-100 text-blue-800 border-blue-200' },
     cnc: { label: 'Присадка / ЧПУ', color: 'bg-purple-100 text-purple-800 border-purple-200' },
-    milling: { label: 'Присадка / ЧПУ', color: 'bg-purple-100 text-purple-800 border-purple-200' },
     facades: { label: 'Фасады', color: 'bg-pink-100 text-pink-800 border-pink-200' },
     assembly: { label: 'Сборка', color: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
     kitting: { label: 'Комплектовка', color: 'bg-cyan-100 text-cyan-800 border-cyan-200' },
     qc: { label: 'Контроль ОТК', color: 'bg-indigo-100 text-indigo-800 border-indigo-200' },
     packing: { label: 'Упаковка', color: 'bg-orange-100 text-orange-800 border-orange-200' },
-    packaging: { label: 'Упаковка', color: 'bg-orange-100 text-orange-800 border-orange-200' },
     ready: { label: 'Готово к отгрузке', color: 'bg-teal-100 text-teal-800 border-teal-200' },
     shipping: { label: 'Отгрузка', color: 'bg-emerald-100 text-emerald-800 border-emerald-200' }
   };
@@ -621,7 +622,9 @@ export const ERPArchiveOrderModal: React.FC<ERPArchiveOrderModalProps> = ({
                 </h4>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {Object.entries(stageNames).map(([stageKey, meta]) => {
+                  {Object.entries(stageNames)
+                    .filter(([stageKey]) => isStageEnabled(settings, stageKey))
+                    .map(([stageKey, meta]) => {
                     const stData = stageProgress[stageKey as keyof typeof stageProgress];
                     const isDone = stData?.status === 'done' || 
                                    (stageKey === 'shipping' && (isFullyShipped || order.status === 'shipped' || !!order.shippedAt)) ||
@@ -655,10 +658,18 @@ export const ERPArchiveOrderModal: React.FC<ERPArchiveOrderModalProps> = ({
 
                         <div className="space-y-1 text-xs text-slate-600">
                           <div>
-                            Исполнитель: <strong className="text-slate-900">{stData?.completedBy || '—'}</strong>
+                            Исполнитель: <strong className="text-slate-900">
+                              {stageKey === 'queue' && order.plannedByEmployeeName 
+                                ? order.plannedByEmployeeName 
+                                : (stData?.completedBy || '—')}
+                            </strong>
                           </div>
                           <div>
-                            Дата завершения: <span className="font-mono text-slate-800">{formatDateTimeSafe(stData?.completedAt)}</span>
+                            Дата завершения: <span className="font-mono text-slate-800">
+                              {stageKey === 'queue' && order.plannedAt 
+                                ? formatDateTimeSafe(order.plannedAt) 
+                                : formatDateTimeSafe(stData?.completedAt)}
+                            </span>
                           </div>
                           {stData?.notes && (
                             <div className="text-[11px] text-slate-500 italic pt-1">

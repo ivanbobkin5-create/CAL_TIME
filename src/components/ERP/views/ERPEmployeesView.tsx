@@ -274,7 +274,13 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
                   <div className="flex items-center justify-between text-slate-600">
                     <span className="text-slate-400">Оплата:</span>
                     <span className="font-bold text-indigo-600">
-                      {emp.rateType === 'piecework' ? 'Сдельная от выработки' : `${(emp.baseRate || 55000)?.toLocaleString('ru-RU')} ₽ / мес`}
+                      {emp.rateType === 'piecework' 
+                        ? (emp.baseRate && emp.baseRate > 0 ? `Сдельная + оклад ${emp.baseRate.toLocaleString('ru-RU')} ₽` : 'Сдельная от выработки')
+                        : emp.rateType === 'hourly'
+                        ? `${(emp.baseRate || 350)?.toLocaleString('ru-RU')} ₽ / ч`
+                        : emp.rateType === 'shift'
+                        ? `${(emp.baseRate || 3000)?.toLocaleString('ru-RU')} ₽ / смена`
+                        : `${(emp.baseRate || 55000)?.toLocaleString('ru-RU')} ₽ / мес`}
                     </span>
                   </div>
                   {(emp.carPlate || emp.carModel) && (
@@ -542,20 +548,28 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
                         onChange={(e) => setFormEmployee({ ...formEmployee, rateType: e.target.value as any })}
                         className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500"
                       >
-                        <option value="piecework">Сдельная от выработки</option>
+                        <option value="piecework">Сдельная от выработки (+ оклад)</option>
                         <option value="salary">Фиксированный оклад</option>
                         <option value="hourly">Почасовая ставка</option>
+                        <option value="shift">Оплата за смену</option>
                       </select>
                     </div>
 
                     <div>
-                      <label className="block text-xs font-bold text-slate-700 mb-1">Базовая ставка (₽)</label>
+                      <label className="block text-xs font-bold text-slate-700 mb-1">
+                        {formEmployee.rateType === 'hourly' ? 'Ставка в час (₽/ч)' : formEmployee.rateType === 'shift' ? 'Ставка за смену (₽/смена)' : 'Базовый оклад в месяц (₽)'}
+                      </label>
                       <input
                         type="number"
-                        value={formEmployee.baseRate || 55000}
+                        min="0"
+                        placeholder="0"
+                        value={formEmployee.baseRate ?? 0}
                         onChange={(e) => setFormEmployee({ ...formEmployee, baseRate: Number(e.target.value) })}
                         className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
                       />
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        {formEmployee.rateType === 'piecework' ? 'При сделке: если оклад > 0, начисляется пропорционально сменам/часам (0 = чисто сдельная)' : 'Базовая ставка для расчета'}
+                      </p>
                     </div>
                   </div>
                 </>
