@@ -128,39 +128,40 @@ export function isMaterialOrFacadeItem(
   reviewKeywords?: string[],
   article?: string
 ): boolean {
-  // If item has a specific SKU / Article number, it's a specific product/hardware item, NOT a raw sheet material
+  // 1. If item has a specific SKU / Article number, it's a specific product/hardware item, NOT a raw sheet material
   if (article && article.trim().length > 0) {
     return false;
   }
 
   const lower = name.toLowerCase();
 
-  // Explicit hardware / fittings terms that should never be flagged as sheet material or facade plate
+  // 2. Explicit hardware / fittings terms that should ALWAYS be treated as hardware, even if they mention "фасад", "дверь", "стекло" etc.
   const HARDWARE_FITTINGS_TERMS = [
-    'толкатель', 'нажимной', 'петл', 'стяжк', 'крепеж', 'уголок', 'ручк', 'доводчик',
+    'толкатель', 'нажимной', 'выталкиватель', 'петл', 'стяжк', 'крепеж', 'уголок', 'ручк', 'доводчик',
     'защелк', 'механизм', 'подъемник', 'направляющ', 'опор', 'держатель', 'амортизатор',
-    'демпфер', 'клипс', 'фиксатор', 'заглушк', 'эксцентрик', 'евровинт', 'конфирмат'
+    'демпфер', 'клипс', 'фиксатор', 'заглушк', 'эксцентрик', 'евровинт', 'конфирмат',
+    'подвес', 'навес', 'трафарет', 'адаптер', 'соединитель', 'крючок', 'замок'
   ];
 
   if (HARDWARE_FITTINGS_TERMS.some(term => lower.includes(term))) {
     return false;
   }
 
-  // 1. Check custom review keywords configured in settings (e.g. Двери, Купе, Стекло, Двери RIAL, Зеркало, Фасады)
+  // 3. Check custom review keywords configured in settings (e.g. Двери, Купе, Стекло, Двери RIAL, Зеркало, Фасады)
   if (reviewKeywords && reviewKeywords.length > 0) {
     if (reviewKeywords.some(kw => kw && kw.trim() && lower.includes(kw.toLowerCase().trim()))) {
       return true;
     }
   }
 
-  // 2. Check custom exclude keywords
+  // 4. Check custom exclude keywords
   if (excludeKeywords && excludeKeywords.length > 0) {
     if (excludeKeywords.some(kw => kw && kw.trim() && lower.includes(kw.toLowerCase().trim()))) {
       return true;
     }
   }
 
-  // 3. Fallback built-in patterns
+  // 5. Fallback built-in patterns
   return SHEET_AND_FACADE_PATTERNS.some(pat => pat.test(lower));
 }
 

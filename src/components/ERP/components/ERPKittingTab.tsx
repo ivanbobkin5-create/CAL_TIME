@@ -62,10 +62,25 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
   const kittingPackages = existingPackages.filter(p => p.type === 'kitting');
   const nextNumber = existingPackages.length + 1;
 
+  const getInitialDocs = () => {
+    const docsList = settings?.requiredKittingDocuments || [
+      { id: 'doc-1', name: 'Паспорт изделия и инструкция по сборке', enabled: true },
+      { id: 'doc-2', name: 'Акт приема-передачи товара', enabled: true },
+      { id: 'doc-3', name: 'Чертежи и схема разметки', enabled: true }
+    ];
+    const initial: Record<string, boolean> = {};
+    docsList.forEach(d => {
+      if (d.enabled !== false) {
+        initial[d.id] = true;
+      }
+    });
+    return initial;
+  };
+
   // Selected hardware items to be put into the current box being prepared
   // Map of hardwareId -> quantity to put in this box
   const [draftBoxItems, setDraftBoxItems] = useState<Record<string, number>>({});
-  const [selectedDocs, setSelectedDocs] = useState<Record<string, boolean>>({});
+  const [selectedDocs, setSelectedDocs] = useState<Record<string, boolean>>(() => getInitialDocs());
   const [packageName, setPackageName] = useState<string>(`Место ${nextNumber} (Фурнитура)`);
   const [customNotes, setCustomNotes] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -682,7 +697,7 @@ export const ERPKittingTab: React.FC<ERPKittingTabProps> = ({
       }
     }
     setDraftBoxItems({});
-    setSelectedDocs({});
+    setSelectedDocs(getInitialDocs());
     setCustomNotes('');
     setPackageName(`Место ${existingPackages.length + 1} (Фурнитура)`);
     setFeedbackMsg('Создано новое чистое место комплектации.');

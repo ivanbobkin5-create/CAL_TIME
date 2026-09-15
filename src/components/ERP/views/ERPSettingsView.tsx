@@ -2365,6 +2365,54 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                   className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-black text-slate-900 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 />
               </div>
+
+              {/* Installation & Assembly Tariffs */}
+              <div className="p-4 bg-indigo-50/70 rounded-2xl border border-indigo-200 col-span-1 sm:col-span-2 lg:col-span-3 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Wrench className="w-4 h-4 text-indigo-600" />
+                  <span className="font-bold text-slate-900 text-xs uppercase tracking-wider">
+                    Расценки для раздела «Монтаж и сборка»
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="p-3 bg-white rounded-xl border border-indigo-100">
+                    <label className="block text-xs font-bold text-slate-800 mb-1">
+                      Выезд сборщика на объект (₽)
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.installationTravelRate || 1500}
+                      onChange={(e) => setFormData({ ...formData, installationTravelRate: Number(e.target.value) })}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 font-black text-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                  </div>
+
+                  <div className="p-3 bg-white rounded-xl border border-indigo-100">
+                    <label className="block text-xs font-bold text-slate-800 mb-1">
+                      Выезд по рекламации (₽)
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.installationReclamationRate || 1000}
+                      onChange={(e) => setFormData({ ...formData, installationReclamationRate: Number(e.target.value) })}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 font-black text-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                  </div>
+
+                  <div className="p-3 bg-white rounded-xl border border-indigo-100">
+                    <label className="block text-xs font-bold text-slate-800 mb-1">
+                      Забор фурнитуры / Докупка (₽)
+                    </label>
+                    <input
+                      type="number"
+                      value={formData.installationHardwarePickupRate || 500}
+                      onChange={(e) => setFormData({ ...formData, installationHardwarePickupRate: Number(e.target.value) })}
+                      className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 font-black text-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -3735,6 +3783,119 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                   </div>
                 </label>
               </div>
+
+              {/* Installation and Reclamation Stages & Keyword Search Settings */}
+              <div className="pt-4 border-t border-indigo-200/80 space-y-4 bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100">
+                <div className="flex items-center gap-2">
+                  <Wrench className="w-5 h-5 text-indigo-600" />
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-sm">Настройки раздела «Монтаж и сборка»</h4>
+                    <p className="text-[11px] text-slate-500">
+                      Укажите стадии Битрикс24 и ключевые слова для фильтрации сделок/задач по монтажу и рекламациям
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Installation Stage & Keywords */}
+                  <div className="p-3.5 bg-white rounded-xl border border-indigo-100 space-y-3">
+                    <label className="block text-xs font-bold text-indigo-900 flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
+                      Стадия Битрикс24 для раздела Монтаж и Сборка:
+                    </label>
+
+                    {!manualStageInputMode && (b24Stages.length > 0 || isFetchingB24Stages) ? (
+                      <select
+                        value={formData.installationStageId || ''}
+                        onChange={(e) => setFormData(prev => ({ ...prev, installationStageId: e.target.value }))}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-50 hover:bg-white border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                      >
+                        <option value="">-- Фильтровать по ключевым словам из всех стадий --</option>
+                        {formData.installationStageId && !filteredB24Stages.some(s => s.id === formData.installationStageId) && (
+                          <option value={formData.installationStageId}>⚠️ {formData.installationStageId} (текущая)</option>
+                        )}
+                        {filteredB24Stages.map(st => (
+                          <option key={`inst-${st.categoryId}-${st.id}`} value={st.id}>
+                            {st.name} [{st.id}] {b24Categories.length > 2 && st.categoryName ? `(${st.categoryName})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        placeholder="Например: C1:EXECUTING"
+                        value={formData.installationStageId || ''}
+                        onChange={(e) => setFormData(prev => ({ ...prev, installationStageId: e.target.value }))}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                    )}
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                        Ключевые слова для поиска задач Монтажа (через запятую)
+                      </label>
+                      <CommaSeparatedInput
+                        valueArray={formData.installationKeywords || ['монтаж', 'сборка', 'установка', 'у клиента']}
+                        onChangeArray={(newKeywords) => setFormData(prev => ({ ...prev, installationKeywords: newKeywords }))}
+                        placeholder="монтаж, сборка, установка"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 font-mono text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Робот ищет задачи Битрикс24 со словами или тегами из списка
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Reclamation Stage & Keywords */}
+                  <div className="p-3.5 bg-white rounded-xl border border-rose-100 space-y-3">
+                    <label className="block text-xs font-bold text-rose-900 flex items-center gap-1.5">
+                      <span className="w-2.5 h-2.5 rounded-full bg-rose-600"></span>
+                      Стадия Битрикс24 для Рекламаций:
+                    </label>
+
+                    {!manualStageInputMode && (b24Stages.length > 0 || isFetchingB24Stages) ? (
+                      <select
+                        value={formData.reclamationStageId || ''}
+                        onChange={(e) => setFormData(prev => ({ ...prev, reclamationStageId: e.target.value }))}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-50 hover:bg-white border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-rose-500 cursor-pointer"
+                      >
+                        <option value="">-- Фильтровать по ключевым словам из всех стадий --</option>
+                        {formData.reclamationStageId && !filteredB24Stages.some(s => s.id === formData.reclamationStageId) && (
+                          <option value={formData.reclamationStageId}>⚠️ {formData.reclamationStageId} (текущая)</option>
+                        )}
+                        {filteredB24Stages.map(st => (
+                          <option key={`rec-${st.categoryId}-${st.id}`} value={st.id}>
+                            {st.name} [{st.id}] {b24Categories.length > 2 && st.categoryName ? `(${st.categoryName})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        placeholder="Например: C1:RECLAMATION"
+                        value={formData.reclamationStageId || ''}
+                        onChange={(e) => setFormData(prev => ({ ...prev, reclamationStageId: e.target.value }))}
+                        className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-rose-500"
+                      />
+                    )}
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                        Ключевые слова для поиска задач Рекламаций (через запятую)
+                      </label>
+                      <CommaSeparatedInput
+                        valueArray={formData.reclamationKeywords || ['рекламация', 'брак', 'переделка', 'замена', 'доработка']}
+                        onChangeArray={(newKeywords) => setFormData(prev => ({ ...prev, reclamationKeywords: newKeywords }))}
+                        placeholder="рекламация, брак, переделка"
+                        className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 font-mono text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-rose-500"
+                      />
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        Ищет рекламационные задачи и помечает их для расследования виновных и штрафов
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <div className="space-y-4">
@@ -4574,6 +4735,66 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                   />
                   <span className="text-xs font-bold text-slate-800">Доступно сотрудникам</span>
                 </label>
+              </div>
+
+              {/* 10. Installation & Assembly */}
+              <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div>
+                    <div className="font-bold text-slate-900 text-xs flex items-center gap-1.5">
+                      <Wrench className="w-4 h-4 text-indigo-600" /> Раздел «Монтаж и сборка»
+                    </div>
+                    <div className="text-[11px] text-slate-500">Задачи на сборку у заказчика, выезды, рекламации и статусы оплаты</div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={formData.installationSectionEnabled === false ? 'none' : (formData.installationAllowedEmployeeIds && formData.installationAllowedEmployeeIds.length > 0 ? 'custom' : 'all')}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        if (val === 'none') {
+                          setFormData({ ...formData, installationSectionEnabled: false, installationAllowedEmployeeIds: [] });
+                        } else if (val === 'all') {
+                          setFormData({ ...formData, installationSectionEnabled: true, installationAllowedEmployeeIds: [] });
+                        } else {
+                          setFormData({ ...formData, installationSectionEnabled: false, installationAllowedEmployeeIds: formData.installationAllowedEmployeeIds || [] });
+                        }
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      <option value="all">Доступно всем сотрудникам</option>
+                      <option value="none">Только начальнику цеха</option>
+                      <option value="custom">Выбранным сотрудникам</option>
+                    </select>
+                  </div>
+                </div>
+
+                {formData.installationSectionEnabled === false && (
+                  <div className="pt-2 border-t border-slate-200/60">
+                    <div className="text-[11px] font-bold text-slate-700 mb-2">
+                      Разрешить доступ к разделу «Монтаж и сборка» отдельным сотрудникам (например, сборщикам мебели):
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                      {employees.map(emp => {
+                        const isChecked = (formData.installationAllowedEmployeeIds || []).includes(emp.id);
+                        return (
+                          <label key={emp.id} className="flex items-center gap-2 p-2 bg-white rounded-xl border border-slate-200 cursor-pointer text-xs">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={(e) => {
+                                const current = formData.installationAllowedEmployeeIds || [];
+                                const updated = e.target.checked ? [...current, emp.id] : current.filter(id => id !== emp.id);
+                                setFormData({ ...formData, installationAllowedEmployeeIds: updated });
+                              }}
+                              className="w-4 h-4 text-indigo-600 rounded cursor-pointer"
+                            />
+                            <span className="truncate font-medium text-slate-800">{emp.name} ({emp.productionRole || emp.role})</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* 10. Settings */}

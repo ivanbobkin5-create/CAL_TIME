@@ -30,7 +30,8 @@ import {
   Archive,
   Truck,
   PackageCheck,
-  Sparkles
+  Sparkles,
+  Wrench
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -41,7 +42,8 @@ import {
   ERPCompanySettings,
   ProductionStageId,
   SalaryAdjustment,
-  MaterialResidual
+  MaterialResidual,
+  InstallationTask
 } from './types';
 import { ERPLoader } from './ERPLoader';
 import { ERPDashboardView } from './views/ERPDashboardView';
@@ -55,6 +57,7 @@ import { ERPEmployeesView } from './views/ERPEmployeesView';
 import { ERPSettingsView } from './views/ERPSettingsView';
 import { ERPArchiveView } from './views/ERPArchiveView';
 import { ERPMaterialResidualsView } from './views/ERPMaterialResidualsView';
+import { ERPInstallationView } from './views/ERPInstallationView';
 import { ERPLoginView } from './views/ERPLoginView';
 import { ERPOrderWorkspaceView } from './views/ERPOrderWorkspaceView';
 import { ShiftSummaryModal } from './components/ShiftSummaryModal';
@@ -240,6 +243,88 @@ export const ERPApp: React.FC<ERPAppProps> = ({
   const [workspaceStageId, setWorkspaceStageId] = useState<ProductionStageId | null>(null);
   const [activeProductionStageId, setActiveProductionStageId] = useState<ProductionStageId | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // Installation Tasks State
+  const [installationTasks, setInstallationTasks] = useState<InstallationTask[]>(() => {
+    try {
+      const saved = localStorage.getItem(`erp_installation_tasks_${aliasOrId}`);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return [
+      {
+        id: 'inst-demo-1',
+        orderNumber: '11-0626-11',
+        clientName: 'Алексей Смирнов',
+        clientPhone: '+7 (916) 123-45-67',
+        address: 'г. Москва, пр-т Мира, д. 42, кв. 108',
+        floor: '7',
+        hasElevator: true,
+        assemblyPrice: 12500,
+        type: 'installation',
+        status: 'scheduled',
+        paymentStatus: 'unpaid',
+        scheduledDate: new Date().toISOString().split('T')[0],
+        installerEmployeeName: 'Ковалев Дмитрий',
+        createdAt: new Date().toISOString()
+      },
+      {
+        id: 'inst-demo-2',
+        orderNumber: '09-0412-05',
+        clientName: 'Мария Федорова',
+        clientPhone: '+7 (926) 987-65-43',
+        address: 'г. Москва, ул. Тверская, д. 15, кв. 3',
+        assemblyPrice: 2000,
+        type: 'reclamation',
+        status: 'in_progress',
+        paymentStatus: 'unpaid',
+        scheduledDate: new Date().toISOString().split('T')[0],
+        installerEmployeeName: 'Петров Иван',
+        culpritEmployeeName: 'Сидоров Алексей (Распил)',
+        penaltyAmount: 1500,
+        createdAt: new Date().toISOString()
+      }
+    ];
+  });
+
+  const handleAddInstallationTask = (taskData: Partial<InstallationTask>) => {
+    const newTask: InstallationTask = {
+      id: `inst-${Date.now()}`,
+      orderNumber: taskData.orderNumber || '0000',
+      clientName: taskData.clientName || 'Заказчик',
+      type: taskData.type || 'installation',
+      status: taskData.status || 'new',
+      paymentStatus: taskData.paymentStatus || 'unpaid',
+      createdAt: new Date().toISOString(),
+      ...taskData
+    };
+    setInstallationTasks(prev => {
+      const next = [newTask, ...prev];
+      try {
+        localStorage.setItem(`erp_installation_tasks_${aliasOrId}`, JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+  };
+
+  const handleUpdateInstallationTask = (updatedTask: InstallationTask) => {
+    setInstallationTasks(prev => {
+      const next = prev.map(t => t.id === updatedTask.id ? updatedTask : t);
+      try {
+        localStorage.setItem(`erp_installation_tasks_${aliasOrId}`, JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+  };
+
+  const handleDeleteInstallationTask = (id: string) => {
+    setInstallationTasks(prev => {
+      const next = prev.filter(t => t.id !== id);
+      try {
+        localStorage.setItem(`erp_installation_tasks_${aliasOrId}`, JSON.stringify(next));
+      } catch (e) {}
+      return next;
+    });
+  };
 
   // Helper to load order state from localStorage
   const loadLocalOrdersCache = (compId: string): Record<string, Partial<ProductionOrder>> => {
@@ -1471,6 +1556,11 @@ export const ERPApp: React.FC<ERPAppProps> = ({
         return settings.salariesSectionEnabled !== false;
       case 'employees':
         return settings.employeesSectionEnabled !== false;
+      case 'installation':
+        if (settings.installationSectionEnabled === false) {
+          return (settings.installationAllowedEmployeeIds || []).includes(empId);
+        }
+        return true;
       case 'settings':
         return settings.settingsSectionEnabled === true;
       default:
@@ -1485,6 +1575,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
     { id: 'schedule', label: 'График работы', icon: CalendarDays },
     { id: 'residuals', label: 'Остатки материалов', icon: Layers },
     { id: 'production', label: 'Производство', icon: Factory, badge: orders.filter(o => !o.isDeleted && (o.isReadyForProduction || o.status === 'in_progress' || (o.currentStage && o.currentStage !== 'queue') || !!o.plannedCuttingDate || (o.stagePlannedDates && Object.keys(o.stagePlannedDates).length > 0)) && o.status !== 'completed' && o.status !== 'shipped').length },
+    { id: 'installation', label: 'Монтаж и сборка', icon: Wrench, badge: installationTasks.filter(t => t.status !== 'completed' && t.status !== 'cancelled').length },
     { id: 'archive', label: 'Архив заказов', icon: Archive, badge: orders.filter(o => !o.isDeleted && (o.status === 'completed' || o.status === 'shipped')).length },
     { id: 'reports', label: 'Аналитика и отчеты', icon: BarChart3 },
     { id: 'salaries', label: 'Зарплаты', icon: RussianRuble },
@@ -1956,6 +2047,21 @@ export const ERPApp: React.FC<ERPAppProps> = ({
                   onAddEmployee={handleAddEmployee}
                   onUpdateEmployee={handleUpdateEmployee}
                   onDeleteEmployee={handleDeleteEmployee}
+                />
+              )}
+
+              {activeSection === 'installation' && (
+                <ERPInstallationView
+                  tasks={installationTasks}
+                  employees={employees}
+                  orders={orders}
+                  settings={settings}
+                  onAddTask={handleAddInstallationTask}
+                  onUpdateTask={handleUpdateInstallationTask}
+                  onDeleteTask={handleDeleteInstallationTask}
+                  onAddSalaryAdjustment={handleAddAdjustment}
+                  onSyncBitrixTasks={handleSyncOrders}
+                  isSyncingBitrix={isSyncingOrders}
                 />
               )}
 

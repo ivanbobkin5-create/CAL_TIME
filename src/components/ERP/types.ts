@@ -8,6 +8,7 @@ export type ERPSection =
   | 'salaries'
   | 'employees'
   | 'residuals'
+  | 'installation'
   | 'settings';
 
 export interface MaterialResidual {
@@ -480,6 +481,22 @@ export interface ERPCompanySettings {
   reportsSectionEnabled?: boolean; // Доступ к разделу Аналитика и отчеты
   reportsViewScope?: 'all' | 'own_only'; // Объем аналитики: все производство или только за себя
   employeesSectionEnabled?: boolean; // Доступ к разделу Сотрудники
+  installationSectionEnabled?: boolean; // Доступ к разделу Монтаж и сборка
+  installationAccessMode?: 'all' | 'none' | 'custom';
+  installationAllowedEmployeeIds?: string[];
+  
+  // Настройки стадии и поиска для раздела Монтаж и сборка
+  installationStageId?: string; // Стадия в Битрикс24 для планового монтажа
+  reclamationStageId?: string;  // Стадия в Битрикс24 для рекламаций
+  installationKeywords?: string[]; // Ключевые слова для поиска монтажных задач
+  reclamationKeywords?: string[];  // Ключевые слова для поиска задач по рекламации
+
+  // Расценки на операции монтажа и сборки
+  installationTravelRate?: number; // Тариф выезда сборщика
+  installationReclamationRate?: number; // Тариф выезда по рекламации
+  installationHardwarePickupRate?: number; // Тариф забора фурнитуры
+  installationCustomRates?: Array<{ id: string; name: string; rate: number }>; // Кастомные операции
+  
   settingsSectionEnabled?: boolean; // Доступ к настройкам для обычных сотрудников
 
   autoScheduleOrders: boolean;
@@ -582,4 +599,54 @@ export interface SalaryAdjustment {
   reason: string; // Примечание (за что)
   date: string; // YYYY-MM-DD
   createdBy?: string;
+}
+
+export interface InstallationTask {
+  id: string;
+  orderId?: string;
+  orderNumber: string;
+  bitrixDealId?: string;
+  bitrixTaskId?: string;
+  bitrixTaskUrl?: string;
+  clientName: string;
+  clientPhone?: string;
+  address?: string;
+  floor?: string;
+  hasElevator?: boolean | string;
+  assemblyPrice?: number; // Стоимость сборки из Битрикс24 или вручную
+  deliveryPrice?: number;
+  type: 'installation' | 'reclamation'; // Монтаж или Рекламация
+  stageId?: string;
+  stageName?: string;
+  
+  installerEmployeeId?: string;  // Назначенный сборщик (мебели)
+  installerEmployeeName?: string;
+  additionalInstallerIds?: string[]; // Доп. сборщики
+  
+  status: 'new' | 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+  paymentStatus: 'unpaid' | 'paid' | 'partial';
+  paidAmount?: number;
+  
+  scheduledDate?: string;
+  completedDate?: string;
+  
+  comment?: string;
+  packagesCount?: number;
+  digitalLocations?: string[];
+  
+  // Виновник рекламации для списывания штрафов
+  culpritEmployeeId?: string;
+  culpritEmployeeName?: string;
+  penaltyAmount?: number;
+  
+  // Дополнительные выполненные операции (выезд, забор фурнитуры и т.д.)
+  completedOperations?: Array<{
+    id: string;
+    name: string;
+    rate: number;
+    completedAt?: string;
+  }>;
+
+  createdAt: string;
+  updatedAt?: string;
 }
