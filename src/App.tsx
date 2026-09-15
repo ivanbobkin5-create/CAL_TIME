@@ -9409,6 +9409,8 @@ const SummaryView = ({
     return 400;
   })();
 
+  const isSalonOrDesigner = companyType === "Салон" || companyType === "Дизайнер";
+
   let totalCost = 0;
   let allDataEntered = true;
   let totalLdspSheets = 0;
@@ -11075,8 +11077,6 @@ const SummaryView = ({
   }, [summaryRows]);
 
   const sumWithoutDeliveryAndAssembly = finalTotal - deliverySum - assemblySum;
-
-  const isSalonOrDesigner = companyType === "Салон" || companyType === "Дизайнер";
 
   const salonAnalytics = React.useMemo(() => {
     if (!isSalonOrDesigner) return null;
