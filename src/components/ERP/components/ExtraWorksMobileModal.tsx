@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   X, 
   Plus, 
@@ -10,7 +10,8 @@ import {
   Info, 
   Trash2, 
   Wrench,
-  CheckCircle2
+  CheckCircle2,
+  Search
 } from 'lucide-react';
 import { 
   InstallationTask, 
@@ -61,6 +62,17 @@ export const ExtraWorksMobileModal: React.FC<ExtraWorksMobileModalProps> = ({
   const [showAddCustom, setShowAddCustom] = useState(false);
   const [customName, setCustomName] = useState('');
   const [customPrice, setCustomPrice] = useState<number>(500);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Filter tariff items by search query
+  const filteredTariffItems = useMemo(() => {
+    if (!searchQuery.trim()) return effectiveTariff.items;
+    const q = searchQuery.toLowerCase().trim();
+    return effectiveTariff.items.filter(item => 
+      item.name.toLowerCase().includes(q) || 
+      (item.category && item.category.toLowerCase().includes(q))
+    );
+  }, [effectiveTariff.items, searchQuery]);
 
   // Auto-save whenever performedMap or customWorks change
   const saveChanges = (newMap: Record<string, PerformedExtraWork>, newCustom: PerformedExtraWork[]) => {
@@ -183,13 +195,41 @@ export const ExtraWorksMobileModal: React.FC<ExtraWorksMobileModalProps> = ({
           </span>
         </div>
 
+        {/* Search Bar for Extra Works */}
+        <div className="p-3 bg-slate-50 border-b border-slate-200/80 shrink-0">
+          <div className="relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Поиск услуги по названию..."
+              className="w-full pl-9 pr-8 py-2 rounded-xl bg-white border border-slate-200 text-xs text-slate-900 font-medium placeholder-slate-400 focus:outline-hidden focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+        </div>
+
         {/* Work Items Checklist (Scrollable) */}
         <div className="p-4 overflow-y-auto space-y-3 flex-1">
           <div className="text-[11px] font-black text-slate-400 uppercase tracking-wider">
             Отметьте выполненные доп. работы:
           </div>
 
-          {effectiveTariff.items.map(item => {
+          {filteredTariffItems.length === 0 ? (
+            <div className="p-6 text-center text-xs text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+              По запросу «{searchQuery}» работы не найдены
+            </div>
+          ) : (
+            filteredTariffItems.map(item => {
             const performed = performedMap[item.id];
             const qty = performed ? performed.quantity : 0;
             const isSelected = qty > 0;
@@ -242,7 +282,7 @@ export const ExtraWorksMobileModal: React.FC<ExtraWorksMobileModalProps> = ({
                 </div>
               </div>
             );
-          })}
+          }))}
 
           {/* Custom Works Section */}
           {customWorks.length > 0 && (

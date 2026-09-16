@@ -429,12 +429,6 @@ export const ERPInstallationView: React.FC<ERPInstallationViewProps> = ({
               ? 'Попробуйте изменить параметры поиска или сбросить фильтры.'
               : 'В разделе пока нет зарегистрированных выездов на монтаж. Добавьте задачу вручную или загрузите из Битрикс24.'}
           </p>
-          <button
-            onClick={handleOpenAdd}
-            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-sm cursor-pointer"
-          >
-            Добавить первый монтаж
-          </button>
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -474,7 +468,7 @@ export const ERPInstallationView: React.FC<ERPInstallationViewProps> = ({
                       </div>
 
                       <h3 className="font-black text-slate-900 text-base mt-2 flex items-center gap-1.5">
-                        <span>Заказ № {task.orderNumber}</span>
+                        <span>{task.orderNumber}</span>
                         {task.bitrixTaskUrl && (
                           <a
                             href={task.bitrixTaskUrl}
@@ -948,7 +942,7 @@ export const ERPInstallationView: React.FC<ERPInstallationViewProps> = ({
               <div className="flex items-center gap-2">
                 <ShieldAlert className="w-5 h-5 text-rose-600" />
                 <h3 className="font-black text-slate-900 text-base">
-                  Удержание по рекламации (Заказ № {penaltyTaskModal.orderNumber})
+                  Удержание по рекламации ({penaltyTaskModal.orderNumber})
                 </h3>
               </div>
               <button

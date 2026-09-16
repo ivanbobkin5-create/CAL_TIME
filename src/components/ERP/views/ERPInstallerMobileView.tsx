@@ -25,7 +25,8 @@ import {
   Coins,
   FileSpreadsheet,
   AlertTriangle,
-  Camera
+  Camera,
+  Play
 } from 'lucide-react';
 import { ERPEmployee, InstallationTask, InstallationActSettings } from '../types';
 import { ExtraWorksMobileModal } from '../components/ExtraWorksMobileModal';
@@ -89,19 +90,16 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
     } as ERPEmployee;
   }, [employees, installerId]);
 
-  // Filter Tasks for this Installer
+  // Filter Tasks strictly for this Installer (where this employee is selected/assigned as executor)
   const installerTasks = useMemo(() => {
     return tasks.filter(t => {
-      if (t.installerEmployeeId === installer.id || t.installerEmployeeName === installer.name) {
-        return true;
-      }
-      // Unassigned proposed tasks for assemblers
-      if (!t.installerEmployeeId && (t.status === 'new' || t.status === 'scheduled')) {
-        return true;
-      }
-      return false;
+      const isAssignedToThisInstaller = 
+        (t.installerEmployeeId && (t.installerEmployeeId === installer.id || t.installerEmployeeId === installerId)) ||
+        (t.installerEmployeeName && installer.name && t.installerEmployeeName.trim().toLowerCase() === installer.name.trim().toLowerCase());
+
+      return Boolean(isAssignedToThisInstaller);
     });
-  }, [tasks, installer]);
+  }, [tasks, installer, installerId]);
 
   // Tab 1: Proposed Tasks (New or Scheduled without client agreement)
   const proposedTasks = useMemo(() => {
@@ -151,6 +149,17 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
     };
   }, [completedTasks, activeTasks]);
 
+  // Handle Starting Installation
+  const handleStartInstallation = (task: InstallationTask) => {
+    const updated: InstallationTask = {
+      ...task,
+      status: 'in_progress',
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    onUpdateTask(updated);
+  };
+
   // Handle Taking Task into Work (Agreeing Date & Time)
   const handleConfirmTakeInWork = (e: React.FormEvent) => {
     e.preventDefault();
@@ -160,7 +169,7 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
 
     const updated: InstallationTask = {
       ...takeModalTask,
-      status: 'scheduled',
+      status: 'in_progress',
       scheduledDate: scheduledDateTime,
       installerEmployeeId: installer.id,
       installerEmployeeName: installer.name,
@@ -226,74 +235,113 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
           )}
         </div>
 
-        {/* Quick Tabs Bar */}
-        <div className="max-w-md mx-auto mt-3.5 flex items-center gap-1 overflow-x-auto pb-0.5 no-scrollbar">
+        {/* Color Badge Tabs Bar (No horizontal scroll, compact colored cards) */}
+        <div className="max-w-md mx-auto mt-3 grid grid-cols-5 gap-1.5">
+          {/* Tab 1: Proposed */}
           <button
+            type="button"
             onClick={() => setActiveTab('proposed')}
-            className={`px-3 py-2 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`flex flex-col items-center justify-center py-2 px-1 rounded-2xl border transition-all cursor-pointer relative ${
               activeTab === 'proposed'
-                ? 'bg-cyan-600 text-white shadow-sm'
-                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
+                ? 'bg-amber-500 text-slate-950 border-amber-300 font-black shadow-md shadow-amber-500/20 scale-[1.02]'
+                : 'bg-amber-950/40 text-amber-300 border-amber-500/30 hover:bg-amber-900/50'
             }`}
           >
-            <span>Предлагаемый</span>
-            {proposedTasks.length > 0 && (
-              <span className="w-5 h-5 rounded-full bg-amber-500 text-slate-950 font-black text-[10px] flex items-center justify-center">
-                {proposedTasks.length}
-              </span>
-            )}
+            <div className="flex items-center gap-1">
+              <Clock className="w-3.5 h-3.5 shrink-0" />
+              {proposedTasks.length > 0 && (
+                <span className={`px-1.5 py-0.2 text-[9px] font-black rounded-full leading-none ${
+                  activeTab === 'proposed' ? 'bg-slate-950 text-amber-400' : 'bg-amber-500 text-slate-950'
+                }`}>
+                  {proposedTasks.length}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] font-extrabold leading-tight mt-1 truncate max-w-full text-center">
+              Заявки
+            </span>
           </button>
 
+          {/* Tab 2: Active */}
           <button
+            type="button"
             onClick={() => setActiveTab('active')}
-            className={`px-3 py-2 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`flex flex-col items-center justify-center py-2 px-1 rounded-2xl border transition-all cursor-pointer relative ${
               activeTab === 'active'
-                ? 'bg-cyan-600 text-white shadow-sm'
-                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
+                ? 'bg-cyan-500 text-slate-950 border-cyan-300 font-black shadow-md shadow-cyan-500/20 scale-[1.02]'
+                : 'bg-cyan-950/40 text-cyan-300 border-cyan-500/30 hover:bg-cyan-900/50'
             }`}
           >
-            <span>Активные</span>
-            {activeTasks.length > 0 && (
-              <span className="w-5 h-5 rounded-full bg-cyan-400 text-slate-950 font-black text-[10px] flex items-center justify-center">
-                {activeTasks.length}
-              </span>
-            )}
+            <div className="flex items-center gap-1">
+              <Wrench className="w-3.5 h-3.5 shrink-0" />
+              {activeTasks.length > 0 && (
+                <span className={`px-1.5 py-0.2 text-[9px] font-black rounded-full leading-none ${
+                  activeTab === 'active' ? 'bg-slate-950 text-cyan-400' : 'bg-cyan-400 text-slate-950'
+                }`}>
+                  {activeTasks.length}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] font-extrabold leading-tight mt-1 truncate max-w-full text-center">
+              В работе
+            </span>
           </button>
 
+          {/* Tab 3: Completed */}
           <button
+            type="button"
             onClick={() => setActiveTab('completed')}
-            className={`px-3 py-2 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`flex flex-col items-center justify-center py-2 px-1 rounded-2xl border transition-all cursor-pointer relative ${
               activeTab === 'completed'
-                ? 'bg-cyan-600 text-white shadow-sm'
-                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
+                ? 'bg-emerald-500 text-slate-950 border-emerald-300 font-black shadow-md shadow-emerald-500/20 scale-[1.02]'
+                : 'bg-emerald-950/40 text-emerald-300 border-emerald-500/30 hover:bg-emerald-900/50'
             }`}
           >
-            <span>Завершенные</span>
-            {completedTasks.length > 0 && (
-              <span className="text-[10px] opacity-75">({completedTasks.length})</span>
-            )}
+            <div className="flex items-center gap-1">
+              <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />
+              {completedTasks.length > 0 && (
+                <span className={`px-1.5 py-0.2 text-[9px] font-black rounded-full leading-none ${
+                  activeTab === 'completed' ? 'bg-slate-950 text-emerald-400' : 'bg-emerald-500 text-slate-950'
+                }`}>
+                  {completedTasks.length}
+                </span>
+              )}
+            </div>
+            <span className="text-[10px] font-extrabold leading-tight mt-1 truncate max-w-full text-center">
+              Сдано
+            </span>
           </button>
 
+          {/* Tab 4: Earnings */}
           <button
+            type="button"
             onClick={() => setActiveTab('earnings')}
-            className={`px-3 py-2 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`flex flex-col items-center justify-center py-2 px-1 rounded-2xl border transition-all cursor-pointer relative ${
               activeTab === 'earnings'
-                ? 'bg-cyan-600 text-white shadow-sm'
-                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
+                ? 'bg-purple-500 text-slate-950 border-purple-300 font-black shadow-md shadow-purple-500/20 scale-[1.02]'
+                : 'bg-purple-950/40 text-purple-300 border-purple-500/30 hover:bg-purple-900/50'
             }`}
           >
-            <span>Заработок</span>
+            <Coins className="w-3.5 h-3.5 shrink-0" />
+            <span className="text-[10px] font-extrabold leading-tight mt-1 truncate max-w-full text-center">
+              Доход
+            </span>
           </button>
 
+          {/* Tab 5: Schedule */}
           <button
+            type="button"
             onClick={() => setActiveTab('schedule')}
-            className={`px-3 py-2 rounded-xl text-xs font-bold shrink-0 transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`flex flex-col items-center justify-center py-2 px-1 rounded-2xl border transition-all cursor-pointer relative ${
               activeTab === 'schedule'
-                ? 'bg-cyan-600 text-white shadow-sm'
-                : 'bg-slate-800/80 text-slate-300 hover:bg-slate-800'
+                ? 'bg-sky-500 text-slate-950 border-sky-300 font-black shadow-md shadow-sky-500/20 scale-[1.02]'
+                : 'bg-sky-950/40 text-sky-300 border-sky-500/30 hover:bg-sky-900/50'
             }`}
           >
-            <span>График</span>
+            <Calendar className="w-3.5 h-3.5 shrink-0" />
+            <span className="text-[10px] font-extrabold leading-tight mt-1 truncate max-w-full text-center">
+              График
+            </span>
           </button>
         </div>
       </div>
@@ -574,6 +622,28 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
 
                     {/* Actions */}
                     <div className="space-y-2 pt-1">
+                      {/* Status / Start Action */}
+                      {task.status !== 'in_progress' ? (
+                        <button
+                          type="button"
+                          onClick={() => handleStartInstallation(task)}
+                          className="w-full py-3 rounded-2xl bg-blue-600 hover:bg-blue-500 text-white font-black text-xs shadow-md shadow-blue-600/30 transition-all flex items-center justify-center gap-2 cursor-pointer"
+                        >
+                          <Play className="w-4 h-4 fill-white" />
+                          <span>▶ Начать монтаж (Статус в ERP: В процессе)</span>
+                        </button>
+                      ) : (
+                        <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl flex items-center justify-between text-blue-900">
+                          <div className="flex items-center gap-2 font-black text-xs">
+                            <span className="w-2.5 h-2.5 rounded-full bg-blue-600 animate-ping" />
+                            <span>Статус в ERP: В процессе монтажа</span>
+                          </div>
+                          <span className="text-[10px] font-extrabold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-lg">
+                            Выполняется
+                          </span>
+                        </div>
+                      )}
+
                       <div className="flex items-center gap-2">
                         <button
                           onClick={() => {

@@ -321,12 +321,35 @@ export const ERPApp: React.FC<ERPAppProps> = ({
 
   const handleUpdateInstallationTask = (updatedTask: InstallationTask) => {
     setInstallationTasks(prev => {
-      const next = prev.map(t => t.id === updatedTask.id ? updatedTask : t);
+      const exists = prev.some(t => t.id === updatedTask.id);
+      const next = exists ? prev.map(t => t.id === updatedTask.id ? updatedTask : t) : [updatedTask, ...prev];
       try {
         localStorage.setItem(`erp_installation_tasks_${aliasOrId}`, JSON.stringify(next));
       } catch (e) {}
       return next;
     });
+
+    // Also update order status in main ERP state if matching order exists
+    if (updatedTask.orderNumber) {
+      setOrders(prev => prev.map(o => {
+        if (o.orderNumber === updatedTask.orderNumber) {
+          let newStage = o.currentStage;
+          let newStatus = o.status;
+          if (updatedTask.status === 'in_progress') {
+            newStage = 'installation';
+            newStatus = 'in_progress';
+          } else if (updatedTask.status === 'completed') {
+            newStage = 'installation';
+          }
+          return {
+            ...o,
+            currentStage: newStage,
+            status: newStatus
+          };
+        }
+        return o;
+      }));
+    }
   };
 
   const handleDeleteInstallationTask = (id: string) => {
@@ -1587,6 +1610,22 @@ export const ERPApp: React.FC<ERPAppProps> = ({
     return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
   }, [orders, isShiftActive]);
 
+  // 0. Public Installer Passport View (No login or password required, opens instantly like product passport)
+  if (installerIdFromPath) {
+    return (
+      <ERPInstallerMobileView
+        installerId={installerIdFromPath}
+        aliasOrId={aliasOrId}
+        employees={employees}
+        tasks={installationTasks}
+        onUpdateTask={handleUpdateInstallationTask}
+        onBackToErp={() => setInstallerIdFromPath(null)}
+        actSettings={settings.installationActSettings}
+        companyName={company?.title || company?.name || settings.companyTitle || 'Мебельное производство'}
+      />
+    );
+  }
+
   // 1. Loading Splash (Strict pre-cabinet synchronization)
   if (isLoading) {
     return (
@@ -1760,21 +1799,6 @@ export const ERPApp: React.FC<ERPAppProps> = ({
     .join('')
     .substring(0, 2)
     .toUpperCase() || 'СП';
-
-  if (installerIdFromPath) {
-    return (
-      <ERPInstallerMobileView
-        installerId={installerIdFromPath}
-        aliasOrId={aliasOrId}
-        employees={employees}
-        tasks={installationTasks}
-        onUpdateTask={handleUpdateInstallationTask}
-        onBackToErp={() => setInstallerIdFromPath(null)}
-        actSettings={settings.installationActSettings}
-        companyName={company?.title || company?.name || settings.companyTitle || 'Мебельное производство'}
-      />
-    );
-  }
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row text-slate-800 font-sans selection:bg-blue-600 selection:text-white pb-20 md:pb-0">
