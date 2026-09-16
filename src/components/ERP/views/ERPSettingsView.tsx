@@ -55,7 +55,8 @@ import {
   ExternalLink,
   HelpCircle,
   Eye,
-  EyeOff
+  EyeOff,
+  Building2
 } from 'lucide-react';
 import { ERPCompanySettings, MachineEquipment, PackageLabelSettings, ProductionStageId, ERPNoteRule, ProductionOrder, ERPEmployee } from '../types';
 import { DEFAULT_BIRKA_COLUMN_MAPPING } from '../utils/birkaParser';
@@ -2698,7 +2699,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                 }`}
               >
                 <div className="flex items-center justify-between mb-1.5">
-                  <Building className="w-5 h-5 text-sky-600" />
+                  <Building2 className="w-5 h-5 text-sky-600" />
                   <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">CRM</span>
                 </div>
                 <div className="font-bold text-xs text-slate-900">Только Битрикс24</div>
@@ -2879,7 +2880,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
             {(formData.photoStorageTarget === 'bitrix24' || formData.photoStorageTarget === 'both') && (
               <div className="p-5 bg-sky-50/40 rounded-2xl border border-sky-100 space-y-3 animate-fadeIn text-xs text-slate-800">
                 <div className="font-bold text-sky-950 flex items-center gap-2">
-                  <Building className="w-4 h-4 text-sky-600" />
+                  <Building2 className="w-4 h-4 text-sky-600" />
                   <span>Интеграция загрузки фото в Битрикс24</span>
                 </div>
                 <p className="text-[11px] text-slate-600 leading-relaxed">

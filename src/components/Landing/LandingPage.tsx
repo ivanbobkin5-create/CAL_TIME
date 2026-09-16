@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   Calculator, 
   LayoutDashboard, 
@@ -13,38 +13,68 @@ import {
   Sparkles,
   Percent,
   Tag,
-  Gift
+  Gift,
+  QrCode,
+  Wrench,
+  Building2,
+  Cloud,
+  FileText,
+  ShieldCheck,
+  Check,
+  Layers,
+  Smartphone,
+  Cpu,
+  BarChart3,
+  HardDrive,
+  Clock,
+  PackageCheck,
+  Zap,
+  ExternalLink
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRegister: () => void }) => {
+  const [activeErpTab, setActiveErpTab] = useState<'shopfloor' | 'installer' | 'bitrix' | 'storage'>('shopfloor');
+
   return (
     <div className="min-h-screen bg-white">
       {/* Navigation */}
       <nav className="fixed top-0 left-0 right-0 bg-white/80 backdrop-blur-md z-50 border-b border-gray-100">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16 items-center">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-200">
                 <Calculator className="text-white w-6 h-6" />
               </div>
               <span className="text-xl font-black text-gray-900 tracking-tight hidden sm:inline">Мебельный <span className="text-blue-600">калькулятор</span></span>
               <span className="text-xl font-black text-gray-900 tracking-tight sm:hidden">Калькулятор</span>
             </div>
+
+            {/* Nav Menu */}
+            <div className="hidden md:flex items-center gap-6 text-xs font-bold text-slate-600">
+              <a href="#features" className="hover:text-blue-600 transition-colors">Возможности</a>
+              <a href="#erp-module" className="px-3 py-1.5 rounded-full bg-indigo-50 text-indigo-700 font-extrabold hover:bg-indigo-100 transition-all flex items-center gap-1.5 border border-indigo-100">
+                <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                <span>ERP Производство</span>
+              </a>
+              <a href="#marketing" className="hover:text-blue-600 transition-colors">Маркетинг</a>
+              <a href="#solutions" className="hover:text-blue-600 transition-colors">Для кого</a>
+            </div>
+
             <div className="flex items-center gap-4">
-              <div className="hidden md:flex items-center gap-2 text-sm text-gray-500 font-medium mr-2">
-                <Phone className="w-4 h-4" />
-                <span className="hover:text-blue-600 transition-colors">+7 (812) 507-99-27 <span className="text-gray-400">доб. 2</span></span>
+              <div className="hidden lg:flex items-center gap-2 text-xs text-gray-500 font-medium mr-2">
+                <Phone className="w-3.5 h-3.5 text-blue-600" />
+                <span className="hover:text-blue-600 transition-colors font-bold">+7 (812) 507-99-27 <span className="text-gray-400 font-normal">доб. 2</span></span>
               </div>
               <button 
                 onClick={onLogin}
-                className="text-sm font-bold text-gray-600 hover:text-blue-600 transition-colors"
+                className="text-sm font-bold text-gray-600 hover:text-blue-600 transition-colors cursor-pointer"
               >
                 Войти
               </button>
               <button 
                 onClick={onRegister}
-                className="px-6 py-2.5 bg-blue-600 text-white text-sm font-bold rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all"
+                className="px-5 py-2.5 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all cursor-pointer"
               >
                 Начать бесплатно
               </button>
@@ -54,44 +84,48 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
       </nav>
 
       {/* Hero Section */}
-      <section className="pt-32 pb-20 px-4">
-        <div className="max-w-7xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 px-4 py-2 bg-blue-50 text-blue-700 rounded-full text-sm font-bold mb-8 animate-bounce">
-            <CheckCircle2 className="w-4 h-4" />
-            Профессиональный инструмент для мебельщиков
+      <section className="pt-32 pb-20 px-4 relative overflow-hidden">
+        <div className="max-w-7xl mx-auto text-center relative z-10">
+          <div className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-100/80 text-indigo-800 rounded-full text-xs font-black mb-8 shadow-xs">
+            <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse"></span>
+            <span>Глобальное обновление: ERP 2.0 для мебельных фабрик и цехов</span>
           </div>
-          <h1 className="text-5xl md:text-7xl font-black text-gray-900 mb-6 tracking-tight leading-tight">
-            Умный калькулятор для <br />
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-indigo-600">
-              мебельного бизнеса
+
+          <h1 className="text-4xl sm:text-6xl md:text-7xl font-black text-gray-900 mb-6 tracking-tight leading-tight">
+            Умный калькулятор & <br />
+            <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600">
+              ERP Мебельное производство
             </span>
           </h1>
-          <p className="text-xl text-gray-500 max-w-3xl mx-auto mb-10 leading-relaxed">
-            Автоматизируйте расчеты, управляйте проектами и взаимодействуйте с производствами в единой экосистеме. От эскиза до готового изделия за считанные минуты.
+
+          <p className="text-lg md:text-xl text-gray-500 max-w-3xl mx-auto mb-10 leading-relaxed">
+            Единая цифровая экосистема: от быстрого расчета стоимости кухни в салоне до цехового контроля распила, выездного монтажа и сквозной синхронизации с Битрикс24.
           </p>
+
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <button 
               onClick={onRegister}
-              className="w-full sm:w-auto px-10 py-4 bg-blue-600 text-white text-lg font-bold rounded-2xl hover:bg-blue-700 shadow-xl shadow-blue-200 transition-all flex items-center justify-center gap-2 group"
+              className="w-full sm:w-auto px-10 py-4 bg-blue-600 text-white text-base font-black rounded-2xl hover:bg-blue-700 shadow-xl shadow-blue-200 transition-all flex items-center justify-center gap-2 group cursor-pointer"
             >
               Зарегистрироваться <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </button>
-            <button 
-              onClick={onLogin}
-              className="w-full sm:w-auto px-10 py-4 bg-white text-gray-900 text-lg font-bold rounded-2xl border-2 border-gray-100 hover:border-blue-200 transition-all"
+            <a 
+              href="#erp-module"
+              className="w-full sm:w-auto px-10 py-4 bg-slate-900 text-white text-base font-black rounded-2xl border-2 border-slate-900 hover:bg-slate-800 transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg shadow-slate-200"
             >
-              У меня есть аккаунт
-            </button>
+              <Factory className="w-5 h-5 text-amber-400" />
+              <span>Обзор модуля ERP</span>
+            </a>
           </div>
         </div>
       </section>
 
-      {/* Features Grid */}
-      <section className="py-20 bg-gray-50">
+      {/* Basic Features Grid */}
+      <section className="py-20 bg-gray-50" id="features">
         <div className="max-w-7xl mx-auto px-4">
           <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-black text-gray-900 mb-4">Всё необходимое в одном месте</h2>
-            <p className="text-gray-500">Мощные инструменты для каждого этапа вашего бизнеса</p>
+            <h2 className="text-3xl md:text-4xl font-black text-gray-900 mb-4">Всё необходимое для роста продаж</h2>
+            <p className="text-gray-500">Профессиональный инструментарий для салонов, дизайнеров и производств</p>
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -99,9 +133,9 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
               <div className="w-14 h-14 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mb-6 group-hover:bg-blue-600 group-hover:text-white transition-all">
                 <Calculator className="w-8 h-8" />
               </div>
-              <h3 className="text-xl font-bold text-gray-900 mb-4">Точный расчет</h3>
+              <h3 className="text-xl font-bold text-gray-900 mb-4">Точный расчет сметы</h3>
               <p className="text-gray-500 leading-relaxed">
-                Учитывайте всё: от ЛДСП и кромки до фурнитуры и услуг. Гибкие настройки наценок и коэффициентов.
+                Учитывайте всё: от ЛДСП и кромки до сложных механизмов и услуг. Гибкие настройки наценок, коэффициентов и налогов.
               </p>
             </div>
 
@@ -111,7 +145,7 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
               </div>
               <h3 className="text-xl font-bold text-gray-900 mb-4">Управление проектами</h3>
               <p className="text-gray-500 leading-relaxed">
-                Храните все расчеты в облаке. Отслеживайте статусы, прикрепляйте эскизы и спецификации.
+                Храните все расчеты в облаке. Отслеживайте статусы, прикрепляйте 3D-эскизы, спецификации и историю согласований.
               </p>
             </div>
 
@@ -121,80 +155,372 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
               </div>
               <h3 className="text-xl font-bold text-gray-900 mb-4">Связь с производством</h3>
               <p className="text-gray-500 leading-relaxed">
-                Передавайте заказы напрямую на производство. Получайте актуальные цены и сроки в реальном времени.
+                Передавайте заказы напрямую в цех. Получайте актуальные прайс-листы и статусы готовности заказов в реальном времени.
               </p>
             </div>
           </div>
         </div>
       </section>
 
-      {/* Platform Power Section */}
-      <section className="py-24 bg-gray-50" id="platform">
-        <div className="max-w-7xl mx-auto px-4">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-5xl font-black text-gray-900 mb-6">Операционная система вашего мебельного дела</h2>
-            <p className="text-xl text-gray-500 max-w-2xl mx-auto">От эскиза до отгрузки — всё в одном информационном поле.</p>
-          </div>
+      {/* ========================================================================= */}
+      {/* ERP SHOWCASE PRESENTATION SECTION (FLAGSHIP FEATURE) */}
+      {/* ========================================================================= */}
+      <section className="py-24 bg-slate-950 text-white relative overflow-hidden" id="erp-module">
+        {/* Glow Effects */}
+        <div className="absolute top-0 left-1/4 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none"></div>
+        <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-emerald-600/15 rounded-full blur-3xl pointer-events-none"></div>
+
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6" id="bento-grid">
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              whileInView={{ opacity: 1, scale: 1 }}
-              className="md:col-span-2 bg-white p-8 rounded-3xl shadow-sm border border-gray-100 flex flex-col justify-between"
-            >
-              <div className="flex items-center gap-4 mb-6">
-                <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white"><Calculator className="w-6 h-6" /></div>
-                <h3 className="text-2xl font-bold text-gray-900">Безошибочные расчеты</h3>
-              </div>
-              <p className="text-gray-600 text-lg">Автоматизация учета всех материалов и услуг. Исключите человеческий фактор: система мгновенно считает стоимость корпуса, фасадов, фурнитуры и работ.</p>
-            </motion.div>
+          {/* Header Badge & Title */}
+          <div className="text-center max-w-3xl mx-auto mb-16 space-y-4">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-indigo-900/60 border border-indigo-700/60 text-indigo-300 text-xs font-black uppercase tracking-wider">
+              <Factory className="w-4 h-4 text-indigo-400" />
+              <span>Глобальный Модуль Управления Фабрикой</span>
+            </div>
 
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              whileInView={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.1 }}
-              className="bg-gray-900 p-8 rounded-3xl text-white flex flex-col justify-between"
-            >
-              <h3 className="text-2xl font-bold mb-4">Единое поле работы</h3>
-              <p className="text-gray-400">Производство и салоны работают в единой среде. Данные о расчетах мгновенно доступны всем участникам процесса.</p>
-            </motion.div>
+            <h2 className="text-3xl sm:text-5xl font-black text-white tracking-tight leading-tight">
+              ERP Мебельное Производство
+            </h2>
 
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              whileInView={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.2 }}
-              className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100"
-            >
-              <h3 className="text-2xl font-bold text-gray-900 mb-4">Bitrix24 Интеграция</h3>
-              <p className="text-gray-600">Выгружайте готовые данные о сделках прямо в Bitrix24. Работайте в своей CRM, используя мощности нашей системы расчета.</p>
-            </motion.div>
-
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.95 }}
-              whileInView={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.3 }}
-              className="md:col-span-2 relative bg-blue-600 p-8 rounded-3xl text-white flex items-center justify-center group cursor-pointer"
-            >
-              <div className="absolute inset-0 bg-black/20 rounded-3xl group-hover:bg-black/10 transition-colors" />
-              <div className="flex items-center gap-4 relative z-10">
-                <div className="w-20 h-20 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm group-hover:scale-105 transition-transform">
-                  <div className="w-0 h-0 border-t-[12px] border-t-transparent border-l-[20px] border-l-white border-b-[12px] border-b-transparent ml-1" />
-                </div>
-                <div className="text-2xl font-bold">Посмотреть видео-обзор сервиса</div>
-              </div>
-            </motion.div>
+            <p className="text-slate-400 text-base sm:text-lg leading-relaxed">
+              Полноценная система оперативного управления цехом, выездными сборщиками и CRM-интеграцией. Наведите порядок в заказах от распила до сдачи клиенту.
+            </p>
           </div>
+
+          {/* ERP Tab Navigation */}
+          <div className="flex justify-center mb-10 overflow-x-auto pb-2">
+            <div className="p-1.5 bg-slate-900 rounded-2xl border border-slate-800 flex items-center gap-1">
+              <button
+                onClick={() => setActiveErpTab('shopfloor')}
+                className={`px-4 py-2.5 rounded-xl font-extrabold text-xs transition-all flex items-center gap-2 cursor-pointer ${
+                  activeErpTab === 'shopfloor' 
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' 
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <QrCode className="w-4 h-4" />
+                <span>Цеховой учет (QR)</span>
+              </button>
+
+              <button
+                onClick={() => setActiveErpTab('installer')}
+                className={`px-4 py-2.5 rounded-xl font-extrabold text-xs transition-all flex items-center gap-2 cursor-pointer ${
+                  activeErpTab === 'installer' 
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' 
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Wrench className="w-4 h-4" />
+                <span>Монтаж и Сборка</span>
+              </button>
+
+              <button
+                onClick={() => setActiveErpTab('bitrix')}
+                className={`px-4 py-2.5 rounded-xl font-extrabold text-xs transition-all flex items-center gap-2 cursor-pointer ${
+                  activeErpTab === 'bitrix' 
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' 
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Building2 className="w-4 h-4" />
+                <span>Битрикс24 CRM</span>
+              </button>
+
+              <button
+                onClick={() => setActiveErpTab('storage')}
+                className={`px-4 py-2.5 rounded-xl font-extrabold text-xs transition-all flex items-center gap-2 cursor-pointer ${
+                  activeErpTab === 'storage' 
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' 
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <Cloud className="w-4 h-4" />
+                <span>Яндекс.Диск и Хранилище</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Tab Content Display */}
+          <div className="bg-slate-900/90 rounded-3xl p-6 sm:p-10 border border-slate-800 shadow-2xl backdrop-blur-md">
+            
+            {/* TAB 1: SHOPFLOOR & QR */}
+            {activeErpTab === 'shopfloor' && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+                <div className="lg:col-span-6 space-y-6">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-emerald-950 border border-emerald-800/80 text-emerald-400 font-black text-xs uppercase tracking-wider">
+                    <Zap className="w-3.5 h-3.5 text-amber-400" /> Безклавиатурный контроль цеха
+                  </div>
+
+                  <h3 className="text-2xl sm:text-3xl font-black text-white">
+                    Учет на участках без мыши и клавиатуры
+                  </h3>
+
+                  <p className="text-slate-300 text-sm leading-relaxed">
+                    Операторы станочных участков (Распил, Кромка, Присадка ЧПУ, Сборка, Упаковка) используют штрихкод-сканеры. Просто поднесите сканер к QR-коду на маршрутном листе или детали — статус заказа мгновенно обновится.
+                  </p>
+
+                  <div className="space-y-3 pt-2 text-xs">
+                    <div className="flex items-center gap-3 text-slate-200">
+                      <div className="w-6 h-6 rounded-lg bg-indigo-900/60 text-indigo-400 flex items-center justify-center font-bold">1</div>
+                      <span>Сканирование QR-кодов деталей и пакетов на любых планшетах/ТСД</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-slate-200">
+                      <div className="w-6 h-6 rounded-lg bg-indigo-900/60 text-indigo-400 flex items-center justify-center font-bold">2</div>
+                      <span>Автоматический расчет индивидуальной выработки рабочих и тайминга партий</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-slate-200">
+                      <div className="w-6 h-6 rounded-lg bg-indigo-900/60 text-indigo-400 flex items-center justify-center font-bold">3</div>
+                      <span>Печать QR-команд для переключения статусов прямо на листах расскроя</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Visual Widget Preview */}
+                <div className="lg:col-span-6">
+                  <div className="bg-slate-950 rounded-2xl p-5 border border-slate-800 space-y-4 shadow-xl">
+                    <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                      <div className="flex items-center gap-2">
+                        <QrCode className="w-5 h-5 text-indigo-400" />
+                        <span className="font-mono text-xs font-bold text-slate-200">Терминал: Участок ЧПУ-Присадки</span>
+                      </div>
+                      <span className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-400 border border-emerald-800 text-[10px] font-bold uppercase">В работе</span>
+                    </div>
+
+                    <div className="p-3 bg-slate-900 rounded-xl space-y-2 text-xs font-mono">
+                      <div className="text-slate-400 text-[10px]">Текущий заказ в обработке:</div>
+                      <div className="text-amber-400 font-bold text-sm">Заказ № 11-0626-11 (Кухня "Лофт")</div>
+                      <div className="flex items-center justify-between text-slate-300 pt-1 text-[11px]">
+                        <span>Пакет 2/4 (Фасады МДФ)</span>
+                        <span className="text-emerald-400">ГОТОВО: 80%</span>
+                      </div>
+                      <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                        <div className="bg-gradient-to-r from-indigo-500 to-emerald-400 h-full w-[80%]"></div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 text-[11px]">
+                      <div className="p-2.5 bg-slate-900 rounded-xl border border-slate-800 text-center">
+                        <div className="text-slate-400 text-[9px] uppercase">Оператор</div>
+                        <div className="font-bold text-slate-200 mt-0.5">Иван А. (ЧПУ)</div>
+                      </div>
+                      <div className="p-2.5 bg-slate-900 rounded-xl border border-slate-800 text-center">
+                        <div className="text-slate-400 text-[9px] uppercase">Время смены</div>
+                        <div className="font-bold text-emerald-400 mt-0.5">4 ч 20 мин</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 2: INSTALLER PWA & KANBAN */}
+            {activeErpTab === 'installer' && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+                <div className="lg:col-span-6 space-y-6">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-indigo-950 border border-indigo-800/80 text-indigo-300 font-black text-xs uppercase tracking-wider">
+                    <Smartphone className="w-3.5 h-3.5 text-indigo-400" /> PWA Кабинет Сборщика & Канбан
+                  </div>
+
+                  <h3 className="text-2xl sm:text-3xl font-black text-white">
+                    Выездная сборка, актирование и рекламации
+                  </h3>
+
+                  <p className="text-slate-300 text-sm leading-relaxed">
+                    Диспетчер управляет заказами на интерактивной Канбан-доске стадий. Выездной сборщик работает в автономии со смартфона — формирует отчет о работах, фиксирует фото дефектов и подписывает Акт у клиента графической подписью.
+                  </p>
+
+                  <div className="space-y-3 pt-2 text-xs">
+                    <div className="flex items-center gap-3 text-slate-200">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Канбан-доска стадий: Ждет назначения → Назначен → В работе → Рекламация → Сдан</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-slate-200">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Прейскурант дополнительных работ (вырезы под мойку, подгонки по месту)</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-slate-200">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                      <span>Графическая подпись клиента пальцем на экране и Акт приема-передачи</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Visual Widget Preview */}
+                <div className="lg:col-span-6">
+                  <div className="bg-slate-950 rounded-2xl p-5 border border-slate-800 space-y-3 shadow-xl">
+                    <div className="flex items-center justify-between text-xs font-bold border-b border-slate-800 pb-2">
+                      <span className="text-slate-300 flex items-center gap-1.5">
+                        <Wrench className="w-4 h-4 text-indigo-400" /> Акт Выезда Сборщика
+                      </span>
+                      <span className="text-emerald-400 font-mono">Подписан клиентом</span>
+                    </div>
+
+                    <div className="p-3 bg-slate-900 rounded-xl space-y-2 text-xs">
+                      <div className="flex justify-between items-center text-slate-200 font-bold">
+                        <span>Доп. работы на объекте:</span>
+                        <span className="text-amber-400 font-mono">+ 4,500 ₽</span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 space-y-1 pl-2 border-l-2 border-indigo-500">
+                        <div>• Вырез под варочную панель (1,500 ₽)</div>
+                        <div>• Установка и подключение вытяжки (3,000 ₽)</div>
+                      </div>
+                    </div>
+
+                    <div className="p-3 bg-emerald-950/60 rounded-xl border border-emerald-800/80 flex items-center justify-between text-xs text-emerald-200">
+                      <div>
+                        <div className="font-bold text-[11px]">Электронный Акт № 1042</div>
+                        <div className="text-[9px] text-emerald-400">Гарантийный период: 24 месяца</div>
+                      </div>
+                      <div className="px-2 py-1 bg-emerald-900 text-emerald-100 rounded text-[10px] font-bold">
+                        ✍️ Подпись в базе
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 3: BITRIX24 INTEGRATION */}
+            {activeErpTab === 'bitrix' && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+                <div className="lg:col-span-6 space-y-6">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-sky-950 border border-sky-800/80 text-sky-400 font-black text-xs uppercase tracking-wider">
+                    <Building2 className="w-3.5 h-3.5 text-sky-400" /> Двусторонняя Синхронизация CRM
+                  </div>
+
+                  <h3 className="text-2xl sm:text-3xl font-black text-white">
+                    Бесшовная связь с Битрикс24
+                  </h3>
+
+                  <p className="text-slate-300 text-sm leading-relaxed">
+                    Двусторонний обмен данными: заказы из Битрикс24 автоматически попадают на производство, а текущие статусы цеха, фотографии от сборщиков и суммы доп. работ моментально возвращаются в карточки сделок и задач CRM.
+                  </p>
+
+                  <div className="space-y-3 pt-2 text-xs">
+                    <div className="flex items-center gap-3 text-slate-200">
+                      <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0" />
+                      <span>Авто-создание задач монтажа в Битрикс24 с выгрузкой отчетов сборщика</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-slate-200">
+                      <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0" />
+                      <span>Перемещение стадий сделки в CRM при готовности распила или сборки</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-slate-200">
+                      <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0" />
+                      <span>Работа сборщиков через простой интерфейс без необходимости давать им права в CRM</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Visual Widget Preview */}
+                <div className="lg:col-span-6">
+                  <div className="bg-slate-950 rounded-2xl p-5 border border-slate-800 space-y-3 shadow-xl">
+                    <div className="flex items-center justify-between text-xs font-bold border-b border-slate-800 pb-2">
+                      <span className="text-sky-300 flex items-center gap-1.5">
+                        <Building2 className="w-4 h-4 text-sky-400" /> Битрикс24 Входящий Вебхук
+                      </span>
+                      <span className="text-emerald-400 font-mono text-[10px]">Активен (Связь 100%)</span>
+                    </div>
+
+                    <div className="p-3 bg-slate-900 rounded-xl space-y-2 text-xs">
+                      <div className="text-slate-400 text-[10px] font-mono">Синхронизация карточки сделки:</div>
+                      <div className="font-bold text-slate-100">Сделка № 4829 • Кухонный гарнитур "Эмаль"</div>
+                      <div className="flex items-center justify-between text-[11px] pt-1">
+                        <span className="text-slate-400">Стадия в CRM:</span>
+                        <span className="px-2 py-0.5 rounded bg-sky-950 text-sky-300 font-bold">Готово к монтажу</span>
+                      </div>
+                    </div>
+
+                    <div className="p-2.5 bg-slate-900 rounded-xl border border-slate-800 text-[11px] text-slate-300 flex items-center justify-between">
+                      <span>Фотографии монтажа отправлены в комментарии к задаче #1042</span>
+                      <ExternalLink className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* TAB 4: YANDEX DISK & STORAGE */}
+            {activeErpTab === 'storage' && (
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
+                <div className="lg:col-span-6 space-y-6">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-amber-950 border border-amber-800/80 text-amber-400 font-black text-xs uppercase tracking-wider">
+                    <Cloud className="w-3.5 h-3.5 text-amber-400" /> Облачное Хранилище Фотоотчетов
+                  </div>
+
+                  <h3 className="text-2xl sm:text-3xl font-black text-white">
+                    Организованное хранение на Яндекс.Диске
+                  </h3>
+
+                  <p className="text-slate-300 text-sm leading-relaxed">
+                    Никакой перегрузки внутренней базы ERP. Снимки объективного контроля и фотофиксация брака автоматически раскладываются в структурированные папки по номерам заказов на вашем корпоративном Яндекс.Диске или дублируются в Битрикс24.
+                  </p>
+
+                  <div className="space-y-3 pt-2 text-xs">
+                    <div className="flex items-center gap-3 text-slate-200">
+                      <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>Автоматическое создание папок типа <code>/ERP_Фотоотчеты/Заказ_11-0626-11/</code></span>
+                    </div>
+                    <div className="flex items-center gap-3 text-slate-200">
+                      <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>Быстрое подключение OAuth-токена в 1 клик с проверкой остатка места</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-slate-200">
+                      <CheckCircle2 className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span>Режимы: «Только Яндекс.Диск», «Только Битрикс24» или «Оба хранилища»</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Visual Widget Preview */}
+                <div className="lg:col-span-6">
+                  <div className="bg-slate-950 rounded-2xl p-5 border border-slate-800 space-y-3 shadow-xl">
+                    <div className="flex items-center justify-between text-xs font-bold border-b border-slate-800 pb-2">
+                      <span className="text-amber-300 flex items-center gap-1.5">
+                        <HardDrive className="w-4 h-4 text-amber-400" /> Яндекс.Диск Корпоративный
+                      </span>
+                      <span className="text-emerald-400 font-mono text-[10px]">Подключено (Свободно: 84 ГБ)</span>
+                    </div>
+
+                    <div className="p-3 bg-slate-900 rounded-xl space-y-2 text-xs font-mono">
+                      <div className="text-slate-400 text-[10px]">Структура директории:</div>
+                      <div className="text-amber-400 font-bold">/ERP_Фотоотчеты/Заказ_11-0626-11/</div>
+                      <div className="text-slate-300 text-[11px] space-y-1 pl-2 border-l border-slate-700">
+                        <div>📁 photo_17105820_1.jpg (Фото собранного гарнитура)</div>
+                        <div>📁 photo_17105820_2.jpg (Узел примыкания столешницы)</div>
+                        <div>📁 photo_17105820_3.jpg (Подписанный Акт сдачи)</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </div>
+
+          {/* ERP Bottom CTA */}
+          <div className="mt-12 text-center">
+            <button
+              onClick={onRegister}
+              className="px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-black text-sm rounded-2xl hover:from-blue-500 hover:to-indigo-500 shadow-xl shadow-indigo-600/30 transition-all cursor-pointer inline-flex items-center gap-2"
+            >
+              <span>Подключить модуль ERP для вашего производства</span>
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </div>
+
         </div>
       </section>
 
       {/* Smart Marketing Section */}
-      <section className="py-20 bg-gradient-to-b from-white to-gray-50 border-t border-gray-100 overflow-hidden">
+      <section className="py-20 bg-gradient-to-b from-white to-gray-50 border-t border-gray-100 overflow-hidden" id="marketing">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex flex-col lg:flex-row items-center gap-16">
             <div className="flex-1 space-y-6">
               <div className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-50 text-indigo-700 rounded-full text-sm font-bold">
                 <Sparkles className="w-4 h-4" />
-                <span>Новый модуль: Маркетинг и Акции</span>
+                <span>Модуль: Маркетинг и Акции</span>
               </div>
               <h2 className="text-4xl md:text-5xl font-black text-gray-900 leading-tight tracking-tight">
                 Управляйте продажами через <br />
@@ -311,7 +637,7 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
       </section>
 
       {/* Roles Section */}
-      <section className="py-20">
+      <section className="py-20" id="solutions">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex flex-col lg:flex-row items-center gap-16">
             <div className="flex-1">
@@ -326,7 +652,7 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
                   </div>
                   <div>
                     <h4 className="font-bold text-gray-900 mb-1">Мебельное производство</h4>
-                    <p className="text-sm text-gray-500">Управляйте заказами от салонов, настраивайте прайсы и контролируйте работу цеха.</p>
+                    <p className="text-sm text-gray-500">Управляйте заказами от салонов, настраивайте цеховой учет (QR) и контролируйте выездные монтажи.</p>
                   </div>
                 </div>
                 <div className="flex gap-4">
@@ -335,7 +661,7 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
                   </div>
                   <div>
                     <h4 className="font-bold text-gray-900 mb-1">Мебельный салон</h4>
-                    <p className="text-sm text-gray-500">Быстро считайте заказы клиентам, отправляйте заявки на производство и ведите базу проектов.</p>
+                    <p className="text-sm text-gray-500">Быстро считайте заказы клиентам, применяйте рекламные акции, отправляйте заявки в цех и ведите базу проектов.</p>
                   </div>
                 </div>
                 <div className="flex gap-4">
@@ -344,7 +670,7 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
                   </div>
                   <div>
                     <h4 className="font-bold text-gray-900 mb-1">Частный дизайнер</h4>
-                    <p className="text-sm text-gray-500">Профессиональный инструмент для точного расчета стоимости ваших идей.</p>
+                    <p className="text-sm text-gray-500">Профессиональный инструмент для точного расчета стоимости и спецификаций ваших идей.</p>
                   </div>
                 </div>
               </div>
@@ -353,10 +679,10 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
               <div className="absolute top-0 right-0 -mr-20 -mt-20 w-64 h-64 bg-white/10 rounded-full blur-3xl"></div>
               <div className="relative z-10">
                 <h3 className="text-3xl font-bold mb-6">Готовы оптимизировать свой бизнес?</h3>
-                <p className="text-blue-100 mb-8 text-lg">Присоединяйтесь к сотням профессионалов, которые уже используют Мебельный Калькулятор для роста своего бизнеса.</p>
+                <p className="text-blue-100 mb-8 text-lg">Присоединяйтесь к сотням профессионалов, которые уже используют экосистему Мебельный Калькулятор + ERP для роста своего бизнеса.</p>
                 <button 
                   onClick={onRegister}
-                  className="px-8 py-4 bg-white text-blue-600 font-black rounded-2xl hover:bg-blue-50 transition-all shadow-lg"
+                  className="px-8 py-4 bg-white text-blue-600 font-black rounded-2xl hover:bg-blue-50 transition-all shadow-lg cursor-pointer"
                 >
                   Попробовать бесплатно
                 </button>
@@ -376,7 +702,7 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
             <span className="text-lg font-black text-gray-900 tracking-tight hidden sm:inline">Мебельный <span className="text-blue-600">калькулятор</span></span>
             <span className="text-lg font-black text-gray-900 tracking-tight sm:hidden">Калькулятор</span>
           </div>
-          <p className="text-gray-400 text-sm">© 2026 Мебельный калькулятор. Все права защищены.</p>
+          <p className="text-gray-400 text-sm">© 2026 Мебельный калькулятор & ERP Мебельное производство. Все права защищены.</p>
         </div>
       </footer>
     </div>
