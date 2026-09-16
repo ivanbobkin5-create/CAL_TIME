@@ -443,7 +443,7 @@ export const PartnerOrdersView = ({
                     <div className="text-left sm:text-right min-w-[140px]">
                       <span className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest block">Стоимость заказа</span>
                       <span className="text-xl font-black text-indigo-600">
-                        {totalProductionPrice.toLocaleString()} ₽
+                        {(totalProductionPrice || 0).toLocaleString()} ₽
                       </span>
                     </div>
 

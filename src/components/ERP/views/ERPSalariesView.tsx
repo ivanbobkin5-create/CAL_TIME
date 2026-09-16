@@ -24,7 +24,7 @@ import {
   Printer,
   Info
 } from 'lucide-react';
-import { ERPEmployee, SalaryAdjustment } from '../types';
+import { ERPEmployee, SalaryAdjustment, InstallationTask } from '../types';
 import { getOrderCalculatedHoles } from '../utils';
 
 interface ERPSalariesViewProps {
@@ -38,6 +38,7 @@ interface ERPSalariesViewProps {
   shiftLogs?: any[];
   scheduleEntries?: Record<string, any>;
   settings?: any;
+  installationTasks?: InstallationTask[];
 }
 
 type EmployeeCategory = 'production' | 'non_production' | 'all';
@@ -52,7 +53,8 @@ export const ERPSalariesView: React.FC<ERPSalariesViewProps> = ({
   orders = [],
   shiftLogs = [],
   scheduleEntries = {},
-  settings
+  settings,
+  installationTasks = []
 }) => {
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().substring(0, 7));
   const [search, setSearch] = useState('');
@@ -267,6 +269,40 @@ export const ERPSalariesView: React.FC<ERPSalariesViewProps> = ({
           });
         }
       });
+
+      // 3.1 Piecework calculations from completed Installation Tasks (Монтаж и сборка)
+      if (installationTasks && Array.isArray(installationTasks)) {
+        installationTasks.forEach((task) => {
+          if (task.status !== 'completed') return;
+
+          const isAssigned = 
+            (task.installerEmployeeId && (task.installerEmployeeId === emp.id || task.installerEmployeeId === (emp as any).badgeCode)) ||
+            (task.additionalInstallerIds && Array.isArray(task.additionalInstallerIds) && task.additionalInstallerIds.includes(emp.id)) ||
+            (!task.installerEmployeeId && task.installerEmployeeName && emp.name && task.installerEmployeeName.trim().toLowerCase() === emp.name.trim().toLowerCase());
+
+          if (!isAssigned) return;
+
+          const taskDate = task.completedDate || task.updatedAt || task.createdAt || '';
+          const isSameMonth = !selectedMonth || taskDate.startsWith(selectedMonth);
+
+          if (isSameMonth) {
+            const taskEarned = (task.assemblyPrice || 0) + (task.extraWorksTotal || 0);
+            pieceworkPay += taskEarned;
+            matchedWorkLogs.push({
+              stageId: 'installation',
+              stageName: 'Монтаж и сборка',
+              orderNumber: task.orderNumber,
+              clientName: task.clientName,
+              address: task.address,
+              date: taskDate,
+              rate: task.assemblyPrice || 0,
+              amountEarned: taskEarned,
+              metricLabel: `Заказ ${task.orderNumber}${task.clientName ? ' (' + task.clientName + ')' : ''}${task.address ? ', ' + task.address : ''}`,
+              metricValue: 1
+            });
+          }
+        });
+      }
 
       // 4. Bonuses & penalties from salaryAdjustments
       const empAdjustments = salaryAdjustments.filter(a => {
@@ -911,7 +947,8 @@ export const ERPSalariesView: React.FC<ERPSalariesViewProps> = ({
                                             {log.orderNumber ? `Заказ №${log.orderNumber}` : `ID: ${log.orderId?.substring(0, 8)}...`}
                                           </td>
                                           <td className="py-2 text-slate-500 capitalize">
-                                            {log.stageId === 'cutting' ? 'Раскрой' : 
+                                            {log.stageId === 'installation' ? '🛠️ Монтаж и сборка' :
+                                             log.stageId === 'cutting' ? 'Раскрой' : 
                                              log.stageId === 'edging' ? 'Кромка' : 
                                              log.stageId === 'cnc' ? 'Присадка / ЧПУ' : 
                                              log.stageId === 'assembly' ? 'Сборка' : 
@@ -919,7 +956,7 @@ export const ERPSalariesView: React.FC<ERPSalariesViewProps> = ({
                                              log.stageId === 'qc' ? 'ОТК (Контроль)' : 
                                              log.stageId === 'packing' ? 'Упаковка' : 
                                              log.stageId === 'shipping' ? 'Отгрузка' : 
-                                             log.stageId === 'facades' ? 'Фасады' : log.stageId}
+                                             log.stageId === 'facades' ? 'Фасады' : log.stageName || log.stageId}
                                           </td>
                                           <td className="py-2 text-right font-mono font-bold text-slate-700">
                                             {log.metricLabel}

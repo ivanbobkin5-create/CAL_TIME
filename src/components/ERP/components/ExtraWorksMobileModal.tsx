@@ -248,7 +248,7 @@ export const ExtraWorksMobileModal: React.FC<ExtraWorksMobileModalProps> = ({
                     {item.name}
                   </div>
                   <div className="text-[11px] text-slate-500 font-medium mt-0.5 flex items-center gap-2">
-                    <span className="font-bold text-amber-700">{item.price.toLocaleString('ru-RU')} ₽</span>
+                    <span className="font-bold text-amber-700">{(item.price || 0).toLocaleString('ru-RU')} ₽</span>
                     <span>/ {item.unit}</span>
                   </div>
                 </div>
@@ -294,7 +294,7 @@ export const ExtraWorksMobileModal: React.FC<ExtraWorksMobileModalProps> = ({
                 <div key={custom.id} className="p-3 bg-purple-50 rounded-2xl border border-purple-200 flex items-center justify-between gap-2">
                   <div className="min-w-0">
                     <div className="font-bold text-xs text-purple-950">{custom.name}</div>
-                    <div className="text-[11px] text-purple-700 font-medium">{custom.price.toLocaleString('ru-RU')} ₽</div>
+                    <div className="text-[11px] text-purple-700 font-medium">{(custom.price || 0).toLocaleString('ru-RU')} ₽</div>
                   </div>
                   <button
                     type="button"

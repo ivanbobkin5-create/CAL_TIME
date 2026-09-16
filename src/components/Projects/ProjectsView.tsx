@@ -1381,7 +1381,7 @@ export const ProjectsView = ({
                                 <div className="text-right">
                                   <div className="text-[10px] text-gray-400 font-bold uppercase">Сумма комплекта</div>
                                   <div className="text-lg md:text-xl font-extrabold text-indigo-700">
-                                    {setTotal.toLocaleString()} ₽
+                                    {(setTotal || 0).toLocaleString()} ₽
                                   </div>
                                 </div>
 
@@ -1602,7 +1602,7 @@ export const ProjectsView = ({
                                                 {subProject.name || "Без названия"}
                                               </div>
                                               <div className="text-xs text-indigo-600 font-extrabold">
-                                                {projPrice.toLocaleString()} ₽
+                                                {(projPrice || 0).toLocaleString()} ₽
                                               </div>
                                             </div>
                                           </div>

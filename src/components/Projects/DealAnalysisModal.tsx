@@ -419,7 +419,7 @@ export const DealAnalysisModal = ({
               <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-2xs">
                 <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest mb-1 block">Итого продано</div>
                 <div className="text-2xl font-black text-slate-900">
-                  {metrics.clientTotalSum.toLocaleString()} ₽
+                  {(metrics.clientTotalSum || 0).toLocaleString()} ₽
                 </div>
                 <div className="text-[11px] text-slate-500 font-semibold mt-1">Сумма от клиента</div>
               </div>
@@ -427,7 +427,7 @@ export const DealAnalysisModal = ({
               <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-2xs">
                 <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest mb-1 block">Себестоимость производства</div>
                 <div className="text-2xl font-black text-indigo-600">
-                  {metrics.productionTotalCost.toLocaleString()} ₽
+                  {(metrics.productionTotalCost || 0).toLocaleString()} ₽
                 </div>
                 <div className="text-[11px] text-slate-500 font-semibold mt-1">Оплата производству</div>
               </div>
@@ -435,7 +435,7 @@ export const DealAnalysisModal = ({
               <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-2xs">
                 <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest mb-1 block">Чистый заработок</div>
                 <div className="text-2xl font-black text-emerald-600">
-                  {metrics.netProfit.toLocaleString()} ₽
+                  {(metrics.netProfit || 0).toLocaleString()} ₽
                 </div>
                 <div className="text-[11px] text-slate-500 font-semibold mt-1">Прибыль компании</div>
               </div>
@@ -455,7 +455,7 @@ export const DealAnalysisModal = ({
               <div className="bg-white p-5 rounded-2xl border border-slate-100 shadow-2xs">
                 <div className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest mb-1 block">Сумма заказа для производства</div>
                 <div className="text-2xl font-black text-indigo-600">
-                  {metrics.productionTotalCost.toLocaleString()} ₽
+                  {(metrics.productionTotalCost || 0).toLocaleString()} ₽
                 </div>
                 <div className="text-[11px] text-slate-500 font-semibold mt-1">Ваша выручка от партнера</div>
               </div>
@@ -505,14 +505,14 @@ export const DealAnalysisModal = ({
                           {item.qty}
                         </td>
                         <td className="py-4 px-4 font-extrabold text-slate-800">
-                          {item.clientTotal.toLocaleString()} ₽
+                          {(item.clientTotal || 0).toLocaleString()} ₽
                         </td>
                         <td className="py-4 px-4 font-extrabold text-indigo-600">
-                          {item.productionCost > 0 ? `${item.productionCost.toLocaleString()} ₽` : "—"}
+                          {item.productionCost > 0 ? `${(item.productionCost || 0).toLocaleString()} ₽` : "—"}
                         </td>
                         {!isProductionView && (
                           <td className="py-4 px-4 font-black text-emerald-600">
-                            {item.profit.toLocaleString()} ₽
+                            {(item.profit || 0).toLocaleString()} ₽
                             <span className="text-[10px] font-bold text-slate-400 ml-1">({item.margin}%)</span>
                           </td>
                         )}
@@ -543,11 +543,11 @@ export const DealAnalysisModal = ({
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-semibold">Продано клиенту:</span>
-                  <span className="font-extrabold text-slate-800">{metrics.clientAssemblyPrice.toLocaleString()} ₽</span>
+                  <span className="font-extrabold text-slate-800">{(metrics.clientAssemblyPrice || 0).toLocaleString()} ₽</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-semibold">Себестоимость на производстве:</span>
-                  <span className="font-extrabold text-indigo-600">{metrics.productionAssemblyCost.toLocaleString()} ₽</span>
+                  <span className="font-extrabold text-indigo-600">{(metrics.productionAssemblyCost || 0).toLocaleString()} ₽</span>
                 </div>
                 {!isProductionView && (
                   <div className="flex justify-between pt-2 border-t border-slate-100">
@@ -565,11 +565,11 @@ export const DealAnalysisModal = ({
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-semibold">Продано клиенту:</span>
-                  <span className="font-extrabold text-slate-800">{metrics.clientDeliveryPrice.toLocaleString()} ₽</span>
+                  <span className="font-extrabold text-slate-800">{(metrics.clientDeliveryPrice || 0).toLocaleString()} ₽</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-slate-500 font-semibold">Себестоимость на производстве:</span>
-                  <span className="font-extrabold text-indigo-600">{metrics.productionDeliveryCost.toLocaleString()} ₽</span>
+                  <span className="font-extrabold text-indigo-600">{(metrics.productionDeliveryCost || 0).toLocaleString()} ₽</span>
                 </div>
                 {!isProductionView && (
                   <div className="flex justify-between pt-2 border-t border-slate-100">

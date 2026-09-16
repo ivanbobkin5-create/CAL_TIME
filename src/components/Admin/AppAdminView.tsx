@@ -1145,7 +1145,7 @@ export const AppAdminView = () => {
                 <div className="flex justify-between items-start">
                   <div>
                     <h3 className="text-base font-black text-slate-900">{req.companyName}</h3>
-                    <p className="text-xs text-slate-400 font-semibold">{new Date(req.createdAt).toLocaleString('ru-RU')}</p>
+                    <p className="text-xs text-slate-400 font-semibold">{(req.createdAt ? new Date(req.createdAt).toLocaleString('ru-RU') : '—')}</p>
                   </div>
                   <span className={cn(
                     "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider",

@@ -680,7 +680,7 @@ export const Bitrix24Modal = ({
               });
             }
           }
-          deliveryCommentText += `- ${p.name || p.id}: ${pDelivery.toLocaleString()} ₽\n`;
+          deliveryCommentText += `- ${p.name || p.id}: ${(pDelivery || 0).toLocaleString()} ₽\n`;
         });
       } else {
         deliveryCommentText = data.comment || project.name || "";
@@ -773,37 +773,37 @@ export const Bitrix24Modal = ({
               <div className="bg-white p-3 rounded-xl border border-gray-50">
                 <div className="text-gray-400 font-medium">Корпус (ЛДСП/ХДФ)</div>
                 <div className="font-bold text-gray-800 mt-1">
-                  {computedSummary.totalMaterialsPrice.toLocaleString()} ₽
+                  {(computedSummary.totalMaterialsPrice || 0).toLocaleString()} ₽
                 </div>
               </div>
               <div className="bg-white p-3 rounded-xl border border-gray-50">
                 <div className="text-gray-400 font-medium font-bold text-gray-800">Фурнитура</div>
                 <div className="font-bold text-gray-800 mt-1">
-                  {computedSummary.totalHardwarePrice.toLocaleString()} ₽
+                  {(computedSummary.totalHardwarePrice || 0).toLocaleString()} ₽
                 </div>
               </div>
               <div className="bg-white p-3 rounded-xl border border-gray-50">
                 <div className="text-gray-400 font-medium">Плитные фасады</div>
                 <div className="font-bold text-gray-800 mt-1">
-                  {computedSummary.totalFacadePrice.toLocaleString()} ₽
+                  {(computedSummary.totalFacadePrice || 0).toLocaleString()} ₽
                 </div>
               </div>
               <div className="bg-white p-3 rounded-xl border border-gray-50">
                 <div className="text-gray-400 font-medium">Заказные фасады</div>
                 <div className="font-bold text-gray-800 mt-1">
-                  {computedSummary.totalCustomFacadePrice.toLocaleString()} ₽
+                  {(computedSummary.totalCustomFacadePrice || 0).toLocaleString()} ₽
                 </div>
               </div>
               <div className="bg-white p-3 rounded-xl border border-gray-50">
                 <div className="text-gray-400 font-medium">Монтаж и сборка</div>
                 <div className="font-bold text-gray-800 mt-1">
-                  {computedSummary.totalAssemblyPrice.toLocaleString()} ₽
+                  {(computedSummary.totalAssemblyPrice || 0).toLocaleString()} ₽
                 </div>
               </div>
               <div className="bg-white p-3 rounded-xl border border-gray-50">
                 <div className="text-gray-400 font-medium">Доставка</div>
                 <div className="font-bold text-gray-800 mt-1">
-                  {computedSummary.totalDeliveryPrice.toLocaleString()} ₽
+                  {(computedSummary.totalDeliveryPrice || 0).toLocaleString()} ₽
                 </div>
               </div>
             </div>

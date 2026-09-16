@@ -680,10 +680,10 @@ export const ProjectSetCheckoutModal = ({
                       Сумма по договору
                     </p>
                     <p className="text-3xl font-black text-indigo-900 mt-1">
-                      {contractSum.toLocaleString()} ₽
+                      {(contractSum || 0).toLocaleString()} ₽
                     </p>
                     <p className="text-[11px] font-medium text-gray-500 mt-1">
-                      {totalVatSum > 0 ? `в том числе НДС - ${totalVatSum.toLocaleString("ru-RU")} руб.` : "без НДС"}
+                      {totalVatSum > 0 ? `в том числе НДС - ${(totalVatSum || 0).toLocaleString("ru-RU")} руб.` : "без НДС"}
                     </p>
                   </div>
                   {separateSum > 0 && (
@@ -692,7 +692,7 @@ export const ProjectSetCheckoutModal = ({
                         Оплачивается отдельно
                       </p>
                       <p className="text-lg font-extrabold text-indigo-950 mt-0.5">
-                        {separateSum.toLocaleString()} ₽
+                        {(separateSum || 0).toLocaleString()} ₽
                       </p>
                     </div>
                   )}
@@ -793,7 +793,7 @@ export const ProjectSetCheckoutModal = ({
                             </div>
                           </div>
                           <div className="text-xs text-gray-500 font-bold">
-                            Сумма: <span className="text-indigo-600 font-extrabold">{amt.toLocaleString()} ₽</span>
+                            Сумма: <span className="text-indigo-600 font-extrabold">{(amt || 0).toLocaleString()} ₽</span>
                           </div>
                         </div>
                       );
@@ -824,7 +824,7 @@ export const ProjectSetCheckoutModal = ({
                         </div>
                         <div className="text-right">
                           <p className="text-xl font-black text-emerald-950">
-                            {restAmt.toLocaleString()} ₽
+                            {(restAmt || 0).toLocaleString()} ₽
                           </p>
                         </div>
                       </div>
@@ -1018,7 +1018,7 @@ export const ProjectSetCheckoutModal = ({
                       </span>
                     </div>
                     <span className="font-black text-gray-900">
-                      {summary.totalDeliveryPrice.toLocaleString()} ₽
+                      {(summary.totalDeliveryPrice || 0).toLocaleString()} ₽
                     </span>
                   </div>
                   <div className="p-4 bg-white rounded-2xl border border-gray-100 shadow-sm flex items-center justify-between">
@@ -1029,7 +1029,7 @@ export const ProjectSetCheckoutModal = ({
                       </span>
                     </div>
                     <span className="font-black text-gray-900">
-                      {summary.totalAssemblyPrice.toLocaleString()} ₽
+                      {(summary.totalAssemblyPrice || 0).toLocaleString()} ₽
                     </span>
                   </div>
                 </div>

@@ -305,7 +305,7 @@ export const UserProfileView = ({ userData, onUpdateUser, onLogout }: UserProfil
                   <div className="w-12 h-12 bg-green-50 text-green-600 rounded-2xl flex items-center justify-center mb-6">
                     <TrendingUp className="w-6 h-6" />
                   </div>
-                  <div className="text-2xl font-black text-gray-900 mb-1">{stats.totalVolume.toLocaleString()}</div>
+                  <div className="text-2xl font-black text-gray-900 mb-1">{(stats.totalVolume || 0).toLocaleString()}</div>
                   <div className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Всего ₽</div>
                 </div>
 
@@ -313,7 +313,7 @@ export const UserProfileView = ({ userData, onUpdateUser, onLogout }: UserProfil
                   <div className="w-12 h-12 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mb-6">
                     <DollarSign className="w-6 h-6" />
                   </div>
-                  <div className="text-2xl font-black text-gray-900 mb-1">{stats.avgPrice.toLocaleString()}</div>
+                  <div className="text-2xl font-black text-gray-900 mb-1">{(stats.avgPrice || 0).toLocaleString()}</div>
                   <div className="text-[10px] text-gray-400 font-black uppercase tracking-widest">Средний чек</div>
                 </div>
 
@@ -332,7 +332,7 @@ export const UserProfileView = ({ userData, onUpdateUser, onLogout }: UserProfil
                 <div className="relative z-10">
                   <div className="text-xs font-black uppercase tracking-[0.2em] mb-4 opacity-60">Самый масштабный проект</div>
                   <div className="text-4xl font-black mb-2 tracking-tight">{stats.mostExpensiveName}</div>
-                  <div className="text-xl font-bold opacity-90">{stats.mostExpensive.toLocaleString()} ₽</div>
+                  <div className="text-xl font-bold opacity-90">{(stats.mostExpensive || 0).toLocaleString()} ₽</div>
                   <div className="mt-8 inline-flex items-center gap-2 px-4 py-2 bg-white/10 rounded-full text-xs font-black backdrop-blur-md">
                     👑 Лучший результат в истории
                   </div>

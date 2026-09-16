@@ -2828,28 +2828,47 @@ const LDSP_BRANDS = [
 ];
 
 const FACADE_BRANDS: Record<string, SheetConfig> = {
-  AGT: { width: 2800, height: 1220 },
-  "AGT SUPRAMATT": { width: 2800, height: 1220 },
-  Evogloss: { width: 2800, height: 1220 },
-  Evosoft: { width: 2800, height: 1220 },
-  Arkopa: { width: 2800, height: 1220 },
+  AGT: { name: "AGT", width: 2800, height: 1220 },
+  "AGT SUPRAMATT": { name: "AGT SUPRAMATT", width: 2800, height: 1220 },
+  Evogloss: { name: "Evogloss", width: 2800, height: 1220 },
+  Evosoft: { name: "Evosoft", width: 2800, height: 1220 },
+  Arkopa: { name: "Arkopa", width: 2800, height: 1220 },
+  Alvic: { name: "Alvic", width: 2750, height: 1220 },
+  Fundermax: { name: "Fundermax", width: 2800, height: 1300 },
+  Egger: { name: "Egger", width: 2800, height: 2070 },
+  Kronospan: { name: "Kronospan", width: 2800, height: 2070 },
+  Lamarty: { name: "Lamarty", width: 2750, height: 1830 },
+  Nordeco: { name: "Nordeco", width: 2800, height: 2070 },
+  Uvadrev: { name: "Uvadrev", width: 2440, height: 1830 },
 };
 
 const findBrandConfig = (searchName: string) => {
   if (!searchName) return null;
-  const ldspMatch = LDSP_BRANDS.find(b => b.name.toLowerCase().includes(searchName.toLowerCase()));
-  if (ldspMatch) return ldspMatch;
-  const facadeMatch = Object.entries(FACADE_BRANDS).find(([k]) => k.toLowerCase() === searchName.toLowerCase());
+  const sLower = searchName.toLowerCase();
+  const facadeMatch = Object.entries(FACADE_BRANDS).find(([k]) => 
+    k.toLowerCase() === sLower || sLower.includes(k.toLowerCase()) || k.toLowerCase().includes(sLower)
+  );
   if (facadeMatch) {
     return {
       name: facadeMatch[0],
-      ...facadeMatch[1]
+      width: facadeMatch[1].width,
+      height: facadeMatch[1].height,
+    };
+  }
+  const ldspMatch = LDSP_BRANDS.find(b => 
+    b.name.toLowerCase().includes(sLower) || sLower.includes(b.name.split(" ")[0].toLowerCase())
+  );
+  if (ldspMatch) {
+    return {
+      name: ldspMatch.name.split(" ")[0],
+      width: ldspMatch.width,
+      height: ldspMatch.height,
     };
   }
   return {
     name: searchName,
     width: 2800,
-    height: 2070
+    height: 2070,
   };
 };
 
@@ -3787,7 +3806,7 @@ const PriceView = ({
   setOwnProductionConfig: React.Dispatch<
     React.SetStateAction<OwnProductionConfig>
   >;
-  onSave?: () => Promise<void>;
+  onSave?: (silent?: boolean) => Promise<void>;
   setCatalogServices: React.Dispatch<React.SetStateAction<any[]>>;
   onShowHistory: (id: string) => void;
   logPriceChange: (id: string, old: number, newVal: number) => void;
@@ -4669,7 +4688,7 @@ const PriceView = ({
               onClick={async () => {
                 setIsSaving(true);
                 try {
-                  await onSave();
+                  await onSave(false);
                 } finally {
                   setIsSaving(false);
                 }
@@ -5917,7 +5936,7 @@ const PriceView = ({
                       }));
                     }}
                     showConfirm={showConfirm}
-                    onSaveConfig={() => onSave?.()}
+                    onSaveConfig={() => onSave?.(true)}
                   />
 
                   <FacadePriceGrid
@@ -5978,7 +5997,7 @@ const PriceView = ({
                       }));
                     }}
                     showConfirm={showConfirm}
-                    onSaveConfig={() => onSave?.()}
+                    onSaveConfig={() => onSave?.(true)}
                   />
 
                   {ownProductionConfig.extraFacadeTypes?.map((extraType) => (
@@ -6033,7 +6052,7 @@ const PriceView = ({
                         );
                       }}
                       showConfirm={showConfirm}
-                      onSaveConfig={() => onSave?.()}
+                      onSaveConfig={() => onSave?.(true)}
                     />
                   ))}
                 </div>
@@ -6986,13 +7005,94 @@ const CalculatorView = ({
                                   Бренд плиты
                                 </label>
                                 <select
-                                  value={sheetConfigs[key]?.name || ""}
+                                  value={(() => {
+                                    const curName = sheetConfigs[key]?.name || "";
+                                    if (!curName) return "";
+                                    if (FACADE_BRANDS[curName]) return curName;
+                                    const configToUse =
+                                      productionFormat === "contract" &&
+                                      productionSettings?.production
+                                        ? productionSettings.production
+                                        : ownProductionConfig;
+                                    const inCustom = configToUse?.ldspBrands?.find(
+                                      (b: any) => b.brand === curName,
+                                    );
+                                    if (inCustom) return curName;
+                                    const inLdsp = LDSP_BRANDS.find(
+                                      (b) =>
+                                        b.name === curName ||
+                                        b.name.split(" ")[0] === curName,
+                                    );
+                                    if (inLdsp) return inLdsp.name.split(" ")[0];
+                                    const matchedFacade = Object.keys(
+                                      FACADE_BRANDS,
+                                    ).find(
+                                      (k) =>
+                                        k.toLowerCase() ===
+                                          curName.toLowerCase() ||
+                                        curName
+                                          .toLowerCase()
+                                          .includes(k.toLowerCase()),
+                                    );
+                                    if (matchedFacade) return matchedFacade;
+                                    return curName;
+                                  })()}
                                   onChange={(e) => {
-                                    const brand =
-                                      LDSP_BRANDS.find((b) =>
-                                        b.name.includes(e.target.value),
-                                      ) || FACADE_BRANDS[e.target.value];
-                                    if (brand) updateSheetConfig(key, brand);
+                                    const val = e.target.value;
+                                    if (!val) return;
+
+                                    const configToUse =
+                                      productionFormat === "contract" &&
+                                      productionSettings?.production
+                                        ? productionSettings.production
+                                        : ownProductionConfig;
+
+                                    const customBrand =
+                                      configToUse?.ldspBrands?.find(
+                                        (b: any) => b.brand === val,
+                                      );
+                                    if (customBrand && customBrand.format) {
+                                      const [w, h] = customBrand.format
+                                        .split("x")
+                                        .map((n: string) => parseInt(n));
+                                      if (w && h) {
+                                        updateSheetConfig(key, {
+                                          name: customBrand.brand,
+                                          width: w,
+                                          height: h,
+                                        });
+                                        return;
+                                      }
+                                    }
+
+                                    const facadeBrand = FACADE_BRANDS[val];
+                                    if (facadeBrand) {
+                                      updateSheetConfig(key, {
+                                        name: val,
+                                        width: facadeBrand.width,
+                                        height: facadeBrand.height,
+                                      });
+                                      return;
+                                    }
+
+                                    const ldspBrand = LDSP_BRANDS.find(
+                                      (b) =>
+                                        b.name === val ||
+                                        b.name.startsWith(val),
+                                    );
+                                    if (ldspBrand) {
+                                      updateSheetConfig(key, {
+                                        name: ldspBrand.name.split(" ")[0],
+                                        width: ldspBrand.width,
+                                        height: ldspBrand.height,
+                                      });
+                                      return;
+                                    }
+
+                                    const found = findBrandConfig(val);
+                                    if (found) {
+                                      updateSheetConfig(key, found);
+                                    }
                                   }}
                                   className="w-full p-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none bg-white font-bold text-blue-600"
                                 >
@@ -7000,22 +7100,70 @@ const CalculatorView = ({
                                   {(() => {
                                     const seen = new Set();
                                     const results: any[] = [];
-                                    
-                                    LDSP_BRANDS.forEach(b => {
-                                      const name = b.name.split(" ")[0];
-                                      if (!seen.has(name)) {
-                                        results.push(<option key={b.name} value={b.name}>{name}</option>);
-                                        seen.add(name);
+                                    const configToUse =
+                                      productionFormat === "contract" &&
+                                      productionSettings?.production
+                                        ? productionSettings.production
+                                        : ownProductionConfig;
+
+                                    // 1. Facade specialized brands
+                                    Object.entries(FACADE_BRANDS).forEach(
+                                      ([b, cfg]) => {
+                                        if (!seen.has(b.toLowerCase())) {
+                                          results.push(
+                                            <option
+                                              key={`facade-${b}`}
+                                              value={b}
+                                            >
+                                              {b} ({cfg.width}x{cfg.height})
+                                            </option>,
+                                          );
+                                          seen.add(b.toLowerCase());
+                                        }
+                                      },
+                                    );
+
+                                    // 2. Custom brands from settings
+                                    if (Array.isArray(configToUse?.ldspBrands)) {
+                                      configToUse.ldspBrands.forEach(
+                                        (b: any) => {
+                                          if (
+                                            b.brand &&
+                                            !seen.has(b.brand.toLowerCase())
+                                          ) {
+                                            results.push(
+                                              <option
+                                                key={`custom-${b.brand}`}
+                                                value={b.brand}
+                                              >
+                                                {b.brand}{" "}
+                                                {b.format
+                                                  ? `(${b.format})`
+                                                  : ""}
+                                              </option>,
+                                            );
+                                            seen.add(b.brand.toLowerCase());
+                                          }
+                                        },
+                                      );
+                                    }
+
+                                    // 3. Standard LDSP brands
+                                    LDSP_BRANDS.forEach((b) => {
+                                      const shortName = b.name.split(" ")[0];
+                                      if (!seen.has(shortName.toLowerCase())) {
+                                        results.push(
+                                          <option
+                                            key={`ldsp-${b.name}`}
+                                            value={shortName}
+                                          >
+                                            {b.name}
+                                          </option>,
+                                        );
+                                        seen.add(shortName.toLowerCase());
                                       }
                                     });
-                                    
-                                    Object.keys(FACADE_BRANDS).forEach(b => {
-                                      if (!seen.has(b)) {
-                                        results.push(<option key={b} value={b}>{b}</option>);
-                                        seen.add(b);
-                                      }
-                                    });
-                                    
+
                                     return results;
                                   })()}
                                 </select>
@@ -20747,8 +20895,8 @@ const ReadyMadeProductsView = ({
                                 {mod.moduleGroup && <span className="text-[10px] bg-indigo-100 text-indigo-800 px-1.5 py-0.5 rounded font-bold">{mod.moduleGroup}</span>}
                               </div>
                               <div className="text-[11px] text-gray-500 mt-0.5 flex items-center gap-2">
-                                <span>Цена за ед.: <strong>{itemPrice.toLocaleString()} ₽</strong></span>
-                                <span>• Сумма: <strong className="text-indigo-700">{subtotal.toLocaleString()} ₽</strong></span>
+                                <span>Цена за ед.: <strong>{(itemPrice || 0).toLocaleString()} ₽</strong></span>
+                                <span>• Сумма: <strong className="text-indigo-700">{(subtotal || 0).toLocaleString()} ₽</strong></span>
                               </div>
                             </div>
                             <div className="flex items-center gap-3">
@@ -20853,7 +21001,7 @@ const ReadyMadeProductsView = ({
                               {selectedProd ? (
                                 <div className="flex items-center gap-2">
                                   <span className="text-xs font-bold text-emerald-800">
-                                    Итого: {demandTotalCost.toLocaleString()} ₽ ({unitPrice.toLocaleString()} ₽/шт.)
+                                    Итого: {(demandTotalCost || 0).toLocaleString()} ₽ ({(unitPrice || 0).toLocaleString()} ₽/шт.)
                                   </span>
                                   <button
                                     type="button"
@@ -20991,7 +21139,7 @@ const ReadyMadeProductsView = ({
                                   <option value="">-- Выбрать фасад из каталога или прайса --</option>
                                   {allFacadeOptions.map((f: any) => (
                                     <option key={f.id} value={f.id}>
-                                      {f.name} {f.price ? `(${f.price.toLocaleString()} ₽/м²)` : ""}
+                                      {f.name} {f.price ? `(${(f.price || 0).toLocaleString()} ₽/м²)` : ""}
                                     </option>
                                   ))}
                                 </select>
@@ -21497,7 +21645,7 @@ const ReadyMadeProductsView = ({
                               )}
                             </div>
                             <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-3">
-                              <span>Цена: <strong className="text-indigo-700">{price.toLocaleString()} ₽ {isFacadePicker ? "/ м²" : "/ шт."}</strong></span>
+                              <span>Цена: <strong className="text-indigo-700">{(price || 0).toLocaleString()} ₽ {isFacadePicker ? "/ м²" : "/ шт."}</strong></span>
                               <span>Итого за {isFacadePicker ? `${fittingPickerTarget.qty.toFixed(2)} м²` : `${fittingPickerTarget.qty} шт.`}: <strong className="text-emerald-700 font-black">{(price * fittingPickerTarget.qty).toLocaleString()} ₽</strong></span>
                             </div>
                           </div>
@@ -21599,7 +21747,7 @@ const ReadyMadeProductsView = ({
                           )}
                         </div>
                         <div className="text-xs text-gray-500 mt-1 flex items-center gap-3 flex-wrap">
-                          {price > 0 && <span>Цена: <strong className="text-indigo-700">{price.toLocaleString()} ₽</strong></span>}
+                          {price > 0 && <span>Цена: <strong className="text-indigo-700">{(price || 0).toLocaleString()} ₽</strong></span>}
                           {mod.width && <span>Ширина: <strong className="text-gray-700">{mod.width} мм</strong></span>}
                           {(mod.height || mod.moduleHeight) && <span>Высота: <strong className="text-gray-700">{mod.height || mod.moduleHeight} мм</strong></span>}
                         </div>
@@ -39126,7 +39274,7 @@ export default function App() {
                                         </div>
                                         {qty > 1 && unitPrice > 0 && (
                                           <div className="text-[9px] text-gray-400 font-medium mt-0.5">
-                                            {unitPrice.toLocaleString()} ₽/шт
+                                            {(unitPrice || 0).toLocaleString()} ₽/шт
                                           </div>
                                         )}
                                       </div>
@@ -39172,7 +39320,7 @@ export default function App() {
 
                               const diff = analogPrice - currPrice;
                               const diffRepr = diff > 0 
-                                ? `дороже на ${diff.toLocaleString()} ₽` 
+                                ? `дороже на ${(diff || 0).toLocaleString()} ₽` 
                                 : diff < 0 
                                 ? `дешевле на ${Math.abs(diff).toLocaleString()} ₽`
                                 : "такая же цена";
@@ -39349,7 +39497,7 @@ export default function App() {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="text-xs font-bold text-gray-800 truncate">{cp?.name || 'Товар'}</div>
-                          <div className="text-[10px] text-gray-500">Цена: {unitPrice.toLocaleString()} ₽ / шт.</div>
+                          <div className="text-[10px] text-gray-500">Цена: {(unitPrice || 0).toLocaleString()} ₽ / шт.</div>
                         </div>
                         <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
                           <input

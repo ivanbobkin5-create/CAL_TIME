@@ -228,7 +228,7 @@ export const CommercialProposalPrintView = ({
 
       const premiumDesc = `Ваш проект рассчитан в максимальной комплектации Премиум с использованием высококлассной фурнитуры (${currentHardwaresList}) и долговечных материалов (${currentMaterialsList}). Это флагманское качество, безупречная плавность хода и ресурс эксплуатации более 25 лет.`;
       
-      const comfortDesc = `Для оптимизации бюджета мы разработали проект-альтернативу: замена премиальной фурнитуры на надежные азиатские механизмы DTC/Samet со встроенными доводчиками, а также использование фасадов из качественного МДФ в износостойкой суперматовой ПВХ-плёнке. Внешний вид мебели останется практически идентичным, а экономия составит около ${saving.toLocaleString()} ₽ (15%).`;
+      const comfortDesc = `Для оптимизации бюджета мы разработали проект-альтернативу: замена премиальной фурнитуры на надежные азиатские механизмы DTC/Samet со встроенными доводчиками, а также использование фасадов из качественного МДФ в износостойкой суперматовой ПВХ-плёнке. Внешний вид мебели останется практически идентичным, а экономия составит около ${(saving || 0).toLocaleString()} ₽ (15%).`;
 
       return {
         type: "premium-heavy" as const,
@@ -276,7 +276,7 @@ export const CommercialProposalPrintView = ({
 
       const comfortDesc = `Ваш проект рассчитан в оптимальной комплектации Комфорт с отличным балансом цены и долговечности. Используется фурнитура с доводчиками (${currentHardwaresList}) и практичные износостойкие фасады (${currentMaterialsList}).`;
 
-      const optimaDesc = `Для снижения общей стоимости проекта можно заменить механизмы на более доступную базовую фурнитуру Boyard или Firmax без сложных систем доводчиков, а материал фасадов выбрать из ЛДСП. Проект полностью сохранит свою конфигурацию и внешний вид, снижая общую смету на ${saving.toLocaleString()} ₽ (15%).`;
+      const optimaDesc = `Для снижения общей стоимости проекта можно заменить механизмы на более доступную базовую фурнитуру Boyard или Firmax без сложных систем доводчиков, а материал фасадов выбрать из ЛДСП. Проект полностью сохранит свою конфигурацию и внешний вид, снижая общую смету на ${(saving || 0).toLocaleString()} ₽ (15%).`;
 
       return {
         type: "comfort-heavy" as const,
@@ -669,7 +669,7 @@ export const CommercialProposalPrintView = ({
                         <div className="text-right">
                           <p className="text-[11px] text-gray-400 font-medium">Стоимость изделия</p>
                           <span className="text-sm font-black text-indigo-700">
-                            {getProjectItemPrice(projectItem).toLocaleString()} ₽
+                            {(getProjectItemPrice(projectItem) || 0).toLocaleString()} ₽
                           </span>
                         </div>
                       )}
@@ -844,7 +844,7 @@ export const CommercialProposalPrintView = ({
 
               <div className="text-right">
                 <span className="text-2xl font-black text-white tracking-tight">
-                  {totalSum.toLocaleString()} ₽
+                  {(totalSum || 0).toLocaleString()} ₽
                 </span>
                 <p className="text-[10px] text-indigo-200">Действительно в течение 14 дней</p>
               </div>

@@ -43,7 +43,8 @@ import {
   ProductionStageId,
   SalaryAdjustment,
   MaterialResidual,
-  InstallationTask
+  InstallationTask,
+  EmployeeWorkLog
 } from './types';
 import { ERPLoader } from './ERPLoader';
 import { ERPDashboardView } from './views/ERPDashboardView';
@@ -312,26 +313,73 @@ export const ERPApp: React.FC<ERPAppProps> = ({
       return next;
     });
 
-    // Also update order status in main ERP state if matching order exists
+    // Also update order status & workLog in main ERP state if matching order exists
     if (updatedTask.orderNumber) {
-      setOrders(prev => prev.map(o => {
-        if (o.orderNumber === updatedTask.orderNumber) {
-          let newStage = o.currentStage;
-          let newStatus = o.status;
-          if (updatedTask.status === 'in_progress') {
-            newStage = 'installation' as ProductionStageId;
-            newStatus = 'in_progress';
-          } else if (updatedTask.status === 'completed') {
-            newStage = 'installation' as ProductionStageId;
+      setOrders(prev => {
+        let hasChanges = false;
+        const nextOrders = prev.map(o => {
+          if (o.orderNumber === updatedTask.orderNumber || (updatedTask.orderId && o.id === updatedTask.orderId)) {
+            hasChanges = true;
+            let newStage = o.currentStage;
+            let newStatus = o.status;
+            let updatedWorkLogs = o.workLogs ? [...o.workLogs] : [];
+
+            if (updatedTask.status === 'in_progress') {
+              newStage = 'assembly';
+              newStatus = 'in_progress';
+            } else if (updatedTask.status === 'completed') {
+              newStage = 'assembly';
+              // Add or update installation workLog for assembler salary calculation
+              if (updatedTask.installerEmployeeId) {
+                const earned = (updatedTask.assemblyPrice || 0) + (updatedTask.extraWorksTotal || 0);
+                const existingIdx = updatedWorkLogs.findIndex(l => l.stageId === 'assembly' && l.employeeId === updatedTask.installerEmployeeId);
+                const logEntry: EmployeeWorkLog = {
+                  id: `inst-log-${updatedTask.id}`,
+                  orderId: o.id,
+                  orderNumber: o.orderNumber,
+                  stageId: 'assembly',
+                  employeeId: updatedTask.installerEmployeeId,
+                  employeeName: updatedTask.installerEmployeeName || '',
+                  date: updatedTask.completedDate || new Date().toISOString(),
+                  startTime: updatedTask.scheduledDate || new Date().toISOString(),
+                  endTime: updatedTask.completedDate || new Date().toISOString(),
+                  status: 'completed',
+                  scannedPartsCount: 0,
+                  scannedAreaM2: 0,
+                  amountEarned: earned
+                };
+
+                if (existingIdx >= 0) {
+                  updatedWorkLogs[existingIdx] = { ...updatedWorkLogs[existingIdx], ...logEntry };
+                } else {
+                  updatedWorkLogs.push(logEntry);
+                }
+              }
+            }
+
+            return {
+              ...o,
+              currentStage: newStage,
+              status: newStatus,
+              workLogs: updatedWorkLogs
+            };
           }
-          return {
-            ...o,
-            currentStage: newStage,
-            status: newStatus
-          };
+          return o;
+        });
+
+        if (hasChanges) {
+          const targetId = company?.id || aliasOrId;
+          if (targetId) {
+            fetch(`/api/erp/${targetId}/orders`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ orders: nextOrders })
+            }).catch(e => console.warn('Failed to sync updated order workLogs', e));
+          }
         }
-        return o;
-      }));
+
+        return nextOrders;
+      });
     }
   };
 
@@ -616,6 +664,36 @@ export const ERPApp: React.FC<ERPAppProps> = ({
       }
 
       if (!parsedUser) {
+        // If an installer view is accessed via public link /installer/:installerId,
+        // we MUST still fetch employees and installation tasks from the server!
+        if (installerIdFromPath) {
+          try {
+            const [empRes, tasksRes] = await Promise.allSettled([
+              fetch(`/api/erp/${comp.id}/employees`),
+              fetch(`/api/erp/${comp.id}/installation-tasks`)
+            ]);
+
+            if (empRes.status === 'fulfilled' && empRes.value.ok) {
+              const empData = await empRes.value.json();
+              if (empData.employees && Array.isArray(empData.employees)) {
+                setEmployees(empData.employees);
+              }
+            }
+
+            if (tasksRes.status === 'fulfilled' && tasksRes.value.ok) {
+              const tasksData = await tasksRes.value.json();
+              if (tasksData.tasks && Array.isArray(tasksData.tasks)) {
+                setInstallationTasks(tasksData.tasks);
+                try {
+                  localStorage.setItem(`erp_installation_tasks_${comp.id}`, JSON.stringify(tasksData.tasks));
+                } catch (e) {}
+              }
+            }
+          } catch (installerErr) {
+            console.warn('Error fetching installer data:', installerErr);
+          }
+        }
+
         // Not logged in -> show login screen
         setIsLoading(false);
         setIsDataReady(true);
@@ -2258,6 +2336,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
                   shiftLogs={shiftLogs}
                   scheduleEntries={scheduleEntries}
                   settings={settings}
+                  installationTasks={installationTasks}
                 />
               )}
 

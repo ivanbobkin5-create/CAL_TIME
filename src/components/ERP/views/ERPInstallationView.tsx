@@ -27,7 +27,9 @@ import {
   Eye,
   Check,
   Sparkles,
-  ArrowRight
+  ArrowRight,
+  Play,
+  RotateCcw
 } from 'lucide-react';
 import { 
   InstallationTask, 
@@ -75,6 +77,7 @@ export const ERPInstallationView: React.FC<ERPInstallationViewProps> = ({
   // MODALS FOR ASSIGNMENT & REPORT
   const [assigningTask, setAssigningTask] = useState<InstallationTask | null>(null);
   const [selectedInstallerId, setSelectedInstallerId] = useState<string>('');
+  const [assignStatusMode, setAssignStatusMode] = useState<'scheduled' | 'in_progress'>('scheduled');
   const [assemblerSearch, setAssemblerSearch] = useState<string>('');
 
   const [reportTask, setReportTask] = useState<InstallationTask | null>(null);
@@ -242,6 +245,7 @@ export const ERPInstallationView: React.FC<ERPInstallationViewProps> = ({
   const handleOpenAssignModal = (task: InstallationTask) => {
     setAssigningTask(task);
     setSelectedInstallerId(task.installerEmployeeId || '');
+    setAssignStatusMode(task.status === 'in_progress' ? 'in_progress' : 'scheduled');
     setAssemblerSearch('');
   };
 
@@ -250,8 +254,15 @@ export const ERPInstallationView: React.FC<ERPInstallationViewProps> = ({
     if (!assigningTask) return;
     const emp = employees.find(e => e.id === selectedInstallerId);
     
-    // Update task status automatically if assigning first time
-    const nextStatus = selectedInstallerId && assigningTask.status === 'new' ? 'scheduled' : assigningTask.status;
+    // Determine target status
+    let nextStatus = assigningTask.status;
+    if (selectedInstallerId) {
+      if (assigningTask.status === 'new' || assigningTask.status === 'scheduled') {
+        nextStatus = assignStatusMode;
+      }
+    } else {
+      nextStatus = 'new';
+    }
 
     onUpdateTask({
       ...assigningTask,
@@ -504,14 +515,71 @@ export const ERPInstallationView: React.FC<ERPInstallationViewProps> = ({
           </div>
         </div>
 
-        {/* Action Button: Open Report */}
-        <button
-          onClick={() => setReportTask(task)}
-          className="w-full py-1.5 rounded-xl bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 font-bold text-xs text-slate-700 transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-        >
-          <FileText className="w-3.5 h-3.5 text-indigo-600" />
-          <span>Отчет о монтаже</span>
-        </button>
+        {/* Quick status transition buttons & Report */}
+        <div className="flex items-center gap-1.5 pt-1">
+          {task.status !== 'in_progress' && task.status !== 'completed' && (
+            <button
+              onClick={() => handleStatusChange(task, 'in_progress')}
+              className="flex-1 py-1.5 px-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold text-[10px] transition-colors flex items-center justify-center gap-1 cursor-pointer border border-amber-200"
+              title="Перевести в статус «Идет монтаж»"
+            >
+              <Play className="w-3 h-3 text-amber-600" />
+              <span>В работу</span>
+            </button>
+          )}
+
+          {task.status === 'in_progress' && (
+            <>
+              <button
+                onClick={() => handleStatusChange(task, 'completed')}
+                className="flex-1 py-1.5 px-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-[10px] transition-colors flex items-center justify-center gap-1 cursor-pointer border border-emerald-200"
+                title="Завершить монтаж успешно"
+              >
+                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                <span>Завершить</span>
+              </button>
+
+              <button
+                onClick={() => handleStatusChange(task, 'reclamation')}
+                className="py-1.5 px-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-800 font-bold text-[10px] transition-colors flex items-center justify-center gap-1 cursor-pointer border border-rose-200"
+                title="Перевести в рекламацию"
+              >
+                <AlertTriangle className="w-3 h-3 text-rose-600" />
+                <span>Брак</span>
+              </button>
+            </>
+          )}
+
+          {task.status === 'reclamation' && (
+            <button
+              onClick={() => handleStatusChange(task, 'in_progress')}
+              className="flex-1 py-1.5 px-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 font-bold text-[10px] transition-colors flex items-center justify-center gap-1 cursor-pointer border border-blue-200"
+              title="Вернуть в работу после устранения брака"
+            >
+              <RotateCcw className="w-3 h-3 text-blue-600" />
+              <span>В работу</span>
+            </button>
+          )}
+
+          {task.status === 'completed' && (
+            <button
+              onClick={() => handleStatusChange(task, 'in_progress')}
+              className="py-1.5 px-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold text-[10px] transition-colors flex items-center justify-center gap-1 cursor-pointer border border-slate-200"
+              title="Вернуть в статус «В работе»"
+            >
+              <RotateCcw className="w-3 h-3 text-slate-500" />
+              <span>Вернуть</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => setReportTask(task)}
+            className="flex-1 py-1.5 rounded-xl bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 font-bold text-[10px] text-slate-700 transition-colors flex items-center justify-center gap-1 cursor-pointer"
+          >
+            <FileText className="w-3.5 h-3.5 text-indigo-600" />
+            <span>Отчет</span>
+          </button>
+        </div>
       </div>
     );
   };
@@ -792,6 +860,37 @@ export const ERPInstallationView: React.FC<ERPInstallationViewProps> = ({
                 })}
             </div>
 
+            {/* Action upon assignment */}
+            {selectedInstallerId && (
+              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 space-y-2">
+                <div className="text-[11px] font-bold text-slate-700">После назначения:</div>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAssignStatusMode('scheduled')}
+                    className={`p-2.5 rounded-xl border text-center font-bold text-xs transition-all cursor-pointer ${
+                      assignStatusMode === 'scheduled'
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    📅 Ждет выезда
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAssignStatusMode('in_progress')}
+                    className={`p-2.5 rounded-xl border text-center font-bold text-xs transition-all cursor-pointer ${
+                      assignStatusMode === 'in_progress'
+                        ? 'bg-amber-600 text-white border-amber-600 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    ⚙️ Сразу в работу
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
               <button
                 onClick={() => setAssigningTask(null)}
@@ -898,9 +997,9 @@ export const ERPInstallationView: React.FC<ERPInstallationViewProps> = ({
                         <tr key={idx} className="hover:bg-slate-50">
                           <td className="p-2.5 font-bold">{w.name}</td>
                           <td className="p-2.5 text-center font-mono">{w.quantity} {w.unit}</td>
-                          <td className="p-2.5 text-right font-mono">{w.rate.toLocaleString('ru-RU')} ₽</td>
+                          <td className="p-2.5 text-right font-mono">{(w.rate || 0).toLocaleString('ru-RU')} ₽</td>
                           <td className="p-2.5 text-right font-mono font-bold text-indigo-950">
-                            {w.totalPrice.toLocaleString('ru-RU')} ₽
+                            {(w.totalPrice || 0).toLocaleString('ru-RU')} ₽
                           </td>
                         </tr>
                       ))}
@@ -998,7 +1097,7 @@ export const ERPInstallationView: React.FC<ERPInstallationViewProps> = ({
             </div>
 
             <form onSubmit={handleSaveTask} className="space-y-4 text-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Номер заказа *</label>
                   <input
@@ -1020,6 +1119,21 @@ export const ERPInstallationView: React.FC<ERPInstallationViewProps> = ({
                   >
                     <option value="installation">🛠️ Монтаж и сборка</option>
                     <option value="reclamation">⚠️ Рекламация / Бракованная деталь</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block font-bold text-slate-700 mb-1">Статус монтажа</label>
+                  <select
+                    value={formData.status || 'new'}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value as any })}
+                    className="w-full px-3.5 py-2.5 rounded-2xl bg-slate-50 border border-slate-200 font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    <option value="new">⏳ Ждет назначения</option>
+                    <option value="scheduled">📅 Сборщик назначен (ждет выезда)</option>
+                    <option value="in_progress">⚙️ Идет монтаж (В работе)</option>
+                    <option value="completed">✅ Монтаж завершен успешно</option>
+                    <option value="reclamation">⚠️ Рекламация</option>
                   </select>
                 </div>
               </div>

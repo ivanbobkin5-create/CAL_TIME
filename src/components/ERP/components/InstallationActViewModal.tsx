@@ -191,8 +191,8 @@ export const InstallationActViewModal: React.FC<InstallationActViewModalProps> =
                       </td>
                       <td className="p-3 text-center text-slate-500">{ew.unit}</td>
                       <td className="p-3 text-center font-mono font-bold">{ew.quantity}</td>
-                      <td className="p-3 text-right font-mono text-slate-600">{ew.price.toLocaleString('ru-RU')} ₽</td>
-                      <td className="p-3 text-right font-mono font-bold text-amber-900">{ew.totalPrice.toLocaleString('ru-RU')} ₽</td>
+                      <td className="p-3 text-right font-mono text-slate-600">{(ew.price || 0).toLocaleString('ru-RU')} ₽</td>
+                      <td className="p-3 text-right font-mono font-bold text-amber-900">{(ew.totalPrice || 0).toLocaleString('ru-RU')} ₽</td>
                     </tr>
                   ))}
                 </tbody>
@@ -202,7 +202,7 @@ export const InstallationActViewModal: React.FC<InstallationActViewModalProps> =
                       Итого к оплате за монтаж и доп. работы:
                     </td>
                     <td className="p-3.5 text-right font-mono text-base text-amber-400">
-                      {grandTotal.toLocaleString('ru-RU')} ₽
+                      {(grandTotal || 0).toLocaleString('ru-RU')} ₽
                     </td>
                   </tr>
                 </tfoot>
@@ -257,7 +257,7 @@ export const InstallationActViewModal: React.FC<InstallationActViewModalProps> =
               />
               <div className="text-xs">
                 <div className="font-bold text-emerald-400">
-                  Оплата в размере {grandTotal.toLocaleString('ru-RU')} ₽ получена от клиента
+                  Оплата в размере {(grandTotal || 0).toLocaleString('ru-RU')} ₽ получена от клиента
                 </div>
                 <div className="text-[10px] text-slate-400">
                   Отметьте для подтверждения кассового отчета

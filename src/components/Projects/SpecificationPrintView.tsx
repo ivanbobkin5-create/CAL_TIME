@@ -145,7 +145,7 @@ export const SpecificationPrintView = ({
             <div>
               <p className="text-gray-500 mb-1">Сумма по договору:</p>
               <p className="font-bold text-xl">
-                {contractSum.toLocaleString()} ₽
+                {(contractSum || 0).toLocaleString()} ₽
               </p>
 
               {separateItems.length > 0 && (
@@ -154,7 +154,7 @@ export const SpecificationPrintView = ({
                   {separateItems.map((item, idx) => (
                     <p key={idx} className="flex justify-between font-medium">
                       <span>— {item.name}:</span>
-                      <span className="text-gray-905 text-gray-900">{item.val.toLocaleString()} ₽</span>
+                      <span className="text-gray-905 text-gray-900">{(item.val || 0).toLocaleString()} ₽</span>
                     </p>
                   ))}
                 </div>
@@ -246,7 +246,7 @@ export const SpecificationPrintView = ({
                         )}
                       </div>
                       <span className="text-sm font-bold">
-                        {projSum.toLocaleString()} ₽
+                        {(projSum || 0).toLocaleString()} ₽
                       </span>
                     </div>
                   );
@@ -538,7 +538,7 @@ export const SpecificationPrintView = ({
                               Доставка
                             </td>
                             <td className="p-2 px-3 text-right font-bold">
-                              {summary.totalDeliveryPrice.toLocaleString()}{" "}
+                              {(summary.totalDeliveryPrice || 0).toLocaleString()}{" "}
                               <span className="text-[9px]">₽</span>
                             </td>
                           </tr>
@@ -555,7 +555,7 @@ export const SpecificationPrintView = ({
                               Сборка
                             </td>
                             <td className="p-2 px-3 text-right font-bold">
-                              {summary.totalAssemblyPrice.toLocaleString()}{" "}
+                              {(summary.totalAssemblyPrice || 0).toLocaleString()}{" "}
                               <span className="text-[9px]">₽</span>
                             </td>
                           </tr>

@@ -608,19 +608,19 @@ export const ProjectAnalyticsModal = ({
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="p-6 bg-gradient-to-br from-blue-50/70 to-blue-50/20 border border-blue-100 rounded-2xl">
               <span className="text-xs font-bold text-blue-800 uppercase tracking-wider block mb-1">Выручка (Продано)</span>
-              <div className="text-2xl font-black text-blue-900">{totals.revenue.toLocaleString()} ₽</div>
+              <div className="text-2xl font-black text-blue-900">{(totals.revenue || 0).toLocaleString()} ₽</div>
               <span className="text-[10px] text-blue-500 font-medium mt-1 inline-block">Оплачено клиентом по спецификации</span>
             </div>
 
             <div className="p-6 bg-gradient-to-br from-red-50/70 to-red-50/20 border border-red-100 rounded-2xl">
               <span className="text-xs font-bold text-red-800 uppercase tracking-wider block mb-1">Затраты (Себестоимость)</span>
-              <div className="text-2xl font-black text-red-900">{totals.cost.toLocaleString()} ₽</div>
+              <div className="text-2xl font-black text-red-900">{(totals.cost || 0).toLocaleString()} ₽</div>
               <span className="text-[10px] text-red-500 font-medium mt-1 inline-block">Стоимость сырья и закупки</span>
             </div>
 
             <div className="p-6 bg-gradient-to-br from-green-50/70 to-green-50/20 border border-green-100 rounded-2xl">
               <span className="text-xs font-bold text-green-800 uppercase tracking-wider block mb-1">Чистая прибыль (Маржа)</span>
-              <div className="text-2xl font-black text-green-900">{totals.profit.toLocaleString()} ₽</div>
+              <div className="text-2xl font-black text-green-900">{(totals.profit || 0).toLocaleString()} ₽</div>
               <span className="text-[10px] text-green-500 font-medium mt-1 inline-block">Итоговый доход от проекта</span>
             </div>
 
@@ -657,15 +657,15 @@ export const ProjectAnalyticsModal = ({
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between text-slate-300">
                       <span>Закупка у нас:</span>
-                      <span className="font-semibold text-white">{salonAnalytics.prodCost.toLocaleString()} ₽</span>
+                      <span className="font-semibold text-white">{(salonAnalytics.prodCost || 0).toLocaleString()} ₽</span>
                     </div>
                     <div className="flex justify-between text-slate-300">
                       <span>Продажа клиенту:</span>
-                      <span className="font-semibold text-white">{salonAnalytics.prodRetail.toLocaleString()} ₽</span>
+                      <span className="font-semibold text-white">{(salonAnalytics.prodRetail || 0).toLocaleString()} ₽</span>
                     </div>
                     <div className="pt-2.5 border-t border-white/10 flex justify-between font-bold text-emerald-400">
                       <span>Ваша маржа:</span>
-                      <span>+{salonAnalytics.prodProfit.toLocaleString()} ₽</span>
+                      <span>+{(salonAnalytics.prodProfit || 0).toLocaleString()} ₽</span>
                     </div>
                   </div>
                 </div>
@@ -679,15 +679,15 @@ export const ProjectAnalyticsModal = ({
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between text-slate-300">
                       <span>Ваша закупка:</span>
-                      <span className="font-semibold text-white">{salonAnalytics.ownCost.toLocaleString()} ₽</span>
+                      <span className="font-semibold text-white">{(salonAnalytics.ownCost || 0).toLocaleString()} ₽</span>
                     </div>
                     <div className="flex justify-between text-slate-300">
                       <span>Продажа клиенту:</span>
-                      <span className="font-semibold text-white">{salonAnalytics.ownRetail.toLocaleString()} ₽</span>
+                      <span className="font-semibold text-white">{(salonAnalytics.ownRetail || 0).toLocaleString()} ₽</span>
                     </div>
                     <div className="pt-2.5 border-t border-white/10 flex justify-between font-bold text-emerald-400">
                       <span>Ваша маржа:</span>
-                      <span>+{salonAnalytics.ownProfit.toLocaleString()} ₽</span>
+                      <span>+{(salonAnalytics.ownProfit || 0).toLocaleString()} ₽</span>
                     </div>
                   </div>
                 </div>
@@ -701,7 +701,7 @@ export const ProjectAnalyticsModal = ({
                   <div className="space-y-2 text-sm">
                     <div className="flex justify-between text-indigo-200">
                       <span>Всего затраты:</span>
-                      <span className="font-semibold text-white">{salonAnalytics.totalCost.toLocaleString()} ₽</span>
+                      <span className="font-semibold text-white">{(salonAnalytics.totalCost || 0).toLocaleString()} ₽</span>
                     </div>
                     <div className="flex justify-between text-indigo-200">
                       <span>Всего выручка:</span>
@@ -709,7 +709,7 @@ export const ProjectAnalyticsModal = ({
                     </div>
                     <div className="pt-2.5 border-t border-white/20 flex justify-between text-base font-black text-emerald-300">
                       <span>Общая прибыль:</span>
-                      <span>+{salonAnalytics.totalProfit.toLocaleString()} ₽</span>
+                      <span>+{(salonAnalytics.totalProfit || 0).toLocaleString()} ₽</span>
                     </div>
                   </div>
                 </div>
@@ -825,16 +825,16 @@ export const ProjectAnalyticsModal = ({
                         {row.name}
                       </td>
                       <td className="px-6 py-4 text-right text-gray-500 font-mono">
-                        {row.cost.toLocaleString()} ₽
+                        {(row.cost || 0).toLocaleString()} ₽
                       </td>
                       <td className="px-6 py-4 text-right text-gray-900 font-mono">
-                        {row.revenue.toLocaleString()} ₽
+                        {(row.revenue || 0).toLocaleString()} ₽
                       </td>
                       <td className="px-6 py-4 text-right text-indigo-600">
                         x{row.markup}
                       </td>
                       <td className="px-6 py-4 text-right text-emerald-600 font-bold font-mono">
-                        {row.profit.toLocaleString()} ₽
+                        {(row.profit || 0).toLocaleString()} ₽
                       </td>
                       <td className="px-6 py-4 text-right">
                         <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
@@ -851,10 +851,10 @@ export const ProjectAnalyticsModal = ({
                   ))}
                   <tr className="bg-indigo-50/40 text-gray-900 font-bold border-t-2 border-indigo-100">
                     <td className="px-6 py-4 text-indigo-900 uppercase tracking-wider text-xs">Итого по спецификации:</td>
-                    <td className="px-6 py-4 text-right font-mono">{totals.cost.toLocaleString()} ₽</td>
-                    <td className="px-6 py-4 text-right font-mono">{totals.revenue.toLocaleString()} ₽</td>
+                    <td className="px-6 py-4 text-right font-mono">{(totals.cost || 0).toLocaleString()} ₽</td>
+                    <td className="px-6 py-4 text-right font-mono">{(totals.revenue || 0).toLocaleString()} ₽</td>
                     <td className="px-6 py-4 text-right text-indigo-600 font-black">x{totals.markup}</td>
-                    <td className="px-6 py-4 text-right text-emerald-700 font-black font-mono">{totals.profit.toLocaleString()} ₽</td>
+                    <td className="px-6 py-4 text-right text-emerald-700 font-black font-mono">{(totals.profit || 0).toLocaleString()} ₽</td>
                     <td className="px-6 py-4 text-right">
                       <span className="px-3 py-1 bg-indigo-600 text-white font-black text-xs rounded-full">
                         {totals.marginPercent}%
@@ -901,7 +901,7 @@ export const ProjectAnalyticsModal = ({
                       <div key={row.id} className="space-y-1">
                         <div className="flex justify-between text-[11px] font-bold text-gray-500">
                           <span>{row.name.split(" ")[0]}</span>
-                          <span>{Math.round(pct)}% • {row.cost.toLocaleString()} ₽</span>
+                          <span>{Math.round(pct)}% • {(row.cost || 0).toLocaleString()} ₽</span>
                         </div>
                         <div className="w-full bg-gray-100 h-1.5 rounded-full overflow-hidden">
                           <div 

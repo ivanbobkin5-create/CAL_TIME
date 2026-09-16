@@ -101,16 +101,26 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
     if (!installerId) return [];
 
     return tasks.filter(t => {
+      // 1. Strict ID matching
       const isAssignedToThisInstaller = 
         (t.installerEmployeeId && (t.installerEmployeeId === installer.id || t.installerEmployeeId === installerId)) ||
         (t.additionalInstallerIds && Array.isArray(t.additionalInstallerIds) && (t.additionalInstallerIds.includes(installer.id) || t.additionalInstallerIds.includes(installerId)));
 
+      if (isAssignedToThisInstaller) return true;
+
+      // 2. If task is explicitly assigned to another installer ID, NEVER match by name
+      if (t.installerEmployeeId && t.installerEmployeeId !== installer.id && t.installerEmployeeId !== installerId) {
+        return false;
+      }
+
+      // 3. Fallback to name ONLY if installerEmployeeId was unassigned
       const isAssignedByName = Boolean(
+        !t.installerEmployeeId &&
         t.installerEmployeeName && installer.name && installer.name !== 'Сборщик мебели' && 
         t.installerEmployeeName.trim().toLowerCase() === installer.name.trim().toLowerCase()
       );
 
-      return Boolean(isAssignedToThisInstaller || isAssignedByName);
+      return isAssignedByName;
     });
   }, [tasks, installer, installerId]);
 
@@ -119,7 +129,7 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
     return installerTasks.filter(t => 
       t.status !== 'completed' && t.status !== 'cancelled' &&
       !(t as any).agreedWithClient && t.status !== 'in_progress' &&
-      (t.status === 'new' || t.status === 'scheduled' || t.status === 'assigned')
+      (t.status === 'new' || t.status === 'scheduled')
     );
   }, [installerTasks]);
 
@@ -145,15 +155,17 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
     let activePendingAmount = 0;
 
     completedTasks.forEach(t => {
-      const price = t.assemblyPrice || 0;
+      const price = (t.assemblyPrice || 0) + (t.extraWorksTotal || 0);
       totalEarnedAll += price;
-      if (t.completedDate && t.completedDate.startsWith(currentMonthStr)) {
+      
+      const compDate = (t.completedDate || t.updatedAt || t.createdAt || '').substring(0, 7);
+      if (compDate === currentMonthStr || !compDate) {
         totalEarnedMonth += price;
       }
     });
 
     activeTasks.forEach(t => {
-      activePendingAmount += (t.assemblyPrice || 0);
+      activePendingAmount += ((t.assemblyPrice || 0) + (t.extraWorksTotal || 0));
     });
 
     return {
@@ -669,18 +681,41 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
                     </button>
                   </div>
 
-                  {/* Main Action: Take in Work */}
-                  <button
-                    onClick={() => {
-                      setTakeModalTask(task);
-                      setAgreeDate(new Date().toISOString().split('T')[0]);
-                      setAgreeTime('10:00');
-                    }}
-                    className="w-full py-3.5 rounded-2xl bg-cyan-600 hover:bg-cyan-500 text-white font-black text-xs shadow-md shadow-cyan-600/20 transition-all flex items-center justify-center gap-2 cursor-pointer"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Взять в работу (Согласовать время)</span>
-                  </button>
+                  {/* Main Actions: Take in Work */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    <button
+                      onClick={() => {
+                        const nowIso = new Date().toISOString();
+                        const updated: InstallationTask = {
+                          ...task,
+                          status: 'in_progress',
+                          agreedWithClient: true,
+                          agreedAt: nowIso,
+                          scheduledDate: task.scheduledDate || nowIso.split('T')[0],
+                          scheduledTime: task.scheduledTime || '10:00',
+                          updatedAt: nowIso
+                        };
+                        onUpdateTask(updated);
+                        setActiveTab('active');
+                      }}
+                      className="w-full py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs shadow-md shadow-emerald-600/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Play className="w-4 h-4 fill-white" />
+                      <span>Принять в работу сразу</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setTakeModalTask(task);
+                        setAgreeDate(new Date().toISOString().split('T')[0]);
+                        setAgreeTime('10:00');
+                      }}
+                      className="w-full py-3 rounded-2xl bg-cyan-600 hover:bg-cyan-500 text-white font-black text-xs shadow-md shadow-cyan-600/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <Calendar className="w-4 h-4" />
+                      <span>Согласовать дату и время</span>
+                    </button>
+                  </div>
                 </div>
               ))
             )}
@@ -690,6 +725,32 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
         {/* TAB 2: ACTIVE TASKS */}
         {activeTab === 'active' && (
           <div className="space-y-3">
+            {/* Banner if there are pending proposed tasks */}
+            {proposedTasks.length > 0 && (
+              <div className="bg-gradient-to-r from-amber-500/10 via-amber-500/15 to-orange-500/10 border-2 border-amber-300 rounded-3xl p-4 flex items-center justify-between gap-3 shadow-sm animate-fade-in">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-9 h-9 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-black text-sm shrink-0 shadow-md shadow-amber-500/30 animate-pulse">
+                    {proposedTasks.length}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-black text-amber-950 truncate">
+                      {proposedTasks.length === 1 ? 'Вам назначен новый монтаж!' : `Вам назначено монтажей: ${proposedTasks.length}`}
+                    </div>
+                    <div className="text-[11px] text-amber-900 truncate">
+                      Заказ №{proposedTasks[0].orderNumber} ({proposedTasks[0].clientName}) ждет подтверждения
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setActiveTab('proposed')}
+                  className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-white text-xs font-black shrink-0 transition-colors shadow-sm cursor-pointer flex items-center gap-1"
+                >
+                  <span>Открыть</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            )}
+
             <div className="flex items-center justify-between text-xs font-bold text-slate-600 px-1">
               <span>Активные монтажи ({activeTasks.length})</span>
               <span className="text-[10px] text-cyan-800 font-bold bg-cyan-50 px-2 py-0.5 rounded-lg border border-cyan-200">
@@ -704,8 +765,16 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
                 </div>
                 <h3 className="font-bold text-slate-800 text-sm">Активных монтажей пока нет</h3>
                 <p className="text-xs text-slate-400 max-w-xs mx-auto">
-                  Возьмите заказ из вкладки «Предлагаемый», чтобы согласовать время с клиентом.
+                  Возьмите заказ из вкладки «Заявки», чтобы согласовать время с клиентом.
                 </p>
+                {proposedTasks.length > 0 && (
+                  <button
+                    onClick={() => setActiveTab('proposed')}
+                    className="mt-2 px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-bold transition-all shadow-sm cursor-pointer"
+                  >
+                    Перейти к заявкам ({proposedTasks.length})
+                  </button>
+                )}
               </div>
             ) : (
               activeTasks.map(task => {
@@ -1014,6 +1083,76 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
                   <span className="font-bold text-indigo-600">{installer.rateType === 'piecework' ? 'Сдельная (% от заказа)' : `${installer.baseRate || 0} ₽`}</span>
                 </div>
               </div>
+            </div>
+
+            {/* Detailed Completed Orders Earnings List */}
+            <div className="bg-white rounded-3xl p-5 border border-slate-200/80 space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="font-black text-slate-900 text-sm flex items-center gap-1.5">
+                  <Coins className="w-4 h-4 text-emerald-600" />
+                  <span>Начисления по завершенным монтажам ({completedTasks.length})</span>
+                </h3>
+              </div>
+
+              {completedTasks.length === 0 ? (
+                <div className="text-center py-6 text-xs text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                  Завершенных монтажей пока нет. Завершите монтаж на вкладке «В работе», чтобы здесь появилась выплата.
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {completedTasks.map(task => {
+                    const price = task.assemblyPrice || 0;
+                    const extra = task.extraWorksTotal || 0;
+                    const totalTask = price + extra;
+                    const dateFormatted = task.completedDate 
+                      ? new Date(task.completedDate).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' })
+                      : 'Недавно';
+
+                    return (
+                      <div key={task.id} className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200/70 space-y-2">
+                        <div className="flex items-start justify-between gap-2">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-900 font-mono font-bold text-[10px]">
+                                Заказ №{task.orderNumber}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-medium">
+                                {dateFormatted}
+                              </span>
+                            </div>
+                            <div className="font-bold text-slate-900 text-xs mt-1">
+                              {task.clientName}
+                            </div>
+                            {task.address && (
+                              <div className="text-[10px] text-slate-500 truncate max-w-xs mt-0.5">
+                                {task.address}
+                              </div>
+                            )}
+                          </div>
+
+                          <div className="text-right shrink-0">
+                            <div className="font-mono font-black text-emerald-600 text-sm">
+                              +{totalTask.toLocaleString('ru-RU')} ₽
+                            </div>
+                            {extra > 0 && (
+                              <div className="text-[9px] text-slate-400 font-medium">
+                                (монтаж {price.toLocaleString('ru-RU')} + доп. {extra.toLocaleString('ru-RU')})
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {totalTask === 0 && (
+                          <div className="text-[10px] text-amber-700 bg-amber-50 p-2 rounded-xl border border-amber-200 flex items-start gap-1">
+                            <Info className="w-3.5 h-3.5 text-amber-600 shrink-0 mt-0.5" />
+                            <span>Стоимость монтажа в ERP для этого заказа была 0 ₽. Руководитель может указать ставку в карточке монтажа.</span>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}

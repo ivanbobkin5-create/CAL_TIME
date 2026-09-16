@@ -99,10 +99,12 @@ export interface EmployeeWorkLog {
   stageId: ProductionStageId;
   startTime: string;
   endTime?: string;
+  date?: string;
   scannedPartsCount: number;
   scannedAreaM2: number;
   scannedEdgeM?: number;
   status: 'in_progress' | 'paused' | 'completed';
+  amountEarned?: number;
 }
 
 export interface OrderDefectItem {
@@ -480,6 +482,7 @@ export interface ERPCompanySettings {
   archiveSectionEnabled?: boolean; // Доступ к разделу Архив заказов
   reportsSectionEnabled?: boolean; // Доступ к разделу Аналитика и отчеты
   reportsViewScope?: 'all' | 'own_only'; // Объем аналитики: все производство или только за себя
+  activeWebhookUrl?: string; // Webhook для уведомлений о событиях ERP
   employeesSectionEnabled?: boolean; // Доступ к разделу Сотрудники
   installationSectionEnabled?: boolean; // Доступ к разделу Монтаж и сборка
   installationAccessMode?: 'all' | 'none' | 'custom';
@@ -631,6 +634,7 @@ export interface PerformedExtraWork {
   name: string;
   unit: string;
   price: number;
+  rate?: number;
   quantity: number;
   totalPrice: number;
 }
@@ -673,6 +677,9 @@ export interface InstallationTask {
   paidAmount?: number;
   
   scheduledDate?: string;
+  scheduledTime?: string;
+  agreedWithClient?: boolean;
+  agreedAt?: string;
   startedAt?: string;
   completedDate?: string;
   contractDate?: string; // Дата заключения договора (для выбора версии прайс-листа)
