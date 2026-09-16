@@ -52,6 +52,7 @@ import {
 import { ERPCompanySettings, MachineEquipment, PackageLabelSettings, ProductionStageId, ERPNoteRule, ProductionOrder, ERPEmployee } from '../types';
 import { DEFAULT_BIRKA_COLUMN_MAPPING } from '../utils/birkaParser';
 import { DEFAULT_HARDWARE_COLUMN_MAPPING } from '../utils/hardwareParser';
+import { DEFAULT_INSTALLATION_ACT_SETTINGS } from '../utils/installationActUtils';
 import { WarehouseCatalogPickerModal } from '../components/WarehouseCatalogPickerModal';
 import { PrintQrCommandsModal } from '../components/PrintQrCommandsModal';
 import { InstallationActSettingsTab } from '../components/InstallationActSettingsTab';
@@ -283,12 +284,50 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
     birkaColumnMapping: settings.birkaColumnMapping || DEFAULT_BIRKA_COLUMN_MAPPING,
     hardwareColumnMapping: settings.hardwareColumnMapping || DEFAULT_HARDWARE_COLUMN_MAPPING,
     birkaEncodingPreference: settings.birkaEncodingPreference || 'auto',
+    hardwareExcludeKeywords: settings.hardwareExcludeKeywords || ['ЛДСП', 'ДСП', 'МДФ', 'ХДФ', 'Кромка', 'ПВХ', 'Столешница', 'Стеновая'],
+    hardwareReviewKeywords: settings.hardwareReviewKeywords || ['Двери', 'Купе', 'Стекло', 'Двери RIAL', 'Зеркало', 'Фасад', 'Фасады', 'Столешница'],
+    requiredKittingDocuments: settings.requiredKittingDocuments || [
+      { id: 'doc-1', name: 'Чертежи для сборки', enabled: true },
+      { id: 'doc-2', name: 'Акт приема-передачи', enabled: true }
+    ],
+    installationActSettings: settings.installationActSettings || DEFAULT_INSTALLATION_ACT_SETTINGS,
+    bitrix24FieldMapping: settings.bitrix24FieldMapping || {},
+    shippingActTemplate: settings.shippingActTemplate || {
+      companyTitle: companyName || 'Мебельная фабрика',
+      companyInn: '',
+      companyPhone: '',
+      actHeaderTitle: 'АКТ ПРИЕМА-ПЕРЕДАЧИ ТОВАРА И КОМПЛЕКТАЦИИ',
+      actTermsText: 'Заказчик подтверждает, что доставленные упаковки осмотрены, видимых дефектов не обнаружено.',
+      showQrForAssembler: true
+    },
     noteRules: settings.noteRules || [
       { id: 'rule-1', pattern: 'паз', instruction: 'Требуется фрезеровка паза 4 мм под заднюю стенку ХДФ', color: 'blue' },
       { id: 'rule-2', pattern: 'присадка', instruction: 'Выполнить сверление отверстий по карте присадки', color: 'purple' },
       { id: 'rule-3', pattern: 'радиус', instruction: 'Криволинейный рез / радиусная обработка R=50', color: 'amber' }
     ]
   }));
+
+  // Re-sync formData when settings prop finishes loading asynchronously
+  const prevSettingsStrRef = React.useRef(JSON.stringify(settings));
+  React.useEffect(() => {
+    const currentStr = JSON.stringify(settings);
+    if (settings && currentStr !== prevSettingsStrRef.current) {
+      prevSettingsStrRef.current = currentStr;
+      setFormData(prev => ({
+        ...prev,
+        ...settings,
+        equipmentList: (settings.equipmentList && settings.equipmentList.length > 0) ? settings.equipmentList : prev.equipmentList,
+        birkaColumnMapping: settings.birkaColumnMapping || prev.birkaColumnMapping,
+        hardwareColumnMapping: settings.hardwareColumnMapping || prev.hardwareColumnMapping,
+        hardwareExcludeKeywords: settings.hardwareExcludeKeywords || prev.hardwareExcludeKeywords,
+        hardwareReviewKeywords: settings.hardwareReviewKeywords || prev.hardwareReviewKeywords,
+        requiredKittingDocuments: settings.requiredKittingDocuments || prev.requiredKittingDocuments,
+        installationActSettings: settings.installationActSettings || prev.installationActSettings,
+        bitrix24FieldMapping: settings.bitrix24FieldMapping || prev.bitrix24FieldMapping,
+        shippingActTemplate: settings.shippingActTemplate || prev.shippingActTemplate
+      }));
+    }
+  }, [settings]);
 
   // Bitrix24 Stage Auto-fetching State
   const [b24Categories, setB24Categories] = useState<{ id: string; name: string }[]>([]);
@@ -2384,7 +2423,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                     </label>
                     <input
                       type="number"
-                      value={formData.installationTravelRate || 1500}
+                      value={formData.installationTravelRate !== undefined ? formData.installationTravelRate : 1500}
                       onChange={(e) => setFormData({ ...formData, installationTravelRate: Number(e.target.value) })}
                       className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 font-black text-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
                     />
@@ -2396,7 +2435,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                     </label>
                     <input
                       type="number"
-                      value={formData.installationReclamationRate || 1000}
+                      value={formData.installationReclamationRate !== undefined ? formData.installationReclamationRate : 1000}
                       onChange={(e) => setFormData({ ...formData, installationReclamationRate: Number(e.target.value) })}
                       className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 font-black text-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
                     />
@@ -2408,7 +2447,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                     </label>
                     <input
                       type="number"
-                      value={formData.installationHardwarePickupRate || 500}
+                      value={formData.installationHardwarePickupRate !== undefined ? formData.installationHardwarePickupRate : 500}
                       onChange={(e) => setFormData({ ...formData, installationHardwarePickupRate: Number(e.target.value) })}
                       className="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 font-black text-slate-900 text-xs focus:ring-2 focus:ring-indigo-500 outline-none"
                     />
@@ -2489,13 +2528,9 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
               <label className="block text-xs font-bold text-slate-900">
                 Исключать из загружаемого файла фурнитуры (через запятую):
               </label>
-              <input
-                type="text"
-                value={(formData.hardwareExcludeKeywords || ['ЛДСП', 'ДСП', 'МДФ', 'ХДФ', 'Кромка', 'ПВХ', 'Столешница', 'Стеновая']).join(', ')}
-                onChange={(e) => {
-                  const arr = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
-                  setFormData({ ...formData, hardwareExcludeKeywords: arr });
-                }}
+              <CommaSeparatedInput
+                valueArray={formData.hardwareExcludeKeywords || ['ЛДСП', 'ДСП', 'МДФ', 'ХДФ', 'Кромка', 'ПВХ', 'Столешница', 'Стеновая']}
+                onChangeArray={(newArr) => setFormData(prev => ({ ...prev, hardwareExcludeKeywords: newArr }))}
                 placeholder="ЛДСП, ДСП, МДФ, ХДФ, Кромка, ПВХ..."
                 className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-cyan-500"
               />
@@ -2511,13 +2546,9 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                   Позиции для проверки и подтверждения при загрузке (через запятую):
                 </label>
               </div>
-              <input
-                type="text"
-                value={(formData.hardwareReviewKeywords || ['Двери', 'Купе', 'Стекло', 'Двери RIAL', 'Зеркало', 'Фасад', 'Фасады', 'Столешница']).join(', ')}
-                onChange={(e) => {
-                  const arr = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
-                  setFormData({ ...formData, hardwareReviewKeywords: arr });
-                }}
+              <CommaSeparatedInput
+                valueArray={formData.hardwareReviewKeywords || ['Двери', 'Купе', 'Стекло', 'Двери RIAL', 'Зеркало', 'Фасад', 'Фасады', 'Столешница']}
+                onChangeArray={(newArr) => setFormData(prev => ({ ...prev, hardwareReviewKeywords: newArr }))}
                 placeholder="Двери, Купе, Стекло, Двери RIAL, Зеркало, Фасады..."
                 className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-amber-200 font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
               />
@@ -2535,12 +2566,15 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                 <button
                   type="button"
                   onClick={() => {
-                    const existing = formData.requiredKittingDocuments || [
+                    const defaultDocs = [
                       { id: 'doc-1', name: 'Чертежи для сборки', enabled: true },
                       { id: 'doc-2', name: 'Акт приема-передачи', enabled: true }
                     ];
+                    const existing = formData.requiredKittingDocuments && formData.requiredKittingDocuments.length > 0 
+                      ? formData.requiredKittingDocuments 
+                      : defaultDocs;
                     const nextDoc = { id: `doc-${Date.now()}`, name: 'Новый документ', enabled: true };
-                    setFormData({ ...formData, requiredKittingDocuments: [...existing, nextDoc] });
+                    setFormData(prev => ({ ...prev, requiredKittingDocuments: [...existing, nextDoc] }));
                   }}
                   className="px-3 py-1.5 rounded-xl bg-cyan-50 hover:bg-cyan-100 text-cyan-700 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
                 >
@@ -2558,9 +2592,13 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                       type="checkbox"
                       checked={doc.enabled}
                       onChange={(e) => {
-                        const copy = [...(formData.requiredKittingDocuments || [])];
-                        copy[dIdx].enabled = e.target.checked;
-                        setFormData({ ...formData, requiredKittingDocuments: copy });
+                        const defaultDocs = [
+                          { id: 'doc-1', name: 'Чертежи для сборки', enabled: true },
+                          { id: 'doc-2', name: 'Акт приема-передачи', enabled: true }
+                        ];
+                        const list = formData.requiredKittingDocuments || defaultDocs;
+                        const copy = list.map((item, i) => i === dIdx ? { ...item, enabled: e.target.checked } : item);
+                        setFormData(prev => ({ ...prev, requiredKittingDocuments: copy }));
                       }}
                       className="w-4 h-4 rounded text-cyan-600 focus:ring-cyan-500 border-slate-300 cursor-pointer"
                     />
@@ -2568,17 +2606,26 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                       type="text"
                       value={doc.name}
                       onChange={(e) => {
-                        const copy = [...(formData.requiredKittingDocuments || [])];
-                        copy[dIdx].name = e.target.value;
-                        setFormData({ ...formData, requiredKittingDocuments: copy });
+                        const defaultDocs = [
+                          { id: 'doc-1', name: 'Чертежи для сборки', enabled: true },
+                          { id: 'doc-2', name: 'Акт приема-передачи', enabled: true }
+                        ];
+                        const list = formData.requiredKittingDocuments || defaultDocs;
+                        const copy = list.map((item, i) => i === dIdx ? { ...item, name: e.target.value } : item);
+                        setFormData(prev => ({ ...prev, requiredKittingDocuments: copy }));
                       }}
                       className="flex-1 px-3 py-1.5 rounded-xl bg-white border border-slate-200 font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-cyan-500"
                     />
                     <button
                       type="button"
                       onClick={() => {
-                        const copy = (formData.requiredKittingDocuments || []).filter((_, i) => i !== dIdx);
-                        setFormData({ ...formData, requiredKittingDocuments: copy });
+                        const defaultDocs = [
+                          { id: 'doc-1', name: 'Чертежи для сборки', enabled: true },
+                          { id: 'doc-2', name: 'Акт приема-передачи', enabled: true }
+                        ];
+                        const list = formData.requiredKittingDocuments || defaultDocs;
+                        const copy = list.filter((_, i) => i !== dIdx);
+                        setFormData(prev => ({ ...prev, requiredKittingDocuments: copy }));
                       }}
                       className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
                     >

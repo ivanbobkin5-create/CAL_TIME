@@ -238,7 +238,7 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
     if (Notification.permission === 'granted') {
       if ('serviceWorker' in navigator && navigator.serviceWorker.ready) {
         navigator.serviceWorker.ready.then((reg) => {
-          reg.showNotification(title, {
+          (reg as any).showNotification(title, {
             body,
             icon: '/pwa-192x192.png',
             badge: '/pwa-192x192.png',
@@ -246,7 +246,7 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
             tag: 'installation-task-proposed',
             renotify: true,
             data: { url: taskUrl || window.location.href }
-          });
+          } as any);
         }).catch(() => {
           new Notification(title, { body, icon: '/pwa-192x192.png' });
         });

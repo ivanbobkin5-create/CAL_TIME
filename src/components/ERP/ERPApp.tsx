@@ -261,7 +261,12 @@ export const ERPApp: React.FC<ERPAppProps> = ({
   const [installationTasks, setInstallationTasks] = useState<InstallationTask[]>(() => {
     try {
       const saved = localStorage.getItem(`erp_installation_tasks_${aliasOrId}`);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(t => t.id !== 'inst-demo-2' && !t.orderNumber?.includes('Тест2') && !t.clientName?.includes('Тест2') && !t.comment?.includes('Тест2'));
+        }
+      }
     } catch (e) {}
     return [];
   });
@@ -314,10 +319,10 @@ export const ERPApp: React.FC<ERPAppProps> = ({
           let newStage = o.currentStage;
           let newStatus = o.status;
           if (updatedTask.status === 'in_progress') {
-            newStage = 'installation';
+            newStage = 'installation' as ProductionStageId;
             newStatus = 'in_progress';
           } else if (updatedTask.status === 'completed') {
-            newStage = 'installation';
+            newStage = 'installation' as ProductionStageId;
           }
           return {
             ...o,
@@ -1050,9 +1055,10 @@ export const ERPApp: React.FC<ERPAppProps> = ({
 
   const handleSaveSettings = async (newSettings: ERPCompanySettings) => {
     setSettings(newSettings);
-    if (company?.id) {
+    const targetCompId = company?.id || aliasOrId || 'mebel-soft';
+    if (targetCompId) {
       try {
-        await fetch(`/api/db/doc/companies/${company.id}`, {
+        await fetch(`/api/db/doc/companies/${targetCompId}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1063,6 +1069,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
             merge: true
           })
         });
+        setCompany(prev => prev ? { ...prev, erpConfig: newSettings, erpSettings: newSettings } : prev);
         // Reload orders after settings change (e.g. stage or source changed)
         handleSyncOrders();
       } catch (e) {

@@ -598,6 +598,7 @@ export interface ExtraWorkItem {
   name: string;      // Наименование услуги (например, "Выпил под варочную панель")
   unit: string;      // Единица измерения (шт, м.п., услуга, этаж)
   price: number;     // Цена за единицу в ₽
+  category?: string;
 }
 
 export interface ExtraWorksTariffVersion {
@@ -664,6 +665,7 @@ export interface InstallationTask {
   paidAmount?: number;
   
   scheduledDate?: string;
+  startedAt?: string;
   completedDate?: string;
   contractDate?: string; // Дата заключения договора (для выбора версии прайс-листа)
   

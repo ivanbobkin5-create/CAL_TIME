@@ -36,16 +36,23 @@ export const CommaSeparatedInput: React.FC<CommaSeparatedInputProps> = ({
     onChangeArray(parsed);
   };
 
+  const handleBlur = () => {
+    isFocusedRef.current = false;
+    const cleaned = text
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean);
+    onChangeArray(cleaned);
+    setText(cleaned.join(', '));
+  };
+
   return (
     <input
       id={id}
       type="text"
       value={text}
       onFocus={() => { isFocusedRef.current = true; }}
-      onBlur={() => {
-        isFocusedRef.current = false;
-        setText((valueArray || []).join(', '));
-      }}
+      onBlur={handleBlur}
       onChange={handleChange}
       placeholder={placeholder}
       className={className}
