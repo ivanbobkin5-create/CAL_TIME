@@ -240,7 +240,14 @@ function transliterate(str: string): string {
       
       const visibleCategories = companyData.landingPage?.visibleCategories || [];
       if (visibleCategories.length > 0) {
-        allProducts = allProducts.filter(p => visibleCategories.includes(p.category));
+        allProducts = allProducts.filter(p => {
+          if (!p.category) return false;
+          return visibleCategories.some((vc: string) => 
+            vc.trim().toLowerCase() === p.category.trim().toLowerCase() ||
+            p.category.trim().toLowerCase().includes(vc.trim().toLowerCase()) ||
+            vc.trim().toLowerCase().includes(p.category.trim().toLowerCase())
+          );
+        });
       }
       
       const isErpAllowed = companyData.erpAllowed !== undefined ? !!companyData.erpAllowed : (companyData.erpEnabled !== undefined ? !!companyData.erpEnabled : false);

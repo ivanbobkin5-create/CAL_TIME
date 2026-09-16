@@ -1449,6 +1449,36 @@ type ProductionFormat = "own" | "contract";
 
 const isDryerCategory = (cat: string) => cat === "Посудосушитель" || cat === "Посудосушители";
 
+export const matchProductCategory = (prodCat?: string, targetCat?: string | null): boolean => {
+  if (!targetCat || targetCat === "Все категории" || targetCat === "Все") return true;
+  if (!prodCat) return false;
+  const p = prodCat.trim().toLowerCase();
+  const t = targetCat.trim().toLowerCase();
+  if (p === t) return true;
+
+  if (t === "петли" && (p.includes("петл") || p === "петля")) return true;
+  if (t === "посудосушители" && (p.includes("сушил") || p === "посудосушитель")) return true;
+  if (t === "посудосушитель" && (p.includes("сушил") || p === "посудосушители")) return true;
+  if (t === "ручки и крючки" && (p.includes("ручк") || p.includes("крючк") || p.includes("лицев"))) return true;
+  if (t === "системы выдвижения" && (p.includes("выдвиж") || p.includes("направл") || p.includes("ящик") || p.includes("бокс") || p.includes("метабокс"))) return true;
+  if ((t === "подъемные механизмы" || t === "подъёмные механизмы") && (p.includes("подъем") || p.includes("подъём") || p.includes("газлифт") || p.includes("амортизатор"))) return true;
+  if (t === "кухонные гарнитуры" && (p.includes("кухон") || p.includes("гарнитур") || p.includes("кухн"))) return true;
+  if (t === "кухни" && (p.includes("кухон") || p.includes("гарнитур") || p.includes("кухн"))) return true;
+  if (t === "кухонные модули" && (p.includes("модул") || p.includes("корпус"))) return true;
+  if (t === "мойки и аксессуары" && (p.includes("мойк") || p.includes("смесител") || p.includes("фильтр") || p.includes("дозатор"))) return true;
+  if (t === "крепежные элементы и цоколь" && (p.includes("креп") || p.includes("цокол") || p.includes("опор") || p.includes("ножк") || p.includes("уголок") || p.includes("шкант") || p.includes("стяжк") || p.includes("евровинт"))) return true;
+  if (t === "выдвижные корзины" && (p.includes("корзин") || p.includes("бутылочниц") || p.includes("карго"))) return true;
+  if (t === "столешницы и стеновые" && (p.includes("столешниц") || p.includes("стенов") || p.includes("фартук") || p.includes("щит") || p.includes("еврозапил"))) return true;
+  if (t === "оснащение шкафов" && (p.includes("шкаф") || p.includes("гардероб") || p.includes("брючниц") || p.includes("пантограф") || p.includes("вешалк"))) return true;
+  if (t === "освещение" && (p.includes("освещ") || p.includes("светил") || p.includes("лент") || p.includes("профил") || p.includes("трансформатор") || p.includes("блок питан") || p.includes("выключател"))) return true;
+  if (t === "шкафы" && p.includes("шкаф")) return true;
+  if (t === "прихожие" && p.includes("прихож")) return true;
+  if (t === "столы" && p.includes("стол")) return true;
+  if (t === "комоды" && p.includes("комод")) return true;
+
+  return p.includes(t) || t.includes(p);
+};
+
 const INITIAL_PRODUCT_CATEGORIES = [
   "Столешницы и стеновые",
   "Крепежные элементы и цоколь",
@@ -1462,6 +1492,12 @@ const INITIAL_PRODUCT_CATEGORIES = [
   "Освещение",
   "Оснащение шкафов",
   "Кухонные модули",
+  "Кухонные гарнитуры",
+  "Кухни",
+  "Шкафы",
+  "Прихожие",
+  "Столы",
+  "Комоды",
   "Сопутствующие товары",
   "Акционные товары",
   "Мебельные ноги и опоры",
@@ -1479,9 +1515,7 @@ const mergeCategories = (
     .filter(
       (c: string) =>
         typeof c === "string" &&
-        c.trim().length > 0 &&
-        c !== "Кухонный гарнитур" &&
-        c !== "Посудосушитель",
+        c.trim().length > 0,
     )
     .map((c: string) => c.trim());
   return Array.from(new Set([...INITIAL_PRODUCT_CATEGORIES, ...filtered]));
@@ -22463,23 +22497,15 @@ const ProductsView = ({
   const displayProductCategories = useMemo(() => {
     const catSet = new Set<string>();
     (productCategories || []).forEach((c) => {
-      if (c && typeof c === "string") catSet.add(c.trim());
+      if (c && typeof c === "string" && c.trim().length > 0) catSet.add(c.trim());
     });
     (catalogProducts || []).forEach((p: any) => {
-      if (p.category && typeof p.category === "string") {
+      if (p && p.category && typeof p.category === "string" && p.category.trim().length > 0) {
         catSet.add(p.category.trim());
       }
     });
     return Array.from(catSet);
   }, [productCategories, catalogProducts]);
-
-  useEffect(() => {
-    if (selectedCategory && isReadyMadeEnabled) {
-      if (isReadyMadeCategory(selectedCategory)) {
-        setSelectedCategory("Все категории");
-      }
-    }
-  }, [selectedCategory, isReadyMadeEnabled, isReadyMadeCategory, setSelectedCategory]);
 
   // Kitchen Modules Picker Modal State
   const [isKitchenModulesModalOpen, setIsKitchenModulesModalOpen] = useState(false);
@@ -23328,19 +23354,6 @@ const ProductsView = ({
         return false;
       }
 
-      // Исключаем готовую мебель из основного товарного каталога, если она вынесена в отдельный раздел
-      const disabledReadyMadeCats = companyData?.readyMadeConfig?.disabledCategories || [];
-      const defaultReadyCats = ["Кухни", "Шкафы", "Прихожие", "Столы", "Комоды", "Кухонные гарнитуры", "Кухонный гарнитур"];
-      const configuredReadyCats = companyData?.readyMadeConfig?.categories || defaultReadyCats;
-      const activeReadyMadeCats = configuredReadyCats.filter((c: string) => !disabledReadyMadeCats.includes(c));
-      const isReadyMadeEnabled = companyData?.readyMadeConfig?.enabled !== false;
-
-      if (isReadyMadeEnabled && activeProductsView !== 'moderation') {
-        if (p.isReadyMade === true || isReadyMadeCategory(p.category)) {
-          return false;
-        }
-      }
-
       // Stage 1: Moderation / Status filtering
       if (activeProductsView === 'moderation') {
         return p.status === 'pending' || p.markedForDeletion;
@@ -23355,7 +23368,7 @@ const ProductsView = ({
       return true; // Show approved products normally
     });
 
-    const isHandlesSelected = selectedCategory === "Ручки и крючки";
+    const isHandlesSelected = matchProductCategory(selectedCategory || "", "Ручки и крючки");
     const hasAnyHandleFilterActive = !!(
       handleLengthFilter ||
       handleColorFilter ||
@@ -23372,7 +23385,7 @@ const ProductsView = ({
     if (isHandlesSelected && hasAnyHandleFilterActive) {
       const expanded: any[] = [];
       initialFiltered.forEach((p) => {
-        if (p.category === "Ручки и крючки") {
+        if (matchProductCategory(p.category || "", "Ручки и крючки")) {
           const isHook = isProductHook(p);
           if (handlesOrHooksFilter === "handles" && isHook) return;
           if (handlesOrHooksFilter === "hooks" && !isHook) return;
@@ -23425,7 +23438,7 @@ const ProductsView = ({
     } else if (isHandlesSelected) {
       // If no filters are active, we still filter them based on handlesOrHooksFilter!
       itemsToProcess = initialFiltered.filter(p => {
-        if (p.category !== "Ручки и крючки") return true;
+        if (!matchProductCategory(p.category || "", "Ручки и крючки")) return true;
         const isHook = isProductHook(p);
         if (handlesOrHooksFilter === "handles") return !isHook;
         return isHook;
@@ -23457,65 +23470,67 @@ const ProductsView = ({
 
       const matchesCategory =
         !selectedCategory || 
+        selectedCategory === "Все категории" ||
+        selectedCategory === "Все" ||
         (selectedCategory === "Акционные товары"
           ? isPromo
           : isDryerCategory(selectedCategory)
             ? isDryerCategory(p.category)
-            : p.category === selectedCategory);
+            : matchProductCategory(p.category, selectedCategory));
 
       let matchesHingeType = true;
-      if (selectedCategory === "Петли" && hingeTypeFilter) {
+      if (matchProductCategory(selectedCategory || "", "Петли") && hingeTypeFilter) {
         matchesHingeType = p.hingeType === hingeTypeFilter;
       }
 
       let matchesKitchenType = true;
-      if (selectedCategory === "Кухонные гарнитуры" && kitchenTypeFilter) {
+      if (matchProductCategory(selectedCategory || "", "Кухонные гарнитуры") && kitchenTypeFilter) {
         matchesKitchenType = p.kitchenType === kitchenTypeFilter;
       }
 
       let matchesKitchenStyle = true;
-      if (selectedCategory === "Кухонные гарнитуры" && kitchenStyleFilter) {
+      if (matchProductCategory(selectedCategory || "", "Кухонные гарнитуры") && kitchenStyleFilter) {
         matchesKitchenStyle = p.kitchenStyle === kitchenStyleFilter;
       }
 
       let matchesKitchenPrice = true;
-      if (selectedCategory === "Кухонные гарнитуры") {
+      if (matchProductCategory(selectedCategory || "", "Кухонные гарнитуры")) {
         const pPrice = p.economyPrice || p.price || 0;
         if (kitchenMinPriceFilter && pPrice < Number(kitchenMinPriceFilter)) matchesKitchenPrice = false;
         if (kitchenMaxPriceFilter && pPrice > Number(kitchenMaxPriceFilter)) matchesKitchenPrice = false;
       }
 
       let matchesHingeDamping = true;
-      if (selectedCategory === "Петли" && hingeDampingFilter) {
+      if (matchProductCategory(selectedCategory || "", "Петли") && hingeDampingFilter) {
         matchesHingeDamping = p.hingeDamping === hingeDampingFilter;
       }
 
       let matchesManufacturer = true;
-      if (selectedCategory === "Петли" && manufacturerFilter) {
+      if (matchProductCategory(selectedCategory || "", "Петли") && manufacturerFilter) {
         matchesManufacturer = p.manufacturer === manufacturerFilter;
       }
 
       let matchesDrawerSub = true;
-      if (selectedCategory === "Системы выдвижения" && drawerSubFilter) {
+      if (matchProductCategory(selectedCategory || "", "Системы выдвижения") && drawerSubFilter) {
         matchesDrawerSub = p.drawerSubCategory === drawerSubFilter;
       }
       
       let matchesDrawerRunner = true;
-      if (selectedCategory === "Системы выдвижения" && drawerRunnerTypeFilter) {
+      if (matchProductCategory(selectedCategory || "", "Системы выдвижения") && drawerRunnerTypeFilter) {
         matchesDrawerRunner = p.runnerType === drawerRunnerTypeFilter;
       }
 
-      if (selectedCategory === "Системы выдвижения" && manufacturerFilter) {
+      if (matchProductCategory(selectedCategory || "", "Системы выдвижения") && manufacturerFilter) {
         matchesManufacturer = p.manufacturer === manufacturerFilter;
       }
 
       let matchesDepth = true;
-      if (selectedCategory === "Системы выдвижения" && depthFilter) {
+      if (matchProductCategory(selectedCategory || "", "Системы выдвижения") && depthFilter) {
         matchesDepth = p.depth === depthFilter;
       }
 
       let matchesLighting = true;
-      if (selectedCategory === "Освещение" && lightingSubFilter) {
+      if (matchProductCategory(selectedCategory || "", "Освещение") && lightingSubFilter) {
         if (p.lightingType) {
           matchesLighting = p.lightingType === lightingSubFilter;
         } else {
@@ -23536,42 +23551,42 @@ const ProductsView = ({
       }
 
       let matchesModuleGroup = true;
-      if (selectedCategory === "Кухонные модули" && moduleGroupFilter) {
+      if (matchProductCategory(selectedCategory || "", "Кухонные модули") && moduleGroupFilter) {
         matchesModuleGroup = p.moduleGroup === moduleGroupFilter;
       }
 
       let matchesModuleHeight = true;
-      if (selectedCategory === "Кухонные модули" && moduleHeightFilter) {
+      if (matchProductCategory(selectedCategory || "", "Кухонные модули") && moduleHeightFilter) {
         matchesModuleHeight = p.moduleHeight === moduleHeightFilter;
       }
 
       let matchesModuleDepth = true;
-      if (selectedCategory === "Кухонные модули" && moduleDepthFilter) {
+      if (matchProductCategory(selectedCategory || "", "Кухонные модули") && moduleDepthFilter) {
         matchesModuleDepth = p.moduleDepth === moduleDepthFilter;
       }
 
       let matchesModuleWidth = true;
-      if (selectedCategory === "Кухонные модули" && moduleWidthFilter) {
+      if (matchProductCategory(selectedCategory || "", "Кухонные модули") && moduleWidthFilter) {
         matchesModuleWidth = p.moduleWidth === moduleWidthFilter;
       }
 
       let matchesModuleType = true;
-      if (selectedCategory === "Кухонные модули" && moduleTypeFilter) {
+      if (matchProductCategory(selectedCategory || "", "Кухонные модули") && moduleTypeFilter) {
         matchesModuleType = p.moduleType === moduleTypeFilter;
       }
 
       let matchesDryerWidth = true;
-      if (isDryerCategory(selectedCategory) && dryerWidthFilter) {
+      if (isDryerCategory(selectedCategory || "") && dryerWidthFilter) {
         matchesDryerWidth = String(p.dryerWidth) === String(dryerWidthFilter);
       }
 
       let matchesDryerBase = true;
-      if (isDryerCategory(selectedCategory) && dryerBaseFilter) {
+      if (isDryerCategory(selectedCategory || "") && dryerBaseFilter) {
         matchesDryerBase = p.dryerBase === dryerBaseFilter;
       }
 
       let matchesDryerBrand = true;
-      if (isDryerCategory(selectedCategory) && dryerBrandFilter) {
+      if (isDryerCategory(selectedCategory || "") && dryerBrandFilter) {
         matchesDryerBrand = p.manufacturer === dryerBrandFilter;
       }
 
@@ -23615,7 +23630,7 @@ const ProductsView = ({
       }
 
       let matchesSinkGroup = true;
-      if (selectedCategory === "Мойки и аксессуары" && sinkGroupFilter) {
+      if (matchProductCategory(selectedCategory || "", "Мойки и аксессуары") && sinkGroupFilter) {
         matchesSinkGroup = (p.sinkGroup || "Мойки") === sinkGroupFilter;
       }
 
