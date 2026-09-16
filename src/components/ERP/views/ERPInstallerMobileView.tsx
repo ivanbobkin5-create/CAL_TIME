@@ -94,32 +94,38 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
     } as ERPEmployee;
   }, [employees, installerId]);
 
-  // Filter Tasks for this Installer (assigned to them specifically OR unassigned proposed tasks)
+  // Filter Tasks STRICTLY for this Installer (must be explicitly assigned to this installer)
   const installerTasks = useMemo(() => {
+    if (!installerId) return [];
+
     return tasks.filter(t => {
       const isAssignedToThisInstaller = 
         (t.installerEmployeeId && (t.installerEmployeeId === installer.id || t.installerEmployeeId === installerId)) ||
-        (t.installerEmployeeName && installer.name && installer.name !== 'Сборщик мебели' && t.installerEmployeeName.trim().toLowerCase() === installer.name.trim().toLowerCase());
+        (t.additionalInstallerIds && Array.isArray(t.additionalInstallerIds) && (t.additionalInstallerIds.includes(installer.id) || t.additionalInstallerIds.includes(installerId)));
 
-      const isUnassignedFreeTask = 
-        (!t.installerEmployeeId || t.installerEmployeeId === '' || t.installerEmployeeId === 'unassigned') && 
-        (!t.installerEmployeeName || t.installerEmployeeName === 'Не назначен' || t.installerEmployeeName === '');
+      const isAssignedByName = Boolean(
+        t.installerEmployeeName && installer.name && installer.name !== 'Сборщик мебели' && 
+        t.installerEmployeeName.trim().toLowerCase() === installer.name.trim().toLowerCase()
+      );
 
-      return Boolean(isAssignedToThisInstaller || isUnassignedFreeTask);
+      return Boolean(isAssignedToThisInstaller || isAssignedByName);
     });
   }, [tasks, installer, installerId]);
 
   // Tab 1: Proposed Tasks (New or Scheduled without client agreement)
   const proposedTasks = useMemo(() => {
     return installerTasks.filter(t => 
-      (t.status === 'new' || (t.status === 'scheduled' && !(t as any).agreedWithClient))
+      t.status !== 'completed' && t.status !== 'cancelled' &&
+      !(t as any).agreedWithClient && t.status !== 'in_progress' &&
+      (t.status === 'new' || t.status === 'scheduled' || t.status === 'assigned')
     );
   }, [installerTasks]);
 
-  // Tab 2: Active Tasks (Scheduled with client agreement or in_progress)
+  // Tab 2: Active Tasks (In progress or agreed with client)
   const activeTasks = useMemo(() => {
     return installerTasks.filter(t => 
-      (t.status === 'scheduled' && (t as any).agreedWithClient) || t.status === 'in_progress'
+      t.status !== 'completed' && t.status !== 'cancelled' &&
+      (t.status === 'in_progress' || (t as any).agreedWithClient === true || Boolean((t as any).agreedAt))
     );
   }, [installerTasks]);
 
@@ -157,7 +163,22 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
     };
   }, [completedTasks, activeTasks]);
 
-  // Notification & PWA Installation State
+  // Notification & PWA Installation State & Banner Dismissal
+  const [isBannerDismissed, setIsBannerDismissed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('erp_installer_banner_dismissed') === 'true';
+    } catch (e) {
+      return false;
+    }
+  });
+
+  const handleDismissBanner = () => {
+    setIsBannerDismissed(true);
+    try {
+      localStorage.setItem('erp_installer_banner_dismissed', 'true');
+    } catch (e) {}
+  };
+
   const [notifPermission, setNotifPermission] = useState<NotificationPermission>(() => {
     if (typeof window !== 'undefined' && 'Notification' in window) {
       return Notification.permission;
@@ -476,63 +497,74 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
       <div className="max-w-md mx-auto p-4 space-y-4">
 
         {/* PWA & Notification Prompt Banner */}
-        <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-3xl p-4 shadow-lg border border-indigo-800/40 space-y-3">
-          <div className="flex items-start justify-between gap-3">
-            <div className="flex items-center gap-2.5">
-              <div className="w-9 h-9 rounded-2xl bg-indigo-600/40 text-indigo-300 flex items-center justify-center shrink-0 border border-indigo-500/30">
-                <BellRing className="w-5 h-5 text-indigo-400 animate-pulse" />
+        {!isBannerDismissed && (
+          <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-3xl p-4 shadow-lg border border-indigo-800/40 space-y-3 relative animate-fade-in">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2.5 flex-1 pr-6">
+                <div className="w-9 h-9 rounded-2xl bg-indigo-600/40 text-indigo-300 flex items-center justify-center shrink-0 border border-indigo-500/30">
+                  <BellRing className="w-5 h-5 text-indigo-400 animate-pulse" />
+                </div>
+                <div>
+                  <h3 className="font-black text-xs text-white flex items-center gap-1.5">
+                    <span>Уведомления о монтажах</span>
+                    {!isStandalone && (
+                      <span className="text-[9px] bg-indigo-500/30 text-indigo-300 px-1.5 py-0.5 rounded-md font-bold">
+                        PWA
+                      </span>
+                    )}
+                  </h3>
+                  <p className="text-[11px] text-slate-300 font-medium leading-tight mt-0.5">
+                    {notifPermission === 'granted'
+                      ? 'Push-уведомления включены. Вы получите оповещение при вызове на новые монтажи.'
+                      : 'Включите уведомления, чтобы получать вызовы на монтаж прямо на экран телефона.'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-black text-xs text-white flex items-center gap-1.5">
-                  <span>Уведомления о монтажах</span>
-                  {!isStandalone && (
-                    <span className="text-[9px] bg-indigo-500/30 text-indigo-300 px-1.5 py-0.5 rounded-md font-bold">
-                      PWA
-                    </span>
-                  )}
-                </h3>
-                <p className="text-[11px] text-slate-300 font-medium leading-tight mt-0.5">
-                  {notifPermission === 'granted'
-                    ? 'Push-уведомления включены. Вы получите оповещение при вызове на новые монтажи.'
-                    : 'Включите уведомления, чтобы получать вызовы на монтаж прямо на экран телефона.'}
-                </p>
-              </div>
+
+              <button
+                type="button"
+                onClick={handleDismissBanner}
+                className="absolute top-3.5 right-3.5 p-1 rounded-xl bg-white/5 hover:bg-white/15 text-slate-400 hover:text-white transition-colors cursor-pointer"
+                title="Скрыть инструкцию и уведомление"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-indigo-900/60">
+              {notifPermission !== 'granted' ? (
+                <button
+                  type="button"
+                  onClick={requestNotifPermission}
+                  className="flex-1 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs shadow-md shadow-indigo-600/30 flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Bell className="w-3.5 h-3.5" />
+                  <span>Включить уведомления</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => sendNotification('🔔 Проверка push-уведомлений', 'Уведомления отлично работают на вашем устройстве!')}
+                  className="py-1.5 px-3 rounded-xl bg-emerald-600/30 hover:bg-emerald-600/40 border border-emerald-500/40 text-emerald-300 font-extrabold text-[11px] flex items-center gap-1 cursor-pointer"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>Проверить push</span>
+                </button>
+              )}
+
+              {!isStandalone && (
+                <button
+                  type="button"
+                  onClick={handleInstallApp}
+                  className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs flex items-center gap-1.5 cursor-pointer ml-auto"
+                >
+                  <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
+                  <span>На экран «Домой»</span>
+                </button>
+              )}
             </div>
           </div>
-
-          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-indigo-900/60">
-            {notifPermission !== 'granted' ? (
-              <button
-                type="button"
-                onClick={requestNotifPermission}
-                className="flex-1 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs shadow-md shadow-indigo-600/30 flex items-center justify-center gap-1.5 cursor-pointer"
-              >
-                <Bell className="w-3.5 h-3.5" />
-                <span>Включить уведомления</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => sendNotification('🔔 Проверка push-уведомлений', 'Уведомления отлично работают на вашем устройстве!')}
-                className="py-1.5 px-3 rounded-xl bg-emerald-600/30 hover:bg-emerald-600/40 border border-emerald-500/40 text-emerald-300 font-extrabold text-[11px] flex items-center gap-1 cursor-pointer"
-              >
-                <Check className="w-3.5 h-3.5" />
-                <span>Проверить push</span>
-              </button>
-            )}
-
-            {!isStandalone && (
-              <button
-                type="button"
-                onClick={handleInstallApp}
-                className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs flex items-center gap-1.5 cursor-pointer ml-auto"
-              >
-                <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
-                <span>На экран «Домой»</span>
-              </button>
-            )}
-          </div>
-        </div>
+        )}
 
         {/* TAB 1: PROPOSED TASKS */}
         {activeTab === 'proposed' && (

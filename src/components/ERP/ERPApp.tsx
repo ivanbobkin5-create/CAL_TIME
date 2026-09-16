@@ -263,40 +263,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
       const saved = localStorage.getItem(`erp_installation_tasks_${aliasOrId}`);
       if (saved) return JSON.parse(saved);
     } catch (e) {}
-    return [
-      {
-        id: 'inst-demo-1',
-        orderNumber: '11-0626-11',
-        clientName: 'Алексей Смирнов',
-        clientPhone: '+7 (916) 123-45-67',
-        address: 'г. Москва, пр-т Мира, д. 42, кв. 108',
-        floor: '7',
-        hasElevator: true,
-        assemblyPrice: 12500,
-        type: 'installation',
-        status: 'scheduled',
-        paymentStatus: 'unpaid',
-        scheduledDate: new Date().toISOString().split('T')[0],
-        installerEmployeeName: 'Ковалев Дмитрий',
-        createdAt: new Date().toISOString()
-      },
-      {
-        id: 'inst-demo-2',
-        orderNumber: '09-0412-05',
-        clientName: 'Мария Федорова',
-        clientPhone: '+7 (926) 987-65-43',
-        address: 'г. Москва, ул. Тверская, д. 15, кв. 3',
-        assemblyPrice: 2000,
-        type: 'reclamation',
-        status: 'in_progress',
-        paymentStatus: 'unpaid',
-        scheduledDate: new Date().toISOString().split('T')[0],
-        installerEmployeeName: 'Петров Иван',
-        culpritEmployeeName: 'Сидоров Алексей (Распил)',
-        penaltyAmount: 1500,
-        createdAt: new Date().toISOString()
-      }
-    ];
+    return [];
   });
 
   const saveServerInstallationTasks = async (tasks: InstallationTask[], compId?: string) => {
