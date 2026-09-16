@@ -47,7 +47,15 @@ import {
   Link2,
   AlertCircle,
   ListFilter,
-  Edit3
+  Edit3,
+  Cloud,
+  HardDrive,
+  Folder,
+  Key,
+  ExternalLink,
+  HelpCircle,
+  Eye,
+  EyeOff
 } from 'lucide-react';
 import { ERPCompanySettings, MachineEquipment, PackageLabelSettings, ProductionStageId, ERPNoteRule, ProductionOrder, ERPEmployee } from '../types';
 import { DEFAULT_BIRKA_COLUMN_MAPPING } from '../utils/birkaParser';
@@ -291,6 +299,10 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
       { id: 'doc-2', name: 'Акт приема-передачи', enabled: true }
     ],
     installationActSettings: settings.installationActSettings || DEFAULT_INSTALLATION_ACT_SETTINGS,
+    useYandexDiskForPhotos: settings.useYandexDiskForPhotos || false,
+    yandexDiskToken: settings.yandexDiskToken || '',
+    yandexDiskRootFolder: settings.yandexDiskRootFolder || '/ERP_Фотоотчеты',
+    yandexDiskAutoFolders: settings.yandexDiskAutoFolders !== false,
     bitrix24FieldMapping: settings.bitrix24FieldMapping || {},
     shippingActTemplate: settings.shippingActTemplate || {
       companyTitle: companyName || 'Мебельная фабрика',
@@ -328,6 +340,55 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
       }));
     }
   }, [settings]);
+
+  const [isTestingYandexToken, setIsTestingYandexToken] = useState<boolean>(false);
+  const [showYandexInstructions, setShowYandexInstructions] = useState<boolean>(false);
+  const [yandexTestResult, setYandexTestResult] = useState<{
+    success: boolean;
+    user?: string;
+    totalSpaceGB?: string;
+    usedSpaceGB?: string;
+    freeSpaceGB?: string;
+    error?: string;
+  } | null>(null);
+
+  const handleTestYandexDisk = async () => {
+    if (!formData.yandexDiskToken) {
+      alert('Пожалуйста, введите OAuth токен Яндекс.Диска.');
+      return;
+    }
+    setIsTestingYandexToken(true);
+    setYandexTestResult(null);
+    try {
+      const res = await fetch('/api/yandex-disk/test-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: formData.yandexDiskToken })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setYandexTestResult({
+          success: true,
+          user: data.user,
+          totalSpaceGB: data.totalSpaceGB,
+          usedSpaceGB: data.usedSpaceGB,
+          freeSpaceGB: data.freeSpaceGB
+        });
+      } else {
+        setYandexTestResult({
+          success: false,
+          error: data.error || 'Не удалось подключиться к Яндекс.Диску'
+        });
+      }
+    } catch (e: any) {
+      setYandexTestResult({
+        success: false,
+        error: e.message || String(e)
+      });
+    } finally {
+      setIsTestingYandexToken(false);
+    }
+  };
 
   // Bitrix24 Stage Auto-fetching State
   const [b24Categories, setB24Categories] = useState<{ id: string; name: string }[]>([]);
@@ -1955,6 +2016,91 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* Mandatory Kitting Documents List */}
+            <div className="p-5 bg-slate-50 rounded-2xl border border-slate-200 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                    <Box className="w-4 h-4 text-cyan-600" />
+                    <span>Обязательные сопроводительные документы для укладки в коробку</span>
+                  </h4>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Документы, чек-листы или схемы, которые необходимо распечатать и вложить в место/коробку при комплектации.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const defaultDocs = [
+                      { id: 'doc-1', name: 'Чертежи для сборки', enabled: true },
+                      { id: 'doc-2', name: 'Акт приема-передачи', enabled: true }
+                    ];
+                    const existing = formData.requiredKittingDocuments && formData.requiredKittingDocuments.length > 0 
+                      ? formData.requiredKittingDocuments 
+                      : defaultDocs;
+                    const nextDoc = { id: `doc-${Date.now()}`, name: 'Новый документ', enabled: true };
+                    setFormData(prev => ({ ...prev, requiredKittingDocuments: [...existing, nextDoc] }));
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                >
+                  <Plus className="w-4 h-4" /> Добавить документ
+                </button>
+              </div>
+
+              <div className="space-y-2">
+                {(formData.requiredKittingDocuments || [
+                  { id: 'doc-1', name: 'Чертежи для сборки', enabled: true },
+                  { id: 'doc-2', name: 'Акт приема-передачи', enabled: true }
+                ]).map((doc, dIdx) => (
+                  <div key={doc.id || dIdx} className="flex items-center gap-3 p-3 bg-white rounded-2xl border border-slate-200 shadow-2xs">
+                    <input
+                      type="checkbox"
+                      checked={doc.enabled}
+                      onChange={(e) => {
+                        const defaultDocs = [
+                          { id: 'doc-1', name: 'Чертежи для сборки', enabled: true },
+                          { id: 'doc-2', name: 'Акт приема-передачи', enabled: true }
+                        ];
+                        const list = formData.requiredKittingDocuments || defaultDocs;
+                        const copy = list.map((item, i) => i === dIdx ? { ...item, enabled: e.target.checked } : item);
+                        setFormData(prev => ({ ...prev, requiredKittingDocuments: copy }));
+                      }}
+                      className="w-4 h-4 rounded text-cyan-600 focus:ring-cyan-500 border-slate-300 cursor-pointer"
+                    />
+                    <input
+                      type="text"
+                      value={doc.name}
+                      onChange={(e) => {
+                        const defaultDocs = [
+                          { id: 'doc-1', name: 'Чертежи для сборки', enabled: true },
+                          { id: 'doc-2', name: 'Акт приема-передачи', enabled: true }
+                        ];
+                        const list = formData.requiredKittingDocuments || defaultDocs;
+                        const copy = list.map((item, i) => i === dIdx ? { ...item, name: e.target.value } : item);
+                        setFormData(prev => ({ ...prev, requiredKittingDocuments: copy }));
+                      }}
+                      className="flex-1 px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-cyan-500"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const defaultDocs = [
+                          { id: 'doc-1', name: 'Чертежи для сборки', enabled: true },
+                          { id: 'doc-2', name: 'Акт приема-передачи', enabled: true }
+                        ];
+                        const list = formData.requiredKittingDocuments || defaultDocs;
+                        const copy = list.filter((_, i) => i !== dIdx);
+                        setFormData(prev => ({ ...prev, requiredKittingDocuments: copy }));
+                      }}
+                      className="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -2511,130 +2657,162 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
             </div>
           </div>
 
-          {/* Section 3: Hardware Exclusions & Mandatory Kitting Documents */}
+          {/* Section 3: Cloud Storage for Photos (Yandex Disk Integration) */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-6">
-            <div>
-              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                <Box className="w-5 h-5 text-cyan-600" />
-                <span>Исключения и обязательные документы Комплектации</span>
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Настройка автоматической фильтрации ведомости фурнитуры и добавление обязательных сопроводительных документов.
-              </p>
-            </div>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+              <div>
+                <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                  <Cloud className="w-5 h-5 text-indigo-600" />
+                  <span>Облачное хранилище фотоотчетов (Яндекс.Диск)</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5 max-w-2xl">
+                  Автоматическая загрузка фотоотчетов монтажников и рекламаций прямо на ваш Яндекс.Диск. Исключает захламление и перегрузку вашего сервера ERP.
+                </p>
+              </div>
 
-            {/* Hardware Exclusions Keywords */}
-            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 space-y-2">
-              <label className="block text-xs font-bold text-slate-900">
-                Исключать из загружаемого файла фурнитуры (через запятую):
+              <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                <input
+                  type="checkbox"
+                  checked={!!formData.useYandexDiskForPhotos}
+                  onChange={(e) => setFormData(prev => ({ ...prev, useYandexDiskForPhotos: e.target.checked }))}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                <span className="ml-3 text-xs font-bold text-slate-900">
+                  {formData.useYandexDiskForPhotos ? 'Подключено' : 'Выключено'}
+                </span>
               </label>
-              <CommaSeparatedInput
-                valueArray={formData.hardwareExcludeKeywords || ['ЛДСП', 'ДСП', 'МДФ', 'ХДФ', 'Кромка', 'ПВХ', 'Столешница', 'Стеновая']}
-                onChangeArray={(newArr) => setFormData(prev => ({ ...prev, hardwareExcludeKeywords: newArr }))}
-                placeholder="ЛДСП, ДСП, МДФ, ХДФ, Кромка, ПВХ..."
-                className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-cyan-500"
-              />
-              <p className="text-[11px] text-slate-500">
-                Позиции, наименование или категория которых содержат указанные слова, будут автоматически пропускаться при загрузке ведомости фурнитуры.
-              </p>
             </div>
 
-            {/* Hardware Review Keywords (Special items requiring confirmation on upload) */}
-            <div className="p-4 bg-amber-50/60 rounded-2xl border border-amber-200/80 space-y-2">
-              <div className="flex items-center gap-1.5">
-                <label className="block text-xs font-bold text-amber-950">
-                  Позиции для проверки и подтверждения при загрузке (через запятую):
-                </label>
-              </div>
-              <CommaSeparatedInput
-                valueArray={formData.hardwareReviewKeywords || ['Двери', 'Купе', 'Стекло', 'Двери RIAL', 'Зеркало', 'Фасад', 'Фасады', 'Столешница']}
-                onChangeArray={(newArr) => setFormData(prev => ({ ...prev, hardwareReviewKeywords: newArr }))}
-                placeholder="Двери, Купе, Стекло, Двери RIAL, Зеркало, Фасады..."
-                className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-amber-200 font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
-              />
-              <p className="text-[11px] text-amber-800/90 leading-relaxed">
-                Если в загружаемом файле обнаружатся позиции с этими наименованиями (например, двери купе, стекла, зеркала или покупные фасады), система выведет предупреждение со списком, количеством и предложит пользователю отметить галочками, нужно ли добавлять их в фурнитуру.
-              </p>
-            </div>
+            {formData.useYandexDiskForPhotos && (
+              <div className="space-y-5 animate-fadeIn">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* OAuth Token Input */}
+                  <div className="space-y-1.5 md:col-span-2">
+                    <div className="flex items-center justify-between">
+                      <label className="block text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                        <Key className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>OAuth Токен Яндекс.Диска:</span>
+                      </label>
 
-            {/* Mandatory Kitting Documents List */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="block text-xs font-bold text-slate-900">
-                  Обязательные сопроводительные документы для укладки в коробку:
-                </label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const defaultDocs = [
-                      { id: 'doc-1', name: 'Чертежи для сборки', enabled: true },
-                      { id: 'doc-2', name: 'Акт приема-передачи', enabled: true }
-                    ];
-                    const existing = formData.requiredKittingDocuments && formData.requiredKittingDocuments.length > 0 
-                      ? formData.requiredKittingDocuments 
-                      : defaultDocs;
-                    const nextDoc = { id: `doc-${Date.now()}`, name: 'Новый документ', enabled: true };
-                    setFormData(prev => ({ ...prev, requiredKittingDocuments: [...existing, nextDoc] }));
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-cyan-50 hover:bg-cyan-100 text-cyan-700 font-bold text-xs flex items-center gap-1 transition-colors cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Добавить документ
-                </button>
-              </div>
+                      <button
+                        type="button"
+                        onClick={() => setShowYandexInstructions(!showYandexInstructions)}
+                        className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
+                      >
+                        <HelpCircle className="w-3.5 h-3.5" />
+                        <span>{showYandexInstructions ? 'Скрыть инструкцию' : 'Как получить токен?'}</span>
+                      </button>
+                    </div>
 
-              <div className="space-y-2">
-                {(formData.requiredKittingDocuments || [
-                  { id: 'doc-1', name: 'Чертежи для сборки', enabled: true },
-                  { id: 'doc-2', name: 'Акт приема-передачи', enabled: true }
-                ]).map((doc, dIdx) => (
-                  <div key={doc.id || dIdx} className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-200">
-                    <input
-                      type="checkbox"
-                      checked={doc.enabled}
-                      onChange={(e) => {
-                        const defaultDocs = [
-                          { id: 'doc-1', name: 'Чертежи для сборки', enabled: true },
-                          { id: 'doc-2', name: 'Акт приема-передачи', enabled: true }
-                        ];
-                        const list = formData.requiredKittingDocuments || defaultDocs;
-                        const copy = list.map((item, i) => i === dIdx ? { ...item, enabled: e.target.checked } : item);
-                        setFormData(prev => ({ ...prev, requiredKittingDocuments: copy }));
-                      }}
-                      className="w-4 h-4 rounded text-cyan-600 focus:ring-cyan-500 border-slate-300 cursor-pointer"
-                    />
+                    <div className="relative">
+                      <input
+                        type="text"
+                        value={formData.yandexDiskToken || ''}
+                        onChange={(e) => setFormData(prev => ({ ...prev, yandexDiskToken: e.target.value }))}
+                        placeholder="y0_AgAAAA..."
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 font-mono text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 pr-24"
+                      />
+
+                      <button
+                        type="button"
+                        onClick={handleTestYandexDisk}
+                        disabled={isTestingYandexToken}
+                        className="absolute right-1.5 top-1.5 bottom-1.5 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-300 text-white font-bold text-[11px] transition-colors flex items-center gap-1 cursor-pointer"
+                      >
+                        {isTestingYandexToken ? (
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                        )}
+                        <span>Проверить</span>
+                      </button>
+                    </div>
+
+                    {yandexTestResult && (
+                      <div className={`p-3 rounded-xl border text-xs font-bold flex items-center justify-between gap-2 ${
+                        yandexTestResult.success 
+                          ? 'bg-emerald-50 border-emerald-200 text-emerald-950' 
+                          : 'bg-rose-50 border-rose-200 text-rose-950'
+                      }`}>
+                        <div className="flex items-center gap-2">
+                          {yandexTestResult.success ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                          ) : (
+                            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                          )}
+                          <span>
+                            {yandexTestResult.success
+                              ? `Успешно подключено к Яндекс.Диску (${yandexTestResult.user}). Свободно: ${yandexTestResult.freeSpaceGB} ГБ из ${yandexTestResult.totalSpaceGB} ГБ.`
+                              : `Ошибка подключения: ${yandexTestResult.error}`
+                            }
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Step-by-Step Instructions Box */}
+                  {showYandexInstructions && (
+                    <div className="md:col-span-2 p-4 bg-indigo-50/60 rounded-2xl border border-indigo-100 text-xs text-indigo-950 space-y-2 leading-relaxed">
+                      <div className="font-bold flex items-center gap-1.5 text-indigo-900">
+                        <Info className="w-4 h-4 text-indigo-600" />
+                        <span>Пошаговая инструкция для получения OAuth-токена:</span>
+                      </div>
+                      <ol className="list-decimal list-inside space-y-1 text-[11px] text-slate-700">
+                        <li>Перейдите на официальный портал приложений Яндекс: <a href="https://oauth.yandex.ru" target="_blank" rel="noopener noreferrer" className="text-indigo-600 font-bold underline inline-flex items-center gap-0.5">oauth.yandex.ru <ExternalLink className="w-3 h-3" /></a></li>
+                        <li>Нажмите кнопку <strong>«Создать приложение»</strong> (или выберите существующее).</li>
+                        <li>В разделе <strong>«Права и доступы»</strong> найдите категорию <strong>«Яндекс Диск»</strong> и отметьте галочками:
+                          <ul className="list-disc list-inside ml-4 text-[10px] text-slate-600 font-mono">
+                            <li>cloud_api:disk.read (Чтение всего Диска)</li>
+                            <li>cloud_api:disk.write (Запись в любой уголок Диска)</li>
+                          </ul>
+                        </li>
+                        <li>Сохраните приложение и скопируйте полученный <strong>OAuth-токен</strong> в поле выше.</li>
+                      </ol>
+                    </div>
+                  )}
+
+                  {/* Root Folder Input */}
+                  <div className="space-y-1">
+                    <label className="block text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <Folder className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Корневая папка на Диске:</span>
+                    </label>
                     <input
                       type="text"
-                      value={doc.name}
-                      onChange={(e) => {
-                        const defaultDocs = [
-                          { id: 'doc-1', name: 'Чертежи для сборки', enabled: true },
-                          { id: 'doc-2', name: 'Акт приема-передачи', enabled: true }
-                        ];
-                        const list = formData.requiredKittingDocuments || defaultDocs;
-                        const copy = list.map((item, i) => i === dIdx ? { ...item, name: e.target.value } : item);
-                        setFormData(prev => ({ ...prev, requiredKittingDocuments: copy }));
-                      }}
-                      className="flex-1 px-3 py-1.5 rounded-xl bg-white border border-slate-200 font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-cyan-500"
+                      value={formData.yandexDiskRootFolder || '/ERP_Фотоотчеты'}
+                      onChange={(e) => setFormData(prev => ({ ...prev, yandexDiskRootFolder: e.target.value }))}
+                      placeholder="/ERP_Фотоотчеты"
+                      className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
                     />
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const defaultDocs = [
-                          { id: 'doc-1', name: 'Чертежи для сборки', enabled: true },
-                          { id: 'doc-2', name: 'Акт приема-передачи', enabled: true }
-                        ];
-                        const list = formData.requiredKittingDocuments || defaultDocs;
-                        const copy = list.filter((_, i) => i !== dIdx);
-                        setFormData(prev => ({ ...prev, requiredKittingDocuments: copy }));
-                      }}
-                      className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-xl transition-colors cursor-pointer"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <p className="text-[10px] text-slate-500">
+                      Папка создастся на Яндекс.Диске автоматически при первой загрузке.
+                    </p>
                   </div>
-                ))}
+
+                  {/* Auto Folders Toggle */}
+                  <div className="space-y-1">
+                    <label className="block text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <HardDrive className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Структура подпапок:</span>
+                    </label>
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3">
+                      <div className="text-xs">
+                        <div className="font-bold text-slate-900">Раскладывать по номерам заказов</div>
+                        <div className="text-[10px] text-slate-500">например: <code>/ERP_Фотоотчеты/Заказ_1042/photo1.jpg</code></div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={formData.yandexDiskAutoFolders !== false}
+                        onChange={(e) => setFormData(prev => ({ ...prev, yandexDiskAutoFolders: e.target.checked }))}
+                        className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
           {/* Section 4: QR Commands for Shop Floor Control */}

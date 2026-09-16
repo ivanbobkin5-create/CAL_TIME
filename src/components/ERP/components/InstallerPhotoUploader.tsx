@@ -7,6 +7,9 @@ interface InstallerPhotoUploaderProps {
   readOnly?: boolean;
   onPhotosChange: (newPhotos: string[]) => void;
   title?: string;
+  yandexDiskToken?: string;
+  yandexDiskRootFolder?: string;
+  orderNumber?: string;
 }
 
 export const InstallerPhotoUploader: React.FC<InstallerPhotoUploaderProps> = ({
@@ -14,10 +17,14 @@ export const InstallerPhotoUploader: React.FC<InstallerPhotoUploaderProps> = ({
   maxPhotos = 10,
   readOnly = false,
   onPhotosChange,
-  title = 'Фотографии монтажа'
+  title = 'Фотографии монтажа',
+  yandexDiskToken,
+  yandexDiskRootFolder,
+  orderNumber
 }) => {
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
   const [isCompressing, setIsCompressing] = useState(false);
+  const [uploadStatusText, setUploadStatusText] = useState<string>('');
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -35,8 +42,39 @@ export const InstallerPhotoUploader: React.FC<InstallerPhotoUploaderProps> = ({
     try {
       const newPhotoUrls: string[] = [];
 
-      for (const file of filesToProcess) {
+      for (let i = 0; i < filesToProcess.length; i++) {
+        const file = filesToProcess[i];
+        setUploadStatusText(`Обработка фото ${i + 1} из ${filesToProcess.length}...`);
         const compressedBase64 = await compressImage(file);
+
+        if (yandexDiskToken) {
+          setUploadStatusText(`Загрузка на Яндекс.Диск (${i + 1}/${filesToProcess.length})...`);
+          try {
+            const res = await fetch('/api/yandex-disk/upload', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                token: yandexDiskToken,
+                rootFolder: yandexDiskRootFolder || '/ERP_Фотоотчеты',
+                subFolder: orderNumber ? `Заказ_${orderNumber.replace(/[^a-zA-Z0-9_\-\u0400-\u04FF]/g, '_')}` : 'Общие_Фото',
+                fileName: `photo_${Date.now()}_${i + 1}.jpg`,
+                fileBase64: compressedBase64
+              })
+            });
+
+            if (res.ok) {
+              const data = await res.json();
+              if (data.success && data.url) {
+                newPhotoUrls.push(data.url);
+                continue;
+              }
+            }
+          } catch (cloudErr) {
+            console.warn('Fallback to local base64 due to cloud error:', cloudErr);
+          }
+        }
+
+        // Fallback if cloud upload is not configured or fails
         newPhotoUrls.push(compressedBase64);
       }
 
@@ -46,6 +84,7 @@ export const InstallerPhotoUploader: React.FC<InstallerPhotoUploaderProps> = ({
       alert('Ошибка при загрузке фото. Попробуйте еще раз.');
     } finally {
       setIsCompressing(false);
+      setUploadStatusText('');
       e.target.value = '';
     }
   };
@@ -109,7 +148,7 @@ export const InstallerPhotoUploader: React.FC<InstallerPhotoUploaderProps> = ({
         </label>
         {isCompressing && (
           <span className="text-[10px] text-indigo-600 animate-pulse font-bold">
-            Обработка фото...
+            {uploadStatusText || 'Обработка фото...'}
           </span>
         )}
       </div>

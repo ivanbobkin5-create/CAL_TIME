@@ -591,6 +591,12 @@ export interface ERPCompanySettings {
 
   // Настройки Акта приема-передачи и версионируемых Дополнительных работ
   installationActSettings?: InstallationActSettings;
+
+  // Настройки облачного хранилища фото (Яндекс.Диск)
+  useYandexDiskForPhotos?: boolean;
+  yandexDiskToken?: string;
+  yandexDiskRootFolder?: string;
+  yandexDiskAutoFolders?: boolean;
 }
 
 export interface ExtraWorkItem {

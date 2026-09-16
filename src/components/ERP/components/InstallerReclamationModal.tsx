@@ -8,13 +8,17 @@ interface InstallerReclamationModalProps {
   onClose: () => void;
   task: InstallationTask;
   onSubmitReclamationSignal: (reason: string, details: string, photos: string[]) => void;
+  yandexDiskToken?: string;
+  yandexDiskRootFolder?: string;
 }
 
 export const InstallerReclamationModal: React.FC<InstallerReclamationModalProps> = ({
   isOpen,
   onClose,
   task,
-  onSubmitReclamationSignal
+  onSubmitReclamationSignal,
+  yandexDiskToken,
+  yandexDiskRootFolder
 }) => {
   const [reason, setReason] = useState('');
   const [details, setDetails] = useState('');
@@ -107,6 +111,9 @@ export const InstallerReclamationModal: React.FC<InstallerReclamationModalProps>
               maxPhotos={5}
               onPhotosChange={setPhotos}
               title="Фотографии дефекта / брака"
+              orderNumber={task.orderNumber}
+              yandexDiskToken={yandexDiskToken}
+              yandexDiskRootFolder={yandexDiskRootFolder}
             />
           </div>
 

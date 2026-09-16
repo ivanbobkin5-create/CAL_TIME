@@ -3287,6 +3287,166 @@ function transliterate(str: string): string {
     }
   });
 
+  // --- Яндекс.Диск Облачное хранилище (Фотоотчеты монтажей и рекламаций) ---
+  app.post("/api/yandex-disk/test-token", async (req, res) => {
+    try {
+      const { token } = req.body;
+      if (!token) {
+        return res.status(400).json({ success: false, error: "OAuth токен Яндекс.Диска не указан" });
+      }
+
+      const response = await fetch("https://cloud-api.yandex.net/v1/disk/", {
+        headers: { Authorization: `OAuth ${token.trim()}` }
+      });
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        return res.status(response.status).json({
+          success: false,
+          error: errData.message || errData.description || `Ошибка доступа (${response.status})`
+        });
+      }
+
+      const data = await response.json();
+      const totalSpaceGB = (data.total_space / (1024 * 1024 * 1024)).toFixed(1);
+      const usedSpaceGB = (data.used_space / (1024 * 1024 * 1024)).toFixed(1);
+      const freeSpaceGB = ((data.total_space - data.used_space) / (1024 * 1024 * 1024)).toFixed(1);
+
+      res.json({
+        success: true,
+        user: data.user?.display_name || data.user?.login || 'Пользователь Яндекс',
+        totalSpaceGB,
+        usedSpaceGB,
+        freeSpaceGB
+      });
+    } catch (e: any) {
+      console.error("Error testing Yandex Disk token:", e);
+      res.status(500).json({ success: false, error: e.message || String(e) });
+    }
+  });
+
+  app.post("/api/yandex-disk/upload", async (req, res) => {
+    try {
+      const { token, rootFolder = "/ERP_Фотоотчеты", subFolder = "", fileName, fileBase64 } = req.body;
+
+      if (!token) {
+        return res.status(400).json({ success: false, error: "Отсутствует OAuth токен Яндекс.Диска" });
+      }
+      if (!fileName || !fileBase64) {
+        return res.status(400).json({ success: false, error: "Имя файла или данные не переданы" });
+      }
+
+      const cleanToken = token.trim();
+      const cleanRoot = rootFolder.startsWith("/") ? rootFolder : `/${rootFolder}`;
+      const fullDir = subFolder ? `${cleanRoot}/${subFolder.replace(/^\//, '')}` : cleanRoot;
+      const cleanFileName = fileName.replace(/[^a-zA-Z0-9_\-\.\u0400-\u04FF]/g, '_');
+      const targetFilePath = `${fullDir}/${cleanFileName}`;
+
+      // Step 1: Ensure directory path exists on Yandex.Disk
+      const pathParts = fullDir.split("/").filter(Boolean);
+      let currentPath = "";
+      for (const part of pathParts) {
+        currentPath += `/${part}`;
+        await fetch(`https://cloud-api.yandex.net/v1/disk/resources?path=${encodeURIComponent(currentPath)}`, {
+          method: "PUT",
+          headers: { Authorization: `OAuth ${cleanToken}` }
+        }).catch(() => null); // Ignore 409 conflict if folder exists
+      }
+
+      // Step 2: Get Upload Link
+      const uploadUrlRes = await fetch(
+        `https://cloud-api.yandex.net/v1/disk/resources/upload?path=${encodeURIComponent(targetFilePath)}&overwrite=true`,
+        {
+          headers: { Authorization: `OAuth ${cleanToken}` }
+        }
+      );
+
+      if (!uploadUrlRes.ok) {
+        const errJson = await uploadUrlRes.json().catch(() => ({}));
+        throw new Error(errJson.message || `Ошибка получения ссылки на загрузку (${uploadUrlRes.status})`);
+      }
+
+      const uploadUrlData = await uploadUrlRes.json();
+      const href = uploadUrlData.href;
+
+      // Step 3: Upload Binary Buffer to Yandex
+      const base64Data = fileBase64.replace(/^data:image\/\w+;base64,/, '');
+      const imageBuffer = Buffer.from(base64Data, 'base64');
+
+      const uploadRes = await fetch(href, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "image/jpeg",
+          "Content-Length": String(imageBuffer.length)
+        },
+        body: imageBuffer
+      });
+
+      if (!uploadRes.ok) {
+        throw new Error(`Не удалось загрузить файл на сервер Яндекс.Диска (${uploadRes.status})`);
+      }
+
+      // Step 4: Publish or get public link
+      await fetch(`https://cloud-api.yandex.net/v1/disk/resources/publish?path=${encodeURIComponent(targetFilePath)}`, {
+        method: "PUT",
+        headers: { Authorization: `OAuth ${cleanToken}` }
+      }).catch(() => null);
+
+      const metaRes = await fetch(`https://cloud-api.yandex.net/v1/disk/resources?path=${encodeURIComponent(targetFilePath)}`, {
+        headers: { Authorization: `OAuth ${cleanToken}` }
+      });
+
+      let publicUrl = "";
+      if (metaRes.ok) {
+        const metaData = await metaRes.json();
+        publicUrl = metaData.public_url || metaData.file || "";
+      }
+
+      // If no publicUrl, create a proxy URL
+      const fileAccessUrl = publicUrl || `/api/yandex-disk/proxy?path=${encodeURIComponent(targetFilePath)}&token=${encodeURIComponent(cleanToken)}`;
+
+      res.json({
+        success: true,
+        url: fileAccessUrl,
+        filePath: targetFilePath
+      });
+    } catch (e: any) {
+      console.error("Error uploading to Yandex Disk:", e);
+      res.status(500).json({ success: false, error: e.message || String(e) });
+    }
+  });
+
+  app.get("/api/yandex-disk/proxy", async (req, res) => {
+    try {
+      const { path: filePath, token } = req.query;
+      if (!filePath || !token) {
+        return res.status(400).send("Missing path or token");
+      }
+
+      const downloadUrlRes = await fetch(
+        `https://cloud-api.yandex.net/v1/disk/resources/download?path=${encodeURIComponent(String(filePath))}`,
+        {
+          headers: { Authorization: `OAuth ${String(token).trim()}` }
+        }
+      );
+
+      if (!downloadUrlRes.ok) {
+        return res.status(404).send("File not found on Yandex Disk");
+      }
+
+      const { href } = await downloadUrlRes.json();
+      const fileStreamRes = await fetch(href);
+
+      res.setHeader("Content-Type", fileStreamRes.headers.get("content-type") || "image/jpeg");
+      res.setHeader("Cache-Control", "public, max-age=86400");
+      const arrayBuffer = await fileStreamRes.arrayBuffer();
+      res.send(Buffer.from(arrayBuffer));
+    } catch (e: any) {
+      console.error("Error in yandex-disk proxy:", e);
+      res.status(500).send("Failed to proxy image");
+    }
+  });
+
 
 
   // Environment determination

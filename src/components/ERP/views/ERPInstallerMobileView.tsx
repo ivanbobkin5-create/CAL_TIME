@@ -32,7 +32,7 @@ import {
   Download,
   Smartphone
 } from 'lucide-react';
-import { ERPEmployee, InstallationTask, InstallationActSettings } from '../types';
+import { ERPEmployee, InstallationTask, InstallationActSettings, ERPCompanySettings } from '../types';
 import { ExtraWorksMobileModal } from '../components/ExtraWorksMobileModal';
 import { InstallationActViewModal } from '../components/InstallationActViewModal';
 import { InstallerPhotoUploader } from '../components/InstallerPhotoUploader';
@@ -48,6 +48,7 @@ interface ERPInstallerMobileViewProps {
   onBackToErp?: () => void;
   actSettings?: InstallationActSettings;
   companyName?: string;
+  settings?: ERPCompanySettings;
 }
 
 export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
@@ -58,7 +59,8 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
   onUpdateTask,
   onBackToErp,
   actSettings,
-  companyName = 'Мебельное производство'
+  companyName = 'Мебельное производство',
+  settings
 }) => {
   // Active Tab ('proposed' | 'active' | 'completed' | 'earnings' | 'schedule')
   const [activeTab, setActiveTab] = useState<'proposed' | 'active' | 'completed' | 'earnings' | 'schedule'>('proposed');
@@ -817,6 +819,9 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
                           photos={task.photos || []}
                           maxPhotos={10}
                           title="Фотоотчет монтажа"
+                          orderNumber={task.orderNumber}
+                          yandexDiskToken={settings?.useYandexDiskForPhotos ? settings?.yandexDiskToken : undefined}
+                          yandexDiskRootFolder={settings?.yandexDiskRootFolder}
                           onPhotosChange={(newPhotos) => {
                             const updatedTask: InstallationTask = {
                               ...task,
@@ -1303,6 +1308,8 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
           isOpen={!!reclamationModalTask}
           onClose={() => setReclamationModalTask(null)}
           task={reclamationModalTask}
+          yandexDiskToken={settings?.useYandexDiskForPhotos ? settings?.yandexDiskToken : undefined}
+          yandexDiskRootFolder={settings?.yandexDiskRootFolder}
           onSubmitReclamationSignal={(reason, details, photos) => {
             const updated: InstallationTask = {
               ...reclamationModalTask,

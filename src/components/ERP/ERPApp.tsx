@@ -1659,6 +1659,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
         onBackToErp={() => setInstallerIdFromPath(null)}
         actSettings={settings.installationActSettings}
         companyName={company?.title || company?.name || settings.companyTitle || 'Мебельное производство'}
+        settings={settings}
       />
     );
   }
