@@ -12,16 +12,33 @@ import {
   UserPlus,
   Search,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   AlertCircle,
   X,
   Target,
   Factory,
   MapPin,
   Tag,
-  Trash2
+  Trash2,
+  Filter,
+  Sparkles,
+  Clock,
+  Calendar,
+  ExternalLink,
+  CheckCircle2,
+  SlidersHorizontal,
+  Layers,
+  Globe,
+  UserCheck,
+  UserX,
+  Plus
 } from 'lucide-react';
+import { cn, transliterate } from '../../lib/utils';
+
 const handleDbError = (e: any, op: any, path: string) => console.warn("Database error:", op, path, e);
 enum OperationType { LIST = "LIST", UPDATE = "UPDATE", GET = "GET", DELETE = "DELETE", WRITE = "WRITE", CREATE = "CREATE" }
+
 // TimeWeb DB Setup
 const db = {};
 function collection(db: any, path: string, ...rest: any[]) { 
@@ -89,9 +106,6 @@ async function deleteDoc(docRef: any) {
     method: 'DELETE'
   });
 }
-function query(colRef: any, ...constraints: any[]) { return colRef; }
-function where(field: string, op: string, value: any) { return {}; }
-import { cn, transliterate } from '../../lib/utils';
 
 interface Company {
   id: string;
@@ -126,7 +140,8 @@ interface User {
   isBlocked?: boolean;
 }
 
-const CompanyDateInput = ({ company, updateLimit }: { company: Company, updateLimit: any }) => {
+// Inline Helper Component for Company Tariff Expiration Input
+const TariffExpirationPicker = ({ company, updateLimit }: { company: Company, updateLimit: any }) => {
   const [localDate, setLocalDate] = useState(company.tariffExpiration ? new Date(company.tariffExpiration).toISOString().split('T')[0] : '');
 
   useEffect(() => {
@@ -139,91 +154,36 @@ const CompanyDateInput = ({ company, updateLimit }: { company: Company, updateLi
       if (!isNaN(date.getTime())) {
         updateLimit(company.id, 'tariffExpiration', date.toISOString());
       }
-    } else {
-      // Optional: handle clearing the date if needed
     }
   };
 
-  return (
-    <input 
-      type="date"
-      value={localDate}
-      onChange={(e) => setLocalDate(e.target.value)}
-      onBlur={handleBlur}
-      className="bg-transparent font-bold text-gray-900 outline-none text-sm min-w-[120px]"
-    />
-  );
-};
-
-const CompanyProcurementCheckbox = ({ company, updateLimit }: { company: any, updateLimit: any }) => {
-    const isAllowed = company.procurementAllowed !== undefined ? !!company.procurementAllowed : !!company.procurementEnabled;
-    return (
-        <label className="flex items-center gap-2 cursor-pointer">
-            <input
-                type="checkbox"
-                checked={isAllowed}
-                onChange={(e) => {
-                    console.log("DEBUG: Checkbox changed", e.target.checked);
-                    updateLimit(company.id, 'procurementAllowed', !!e.target.checked);
-                    if (!e.target.checked) {
-                        updateLimit(company.id, 'procurementEnabled', false);
-                    }
-                }}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <span className="text-[10px] font-black uppercase text-gray-500">Снабжение</span>
-        </label>
-    );
-};
-
-const CompanyERPCheckbox = ({ company, updateLimit }: { company: any, updateLimit: any }) => {
-    const isAllowed = company.erpAllowed !== undefined ? !!company.erpAllowed : !!company.erpEnabled;
-    return (
-        <label className="flex items-center gap-2 cursor-pointer">
-            <input
-                type="checkbox"
-                checked={isAllowed}
-                onChange={(e) => {
-                    updateLimit(company.id, 'erpAllowed', !!e.target.checked);
-                    updateLimit(company.id, 'erpEnabled', !!e.target.checked);
-                }}
-                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-            />
-            <span className="text-[10px] font-black uppercase text-indigo-600 font-bold">ERP Система</span>
-        </label>
-    );
-};
-
-const CompanyLimitInput = ({ 
-  company, 
-  field, 
-  updateLimit 
-}: { 
-  company: Company, 
-  field: 'employeeLimit' | 'productLimit', 
-  updateLimit: any 
-}) => {
-  const [localVal, setLocalVal] = useState(String(company[field] || 0));
-
-  useEffect(() => {
-    setLocalVal(String(company[field] || 0));
-  }, [company[field]]);
-
-  const handleBlur = () => {
-    const val = parseInt(localVal);
-    if (!isNaN(val) && val !== company[field]) {
-      updateLimit(company.id, field, val);
-    }
+  const getDaysLeft = () => {
+    if (!company.tariffExpiration) return null;
+    const diff = new Date(company.tariffExpiration).getTime() - new Date().getTime();
+    const days = Math.ceil(diff / (1000 * 3600 * 24));
+    return days;
   };
 
+  const daysLeft = getDaysLeft();
+
   return (
-    <input 
-      type="number"
-      value={localVal}
-      onChange={(e) => setLocalVal(e.target.value)}
-      onBlur={handleBlur}
-      className="w-16 bg-transparent font-bold text-gray-900 outline-none"
-    />
+    <div className="flex items-center gap-2">
+      <input 
+        type="date"
+        value={localDate}
+        onChange={(e) => setLocalDate(e.target.value)}
+        onBlur={handleBlur}
+        className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
+      />
+      {daysLeft !== null && (
+        <span className={cn(
+          "px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider",
+          daysLeft < 0 ? "bg-rose-100 text-rose-700" : (daysLeft <= 7 ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800")
+        )}>
+          {daysLeft < 0 ? 'Истек' : `${daysLeft} дн.`}
+        </span>
+      )}
+    </div>
   );
 };
 
@@ -232,8 +192,16 @@ export const AppAdminView = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'companies' | 'stats' | 'requests'>('companies');
+  const [activeTab, setActiveTab] = useState<'companies' | 'users' | 'stats' | 'requests'>('companies');
+  
+  // Filtering & Search State
   const [searchQuery, setSearchQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'Мебельное производство' | 'Салон' | 'Дизайнер'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'blocked'>('all');
+  const [expandedCompanyIds, setExpandedCompanyIds] = useState<Record<string, boolean>>({});
+  const [activeSettingsTab, setActiveSettingsTab] = useState<Record<string, 'info' | 'limits' | 'modules'>>({});
+
+  // Coefficients Modal State
   const [selectedCoefficients, setSelectedCoefficients] = useState<any>(null);
   const [coeffModalOpen, setCoeffModalOpen] = useState(false);
   const [coeffLoading, setCoeffLoading] = useState(false);
@@ -276,15 +244,11 @@ export const AppAdminView = () => {
     const unsubCompanies = onSnapshot(collection(db, 'companies'), async (snapshot) => {
       const companyList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Company));
       
-      // Fetch stats and production details for each company
       const updatedCompanies = await Promise.all(companyList.map(async (company) => {
         const employeesSnapshot = await getDocs(collection(db, 'companies', company.id, 'employees'));
-        
-        // Count projects
         const qProjects = collection(db, 'companies', company.id, 'projects');
         const projectsSnapshot = await getDocs(qProjects);
 
-        // Fetch production settings if applicable
         let address = '';
         let photos: string[] = [];
         try {
@@ -352,29 +316,19 @@ export const AppAdminView = () => {
     if (!window.confirm("Вы уверены, что хотите ПОЛНОСТЬЮ УДАЛИТЬ компанию и всех ее сотрудников? Это действие необратимо!")) return;
     
     try {
-      // 1. Fetch ALL users that claim to be part of this company
       const companyUsers = users.filter(u => u.companyId === companyId);
-      
-      // 2. Also try to fetch from employees subcollection directly to be sure
       const employeesSnapshot = await getDocs(collection(db, 'companies', companyId, 'employees'));
       const directEmployeeIds = employeesSnapshot.docs.map(d => d.id);
-      
-      // Merge unique IDs
       const allEmployeeIds = Array.from(new Set([...companyUsers.map(u => u.uid), ...directEmployeeIds]));
 
       for (const uid of allEmployeeIds) {
-        // Delete from subcollection
         await deleteDoc(doc(db, 'companies', companyId, 'employees', uid));
-        // Delete from global users
         await deleteDoc(doc(db, 'users', uid));
-        // Delete from Auth
         await fetch(`/api/auth/user/${uid}`, { method: 'DELETE' });
       }
 
-      // 3. Delete company record
       await deleteDoc(doc(db, 'companies', companyId));
       
-      // 4. Cleanup settings
       const settingsPaths = ['production', 'categories', 'general', 'prices', 'bitrix24'];
       for (const s of settingsPaths) {
         await deleteDoc(doc(db, 'companies', companyId, 'settings', s));
@@ -391,7 +345,6 @@ export const AppAdminView = () => {
     if (!window.confirm("Вы уверены, что хотите удалить этого пользователя? Это также удалит его учетную запись для входа!")) return;
     
     try {
-      // 1. Delete from company if ID is valid
       if (companyId && companyId !== 'none') {
         try {
           await deleteDoc(doc(db, 'companies', companyId, 'employees', uid));
@@ -399,9 +352,7 @@ export const AppAdminView = () => {
           console.warn("Could not delete from company subcollection", e);
         }
       }
-      // 2. Delete from global users
       await deleteDoc(doc(db, 'users', uid));
-      // 3. Delete from Auth (Prisma)
       await fetch(`/api/auth/user/${uid}`, { method: 'DELETE' });
     } catch (error) {
       console.error("Error deleting user:", error);
@@ -410,389 +361,522 @@ export const AppAdminView = () => {
   };
 
   const updateLimit = async (companyId: string, field: string, value: any) => {
-    console.log("DEBUG: updateLimit called", { companyId, field, value });
     try {
       await updateDoc(doc(db, 'companies', companyId), {
         [field]: value
       });
-      console.log("DEBUG: updateDoc success");
     } catch (error) {
-      console.error("DEBUG: updateDoc error", error);
+      console.error("Error updating limit:", error);
       handleDbError(error, OperationType.UPDATE, `companies/${companyId}`);
     }
   };
 
-  const filteredCompanies = companies.filter(c => 
-    c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.city?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const toggleEmployeesExpanded = (companyId: string) => {
+    setExpandedCompanyIds(prev => ({
+      ...prev,
+      [companyId]: !prev[companyId]
+    }));
+  };
+
+  // Filter companies
+  const filteredCompanies = companies.filter(c => {
+    const matchesSearch = c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          c.city?.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesType = typeFilter === 'all' || c.type === typeFilter;
+    const matchesStatus = statusFilter === 'all' || (statusFilter === 'blocked' ? c.isBlocked : !c.isBlocked);
+    return matchesSearch && matchesType && matchesStatus;
+  });
+
+  // Filter users for Users tab
+  const filteredUsers = users.filter(u => {
+    const company = companies.find(c => c.id === u.companyId);
+    const matchesSearch = u.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          company?.name?.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesSearch;
+  });
 
   const stats = {
     totalCompanies: companies.length,
-    totalUsers: users.filter(u => u.role !== 'admin').length, // Count only real employees
+    totalUsers: users.filter(u => u.role !== 'admin').length,
     blockedCompanies: companies.filter(c => c.isBlocked).length,
     productionCount: companies.filter(c => c.type === 'Мебельное производство').length,
     salonCount: companies.filter(c => c.type === 'Салон').length,
     designerCount: companies.filter(c => c.type === 'Дизайнер').length,
+    erpActiveCount: companies.filter(c => c.erpAllowed || c.erpEnabled).length,
+    procurementActiveCount: companies.filter(c => c.procurementAllowed || c.procurementEnabled).length,
   };
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+      <div className="flex items-center justify-center min-h-screen bg-slate-50">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-xs font-black text-slate-400 uppercase tracking-widest animate-pulse">Загрузка панели управления...</p>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-          <div>
-            <h1 className="text-3xl font-black text-gray-900">Панель администратора</h1>
-            <p className="text-gray-500">Управление компаниями и пользователями системы</p>
+    <div className="min-h-screen bg-slate-100/70 p-4 sm:p-6 lg:p-8 font-sans">
+      <div className="max-w-7xl mx-auto space-y-6">
+        
+        {/* TOP HEADER & NAVIGATION */}
+        <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center shadow-lg shadow-blue-500/20 shrink-0">
+              <ShieldCheck className="w-7 h-7" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-black text-slate-900 tracking-tight">Панель Суперадминистратора</h1>
+              <p className="text-xs text-slate-500 font-medium">Централизованное управление организациями, тарифами и сотрудниками</p>
+            </div>
           </div>
-          
-          <div className="flex bg-white p-1 rounded-2xl border border-gray-200 shadow-sm">
+
+          {/* Tab Switcher */}
+          <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200/80 w-full md:w-auto overflow-x-auto">
             <button 
               onClick={() => setActiveTab('companies')}
               className={cn(
-                "px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2",
-                activeTab === 'companies' ? "bg-blue-600 text-white shadow-lg shadow-blue-200" : "text-gray-500 hover:text-gray-700"
+                "px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 shrink-0 cursor-pointer",
+                activeTab === 'companies' ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
               )}
             >
               <Building2 className="w-4 h-4" />
-              Компании
+              <span>Компании</span>
+              <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] bg-blue-50 text-blue-700 font-mono font-black">{companies.length}</span>
             </button>
+
+            <button 
+              onClick={() => setActiveTab('users')}
+              className={cn(
+                "px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 shrink-0 cursor-pointer",
+                activeTab === 'users' ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
+              )}
+            >
+              <Users className="w-4 h-4" />
+              <span>Все пользователи</span>
+              <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] bg-slate-200 text-slate-700 font-mono font-black">{users.length}</span>
+            </button>
+
             <button 
               onClick={() => setActiveTab('stats')}
               className={cn(
-                "px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2",
-                activeTab === 'stats' ? "bg-blue-600 text-white shadow-lg shadow-blue-200" : "text-gray-500 hover:text-gray-700"
+                "px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 shrink-0 cursor-pointer",
+                activeTab === 'stats' ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
               )}
             >
               <BarChart3 className="w-4 h-4" />
-              Статистика
+              <span>Аналитика</span>
             </button>
+
             <button 
               onClick={() => setActiveTab('requests')}
               className={cn(
-                "px-6 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center gap-2 relative",
-                activeTab === 'requests' ? "bg-blue-600 text-white shadow-lg shadow-blue-200" : "text-gray-500 hover:text-gray-700"
+                "px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 shrink-0 relative cursor-pointer",
+                activeTab === 'requests' ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
               )}
             >
               <AlertCircle className="w-4 h-4" />
-              Заявки
+              <span>Заявки</span>
               {requests.filter(r => r.status === 'pending').length > 0 && (
-                <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white"></span>
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-rose-500 text-white font-mono font-black animate-pulse">
+                  {requests.filter(r => r.status === 'pending').length}
+                </span>
               )}
             </button>
           </div>
         </div>
 
-        {activeTab === 'stats' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <StatCard icon={<Building2 />} label="Всего компаний" value={stats.totalCompanies} color="blue" />
-            <StatCard icon={<Users />} label="Всего пользователей" value={stats.totalUsers} color="indigo" />
-            <StatCard icon={<ShieldAlert />} label="Заблокировано" value={stats.blockedCompanies} color="red" />
-            <StatCard icon={<Factory />} label="Производств" value={stats.productionCount} color="green" />
+        {/* TAB 1: COMPANIES LIST VIEW */}
+        {activeTab === 'companies' && (
+          <div className="space-y-4">
             
-            <div className="lg:col-span-4 bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-sm">
-              <h3 className="text-xl font-bold text-gray-900 mb-6">Распределение по типам</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-8">
-                <DistributionItem label="Производства" count={stats.productionCount} total={stats.totalCompanies} color="bg-blue-500" />
-                <DistributionItem label="Салоны" count={stats.salonCount} total={stats.totalCompanies} color="bg-indigo-500" />
-                <DistributionItem label="Дизайнеры" count={stats.designerCount} total={stats.totalCompanies} color="bg-purple-500" />
+            {/* Filter & Search Bar */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex flex-col md:flex-row items-center justify-between gap-4">
+              <div className="relative w-full md:max-w-md">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                <input 
+                  type="text"
+                  placeholder="Поиск по названию или городу..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                />
               </div>
-            </div>
-          </div>
-        ) : activeTab === 'requests' ? (
-          <div className="space-y-6">
-            {requests.map(req => (
-              <div key={req.id} className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm">
-                <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h3 className="text-lg font-bold text-gray-900">{req.companyName}</h3>
-                    <p className="text-sm text-gray-500">{new Date(req.createdAt).toLocaleString()}</p>
-                  </div>
-                  <span className={cn(
-                    "px-3 py-1 rounded-full text-xs font-bold",
-                    req.status === 'pending' ? "bg-yellow-100 text-yellow-800" : "bg-green-100 text-green-800"
-                  )}>
-                    {req.status === 'pending' ? 'Ожидает' : 'Обработано'}
-                  </span>
+
+              {/* Type and Status Filter Pills */}
+              <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
+                <div className="flex bg-slate-100 p-1 rounded-xl text-[11px] font-bold text-slate-600">
+                  <button
+                    onClick={() => setTypeFilter('all')}
+                    className={cn("px-2.5 py-1 rounded-lg transition-all cursor-pointer", typeFilter === 'all' ? "bg-white text-slate-900 shadow-2xs" : "hover:text-slate-900")}
+                  >
+                    Все типы
+                  </button>
+                  <button
+                    onClick={() => setTypeFilter('Мебельное производство')}
+                    className={cn("px-2.5 py-1 rounded-lg transition-all cursor-pointer", typeFilter === 'Мебельное производство' ? "bg-white text-blue-700 shadow-2xs" : "hover:text-slate-900")}
+                  >
+                    Производства
+                  </button>
+                  <button
+                    onClick={() => setTypeFilter('Салон')}
+                    className={cn("px-2.5 py-1 rounded-lg transition-all cursor-pointer", typeFilter === 'Салон' ? "bg-white text-indigo-700 shadow-2xs" : "hover:text-slate-900")}
+                  >
+                    Салоны
+                  </button>
+                  <button
+                    onClick={() => setTypeFilter('Дизайнер')}
+                    className={cn("px-2.5 py-1 rounded-lg transition-all cursor-pointer", typeFilter === 'Дизайнер' ? "bg-white text-purple-700 shadow-2xs" : "hover:text-slate-900")}
+                  >
+                    Дизайнеры
+                  </button>
                 </div>
-                <div className="bg-gray-50 p-4 rounded-xl space-y-2">
-                  <p><span className="font-medium">Тариф:</span> {req.request.type}</p>
-                  <p><span className="font-medium">Период:</span> {req.request.period === 'year' ? '1 год' : '1 месяц'}</p>
-                  {req.request.extraEmployees > 0 && <p><span className="font-medium">Доп. сотрудники:</span> {req.request.extraEmployees}</p>}
-                  {req.request.extraSalons > 0 && <p><span className="font-medium">Доп. салоны:</span> {req.request.extraSalons}</p>}
-                  {req.request.extraDesigners > 0 && <p><span className="font-medium">Доп. дизайнеры:</span> {req.request.extraDesigners}</p>}
-                  {req.request.extraCities > 0 && <p><span className="font-medium">Доп. города:</span> {req.request.extraCities}</p>}
+
+                <div className="flex bg-slate-100 p-1 rounded-xl text-[11px] font-bold text-slate-600">
+                  <button
+                    onClick={() => setStatusFilter('all')}
+                    className={cn("px-2.5 py-1 rounded-lg transition-all cursor-pointer", statusFilter === 'all' ? "bg-white text-slate-900 shadow-2xs" : "")}
+                  >
+                    Все
+                  </button>
+                  <button
+                    onClick={() => setStatusFilter('active')}
+                    className={cn("px-2.5 py-1 rounded-lg transition-all cursor-pointer", statusFilter === 'active' ? "bg-emerald-50 text-emerald-800 shadow-2xs" : "")}
+                  >
+                    Активные
+                  </button>
+                  <button
+                    onClick={() => setStatusFilter('blocked')}
+                    className={cn("px-2.5 py-1 rounded-lg transition-all cursor-pointer", statusFilter === 'blocked' ? "bg-rose-50 text-rose-800 shadow-2xs" : "")}
+                  >
+                    Заблокировано
+                  </button>
                 </div>
-                {req.status === 'pending' && (
-                  <div className="mt-4 flex justify-end">
-                    <button
-                      onClick={async () => {
-                        try {
-                          await updateDoc(doc(db, 'tariffRequests', req.id), { status: 'completed' });
-                        } catch (error) {
-                          console.error(error);
-                        }
-                      }}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700"
-                    >
-                      Отметить как обработанное
-                    </button>
-                  </div>
-                )}
               </div>
-            ))}
-            {requests.length === 0 && (
-              <div className="text-center py-12 text-gray-500">
-                Нет заявок на тарифы
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="space-y-6">
-            <div className="relative max-w-md">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
-              <input 
-                type="text"
-                placeholder="Поиск компании..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-12 pr-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none shadow-sm transition-all"
-              />
             </div>
 
-            <div className="grid gap-6">
-              {filteredCompanies.map(company => (
-                <div key={company.id} className={cn(
-                  "bg-white p-6 rounded-[2rem] border transition-all shadow-sm hover:shadow-md",
-                  company.isBlocked ? "border-red-100 bg-red-50/30" : "border-gray-100"
-                )}>
-                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                    <div className="flex items-start gap-4">
-                      <div className={cn(
-                        "w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0",
-                        company.isBlocked ? "bg-red-100 text-red-600" : "bg-blue-50 text-blue-600"
-                      )}>
-                        <Building2 className="w-8 h-8" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-3 mb-1">
-                          <h3 className="text-xl font-bold text-gray-900">{company.name}</h3>
-                          {company.isBlocked && (
-                            <span className="px-3 py-1 bg-red-100 text-red-700 text-[10px] font-black uppercase tracking-wider rounded-full flex items-center gap-1">
-                              <Lock className="w-3 h-3" /> Заблокирована
-                            </span>
-                          )}
+            {/* Companies Cards Grid */}
+            <div className="space-y-4">
+              {filteredCompanies.map(company => {
+                const companyEmployees = users.filter(u => u.companyId === company.id);
+                const isExpanded = !!expandedCompanyIds[company.id];
+                const activeTabForCompany = activeSettingsTab[company.id] || 'limits';
+
+                return (
+                  <div 
+                    key={company.id} 
+                    className={cn(
+                      "bg-white rounded-3xl border transition-all shadow-xs hover:shadow-md overflow-hidden",
+                      company.isBlocked ? "border-rose-200 bg-rose-50/20" : "border-slate-200/90"
+                    )}
+                  >
+                    {/* Main Company Header Row */}
+                    <div className="p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                      
+                      {/* Left Block: Icon, Title, Tags & Counters */}
+                      <div className="flex items-start gap-4">
+                        <div className={cn(
+                          "w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 font-bold",
+                          company.isBlocked 
+                            ? "bg-rose-100 text-rose-600" 
+                            : (company.type === 'Мебельное производство' ? "bg-blue-50 text-blue-600" : (company.type === 'Салон' ? "bg-indigo-50 text-indigo-600" : "bg-purple-50 text-purple-600"))
+                        )}>
+                          {company.type === 'Мебельное производство' ? <Factory className="w-6 h-6" /> : <Building2 className="w-6 h-6" />}
                         </div>
-                        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-gray-500">
-                          <span className="flex items-center gap-1"><MapPin className="w-3 h-3" /> {company.city}</span>
-                          <div className="flex items-center gap-1">
-                            <Tag className="w-3 h-3" />
+
+                        <div className="space-y-1.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="text-lg font-black text-slate-900 tracking-tight">{company.name}</h3>
+                            
+                            {/* Company Type Dropdown */}
                             <select 
                               value={company.type}
                               onChange={(e) => updateLimit(company.id, 'type', e.target.value)}
-                              className="bg-transparent border-none p-0 font-medium text-gray-500 focus:ring-0 cursor-pointer hover:text-blue-600 transition-colors"
+                              className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-slate-100 border border-slate-200 text-slate-700 outline-none cursor-pointer hover:bg-slate-200 transition-colors"
                             >
                               <option value="Мебельное производство">Мебельное производство</option>
                               <option value="Салон">Салон</option>
                               <option value="Дизайнер">Дизайнер</option>
                             </select>
+
+                            {company.isBlocked && (
+                              <span className="px-2.5 py-0.5 bg-rose-100 text-rose-700 text-[10px] font-black uppercase tracking-wider rounded-full flex items-center gap-1 border border-rose-200">
+                                <Lock className="w-3 h-3" /> Заблокирована
+                              </span>
+                            )}
                           </div>
-                          <span className="flex items-center gap-1"><Users className="w-3 h-3" /> {company.employeeCount || 0} сотрудников</span>
-                          <span className="flex items-center gap-1"><BarChart3 className="w-3 h-3 text-blue-500" /> {company.projectCount || 0} расчетов</span>
-                          {company.manufacturerId && (
-                            <div className="flex items-center gap-2 px-2 py-0.5 bg-blue-50 text-blue-600 rounded-lg text-[10px] font-bold">
-                              <Factory className="w-3 h-3" />
-                              Производство: {companies.find(c => c.id === company.manufacturerId)?.name || '...'}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </div>
 
-                    <div className="flex flex-wrap items-center gap-4">
-                      {(company.type === 'Салон' || company.type === 'Дизайнер') && company.manufacturerId && (
-                        <button 
-                          onClick={() => fetchCoefficients(company)}
-                          className="px-4 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 rounded-xl font-bold text-xs transition-all flex items-center gap-2"
-                        >
-                          <BarChart3 className="w-4 h-4" />
-                          Коэффициенты
-                        </button>
-                      )}
-                      <div className="flex items-center gap-4 bg-gray-50 p-2 rounded-2xl border border-gray-100">
-                        <div className="px-3">
-                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Лимит сотр.</label>
-                          <CompanyLimitInput company={company} field="employeeLimit" updateLimit={updateLimit} />
-                        </div>
-                        <div className="w-px h-8 bg-gray-200"></div>
-                        <div className="px-3">
-                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Лимит тов.</label>
-                          <CompanyLimitInput company={company} field="productLimit" updateLimit={updateLimit} />
-                        </div>
-                        <div className="w-px h-8 bg-gray-200"></div>
-                        <div className="px-3">
-                          <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Тариф до</label>
-                          <CompanyDateInput company={company} updateLimit={updateLimit} />
-                        </div>
-                        <div className="w-px h-8 bg-gray-200"></div>
-                        <div className="px-3">
-                           <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">Снабжение</label>
-                           <CompanyProcurementCheckbox company={company} updateLimit={updateLimit} />
-                           {(company.procurementAllowed !== undefined ? company.procurementAllowed : company.procurementEnabled) && (
-                            <div className="mt-2 text-[10px]">
-                                <input 
-                                  placeholder="Pipeline ID" 
-                                  value={company.crmPipelineId || ''} 
-                                  onChange={(e) => updateLimit(company.id, 'crmPipelineId', e.target.value)}
-                                  className="w-full border rounded p-1 mb-1"
-                                />
-                                <input 
-                                  placeholder="Stage ID" 
-                                  value={company.crmStageId || ''} 
-                                  onChange={(e) => updateLimit(company.id, 'crmStageId', e.target.value)}
-                                  className="w-full border rounded p-1"
-                                />
-                            </div>
-                           )}
-                        </div>
-                        <div className="w-px h-8 bg-gray-200"></div>
-                        <div className="px-3">
-                           <label className="block text-[10px] font-black text-gray-400 uppercase mb-1">ERP Производство</label>
-                           <CompanyERPCheckbox company={company} updateLimit={updateLimit} />
-                           {(company.erpAllowed !== undefined ? company.erpAllowed : company.erpEnabled) && (
-                             <a
-                               href={`/${company.slug || (company.name ? transliterate(company.name) : company.id)}/erp`}
-                               target="_blank"
-                               rel="noreferrer"
-                               className="mt-1 text-[10px] text-blue-600 hover:underline flex items-center gap-1 font-bold"
-                             >
-                               Открыть ERP ↗
-                             </a>
-                           )}
-                        </div>
-                      </div>
+                          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 font-medium">
+                            <span className="flex items-center gap-1 text-slate-600">
+                              <MapPin className="w-3.5 h-3.5 text-slate-400" /> {company.city || 'Город не указан'}
+                            </span>
+                            
+                            <span className="flex items-center gap-1 font-semibold text-slate-700">
+                              <BarChart3 className="w-3.5 h-3.5 text-blue-600" /> {company.projectCount || 0} расчетов
+                            </span>
 
-                      <button 
-                        onClick={() => toggleCompanyBlock(company.id, !!company.isBlocked)}
-                        className={cn(
-                          "px-6 py-3 rounded-2xl font-bold transition-all flex items-center gap-2",
-                          company.isBlocked 
-                            ? "bg-green-600 text-white hover:bg-green-700 shadow-lg shadow-green-200" 
-                            : "bg-red-50 text-red-600 hover:bg-red-100"
-                        )}
-                      >
-                        {company.isBlocked ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
-                        {company.isBlocked ? "Разблокировать" : "Заблокировать"}
-                      </button>
-                      <button 
-                        onClick={() => deleteCompany(company.id)}
-                        className="p-3 bg-red-50 text-red-600 hover:bg-red-100 hover:text-red-700 rounded-2xl transition-all"
-                        title="Удалить компанию и всех ее сотрудников"
-                      >
-                        <Trash2 className="w-5 h-5" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Production Details */}
-                  {(company.address || (company.photos && company.photos.length > 0)) && (
-                    <div className="mt-6 p-4 bg-gray-50 rounded-2xl border border-gray-100 flex flex-col md:flex-row gap-6">
-                      {company.photos && company.photos.length > 0 && (
-                        <div className="flex gap-2 overflow-x-auto pb-2 shrink-0 md:max-w-[300px]">
-                          {company.photos.slice(0, 5).map((photo, i) => (
-                            <img key={i} src={photo} alt="" className="w-16 h-16 rounded-lg object-cover border border-white shadow-sm" referrerPolicy="no-referrer" />
-                          ))}
-                        </div>
-                      )}
-                      <div>
-                        {company.address && (
-                          <div className="flex items-start gap-2 text-xs text-gray-600">
-                            <MapPin className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
-                            <span>{company.address}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Employee List for this company */}
-                  <div className="mt-8 pt-8 border-t border-gray-100">
-                    <h4 className="text-sm font-black text-gray-400 uppercase tracking-widest mb-4">Сотрудники компании</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {users.filter(u => u.companyId === company.id).map(user => (
-                        <div key={user.uid} className={cn(
-                          "p-4 rounded-2xl border flex items-center justify-between group transition-all",
-                          user.isBlocked ? "bg-red-50 border-red-100" : "bg-white border-gray-100 hover:border-blue-200"
-                        )}>
-                          <div className="flex items-center gap-3 overflow-hidden">
-                            <div className={cn(
-                              "w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 font-bold",
-                              user.isBlocked ? "bg-red-100 text-red-600" : (user.uid === company.ownerUid ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-500")
-                            )}>
-                              {user.displayName?.charAt(0) || 'U'}
-                            </div>
-                            <div className="overflow-hidden">
-                              <div className="flex items-center gap-2">
-                                <p className="font-bold text-gray-900 truncate">{user.displayName}</p>
-                                {user.uid === company.ownerUid && (
-                                  <span className="bg-blue-50 text-blue-600 text-[9px] font-black uppercase px-2 py-0.5 rounded-full border border-blue-100">Админ</span>
-                                )}
-                              </div>
-                              <p className="text-xs text-gray-500 truncate">{user.email}</p>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <button 
-                              onClick={() => toggleUserBlock(user.uid, !!user.isBlocked)}
-                              className={cn(
-                                "p-2 rounded-xl transition-all",
-                                user.isBlocked ? "text-green-600 hover:bg-green-100" : "text-gray-400 hover:text-red-600 hover:bg-red-50"
-                              )}
-                              title={user.isBlocked ? "Разблокировать" : "Заблокировать"}
-                            >
-                              {user.isBlocked ? <Unlock className="w-5 h-5" /> : <Lock className="w-5 h-5" />}
-                            </button>
-                            {user.uid !== company.ownerUid && (
-                              <button
-                                onClick={() => deleteUser(user.uid, company.id)}
-                                className="p-2 rounded-xl transition-all text-gray-400 hover:text-red-600 hover:bg-red-50"
-                                title="Удалить сотрудника"
-                              >
-                                <Trash2 className="w-5 h-5" />
-                              </button>
+                            {company.manufacturerId && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md text-[10px] font-bold border border-blue-100">
+                                <Factory className="w-3 h-3" /> Производство: {companies.find(c => c.id === company.manufacturerId)?.name || '...'}
+                              </span>
                             )}
                           </div>
                         </div>
-                      ))}
+                      </div>
+
+                      {/* Right Block: Limits, Modules Badges and Quick Actions */}
+                      <div className="flex flex-wrap items-center gap-3">
+                        
+                        {/* Coefficients Button for Salons */}
+                        {(company.type === 'Салон' || company.type === 'Дизайнер') && company.manufacturerId && (
+                          <button 
+                            onClick={() => fetchCoefficients(company)}
+                            className="px-3 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-xl font-extrabold text-xs transition-all flex items-center gap-1.5 cursor-pointer border border-indigo-100"
+                          >
+                            <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>Коэффициенты</span>
+                          </button>
+                        )}
+
+                        {/* Toggle Employees Expand Button */}
+                        <button
+                          onClick={() => toggleEmployeesExpanded(company.id)}
+                          className={cn(
+                            "px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 cursor-pointer border",
+                            isExpanded ? "bg-blue-600 text-white border-blue-600" : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                          )}
+                        >
+                          <Users className="w-3.5 h-3.5" />
+                          <span>Сотрудники</span>
+                          <span className={cn(
+                            "px-1.5 py-0.5 rounded-full text-[10px] font-mono font-black",
+                            isExpanded ? "bg-blue-800 text-white" : "bg-slate-200 text-slate-800"
+                          )}>
+                            {companyEmployees.length}
+                          </span>
+                          {isExpanded ? <ChevronUp className="w-3.5 h-3.5 ml-1" /> : <ChevronDown className="w-3.5 h-3.5 ml-1" />}
+                        </button>
+
+                        {/* Block/Unblock Button */}
+                        <button 
+                          onClick={() => toggleCompanyBlock(company.id, !!company.isBlocked)}
+                          className={cn(
+                            "px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 cursor-pointer",
+                            company.isBlocked 
+                              ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-2xs" 
+                              : "bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200/80"
+                          )}
+                        >
+                          {company.isBlocked ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                          <span>{company.isBlocked ? "Разблокировать" : "Заблокировать"}</span>
+                        </button>
+
+                        {/* Delete Company Button */}
+                        <button 
+                          onClick={() => deleteCompany(company.id)}
+                          className="p-2 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 rounded-xl transition-all cursor-pointer border border-rose-200/80"
+                          title="Удалить компанию и всех ее сотрудников"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
+
+                    {/* Compact Limits & Module Controls Bar */}
+                    <div className="bg-slate-50/80 border-t border-slate-200/80 px-5 py-3.5 grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
+                      
+                      {/* Limit 1: Employee Limit */}
+                      <div className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-200/80">
+                        <span className="text-[11px] font-bold text-slate-500 uppercase">Лимит сотр.:</span>
+                        <div className="flex items-center gap-1">
+                          <input 
+                            type="number"
+                            defaultValue={company.employeeLimit || 0}
+                            onBlur={(e) => updateLimit(company.id, 'employeeLimit', parseInt(e.target.value) || 0)}
+                            className="w-12 text-center font-extrabold text-slate-900 bg-slate-100 rounded py-0.5 outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                          <span className="text-[10px] text-slate-400 font-bold">чел.</span>
+                        </div>
+                      </div>
+
+                      {/* Limit 2: Product Limit */}
+                      <div className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-200/80">
+                        <span className="text-[11px] font-bold text-slate-500 uppercase">Лимит тов.:</span>
+                        <div className="flex items-center gap-1">
+                          <input 
+                            type="number"
+                            defaultValue={company.productLimit || 0}
+                            onBlur={(e) => updateLimit(company.id, 'productLimit', parseInt(e.target.value) || 0)}
+                            className="w-12 text-center font-extrabold text-slate-900 bg-slate-100 rounded py-0.5 outline-none focus:ring-1 focus:ring-blue-500"
+                          />
+                          <span className="text-[10px] text-slate-400 font-bold">шт.</span>
+                        </div>
+                      </div>
+
+                      {/* Limit 3: Tariff Expiration Date */}
+                      <div className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-200/80">
+                        <span className="text-[11px] font-bold text-slate-500 uppercase">Тариф до:</span>
+                        <TariffExpirationPicker company={company} updateLimit={updateLimit} />
+                      </div>
+
+                      {/* Modules Toggles (Procurement & ERP) */}
+                      <div className="flex items-center justify-around p-2 bg-white rounded-xl border border-slate-200/80">
+                        
+                        {/* Procurement Module Toggle */}
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={company.procurementAllowed !== undefined ? !!company.procurementAllowed : !!company.procurementEnabled}
+                            onChange={(e) => {
+                              updateLimit(company.id, 'procurementAllowed', e.target.checked);
+                              if (!e.target.checked) updateLimit(company.id, 'procurementEnabled', false);
+                            }}
+                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
+                          />
+                          <span className="text-[10px] font-black text-slate-700 uppercase">Снабжение</span>
+                        </label>
+
+                        <div className="w-px h-4 bg-slate-200"></div>
+
+                        {/* ERP Module Toggle */}
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={company.erpAllowed !== undefined ? !!company.erpAllowed : !!company.erpEnabled}
+                            onChange={(e) => {
+                              updateLimit(company.id, 'erpAllowed', e.target.checked);
+                              updateLimit(company.id, 'erpEnabled', e.target.checked);
+                            }}
+                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                          />
+                          <span className="text-[10px] font-black text-indigo-700 uppercase">ERP 2.0</span>
+                        </label>
+
+                        {(company.erpAllowed || company.erpEnabled) && (
+                          <a
+                            href={`/${company.slug || (company.name ? transliterate(company.name) : company.id)}/erp`}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[10px] text-blue-600 font-bold hover:underline"
+                            title="Открыть ERP кабинет"
+                          >
+                            ↗
+                          </a>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* EXPANDABLE EMPLOYEES PANEL */}
+                    {isExpanded && (
+                      <div className="p-5 bg-slate-100/80 border-t border-slate-200 space-y-3 animate-fadeIn">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <Users className="w-4 h-4 text-blue-600" />
+                            <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">
+                              Сотрудники компании ({companyEmployees.length})
+                            </h4>
+                          </div>
+
+                          <div className="text-[10px] text-slate-500 font-medium">
+                            Администратор организации выделен синим
+                          </div>
+                        </div>
+
+                        {companyEmployees.length === 0 ? (
+                          <div className="p-4 text-center bg-white rounded-2xl border border-slate-200 text-xs text-slate-400 font-semibold">
+                            В этой компании пока нет зарегистрированных сотрудников
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {companyEmployees.map(user => {
+                              const isOwner = user.uid === company.ownerUid;
+
+                              return (
+                                <div 
+                                  key={user.uid} 
+                                  className={cn(
+                                    "p-3 rounded-2xl border flex items-center justify-between gap-2 transition-all",
+                                    user.isBlocked 
+                                      ? "bg-rose-50/80 border-rose-200" 
+                                      : (isOwner ? "bg-blue-50/60 border-blue-200" : "bg-white border-slate-200")
+                                  )}
+                                >
+                                  <div className="flex items-center gap-2.5 overflow-hidden">
+                                    <div className={cn(
+                                      "w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs shrink-0",
+                                      user.isBlocked ? "bg-rose-200 text-rose-800" : (isOwner ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600")
+                                    )}>
+                                      {user.displayName?.charAt(0).toUpperCase() || 'U'}
+                                    </div>
+                                    <div className="overflow-hidden">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="font-bold text-xs text-slate-900 truncate">{user.displayName || 'Без имени'}</span>
+                                        {isOwner && (
+                                          <span className="bg-blue-100 text-blue-700 text-[9px] font-black uppercase px-1.5 py-0.2 rounded shrink-0">Владелец</span>
+                                        )}
+                                      </div>
+                                      <div className="text-[10px] text-slate-500 truncate font-mono">{user.email}</div>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-1 shrink-0">
+                                    <button 
+                                      onClick={() => toggleUserBlock(user.uid, !!user.isBlocked)}
+                                      className={cn(
+                                        "p-1.5 rounded-lg transition-colors cursor-pointer",
+                                        user.isBlocked ? "text-emerald-600 hover:bg-emerald-100" : "text-slate-400 hover:text-rose-600 hover:bg-rose-50"
+                                      )}
+                                      title={user.isBlocked ? "Разблокировать" : "Заблокировать"}
+                                    >
+                                      {user.isBlocked ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
+                                    </button>
+
+                                    {!isOwner && (
+                                      <button
+                                        onClick={() => deleteUser(user.uid, company.id)}
+                                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
+                                        title="Удалить сотрудника"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
 
-            {/* Orphaned Users cleanup */}
+            {/* Orphaned Users cleanup panel */}
             {users.filter(u => 
               u.role !== 'admin' &&
               u.email !== 'lk.ivanbobkin@gmail.com' &&
               (!u.companyId || !companies.find(c => c.id === u.companyId))
             ).length > 0 && (
-              <div className="mt-12 pt-12 border-t-2 border-dashed border-gray-200">
-                <div className="flex items-center justify-between mb-8">
+              <div className="mt-8 p-6 bg-white rounded-3xl border border-rose-200 space-y-4 shadow-xs">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                   <div>
-                    <h2 className="text-2xl font-black text-gray-900 tracking-tight">
-                      Пользователи без компании
-                    </h2>
-                    <p className="text-sm text-gray-500 font-medium font-sans">
-                      Аккаунты, не привязанные ни к одной активной организации (кроме администраторов)
+                    <h3 className="text-base font-black text-rose-950 flex items-center gap-2">
+                      <AlertCircle className="w-5 h-5 text-rose-600" />
+                      Пользователи без компании ({
+                        users.filter(u => u.role !== 'admin' && u.email !== 'lk.ivanbobkin@gmail.com' && (!u.companyId || !companies.find(c => c.id === u.companyId))).length
+                      })
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Зарегистрированные аккаунты, не привязанные ни к одной существующей организации
                     </p>
                   </div>
+
                   <button 
                     onClick={async () => {
                       const orphaned = users.filter(u => 
@@ -808,83 +892,352 @@ export const AppAdminView = () => {
                         alert("Все нераспределенные пользователи удалены");
                       }
                     }}
-                    className="flex items-center gap-2 px-6 py-3 bg-red-50 text-red-600 rounded-2xl font-bold hover:bg-red-100 transition-all text-sm"
+                    className="flex items-center gap-1.5 px-4 py-2 bg-rose-50 text-rose-700 rounded-xl font-extrabold text-xs hover:bg-rose-100 transition-all cursor-pointer border border-rose-200"
                   >
                     <Trash2 className="w-4 h-4" />
-                    Очистить всех "призраков"
+                    Удалить всех призраков
                   </button>
                 </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                   {users.filter(u => 
                     u.role !== 'admin' &&
                     u.email !== 'lk.ivanbobkin@gmail.com' &&
                     (!u.companyId || !companies.find(c => c.id === u.companyId))
                   ).map(user => (
-                    <div key={user.uid} className="bg-white p-6 rounded-3xl border border-gray-100 shadow-sm hover:shadow-md transition-all flex items-center justify-between">
-                      <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-gray-100 text-gray-500 rounded-2xl flex items-center justify-center font-bold">
-                          {user.displayName?.charAt(0) || user.email?.charAt(0).toUpperCase() || 'U'}
-                        </div>
-                        <div className="overflow-hidden">
-                          <p className="font-bold text-gray-900 truncate">{user.displayName || 'Без имени'}</p>
-                          <p className="text-xs text-gray-500 truncate">{user.email}</p>
-                          <p className="text-[10px] text-red-400 font-bold uppercase mt-1">
-                            {user.companyId ? `ID компании: ${user.companyId}` : 'Компания не указана'}
-                          </p>
-                        </div>
+                    <div key={user.uid} className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between gap-2">
+                      <div className="overflow-hidden">
+                        <div className="font-bold text-xs text-slate-900 truncate">{user.displayName || 'Без имени'}</div>
+                        <div className="text-[10px] text-slate-500 font-mono truncate">{user.email}</div>
                       </div>
                       <button 
-                         onClick={() => deleteUser(user.uid, user.companyId || 'none')}
-                         className="p-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-2xl transition-all"
-                         title="Удалить аккаунт"
+                        onClick={() => deleteUser(user.uid, user.companyId || 'none')}
+                        className="p-1.5 bg-white text-rose-600 hover:bg-rose-100 rounded-lg border border-slate-200 transition-colors cursor-pointer"
+                        title="Удалить аккаунт"
                       >
-                        <Trash2 className="w-5 h-5" />
+                        <Trash2 className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   ))}
                 </div>
               </div>
             )}
+
           </div>
         )}
+
+        {/* TAB 2: GLOBAL ALL USERS VIEW */}
+        {activeTab === 'users' && (
+          <div className="space-y-4">
+            
+            {/* Search Bar for Users */}
+            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex items-center justify-between gap-4">
+              <div className="relative w-full max-w-md">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+                <input 
+                  type="text"
+                  placeholder="Поиск пользователя по имени, почте или компании..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                />
+              </div>
+
+              <div className="text-xs text-slate-500 font-bold">
+                Найдено пользователей: <span className="text-slate-900 font-mono">{filteredUsers.length}</span>
+              </div>
+            </div>
+
+            {/* Users Table */}
+            <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-extrabold text-[10px]">
+                    <tr>
+                      <th className="px-6 py-4">Пользователь</th>
+                      <th className="px-6 py-4">Компания</th>
+                      <th className="px-6 py-4">Роль</th>
+                      <th className="px-6 py-4">Статус</th>
+                      <th className="px-6 py-4 text-right">Действия</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+                    {filteredUsers.map(user => {
+                      const company = companies.find(c => c.id === user.companyId);
+                      const isOwner = company && user.uid === company.ownerUid;
+
+                      return (
+                        <tr key={user.uid} className={cn("hover:bg-slate-50/80 transition-colors", user.isBlocked && "bg-rose-50/30")}>
+                          <td className="px-6 py-3.5">
+                            <div className="flex items-center gap-3">
+                              <div className={cn(
+                                "w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0",
+                                user.isBlocked ? "bg-rose-100 text-rose-700" : (isOwner ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700")
+                              )}>
+                                {user.displayName?.charAt(0).toUpperCase() || 'U'}
+                              </div>
+                              <div>
+                                <div className="font-bold text-slate-900">{user.displayName || 'Без имени'}</div>
+                                <div className="text-[11px] text-slate-400 font-mono">{user.email}</div>
+                              </div>
+                            </div>
+                          </td>
+
+                          <td className="px-6 py-3.5">
+                            {company ? (
+                              <div className="flex items-center gap-1.5">
+                                <Building2 className="w-3.5 h-3.5 text-slate-400" />
+                                <span className="font-bold text-slate-800">{company.name}</span>
+                              </div>
+                            ) : (
+                              <span className="text-rose-500 font-bold">Без компании</span>
+                            )}
+                          </td>
+
+                          <td className="px-6 py-3.5">
+                            {user.role === 'admin' ? (
+                              <span className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 font-bold text-[10px] uppercase">Суперадмин</span>
+                            ) : isOwner ? (
+                              <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-bold text-[10px] uppercase">Админ компании</span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[10px] uppercase">Сотрудник</span>
+                            )}
+                          </td>
+
+                          <td className="px-6 py-3.5">
+                            {user.isBlocked ? (
+                              <span className="inline-flex items-center gap-1 text-rose-600 font-bold text-[11px]">
+                                <Lock className="w-3 h-3" /> Заблокирован
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 text-emerald-600 font-bold text-[11px]">
+                                <UserCheck className="w-3 h-3" /> Активен
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="px-6 py-3.5 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => toggleUserBlock(user.uid, !!user.isBlocked)}
+                                className={cn(
+                                  "p-1.5 rounded-lg transition-colors cursor-pointer",
+                                  user.isBlocked ? "bg-emerald-50 text-emerald-600 hover:bg-emerald-100" : "bg-slate-100 text-slate-600 hover:bg-rose-50 hover:text-rose-600"
+                                )}
+                                title={user.isBlocked ? "Разблокировать" : "Заблокировать"}
+                              >
+                                {user.isBlocked ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                              </button>
+
+                              {!isOwner && user.role !== 'admin' && (
+                                <button
+                                  onClick={() => deleteUser(user.uid, user.companyId)}
+                                  className="p-1.5 bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
+                                  title="Удалить пользователя"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: ANALYTICS & STATS */}
+        {activeTab === 'stats' && (
+          <div className="space-y-6">
+            
+            {/* Top Key Metrics Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-2xs flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0">
+                  <Building2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-slate-500">Всего организаций</div>
+                  <div className="text-2xl font-black text-slate-900 font-mono">{stats.totalCompanies}</div>
+                </div>
+              </div>
+
+              <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-2xs flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold shrink-0">
+                  <Users className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-slate-500">Пользователей системы</div>
+                  <div className="text-2xl font-black text-slate-900 font-mono">{stats.totalUsers}</div>
+                </div>
+              </div>
+
+              <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-2xs flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold shrink-0">
+                  <Layers className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-slate-500">Активных с ERP 2.0</div>
+                  <div className="text-2xl font-black text-amber-600 font-mono">{stats.erpActiveCount}</div>
+                </div>
+              </div>
+
+              <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-2xs flex items-center gap-4">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold shrink-0">
+                  <ShieldCheck className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-slate-500">Снабжение под заказ</div>
+                  <div className="text-2xl font-black text-emerald-600 font-mono">{stats.procurementActiveCount}</div>
+                </div>
+              </div>
+            </div>
+
+            {/* Distribution Charts & Breakdown */}
+            <div className="bg-white p-8 rounded-3xl border border-slate-200/80 shadow-2xs space-y-6">
+              <h3 className="text-lg font-black text-slate-900">Структура клиентов по типу деятельности</h3>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-2">
+                  <div className="flex justify-between text-xs font-black">
+                    <span className="text-slate-700">Мебельные производства</span>
+                    <span className="text-blue-600 font-mono">{stats.productionCount} ({stats.totalCompanies > 0 ? Math.round((stats.productionCount/stats.totalCompanies)*100) : 0}%)</span>
+                  </div>
+                  <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                    <div className="bg-blue-600 h-full transition-all" style={{ width: `${stats.totalCompanies > 0 ? (stats.productionCount/stats.totalCompanies)*100 : 0}%` }}></div>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-2">
+                  <div className="flex justify-between text-xs font-black">
+                    <span className="text-slate-700">Мебельные салоны</span>
+                    <span className="text-indigo-600 font-mono">{stats.salonCount} ({stats.totalCompanies > 0 ? Math.round((stats.salonCount/stats.totalCompanies)*100) : 0}%)</span>
+                  </div>
+                  <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                    <div className="bg-indigo-600 h-full transition-all" style={{ width: `${stats.totalCompanies > 0 ? (stats.salonCount/stats.totalCompanies)*100 : 0}%` }}></div>
+                  </div>
+                </div>
+
+                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-2">
+                  <div className="flex justify-between text-xs font-black">
+                    <span className="text-slate-700">Частные дизайнеры</span>
+                    <span className="text-purple-600 font-mono">{stats.designerCount} ({stats.totalCompanies > 0 ? Math.round((stats.designerCount/stats.totalCompanies)*100) : 0}%)</span>
+                  </div>
+                  <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                    <div className="bg-purple-600 h-full transition-all" style={{ width: `${stats.totalCompanies > 0 ? (stats.designerCount/stats.totalCompanies)*100 : 0}%` }}></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* TAB 4: TARIFF CHANGE REQUESTS */}
+        {activeTab === 'requests' && (
+          <div className="space-y-4">
+            {requests.map(req => (
+              <div key={req.id} className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-2xs space-y-4">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h3 className="text-base font-black text-slate-900">{req.companyName}</h3>
+                    <p className="text-xs text-slate-400 font-semibold">{new Date(req.createdAt).toLocaleString('ru-RU')}</p>
+                  </div>
+                  <span className={cn(
+                    "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider",
+                    req.status === 'pending' ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"
+                  )}>
+                    {req.status === 'pending' ? 'Ожидает обработки' : 'Обработано'}
+                  </span>
+                </div>
+
+                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Тип тарифа</span>
+                    <span className="font-extrabold text-slate-900">{req.request?.type || 'Стандарт'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Период</span>
+                    <span className="font-extrabold text-slate-900">{req.request?.period === 'year' ? '1 Год' : '1 Месяц'}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Доп. сотрудники</span>
+                    <span className="font-extrabold text-slate-900">+{req.request?.extraEmployees || 0}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Доп. салоны</span>
+                    <span className="font-extrabold text-slate-900">+{req.request?.extraSalons || 0}</span>
+                  </div>
+                </div>
+
+                {req.status === 'pending' && (
+                  <div className="flex justify-end">
+                    <button
+                      onClick={async () => {
+                        try {
+                          await updateDoc(doc(db, 'tariffRequests', req.id), { status: 'completed' });
+                        } catch (error) {
+                          console.error(error);
+                        }
+                      }}
+                      className="px-5 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-black hover:bg-blue-700 transition-all cursor-pointer shadow-2xs"
+                    >
+                      Отметить как обработанное
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+
+            {requests.length === 0 && (
+              <div className="text-center py-12 bg-white rounded-3xl border border-slate-200 text-slate-400 text-xs font-bold">
+                Нет поступивших заявок на смену тарифов
+              </div>
+            )}
+          </div>
+        )}
+
       </div>
 
-      {/* Coefficients Modal */}
+      {/* COEFFICIENTS MODAL */}
       {coeffModalOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
-            <div className="p-8 border-b border-gray-100 flex justify-between items-center bg-gray-50/50">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
+            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
               <div>
-                <h3 className="text-2xl font-black text-gray-900 leading-none mb-2">Коэффициенты</h3>
-                <p className="text-sm text-gray-500 font-medium">
-                  Для <span className="text-indigo-600 font-bold">{selectedCoefficients?.salonName}</span> от <span className="text-blue-600 font-bold">{selectedCoefficients?.manufacturerName}</span>
+                <h3 className="text-lg font-black text-slate-900 leading-none mb-1">Партнерские коэффициенты</h3>
+                <p className="text-xs text-slate-500 font-semibold">
+                  Для салона <span className="text-indigo-600 font-bold">{selectedCoefficients?.salonName}</span> от <span className="text-blue-600 font-bold">{selectedCoefficients?.manufacturerName}</span>
                 </p>
               </div>
               <button 
                 onClick={() => setCoeffModalOpen(false)}
-                className="p-3 hover:bg-white rounded-2xl transition-all text-gray-400 hover:text-gray-900 shadow-sm hover:shadow"
+                className="p-2 hover:bg-white rounded-xl transition-colors text-slate-400 hover:text-slate-900 cursor-pointer"
               >
-                <X className="w-6 h-6" />
+                <X className="w-5 h-5" />
               </button>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-8">
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
               {coeffLoading ? (
-                <div className="py-20 flex flex-col items-center justify-center gap-4">
-                  <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-                  <p className="text-sm font-bold text-gray-400 animate-pulse uppercase tracking-widest">Загрузка данных...</p>
+                <div className="py-12 flex flex-col items-center justify-center gap-3">
+                  <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Загрузка данных...</p>
                 </div>
               ) : selectedCoefficients?.coeffs ? (
-                <div className="space-y-6">
+                <div className="space-y-4">
                   {selectedCoefficients.isSpecial && (
-                    <div className="p-4 bg-indigo-50 border border-indigo-100 rounded-2xl flex items-center gap-3">
-                      <ShieldCheck className="w-6 h-6 text-indigo-600" />
-                      <p className="text-sm font-bold text-indigo-900">Активны специальные условия для этого клиента</p>
+                    <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-2xl flex items-center gap-2.5 text-indigo-900 text-xs font-bold">
+                      <ShieldCheck className="w-5 h-5 text-indigo-600 shrink-0" />
+                      <span>Активны индивидуальные коммерческие условия для этого салона</span>
                     </div>
                   )}
                   
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-2 gap-3 text-xs">
                     {[
                       { key: 'ldsp', label: 'ЛДСП' },
                       { key: 'hdf', label: 'ХДФ' },
@@ -897,37 +1250,26 @@ export const AppAdminView = () => {
                     ].map(({ key, label }) => {
                       const val = selectedCoefficients.coeffs?.[key];
                       return (
-                        <div key={key} className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex items-center justify-between">
-                          <span className="text-sm font-bold text-gray-500 uppercase tracking-wider">{label}</span>
-                          <span className="text-xl font-black text-gray-900">x{val !== undefined ? val : 1}</span>
+                        <div key={key} className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center justify-between">
+                          <span className="font-bold text-slate-500 uppercase text-[10px]">{label}</span>
+                          <span className="text-sm font-black text-slate-900 font-mono">x{val !== undefined ? val : 1}</span>
                         </div>
                       );
                     })}
-                    {Object.entries(selectedCoefficients.coeffs || {}).filter(([k]) => ![
-                      'ldsp', 'hdf', 'edge', 'facadeSheet', 'facadeCustom', 'hardware', 'assembly', 'delivery'
-                    ].includes(k)).map(([key, value]) => (
-                      <div key={key} className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex items-center justify-between">
-                        <span className="text-sm font-bold text-gray-500 uppercase tracking-wider">
-                          {key.startsWith('cat_') ? key.replace('cat_', '') : key}
-                        </span>
-                        <span className="text-xl font-black text-gray-900">x{value as number}</span>
-                      </div>
-                    ))}
                   </div>
                 </div>
               ) : (
-                <div className="py-20 text-center">
-                  <AlertCircle className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                  <p className="text-lg font-bold text-gray-400">Коэффициенты не найдены</p>
-                  <p className="text-sm text-gray-500">Производство еще не настроило параметры для этого клиента.</p>
+                <div className="py-12 text-center text-slate-400 text-xs font-bold space-y-2">
+                  <AlertCircle className="w-8 h-8 text-slate-300 mx-auto" />
+                  <p>Индивидуальные коэффициенты еще не настроены производством.</p>
                 </div>
               )}
             </div>
             
-            <div className="p-8 bg-gray-50 border-t border-gray-100">
+            <div className="p-4 bg-slate-50 border-t border-slate-100">
               <button 
                 onClick={() => setCoeffModalOpen(false)}
-                className="w-full py-4 bg-gray-900 text-white rounded-2xl font-bold hover:bg-black transition-all shadow-lg shadow-gray-200"
+                className="w-full py-3 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors cursor-pointer"
               >
                 Закрыть
               </button>
@@ -935,48 +1277,7 @@ export const AppAdminView = () => {
           </div>
         </div>
       )}
+
     </div>
   );
 };
-
-const StatCard = ({ icon, label, value, color }: { icon: React.ReactElement, label: string, value: number, color: string }) => {
-  const colors: Record<string, string> = {
-    blue: "bg-blue-50 text-blue-600 shadow-blue-100",
-    indigo: "bg-indigo-50 text-indigo-600 shadow-indigo-100",
-    red: "bg-red-50 text-red-600 shadow-red-100",
-    green: "bg-green-50 text-green-600 shadow-green-100",
-  };
-
-  return (
-    <div className="bg-white p-6 rounded-[2.5rem] border border-gray-100 shadow-sm flex items-center gap-4">
-      <div className={cn("w-14 h-14 rounded-2xl flex items-center justify-center flex-shrink-0", colors[color])}>
-        {React.cloneElement(icon as any, { className: "w-8 h-8" })}
-      </div>
-      <div>
-        <p className="text-sm font-medium text-gray-500">{label}</p>
-        <p className="text-2xl font-black text-gray-900">{value}</p>
-      </div>
-    </div>
-  );
-};
-
-const DistributionItem = ({ label, count, total, color }: { label: string, count: number, total: number, color: string }) => {
-  const percentage = total > 0 ? (count / total) * 100 : 0;
-  return (
-    <div className="space-y-2">
-      <div className="flex justify-between text-sm font-bold">
-        <span className="text-gray-700">{label}</span>
-        <span className="text-gray-900">{count}</span>
-      </div>
-      <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
-        <div 
-          className={cn("h-full transition-all duration-1000", color)} 
-          style={{ width: `${percentage}%` }}
-        ></div>
-      </div>
-    </div>
-  );
-};
-
-
-
