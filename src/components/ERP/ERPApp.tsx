@@ -299,6 +299,21 @@ export const ERPApp: React.FC<ERPAppProps> = ({
     ];
   });
 
+  const saveServerInstallationTasks = async (tasks: InstallationTask[], compId?: string) => {
+    const targetId = compId || company?.id || aliasOrId;
+    if (!targetId) return;
+    try {
+      localStorage.setItem(`erp_installation_tasks_${targetId}`, JSON.stringify(tasks));
+      await fetch(`/api/erp/${targetId}/installation-tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tasks })
+      });
+    } catch (e) {
+      console.warn("Failed to sync installation tasks to server", e);
+    }
+  };
+
   const handleAddInstallationTask = (taskData: Partial<InstallationTask>) => {
     const newTask: InstallationTask = {
       id: `inst-${Date.now()}`,
@@ -312,9 +327,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
     };
     setInstallationTasks(prev => {
       const next = [newTask, ...prev];
-      try {
-        localStorage.setItem(`erp_installation_tasks_${aliasOrId}`, JSON.stringify(next));
-      } catch (e) {}
+      saveServerInstallationTasks(next);
       return next;
     });
   };
@@ -323,9 +336,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
     setInstallationTasks(prev => {
       const exists = prev.some(t => t.id === updatedTask.id);
       const next = exists ? prev.map(t => t.id === updatedTask.id ? updatedTask : t) : [updatedTask, ...prev];
-      try {
-        localStorage.setItem(`erp_installation_tasks_${aliasOrId}`, JSON.stringify(next));
-      } catch (e) {}
+      saveServerInstallationTasks(next);
       return next;
     });
 
@@ -355,9 +366,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
   const handleDeleteInstallationTask = (id: string) => {
     setInstallationTasks(prev => {
       const next = prev.filter(t => t.id !== id);
-      try {
-        localStorage.setItem(`erp_installation_tasks_${aliasOrId}`, JSON.stringify(next));
-      } catch (e) {}
+      saveServerInstallationTasks(next);
       return next;
     });
   };
@@ -570,6 +579,12 @@ export const ERPApp: React.FC<ERPAppProps> = ({
   // Fetch Company & ERP Data with strict pre-cabinet synchronization
   const loadAllERPData = async (userOverride?: any) => {
     setIsDataReady(false);
+
+    // Guaranteed max safety timer (3.5s) so loading splash screen never hangs
+    const safetyDataTimer = setTimeout(() => {
+      setIsDataReady(true);
+    }, 3500);
+
     try {
       let comp: any = company;
       if (!comp) {
@@ -655,15 +670,27 @@ export const ERPApp: React.FC<ERPAppProps> = ({
         }));
       }
 
-      // Fetch employees, orders, schedule, shift-logs, residuals and active shift in parallel
+      // Fetch employees, orders, schedule, shift-logs, residuals, installation-tasks and active shift in parallel
       try {
-        const [empRes, ordersRes, scheduleRes, shiftLogsRes, residualsRes] = await Promise.allSettled([
+        const [empRes, ordersRes, scheduleRes, shiftLogsRes, residualsRes, tasksRes] = await Promise.allSettled([
           fetch(`/api/erp/${comp.id}/employees`),
           fetch(`/api/erp/${comp.id}/orders`),
           fetch(`/api/erp/${comp.id}/schedule`),
           fetch(`/api/erp/${comp.id}/shift-logs`),
-          fetch(`/api/erp/${comp.id}/residuals`)
+          fetch(`/api/erp/${comp.id}/residuals`),
+          fetch(`/api/erp/${comp.id}/installation-tasks`)
         ]);
+
+        // Process installation-tasks
+        if (tasksRes.status === 'fulfilled' && tasksRes.value.ok) {
+          const tasksData = await tasksRes.value.json();
+          if (tasksData.tasks && Array.isArray(tasksData.tasks)) {
+            setInstallationTasks(tasksData.tasks);
+            try {
+              localStorage.setItem(`erp_installation_tasks_${comp.id}`, JSON.stringify(tasksData.tasks));
+            } catch (e) {}
+          }
+        }
 
         // Process residuals
         if (residualsRes.status === 'fulfilled' && residualsRes.value.ok) {
@@ -775,6 +802,8 @@ export const ERPApp: React.FC<ERPAppProps> = ({
       setIsAccessDenied(true);
       setIsLoading(false);
       setIsDataReady(true);
+    } finally {
+      clearTimeout(safetyDataTimer);
     }
   };
 
@@ -852,6 +881,42 @@ export const ERPApp: React.FC<ERPAppProps> = ({
       clearInterval(interval);
     };
   }, [company?.id, isDataReady]);
+
+  // Real-time synchronization of installation tasks across devices (polls every 4s)
+  useEffect(() => {
+    const targetCompId = company?.id || aliasOrId;
+    if (!targetCompId) return;
+
+    let isSubscribed = true;
+
+    const pollTasks = async () => {
+      if (document.hidden) return;
+      try {
+        const res = await fetch(`/api/erp/${targetCompId}/installation-tasks`);
+        if (res.ok && isSubscribed) {
+          const data = await res.json();
+          if (data.tasks && Array.isArray(data.tasks)) {
+            setInstallationTasks(data.tasks);
+            try {
+              localStorage.setItem(`erp_installation_tasks_${targetCompId}`, JSON.stringify(data.tasks));
+            } catch (e) {}
+          }
+        }
+      } catch (err) {}
+    };
+
+    const interval = setInterval(pollTasks, 4000);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') pollTasks();
+    };
+    window.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      isSubscribed = false;
+      clearInterval(interval);
+      window.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [company?.id, aliasOrId]);
 
   // Helper to sync installation tasks from orders list based on stages & keywords
   const syncInstallationTasksFromOrders = useCallback((ordersList: ProductionOrder[]) => {
@@ -968,9 +1033,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
       if (hasChanges) {
         // Remove dummy demo tasks if we synced real ones
         const filtered = updatedTasks.filter(t => !t.id.startsWith('inst-demo-') || updatedTasks.length <= 2);
-        try {
-          localStorage.setItem(`erp_installation_tasks_${aliasOrId}`, JSON.stringify(filtered));
-        } catch (e) {}
+        saveServerInstallationTasks(filtered);
         return filtered;
       }
 

@@ -41,6 +41,14 @@ export const ERPLoader: React.FC<ERPLoaderProps> = ({
 
   useEffect(() => {
     let timer: any = null;
+    
+    // Absolute fallback timer (2.5s) to guarantee screen transition
+    const fallbackTimer = setTimeout(() => {
+      setProgress(100);
+      setCurrentStepIndex(steps.length - 1);
+      if (onFinish) onFinish();
+    }, 2500);
+
     const interval = setInterval(() => {
       setProgress((prev) => {
         if (!isDataReady) {
@@ -61,6 +69,7 @@ export const ERPLoader: React.FC<ERPLoaderProps> = ({
               setCurrentStepIndex(steps.length - 1);
               if (!timer) {
                 timer = setTimeout(() => {
+                  clearTimeout(fallbackTimer);
                   if (onFinish) onFinish();
                 }, 80);
               }
@@ -72,6 +81,7 @@ export const ERPLoader: React.FC<ERPLoaderProps> = ({
           } else {
             if (!timer) {
               timer = setTimeout(() => {
+                clearTimeout(fallbackTimer);
                 if (onFinish) onFinish();
               }, 50);
             }
@@ -83,6 +93,7 @@ export const ERPLoader: React.FC<ERPLoaderProps> = ({
 
     return () => {
       clearInterval(interval);
+      clearTimeout(fallbackTimer);
       if (timer) clearTimeout(timer);
     };
   }, [isDataReady, onFinish]);

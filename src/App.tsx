@@ -32013,6 +32013,10 @@ export default function App() {
       if (!isCheckingDomain) return;
       const hostname = window.location.hostname;
       
+      const domainTimeout = setTimeout(() => {
+        setIsCheckingDomain(false);
+      }, 3500);
+
       try {
         const res = await fetch(`/api/public/lookup-by-host?host=${hostname}`);
         if (res.ok) {
@@ -32024,6 +32028,7 @@ export default function App() {
       } catch (e) {
         console.error("Custom domain lookup failed", e);
       } finally {
+        clearTimeout(domainTimeout);
         setIsCheckingDomain(false);
       }
     };
@@ -32547,6 +32552,11 @@ export default function App() {
     const savedUid = localStorage.getItem('auth_uid');
     const savedEmail = localStorage.getItem('auth_email');
     
+    // Safety max timer (4s) so loading never hangs indefinitely
+    const maxLoadingTimer = setTimeout(() => {
+      setIsLoading(false);
+    }, 4000);
+
     const restoreAuth = async () => {
       if (savedUid && savedEmail) {
         setIsLoading(true);
@@ -32608,14 +32618,17 @@ export default function App() {
         } catch (e) {
           console.error("Failed to restore auth:", e);
         } finally {
+          clearTimeout(maxLoadingTimer);
           setIsLoading(false);
         }
       } else {
+        clearTimeout(maxLoadingTimer);
         setIsLoading(false);
       }
     };
     
     restoreAuth();
+    return () => clearTimeout(maxLoadingTimer);
   }, []);
 
   // Sync Session ID (Temporarily disabled active session blocking as requested)

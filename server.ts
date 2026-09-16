@@ -3187,6 +3187,46 @@ function transliterate(str: string): string {
     }
   });
 
+  // Installation Tasks Endpoints (for Installer Passport & Admin Sync)
+  app.get("/api/erp/:companyId/installation-tasks", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const docPath = `companies/${companyId}/erp_installation_tasks/current`;
+      const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
+      if (!doc) {
+        return res.json({ success: true, tasks: [] });
+      }
+      res.json({ success: true, tasks: JSON.parse(doc.data) });
+    } catch (e: any) {
+      console.error("Error fetching installation tasks:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/erp/:companyId/installation-tasks", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const { tasks } = req.body;
+      const docPath = `companies/${companyId}/erp_installation_tasks/current`;
+      await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+        where: { path: docPath },
+        create: {
+          path: docPath,
+          collection: `companies/${companyId}/erp_installation_tasks`,
+          docId: "current",
+          data: JSON.stringify(tasks || [])
+        },
+        update: {
+          data: JSON.stringify(tasks || [])
+        }
+      }));
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("Error saving installation tasks:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   // Material Residuals Endpoints
   app.get("/api/erp/:companyId/residuals", async (req, res) => {
     try {

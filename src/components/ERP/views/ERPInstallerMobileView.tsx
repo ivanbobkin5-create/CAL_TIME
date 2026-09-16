@@ -94,14 +94,18 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
     } as ERPEmployee;
   }, [employees, installerId]);
 
-  // Filter Tasks strictly for this Installer (where this employee is selected/assigned as executor)
+  // Filter Tasks for this Installer (assigned to them specifically OR unassigned proposed tasks)
   const installerTasks = useMemo(() => {
     return tasks.filter(t => {
       const isAssignedToThisInstaller = 
         (t.installerEmployeeId && (t.installerEmployeeId === installer.id || t.installerEmployeeId === installerId)) ||
-        (t.installerEmployeeName && installer.name && t.installerEmployeeName.trim().toLowerCase() === installer.name.trim().toLowerCase());
+        (t.installerEmployeeName && installer.name && installer.name !== 'Сборщик мебели' && t.installerEmployeeName.trim().toLowerCase() === installer.name.trim().toLowerCase());
 
-      return Boolean(isAssignedToThisInstaller);
+      const isUnassignedFreeTask = 
+        (!t.installerEmployeeId || t.installerEmployeeId === '' || t.installerEmployeeId === 'unassigned') && 
+        (!t.installerEmployeeName || t.installerEmployeeName === 'Не назначен' || t.installerEmployeeName === '');
+
+      return Boolean(isAssignedToThisInstaller || isUnassignedFreeTask);
     });
   }, [tasks, installer, installerId]);
 
