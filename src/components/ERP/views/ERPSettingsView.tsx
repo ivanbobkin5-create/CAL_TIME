@@ -54,6 +54,7 @@ import { DEFAULT_BIRKA_COLUMN_MAPPING } from '../utils/birkaParser';
 import { DEFAULT_HARDWARE_COLUMN_MAPPING } from '../utils/hardwareParser';
 import { WarehouseCatalogPickerModal } from '../components/WarehouseCatalogPickerModal';
 import { PrintQrCommandsModal } from '../components/PrintQrCommandsModal';
+import { InstallationActSettingsTab } from '../components/InstallationActSettingsTab';
 import { CommaSeparatedInput } from '../components/CommaSeparatedInput';
 import { evaluateBirkaQrTemplate, matchDetailToScannedCode, decomposeBarcodeForDiagnostics } from '../utils';
 import * as XLSX from 'xlsx';
@@ -254,7 +255,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
   companyId,
   onSaveSettings
 }) => {
-  const [activeTab, setActiveTab] = useState<'stages' | 'birka' | 'hardware' | 'warehouse_cells' | 'rules' | 'tariffs' | 'additional' | 'equipment' | 'labels' | 'shifts' | 'bitrix_delivery'>('stages');
+  const [activeTab, setActiveTab] = useState<'stages' | 'birka' | 'hardware' | 'warehouse_cells' | 'rules' | 'tariffs' | 'additional' | 'equipment' | 'labels' | 'shifts' | 'bitrix_delivery' | 'installation_act'>('stages');
 
   const defaultStageIds = ALL_STAGES_CONFIG.map(s => s.id);
   const initialStagesOrder = (() => {
@@ -885,6 +886,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
             { id: 'equipment', label: 'Оборудование и план', desc: 'Станки и мощности смены', icon: Scissors, count: formData.equipmentList?.length },
             { id: 'labels', label: 'Маркировка мест', desc: 'Термоэтикетки и штрихкоды', icon: Package },
             { id: 'bitrix_delivery', label: 'Битрикс24 и печать Акта', desc: 'Поля Битрикс, Акт и ТТН', icon: Truck },
+            { id: 'installation_act', label: 'Акт и Доп. работы монтажа', desc: 'Версии прайса, гарантия и Акт', icon: FileSpreadsheet, count: formData.installationActSettings?.tariffVersions?.length || 3 },
             { id: 'shifts', label: 'Режим сменности', desc: 'График, часы и нормативы', icon: Clock }
           ].map(tab => {
             const Icon = tab.icon;
@@ -4817,6 +4819,15 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {activeTab === 'installation_act' && (
+        <div className="lg:col-span-8 space-y-6">
+          <InstallationActSettingsTab
+            actSettings={formData.installationActSettings}
+            onChange={(updatedActSettings) => setFormData({ ...formData, installationActSettings: updatedActSettings })}
+          />
         </div>
       )}
 

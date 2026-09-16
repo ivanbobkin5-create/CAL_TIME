@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Factory, 
   LayoutDashboard, 
@@ -58,6 +58,7 @@ import { ERPSettingsView } from './views/ERPSettingsView';
 import { ERPArchiveView } from './views/ERPArchiveView';
 import { ERPMaterialResidualsView } from './views/ERPMaterialResidualsView';
 import { ERPInstallationView } from './views/ERPInstallationView';
+import { ERPInstallerMobileView } from './views/ERPInstallerMobileView';
 import { ERPLoginView } from './views/ERPLoginView';
 import { ERPOrderWorkspaceView } from './views/ERPOrderWorkspaceView';
 import { ShiftSummaryModal } from './components/ShiftSummaryModal';
@@ -243,6 +244,18 @@ export const ERPApp: React.FC<ERPAppProps> = ({
   const [workspaceStageId, setWorkspaceStageId] = useState<ProductionStageId | null>(null);
   const [activeProductionStageId, setActiveProductionStageId] = useState<ProductionStageId | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+
+  // Detect if URL path is an installer link (e.g. /c/mebelfaktura/erp/installer/emp-123 or /installer/emp-123)
+  const [installerIdFromPath, setInstallerIdFromPath] = useState<string | null>(() => {
+    if (typeof window !== 'undefined') {
+      const pathname = window.location.pathname;
+      if (pathname.includes('/installer/')) {
+        const parts = pathname.split('/installer/');
+        return parts[1] ? parts[1].split('/')[0] : null;
+      }
+    }
+    return null;
+  });
 
   // Installation Tasks State
   const [installationTasks, setInstallationTasks] = useState<InstallationTask[]>(() => {
@@ -817,6 +830,103 @@ export const ERPApp: React.FC<ERPAppProps> = ({
     };
   }, [company?.id, isDataReady]);
 
+  // Helper to sync installation tasks from orders list based on stages & keywords
+  const syncInstallationTasksFromOrders = useCallback((ordersList: ProductionOrder[]) => {
+    if (!ordersList || ordersList.length === 0) return;
+
+    const instKeywords = (settings?.installationStageKeywords || ['монтаж', 'сборка', 'установка'])
+      .flatMap(k => k.split(/[,;\n]/))
+      .map(k => k.trim().toLowerCase())
+      .filter(Boolean);
+
+    const reclKeywords = (settings?.reclamationStageKeywords || ['рекламация', 'брак', 'доделка', 'переделка'])
+      .flatMap(k => k.split(/[,;\n]/))
+      .map(k => k.trim().toLowerCase())
+      .filter(Boolean);
+
+    const configuredInstStageId = settings?.installationStageId;
+    const configuredReclStageId = settings?.reclamationStageId;
+
+    setInstallationTasks(prevTasks => {
+      const updatedTasks = [...prevTasks];
+      let hasChanges = false;
+
+      ordersList.forEach(order => {
+        const stageNameLower = (order.stageName || '').toLowerCase();
+        const currentStageLower = (order.currentStage || '').toLowerCase();
+        const commentLower = (order.comment || '').toLowerCase();
+        const titleLower = ((order.orderNumber || '') + ' ' + (order.clientName || '') + ' ' + (order.productType || '')).toLowerCase();
+
+        // Check Bitrix stage match
+        const matchesInstStage = (configuredInstStageId && order.stageId === configuredInstStageId) || 
+                                 order.currentStage === 'installation' || 
+                                 order.currentStage === 'shipping';
+
+        const matchesReclStage = configuredReclStageId && order.stageId === configuredReclStageId;
+
+        // Check Keyword match
+        const matchesInstKeyword = instKeywords.some(kw => 
+          stageNameLower.includes(kw) || currentStageLower.includes(kw) || commentLower.includes(kw) || titleLower.includes(kw)
+        );
+
+        const matchesReclKeyword = reclKeywords.some(kw => 
+          stageNameLower.includes(kw) || currentStageLower.includes(kw) || commentLower.includes(kw) || titleLower.includes(kw)
+        );
+
+        if (matchesInstStage || matchesReclStage || matchesInstKeyword || matchesReclKeyword) {
+          const isReclamation = matchesReclStage || matchesReclKeyword;
+
+          // Find existing task by orderNumber or bitrixDealId
+          const existingIndex = updatedTasks.findIndex(t => 
+            t.orderNumber === order.orderNumber || (t.bitrixDealId && order.bitrixDealId && t.bitrixDealId === order.bitrixDealId)
+          );
+
+          if (existingIndex < 0) {
+            const newTask: InstallationTask = {
+              id: `inst-b24-${order.id || order.orderNumber}`,
+              orderId: order.id,
+              orderNumber: order.orderNumber,
+              bitrixDealId: order.bitrixDealId,
+              clientName: order.clientName || 'Заказчик из CRM',
+              clientPhone: order.clientPhone || '',
+              address: order.deliveryAddress || order.address || 'Адрес не указан в CRM',
+              floor: order.floor || '',
+              hasElevator: order.hasElevator ?? false,
+              assemblyPrice: order.assemblyPrice || 0,
+              deliveryPrice: order.deliveryPrice || 0,
+              type: isReclamation ? 'reclamation' : 'installation',
+              status: 'scheduled',
+              paymentStatus: 'unpaid',
+              scheduledDate: order.plannedShippingDate || new Date().toISOString().split('T')[0],
+              contractDate: order.contractDate || order.createdAt || new Date().toISOString().split('T')[0],
+              comment: order.comment || '',
+              createdAt: order.createdAt || new Date().toISOString()
+            };
+            updatedTasks.push(newTask);
+            hasChanges = true;
+          }
+        }
+      });
+
+      if (hasChanges) {
+        // If we synced real tasks, remove the demo placeholder tasks if present
+        const filtered = updatedTasks.filter(t => !t.id.startsWith('inst-demo-') || updatedTasks.length <= 2);
+        try {
+          localStorage.setItem(`erp_installation_tasks_${aliasOrId}`, JSON.stringify(filtered));
+        } catch (e) {}
+        return filtered;
+      }
+
+      return prevTasks;
+    });
+  }, [settings?.installationStageId, settings?.reclamationStageId, settings?.installationStageKeywords, settings?.reclamationStageKeywords, aliasOrId]);
+
+  useEffect(() => {
+    if (orders.length > 0) {
+      syncInstallationTasksFromOrders(orders);
+    }
+  }, [orders, syncInstallationTasksFromOrders]);
+
   const handleSyncOrders = async () => {
     if (!company?.id) return;
     setIsSyncingOrders(true);
@@ -829,6 +939,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
           setOrders(data.orders);
           saveLocalOrdersCache(company.id, data.orders);
           setOrderSource(data.orderSource || 'projects');
+          syncInstallationTasksFromOrders(data.orders);
           const count = data.orders.length;
           setSyncStatusText(
             data.orderSource === 'bitrix24'
@@ -1615,6 +1726,21 @@ export const ERPApp: React.FC<ERPAppProps> = ({
     .join('')
     .substring(0, 2)
     .toUpperCase() || 'СП';
+
+  if (installerIdFromPath) {
+    return (
+      <ERPInstallerMobileView
+        installerId={installerIdFromPath}
+        aliasOrId={aliasOrId}
+        employees={employees}
+        tasks={installationTasks}
+        onUpdateTask={handleUpdateInstallationTask}
+        onBackToErp={() => setInstallerIdFromPath(null)}
+        actSettings={settings.installationActSettings}
+        companyName={company?.title || company?.name || settings.companyTitle || 'Мебельное производство'}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-100 flex flex-col md:flex-row text-slate-800 font-sans selection:bg-blue-600 selection:text-white pb-20 md:pb-0">

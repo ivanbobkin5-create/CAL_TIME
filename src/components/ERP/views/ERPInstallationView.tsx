@@ -507,6 +507,70 @@ export const ERPInstallationView: React.FC<ERPInstallationViewProps> = ({
                     </div>
                   </div>
 
+                  {/* Signal Banner from Assembler */}
+                  {task.hasPendingReclamationFlag && task.reclamationSignal && (
+                    <div className="p-3 bg-rose-900 text-white rounded-2xl shadow-lg border border-rose-700 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="font-black text-xs flex items-center gap-1.5 text-rose-200">
+                          <AlertTriangle className="w-4 h-4 text-amber-400" />
+                          СИГНАЛ О РЕКЛАМАЦИИ ОТ СБОРЩИКА
+                        </span>
+                        <span className="text-[10px] text-rose-300 font-mono">
+                          {new Date(task.reclamationSignal.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+
+                      <div className="text-xs bg-rose-950/60 p-2.5 rounded-xl border border-rose-800/80 space-y-1">
+                        <div className="font-bold text-white">Причина: {task.reclamationSignal.reason}</div>
+                        {task.reclamationSignal.details && (
+                          <div className="text-rose-200 text-[11px]">Детали: {task.reclamationSignal.details}</div>
+                        )}
+                      </div>
+
+                      {/* Signal Photos if attached */}
+                      {task.reclamationSignal.photos && task.reclamationSignal.photos.length > 0 && (
+                        <div className="flex items-center gap-1.5 overflow-x-auto py-1">
+                          {task.reclamationSignal.photos.map((p, pIdx) => (
+                            <img key={pIdx} src={p} alt="Фото брака" className="w-12 h-12 object-cover rounded-xl border border-rose-600" />
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Action buttons for ERP Manager */}
+                      <div className="flex items-center gap-1.5 pt-1">
+                        <button
+                          onClick={() => {
+                            onUpdateTask({
+                              ...task,
+                              type: 'reclamation',
+                              hasPendingReclamationFlag: false,
+                              reclamationSignal: { ...task.reclamationSignal!, status: 'accepted' },
+                              comment: task.comment ? `${task.comment}\n[Рекламация подтверждена]: ${task.reclamationSignal.reason}` : task.reclamationSignal.reason,
+                              updatedAt: new Date().toISOString()
+                            });
+                            handleOpenPenaltyModal(task);
+                          }}
+                          className="flex-1 py-1.5 px-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] transition-colors cursor-pointer text-center"
+                        >
+                          Зарегистрировать рекламацию
+                        </button>
+                        <button
+                          onClick={() => {
+                            onUpdateTask({
+                              ...task,
+                              hasPendingReclamationFlag: false,
+                              reclamationSignal: { ...task.reclamationSignal!, status: 'rejected' },
+                              updatedAt: new Date().toISOString()
+                            });
+                          }}
+                          className="py-1.5 px-2 rounded-xl bg-rose-800 hover:bg-rose-700 text-rose-200 font-bold text-[11px] transition-colors cursor-pointer"
+                        >
+                          Отклонить
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Client Info Block */}
                   <div className="p-3 bg-slate-50/80 rounded-2xl border border-slate-100 space-y-1.5 text-xs">
                     <div className="font-bold text-slate-900 flex items-center justify-between">
@@ -525,6 +589,23 @@ export const ERPInstallationView: React.FC<ERPInstallationViewProps> = ({
                       </div>
                     )}
                   </div>
+
+                  {/* Photos from Assembler */}
+                  {task.photos && task.photos.length > 0 && (
+                    <div className="space-y-1 bg-slate-50 p-2.5 rounded-2xl border border-slate-200">
+                      <div className="text-[10px] font-bold text-slate-600 uppercase tracking-wider flex items-center justify-between">
+                        <span>Фотоотчет сборщика:</span>
+                        <span className="font-mono text-indigo-600">{task.photos.length} шт.</span>
+                      </div>
+                      <div className="flex items-center gap-1.5 overflow-x-auto py-1">
+                        {task.photos.map((ph, idx) => (
+                          <a key={idx} href={ph} target="_blank" rel="noreferrer" className="shrink-0">
+                            <img src={ph} alt={`Фото ${idx+1}`} className="w-12 h-12 object-cover rounded-xl border border-slate-200 hover:border-indigo-500 transition-colors" />
+                          </a>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Installer Assignment */}
                   <div className="space-y-1">

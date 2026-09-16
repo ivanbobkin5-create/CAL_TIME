@@ -36655,6 +36655,12 @@ export default function App() {
     }
   }
 
+  if (currentPath.includes("/installer/")) {
+    const rawParts = currentPath.split("/").filter(Boolean);
+    const aliasOrId = (rawParts.length > 0 && rawParts[0] !== "installer" && rawParts[0] !== "c") ? rawParts[0] : "company";
+    return <ERPApp aliasOrId={aliasOrId} catalogProducts={catalogProducts} />;
+  }
+
   if (currentPath.startsWith("/c/")) {
     const rawParts = currentPath.split("/c/")[1].split("/").filter(Boolean);
     const aliasOrId = rawParts[0];

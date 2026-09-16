@@ -16,10 +16,13 @@ import {
   Check,
   UserX,
   QrCode,
-  Printer
+  Printer,
+  Wrench,
+  Copy
 } from 'lucide-react';
 import { ERPEmployee } from '../types';
 import { EmployeeBadgeModal } from '../components/EmployeeBadgeModal';
+import { InstallerLinkModal } from '../components/InstallerLinkModal';
 
 interface ERPEmployeesViewProps {
   employees: ERPEmployee[];
@@ -57,6 +60,7 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingEmployee, setEditingEmployee] = useState<ERPEmployee | null>(null);
   const [selectedEmployeeForBadge, setSelectedEmployeeForBadge] = useState<ERPEmployee | null>(null);
+  const [selectedInstallerForLink, setSelectedInstallerForLink] = useState<ERPEmployee | null>(null);
 
   const [formEmployee, setFormEmployee] = useState<Partial<ERPEmployee>>({
     name: '',
@@ -314,6 +318,15 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
                   <div className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200">
                     🤝 Аутсорс (Аналитические данные)
                   </div>
+                ) : (emp.productionRole || emp.role || '').toLowerCase().includes('сборщик') || (emp.productionRole || emp.role || '').toLowerCase().includes('монтажник') ? (
+                  <button
+                    onClick={() => setSelectedInstallerForLink(emp)}
+                    className="px-3 py-1.5 rounded-xl bg-cyan-50 hover:bg-cyan-100 text-cyan-800 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-cyan-200"
+                    title="Открыть и скопировать личную ссылку сборщика мебели"
+                  >
+                    <Wrench className="w-3.5 h-3.5 text-cyan-600" />
+                    <span>Личная ссылка</span>
+                  </button>
                 ) : (
                   <button
                     onClick={() => setSelectedEmployeeForBadge(emp)}
@@ -650,6 +663,16 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
             </form>
           </div>
         </div>
+      )}
+      {/* Installer Link Modal */}
+      {selectedInstallerForLink && (
+        <InstallerLinkModal
+          isOpen={!!selectedInstallerForLink}
+          onClose={() => setSelectedInstallerForLink(null)}
+          employee={selectedInstallerForLink}
+          aliasOrId={companyId || 'company'}
+          companyName={companyName}
+        />
       )}
     </div>
   );

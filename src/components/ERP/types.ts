@@ -588,6 +588,42 @@ export interface ERPCompanySettings {
     customFooterNotes?: string;
     showQrForAssembler?: boolean;
   };
+
+  // Настройки Акта приема-передачи и версионируемых Дополнительных работ
+  installationActSettings?: InstallationActSettings;
+}
+
+export interface ExtraWorkItem {
+  id: string;
+  name: string;      // Наименование услуги (например, "Выпил под варочную панель")
+  unit: string;      // Единица измерения (шт, м.п., услуга, этаж)
+  price: number;     // Цена за единицу в ₽
+}
+
+export interface ExtraWorksTariffVersion {
+  id: string;
+  versionName: string;    // Название версии, e.g. "Прайс-лист от 01.06.2026"
+  effectiveFrom: string;  // Дата вступления в силу (YYYY-MM-DD), e.g. "2026-06-01"
+  items: ExtraWorkItem[];
+}
+
+export interface InstallationActSettings {
+  warrantyYears: number;      // Срок гарантии в годах (по умолчанию 2)
+  actHeaderTitle: string;    // Заголовок Акта
+  actTextIntro: string;      // Текст вступления/преамбулы
+  actTermsText: string;      // Текст гарантии и условий
+  servicePhone?: string;     // Сервисный телефон компании
+  tariffVersions: ExtraWorksTariffVersion[]; // Версионированные прайс-листы
+}
+
+export interface PerformedExtraWork {
+  id: string;
+  workId: string;
+  name: string;
+  unit: string;
+  price: number;
+  quantity: number;
+  totalPrice: number;
 }
 
 export interface SalaryAdjustment {
@@ -629,6 +665,7 @@ export interface InstallationTask {
   
   scheduledDate?: string;
   completedDate?: string;
+  contractDate?: string; // Дата заключения договора (для выбора версии прайс-листа)
   
   comment?: string;
   packagesCount?: number;
@@ -638,6 +675,30 @@ export interface InstallationTask {
   culpritEmployeeId?: string;
   culpritEmployeeName?: string;
   penaltyAmount?: number;
+  
+  // Дополнительные работы сборщика
+  appliedTariffVersionId?: string; // ID версии прайса, действующей на дату договора
+  performedExtraWorks?: PerformedExtraWork[];
+  extraWorksTotal?: number;
+  
+  // Подписание Акта и Гарантия
+  warrantyUntil?: string; // Дата окончания гарантии (напр., +2 года от даты сдачи)
+  clientSignature?: string;
+  clientApprovedAt?: string;
+  actGeneratedText?: string;
+  
+  // Фотографии монтажа (до 10 штук)
+  photos?: string[];
+
+  // Сигнальный запрос на рекламацию от сборщика
+  hasPendingReclamationFlag?: boolean;
+  reclamationSignal?: {
+    reason: string;
+    details: string;
+    photos?: string[];
+    createdAt: string;
+    status: 'pending' | 'accepted' | 'rejected';
+  };
   
   // Дополнительные выполненные операции (выезд, забор фурнитуры и т.д.)
   completedOperations?: Array<{
