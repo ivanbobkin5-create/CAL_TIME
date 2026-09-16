@@ -209,6 +209,66 @@ export const ERPInstallationView: React.FC<ERPInstallationViewProps> = ({
     });
   }, [tasks, typeFilter, paymentFilter, search]);
 
+  // Overall and Filtered KPI Summary
+  const summaryStats = useMemo(() => {
+    let totalCount = tasks.length;
+    let inProgressCount = 0;
+    let scheduledCount = 0;
+    let unassignedCount = 0;
+    let completedCount = 0;
+    let reclamationCount = 0;
+    
+    let totalAssemblySum = 0;
+    let paidAssemblySum = 0;
+    let totalExtraSum = 0;
+    let paidExtraSum = 0;
+
+    tasks.forEach(t => {
+      const isRec = t.status === 'reclamation' || t.type === 'reclamation' || t.hasPendingReclamationFlag;
+      if (isRec) {
+        reclamationCount++;
+      } else if (t.status === 'completed') {
+        completedCount++;
+      } else if (t.status === 'in_progress') {
+        inProgressCount++;
+      } else if (t.status === 'scheduled' || t.installerEmployeeId) {
+        scheduledCount++;
+      } else {
+        unassignedCount++;
+      }
+
+      const assemblyPrice = t.assemblyPrice || 0;
+      const extraTotal = t.extraWorksTotal || 0;
+
+      totalAssemblySum += assemblyPrice;
+      if (t.isBaseAssemblyPaid || t.paymentStatus === 'paid') {
+        paidAssemblySum += assemblyPrice;
+      }
+
+      totalExtraSum += extraTotal;
+      if (t.isExtraWorksPaid) {
+        paidExtraSum += extraTotal;
+      }
+    });
+
+    const totalToPay = totalAssemblySum + totalExtraSum;
+    const totalPaid = paidAssemblySum + paidExtraSum;
+    const unpaidDebt = Math.max(0, totalToPay - totalPaid);
+
+    return {
+      totalCount,
+      activeCount: inProgressCount + scheduledCount,
+      unassignedCount,
+      completedCount,
+      reclamationCount,
+      totalToPay,
+      totalPaid,
+      unpaidDebt,
+      totalExtraSum,
+      paidExtraSum
+    };
+  }, [tasks]);
+
   // Kanban Columns Data Categorization
   const kanbanColumns = useMemo(() => {
     const unassigned: InstallationTask[] = [];
@@ -836,6 +896,99 @@ export const ERPInstallationView: React.FC<ERPInstallationViewProps> = ({
             <Plus className="w-4 h-4" />
             <span>Добавить монтаж</span>
           </button>
+        </div>
+      </div>
+
+      {/* COMPACT KPI SUMMARY BAR */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+        {/* Card 1: Total & Reclamations */}
+        <div className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-500 mb-1">
+            <span className="text-[11px] font-bold">Всего заявок</span>
+            <Package className="w-3.5 h-3.5 text-indigo-500" />
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-lg font-black text-slate-900 font-mono">{summaryStats.totalCount}</span>
+            {summaryStats.reclamationCount > 0 && (
+              <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-1.5 py-0.2 rounded-md border border-rose-200">
+                {summaryStats.reclamationCount} рекл.
+              </span>
+            )}
+          </div>
+          <div className="text-[10px] text-slate-400 mt-1 font-medium truncate">
+            Монтажи и рекламации
+          </div>
+        </div>
+
+        {/* Card 2: Active / In Progress */}
+        <div className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-500 mb-1">
+            <span className="text-[11px] font-bold">В работе / План</span>
+            <Clock className="w-3.5 h-3.5 text-amber-500" />
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-lg font-black text-amber-700 font-mono">{summaryStats.activeCount}</span>
+            {summaryStats.unassignedCount > 0 && (
+              <span className="text-[10px] font-bold text-slate-600 bg-slate-100 px-1.5 py-0.2 rounded-md border border-slate-200">
+                {summaryStats.unassignedCount} новых
+              </span>
+            )}
+          </div>
+          <div className="text-[10px] text-slate-400 mt-1 font-medium truncate">
+            Назначены или выполняются
+          </div>
+        </div>
+
+        {/* Card 3: Completed */}
+        <div className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-500 mb-1">
+            <span className="text-[11px] font-bold">Сдано клиентам</span>
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-lg font-black text-emerald-700 font-mono">{summaryStats.completedCount}</span>
+            <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.2 rounded-md border border-emerald-200">
+              {summaryStats.totalCount > 0 ? Math.round((summaryStats.completedCount / summaryStats.totalCount) * 100) : 0}%
+            </span>
+          </div>
+          <div className="text-[10px] text-slate-400 mt-1 font-medium truncate">
+            Успешно завершенные
+          </div>
+        </div>
+
+        {/* Card 4: Total Accrued */}
+        <div className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-500 mb-1">
+            <span className="text-[11px] font-bold">Начислено мастерам</span>
+            <DollarSign className="w-3.5 h-3.5 text-indigo-500" />
+          </div>
+          <div className="flex items-baseline gap-1">
+            <span className="text-base sm:text-lg font-black text-indigo-900 font-mono">
+              {summaryStats.totalToPay.toLocaleString('ru-RU')} ₽
+            </span>
+          </div>
+          <div className="text-[10px] text-slate-500 mt-1 font-medium truncate">
+            В т.ч. доп. работы: <strong className="text-indigo-600 font-mono">{summaryStats.totalExtraSum.toLocaleString('ru-RU')} ₽</strong>
+          </div>
+        </div>
+
+        {/* Card 5: Unpaid vs Paid */}
+        <div className="bg-white p-3 rounded-2xl border border-slate-200/90 shadow-2xs flex flex-col justify-between">
+          <div className="flex items-center justify-between text-slate-500 mb-1">
+            <span className="text-[11px] font-bold">К выплате / Выплачено</span>
+            <CreditCard className="w-3.5 h-3.5 text-emerald-500" />
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-base sm:text-lg font-black text-amber-700 font-mono">
+              {summaryStats.unpaidDebt.toLocaleString('ru-RU')} ₽
+            </span>
+            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded-md border border-emerald-200">
+              {summaryStats.totalPaid.toLocaleString('ru-RU')} ₽
+            </span>
+          </div>
+          <div className="text-[10px] text-slate-400 mt-1 font-medium truncate">
+            Остаток к выдаче сборщикам
+          </div>
         </div>
       </div>
 

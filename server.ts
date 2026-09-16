@@ -3287,6 +3287,173 @@ function transliterate(str: string): string {
     }
   });
 
+  // --- Dedicated ERP Settings Persistence Endpoints ---
+  app.get("/api/erp/:companyId/settings", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      
+      // 1. Check dedicated erp_settings document
+      const docPath = `companies/${companyId}/erp_settings/current`;
+      const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
+      
+      let directSettings = null;
+      if (doc && doc.data) {
+        try { directSettings = JSON.parse(doc.data); } catch (e) {}
+      }
+
+      // 2. Also lookup company doc to merge any company-level Bitrix/ERP config
+      let companyDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } }));
+      let realCompanyData: any = null;
+      let realCompanyId: string = companyId;
+
+      if (companyDoc) {
+        try { realCompanyData = JSON.parse(companyDoc.data); } catch (e) {}
+      } else {
+        const allDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({ where: { collection: "companies" } }));
+        for (const d of allDocs) {
+          try {
+            const parsed = JSON.parse(d.data);
+            if (d.docId === companyId || parsed.landingPage?.alias === companyId || transliterate(parsed.name || '') === companyId) {
+              realCompanyData = parsed;
+              realCompanyId = d.docId;
+              break;
+            }
+          } catch (e) {}
+        }
+      }
+
+      const compSettings = realCompanyData ? (realCompanyData.erpConfig || realCompanyData.erpSettings || {}) : {};
+      const mergedSettings = {
+        ...compSettings,
+        ...(directSettings || {})
+      };
+
+      res.json({ success: true, settings: mergedSettings, companyId: realCompanyId });
+    } catch (e: any) {
+      console.error("Error fetching ERP settings:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/erp/:companyId/settings", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const { settings } = req.body;
+      if (!settings) return res.status(400).json({ error: "No settings provided" });
+
+      // 1. Resolve real company ID & update company document
+      let companyDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } }));
+      let realCompanyId = companyId;
+      let realCompanyData: any = null;
+
+      if (companyDoc) {
+        try { realCompanyData = JSON.parse(companyDoc.data); } catch (e) {}
+      } else {
+        const allDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({ where: { collection: "companies" } }));
+        for (const d of allDocs) {
+          try {
+            const parsed = JSON.parse(d.data);
+            if (d.docId === companyId || parsed.landingPage?.alias === companyId || transliterate(parsed.name || '') === companyId) {
+              realCompanyId = d.docId;
+              realCompanyData = parsed;
+              break;
+            }
+          } catch (e) {}
+        }
+      }
+
+      // Save into isolated erp_settings/current for companyId AND realCompanyId
+      const targetIds = Array.from(new Set([companyId, realCompanyId].filter(Boolean)));
+      for (const tId of targetIds) {
+        const settingsPath = `companies/${tId}/erp_settings/current`;
+        await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+          where: { path: settingsPath },
+          create: {
+            path: settingsPath,
+            collection: `companies/${tId}/erp_settings`,
+            docId: "current",
+            data: JSON.stringify(settings)
+          },
+          update: {
+            data: JSON.stringify(settings)
+          }
+        }));
+        invalidateCache(settingsPath);
+      }
+
+      // Also persist erpConfig into company document if found
+      if (realCompanyData) {
+        const updatedComp = {
+          ...realCompanyData,
+          erpConfig: settings,
+          erpSettings: settings
+        };
+        const compPath = `companies/${realCompanyId}`;
+        await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+          where: { path: compPath },
+          create: {
+            path: compPath,
+            collection: "companies",
+            docId: realCompanyId,
+            data: JSON.stringify(updatedComp)
+          },
+          update: {
+            data: JSON.stringify(updatedComp)
+          }
+        }));
+        invalidateCache(compPath);
+      }
+
+      res.json({ success: true, settings });
+    } catch (e: any) {
+      console.error("Error saving ERP settings:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  // --- Dedicated Salary Adjustments (Bonuses & Penalties) Endpoints ---
+  app.get("/api/erp/:companyId/salary-adjustments", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const docPath = `companies/${companyId}/erp_salary_adjustments/current`;
+      const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
+      if (!doc || !doc.data) {
+        return res.json({ success: true, adjustments: [] });
+      }
+      res.json({ success: true, adjustments: JSON.parse(doc.data) });
+    } catch (e: any) {
+      console.error("Error fetching salary adjustments:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/erp/:companyId/salary-adjustments", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const { adjustments } = req.body;
+      const docPath = `companies/${companyId}/erp_salary_adjustments/current`;
+      await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+        where: { path: docPath },
+        create: {
+          path: docPath,
+          collection: `companies/${companyId}/erp_salary_adjustments`,
+          docId: "current",
+          data: JSON.stringify(adjustments || [])
+        },
+        update: {
+          data: JSON.stringify(adjustments || [])
+        }
+      }));
+      invalidateCache(docPath);
+      res.json({ success: true, adjustments });
+    } catch (e: any) {
+      console.error("Error saving salary adjustments:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+
+
   // --- Яндекс.Диск Облачное хранилище (Фотоотчеты монтажей и рекламаций) ---
   app.post("/api/yandex-disk/test-token", async (req, res) => {
     try {

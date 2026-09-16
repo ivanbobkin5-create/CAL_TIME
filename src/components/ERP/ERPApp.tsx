@@ -427,39 +427,49 @@ export const ERPApp: React.FC<ERPAppProps> = ({
     } catch (e) {
       console.warn('Failed to load salary adjustments', e);
     }
-    return [
-      {
-        id: 'adj-1',
-        employeeId: 'emp-1',
-        employeeName: 'Иванов Иван',
-        type: 'bonus',
-        amount: 3000,
-        reason: 'Премия за аккуратный раскрой без брака',
-        date: new Date().toISOString().split('T')[0],
-        createdBy: 'Начальник цеха'
-      }
-    ];
+    return [];
   });
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('erp_salary_adjustments_v1', JSON.stringify(salaryAdjustments));
-    } catch (e) {
-      console.warn('Failed to save salary adjustments', e);
+  const saveSalaryAdjustmentsToBackend = async (adjustmentsList: SalaryAdjustment[]) => {
+    const targetCompId = company?.id || aliasOrId;
+    if (targetCompId) {
+      try {
+        localStorage.setItem(`erp_salary_adjustments_${targetCompId}`, JSON.stringify(adjustmentsList));
+        localStorage.setItem('erp_salary_adjustments_v1', JSON.stringify(adjustmentsList));
+        await fetch(`/api/erp/${targetCompId}/salary-adjustments`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ adjustments: adjustmentsList })
+        });
+      } catch (e) {
+        console.warn('Failed to persist salary adjustments to server:', e);
+      }
     }
-  }, [salaryAdjustments]);
+  };
 
-  // Handlers for adjustments
+  // Handlers for adjustments with persistent server sync
   const handleAddAdjustment = (adj: SalaryAdjustment) => {
-    setSalaryAdjustments(prev => [adj, ...prev]);
+    setSalaryAdjustments(prev => {
+      const next = [adj, ...prev];
+      saveSalaryAdjustmentsToBackend(next);
+      return next;
+    });
   };
 
   const handleEditAdjustment = (updatedAdj: SalaryAdjustment) => {
-    setSalaryAdjustments(prev => prev.map(a => a.id === updatedAdj.id ? updatedAdj : a));
+    setSalaryAdjustments(prev => {
+      const next = prev.map(a => a.id === updatedAdj.id ? updatedAdj : a);
+      saveSalaryAdjustmentsToBackend(next);
+      return next;
+    });
   };
 
   const handleDeleteAdjustment = (adjId: string) => {
-    setSalaryAdjustments(prev => prev.filter(a => a.id !== adjId));
+    setSalaryAdjustments(prev => {
+      const next = prev.filter(a => a.id !== adjId);
+      saveSalaryAdjustmentsToBackend(next);
+      return next;
+    });
   };
 
   // Shift & Timer State
@@ -720,16 +730,51 @@ export const ERPApp: React.FC<ERPAppProps> = ({
         }));
       }
 
-      // Fetch employees, orders, schedule, shift-logs, residuals, installation-tasks and active shift in parallel
+      // Fetch employees, orders, schedule, shift-logs, residuals, installation-tasks, settings and salary adjustments in parallel
       try {
-        const [empRes, ordersRes, scheduleRes, shiftLogsRes, residualsRes, tasksRes] = await Promise.allSettled([
+        const [empRes, ordersRes, scheduleRes, shiftLogsRes, residualsRes, tasksRes, settingsRes, salaryAdjRes] = await Promise.allSettled([
           fetch(`/api/erp/${comp.id}/employees`),
           fetch(`/api/erp/${comp.id}/orders`),
           fetch(`/api/erp/${comp.id}/schedule`),
           fetch(`/api/erp/${comp.id}/shift-logs`),
           fetch(`/api/erp/${comp.id}/residuals`),
-          fetch(`/api/erp/${comp.id}/installation-tasks`)
+          fetch(`/api/erp/${comp.id}/installation-tasks`),
+          fetch(`/api/erp/${comp.id}/settings`),
+          fetch(`/api/erp/${comp.id}/salary-adjustments`)
         ]);
+
+        // Process dedicated ERP settings
+        if (settingsRes.status === 'fulfilled' && settingsRes.value.ok) {
+          const sData = await settingsRes.value.json();
+          if (sData.settings && typeof sData.settings === 'object') {
+            setSettings(prev => ({
+              ...prev,
+              ...sData.settings
+            }));
+            try {
+              localStorage.setItem(`erp_settings_${comp.id}`, JSON.stringify(sData.settings));
+            } catch (e) {}
+          }
+        } else {
+          try {
+            const localSaved = localStorage.getItem(`erp_settings_${comp.id}`);
+            if (localSaved) {
+              setSettings(prev => ({ ...prev, ...JSON.parse(localSaved) }));
+            }
+          } catch (e) {}
+        }
+
+        // Process salary adjustments
+        if (salaryAdjRes.status === 'fulfilled' && salaryAdjRes.value.ok) {
+          const saData = await salaryAdjRes.value.json();
+          if (saData.adjustments && Array.isArray(saData.adjustments)) {
+            setSalaryAdjustments(saData.adjustments);
+            try {
+              localStorage.setItem(`erp_salary_adjustments_${comp.id}`, JSON.stringify(saData.adjustments));
+              localStorage.setItem('erp_salary_adjustments_v1', JSON.stringify(saData.adjustments));
+            } catch (e) {}
+          }
+        }
 
         // Process installation-tasks
         if (tasksRes.status === 'fulfilled' && tasksRes.value.ok) {
@@ -1136,17 +1181,25 @@ export const ERPApp: React.FC<ERPAppProps> = ({
     const targetCompId = company?.id || aliasOrId || 'mebel-soft';
     if (targetCompId) {
       try {
-        await fetch(`/api/db/doc/companies/${targetCompId}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            data: {
-              erpConfig: newSettings,
-              erpSettings: newSettings
-            },
-            merge: true
+        localStorage.setItem(`erp_settings_${targetCompId}`, JSON.stringify(newSettings));
+        await Promise.allSettled([
+          fetch(`/api/erp/${targetCompId}/settings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ settings: newSettings })
+          }),
+          fetch(`/api/db/doc/companies/${targetCompId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              data: {
+                erpConfig: newSettings,
+                erpSettings: newSettings
+              },
+              merge: true
+            })
           })
-        });
+        ]);
         setCompany(prev => prev ? { ...prev, erpConfig: newSettings, erpSettings: newSettings } : prev);
         // Reload orders after settings change (e.g. stage or source changed)
         handleSyncOrders();

@@ -320,12 +320,20 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
     ]
   }));
 
-  // Re-sync formData when settings prop finishes loading asynchronously
+  // Re-sync formData and stagesOrder when settings prop finishes loading asynchronously
   const prevSettingsStrRef = React.useRef(JSON.stringify(settings));
   React.useEffect(() => {
     const currentStr = JSON.stringify(settings);
     if (settings && currentStr !== prevSettingsStrRef.current) {
       prevSettingsStrRef.current = currentStr;
+      
+      // Update stages order if enabledStages exists
+      if (settings.enabledStages && Array.isArray(settings.enabledStages) && settings.enabledStages.length > 0) {
+        const enabled = settings.enabledStages;
+        const remaining = defaultStageIds.filter(id => !enabled.includes(id));
+        setStagesOrder([...enabled, ...remaining]);
+      }
+
       setFormData(prev => ({
         ...prev,
         ...settings,
@@ -337,7 +345,11 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
         requiredKittingDocuments: settings.requiredKittingDocuments || prev.requiredKittingDocuments,
         installationActSettings: settings.installationActSettings || prev.installationActSettings,
         bitrix24FieldMapping: settings.bitrix24FieldMapping || prev.bitrix24FieldMapping,
-        shippingActTemplate: settings.shippingActTemplate || prev.shippingActTemplate
+        shippingActTemplate: settings.shippingActTemplate || prev.shippingActTemplate,
+        extraWorksCatalog: (settings.extraWorksCatalog && settings.extraWorksCatalog.length > 0) ? settings.extraWorksCatalog : prev.extraWorksCatalog,
+        departments: (settings.departments && settings.departments.length > 0) ? settings.departments : prev.departments,
+        tariffs: settings.tariffs || prev.tariffs,
+        stageDailyCapacities: settings.stageDailyCapacities || prev.stageDailyCapacities
       }));
     }
   }, [settings]);
