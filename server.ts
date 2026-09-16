@@ -3447,6 +3447,64 @@ function transliterate(str: string): string {
     }
   });
 
+  // --- Загрузка фотографий монтажа напрямую в задачи/сделки Битрикс24 ---
+  app.post("/api/bitrix24/upload-task-photo", async (req, res) => {
+    try {
+      const { webhookUrl, orderNumber, bitrixTaskId, fileName, fileBase64 } = req.body;
+
+      if (!webhookUrl) {
+        return res.status(400).json({ success: false, error: "Вебхук Битрикс24 не настроен" });
+      }
+      if (!fileBase64) {
+        return res.status(400).json({ success: false, error: "Данные файла не переданы" });
+      }
+
+      const cleanWebhook = webhookUrl.replace(/\/$/, '');
+      const cleanFileName = fileName || `photo_${Date.now()}.jpg`;
+      const base64Data = fileBase64.replace(/^data:image\/\w+;base64,/, '');
+
+      // Step 1: Attach file to Bitrix24 Task Comment or Storage
+      let uploadedUrl = fileBase64;
+
+      if (bitrixTaskId) {
+        const commentUrl = `${cleanWebhook}/task.commentitem.add.json`;
+        const commentRes = await fetch(commentUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            TASKID: bitrixTaskId,
+            FIELDS: {
+              POST_MESSAGE: `[B]Фотоотчет монтажа по заказу №${orderNumber}[/B]`,
+              UF_FORUM_STYLE_TYPE: "M"
+            },
+            FILES: [
+              {
+                NAME: cleanFileName,
+                CONTENT: base64Data
+              }
+            ]
+          })
+        });
+
+        if (commentRes.ok) {
+          const commentJson = await commentRes.json();
+          if (commentJson.result) {
+            console.log(`Successfully attached photo to Bitrix24 task ${bitrixTaskId}`);
+          }
+        }
+      }
+
+      res.json({
+        success: true,
+        url: uploadedUrl,
+        message: "Фотография отправлена в Битрикс24"
+      });
+    } catch (e: any) {
+      console.error("Error uploading photo to Bitrix24:", e);
+      res.status(500).json({ success: false, error: e.message || String(e) });
+    }
+  });
+
 
 
   // Environment determination

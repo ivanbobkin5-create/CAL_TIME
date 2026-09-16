@@ -820,8 +820,11 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
                           maxPhotos={10}
                           title="Фотоотчет монтажа"
                           orderNumber={task.orderNumber}
-                          yandexDiskToken={settings?.useYandexDiskForPhotos ? settings?.yandexDiskToken : undefined}
+                          photoStorageTarget={settings?.photoStorageTarget || 'yandex_disk'}
+                          yandexDiskToken={settings?.yandexDiskToken}
                           yandexDiskRootFolder={settings?.yandexDiskRootFolder}
+                          bitrixWebhookUrl={settings?.activeWebhookUrl || settings?.bitrix24WebhookUrl}
+                          bitrixTaskId={task.bitrixTaskId}
                           onPhotosChange={(newPhotos) => {
                             const updatedTask: InstallationTask = {
                               ...task,
@@ -1308,8 +1311,10 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
           isOpen={!!reclamationModalTask}
           onClose={() => setReclamationModalTask(null)}
           task={reclamationModalTask}
-          yandexDiskToken={settings?.useYandexDiskForPhotos ? settings?.yandexDiskToken : undefined}
+          photoStorageTarget={settings?.photoStorageTarget || 'yandex_disk'}
+          yandexDiskToken={settings?.yandexDiskToken}
           yandexDiskRootFolder={settings?.yandexDiskRootFolder}
+          bitrixWebhookUrl={settings?.activeWebhookUrl || settings?.bitrix24WebhookUrl}
           onSubmitReclamationSignal={(reason, details, photos) => {
             const updated: InstallationTask = {
               ...reclamationModalTask,

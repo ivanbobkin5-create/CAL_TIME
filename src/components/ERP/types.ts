@@ -592,8 +592,10 @@ export interface ERPCompanySettings {
   // Настройки Акта приема-передачи и версионируемых Дополнительных работ
   installationActSettings?: InstallationActSettings;
 
-  // Настройки облачного хранилища фото (Яндекс.Диск)
+  // Настройки внешнего хранилища фото (Яндекс.Диск, Битрикс24 или оба сразу)
+  photoStorageTarget?: 'yandex_disk' | 'bitrix24' | 'both';
   useYandexDiskForPhotos?: boolean;
+  yandexClientId?: string;
   yandexDiskToken?: string;
   yandexDiskRootFolder?: string;
   yandexDiskAutoFolders?: boolean;
@@ -666,7 +668,7 @@ export interface InstallationTask {
   installerEmployeeName?: string;
   additionalInstallerIds?: string[]; // Доп. сборщики
   
-  status: 'new' | 'scheduled' | 'in_progress' | 'completed' | 'cancelled';
+  status: 'new' | 'scheduled' | 'in_progress' | 'reclamation' | 'completed' | 'cancelled';
   paymentStatus: 'unpaid' | 'paid' | 'partial';
   paidAmount?: number;
   

@@ -7,8 +7,11 @@ interface InstallerPhotoUploaderProps {
   readOnly?: boolean;
   onPhotosChange: (newPhotos: string[]) => void;
   title?: string;
+  photoStorageTarget?: 'yandex_disk' | 'bitrix24' | 'both';
   yandexDiskToken?: string;
   yandexDiskRootFolder?: string;
+  bitrixWebhookUrl?: string;
+  bitrixTaskId?: string;
   orderNumber?: string;
 }
 
@@ -18,8 +21,11 @@ export const InstallerPhotoUploader: React.FC<InstallerPhotoUploaderProps> = ({
   readOnly = false,
   onPhotosChange,
   title = 'Фотографии монтажа',
+  photoStorageTarget = 'yandex_disk',
   yandexDiskToken,
   yandexDiskRootFolder,
+  bitrixWebhookUrl,
+  bitrixTaskId,
   orderNumber
 }) => {
   const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
@@ -47,7 +53,11 @@ export const InstallerPhotoUploader: React.FC<InstallerPhotoUploaderProps> = ({
         setUploadStatusText(`Обработка фото ${i + 1} из ${filesToProcess.length}...`);
         const compressedBase64 = await compressImage(file);
 
-        if (yandexDiskToken) {
+        let yandexResultUrl: string | null = null;
+        let bitrixUploaded = false;
+
+        // 1. Upload to Yandex.Disk if target is 'yandex_disk' or 'both'
+        if ((photoStorageTarget === 'yandex_disk' || photoStorageTarget === 'both') && yandexDiskToken) {
           setUploadStatusText(`Загрузка на Яндекс.Диск (${i + 1}/${filesToProcess.length})...`);
           try {
             const res = await fetch('/api/yandex-disk/upload', {
@@ -65,17 +75,43 @@ export const InstallerPhotoUploader: React.FC<InstallerPhotoUploaderProps> = ({
             if (res.ok) {
               const data = await res.json();
               if (data.success && data.url) {
-                newPhotoUrls.push(data.url);
-                continue;
+                yandexResultUrl = data.url;
               }
             }
           } catch (cloudErr) {
-            console.warn('Fallback to local base64 due to cloud error:', cloudErr);
+            console.warn('Fallback due to cloud error:', cloudErr);
           }
         }
 
-        // Fallback if cloud upload is not configured or fails
-        newPhotoUrls.push(compressedBase64);
+        // 2. Upload to Bitrix24 if target is 'bitrix24' or 'both'
+        if ((photoStorageTarget === 'bitrix24' || photoStorageTarget === 'both') && bitrixWebhookUrl) {
+          setUploadStatusText(`Отправка в Битрикс24 (${i + 1}/${filesToProcess.length})...`);
+          try {
+            const res = await fetch('/api/bitrix24/upload-task-photo', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                webhookUrl: bitrixWebhookUrl,
+                orderNumber: orderNumber || 'БЕЗ_НОМЕРА',
+                bitrixTaskId,
+                fileName: `photo_${Date.now()}_${i + 1}.jpg`,
+                fileBase64: compressedBase64
+              })
+            });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.success) {
+                bitrixUploaded = true;
+              }
+            }
+          } catch (b24Err) {
+            console.warn('Bitrix24 upload error:', b24Err);
+          }
+        }
+
+        // Prefer Yandex URL if uploaded, or fallback to compressed base64 for display in ERP
+        const finalUrl = yandexResultUrl || compressedBase64;
+        newPhotoUrls.push(finalUrl);
       }
 
       onPhotosChange([...photos, ...newPhotoUrls]);

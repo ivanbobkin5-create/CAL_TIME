@@ -2657,42 +2657,108 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
             </div>
           </div>
 
-          {/* Section 3: Cloud Storage for Photos (Yandex Disk Integration) */}
+          {/* Section 3: Storage Destination for Photos (Yandex.Disk / Bitrix24 / ERP) */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-              <div>
-                <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                  <Cloud className="w-5 h-5 text-indigo-600" />
-                  <span>Облачное хранилище фотоотчетов (Яндекс.Диск)</span>
-                </h3>
-                <p className="text-xs text-slate-500 mt-0.5 max-w-2xl">
-                  Автоматическая загрузка фотоотчетов монтажников и рекламаций прямо на ваш Яндекс.Диск. Исключает захламление и перегрузку вашего сервера ERP.
-                </p>
-              </div>
-
-              <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                <input
-                  type="checkbox"
-                  checked={!!formData.useYandexDiskForPhotos}
-                  onChange={(e) => setFormData(prev => ({ ...prev, useYandexDiskForPhotos: e.target.checked }))}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-                <span className="ml-3 text-xs font-bold text-slate-900">
-                  {formData.useYandexDiskForPhotos ? 'Подключено' : 'Выключено'}
-                </span>
-              </label>
+            <div>
+              <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
+                <Cloud className="w-5 h-5 text-indigo-600" />
+                <span>Хранилище фотоотчетов монтажей и рекламаций</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5 max-w-2xl">
+                Выберите, куда сохранять снимки сборщиков: на Яндекс.Диск, в задачи Битрикс24 или локально в ERP.
+              </p>
             </div>
 
-            {formData.useYandexDiskForPhotos && (
-              <div className="space-y-5 animate-fadeIn">
+            {/* Storage Target Selector */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, photoStorageTarget: 'yandex_disk', useYandexDiskForPhotos: true }))}
+                className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+                  (formData.photoStorageTarget === 'yandex_disk' || (!formData.photoStorageTarget && formData.useYandexDiskForPhotos))
+                    ? 'bg-indigo-50/80 border-indigo-500 ring-2 ring-indigo-500/20'
+                    : 'bg-slate-50 border-slate-200 hover:bg-slate-100/80'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <Cloud className="w-5 h-5 text-indigo-600" />
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700">Облако</span>
+                </div>
+                <div className="font-bold text-xs text-slate-900">Только Яндекс.Диск</div>
+                <div className="text-[10px] text-slate-500 mt-0.5">Сохранение в папки по заказам на ваш диск</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, photoStorageTarget: 'bitrix24', useYandexDiskForPhotos: false }))}
+                className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+                  formData.photoStorageTarget === 'bitrix24'
+                    ? 'bg-sky-50/80 border-sky-500 ring-2 ring-sky-500/20'
+                    : 'bg-slate-50 border-slate-200 hover:bg-slate-100/80'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <Building className="w-5 h-5 text-sky-600" />
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-sky-100 text-sky-700">CRM</span>
+                </div>
+                <div className="font-bold text-xs text-slate-900">Только Битрикс24</div>
+                <div className="text-[10px] text-slate-500 mt-0.5">Прикреплять к задачам/сделкам Битрикс24 через вебхук</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setFormData(prev => ({ ...prev, photoStorageTarget: 'both', useYandexDiskForPhotos: true }))}
+                className={`p-4 rounded-2xl border text-left transition-all cursor-pointer ${
+                  formData.photoStorageTarget === 'both'
+                    ? 'bg-emerald-50/80 border-emerald-500 ring-2 ring-emerald-500/20'
+                    : 'bg-slate-50 border-slate-200 hover:bg-slate-100/80'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <Sparkles className="w-5 h-5 text-emerald-600" />
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">Дублирование</span>
+                </div>
+                <div className="font-bold text-xs text-slate-900">Яндекс.Диск + Битрикс24</div>
+                <div className="text-[10px] text-slate-500 mt-0.5">Сохранять на Диск и одновременно прикреплять в Битрикс24</div>
+              </button>
+            </div>
+
+            {/* YANDEX DISK SETTINGS PANEL */}
+            {(formData.photoStorageTarget === 'yandex_disk' || formData.photoStorageTarget === 'both' || (!formData.photoStorageTarget && formData.useYandexDiskForPhotos)) && (
+              <div className="space-y-5 animate-fadeIn p-5 bg-indigo-50/30 rounded-2xl border border-indigo-100">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* ClientID input and Quick Authorization Button */}
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="block text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>ClientID вашего приложения в Яндекс OAuth (из вашего личного кабинета):</span>
+                    </label>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="text"
+                        value={formData.yandexClientId || 'c27e4339827421cae399989cc1b9610'}
+                        onChange={(e) => setFormData(prev => ({ ...prev, yandexClientId: e.target.value }))}
+                        placeholder="c27e4339827421cae399989cc1b9610"
+                        className="flex-1 px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 font-mono text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                      />
+                      <a
+                        href={`https://oauth.yandex.ru/authorize?response_type=token&client_id=${formData.yandexClientId || 'c27e4339827421cae399989cc1b9610'}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs shrink-0"
+                      >
+                        <ExternalLink className="w-4 h-4" />
+                        <span>Получить OAuth-токен в 1 клик</span>
+                      </a>
+                    </div>
+                  </div>
+
                   {/* OAuth Token Input */}
                   <div className="space-y-1.5 md:col-span-2">
                     <div className="flex items-center justify-between">
                       <label className="block text-xs font-bold text-slate-900 flex items-center gap-1.5">
                         <Key className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>OAuth Токен Яндекс.Диска:</span>
+                        <span>OAuth Токен Яндекс.Диска (вставьте скопированный токен сюда):</span>
                       </label>
 
                       <button
@@ -2701,7 +2767,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                         className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 cursor-pointer"
                       >
                         <HelpCircle className="w-3.5 h-3.5" />
-                        <span>{showYandexInstructions ? 'Скрыть инструкцию' : 'Как получить токен?'}</span>
+                        <span>{showYandexInstructions ? 'Скрыть пояснение' : 'Инструкция по токену'}</span>
                       </button>
                     </div>
 
@@ -2711,7 +2777,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                         value={formData.yandexDiskToken || ''}
                         onChange={(e) => setFormData(prev => ({ ...prev, yandexDiskToken: e.target.value }))}
                         placeholder="y0_AgAAAA..."
-                        className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 border border-slate-200 font-mono text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 pr-24"
+                        className="w-full px-3.5 py-2.5 rounded-xl bg-white border border-slate-200 font-mono text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 pr-24"
                       />
 
                       <button
@@ -2752,23 +2818,21 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                     )}
                   </div>
 
-                  {/* Step-by-Step Instructions Box */}
+                  {/* Instructions Box */}
                   {showYandexInstructions && (
-                    <div className="md:col-span-2 p-4 bg-indigo-50/60 rounded-2xl border border-indigo-100 text-xs text-indigo-950 space-y-2 leading-relaxed">
-                      <div className="font-bold flex items-center gap-1.5 text-indigo-900">
-                        <Info className="w-4 h-4 text-indigo-600" />
-                        <span>Пошаговая инструкция для получения OAuth-токена:</span>
+                    <div className="md:col-span-2 p-4 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-950 space-y-2 leading-relaxed">
+                      <div className="font-bold flex items-center gap-1.5 text-amber-900">
+                        <Info className="w-4 h-4 text-amber-600" />
+                        <span>Как получить токен Яндекс (по вашему скриншоту):</span>
                       </div>
+                      <p className="text-[11px] text-slate-700">
+                        На вашей странице вы видите <strong>ClientID</strong> и <strong>Client secret</strong>. Напрямую на той странице Яндекс не показывает сам ключ доступа к диску, так как токен выдается конкретному аккаунту.
+                      </p>
                       <ol className="list-decimal list-inside space-y-1 text-[11px] text-slate-700">
-                        <li>Перейдите на официальный портал приложений Яндекс: <a href="https://oauth.yandex.ru" target="_blank" rel="noopener noreferrer" className="text-indigo-600 font-bold underline inline-flex items-center gap-0.5">oauth.yandex.ru <ExternalLink className="w-3 h-3" /></a></li>
-                        <li>Нажмите кнопку <strong>«Создать приложение»</strong> (или выберите существующее).</li>
-                        <li>В разделе <strong>«Права и доступы»</strong> найдите категорию <strong>«Яндекс Диск»</strong> и отметьте галочками:
-                          <ul className="list-disc list-inside ml-4 text-[10px] text-slate-600 font-mono">
-                            <li>cloud_api:disk.read (Чтение всего Диска)</li>
-                            <li>cloud_api:disk.write (Запись в любой уголок Диска)</li>
-                          </ul>
-                        </li>
-                        <li>Сохраните приложение и скопируйте полученный <strong>OAuth-токен</strong> в поле выше.</li>
+                        <li>Убедитесь, что в поле <strong>ClientID</strong> выше указан ваш ID: <code className="bg-amber-100 px-1 py-0.5 rounded text-amber-900 font-mono">c27e4339827421cae399989cc1b9610</code>.</li>
+                        <li>Нажмите оранжевую кнопку <strong>«Получить OAuth-токен в 1 клик»</strong>.</li>
+                        <li>Яндекс откроет окно подтверждения. Нажмите <strong>«Разрешить»</strong>.</li>
+                        <li>Яндекс выдаст готовый токен вида <code className="bg-amber-100 px-1 py-0.5 rounded text-amber-900 font-mono">y0_AgAAAA...</code>. Скопируйте его и вставьте в поле токена выше!</li>
                       </ol>
                     </div>
                   )}
@@ -2784,11 +2848,8 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                       value={formData.yandexDiskRootFolder || '/ERP_Фотоотчеты'}
                       onChange={(e) => setFormData(prev => ({ ...prev, yandexDiskRootFolder: e.target.value }))}
                       placeholder="/ERP_Фотоотчеты"
-                      className="w-full px-3.5 py-2 rounded-xl bg-slate-50 border border-slate-200 font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-3.5 py-2 rounded-xl bg-white border border-slate-200 font-bold text-xs text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
                     />
-                    <p className="text-[10px] text-slate-500">
-                      Папка создастся на Яндекс.Диске автоматически при первой загрузке.
-                    </p>
                   </div>
 
                   {/* Auto Folders Toggle */}
@@ -2797,10 +2858,10 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                       <HardDrive className="w-3.5 h-3.5 text-indigo-600" />
                       <span>Структура подпапок:</span>
                     </label>
-                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-3">
+                    <div className="p-2.5 bg-white rounded-xl border border-slate-200 flex items-center justify-between gap-3">
                       <div className="text-xs">
-                        <div className="font-bold text-slate-900">Раскладывать по номерам заказов</div>
-                        <div className="text-[10px] text-slate-500">например: <code>/ERP_Фотоотчеты/Заказ_1042/photo1.jpg</code></div>
+                        <div className="font-bold text-slate-900">По заказам</div>
+                        <div className="text-[10px] text-slate-500">например: <code>/ERP_Фотоотчеты/Заказ_1042/</code></div>
                       </div>
                       <input
                         type="checkbox"
@@ -2810,6 +2871,26 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                       />
                     </div>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* BITRIX24 PHOTO SETTINGS PANEL */}
+            {(formData.photoStorageTarget === 'bitrix24' || formData.photoStorageTarget === 'both') && (
+              <div className="p-5 bg-sky-50/40 rounded-2xl border border-sky-100 space-y-3 animate-fadeIn text-xs text-slate-800">
+                <div className="font-bold text-sky-950 flex items-center gap-2">
+                  <Building className="w-4 h-4 text-sky-600" />
+                  <span>Интеграция загрузки фото в Битрикс24</span>
+                </div>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  Все фотографии, загруженные сборщиками через ERP, будут автоматически отправляться в комментарии к соответствующей задаче Битрикс24 через настроенный входящий вебхук компании.
+                </p>
+                <div className="p-3 bg-white rounded-xl border border-sky-200/80 font-bold text-sky-900">
+                  Вебхук: {formData.activeWebhookUrl || formData.bitrix24WebhookUrl ? (
+                    <span className="text-emerald-600 font-mono">Настроен ({formData.activeWebhookUrl || formData.bitrix24WebhookUrl})</span>
+                  ) : (
+                    <span className="text-rose-600">Не настроен (укажите вебхук во вкладке Битрикс24)</span>
+                  )}
                 </div>
               </div>
             )}

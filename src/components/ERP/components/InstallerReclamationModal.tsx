@@ -8,8 +8,10 @@ interface InstallerReclamationModalProps {
   onClose: () => void;
   task: InstallationTask;
   onSubmitReclamationSignal: (reason: string, details: string, photos: string[]) => void;
+  photoStorageTarget?: 'yandex_disk' | 'bitrix24' | 'both';
   yandexDiskToken?: string;
   yandexDiskRootFolder?: string;
+  bitrixWebhookUrl?: string;
 }
 
 export const InstallerReclamationModal: React.FC<InstallerReclamationModalProps> = ({
@@ -17,8 +19,10 @@ export const InstallerReclamationModal: React.FC<InstallerReclamationModalProps>
   onClose,
   task,
   onSubmitReclamationSignal,
+  photoStorageTarget = 'yandex_disk',
   yandexDiskToken,
-  yandexDiskRootFolder
+  yandexDiskRootFolder,
+  bitrixWebhookUrl
 }) => {
   const [reason, setReason] = useState('');
   const [details, setDetails] = useState('');
@@ -112,8 +116,11 @@ export const InstallerReclamationModal: React.FC<InstallerReclamationModalProps>
               onPhotosChange={setPhotos}
               title="Фотографии дефекта / брака"
               orderNumber={task.orderNumber}
+              photoStorageTarget={photoStorageTarget}
               yandexDiskToken={yandexDiskToken}
               yandexDiskRootFolder={yandexDiskRootFolder}
+              bitrixWebhookUrl={bitrixWebhookUrl}
+              bitrixTaskId={task.bitrixTaskId}
             />
           </div>
 
