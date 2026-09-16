@@ -1,0 +1,26 @@
+{
+  "id": "/",
+  "name": "Mebel-Plan ERP — Паспорт Сборщика",
+  "short_name": "Монтажи",
+  "description": "Рабочий кабинет сборщика мебели: графики монтажей, акты выполненных работ и уведомления о новых заказах",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#2563eb",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { 
   Wrench, 
   Calendar, 
@@ -26,7 +26,11 @@ import {
   FileSpreadsheet,
   AlertTriangle,
   Camera,
-  Play
+  Play,
+  Bell,
+  BellRing,
+  Download,
+  Smartphone
 } from 'lucide-react';
 import { ERPEmployee, InstallationTask, InstallationActSettings } from '../types';
 import { ExtraWorksMobileModal } from '../components/ExtraWorksMobileModal';
@@ -148,6 +152,124 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
       activeCount: activeTasks.length
     };
   }, [completedTasks, activeTasks]);
+
+  // Notification & PWA Installation State
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission>(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      return Notification.permission;
+    }
+    return 'default';
+  });
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isStandalone, setIsStandalone] = useState(false);
+  const [showInstallGuide, setShowInstallGuide] = useState(false);
+  const [isIOS, setIsIOS] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const isStandaloneMode = window.matchMedia('(display-mode: standalone)').matches ||
+      (window.navigator as any).standalone === true;
+    setIsStandalone(isStandaloneMode);
+
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    setIsIOS(/iphone|ipad|ipod/.test(userAgent));
+
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    };
+  }, []);
+
+  // Request Push / Browser Notifications
+  const requestNotifPermission = async () => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      alert('Ваш браузер не поддерживает push-уведомления.');
+      return;
+    }
+    try {
+      const res = await Notification.requestPermission();
+      setNotifPermission(res);
+      if (res === 'granted') {
+        sendNotification(
+          '🔔 Push-уведомления включены!',
+          'При поступлении новых монтажей вам придет уведомление прямо на экран смартфона.'
+        );
+      } else if (res === 'denied') {
+        alert('Разрешение на уведомления заблокировано в настройках браузера. Разрешите их в настройках сайта.');
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Helper to send browser/serviceWorker notification
+  const sendNotification = (title: string, body: string, taskUrl?: string) => {
+    if (typeof window === 'undefined' || !('Notification' in window)) return;
+    if (Notification.permission === 'granted') {
+      if ('serviceWorker' in navigator && navigator.serviceWorker.ready) {
+        navigator.serviceWorker.ready.then((reg) => {
+          reg.showNotification(title, {
+            body,
+            icon: '/pwa-192x192.png',
+            badge: '/pwa-192x192.png',
+            vibrate: [200, 100, 200, 100, 200],
+            tag: 'installation-task-proposed',
+            renotify: true,
+            data: { url: taskUrl || window.location.href }
+          });
+        }).catch(() => {
+          new Notification(title, { body, icon: '/pwa-192x192.png' });
+        });
+      } else {
+        new Notification(title, { body, icon: '/pwa-192x192.png' });
+      }
+    }
+  };
+
+  // Track new proposed tasks and trigger notification
+  const knownProposedTaskIdsRef = useRef<Set<string> | null>(null);
+
+  useEffect(() => {
+    const currentIds = new Set(proposedTasks.map(t => t.id));
+
+    if (knownProposedTaskIdsRef.current === null) {
+      // First render: initialize known proposed task IDs without spamming
+      knownProposedTaskIdsRef.current = currentIds;
+    } else {
+      // Find tasks newly added/proposed to this installer
+      proposedTasks.forEach(task => {
+        if (!knownProposedTaskIdsRef.current?.has(task.id)) {
+          sendNotification(
+            `🔔 Предложен новый монтаж! (${task.orderNumber})`,
+            `Заказчик: ${task.clientName}${task.address ? `. Адрес: ${task.address}` : ''}. Нажмите, чтобы открыть заявку.`,
+            window.location.href
+          );
+        }
+      });
+      knownProposedTaskIdsRef.current = currentIds;
+    }
+  }, [proposedTasks]);
+
+  // Handle PWA Install
+  const handleInstallApp = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const choice = await deferredPrompt.userChoice;
+      if (choice.outcome === 'accepted') {
+        setIsStandalone(true);
+        setDeferredPrompt(null);
+      }
+    } else if (isIOS) {
+      setShowInstallGuide(true);
+    } else {
+      alert('Для установки приложения нажмите «Добавить на рабочий стол» или «Установить приложение» в меню вашего браузера.');
+    }
+  };
 
   // Handle Starting Installation
   const handleStartInstallation = (task: InstallationTask) => {
@@ -348,6 +470,65 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
 
       {/* Main Content Area */}
       <div className="max-w-md mx-auto p-4 space-y-4">
+
+        {/* PWA & Notification Prompt Banner */}
+        <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-3xl p-4 shadow-lg border border-indigo-800/40 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-2xl bg-indigo-600/40 text-indigo-300 flex items-center justify-center shrink-0 border border-indigo-500/30">
+                <BellRing className="w-5 h-5 text-indigo-400 animate-pulse" />
+              </div>
+              <div>
+                <h3 className="font-black text-xs text-white flex items-center gap-1.5">
+                  <span>Уведомления о монтажах</span>
+                  {!isStandalone && (
+                    <span className="text-[9px] bg-indigo-500/30 text-indigo-300 px-1.5 py-0.5 rounded-md font-bold">
+                      PWA
+                    </span>
+                  )}
+                </h3>
+                <p className="text-[11px] text-slate-300 font-medium leading-tight mt-0.5">
+                  {notifPermission === 'granted'
+                    ? 'Push-уведомления включены. Вы получите оповещение при вызове на новые монтажи.'
+                    : 'Включите уведомления, чтобы получать вызовы на монтаж прямо на экран телефона.'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-indigo-900/60">
+            {notifPermission !== 'granted' ? (
+              <button
+                type="button"
+                onClick={requestNotifPermission}
+                className="flex-1 py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs shadow-md shadow-indigo-600/30 flex items-center justify-center gap-1.5 cursor-pointer"
+              >
+                <Bell className="w-3.5 h-3.5" />
+                <span>Включить уведомления</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => sendNotification('🔔 Проверка push-уведомлений', 'Уведомления отлично работают на вашем устройстве!')}
+                className="py-1.5 px-3 rounded-xl bg-emerald-600/30 hover:bg-emerald-600/40 border border-emerald-500/40 text-emerald-300 font-extrabold text-[11px] flex items-center gap-1 cursor-pointer"
+              >
+                <Check className="w-3.5 h-3.5" />
+                <span>Проверить push</span>
+              </button>
+            )}
+
+            {!isStandalone && (
+              <button
+                type="button"
+                onClick={handleInstallApp}
+                className="py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs flex items-center gap-1.5 cursor-pointer ml-auto"
+              >
+                <Smartphone className="w-3.5 h-3.5 text-cyan-400" />
+                <span>На экран «Домой»</span>
+              </button>
+            )}
+          </div>
+        </div>
 
         {/* TAB 1: PROPOSED TASKS */}
         {activeTab === 'proposed' && (
@@ -1104,6 +1285,44 @@ export const ERPInstallerMobileView: React.FC<ERPInstallerMobileViewProps> = ({
             setReclamationModalTask(null);
           }}
         />
+      )}
+
+      {/* iOS Installation Guide Modal */}
+      {showInstallGuide && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-5 space-y-4 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <Smartphone className="w-5 h-5 text-indigo-600" />
+                <h3 className="font-black text-slate-900 text-sm">Установка на iPhone / iPad</h3>
+              </div>
+              <button
+                onClick={() => setShowInstallGuide(false)}
+                className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-100 cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-slate-700">
+              <p className="font-medium">
+                Чтобы получать push-уведомления и открывать приложение в 1 клик с рабочего стола:
+              </p>
+              <ol className="space-y-2 list-decimal list-inside font-semibold text-slate-800 bg-slate-50 p-3 rounded-2xl border border-slate-200/80">
+                <li>Нажмите кнопку <span className="inline-block px-1.5 py-0.5 bg-slate-200 rounded font-bold">Поделиться</span> внизу браузера Safari.</li>
+                <li>Прокрутите вниз и нажмите <span className="inline-block px-1.5 py-0.5 bg-slate-200 rounded font-bold">«На экран «Домой»»</span>.</li>
+                <li>Нажмите <span className="inline-block px-1.5 py-0.5 bg-indigo-100 text-indigo-800 rounded font-bold">Добавить</span>.</li>
+              </ol>
+            </div>
+
+            <button
+              onClick={() => setShowInstallGuide(false)}
+              className="w-full py-2.5 rounded-2xl bg-indigo-600 text-white font-bold text-xs shadow-md cursor-pointer"
+            >
+              Понятно
+            </button>
+          </div>
+        </div>
       )}
     </div>
   );
