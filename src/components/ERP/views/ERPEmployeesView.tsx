@@ -314,19 +314,22 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
 
               {/* Bottom Card Actions */}
               <div className="mt-4 pt-3 flex items-center justify-between border-t border-slate-100 gap-2">
-                {emp.employmentType === 'outsource' ? (
-                  <div className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200">
-                    🤝 Аутсорс (Аналитические данные)
-                  </div>
-                ) : (emp.productionRole || emp.role || '').toLowerCase().includes('сборщик') || (emp.productionRole || emp.role || '').toLowerCase().includes('монтажник') ? (
+                {((emp.productionRole || emp.role || '').toLowerCase().includes('сборщик') || 
+                  (emp.productionRole || emp.role || '').toLowerCase().includes('монтажник') || 
+                  (emp.productionRole || emp.role || '').toLowerCase().includes('сборк') || 
+                  emp.department === 'assembly') ? (
                   <button
                     onClick={() => setSelectedInstallerForLink(emp)}
-                    className="px-3 py-1.5 rounded-xl bg-cyan-50 hover:bg-cyan-100 text-cyan-800 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-cyan-200"
+                    className="px-3 py-1.5 rounded-xl bg-cyan-50 hover:bg-cyan-100 text-cyan-800 text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer border border-cyan-200 shadow-xs"
                     title="Открыть и скопировать личную ссылку сборщика мебели"
                   >
                     <Wrench className="w-3.5 h-3.5 text-cyan-600" />
                     <span>Личная ссылка</span>
                   </button>
+                ) : emp.employmentType === 'outsource' ? (
+                  <div className="text-[11px] font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200">
+                    🤝 Аутсорс (Аналитические данные)
+                  </div>
                 ) : (
                   <button
                     onClick={() => setSelectedEmployeeForBadge(emp)}

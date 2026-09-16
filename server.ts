@@ -1865,25 +1865,44 @@ function transliterate(str: string): string {
           const upperStage = dealStageId.toUpperCase();
           const isClosedInB24 = deal.CLOSED === "Y" || upperStage.includes("WON") || upperStage.includes("LOSE") || upperStage.includes("APOLOGY");
 
-          if (allowedStageIds && allowedStageIds.size > 0) {
-            const isInAllowed = Array.from(allowedStageIds).some(allowed => isSameStage(allowed, dealStageId, categoryId));
-            if (!isInAllowed) {
-              continue;
-            }
-          } else if (startStageId) {
-            if (!isSameStage(dealStageId, startStageId, categoryId)) {
-              continue;
-            }
-          }
+          const instStageConfig = erpConfig.installationStageId || companyData.bitrix24?.installationStageId || '';
+          const reclStageConfig = erpConfig.reclamationStageId || companyData.bitrix24?.reclamationStageId || '';
 
-          // If deal is closed in CRM
-          if (isClosedInB24) {
-            if (excludeClosedDeals) {
-              if (!doneStageId || !isSameStage(dealStageId, doneStageId, categoryId)) {
+          const isTargetInstOrReclStage = Boolean(
+            (instStageConfig && isSameStage(dealStageId, instStageConfig, categoryId)) ||
+            (reclStageConfig && isSameStage(dealStageId, reclStageConfig, categoryId))
+          );
+
+          // Check keywords in deal TITLE or STAGE_ID
+          const dealTitleLower = (deal.TITLE || '').toLowerCase();
+          const dealStageLower = dealStageId.toLowerCase();
+          const isInstOrReclKeyword = ['монтаж', 'сборка', 'установка', 'рекламация', 'брак', 'доделка', 'переделка'].some(kw => 
+            dealTitleLower.includes(kw) || dealStageLower.includes(kw)
+          );
+
+          const isInstallationOrReclamationDeal = isTargetInstOrReclStage || isInstOrReclKeyword;
+
+          if (!isInstallationOrReclamationDeal) {
+            if (allowedStageIds && allowedStageIds.size > 0) {
+              const isInAllowed = Array.from(allowedStageIds).some(allowed => isSameStage(allowed, dealStageId, categoryId));
+              if (!isInAllowed) {
                 continue;
               }
-            } else if (!allowedStageIds && !doneStageId) {
-              continue;
+            } else if (startStageId) {
+              if (!isSameStage(dealStageId, startStageId, categoryId)) {
+                continue;
+              }
+            }
+
+            // If deal is closed in CRM
+            if (isClosedInB24) {
+              if (excludeClosedDeals) {
+                if (!doneStageId || !isSameStage(dealStageId, doneStageId, categoryId)) {
+                  continue;
+                }
+              } else if (!allowedStageIds && !doneStageId) {
+                continue;
+              }
             }
           }
 

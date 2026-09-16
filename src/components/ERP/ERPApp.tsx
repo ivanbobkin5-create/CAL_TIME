@@ -834,35 +834,50 @@ export const ERPApp: React.FC<ERPAppProps> = ({
   const syncInstallationTasksFromOrders = useCallback((ordersList: ProductionOrder[]) => {
     if (!ordersList || ordersList.length === 0) return;
 
-    const instKeywords = (settings?.installationStageKeywords || ['монтаж', 'сборка', 'установка'])
-      .flatMap(k => k.split(/[,;\n]/))
+    const rawInstKw = (settings as any)?.installationKeywords || (settings as any)?.installationStageKeywords || ['монтаж', 'сборка', 'установка', 'у клиента'];
+    const instKeywords = (Array.isArray(rawInstKw) ? rawInstKw : [String(rawInstKw)])
+      .flatMap(k => String(k).split(/[,;\n]/))
       .map(k => k.trim().toLowerCase())
       .filter(Boolean);
 
-    const reclKeywords = (settings?.reclamationStageKeywords || ['рекламация', 'брак', 'доделка', 'переделка'])
-      .flatMap(k => k.split(/[,;\n]/))
+    const rawReclKw = (settings as any)?.reclamationKeywords || (settings as any)?.reclamationStageKeywords || ['рекламация', 'брак', 'доделка', 'переделка', 'замена', 'доработка'];
+    const reclKeywords = (Array.isArray(rawReclKw) ? rawReclKw : [String(rawReclKw)])
+      .flatMap(k => String(k).split(/[,;\n]/))
       .map(k => k.trim().toLowerCase())
       .filter(Boolean);
 
-    const configuredInstStageId = settings?.installationStageId;
-    const configuredReclStageId = settings?.reclamationStageId;
+    const configuredInstStageId = (settings as any)?.installationStageId || (settings as any)?.bitrix24InstallationStageId;
+    const configuredReclStageId = (settings as any)?.reclamationStageId || (settings as any)?.bitrix24ReclamationStageId;
 
     setInstallationTasks(prevTasks => {
       const updatedTasks = [...prevTasks];
       let hasChanges = false;
 
-      ordersList.forEach(order => {
-        const stageNameLower = (order.stageName || '').toLowerCase();
-        const currentStageLower = (order.currentStage || '').toLowerCase();
-        const commentLower = (order.comment || '').toLowerCase();
-        const titleLower = ((order.orderNumber || '') + ' ' + (order.clientName || '') + ' ' + (order.productType || '')).toLowerCase();
+      ordersList.forEach((order: any) => {
+        const orderStageId = String(order.stageId || order.bitrixStageId || '').toUpperCase();
+        const stageNameLower = String(order.stageName || order.bitrixStageName || '').toLowerCase();
+        const currentStageLower = String(order.currentStage || '').toLowerCase();
+        const commentLower = String(order.comment || order.comments || order.deliveryData?.comment || '').toLowerCase();
+        const titleLower = (String(order.orderNumber || '') + ' ' + String(order.clientName || '') + ' ' + String(order.projectName || '') + ' ' + String(order.productType || '')).toLowerCase();
+
+        // Helper for stage ID match
+        const matchesStageId = (cfgStageId?: string) => {
+          if (!cfgStageId) return false;
+          const cleanCfg = String(cfgStageId).trim().toUpperCase();
+          if (!orderStageId) return false;
+          if (orderStageId === cleanCfg) return true;
+          // Clean category prefix e.g. C1:
+          const orderClean = orderStageId.includes(':') ? orderStageId.split(':')[1] : orderStageId;
+          const cfgClean = cleanCfg.includes(':') ? cleanCfg.split(':')[1] : cleanCfg;
+          return orderClean === cfgClean;
+        };
 
         // Check Bitrix stage match
-        const matchesInstStage = (configuredInstStageId && order.stageId === configuredInstStageId) || 
+        const matchesInstStage = matchesStageId(configuredInstStageId) || 
                                  order.currentStage === 'installation' || 
                                  order.currentStage === 'shipping';
 
-        const matchesReclStage = configuredReclStageId && order.stageId === configuredReclStageId;
+        const matchesReclStage = matchesStageId(configuredReclStageId);
 
         // Check Keyword match
         const matchesInstKeyword = instKeywords.some(kw => 
@@ -873,43 +888,62 @@ export const ERPApp: React.FC<ERPAppProps> = ({
           stageNameLower.includes(kw) || currentStageLower.includes(kw) || commentLower.includes(kw) || titleLower.includes(kw)
         );
 
-        if (matchesInstStage || matchesReclStage || matchesInstKeyword || matchesReclKeyword) {
+        const hasAssemblyOrDeliveryPrice = (order.assemblyPrice && order.assemblyPrice > 0) || 
+                                           (order.deliveryData?.assemblyPrice && order.deliveryData.assemblyPrice > 0) ||
+                                           (order.deliveryPrice && order.deliveryPrice > 0);
+
+        if (matchesInstStage || matchesReclStage || matchesInstKeyword || matchesReclKeyword || (hasAssemblyOrDeliveryPrice && !configuredInstStageId)) {
           const isReclamation = matchesReclStage || matchesReclKeyword;
 
-          // Find existing task by orderNumber or bitrixDealId
+          // Find existing task by orderNumber or bitrixDealId or order.id
           const existingIndex = updatedTasks.findIndex(t => 
-            t.orderNumber === order.orderNumber || (t.bitrixDealId && order.bitrixDealId && t.bitrixDealId === order.bitrixDealId)
+            (t.orderNumber && order.orderNumber && String(t.orderNumber) === String(order.orderNumber)) || 
+            (t.bitrixDealId && order.bitrixDealId && String(t.bitrixDealId) === String(order.bitrixDealId)) ||
+            (t.orderId && order.id && String(t.orderId) === String(order.id))
           );
 
           if (existingIndex < 0) {
             const newTask: InstallationTask = {
               id: `inst-b24-${order.id || order.orderNumber}`,
               orderId: order.id,
-              orderNumber: order.orderNumber,
-              bitrixDealId: order.bitrixDealId,
-              clientName: order.clientName || 'Заказчик из CRM',
-              clientPhone: order.clientPhone || '',
-              address: order.deliveryAddress || order.address || 'Адрес не указан в CRM',
-              floor: order.floor || '',
-              hasElevator: order.hasElevator ?? false,
-              assemblyPrice: order.assemblyPrice || 0,
-              deliveryPrice: order.deliveryPrice || 0,
+              orderNumber: String(order.orderNumber || order.id || 'ЗАКАЗ'),
+              bitrixDealId: order.bitrixDealId ? String(order.bitrixDealId) : undefined,
+              clientName: order.clientName || order.deliveryData?.clientName || 'Заказчик из CRM',
+              clientPhone: order.clientPhone || order.deliveryData?.clientPhone || '',
+              address: order.deliveryAddress || order.address || order.deliveryData?.address || 'Адрес не указан в CRM',
+              floor: order.floor || order.deliveryData?.floor || '',
+              hasElevator: Boolean(order.hasElevator ?? order.deliveryData?.hasElevator ?? false),
+              assemblyPrice: order.assemblyPrice || order.deliveryData?.assemblyPrice || 0,
+              deliveryPrice: order.deliveryPrice || order.deliveryData?.deliveryPrice || 0,
               type: isReclamation ? 'reclamation' : 'installation',
               status: 'scheduled',
               paymentStatus: 'unpaid',
-              scheduledDate: order.plannedShippingDate || new Date().toISOString().split('T')[0],
+              scheduledDate: order.plannedShippingDate || order.deadlineDate || new Date().toISOString().split('T')[0],
               contractDate: order.contractDate || order.createdAt || new Date().toISOString().split('T')[0],
-              comment: order.comment || '',
+              comment: order.comment || order.comments || order.deliveryData?.comment || '',
               createdAt: order.createdAt || new Date().toISOString()
             };
             updatedTasks.push(newTask);
             hasChanges = true;
+          } else {
+            // Update existing task if updated from CRM
+            const existing = updatedTasks[existingIndex];
+            const updated: InstallationTask = {
+              ...existing,
+              clientName: order.clientName || existing.clientName,
+              clientPhone: order.clientPhone || existing.clientPhone,
+              address: order.deliveryAddress || order.deliveryData?.address || existing.address,
+              assemblyPrice: order.assemblyPrice || order.deliveryData?.assemblyPrice || existing.assemblyPrice,
+              deliveryPrice: order.deliveryPrice || order.deliveryData?.deliveryPrice || existing.deliveryPrice,
+              comment: order.comment || order.deliveryData?.comment || existing.comment,
+            };
+            updatedTasks[existingIndex] = updated;
           }
         }
       });
 
       if (hasChanges) {
-        // If we synced real tasks, remove the demo placeholder tasks if present
+        // Remove dummy demo tasks if we synced real ones
         const filtered = updatedTasks.filter(t => !t.id.startsWith('inst-demo-') || updatedTasks.length <= 2);
         try {
           localStorage.setItem(`erp_installation_tasks_${aliasOrId}`, JSON.stringify(filtered));
@@ -919,7 +953,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
 
       return prevTasks;
     });
-  }, [settings?.installationStageId, settings?.reclamationStageId, settings?.installationStageKeywords, settings?.reclamationStageKeywords, aliasOrId]);
+  }, [(settings as any)?.installationStageId, (settings as any)?.reclamationStageId, (settings as any)?.installationKeywords, (settings as any)?.installationStageKeywords, (settings as any)?.reclamationKeywords, (settings as any)?.reclamationStageKeywords, aliasOrId]);
 
   useEffect(() => {
     if (orders.length > 0) {
