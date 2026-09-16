@@ -1467,10 +1467,23 @@ const INITIAL_PRODUCT_CATEGORIES = [
   "Мебельные ноги и опоры",
 ];
 
-const mergeCategories = (catsList: string[] | undefined | null): string[] => {
-  const filtered = (catsList || []).filter(
-    (c: string) => c !== "Кухонные гарнитуры" && c !== "Кухонный гарнитур" && c !== "Посудосушитель"
-  );
+const mergeCategories = (
+  catsList: string[] | undefined | null,
+  extraCats?: string[],
+): string[] => {
+  const list = [
+    ...(Array.isArray(catsList) ? catsList : []),
+    ...(Array.isArray(extraCats) ? extraCats : []),
+  ];
+  const filtered = list
+    .filter(
+      (c: string) =>
+        typeof c === "string" &&
+        c.trim().length > 0 &&
+        c !== "Кухонный гарнитур" &&
+        c !== "Посудосушитель",
+    )
+    .map((c: string) => c.trim());
   return Array.from(new Set([...INITIAL_PRODUCT_CATEGORIES, ...filtered]));
 };
 
@@ -3778,7 +3791,9 @@ const PriceView = ({
   setCustomEdgeMapping,
   resolveBrandCoefficient,
   isSavingConfig,
+  productCategories = [],
 }: {
+  productCategories?: string[];
   calcMode: string;
   prices: Record<string, number>;
   setPrices: React.Dispatch<React.SetStateAction<Record<string, number>>>;
@@ -4022,7 +4037,10 @@ const PriceView = ({
   };
 
   const categoriesToDisplay = useMemo(() => {
-    return PRICE_LIST_CATEGORIES.map((cat) => {
+    const predefinedTitles = new Set(PRICE_LIST_CATEGORIES.map((c) => c.title));
+
+    // Standard categories
+    const baseCats = PRICE_LIST_CATEGORIES.map((cat) => {
       // Find products in this category
       const products = catalogProducts.filter((p) => p.category === cat.title);
 
@@ -4040,15 +4058,6 @@ const PriceView = ({
 
       if (cat.title === "Фасады заказные") {
         const customFacadeBrands: string[] = [];
-        // User requested to hide these if they have separate tables
-        // if (ownProductionConfig.facadeSettings?.displayName)
-        //   customFacadeBrands.push(
-        //     ownProductionConfig.facadeSettings.displayName,
-        //   );
-        // if (ownProductionConfig.enamelSettings?.displayName)
-        //   customFacadeBrands.push(
-        //     ownProductionConfig.enamelSettings.displayName,
-        //   );
         ownProductionConfig.extraFacadeTypes?.forEach((t) => {
           if (t.displayName) customFacadeBrands.push(t.displayName);
         });
@@ -4060,7 +4069,32 @@ const PriceView = ({
 
       return { ...cat, products };
     });
-  }, [catalogProducts, catalogMaterials, ownProductionConfig]);
+
+    // Custom categories created by user or present in products
+    const allCustomCatTitles = Array.from(
+      new Set([
+        ...(productCategories || []),
+        ...(catalogProducts || []).map((p: any) => p.category).filter(Boolean),
+      ]),
+    ).filter(
+      (catTitle) =>
+        catTitle &&
+        typeof catTitle === "string" &&
+        !predefinedTitles.has(catTitle) &&
+        catTitle !== "Кромочные материалы" &&
+        catTitle !== "Фасады заказные" &&
+        catTitle !== "Услуги производства" &&
+        catTitle !== "Материалы",
+    );
+
+    const extraCategoryBlocks = allCustomCatTitles.map((catTitle) => ({
+      title: catTitle,
+      brands: [],
+      products: catalogProducts.filter((p) => p.category === catTitle),
+    }));
+
+    return [...baseCats, ...extraCategoryBlocks];
+  }, [catalogProducts, catalogMaterials, ownProductionConfig, productCategories]);
 
   const exportToExcel = () => {
     const workbook = XLSX.utils.book_new();
@@ -9113,10 +9147,12 @@ const CompactCatalogMatcher = ({
   catalogProducts,
   defaultCategory,
   onBind,
+  productCategories = [],
 }: {
   catalogProducts: any[];
   defaultCategory?: string;
   onBind: (product: any) => void;
+  productCategories?: string[];
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>(defaultCategory || "Все");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -9124,11 +9160,14 @@ const CompactCatalogMatcher = ({
 
   const categories = useMemo(() => {
     const set = new Set<string>();
+    (productCategories || []).forEach((c) => {
+      if (c && typeof c === "string") set.add(c.trim());
+    });
     (catalogProducts || []).forEach((p: any) => {
-      if (p.category) set.add(p.category);
+      if (p.category && typeof p.category === "string") set.add(p.category.trim());
     });
     return Array.from(set).sort();
-  }, [catalogProducts]);
+  }, [catalogProducts, productCategories]);
 
   const filteredProducts = useMemo(() => {
     return (catalogProducts || []).filter((p: any) => {
@@ -9301,7 +9340,9 @@ const SummaryView = ({
   detailedFastenersMode = false,
   setDetailedFastenersMode,
   onBindUnmatchedItem,
+  productCategories = [],
 }: {
+  productCategories?: string[];
   unmatchedBazisItems?: any[];
   bazisFasteners?: any[];
   setBazisFasteners?: React.Dispatch<React.SetStateAction<any[]>>;
@@ -11947,6 +11988,7 @@ const SummaryView = ({
                       <td className="py-2 px-3 text-right">
                         <CompactCatalogMatcher
                           catalogProducts={catalogProducts || []}
+                          productCategories={productCategories || []}
                           defaultCategory={item.categoryType === "Петли" ? "Петли" : item.categoryType === "Направляющие" ? "Направляющие" : "Все"}
                           onBind={(chosenProd) => {
                             if (chosenProd && onBindUnmatchedItem) {
@@ -22419,13 +22461,17 @@ const ProductsView = ({
   }, [activeReadyMadeCats]);
 
   const displayProductCategories = useMemo(() => {
-    return productCategories.filter((cat) => {
-      const catLower = cat.toLowerCase().trim();
-      if (catLower.includes("модул")) return true;
-      if (!isReadyMadeEnabled) return true;
-      return !isReadyMadeCategory(cat);
+    const catSet = new Set<string>();
+    (productCategories || []).forEach((c) => {
+      if (c && typeof c === "string") catSet.add(c.trim());
     });
-  }, [productCategories, isReadyMadeEnabled, isReadyMadeCategory]);
+    (catalogProducts || []).forEach((p: any) => {
+      if (p.category && typeof p.category === "string") {
+        catSet.add(p.category.trim());
+      }
+    });
+    return Array.from(catSet);
+  }, [productCategories, catalogProducts]);
 
   useEffect(() => {
     if (selectedCategory && isReadyMadeEnabled) {
@@ -24293,7 +24339,7 @@ const ProductsView = ({
             {cat}
           </button>
         ))}
-        {userRole === "admin" && (
+        {(userRole === "admin" || !userRole || companyData?.ownerUid === userData?.uid) && (
           <button
             onClick={() => {
               showPrompt(
@@ -24301,12 +24347,13 @@ const ProductsView = ({
                 "Введите название новой категории:",
                 "",
                 (newCat) => {
-                  if (
-                    newCat &&
-                    newCat.trim() &&
-                    !productCategories.includes(newCat.trim())
-                  ) {
-                    setProductCategories((prev) => [...prev, newCat.trim()]);
+                  if (newCat && newCat.trim()) {
+                    const trimmed = newCat.trim();
+                    if (!productCategories.includes(trimmed)) {
+                      const updated = [...productCategories, trimmed];
+                      setProductCategories(updated);
+                    }
+                    setSelectedCategory(trimmed);
                   }
                 },
               );
@@ -32508,6 +32555,16 @@ export default function App() {
               setProductCategories(loadedCats);
               setCoefficients((prev: any) => ({ ...prev, products: data.coefficients || {} }));
             }
+            if (key.includes('products') && Array.isArray(data)) {
+              try {
+                const prods = data.map((d: any) => ({ id: d.id, ...(d.data || d) }));
+                setOwnProducts(prods);
+                const itemCategories = prods.map((p: any) => p.category).filter(Boolean);
+                if (itemCategories.length > 0) {
+                  setProductCategories((prev) => mergeCategories(prev, itemCategories));
+                }
+              } catch (e) {}
+            }
             if (key.includes('production')) {
               setContractConfig((prev) => ({ ...prev, ...data }));
               setOwnProductionConfig((prev: any) => ({ ...prev, ...data }));
@@ -32672,7 +32729,12 @@ export default function App() {
 
       if (prodColData) {
         await safeSetLocalStorage(`meb_cache:/api/db/col/companies/${companyId}/products`, JSON.stringify(prodColData));
-        setOwnProducts(prodColData.map((d: any) => ({ id: d.id, ...d.data })));
+        const prods = prodColData.map((d: any) => ({ id: d.id, ...d.data }));
+        setOwnProducts(prods);
+        const itemCategories = prods.map((p: any) => p.category).filter(Boolean);
+        if (itemCategories.length > 0) {
+          setProductCategories((prev) => mergeCategories(prev, itemCategories));
+        }
       }
       
       if (projData) {
@@ -35758,6 +35820,16 @@ export default function App() {
       );
       console.log("setDoc completed successfully");
 
+      // Auto-persist new category if product has a previously unlisted category
+      if (finalProduct.category && typeof finalProduct.category === "string") {
+        const catName = finalProduct.category.trim();
+        if (catName && !productCategories.includes(catName)) {
+          const updatedCats = Array.from(new Set([...productCategories, catName]));
+          setProductCategories(updatedCats);
+          saveProductCategories(updatedCats);
+        }
+      }
+
       if (isNew && finalProduct.status === 'pending') {
         showAlert("На проверке", "Товар успешно сохранен и отправлен на модерацию");
       } else {
@@ -35775,7 +35847,7 @@ export default function App() {
   };
 
   const saveProductCategories = async (newCategories: string[]) => {
-    if (!companyData?.id || userRole !== "admin") return;
+    if (!companyData?.id) return;
     try {
       await setDoc(
         doc(db, "companies", companyData.id, "settings", "categories"),
@@ -35783,6 +35855,10 @@ export default function App() {
           categories: newCategories,
         },
         { merge: true },
+      );
+      await safeSetLocalStorage(
+        `meb_cache:/api/db/doc/companies/${companyData.id}/settings/categories`,
+        JSON.stringify({ categories: newCategories })
       );
     } catch (error) {
       handleDbError(
@@ -37902,6 +37978,7 @@ export default function App() {
 
           <div className={cn(activeTab === "summary" || activeTab === "checkout_current" ? "block" : "hidden")}>
             <SummaryView
+              productCategories={productCategories}
               manufacturerCoefficients={manufacturerCoefficients}
               unmatchedBazisItems={unmatchedBazisItems}
               bazisFasteners={bazisFasteners}
@@ -38413,6 +38490,7 @@ export default function App() {
           ) : activeTab === "price" &&
             (userRole === "admin" || userRole === "manager") ? (
             <PriceView
+              productCategories={productCategories}
               calcMode={calcMode}
               prices={prices}
               setPrices={setPrices}

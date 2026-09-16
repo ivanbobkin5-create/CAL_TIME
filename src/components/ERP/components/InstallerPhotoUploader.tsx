@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { Camera, Image as ImageIcon, Trash2, ZoomIn, X, AlertCircle } from 'lucide-react';
+import React, { useState, useRef } from 'react';
+import { Camera, Image as ImageIcon, Trash2, ZoomIn, X, AlertCircle, UploadCloud, FolderPlus } from 'lucide-react';
+import { PhotoGalleryModal } from './PhotoGalleryModal';
 
 interface InstallerPhotoUploaderProps {
   photos: string[];
@@ -28,12 +29,14 @@ export const InstallerPhotoUploader: React.FC<InstallerPhotoUploaderProps> = ({
   bitrixTaskId,
   orderNumber
 }) => {
-  const [selectedPhoto, setSelectedPhoto] = useState<string | null>(null);
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [galleryInitialIndex, setGalleryInitialIndex] = useState(0);
   const [isCompressing, setIsCompressing] = useState(false);
   const [uploadStatusText, setUploadStatusText] = useState<string>('');
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
+  const processFiles = async (files: FileList | File[]) => {
     if (!files || files.length === 0) return;
 
     if (photos.length + files.length > maxPhotos) {
@@ -50,23 +53,24 @@ export const InstallerPhotoUploader: React.FC<InstallerPhotoUploaderProps> = ({
 
       for (let i = 0; i < filesToProcess.length; i++) {
         const file = filesToProcess[i];
-        setUploadStatusText(`Обработка фото ${i + 1} из ${filesToProcess.length}...`);
+        setUploadStatusText(`Сжатие фото ${i + 1} из ${filesToProcess.length}...`);
         const compressedBase64 = await compressImage(file);
 
         let yandexResultUrl: string | null = null;
         let bitrixUploaded = false;
 
-        // 1. Upload to Yandex.Disk if target is 'yandex_disk' or 'both'
+        // 1. Upload to Yandex.Disk if token is present
         if ((photoStorageTarget === 'yandex_disk' || photoStorageTarget === 'both') && yandexDiskToken) {
           setUploadStatusText(`Загрузка на Яндекс.Диск (${i + 1}/${filesToProcess.length})...`);
           try {
+            const cleanSubfolder = orderNumber ? `Заказ_${orderNumber.replace(/[^a-zA-Z0-9_\-\u0400-\u04FF]/g, '_')}` : 'Общие_Фото';
             const res = await fetch('/api/yandex-disk/upload', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 token: yandexDiskToken,
                 rootFolder: yandexDiskRootFolder || '/ERP_Фотоотчеты',
-                subFolder: orderNumber ? `Заказ_${orderNumber.replace(/[^a-zA-Z0-9_\-\u0400-\u04FF]/g, '_')}` : 'Общие_Фото',
+                subFolder: cleanSubfolder,
                 fileName: `photo_${Date.now()}_${i + 1}.jpg`,
                 fileBase64: compressedBase64
               })
@@ -77,13 +81,16 @@ export const InstallerPhotoUploader: React.FC<InstallerPhotoUploaderProps> = ({
               if (data.success && data.url) {
                 yandexResultUrl = data.url;
               }
+            } else {
+              const errData = await res.json().catch(() => ({}));
+              console.warn('Yandex Disk upload warning:', errData.error || res.statusText);
             }
           } catch (cloudErr) {
             console.warn('Fallback due to cloud error:', cloudErr);
           }
         }
 
-        // 2. Upload to Bitrix24 if target is 'bitrix24' or 'both'
+        // 2. Upload to Bitrix24 if webhook is present
         if ((photoStorageTarget === 'bitrix24' || photoStorageTarget === 'both') && bitrixWebhookUrl) {
           setUploadStatusText(`Отправка в Битрикс24 (${i + 1}/${filesToProcess.length})...`);
           try {
@@ -121,7 +128,14 @@ export const InstallerPhotoUploader: React.FC<InstallerPhotoUploaderProps> = ({
     } finally {
       setIsCompressing(false);
       setUploadStatusText('');
-      e.target.value = '';
+      if (cameraInputRef.current) cameraInputRef.current.value = '';
+      if (galleryInputRef.current) galleryInputRef.current.value = '';
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      processFiles(e.target.files);
     }
   };
 
@@ -129,6 +143,11 @@ export const InstallerPhotoUploader: React.FC<InstallerPhotoUploaderProps> = ({
     if (readOnly) return;
     const updated = photos.filter((_, i) => i !== index);
     onPhotosChange(updated);
+  };
+
+  const openLightbox = (index: number) => {
+    setGalleryInitialIndex(index);
+    setGalleryOpen(true);
   };
 
   // Helper to compress images on device before converting to base64
@@ -142,8 +161,8 @@ export const InstallerPhotoUploader: React.FC<InstallerPhotoUploaderProps> = ({
           let width = img.width;
           let height = img.height;
 
-          // Max dimension 1280px
-          const maxDim = 1280;
+          // Max dimension 1440px
+          const maxDim = 1440;
           if (width > maxDim || height > maxDim) {
             if (width > height) {
               height = Math.round((height * maxDim) / width);
@@ -164,7 +183,7 @@ export const InstallerPhotoUploader: React.FC<InstallerPhotoUploaderProps> = ({
           }
 
           ctx.drawImage(img, 0, 0, width, height);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.75);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.80);
           resolve(dataUrl);
         };
         img.onerror = reject;
@@ -176,34 +195,36 @@ export const InstallerPhotoUploader: React.FC<InstallerPhotoUploaderProps> = ({
   };
 
   return (
-    <div className="space-y-2">
+    <div className="space-y-2.5">
       <div className="flex items-center justify-between">
         <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
           <Camera className="w-4 h-4 text-indigo-600" />
           <span>{title} ({photos.length}/{maxPhotos})</span>
         </label>
         {isCompressing && (
-          <span className="text-[10px] text-indigo-600 animate-pulse font-bold">
-            {uploadStatusText || 'Обработка фото...'}
+          <span className="text-[10px] text-indigo-600 animate-pulse font-bold flex items-center gap-1">
+            <UploadCloud className="w-3.5 h-3.5" />
+            {uploadStatusText || 'Загрузка фото...'}
           </span>
         )}
       </div>
 
-      {/* Grid of Photos */}
+      {/* Grid of Attached Photos */}
       <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
         {photos.map((photo, idx) => (
-          <div key={idx} className="relative group aspect-square rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 shadow-xs">
+          <div key={idx} className="relative group aspect-square rounded-2xl overflow-hidden border border-slate-200 bg-slate-100 shadow-2xs">
             <img 
               src={photo} 
               alt={`Фото ${idx + 1}`} 
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover cursor-pointer"
+              onClick={() => openLightbox(idx)}
             />
             <div className="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 p-1">
               <button
                 type="button"
-                onClick={() => setSelectedPhoto(photo)}
+                onClick={() => openLightbox(idx)}
                 className="p-1.5 rounded-full bg-white/90 text-slate-800 hover:bg-white transition-colors cursor-pointer"
-                title="Увеличить"
+                title="Увеличить (Слайдер)"
               >
                 <ZoomIn className="w-3.5 h-3.5" />
               </button>
@@ -223,24 +244,55 @@ export const InstallerPhotoUploader: React.FC<InstallerPhotoUploaderProps> = ({
             </span>
           </div>
         ))}
-
-        {/* Upload Button Card */}
-        {!readOnly && photos.length < maxPhotos && (
-          <label className="aspect-square rounded-2xl border-2 border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/50 hover:bg-indigo-50 transition-colors flex flex-col items-center justify-center cursor-pointer text-indigo-600 p-2 text-center">
-            <Camera className="w-5 h-5 mb-1" />
-            <span className="text-[10px] font-bold leading-tight">Добавить фото</span>
-            <input 
-              type="file" 
-              accept="image/*" 
-              capture="environment" 
-              multiple 
-              onChange={handleFileChange}
-              className="hidden" 
-              disabled={isCompressing}
-            />
-          </label>
-        )}
       </div>
+
+      {/* Two Action Buttons for Upload: 1. Camera, 2. Gallery from device */}
+      {!readOnly && photos.length < maxPhotos && (
+        <div className="grid grid-cols-2 gap-2 pt-1">
+          {/* 1. Camera Snap Button */}
+          <button
+            type="button"
+            onClick={() => cameraInputRef.current?.click()}
+            disabled={isCompressing}
+            className="py-2.5 px-3 rounded-2xl border-2 border-dashed border-indigo-300 hover:border-indigo-500 bg-indigo-50/50 hover:bg-indigo-50 text-indigo-700 transition-all flex items-center justify-center gap-2 cursor-pointer text-xs font-bold shadow-2xs active:scale-98"
+          >
+            <Camera className="w-4 h-4 text-indigo-600 shrink-0" />
+            <span className="truncate">Сделать фото</span>
+          </button>
+
+          {/* 2. Gallery / Device files Button */}
+          <button
+            type="button"
+            onClick={() => galleryInputRef.current?.click()}
+            disabled={isCompressing}
+            className="py-2.5 px-3 rounded-2xl border-2 border-dashed border-cyan-300 hover:border-cyan-500 bg-cyan-50/50 hover:bg-cyan-50 text-cyan-800 transition-all flex items-center justify-center gap-2 cursor-pointer text-xs font-bold shadow-2xs active:scale-98"
+          >
+            <ImageIcon className="w-4 h-4 text-cyan-600 shrink-0" />
+            <span className="truncate">Из галереи</span>
+          </button>
+
+          {/* Hidden inputs */}
+          <input 
+            ref={cameraInputRef}
+            type="file" 
+            accept="image/*" 
+            capture="environment" 
+            multiple 
+            onChange={handleFileChange}
+            className="hidden" 
+            disabled={isCompressing}
+          />
+          <input 
+            ref={galleryInputRef}
+            type="file" 
+            accept="image/*" 
+            multiple 
+            onChange={handleFileChange}
+            className="hidden" 
+            disabled={isCompressing}
+          />
+        </div>
+      )}
 
       {photos.length === 0 && readOnly && (
         <div className="text-xs text-slate-400 italic bg-slate-50 p-2.5 rounded-xl border border-slate-200">
@@ -248,24 +300,15 @@ export const InstallerPhotoUploader: React.FC<InstallerPhotoUploaderProps> = ({
         </div>
       )}
 
-      {/* Lightbox Modal */}
-      {selectedPhoto && (
-        <div className="fixed inset-0 z-50 bg-slate-950/90 backdrop-blur-md flex items-center justify-center p-4">
-          <div className="relative max-w-3xl w-full max-h-[90vh] flex flex-col items-center">
-            <button
-              onClick={() => setSelectedPhoto(null)}
-              className="absolute -top-10 right-0 p-2 rounded-full bg-white/20 hover:bg-white/30 text-white transition-colors cursor-pointer"
-            >
-              <X className="w-6 h-6" />
-            </button>
-            <img 
-              src={selectedPhoto} 
-              alt="Увеличенное фото" 
-              className="max-w-full max-h-[80vh] object-contain rounded-2xl border border-slate-700 shadow-2xl"
-            />
-          </div>
-        </div>
-      )}
+      {/* Rich Photo Carousel Lightbox Modal */}
+      <PhotoGalleryModal
+        isOpen={galleryOpen}
+        onClose={() => setGalleryOpen(false)}
+        photos={photos}
+        initialIndex={galleryInitialIndex}
+        title={title}
+        orderNumber={orderNumber}
+      />
     </div>
   );
 };

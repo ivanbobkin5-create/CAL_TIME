@@ -675,6 +675,10 @@ export interface InstallationTask {
   status: 'new' | 'scheduled' | 'in_progress' | 'reclamation' | 'completed' | 'cancelled';
   paymentStatus: 'unpaid' | 'paid' | 'partial';
   paidAmount?: number;
+  isBaseAssemblyPaid?: boolean; // Выплачен ли базовый монтаж сборщику
+  isExtraWorksPaid?: boolean;   // Оплачены ли доп. работы
+  paidAt?: string;              // Дата и время фиксации оплаты
+  paidByEmployeeName?: string;  // Кто провел выплату
   
   scheduledDate?: string;
   scheduledTime?: string;

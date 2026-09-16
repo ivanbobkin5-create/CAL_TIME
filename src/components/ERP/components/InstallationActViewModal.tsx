@@ -184,17 +184,20 @@ export const InstallationActViewModal: React.FC<InstallationActViewModalProps> =
                   </tr>
 
                   {/* Performed Extra Works */}
-                  {task.performedExtraWorks && task.performedExtraWorks.map((ew, i) => (
-                    <tr key={ew.id || i} className="hover:bg-slate-50/50">
-                      <td className="p-3 font-medium text-slate-800">
-                        {ew.name}
-                      </td>
-                      <td className="p-3 text-center text-slate-500">{ew.unit}</td>
-                      <td className="p-3 text-center font-mono font-bold">{ew.quantity}</td>
-                      <td className="p-3 text-right font-mono text-slate-600">{(ew.price || 0).toLocaleString('ru-RU')} ₽</td>
-                      <td className="p-3 text-right font-mono font-bold text-amber-900">{(ew.totalPrice || 0).toLocaleString('ru-RU')} ₽</td>
-                    </tr>
-                  ))}
+                  {task.performedExtraWorks && task.performedExtraWorks.map((ew, i) => {
+                    const tariffPrice = ew.price !== undefined && ew.price > 0 ? ew.price : (ew.rate !== undefined && ew.rate > 0 ? ew.rate : (ew.quantity > 0 ? ew.totalPrice / ew.quantity : 0));
+                    return (
+                      <tr key={ew.id || i} className="hover:bg-slate-50/50">
+                        <td className="p-3 font-medium text-slate-800">
+                          {ew.name}
+                        </td>
+                        <td className="p-3 text-center text-slate-500">{ew.unit}</td>
+                        <td className="p-3 text-center font-mono font-bold">{ew.quantity}</td>
+                        <td className="p-3 text-right font-mono text-slate-700 font-bold">{(tariffPrice || 0).toLocaleString('ru-RU')} ₽</td>
+                        <td className="p-3 text-right font-mono font-bold text-amber-900">{(ew.totalPrice || 0).toLocaleString('ru-RU')} ₽</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
                 <tfoot className="bg-slate-900 text-white font-black">
                   <tr>
