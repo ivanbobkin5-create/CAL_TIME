@@ -18,7 +18,7 @@ import { BazisHardwareImportModal } from "./components/BazisHardwareImportModal"
 import { ProductKitBuilder } from "./components/ProductKitBuilder";
 import { FastenersPriceTable } from "./components/FastenersPriceTable";
 import type { KitItem } from "./components/ProductKitPickerModal";
-import { initBitrix24, sendToBitrix24Deal, type Bitrix24Context } from "./services/bitrix24";
+import { initBitrix24, sendToBitrix24Deal, registerBitrix24Placement, type Bitrix24Context } from "./services/bitrix24";
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
@@ -18414,14 +18414,31 @@ const SettingsView = ({
                       </div>
                     </div>
 
-                    <div className="text-xs text-gray-600 bg-white/80 backdrop-blur-xs p-3.5 rounded-xl border border-gray-100 space-y-2">
-                      <p className="font-bold text-gray-800">Как встроить приложение во вкладку Сделки Битрикс24:</p>
-                      <ol className="list-decimal list-inside space-y-1 text-[11px] text-gray-600">
-                        <li>В Битрикс24 перейдите в раздел <b>Разработчикам &rarr; Другое &rarr; Локальное приложение</b>.</li>
-                        <li>Укажите название (например: <i>Калькулятор Мебели</i>).</li>
-                        <li>В поле <b>URL карточки</b> вставьте адрес приложения: <code className="bg-gray-100 px-1.5 py-0.5 rounded font-mono text-blue-600 select-all">{typeof window !== "undefined" ? window.location.origin : "https://ваше-приложение.ru"}</code></li>
-                        <li>Укажите место размещения: <b>Вкладка карточки сделки (`CRM_DEAL_DETAIL_TAB`)</b> и права доступа (<i>CRM</i>, <i>Пользователи</i>).</li>
+                    <div className="text-xs text-gray-600 bg-white/80 backdrop-blur-xs p-3.5 rounded-xl border border-gray-100 space-y-2.5">
+                      <p className="font-bold text-gray-800">Как создать Локальное приложение в Битрикс24:</p>
+                      <ol className="list-decimal list-inside space-y-1.5 text-[11px] text-gray-600">
+                        <li>Зайдите в Битрикс24 &rarr; <b>Разработчикам &rarr; Другое &rarr; Локальное приложение</b>.</li>
+                        <li>Укажите название: <i>Калькулятор Мебели</i>.</li>
+                        <li>Вставьте адрес приложения: <code className="bg-gray-100 px-1.5 py-0.5 rounded font-mono text-blue-600 select-all">{typeof window !== "undefined" ? window.location.origin : "https://ваше-приложение.ru"}</code></li>
+                        <li>В пункте <b>Права доступа</b> выберите: <b>CRM (`crm`)</b> и <b>Пользователи (`user`)</b>.</li>
+                        <li>Сохраните приложение.</li>
                       </ol>
+
+                      <div className="pt-2 border-t border-gray-200/60 flex items-center justify-between flex-wrap gap-2">
+                        <span className="text-[11px] font-semibold text-gray-600">
+                          Авто-добавление вкладки в карточку Сделки CRM:
+                        </span>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            const res = await registerBitrix24Placement();
+                            showAlert("Битрикс24", res.message);
+                          }}
+                          className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all cursor-pointer"
+                        >
+                          Зарегистрировать вкладку в CRM
+                        </button>
+                      </div>
                     </div>
                   </div>
 

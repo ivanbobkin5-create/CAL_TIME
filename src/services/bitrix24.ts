@@ -187,3 +187,44 @@ export const sendToBitrix24Deal = async ({
     }
   });
 };
+
+export const registerBitrix24Placement = async (): Promise<{ success: boolean; message: string }> => {
+  if (!window.BX24) {
+    return { success: false, message: "Окружение Битрикс24 не найдено. Откройте приложение внутри Битрикс24." };
+  }
+
+  const appUrl = typeof window !== "undefined" ? window.location.origin : "";
+
+  return new Promise((resolve) => {
+    try {
+      window.BX24.callMethod(
+        "placement.bind",
+        {
+          PLACEMENT: "CRM_DEAL_DETAIL_TAB",
+          HANDLER: appUrl,
+          TITLE: "Калькулятор Мебели",
+          DESCRIPTION: "Расчет стоимости мебели и материалов",
+        },
+        (res: any) => {
+          if (res.error()) {
+            console.error("BX24 placement.bind error:", res.error());
+            resolve({
+              success: false,
+              message: `Ошибка регистрации вкладки: ${res.error()}`,
+            });
+          } else {
+            resolve({
+              success: true,
+              message: "Вкладка «Калькулятор Мебели» успешно зарегистрирована в Сделках CRM!",
+            });
+          }
+        }
+      );
+    } catch (err: any) {
+      resolve({
+        success: false,
+        message: err.message || "Ошибка при вызове placement.bind",
+      });
+    }
+  });
+};

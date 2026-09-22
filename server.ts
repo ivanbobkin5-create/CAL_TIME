@@ -80,6 +80,15 @@ async function startServer() {
   app.use(cors());
   app.use(compression());
   app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+  // Handle Bitrix24 POST requests to SPA routes (e.g., POST /) by rewriting method to GET
+  app.use((req, res, next) => {
+    if (req.method === 'POST' && !req.path.startsWith('/api/')) {
+      req.method = 'GET';
+    }
+    next();
+  });
 
   // Disable caching for general API responses, but allow cache validation (no-cache) for db endpoints
   app.use((req, res, next) => {
@@ -3717,7 +3726,7 @@ function transliterate(str: string): string {
     // Check if dist exists for better error reporting in logs
     app.use(express.static(distPath, { index: false }));
     
-    app.get('*', (req, res) => {
+    app.all('*', (req, res) => {
       // API 404s
       if (req.path.startsWith('/api/')) {
         console.warn(`--- [API 404] No route for: ${req.path} ---`);
