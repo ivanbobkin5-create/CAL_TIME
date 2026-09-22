@@ -424,6 +424,79 @@ const ProductImg = ({
   );
 };
 
+const extractProductImages = (product: any): string[] => {
+  if (!product) return [];
+  const list: string[] = [];
+  if (Array.isArray(product.images)) {
+    product.images.forEach((img: any) => {
+      if (typeof img === "string" && img.trim() && !list.includes(img.trim())) {
+        list.push(img.trim());
+      }
+    });
+  }
+  if (typeof product.image === "string" && product.image.trim() && !list.includes(product.image.trim())) {
+    list.push(product.image.trim());
+  }
+  if (typeof product.imageUrl === "string" && product.imageUrl.trim() && !list.includes(product.imageUrl.trim())) {
+    list.push(product.imageUrl.trim());
+  }
+  if (typeof product.photo === "string" && product.photo.trim() && !list.includes(product.photo.trim())) {
+    list.push(product.photo.trim());
+  }
+  if (Array.isArray(product.photos)) {
+    product.photos.forEach((img: any) => {
+      if (typeof img === "string" && img.trim() && !list.includes(img.trim())) {
+        list.push(img.trim());
+      }
+    });
+  }
+  return list;
+};
+
+const loadProductFullImages = async (product: any, companyId?: string): Promise<string[]> => {
+  const direct = extractProductImages(product);
+  if (direct.length > 0) return direct;
+  if (!product?.id) return [];
+
+  const compId = product.companyId || companyId;
+  if (!compId) return [];
+
+  const docKey = `meb_cache:/api/db/doc/companies/${compId}/products/${product.id}`;
+  try {
+    const cachedStr = await idbCache.get(docKey);
+    if (cachedStr) {
+      const parsed = JSON.parse(cachedStr);
+      const cached = extractProductImages(parsed);
+      if (cached.length > 0) return cached;
+    }
+  } catch (_) {}
+
+  try {
+    const lsStr = localStorage.getItem(docKey);
+    if (lsStr) {
+      const parsed = JSON.parse(lsStr);
+      const cached = extractProductImages(parsed);
+      if (cached.length > 0) return cached;
+    }
+  } catch (_) {}
+
+  try {
+    const docUrl = `/api/db/doc/companies/${compId}/products/${product.id}`;
+    const res = await fetch(docUrl);
+    if (res.ok) {
+      const docData = await res.json();
+      if (docData) {
+        try {
+          safeSetLocalStorage(`meb_cache:${docUrl}`, JSON.stringify(docData));
+        } catch (_) {}
+        return extractProductImages(docData);
+      }
+    }
+  } catch (_) {}
+
+  return [];
+};
+
 const hydrateCollectionWithImages = async (url: string, parsedList: any[]): Promise<any[]> => {
   return parsedList;
 };
@@ -6391,6 +6464,8 @@ const normThicknessForConfig = (t: string) => {
 
 const CalculatorView = ({
   handleFileUpload,
+  handlePro100FileUpload,
+  handleBazisFileUpload,
   handleHardwareFileUpload,
   handleCuttingTypeChange,
   cuttingType,
@@ -6456,6 +6531,8 @@ const CalculatorView = ({
 }: {
   customEdgeMapping?: Record<string, { edgeBrand?: string; edgeDecor?: string }>;
   handleFileUpload: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  handlePro100FileUpload?: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  handleBazisFileUpload?: (event: React.ChangeEvent<HTMLInputElement>) => void;
   handleHardwareFileUpload?: (event: React.ChangeEvent<HTMLInputElement>) => void;
   handleCuttingTypeChange: (type: "nesting" | "saw") => void;
   cuttingType: "nesting" | "saw";
@@ -6611,34 +6688,59 @@ const CalculatorView = ({
           </div>
         )}
 
-        <div className="mb-8 p-6 bg-gray-50 rounded-2xl border border-gray-200 grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Загрузить отчет Pro100 (CSV) или Базис-Мебельщик (XLS, XLSX)
-              </label>
+        <div className="mb-8 p-6 bg-gray-50 rounded-2xl border border-gray-200 grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div className="lg:col-span-2 space-y-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Pro100 dedicated button */}
               <div className="relative group">
+                <label className="block text-xs font-bold uppercase tracking-wider text-blue-900 mb-1.5 flex items-center justify-between">
+                  <span>Отчет Pro100</span>
+                  <span className="text-[10px] bg-blue-100 text-blue-800 font-black px-1.5 py-0.5 rounded">.CSV</span>
+                </label>
+                <input
+                  type="file"
+                  accept=".csv,.txt"
+                  onChange={handlePro100FileUpload || handleFileUpload}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                />
+                <div className="border-2 border-dashed border-blue-200 group-hover:border-blue-500 rounded-xl p-4 text-center transition-all bg-white group-hover:bg-blue-50/40 shadow-xs cursor-pointer h-[110px] flex flex-col items-center justify-center">
+                  <FileText className="w-6 h-6 text-blue-500 mx-auto mb-1.5 group-hover:scale-110 transition-transform" />
+                  <span className="text-xs font-bold text-gray-800 block">
+                    Загрузить отчет Pro100
+                  </span>
+                  <span className="text-[10px] text-gray-400 block mt-0.5">
+                    Спецификация деталей (CSV)
+                  </span>
+                </div>
+              </div>
+
+              {/* Bazis dedicated button */}
+              <div className="relative group">
+                <label className="block text-xs font-bold uppercase tracking-wider text-indigo-900 mb-1.5 flex items-center justify-between">
+                  <span>Отчеты Базис-Мебельщик</span>
+                  <span className="text-[10px] bg-indigo-100 text-indigo-800 font-black px-1.5 py-0.5 rounded">XLSX / XLS / CSV</span>
+                </label>
                 <input
                   type="file"
                   multiple
                   accept=".csv,.xls,.xlsx,.txt"
-                  onChange={handleFileUpload}
+                  onChange={handleBazisFileUpload || handleFileUpload}
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                 />
-                <div className="border-2 border-dashed border-gray-300 rounded-xl p-5 text-center group-hover:border-blue-500 transition-colors bg-white shadow-xs">
-                  <Calculator className="w-7 h-7 text-gray-400 mx-auto mb-1.5 group-hover:text-blue-500" />
-                  <span className="text-sm font-medium text-gray-700 block">
-                    Нажмите или перетащите файл(ы) спецификации деталей / фурнитуры
+                <div className="border-2 border-dashed border-indigo-200 group-hover:border-indigo-500 rounded-xl p-4 text-center transition-all bg-white group-hover:bg-indigo-50/40 shadow-xs cursor-pointer h-[110px] flex flex-col items-center justify-center">
+                  <Layers className="w-6 h-6 text-indigo-500 mx-auto mb-1.5 group-hover:scale-110 transition-transform" />
+                  <span className="text-xs font-bold text-gray-800 block">
+                    Загрузить отчеты Базис
                   </span>
-                  <span className="text-[11px] text-gray-400 block mt-0.5">
-                    XLS, XLSX, CSV (Раскрой деталей, ведомость фурнитуры и метизов)
+                  <span className="text-[10px] text-gray-400 block mt-0.5">
+                    Панели + фурнитура (1 или 2 файла)
                   </span>
                 </div>
               </div>
             </div>
 
             {handleHardwareFileUpload && (
-              <div className="pt-1 border-t border-gray-200/60">
+              <div className="pt-2 border-t border-gray-200/60">
                 <label className="block text-xs font-semibold text-gray-600 mb-1.5 flex items-center justify-between">
                   <span>Дополнительный файл фурнитуры и крепежа</span>
                   <span className="text-[10px] text-amber-700 bg-amber-100/80 px-1.5 py-0.5 rounded font-medium">Базис-Мебельщик</span>
@@ -8110,11 +8212,11 @@ const CalculatorView = ({
               </div>
             </section>
 
-            <section className="hidden">
+            <section className="mt-8">
               <div className="flex items-center gap-2 mb-4">
-                <LayoutDashboard className="w-5 h-5 text-gray-400" />
-                <h2 className="text-xl font-semibold text-gray-800">
-                  Результаты раскроя
+                <LayoutDashboard className="w-5 h-5 text-blue-600" />
+                <h2 className="text-xl font-bold text-gray-800">
+                  Результаты и карты раскроя
                 </h2>
               </div>
               {Object.entries(results)
@@ -9496,11 +9598,11 @@ const CompactCatalogMatcher = ({
   }, [catalogProducts, selectedCategory, searchQuery]);
 
   return (
-    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5 justify-end">
+    <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 justify-end max-w-full">
       <select
         value={selectedCategory}
         onChange={(e) => setSelectedCategory(e.target.value)}
-        className="px-2 py-1 bg-white border border-amber-300 rounded-lg text-xs font-semibold text-amber-950 focus:ring-1 focus:ring-amber-500 max-w-[120px] shrink-0"
+        className="px-2 py-1 bg-white border border-amber-300 rounded-lg text-xs font-semibold text-amber-950 focus:ring-1 focus:ring-amber-500 max-w-[110px] truncate shrink-0"
       >
         <option value="Все">Все катег.</option>
         {categories.map((cat) => (
@@ -9513,13 +9615,13 @@ const CompactCatalogMatcher = ({
         placeholder="Поиск..."
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
-        className="px-2 py-1 bg-white border border-amber-300 rounded-lg text-xs text-amber-950 placeholder-amber-400 focus:ring-1 focus:ring-amber-500 w-24 sm:w-28 shrink-0"
+        className="px-2 py-1 bg-white border border-amber-300 rounded-lg text-xs text-amber-950 placeholder-amber-400 focus:ring-1 focus:ring-amber-500 w-20 sm:w-24 shrink-0"
       />
 
       <select
         value={selectedId}
         onChange={(e) => setSelectedId(e.target.value)}
-        className="px-2 py-1 bg-amber-50 border border-amber-300 rounded-lg text-xs font-medium text-amber-950 focus:ring-1 focus:ring-amber-500 max-w-[170px] truncate shrink-0"
+        className="px-2 py-1 bg-amber-50 border border-amber-300 rounded-lg text-xs font-medium text-amber-950 focus:ring-1 focus:ring-amber-500 max-w-[150px] sm:max-w-[200px] truncate shrink"
       >
         <option value="">-- Выбрать ({filteredProducts.length}) --</option>
         {filteredProducts.map((p: any) => (
@@ -12227,7 +12329,7 @@ const SummaryView = ({
       )}
 
       {unmatchedBazisItems && unmatchedBazisItems.length > 0 && (
-        <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-4 shadow-xs mb-6 font-sans">
+        <div className="bg-amber-50/90 border border-amber-200 rounded-2xl p-4 shadow-xs mb-6 font-sans max-w-full overflow-hidden">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-amber-200/60">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-800 flex items-center justify-center font-bold shrink-0">
@@ -12255,16 +12357,16 @@ const SummaryView = ({
             </button>
           </div>
 
-          <div className="mt-3 overflow-x-auto">
+          <div className="mt-3 overflow-x-auto max-w-full">
             <table className="w-full text-left text-xs">
               <thead>
                 <tr className="text-amber-900/70 font-bold uppercase tracking-wider border-b border-amber-200/50">
                   <th className="py-2 px-3">Наименование из файла</th>
-                  <th className="py-2 px-3">Артикул в файле</th>
-                  <th className="py-2 px-3 text-right">Кол-во</th>
-                  <th className="py-2 px-3 text-right">Ед. изм.</th>
-                  <th className="py-2 px-3 text-right">Цена</th>
-                  <th className="py-2 px-3 text-right">Сопоставить с товаром из каталога</th>
+                  <th className="py-2 px-3 w-28">Артикул</th>
+                  <th className="py-2 px-3 text-right w-16">Кол-во</th>
+                  <th className="py-2 px-3 text-right w-14">Ед.</th>
+                  <th className="py-2 px-3 text-right w-20">Цена</th>
+                  <th className="py-2 px-3 text-right">Сопоставить с товаром</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-amber-200/40">
@@ -12278,7 +12380,7 @@ const SummaryView = ({
 
                   return (
                     <tr key={item.id || idx} className="hover:bg-amber-100/40 transition-colors">
-                      <td className="py-2 px-3 font-semibold text-amber-950">
+                      <td className="py-2 px-3 font-semibold text-amber-950 max-w-xs break-words">
                         {item.name}
                         {item.isAmbiguous && (
                           <span className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900">
@@ -12317,24 +12419,24 @@ const SummaryView = ({
         </div>
       )}
 
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[800px]">
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden max-w-full">
+        <div className="overflow-x-auto max-w-full">
+          <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                <th className="px-4 sm:px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider">
                   Материал / Параметры
                 </th>
-                <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider whitespace-nowrap">
+                <th className="px-4 sm:px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider w-36 sm:w-48">
                   Декор
                 </th>
-                <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider text-right whitespace-nowrap">
+                <th className="px-3 sm:px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider text-right w-20 sm:w-28 whitespace-nowrap">
                   Кол-во
                 </th>
-                <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider text-right whitespace-nowrap">
+                <th className="px-3 sm:px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider text-right w-24 sm:w-28 whitespace-nowrap">
                   Цена
                 </th>
-                <th className="px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider text-right whitespace-nowrap">
+                <th className="px-4 sm:px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider text-right w-24 sm:w-32 whitespace-nowrap">
                   Итого
                 </th>
               </tr>
@@ -19757,6 +19859,32 @@ const ReadyMadeProductsView = ({
     selectedFittings: {},
   });
 
+  useEffect(() => {
+    if (!editingProduct || !editingProduct.id) return;
+    let isMounted = true;
+    const compId = editingProduct.companyId || companyData?.id || companyData?.manufacturerId;
+    if (!compId) return;
+
+    loadProductFullImages(editingProduct, compId).then((imgs) => {
+      if (!isMounted || !imgs || imgs.length === 0) return;
+      setNewProduct((prev: any) => {
+        const current = Array.isArray(prev.images) ? prev.images.filter(Boolean) : [];
+        if (current.length === 0) {
+          return { ...prev, images: imgs };
+        }
+        const merged = [...current];
+        imgs.forEach((img) => {
+          if (!merged.includes(img)) merged.push(img);
+        });
+        return { ...prev, images: merged };
+      });
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [editingProduct?.id, companyData?.id, companyData?.manufacturerId]);
+
   const calculatedFittingDemands = useMemo(() => {
     const demandsMap: Record<string, { key: string; label: string; category: string; hingeType?: string; qty: number }> = {};
 
@@ -20284,13 +20412,14 @@ const ReadyMadeProductsView = ({
 
   const handleOpenEdit = (product: any) => {
     setEditingProduct(product);
+    const initialImages = extractProductImages(product);
     setNewProduct({
       ...product,
       name: product.name || "",
       category: product.category || "Кухни",
       purchasePrice: product.purchasePrice || product.price || 0,
       price: product.price || 0,
-      images: product.images || (product.image ? [product.image] : []),
+      images: initialImages,
       article: product.article || "",
       unit: product.unit || "комплект",
       description: product.description || "",
@@ -20316,10 +20445,21 @@ const ReadyMadeProductsView = ({
     });
     setImageUrlInput("");
     setIsAddingProduct(true);
+    if (initialImages.length === 0 && product?.id) {
+      loadProductFullImages(product, companyData?.id || companyData?.manufacturerId).then((loadedImgs) => {
+        if (loadedImgs.length > 0) {
+          setNewProduct((prev: any) => ({
+            ...prev,
+            images: (prev.images && prev.images.length > 0) ? prev.images : loadedImgs,
+          }));
+        }
+      });
+    }
   };
 
   const handleOpenCreateBasedOn = (product: any) => {
     setEditingProduct(null);
+    const initialImages = extractProductImages(product);
     setNewProduct({
       ...product,
       id: undefined,
@@ -20328,7 +20468,7 @@ const ReadyMadeProductsView = ({
       category: product.category || "Кухни",
       purchasePrice: product.purchasePrice || product.price || 0,
       price: product.price || 0,
-      images: product.images || (product.image ? [product.image] : []),
+      images: initialImages,
       unit: product.unit || "комплект",
       description: product.description || "",
       manufacturer: product.manufacturer || "",
@@ -20353,6 +20493,16 @@ const ReadyMadeProductsView = ({
     });
     setImageUrlInput("");
     setIsAddingProduct(true);
+    if (initialImages.length === 0 && product?.id) {
+      loadProductFullImages(product, companyData?.id || companyData?.manufacturerId).then((loadedImgs) => {
+        if (loadedImgs.length > 0) {
+          setNewProduct((prev: any) => ({
+            ...prev,
+            images: (prev.images && prev.images.length > 0) ? prev.images : loadedImgs,
+          }));
+        }
+      });
+    }
   };
 
   const handleSaveReadyMadeProduct = async () => {
@@ -23037,6 +23187,32 @@ const ProductsView = ({
     return () => clearTimeout(timer);
   }, [newProduct.manufacturerArticle, newProduct.article, newProduct.name, editingProduct, checkDuplicates]);
 
+  useEffect(() => {
+    if (!editingProduct || !editingProduct.id) return;
+    let isMounted = true;
+    const compId = editingProduct.companyId || companyData?.id || companyData?.manufacturerId;
+    if (!compId) return;
+
+    loadProductFullImages(editingProduct, compId).then((imgs) => {
+      if (!isMounted || !imgs || imgs.length === 0) return;
+      setNewProduct((prev: any) => {
+        const current = Array.isArray(prev.images) ? prev.images.filter(Boolean) : [];
+        if (current.length === 0) {
+          return { ...prev, images: imgs };
+        }
+        const merged = [...current];
+        imgs.forEach((img) => {
+          if (!merged.includes(img)) merged.push(img);
+        });
+        return { ...prev, images: merged };
+      });
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [editingProduct?.id, companyData?.id, companyData?.manufacturerId]);
+
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files) {
@@ -23381,12 +23557,13 @@ const ProductsView = ({
 
   const handleEditProduct = (product: any) => {
     setEditingProduct(product);
+    const initialImages = extractProductImages(product);
     setNewProduct({
       name: product.name || "",
       category: product.category || displayProductCategories[0] || productCategories[0],
       purchasePrice: product.purchasePrice || 0,
       price: product.price || 0,
-      images: product.images || (product.image ? [product.image] : []),
+      images: initialImages,
       article: product.article || "",
       analogs: product.analogs || [],
       vendorArticle: product.vendorArticle || "",
@@ -23486,17 +23663,28 @@ const ProductsView = ({
       brand: product.brand || "",
       variations: product.variations || [],
     });
+    if (initialImages.length === 0 && product?.id) {
+      loadProductFullImages(product, companyData?.id || companyData?.manufacturerId).then((loadedImgs) => {
+        if (loadedImgs.length > 0) {
+          setNewProduct((prev: any) => ({
+            ...prev,
+            images: (prev.images && prev.images.length > 0) ? prev.images : loadedImgs,
+          }));
+        }
+      });
+    }
     console.log("handleAddNewEvent fired, setting isAddingProduct to true"); setIsAddingProduct(true);
   };
 
   const handleCreateBasedOn = (product: any) => {
     setEditingProduct(null);
+    const initialImages = extractProductImages(product);
     setNewProduct({
       name: product.name ? `${product.name} (копия)` : "",
       category: product.category || displayProductCategories[0] || productCategories[0],
       purchasePrice: product.purchasePrice || 0,
       price: product.price || 0,
-      images: product.images || (product.image ? [product.image] : []),
+      images: initialImages,
       article: product.article ? `${product.article}_копия` : "",
       analogs: product.analogs || [],
       vendorArticle: product.vendorArticle || "",
@@ -23596,6 +23784,16 @@ const ProductsView = ({
       brand: product.brand || "",
       variations: product.variations || [],
     });
+    if (initialImages.length === 0 && product?.id) {
+      loadProductFullImages(product, companyData?.id || companyData?.manufacturerId).then((loadedImgs) => {
+        if (loadedImgs.length > 0) {
+          setNewProduct((prev: any) => ({
+            ...prev,
+            images: (prev.images && prev.images.length > 0) ? prev.images : loadedImgs,
+          }));
+        }
+      });
+    }
     console.log("handleAddNewEvent fired, setting isAddingProduct to true"); setIsAddingProduct(true);
   };
 
@@ -30677,17 +30875,19 @@ const ProductsView = ({
                       Фотографии товара
                     </label>
                     <div className="grid grid-cols-3 gap-3 mb-4">
-                      {newProduct.images.map((img, idx) => (
+                      {(Array.isArray(newProduct.images) ? newProduct.images.filter(Boolean) : []).map((img: string, idx: number) => (
                         <div
                           key={idx}
                           className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 group"
                         >
                           <img
                             src={img}
+                            alt={`фото ${idx + 1}`}
                             className="w-full h-full object-cover"
                             referrerPolicy="no-referrer"
                           />
                           <button
+                            type="button"
                             onClick={() => removeImage(idx)}
                             className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
                           >
@@ -30695,7 +30895,7 @@ const ProductsView = ({
                           </button>
                         </div>
                       ))}
-                      {newProduct.images.length < 6 && (
+                      {(!newProduct.images || newProduct.images.length < 6) && (
                         <label className="aspect-square rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-all text-gray-400">
                           <Upload className="w-6 h-6 mb-1" />
                           <span className="text-[10px] font-bold uppercase tracking-wider">
@@ -36604,6 +36804,53 @@ export default function App() {
     setActiveTab("calculator");
   };
 
+  const handlePro100FileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    event.target.value = "";
+
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const buffer = e.target?.result as ArrayBuffer;
+      const decodedResult = await smartDecodeFile(buffer);
+      const decodedText = decodedResult.text;
+
+      let delimiter = "";
+      const firstLines = decodedText.split("\n").slice(0, 5);
+      const semiCount = (firstLines.join("").match(/;/g) || []).length;
+      const commaCount = (firstLines.join("").match(/,/g) || []).length;
+      if (semiCount > commaCount && semiCount > 3) {
+        delimiter = ";";
+      }
+
+      Papa.parse(decodedText, {
+        skipEmptyLines: true,
+        header: false,
+        delimiter,
+        complete: (results) => {
+          const rawData = results.data as string[][];
+          if (!rawData || rawData.length === 0) {
+            showAlert("Ошибка чтения", "Файл Pro100 пуст или поврежден");
+            return;
+          }
+          parsePro100Report(rawData, file.name);
+          setActiveTab("calculator");
+        },
+        error: (error) => {
+          showAlert(
+            "Ошибка чтения",
+            "Произошла ошибка при обработке файла Pro100: " + error.message,
+          );
+        },
+      });
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleBazisFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    handleFileUpload(event);
+  };
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
     if (files.length === 0) return;
@@ -39562,6 +39809,9 @@ export default function App() {
               customEdgeMapping={customEdgeMapping}
               getAvailableThicknessesForBrand={getAvailableThicknessesForBrand}
               handleFileUpload={handleFileUpload}
+              handlePro100FileUpload={handlePro100FileUpload}
+              handleBazisFileUpload={handleBazisFileUpload}
+              handleHardwareFileUpload={handleHardwareFileUpload}
               handleCuttingTypeChange={handleCuttingTypeChange}
               cuttingType={cuttingType}
               kerf={kerf}
