@@ -493,6 +493,70 @@ const pruneCollectionForCache = (key: string, valueStr: string): string => {
   return valueStr;
 };
 
+const serializeEssentialUser = (u: any) => {
+  if (!u) return "";
+  try {
+    const essential = {
+      uid: String(u.uid || ""),
+      email: String(u.email || ""),
+      displayName: String(u.displayName || ""),
+      role: u.role || "manager",
+      accessLevel: u.accessLevel || u.role || "manager",
+      companyId: String(u.companyId || ""),
+      isRoot: !!u.isRoot,
+      isProcurementManager: !!u.isProcurementManager,
+    };
+    return JSON.stringify(essential);
+  } catch (_) {
+    return "";
+  }
+};
+
+const serializeEssentialCompany = (c: any) => {
+  if (!c) return "";
+  try {
+    const essential = {
+      id: String(c.id || ""),
+      name: String(c.name || ""),
+      type: String(c.type || ""),
+      city: String(c.city || ""),
+      ownerUid: String(c.ownerUid || ""),
+      procurementAllowed: c.procurementAllowed,
+      procurementEnabled: c.procurementEnabled,
+      productionFormat: c.productionFormat,
+    };
+    return JSON.stringify(essential);
+  } catch (_) {
+    return "";
+  }
+};
+
+const safeAuthStorageSet = (key: string, value: string) => {
+  if (!key || typeof window === "undefined") return;
+  try {
+    localStorage.setItem(key, value);
+  } catch (err) {
+    console.warn("Storage quota exceeded when setting auth key:", key, err);
+    try {
+      const cacheEntries: { key: string; size: number }[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith("meb_cache:")) {
+          const val = localStorage.getItem(k);
+          cacheEntries.push({ key: k, size: val ? val.length : 0 });
+        }
+      }
+      cacheEntries.sort((a, b) => b.size - a.size);
+      for (const entry of cacheEntries) {
+        localStorage.removeItem(entry.key);
+      }
+      localStorage.setItem(key, value);
+    } catch (cleanupErr) {
+      console.warn("Could not save auth key to localStorage even after clearing caches:", cleanupErr);
+    }
+  }
+};
+
 const safeSetLocalStorage = async (key: string, value: string) => {
   try {
     // 1. Store 100% complete raw data in IndexedDB (has virtually no quota limits)
@@ -22629,7 +22693,9 @@ const ProductsView = ({
     if (selectedProductForDetail && selectedProductForDetail.id) {
       setProductViews((prev) => {
         const next = { ...prev, [selectedProductForDetail.id]: (prev[selectedProductForDetail.id] || 0) + 1 };
-        localStorage.setItem("product_views_count", JSON.stringify(next));
+        try {
+          localStorage.setItem("product_views_count", JSON.stringify(next));
+        } catch (_) {}
         return next;
       });
     }
@@ -32542,16 +32608,58 @@ const SortableVariationItem = ({ v, idx, children, ...props }: any) => {
   );
 };
 
+const getInitialAuthState = () => {
+  if (typeof window === "undefined") return { isAuth: false, user: null, role: null, comp: null };
+  try {
+    const uid = localStorage.getItem("auth_uid");
+    const userStr = localStorage.getItem("auth_user");
+    const compStr = localStorage.getItem("auth_company");
+    if (uid) {
+      let user: any = null;
+      if (userStr) {
+        try {
+          user = JSON.parse(userStr);
+        } catch (_) {}
+      }
+      if (!user) {
+        user = { uid, email: localStorage.getItem("auth_email") || "" };
+      }
+      let comp: any = null;
+      if (compStr) {
+        try {
+          comp = JSON.parse(compStr);
+        } catch (_) {}
+      }
+      const rawRole = user.accessLevel || user.role || "manager";
+      const role = ["admin", "supervisor", "manager", "worker"].includes(rawRole)
+        ? rawRole
+        : rawRole.toLowerCase().includes("админ")
+        ? "admin"
+        : rawRole.toLowerCase().includes("руковод")
+        ? "supervisor"
+        : rawRole.toLowerCase().includes("сотрудник")
+        ? "worker"
+        : "manager";
+      auth.currentUser = { uid, email: user.email || localStorage.getItem("auth_email"), ...user };
+      return { isAuth: true, user: { ...user, uid }, role, comp };
+    }
+  } catch (e) {}
+  return { isAuth: false, user: null, role: null, comp: null };
+};
+
 export default function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const initialAuth = useMemo(() => getInitialAuthState(), []);
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => initialAuth.isAuth);
   
   const [authMode, setAuthMode] = useState<"login" | "register" | "landing">(
     "landing",
   );
   const [userRole, setUserRole] = useState<
     "admin" | "supervisor" | "manager" | "worker" | null
-  >(null);
-  const [userData, setUserData] = useState<any>(null);
+  >(() => initialAuth.role as any);
+  const [userData, setUserData] = useState<any>(() => initialAuth.user);
+  const [companyData, setCompanyData] = useState<any>(() => initialAuth.comp);
+  const [isLoading, setIsLoading] = useState<boolean>(() => !initialAuth.isAuth);
 
   const [isModularProgram, setIsModularProgram] = useState<boolean>(false);
   const [modularAsked, setModularAsked] = useState<boolean>(false);
@@ -32603,8 +32711,6 @@ export default function App() {
     });
   };
 
-  const [companyData, setCompanyData] = useState<any>(null);
-
   useEffect(() => {
     if (!selectedProductForDetail || !selectedProductForDetail.id) return;
     if (selectedProductForDetail.image || (selectedProductForDetail.images && selectedProductForDetail.images.length > 0)) return;
@@ -32635,7 +32741,6 @@ export default function App() {
     });
   }, [selectedProductForDetail?.id, companyData?.id, companyData?.manufacturerId]);
   const isProcurementAllowed = companyData?.procurementAllowed !== undefined ? !!companyData.procurementAllowed : !!companyData?.procurementEnabled;
-  const [isLoading, setIsLoading] = useState(true);
   const [preloadProgress, setPreloadProgress] = useState<number>(0);
   const [isPreloaded, setIsPreloaded] = useState(false);
   const [preloadStatus, setPreloadStatus] = useState<string>("Инициализация...");
@@ -33269,65 +33374,78 @@ export default function App() {
     }, 4000);
 
     const restoreAuth = async () => {
-      if (savedUid && savedEmail) {
-        setIsLoading(true);
+      if (savedUid) {
         try {
           const userRes = await fetch(`/api/db/doc/users/${savedUid}`);
           if (userRes.ok) {
             const docData = await userRes.json();
-            if (!docData || !docData.uid) {
-              console.warn("Invalid user profile document retrieved in restoreAuth:", docData);
-              // Clean up localStorage to prevent loop and let them login with a real account
-              localStorage.removeItem('auth_uid');
-              localStorage.removeItem('auth_email');
-              localStorage.removeItem('auth_token');
-              setIsLoading(false);
-              return;
-            }
-            setUserData(docData);
-            {
-            const rawRole = docData.accessLevel || docData.role || 'manager';
-            setUserRole(['admin', 'supervisor', 'manager', 'worker'].includes(rawRole) ? rawRole : (
-              rawRole.toLowerCase().includes('админ') ? 'admin' :
-              rawRole.toLowerCase().includes('руковод') ? 'supervisor' : 
-              rawRole.toLowerCase().includes('сотрудник') ? 'worker' : 'manager'
-            ));
-          }
-            auth.currentUser = { uid: savedUid, email: savedEmail, ...docData };
-            
-            if (docData.companyId) {
-              let compData: any = null;
-              const compRes = await fetch(`/api/db/doc/companies/${docData.companyId}`);
-              if (compRes.ok) {
-                compData = await compRes.json();
-                setCompanyData({ id: docData.companyId, ...compData });
-              }
-              const empRes = await fetch(`/api/db/doc/companies/${docData.companyId}/employees/${savedUid}`);
-              if (empRes.ok) {
-                const empData = await empRes.json();
-                setUserData(prev => ({ 
-                  ...prev, 
-                  isProcurementManager: empData.isProcurementManager,
-                  accessLevel: empData.accessLevel || prev?.accessLevel
-                }));
-                if (empData.accessLevel) {
-                  setUserRole(empData.accessLevel);
+            if (docData && (docData.uid || docData.email || docData.companyId)) {
+              const fullUserData = { uid: savedUid, email: savedEmail || docData.email || "", ...docData };
+              setUserData(fullUserData);
+              safeAuthStorageSet('auth_user', serializeEssentialUser(fullUserData));
+              
+              const rawRole = docData.accessLevel || docData.role || 'manager';
+              const resolvedRole = ['admin', 'supervisor', 'manager', 'worker'].includes(rawRole) ? rawRole : (
+                rawRole.toLowerCase().includes('админ') ? 'admin' :
+                rawRole.toLowerCase().includes('руковод') ? 'supervisor' : 
+                rawRole.toLowerCase().includes('сотрудник') ? 'worker' : 'manager'
+              );
+              setUserRole(resolvedRole);
+              auth.currentUser = fullUserData;
+              
+              if (docData.companyId) {
+                let compData: any = null;
+                try {
+                  const compRes = await fetch(`/api/db/doc/companies/${docData.companyId}`);
+                  if (compRes.ok) {
+                    compData = await compRes.json();
+                    const fullCompData = { id: docData.companyId, ...compData };
+                    setCompanyData(fullCompData);
+                    safeAuthStorageSet('auth_company', serializeEssentialCompany(fullCompData));
+                  }
+                } catch (cErr) {
+                  console.warn("Could not refresh company data:", cErr);
                 }
+
+                try {
+                  const empRes = await fetch(`/api/db/doc/companies/${docData.companyId}/employees/${savedUid}`);
+                  if (empRes.ok) {
+                    const empData = await empRes.json();
+                    setUserData(prev => ({ 
+                      ...prev, 
+                      isProcurementManager: empData.isProcurementManager,
+                      accessLevel: empData.accessLevel || prev?.accessLevel
+                    }));
+                    if (empData.accessLevel) {
+                      setUserRole(empData.accessLevel);
+                    }
+                  }
+                } catch (eErr) {
+                  console.warn("Could not refresh employee data:", eErr);
+                }
+                
+                // Preload all settings and catalog before unlocking the app
+                await preloadAllData(docData.companyId, savedUid, { ...docData, ...compData });
               }
               
-              // Preload all settings and catalog before unlocking the app
-              await preloadAllData(docData.companyId, savedUid, { ...docData, ...compData });
+              if (docData.isRoot || docData.email === 'lk.ivanbobkin@gmail.com') {
+                setIsAppAdmin(true);
+                setUserRole('admin');
+              }
+              
+              setIsAuthenticated(true);
             }
-            
-            if (docData.isRoot || docData.email === 'lk.ivanbobkin@gmail.com') {
-              setIsAppAdmin(true);
-              setUserRole('admin');
-            }
-            
-            setIsAuthenticated(true);
+          } else if (userRes.status === 401) {
+            // Explicitly unauthorized - clean up
+            localStorage.removeItem('auth_uid');
+            localStorage.removeItem('auth_email');
+            localStorage.removeItem('auth_user');
+            localStorage.removeItem('auth_company');
+            localStorage.removeItem('auth_token');
+            setIsAuthenticated(false);
           }
         } catch (e) {
-          console.error("Failed to restore auth:", e);
+          console.warn("Network error during restoreAuth, using cached session:", e);
         } finally {
           clearTimeout(maxLoadingTimer);
           setIsLoading(false);
@@ -33430,11 +33548,12 @@ export default function App() {
           }
          auth.currentUser = { uid: authUser.uid, email: authUser.email, ...docData };
          
+         let compData: any = null;
          // Fetch company data to ensure correct account type is loaded
          if (docData.companyId) {
            const compRes = await fetch(`/api/db/doc/companies/${docData.companyId}`);
            if (compRes.ok) {
-             const compData = await compRes.json();
+             compData = await compRes.json();
              setCompanyData({ id: docData.companyId, ...compData });
              console.log("Loaded company data:", compData);
            }
@@ -33456,9 +33575,13 @@ export default function App() {
          }
 
          // Persistence
-         localStorage.setItem('auth_uid', authUser.uid);
-         localStorage.setItem('auth_email', authUser.email);
-         if (authUser.token) localStorage.setItem('auth_token', authUser.token);
+         safeAuthStorageSet('auth_uid', authUser.uid);
+         safeAuthStorageSet('auth_email', authUser.email);
+         safeAuthStorageSet('auth_user', serializeEssentialUser({ uid: authUser.uid, email: authUser.email, ...docData }));
+         if (compData) {
+           safeAuthStorageSet('auth_company', serializeEssentialCompany({ id: docData.companyId, ...compData }));
+         }
+         if (authUser.token) safeAuthStorageSet('auth_token', authUser.token);
          
          // Set global admin status
          if (docData.isRoot || docData.email === 'lk.ivanbobkin@gmail.com') {
@@ -33564,20 +33687,26 @@ export default function App() {
         return; // Don't log in yet
       }
 
-      setCompanyData({
+      const compData = {
         id: companyId,
         name: data.companyName,
         type: data.companyType,
         city: data.city,
         ownerUid: user.uid,
-      });
-      setUserData({
+      };
+      const usrData = {
         uid: user.uid,
         email: data.adminEmail,
         displayName: data.adminName,
         role: "admin",
         companyId: companyId,
-      });
+      };
+      setCompanyData(compData);
+      setUserData(usrData);
+      safeAuthStorageSet('auth_uid', user.uid);
+      safeAuthStorageSet('auth_email', data.adminEmail);
+      safeAuthStorageSet('auth_user', serializeEssentialUser(usrData));
+      safeAuthStorageSet('auth_company', serializeEssentialCompany(compData));
       setUserRole("admin");
       setIsAuthenticated(true);
       showAlert("Успех", "Регистрация прошла успешно.");
@@ -33594,6 +33723,8 @@ export default function App() {
       localStorage.removeItem('auth_uid');
       localStorage.removeItem('auth_email');
       localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_user');
+      localStorage.removeItem('auth_company');
       localStorage.removeItem('meb_pending_writes');
       Object.keys(localStorage).forEach((key) => {
         if (key.startsWith('meb_cache:')) {
@@ -33637,7 +33768,9 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem("mebcalc_autosave", autoSaveEnabled.toString());
+    try {
+      localStorage.setItem("mebcalc_autosave", autoSaveEnabled.toString());
+    } catch (_) {}
   }, [autoSaveEnabled]);
   const [currentSummaryRows, setCurrentSummaryRows] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<
@@ -34306,7 +34439,7 @@ export default function App() {
       categoryType: string;
       matchedProduct?: any;
     }>;
-    sourceType: "panels_report" | "hardware_report";
+    sourceType: "panels_report" | "hardware_report" | "combined_report";
   } | null>(null);
 
   const [companyInfo, setCompanyInfoRaw] = useState<any>({
@@ -34685,12 +34818,15 @@ export default function App() {
       if (
         rowStr.includes("готовая деталь_длина") ||
         rowStr.includes("готовая деталь [l]") ||
+        rowStr.includes("готовая деталь [w]") ||
         rowStr.includes("заготовка_длина[l]") ||
+        rowStr.includes("заготовка_длина") ||
         rowStr.includes("деталь без облиц") ||
         rowStr.includes("облицовка[llww]") ||
         rowStr.includes("толщина с учетом облицовки") ||
         (rowStr.includes("обозначение[l1]") && rowStr.includes("материал")) ||
-        (rowStr.includes("обозначение[w1]") && rowStr.includes("обозначение[w2]"))
+        (rowStr.includes("обозначение[w1]") && rowStr.includes("обозначение[w2]")) ||
+        (rowStr.includes("длина") && rowStr.includes("ширина") && (rowStr.includes("кромк") || rowStr.includes("толщин") || rowStr.includes("материал")))
       ) {
         return true;
       }
@@ -34701,7 +34837,7 @@ export default function App() {
   const isBazisHardwareReport = (data: any[][]) => {
     if (!data || data.length === 0) return false;
     if (isBazisPanelsReport(data)) return false;
-    for (let i = 0; i < Math.min(data.length, 25); i++) {
+    for (let i = 0; i < Math.min(data.length, 30); i++) {
       const row = data[i] || [];
       const rowStr = row.map((c) => String(c).toLowerCase()).join(" ");
       if (
@@ -34709,20 +34845,25 @@ export default function App() {
         rowStr.includes("обозн. в проекте") ||
         rowStr.includes("пользовательский") ||
         rowStr.includes("ведомость фурнитуры") ||
-        rowStr.includes("ведомость крепежа")
+        rowStr.includes("ведомость крепежа") ||
+        rowStr.includes("ведомость") ||
+        rowStr.includes("фурнитур") ||
+        rowStr.includes("крепеж") ||
+        rowStr.includes("метиз") ||
+        rowStr.includes("петл") ||
+        rowStr.includes("направляющ") ||
+        rowStr.includes("ручк") ||
+        rowStr.includes("полкодержател") ||
+        rowStr.includes("саморез") ||
+        rowStr.includes("стяжк")
       ) {
         return true;
       }
-    }
-    if (data.length > 2) {
-      for (let i = 0; i < Math.min(data.length, 5); i++) {
-        const row = data[i] || [];
-        const col4 = String(row[4] || "").toLowerCase();
-        const col6 = String(row[6] || "").toLowerCase();
-        const col7 = String(row[7] || "").toLowerCase();
-        if (col4.includes("наименование") && (col6.includes("артикул") || col6.includes("код")) && (col7.includes("кол-во") || col7.includes("количество"))) {
-          return true;
-        }
+      if (
+        rowStr.includes("наименование") &&
+        (rowStr.includes("артикул") || rowStr.includes("код") || rowStr.includes("кол-во") || rowStr.includes("количество") || rowStr.includes("ед.") || rowStr.includes("цена"))
+      ) {
+        return true;
       }
     }
     return false;
@@ -34754,8 +34895,197 @@ export default function App() {
     return isBazisPanelsReport(data) || isBazisHardwareReport(data) || isBazisLegacyReport(data);
   };
 
-  const parseBazisPanelsReport = (rawData: any[][], fileName: string) => {
-    if (!rawData || rawData.length === 0) return false;
+  const extractBazisHardwareItems = (rawData: any[][], fileName: string) => {
+    if (!rawData || rawData.length === 0) return [];
+
+    let colName = -1;
+    let colArticle = -1;
+    let colQty = -1;
+    let colUnit = -1;
+    let colPrice = -1;
+    let headerRowIdx = -1;
+
+    for (let i = 0; i < Math.min(rawData.length, 30); i++) {
+      const row = rawData[i] || [];
+      const rowStr = row.map((c) => String(c).toLowerCase()).join(" ");
+      if (
+        rowStr.includes("наименование") ||
+        rowStr.includes("номенклатура") ||
+        rowStr.includes("материал") ||
+        rowStr.includes("код детали") ||
+        rowStr.includes("ведомость") ||
+        (rowStr.includes("артикул") && (rowStr.includes("кол") || rowStr.includes("цена") || rowStr.includes("ед")))
+      ) {
+        headerRowIdx = i;
+        row.forEach((cell: any, cIdx: number) => {
+          const h = String(cell || "").toLowerCase().trim();
+          if (h.includes("наименование") || h.includes("номенклатура") || h.includes("название") || (h === "материал" && colName === -1)) {
+            colName = cIdx;
+          } else if (h.includes("артикул") || h.includes("код детали") || (h.includes("код") && !h.includes("штрих") && !h.includes("детали_"))) {
+            colArticle = cIdx;
+          } else if (h.includes("кол-во") || h.includes("количество") || h.includes("расчет") || h.includes("расчёт") || h.includes("в заказе") || h.includes("к-во") || h === "кол.") {
+            colQty = cIdx;
+          } else if (h.includes("ед.") || h.includes("единица") || h.includes("изм")) {
+            colUnit = cIdx;
+          } else if (h.includes("цена") || h.includes("стоимость") || h.includes("сумма")) {
+            colPrice = cIdx;
+          }
+        });
+        break;
+      }
+    }
+
+    const parseNum = (val: any): number => {
+      if (val === undefined || val === null) return 0;
+      if (typeof val === "number") return val;
+      const s = String(val).replace(/\s+/g, "").replace(",", ".");
+      const p = parseFloat(s);
+      return isNaN(p) ? 0 : p;
+    };
+
+    // Default column fallback if not found in header
+    if (colName === -1) {
+      let bestNameCol = 0;
+      let maxLen = 0;
+      for (let r = 0; r < Math.min(rawData.length, 10); r++) {
+        const row = rawData[r] || [];
+        row.forEach((cell: any, cIdx: number) => {
+          const s = String(cell || "").trim();
+          if (isNaN(Number(s.replace(",", "."))) && s.length > maxLen) {
+            maxLen = s.length;
+            bestNameCol = cIdx;
+          }
+        });
+      }
+      colName = bestNameCol;
+    }
+
+    if (colQty === -1) {
+      for (let r = (headerRowIdx !== -1 ? headerRowIdx + 1 : 0); r < Math.min(rawData.length, 10); r++) {
+        const row = rawData[r] || [];
+        row.forEach((cell: any, cIdx: number) => {
+          if (cIdx !== colName && cIdx !== colArticle) {
+            const num = parseNum(cell);
+            if (num > 0 && num < 100000 && colQty === -1) {
+              colQty = cIdx;
+            }
+          }
+        });
+      }
+      if (colQty === -1) colQty = colName === 0 ? 1 : 2;
+    }
+
+    if (colArticle === -1 && colName !== 0 && colQty !== 0) {
+      colArticle = 0;
+    }
+
+    const startIdx = headerRowIdx !== -1 ? headerRowIdx + 1 : 0;
+
+    const isTechnicalRow = (str: string) => {
+      const s = str.toLowerCase().trim();
+      return (
+        s.startsWith("ведомость") ||
+        s.startsWith("спецификация") ||
+        s.startsWith("итого") ||
+        s.startsWith("всего") ||
+        s.startsWith("разраб") ||
+        s.startsWith("пров.") ||
+        s.startsWith("утв.") ||
+        s === "наименование" ||
+        s === "материал" ||
+        s === "артикул"
+      );
+    };
+
+    const items: Array<{
+      id: string;
+      name: string;
+      rawPartName?: string;
+      article: string;
+      qty: number;
+      unit: string;
+      price: number;
+      checked: boolean;
+      isFastener: boolean;
+      categoryType: string;
+      matchedProduct?: any;
+    }> = [];
+
+    for (let i = startIdx; i < rawData.length; i++) {
+      const row = rawData[i];
+      if (!row || !Array.isArray(row) || row.length === 0) continue;
+
+      const rawName = colName !== -1 ? String(row[colName] || "").trim() : "";
+      const article = colArticle !== -1 ? String(row[colArticle] || "").trim() : "";
+      if (!rawName && !article) continue;
+      if (isTechnicalRow(rawName) || (article && isTechnicalRow(article))) continue;
+
+      const qty = colQty !== -1 ? parseNum(row[colQty]) || 1 : 1;
+      const unit = colUnit !== -1 ? String(row[colUnit] || "шт").trim() || "шт" : "шт";
+      const price = colPrice !== -1 ? parseNum(row[colPrice]) || 0 : 0;
+
+      const hasPolko = rawName.toLowerCase().includes("полкодержател");
+      const isFast = hasPolko || isFastener(rawName) || rawName.toLowerCase().includes("метиз");
+      const isWorktop = /столешниц|стеновая\s+панель|скинали|постформинг/i.test(rawName);
+      const isPlinth = /цокол/i.test(rawName);
+      const isProfile = /профил|лента/i.test(rawName);
+      const isHinge = /петл/i.test(rawName);
+      const isSlide = /направляющ/i.test(rawName);
+
+      const cat = isWorktop ? "Столешницы" : isPlinth ? "Цоколь" : isProfile ? "Профиль" : isHinge ? "Петли" : isSlide ? "Направляющие" : isFast ? "Метизы" : "Фурнитура";
+
+      let matchedProduct: any = undefined;
+      if (catalogProducts && catalogProducts.length > 0) {
+        const normArt = article.toLowerCase().trim();
+        const normName = rawName.toLowerCase().trim();
+        const isValidArt = normArt && normArt !== "-" && normArt !== "—" && normArt !== "нет" && normArt !== "none" && normArt !== "0";
+
+        matchedProduct = catalogProducts.find((p: any) => {
+          const manualSkus = [
+            ...(Array.isArray(p.skuList) ? p.skuList : []),
+            ...(Array.isArray(p.accountingSkus) ? p.accountingSkus : []),
+          ].map((s: any) => String(s).trim().toLowerCase()).filter(Boolean);
+
+          const pArt = String(p.article || p.sku || "").toLowerCase().trim();
+          const pName = String(p.name || "").toLowerCase().trim();
+
+          // 1. Explicit user SKU/alias bindings
+          if (manualSkus.length > 0) {
+            if (isValidArt && manualSkus.includes(normArt)) return true;
+            if (normName && manualSkus.includes(normName)) return true;
+          }
+
+          // 2. Strict exact Article match
+          if (isValidArt && pArt && normArt === pArt) return true;
+
+          // 3. Strict exact Name match
+          if (normName && pName && normName === pName) return true;
+
+          return false;
+        });
+      }
+
+      const matchedPrice = matchedProduct?.price || (prices ? (prices[rawName] || (article ? prices[article] : 0)) : 0) || price || 0;
+
+      items.push({
+        id: `bazis-item-${Math.random().toString(36).substring(2, 9)}`,
+        name: rawName || article,
+        article,
+        qty: qty > 0 ? qty : 1,
+        unit,
+        price: matchedPrice,
+        checked: true,
+        isFastener: isFast,
+        categoryType: cat,
+        matchedProduct,
+      });
+    }
+
+    return items;
+  };
+
+  const parseBazisPanelsReport = (rawData: any[][], fileName: string, options?: { skipHardwareModal?: boolean }) => {
+    if (!rawData || rawData.length === 0) return [];
 
     let colPartName = 4;
     let colMaterial = 6;
@@ -35012,6 +35342,7 @@ export default function App() {
           const normName = displayName.toLowerCase().trim();
           const normPart = rawPartClean.toLowerCase().trim();
           const normMat = rawMatClean.toLowerCase().trim();
+          const isValidArt = normArt && normArt !== "-" && normArt !== "—" && normArt !== "нет" && normArt !== "none" && normArt !== "0";
 
           matchedProduct = catalogProducts.find((p: any) => {
             const manualSkus = [
@@ -35022,17 +35353,20 @@ export default function App() {
             const pArt = String(p.article || p.sku || "").toLowerCase().trim();
             const pName = String(p.name || "").toLowerCase().trim();
 
+            // 1. Explicit user SKU/alias bindings
             if (manualSkus.length > 0) {
-              if (normArt && manualSkus.includes(normArt)) return true;
+              if (isValidArt && manualSkus.includes(normArt)) return true;
               if (normName && manualSkus.includes(normName)) return true;
               if (normMat && manualSkus.includes(normMat)) return true;
               if (normPart && manualSkus.includes(normPart)) return true;
             }
 
-            if (normArt && pArt && (normArt === pArt || pArt.includes(normArt) || normArt.includes(pArt))) return true;
-            if (normName && pName && (normName === pName || pName.includes(normName) || normName.includes(pName))) return true;
-            if (normMat && pName && (normMat === pName || pName.includes(normMat) || normMat.includes(pName))) return true;
-            if (normPart && pName && (normPart === pName || pName.includes(normPart) || normPart.includes(pName))) return true;
+            // 2. Strict exact Article match from column 8 / file
+            if (isValidArt && pArt && normArt === pArt) return true;
+
+            // 3. Strict exact Name match
+            if (normName && pName && normName === pName) return true;
+            if (normMat && pName && normMat === pName) return true;
 
             return false;
           });
@@ -35081,6 +35415,10 @@ export default function App() {
 
     setActiveTab("calculator");
 
+    if (options?.skipHardwareModal) {
+      return discoveredHardware;
+    }
+
     if (discoveredHardware.length > 0) {
       setBazisHardwareModalData({
         isOpen: true,
@@ -35095,141 +35433,13 @@ export default function App() {
       );
     }
 
-    return true;
+    return discoveredHardware;
   };
 
   const parseBazisHardwareReport = (rawData: any[][], fileName: string) => {
     if (!rawData || rawData.length === 0) return false;
 
-    let colName = 4;
-    let colArticle = 6;
-    let colQty = 7;
-    let colUnit = 5;
-    let colPrice = 8;
-
-    let headerRowIdx = -1;
-    for (let i = 0; i < Math.min(rawData.length, 25); i++) {
-      const row = rawData[i] || [];
-      const rowStr = row.map((c) => String(c).toLowerCase()).join(" ");
-      if (
-        rowStr.includes("наименование") &&
-        (rowStr.includes("артикул") || rowStr.includes("код") || rowStr.includes("кол-во") || rowStr.includes("количество"))
-      ) {
-        headerRowIdx = i;
-        row.forEach((cell: any, cIdx: number) => {
-          const h = String(cell || "").toLowerCase().trim();
-          if (h.includes("наименование")) colName = cIdx;
-          else if (h.includes("артикул") || h.includes("код детали") || (h.includes("код") && !h.includes("штрих"))) colArticle = cIdx;
-          else if (h.includes("кол-во") || h.includes("количество") || h.includes("расчет") || h.includes("расчёт")) colQty = cIdx;
-          else if (h.includes("ед.") || h.includes("единица") || h.includes("изм")) colUnit = cIdx;
-          else if (h.includes("цена") || h.includes("стоимость")) colPrice = cIdx;
-        });
-        break;
-      }
-    }
-
-    const startIdx = headerRowIdx !== -1 ? headerRowIdx + 1 : 1;
-
-    const parseNum = (val: any): number => {
-      if (val === undefined || val === null) return 0;
-      if (typeof val === "number") return val;
-      const s = String(val).replace(/\s+/g, "").replace(",", ".");
-      const p = parseFloat(s);
-      return isNaN(p) ? 0 : p;
-    };
-
-    const isTechnicalRow = (str: string) => {
-      const s = str.toLowerCase();
-      return (
-        s.includes("наименование") ||
-        s.includes("артикул") ||
-        s.includes("итого") ||
-        s.includes("всего в заказе") ||
-        s.includes("спецификация") ||
-        s.includes("ведомость") ||
-        s.includes("разраб") ||
-        s.includes("пров.") ||
-        s.includes("утв.")
-      );
-    };
-
-    const items: Array<{
-      id: string;
-      name: string;
-      rawPartName?: string;
-      article: string;
-      qty: number;
-      unit: string;
-      price: number;
-      checked: boolean;
-      isFastener: boolean;
-      categoryType: string;
-      matchedProduct?: any;
-    }> = [];
-
-    for (let i = startIdx; i < rawData.length; i++) {
-      const row = rawData[i];
-      if (!row || !Array.isArray(row) || row.length === 0) continue;
-
-      const rawName = String(row[colName] || "").trim();
-      const article = String(row[colArticle] || "").trim();
-      if (!rawName && !article) continue;
-      if (isTechnicalRow(rawName)) continue;
-
-      const qty = parseNum(row[colQty]) || 1;
-      const unit = String(row[colUnit] || "шт").trim() || "шт";
-      const price = parseNum(row[colPrice]) || 0;
-
-      const hasPolko = rawName.toLowerCase().includes("полкодержател");
-      const isFast = hasPolko || isFastener(rawName);
-      const isWorktop = /столешниц|стеновая\s+панель|скинали|постформинг/i.test(rawName);
-      const isPlinth = /цокол/i.test(rawName);
-      const isProfile = /профил/i.test(rawName);
-      const isHinge = /петл/i.test(rawName);
-      const isSlide = /направляющ/i.test(rawName);
-
-      const cat = isWorktop ? "Столешницы" : isPlinth ? "Цоколь" : isProfile ? "Профиль" : isHinge ? "Петли" : isSlide ? "Направляющие" : isFast ? "Метизы" : "Фурнитура";
-
-      let matchedProduct: any = undefined;
-      if (catalogProducts && catalogProducts.length > 0) {
-        const normArt = article.toLowerCase().trim();
-        const normName = rawName.toLowerCase().trim();
-        matchedProduct = catalogProducts.find((p: any) => {
-          const manualSkus = [
-            ...(Array.isArray(p.skuList) ? p.skuList : []),
-            ...(Array.isArray(p.accountingSkus) ? p.accountingSkus : []),
-          ].map((s: any) => String(s).trim().toLowerCase()).filter(Boolean);
-
-          const pArt = String(p.article || p.sku || "").toLowerCase().trim();
-          const pName = String(p.name || "").toLowerCase().trim();
-
-          if (manualSkus.length > 0) {
-            if (normArt && manualSkus.includes(normArt)) return true;
-            if (normName && manualSkus.includes(normName)) return true;
-          }
-
-          if (normArt && pArt && (normArt === pArt || pArt.includes(normArt) || normArt.includes(pArt))) return true;
-          if (normName && pName && (normName === pName || pName.includes(normName) || normName.includes(pName))) return true;
-
-          return false;
-        });
-      }
-
-      const matchedPrice = matchedProduct?.price || (prices ? (prices[rawName] || (article ? prices[article] : 0)) : 0) || price || 0;
-
-      items.push({
-        id: `bazis-item-${Math.random().toString(36).substring(2, 9)}`,
-        name: rawName,
-        article,
-        qty: qty > 0 ? qty : 1,
-        unit,
-        price: matchedPrice,
-        checked: true,
-        isFastener: isFast,
-        categoryType: cat,
-        matchedProduct,
-      });
-    }
+    const items = extractBazisHardwareItems(rawData, fileName);
 
     if (items.length === 0) {
       showAlert("Внимание", "В файле не найдено строк с фурнитурой или метизами.");
@@ -35242,6 +35452,7 @@ export default function App() {
       items,
       sourceType: "hardware_report",
     });
+    setActiveTab("calculator");
 
     return true;
   };
@@ -35404,8 +35615,9 @@ export default function App() {
 
       let isCatalogMatch = false;
       if (options.importHardware && companyData?.accountingMappingConfig?.enabled !== false && catalogProducts && catalogProducts.length > 0) {
-        const normArt = article.toLowerCase();
-        const normName = rawName.toLowerCase();
+        const normArt = article.toLowerCase().trim();
+        const normName = rawName.toLowerCase().trim();
+        const isValidArt = normArt && normArt !== "-" && normArt !== "—" && normArt !== "нет" && normArt !== "none" && normArt !== "0";
 
         const foundProd = catalogProducts.find((p: any) => {
           const manualSkus = [
@@ -35413,9 +35625,21 @@ export default function App() {
             ...(Array.isArray(p.accountingSkus) ? p.accountingSkus : [])
           ].map((s: any) => String(s).trim().toLowerCase()).filter(Boolean);
 
-          if (manualSkus.length === 0) return false;
-          if (normArt && manualSkus.includes(normArt)) return true;
-          if (normName && manualSkus.includes(normName)) return true;
+          const pArt = String(p.article || p.sku || "").toLowerCase().trim();
+          const pName = String(p.name || "").toLowerCase().trim();
+
+          // 1. Explicit user SKU/alias bindings
+          if (manualSkus.length > 0) {
+            if (isValidArt && manualSkus.includes(normArt)) return true;
+            if (normName && manualSkus.includes(normName)) return true;
+          }
+
+          // 2. Strict exact Article match
+          if (isValidArt && pArt && normArt === pArt) return true;
+
+          // 3. Strict exact Name match
+          if (normName && pName && normName === pName) return true;
+
           return false;
         });
 
@@ -35989,29 +36213,114 @@ export default function App() {
         return;
       }
 
+      // 1. Identify which file is the Panels (cutting) report
       let panelsFile = parsedList.find((pf) => isBazisPanelsReport(pf.rawData));
-      let hardwareFile = parsedList.find((pf) => isBazisHardwareReport(pf.rawData));
-      let legacyFile = parsedList.find((pf) => isBazisLegacyReport(pf.rawData));
-
-      if (!panelsFile && !hardwareFile) {
-        panelsFile = parsedList[0];
-        hardwareFile = parsedList[1];
-      } else if (!panelsFile && parsedList.length > 1) {
-        panelsFile = parsedList.find((pf) => pf !== hardwareFile) || parsedList[0];
-      } else if (!hardwareFile && parsedList.length > 1) {
-        hardwareFile = parsedList.find((pf) => pf !== panelsFile) || parsedList[1];
+      if (!panelsFile) {
+        // Fallback: check if any file has dimensions / cutting detail columns
+        panelsFile = parsedList.find((pf) => {
+          return pf.rawData.some((r) => {
+            const s = r.map((c) => String(c).toLowerCase()).join(" ");
+            return (
+              s.includes("готовая деталь") ||
+              s.includes("деталь без") ||
+              s.includes("заготовка") ||
+              ((s.includes("длина") || s.includes("[l]")) && (s.includes("ширина") || s.includes("[w]")) && (s.includes("кромк") || s.includes("толщин") || s.includes("материал")))
+            );
+          });
+        });
       }
+
+      const otherFiles = parsedList.filter((pf) => pf !== panelsFile);
 
       if (panelsFile) {
-        parseBazisPanelsReport(panelsFile.rawData, panelsFile.fileName);
-      } else if (legacyFile) {
-        setBazisImportModalData({ rawData: legacyFile.rawData, fileName: legacyFile.fileName });
-      }
+        // Parse panels and gather hardware from panels report
+        const panelsHardware = parseBazisPanelsReport(panelsFile.rawData, panelsFile.fileName, {
+          skipHardwareModal: otherFiles.length > 0,
+        });
 
-      if (hardwareFile) {
-        setTimeout(() => {
-          parseBazisHardwareReport(hardwareFile!.rawData, hardwareFile!.fileName);
-        }, 150);
+        if (otherFiles.length > 0) {
+          const allItems: any[] = [...(Array.isArray(panelsHardware) ? panelsHardware : [])];
+
+          for (const ofile of otherFiles) {
+            const extracted = extractBazisHardwareItems(ofile.rawData, ofile.fileName);
+            if (extracted && extracted.length > 0) {
+              allItems.push(...extracted);
+            }
+          }
+
+          if (allItems.length > 0) {
+            // Merge matching hardware items by article/name
+            const mergedHardware: any[] = [];
+            allItems.forEach((item) => {
+              const itemArt = String(item.article || "").toLowerCase().trim();
+              const itemName = String(item.name || "").toLowerCase().trim();
+              const existing = mergedHardware.find((m) => {
+                const mArt = String(m.article || "").toLowerCase().trim();
+                const mName = String(m.name || "").toLowerCase().trim();
+                if (itemArt && mArt && itemArt === mArt) return true;
+                if (itemName && mName && itemName === mName) return true;
+                return false;
+              });
+
+              if (existing) {
+                existing.qty = (Number(existing.qty) || 0) + (Number(item.qty) || 1);
+                if (!existing.matchedProduct && item.matchedProduct) {
+                  existing.matchedProduct = item.matchedProduct;
+                  existing.price = item.price;
+                }
+              } else {
+                mergedHardware.push({ ...item });
+              }
+            });
+
+            setBazisHardwareModalData({
+              isOpen: true,
+              fileName: [panelsFile.fileName, ...otherFiles.map((f) => f.fileName)].join(" + "),
+              items: mergedHardware,
+              sourceType: "combined_report",
+            });
+          }
+        }
+      } else {
+        // No panels file - all files are hardware or legacy reports
+        const allItems: any[] = [];
+        for (const f of parsedList) {
+          const extracted = extractBazisHardwareItems(f.rawData, f.fileName);
+          if (extracted && extracted.length > 0) {
+            allItems.push(...extracted);
+          }
+        }
+
+        if (allItems.length > 0) {
+          const mergedHardware: any[] = [];
+          allItems.forEach((item) => {
+            const itemArt = String(item.article || "").toLowerCase().trim();
+            const itemName = String(item.name || "").toLowerCase().trim();
+            const existing = mergedHardware.find((m) => {
+              const mArt = String(m.article || "").toLowerCase().trim();
+              const mName = String(m.name || "").toLowerCase().trim();
+              if (itemArt && mArt && itemArt === mArt) return true;
+              if (itemName && mName && itemName === mName) return true;
+              return false;
+            });
+
+            if (existing) {
+              existing.qty = (Number(existing.qty) || 0) + (Number(item.qty) || 1);
+            } else {
+              mergedHardware.push({ ...item });
+            }
+          });
+
+          setBazisHardwareModalData({
+            isOpen: true,
+            fileName: parsedList.map((f) => f.fileName).join(" + "),
+            items: mergedHardware,
+            sourceType: "hardware_report",
+          });
+          setActiveTab("calculator");
+        } else {
+          showAlert("Внимание", "Не удалось распознать данные в выбранных файлах.");
+        }
       }
       return;
     }
@@ -36040,7 +36349,12 @@ export default function App() {
           } else if (isBazisLegacyReport(rawData)) {
             setBazisImportModalData({ rawData, fileName: file.name });
           } else {
-            parseBazisPanelsReport(rawData, file.name);
+            const hwItems = extractBazisHardwareItems(rawData, file.name);
+            if (hwItems.length > 0) {
+              parseBazisHardwareReport(rawData, file.name);
+            } else {
+              parseBazisPanelsReport(rawData, file.name);
+            }
           }
         } catch (err: any) {
           console.error("XLSX parse error:", err);
@@ -36073,6 +36387,13 @@ export default function App() {
             } else if (isBazisLegacyReport(rawData)) {
               setBazisImportModalData({ rawData, fileName: file.name });
             } else {
+              const hwItems = extractBazisHardwareItems(rawData, file.name);
+              const hasPanelKeywords = rawData.some(r => r.some(c => /высота|width|толщина|thickness|кромка/i.test(String(c))));
+              if (hwItems.length > 0 && !hasPanelKeywords) {
+                parseBazisHardwareReport(rawData, file.name);
+                return;
+              }
+
               // Standard Pro100 CSV Parser
               let headerRowIdx = -1;
               for (let i = 0; i < Math.min(rawData.length, 10); i++) {
