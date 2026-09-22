@@ -40243,9 +40243,78 @@ export default function App() {
         <main
           className={cn(
             "flex-1 transition-all duration-300 min-w-0",
-            isSidebarOpen ? "ml-14 lg:ml-64" : "ml-14 lg:ml-20",
+            b24Context?.isBitrix24 ? "ml-0" : (isSidebarOpen ? "ml-14 lg:ml-64" : "ml-14 lg:ml-20"),
           )}
         >
+          {b24Context?.isBitrix24 && (
+            <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white px-4 py-3 shadow-lg border-b border-blue-700/50 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-[100]">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 text-white flex items-center justify-center font-black text-xs shadow-md">
+                  24
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-black uppercase tracking-wider text-cyan-300">CRM Битрикс24</span>
+                    {b24Context.dealId && (
+                      <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-blue-500/30 text-blue-200 border border-blue-400/30">
+                        Сделка #{b24Context.dealId}
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-gray-300 font-medium">
+                    {currentProjectName || "Расчет мебельного изделия"}
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Services Toggles for Bitrix24 deal */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="flex items-center gap-1.5 bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 text-xs font-bold">
+                  <span>🚚 Доставка</span>
+                  <input
+                    type="checkbox"
+                    checked={serviceData.delivery}
+                    onChange={(e) => setServiceData(prev => ({ ...prev, delivery: e.target.checked }))}
+                    className="w-4 h-4 accent-cyan-400 cursor-pointer rounded"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1.5 bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 text-xs font-bold">
+                  <span>🛠️ Монтаж</span>
+                  <input
+                    type="checkbox"
+                    checked={serviceData.assembly}
+                    onChange={(e) => setServiceData(prev => ({ ...prev, assembly: e.target.checked }))}
+                    className="w-4 h-4 accent-cyan-400 cursor-pointer rounded"
+                  />
+                </div>
+
+                <button
+                  onClick={() => setActiveTab("summary")}
+                  className={cn(
+                    "px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer border",
+                    activeTab === "summary"
+                      ? "bg-cyan-400 text-slate-950 border-cyan-300 shadow-md"
+                      : "bg-white/10 hover:bg-white/20 text-white border-white/15"
+                  )}
+                >
+                  📊 Смета ({currentProjectTotal.toLocaleString("ru-RU")} ₽)
+                </button>
+
+                <button
+                  onClick={() => {
+                    if (b24Context?.dealId && !b24DealIdInput) {
+                      setB24DealIdInput(String(b24Context.dealId));
+                    }
+                    setShowB24Modal(true);
+                  }}
+                  className="flex items-center gap-1.5 px-4 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl text-xs font-black shadow-md hover:scale-105 transition-all cursor-pointer border border-emerald-400/40"
+                >
+                  <span>✓ В Сделку</span>
+                </button>
+              </div>
+            </div>
+          )}
           {activeTab === "calculator" && (
             <CalculatorView
               customEdgeMapping={customEdgeMapping}
