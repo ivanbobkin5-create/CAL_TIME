@@ -6821,9 +6821,9 @@ const CalculatorView = ({
 
               {/* Bazis dedicated button */}
               <div className="relative group">
-                <label className="block text-xs font-bold uppercase tracking-wider text-indigo-900 mb-1.5 flex items-center justify-between">
-                  <span>Отчеты Базис</span>
-                  <span className="text-[10px] bg-indigo-100 text-indigo-800 font-black px-1.5 py-0.5 rounded">XLSX / CSV</span>
+                <label className="block text-xs font-bold uppercase tracking-wider text-indigo-900 mb-1.5 flex flex-wrap items-center justify-between gap-1">
+                  <span className="truncate min-w-0">Отчеты Базис-Мебельщик</span>
+                  <span className="text-[10px] bg-indigo-100 text-indigo-800 font-black px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap">XLSX / CSV</span>
                 </label>
                 <input
                   type="file"
@@ -6846,9 +6846,9 @@ const CalculatorView = ({
 
             {handleHardwareFileUpload && (
               <div className="pt-2 border-t border-gray-200/60">
-                <label className="block text-xs font-semibold text-gray-600 mb-1.5 flex items-center justify-between">
-                  <span>Дополнительный файл фурнитуры и крепежа</span>
-                  <span className="text-[10px] text-amber-700 bg-amber-100/80 px-1.5 py-0.5 rounded font-medium">Базис-Мебельщик</span>
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5 flex flex-wrap items-center justify-between gap-1">
+                  <span className="truncate min-w-0">Файл фурнитуры и крепежа</span>
+                  <span className="text-[10px] text-amber-700 bg-amber-100/80 px-1.5 py-0.5 rounded font-medium shrink-0 whitespace-nowrap">Базис-Мебельщик</span>
                 </label>
                 <div className="relative group">
                   <input
@@ -10646,19 +10646,14 @@ const SummaryView = ({
             const dAndTKey = `edgePrice_${decor}_${normThick}`;
 
             if (!edgeGroups[groupKey]) {
-              // Find base price: prioritize price list (edgePrices[dAndTKey]), then catalog, then settings prices
-              let basePrice = edgePrices[dAndTKey] || edgePrices[`edgePrice_${decor}_${thickness}`] || edgePrices[ck] || 0;
-              if (basePrice === 0 && decor !== "Не указан" && decor !== "Не выбран") {
-                const catalogEdge = catalogProducts.find(
-                  (p: any) =>
-                    p.category === "Кромочные материалы" &&
-                    p.decor === decor &&
-                    (p.thickness === normThick || p.thickness === thickness)
-                );
-                if (catalogEdge && catalogEdge.price) {
-                  basePrice = catalogEdge.price;
-                }
-              }
+              // Find base price: prioritize catalog price list item, then edgePrices, then settings prices
+              const catalogEdge = (catalogProducts || []).find(
+                (p: any) =>
+                  p.category === "Кромочные материалы" &&
+                  p.decor === decor &&
+                  (p.thickness === normThick || p.thickness === thickness)
+              );
+              let basePrice = catalogEdge?.price || edgePrices[dAndTKey] || edgePrices[`edgePrice_${decor}_${thickness}`] || edgePrices[ck] || 0;
               if (basePrice === 0 && decor !== "Не указан") {
                 // Try variations of decor string to find in price list
                 const possibleKeys = [
@@ -12526,23 +12521,23 @@ const SummaryView = ({
       )}
 
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden w-full max-w-full">
-        <div className="overflow-x-auto w-full">
-          <table className="w-full text-left border-collapse table-auto">
+        <div className="overflow-x-auto w-full max-w-full">
+          <table className="w-full text-left border-collapse table-fixed min-w-[640px] sm:min-w-0">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-500 uppercase tracking-wider">
-                <th className="px-3 sm:px-4 py-3 min-w-[180px]">
+                <th className="px-3 sm:px-4 py-3 w-[42%] sm:w-[45%] break-words">
                   Материал / Параметры
                 </th>
-                <th className="px-3 sm:px-4 py-3 w-32 sm:w-44">
+                <th className="px-3 sm:px-4 py-3 w-[22%] sm:w-[20%] break-words">
                   Декор
                 </th>
-                <th className="px-2 sm:px-3 py-3 text-right w-16 sm:w-24 whitespace-nowrap">
+                <th className="px-2 sm:px-3 py-3 text-right w-[10%] sm:w-[10%] whitespace-nowrap">
                   Кол-во
                 </th>
-                <th className="px-2 sm:px-3 py-3 text-right w-20 sm:w-28 whitespace-nowrap">
+                <th className="px-2 sm:px-3 py-3 text-right w-[13%] sm:w-[12%] whitespace-nowrap">
                   Цена
                 </th>
-                <th className="px-3 sm:px-4 py-3 text-right w-20 sm:w-28 whitespace-nowrap">
+                <th className="px-3 sm:px-4 py-3 text-right w-[13%] sm:w-[13%] whitespace-nowrap">
                   Итого
                 </th>
               </tr>
@@ -14997,23 +14992,26 @@ const AccountingMappingSettings = ({
 
                       const currentInput = newSkuInputs[product.id] || "";
 
+                      const productImage = (Array.isArray(product.images) && product.images.length > 0 ? product.images[0] : null) || product.image || product.imageUrl || product.photo || product.photoUrl || product.picture || product.preview || product.thumbnail || null;
+
                       return (
                         <div
                           key={product.id}
                           className="p-3.5 flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 hover:bg-gray-50/70 transition-colors"
                         >
                           <div className="flex items-start gap-3 lg:w-5/12 shrink-0">
-                            {product.image ? (
-                              <img
-                                src={product.image}
-                                alt={product.name}
-                                className="w-11 h-11 rounded-xl object-cover border border-gray-200 shrink-0"
+                            <div className="w-11 h-11 rounded-xl border border-gray-200 shrink-0 overflow-hidden bg-gray-50 flex items-center justify-center relative shadow-2xs">
+                              <ProductImg
+                                product={product}
+                                companyId={companyData?.id}
+                                className="w-full h-full object-cover"
+                                fallback={
+                                  <div className="w-full h-full bg-gray-100 flex items-center justify-center text-gray-400">
+                                    <Package className="w-5 h-5" />
+                                  </div>
+                                }
                               />
-                            ) : (
-                              <div className="w-11 h-11 rounded-xl bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-400 shrink-0">
-                                <Package className="w-5 h-5" />
-                              </div>
-                            )}
+                            </div>
 
                             <div className="space-y-1 min-w-0 flex-1">
                               <h5 className="text-xs font-bold text-gray-900 leading-snug break-words">
@@ -15345,6 +15343,9 @@ const SettingsView = ({
                 [fieldKey]: val === "" ? 0 : parseInt(val),
               }));
             }}
+            onBlur={() => {
+              onSaveSettings(true);
+            }}
             className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
           />
         </div>
@@ -15385,6 +15386,9 @@ const SettingsView = ({
                   [fieldKey]: val === "" ? 0 : parseInt(val),
                 }));
               }}
+              onBlur={() => {
+                onSaveSettings(true);
+              }}
               className="w-full px-2.5 py-1.5 bg-blue-50/30 border border-blue-200 focus:border-blue-500 focus:bg-white rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-xs font-bold text-blue-900"
             />
           </div>
@@ -15408,6 +15412,9 @@ const SettingsView = ({
   const [localAssemblyPercentage, setLocalAssemblyPercentage] = useState<number>(assemblyPercentage);
   const lastMovedAssemblyPercentageRef = useRef<number>(0);
 
+  const [localAssemblyIncludesText, setLocalAssemblyIncludesText] = useState<string>(() => (assemblyIncludes || []).join("\n"));
+  const lastTypedAssemblyIncludesRef = useRef<number>(0);
+
   const [showExtraAssemblyModal, setShowExtraAssemblyModal] = useState(false);
   const [newExtraCatName, setNewExtraCatName] = useState("");
   const [newExtraSvcInputs, setNewExtraSvcInputs] = useState<Record<string, { name: string; unit: string; price: number }>>({});
@@ -15424,6 +15431,12 @@ const SettingsView = ({
       setLocalAssemblyPercentage(assemblyPercentage);
     }
   }, [assemblyPercentage]);
+
+  useEffect(() => {
+    if (Date.now() - lastTypedAssemblyIncludesRef.current > 4000) {
+      setLocalAssemblyIncludesText((assemblyIncludes || []).join("\n"));
+    }
+  }, [assemblyIncludes]);
 
   // Auto-save settings on change
   useEffect(() => {
@@ -17463,6 +17476,9 @@ const SettingsView = ({
                                             }));
                                           }
                                         }}
+                                        onBlur={() => {
+                                          onSaveSettings(true);
+                                        }}
                                         className="w-14 px-2 py-1 text-center font-bold text-xs bg-blue-50/40 border border-blue-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 text-blue-900"
                                       />
                                       <span className="text-xs text-gray-400 font-medium">%</span>
@@ -17506,6 +17522,9 @@ const SettingsView = ({
                                     if (setMinAssemblyPrice) {
                                       setMinAssemblyPrice(isNaN(val) ? 0 : val);
                                     }
+                                  }}
+                                  onBlur={() => {
+                                    onSaveSettings(true);
                                   }}
                                   className="w-28 px-3 py-1.5 text-right font-bold text-xs bg-blue-50/40 border border-blue-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-blue-900"
                                 />
@@ -17605,6 +17624,9 @@ const SettingsView = ({
                                     retail: val === "" ? 0 : parseInt(val),
                                   }));
                                 }}
+                                onBlur={() => {
+                                  onSaveSettings(true);
+                                }}
                                 className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
                               />
                             </div>
@@ -17629,6 +17651,9 @@ const SettingsView = ({
                                     wholesale: val === "" ? 0 : parseInt(val),
                                   }));
                                 }}
+                                onBlur={() => {
+                                  onSaveSettings(true);
+                                }}
                                 className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
                               />
                             </div>
@@ -17652,6 +17677,9 @@ const SettingsView = ({
                                     ...prev,
                                     designer: val === "" ? 0 : parseInt(val),
                                   }));
+                                }}
+                                onBlur={() => {
+                                  onSaveSettings(true);
                                 }}
                                 className="w-full px-4 py-2 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-bold"
                               />
@@ -17682,37 +17710,90 @@ const SettingsView = ({
                 </div>
 
                 <textarea
-                  value={assemblyIncludes.join("\n")}
-                  onChange={(e) =>
-                    setAssemblyIncludes(
-                      e.target.value
-                        .split("\n")
-                        .filter((line) => line.trim() !== ""),
-                    )
-                  }
-                  className="w-full h-48 px-4 py-3 bg-gray-50 border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium leading-relaxed font-sans"
+                  value={localAssemblyIncludesText}
+                  onChange={(e) => {
+                    lastTypedAssemblyIncludesRef.current = Date.now();
+                    setLocalAssemblyIncludesText(e.target.value);
+                  }}
+                  onBlur={() => {
+                    const lines = localAssemblyIncludesText
+                      .split("\n")
+                      .map(s => s.trim())
+                      .filter(s => s !== "");
+                    setAssemblyIncludes(lines);
+                    onSaveSettings(true);
+                  }}
+                  className="w-full h-44 px-4 py-3 bg-gray-50 focus:bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium leading-relaxed font-sans transition-all"
                   placeholder="Введите состав пакета сборки..."
                 />
+                <div className="flex items-center justify-between mt-2.5">
+                  <span className="text-[11px] text-gray-400 font-medium">Каждый пункт начинается с новой строки</span>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const lines = localAssemblyIncludesText
+                        .split("\n")
+                        .map(s => s.trim())
+                        .filter(s => s !== "");
+                      setAssemblyIncludes(lines);
+                      await onSaveSettings(false);
+                    }}
+                    className="px-3.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Сохранить состав</span>
+                  </button>
+                </div>
               </section>
             </div>
 
-            <section className="p-6 bg-gray-50 rounded-3xl border border-gray-100 flex items-center justify-between gap-4">
+            <section className="p-6 bg-white rounded-3xl border border-gray-100 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="flex-1">
-                <span className="font-bold text-gray-700 block text-sm font-sans">
+                <span className="font-bold text-gray-800 block text-sm font-sans">
                   Ссылка на Яндекс/Google карты
                 </span>
-                <span className="text-[10px] text-gray-400 font-sans">
-                  Для расчета логистики (дистанции) в сервисе
+                <span className="text-[11px] text-gray-400 font-sans block mt-0.5">
+                  Используется для расчета логистики (дистанции) в сервисе
                 </span>
               </div>
               <input
                 type="text"
                 value={mapLink}
                 onChange={(e) => setMapLink(e.target.value)}
-                placeholder="https://maps..."
-                className="w-full md:w-80 px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                onBlur={() => onSaveSettings(true)}
+                placeholder="https://yandex.ru/maps/..."
+                className="w-full md:w-80 px-4 py-2.5 bg-gray-50 focus:bg-white border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 outline-none transition-all font-medium text-gray-800"
               />
             </section>
+
+            <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-2xl flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2.5">
+                <CheckCircle2 className="w-5 h-5 text-blue-600 shrink-0" />
+                <div>
+                  <span className="text-xs font-bold text-blue-950 block font-sans">
+                    Все настройки надежно сохраняются в профиле компании
+                  </span>
+                  <span className="text-[11px] text-blue-700 font-medium block font-sans">
+                    Тарифы доставки, карта, проценты сборки и метизы синхронизированы на сервере
+                  </span>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  const lines = localAssemblyIncludesText
+                    .split("\n")
+                    .map(s => s.trim())
+                    .filter(s => s !== "");
+                  setAssemblyIncludes(lines);
+                  onSaveSettings(false);
+                }}
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-200 flex items-center gap-2 shrink-0 active:scale-95"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Сохранить тарифы и услуги</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -36927,7 +37008,10 @@ export default function App() {
         }
         skus.forEach((sku) => {
           const norm = normalizeMatchKey(sku);
-          if (norm) skuLookupMap[norm] = p;
+          // Skip purely numeric short SKUs or dimensions (e.g. "16", "450", "1") to avoid matching Pro100 dimensions
+          if (norm && (!/^\d{1,3}$/.test(norm) || skus.length > 1)) {
+            skuLookupMap[norm] = p;
+          }
         });
       });
 
@@ -36941,8 +37025,12 @@ export default function App() {
           let foundSku = "";
 
           for (let c = 0; c < Math.min(row.length, 6); c++) {
-            const cellVal = normalizeMatchKey(row[c]);
-            if (cellVal && skuLookupMap[cellVal]) {
+            const rawCell = String(row[c] || "").trim();
+            // Skip purely numeric cells that look like dimensions or quantities (e.g. "16", "450", "600", "2")
+            if (/^\d{1,3}$/.test(rawCell)) continue;
+
+            const cellVal = normalizeMatchKey(rawCell);
+            if (cellVal && cellVal.length >= 2 && skuLookupMap[cellVal]) {
               matchedProduct = skuLookupMap[cellVal];
               foundSku = cellVal;
               break;
@@ -37016,10 +37104,7 @@ export default function App() {
       addedServices: [],
       unmatchedBazisItems: [],
       bazisFasteners: [],
-      detailedFastenersMode: false,
-      manualFittings: {},
-      customFittingQuantities: {},
-      removedFittings: {}
+      detailedFastenersMode: false
     });
 
     setActiveTab("calculator");
@@ -37341,6 +37426,7 @@ export default function App() {
       const existingProject = projects.find((p: any) => p.id === projectId);
       const createdByValue = existingProject?.createdBy || userData.uid;
       const createdByNameValue = existingProject?.createdByName || userData.displayName || userData.email || "Пользователь";
+      const createdByPhotoValue = existingProject?.createdByPhoto || (userData as any)?.photoURL || (userData as any)?.avatarUrl || (userData as any)?.photoUrl || (userData as any)?.photo || auth.currentUser?.photoURL || "";
 
       const coeffSnapshotToSave = selectedProjectCoefficientsMode === 'current'
         ? {
@@ -37364,6 +37450,7 @@ export default function App() {
         updatedAt: new Date().toISOString(),
         createdBy: createdByValue,
         createdByName: createdByNameValue,
+        createdByPhoto: createdByPhotoValue,
         status: existingProject?.status || "draft",
         totalPrice: activeTotal,
         totalHardwareCost: currentHardwareTotal,
@@ -37375,6 +37462,7 @@ export default function App() {
           companyId: companyData?.id || "",
           manufacturerId: companyData?.manufacturerId || null,
           productionFormat: companyData?.productionFormat || productionFormat || null,
+          createdByPhoto: createdByPhotoValue,
           summaryRows: activeSummaryRows,
           results: activeResults,
           selectedDecor,
@@ -37900,6 +37988,16 @@ export default function App() {
         productData,
         { merge: true }
       );
+      setOwnProducts((prev: any[]) => {
+        const idx = prev.findIndex((p) => p.id === pId);
+        if (idx >= 0) {
+          const updated = [...prev];
+          updated[idx] = { ...updated[idx], ...productData };
+          return updated;
+        } else {
+          return [productData, ...prev];
+        }
+      });
       console.log("Upserted edge to price list:", productData);
     } catch (e) {
       console.error("Error upserting edge to price list:", e);
@@ -38402,6 +38500,24 @@ export default function App() {
             landingPage: companyData.landingPage || null,
             erpConfig: currentErpConfig,
             erpSettings: currentErpConfig,
+            mapLink: mapLink || "",
+            deliveryTariffs: deliveryTariffs || null,
+            assemblyPercentage: assemblyPercentage ?? 10,
+            assemblyPercentages: assemblyPercentages || {},
+            assemblyIncludes: assemblyIncludes || [],
+            minAssemblyPrice: minAssemblyPrice ?? 0,
+            turnkeyAssemblyEnabled: !!turnkeyAssemblyEnabled,
+            extraAssemblyServices: extraAssemblyServices || [],
+            hardwareKitPrice: hardwareKitPrice || null,
+            specificationConfig: specificationConfig || null,
+            coefficients: overrides?.coefficients || coefficients,
+            companyInfo: companyInfo || null,
+            defaultCuttingType: defaultCuttingType || "saw",
+            calcMode: calcMode || "sheet",
+            trimming: trimming ?? 10,
+            sawKerf: sawKerf ?? 4,
+            cutterDiameter: cutterDiameter ?? 8,
+            productCategories: productCategories || [],
           },
           { merge: true },
         ),
@@ -38410,6 +38526,22 @@ export default function App() {
       await Promise.all(savePromises);
       touchSettingsLocal();
       lastTypedSpecificationConfigRef.current = Date.now();
+
+      setCompanyData((prev: any) => ({
+        ...prev,
+        mapLink: mapLink || prev?.mapLink,
+        deliveryTariffs: deliveryTariffs || prev?.deliveryTariffs,
+        assemblyPercentage: assemblyPercentage !== undefined ? assemblyPercentage : prev?.assemblyPercentage,
+        assemblyPercentages: assemblyPercentages || prev?.assemblyPercentages,
+        assemblyIncludes: assemblyIncludes || prev?.assemblyIncludes,
+        minAssemblyPrice: minAssemblyPrice !== undefined ? minAssemblyPrice : prev?.minAssemblyPrice,
+        turnkeyAssemblyEnabled: turnkeyAssemblyEnabled !== undefined ? turnkeyAssemblyEnabled : prev?.turnkeyAssemblyEnabled,
+        extraAssemblyServices: extraAssemblyServices || prev?.extraAssemblyServices,
+        hardwareKitPrice: hardwareKitPrice || prev?.hardwareKitPrice,
+        specificationConfig: specificationConfig || prev?.specificationConfig,
+        coefficients: overrides?.coefficients || coefficients,
+        companyInfo: companyInfo || prev?.companyInfo,
+      }));
 
       if (!silent) {
         showAlert("Успех", "Настройки успешно сохранены");
@@ -40397,6 +40529,7 @@ export default function App() {
               companyId={companyData?.id}
               companyData={companyData}
               userId={userData?.uid}
+              currentUser={userData || auth.currentUser}
               userRole={userRole}
               isProjectsLoading={isProjectsLoading}
               isSetsLoading={isSetsLoading}

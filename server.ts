@@ -1449,8 +1449,9 @@ function transliterate(str: string): string {
       const collection = parts.join('/');
       const { data, merge } = req.body;
 
-      // Settings documents should ALWAYS be safely merged to prevent accidental data wipe
-      const shouldMerge = merge || docPath.includes("/settings/");
+      // Settings and Company root documents should ALWAYS be safely merged to prevent accidental data wipe
+      const isCompanyRoot = docPath.startsWith("companies/") && docPath.split("/").length === 2;
+      const shouldMerge = merge || docPath.includes("/settings/") || isCompanyRoot;
 
       if (shouldMerge) {
         const existing = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
