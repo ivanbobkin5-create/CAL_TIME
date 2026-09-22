@@ -1449,14 +1449,29 @@ function transliterate(str: string): string {
       const collection = parts.join('/');
       const { data, merge } = req.body;
 
-      if (merge) {
+      // Settings documents should ALWAYS be safely merged to prevent accidental data wipe
+      const shouldMerge = merge || docPath.includes("/settings/");
+
+      if (shouldMerge) {
         const existing = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
         const existingData = existing ? JSON.parse(existing.data) : {};
-        const newData = { ...existingData, ...data };
+        let mergedData = { ...existingData, ...data };
+
+        // Extra protection for production settings: do not let an unhydrated or contract-only payload wipe extraFacadeTypes
+        if (
+          docPath.endsWith("/settings/production") &&
+          Array.isArray(existingData.extraFacadeTypes) &&
+          existingData.extraFacadeTypes.length > 0 &&
+          (!Array.isArray(data.extraFacadeTypes) || data.extraFacadeTypes.length === 0) &&
+          !data._allowEmptyExtraFacades
+        ) {
+          mergedData.extraFacadeTypes = existingData.extraFacadeTypes;
+        }
+
         await dbQueryWithRetry(() => prisma.dbDocument.upsert({
           where: { path: docPath },
-          create: { path: docPath, collection, docId, data: JSON.stringify(newData) },
-          update: { data: JSON.stringify(newData) }
+          create: { path: docPath, collection, docId, data: JSON.stringify(mergedData) },
+          update: { data: JSON.stringify(mergedData) }
         }));
       } else {
         await dbQueryWithRetry(() => prisma.dbDocument.upsert({

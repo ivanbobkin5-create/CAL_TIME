@@ -274,7 +274,7 @@ export function LandingSettingsView({
                   </span>
                   <input
                     type="text"
-                    value={landingConfig.alias}
+                    value={landingConfig.alias || ""}
                     onChange={handleAliasChange}
                     placeholder="catalog"
                     className="block w-full min-w-0 flex-1 rounded-none rounded-r-xl border border-gray-300 px-3.5 py-2.5 text-sm focus:border-blue-500 focus:ring-blue-500 font-mono font-bold text-gray-900 bg-white"
@@ -430,7 +430,7 @@ export function LandingSettingsView({
                 </label>
                 <input
                   type="text"
-                  value={landingConfig.title}
+                  value={landingConfig.title || ""}
                   onChange={(e) => handleUpdateConfig({ title: e.target.value })}
                   placeholder="Салон мебели Кухни Всем"
                   className="block w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
@@ -444,7 +444,7 @@ export function LandingSettingsView({
               </label>
               <textarea
                 rows={2}
-                value={landingConfig.description}
+                value={landingConfig.description || ""}
                 onChange={(e) => handleUpdateConfig({ description: e.target.value })}
                 placeholder="Лучшие модульные кухни и мебель в городе. Выберите модули, добавьте в корзину и оформите быструю заявку на точный расчет!"
                 className="block w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
@@ -457,7 +457,7 @@ export function LandingSettingsView({
               </label>
               <textarea
                 rows={3}
-                value={landingConfig.welcomeText}
+                value={landingConfig.welcomeText || ""}
                 onChange={(e) => handleUpdateConfig({ welcomeText: e.target.value })}
                 placeholder="Добро пожаловать в наш онлайн-каталог! Здесь представлены готовые модульные элементы нашего производства с актуальными розничными ценами. Оформление заявки ни к чему вас не обязывает — наши дизайнеры свяжутся с вами, составят 3D проект и ответят на все вопросы."
                 className="block w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
@@ -501,7 +501,7 @@ export function LandingSettingsView({
                 </label>
                 <input
                   type="text"
-                  value={landingConfig.phone}
+                  value={landingConfig.phone || ""}
                   onChange={(e) => handleUpdateConfig({ phone: e.target.value })}
                   placeholder="+7 (999) 123-45-67"
                   className="block w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
@@ -515,7 +515,7 @@ export function LandingSettingsView({
                 </label>
                 <input
                   type="email"
-                  value={landingConfig.email}
+                  value={landingConfig.email || ""}
                   onChange={(e) => handleUpdateConfig({ email: e.target.value })}
                   placeholder="sales@company.ru"
                   className="block w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
@@ -529,7 +529,7 @@ export function LandingSettingsView({
                 </label>
                 <input
                   type="text"
-                  value={landingConfig.address}
+                  value={landingConfig.address || ""}
                   onChange={(e) => handleUpdateConfig({ address: e.target.value })}
                   placeholder="г. Москва, ул. Ленина, д. 45"
                   className="block w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
@@ -543,7 +543,7 @@ export function LandingSettingsView({
                   </label>
                   <input
                     type="text"
-                    value={landingConfig.telegram}
+                    value={landingConfig.telegram || ""}
                     onChange={(e) => handleUpdateConfig({ telegram: e.target.value })}
                     placeholder="company_tg"
                     className="block w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"
@@ -555,7 +555,7 @@ export function LandingSettingsView({
                   </label>
                   <input
                     type="text"
-                    value={landingConfig.whatsapp}
+                    value={landingConfig.whatsapp || ""}
                     onChange={(e) => handleUpdateConfig({ whatsapp: e.target.value })}
                     placeholder="79991234567"
                     className="block w-full rounded-xl border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:ring-blue-500"

@@ -437,7 +437,7 @@ export const InstallationActSettingsTab: React.FC<InstallationActSettingsTabProp
                       <td className="p-3">
                         <input
                           type="text"
-                          value={item.name}
+                          value={item.name || ""}
                           onChange={(e) => handleUpdateWorkItem(item.id, 'name', e.target.value)}
                           className="w-full px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-900 outline-none focus:ring-2 focus:ring-amber-500"
                         />
@@ -445,7 +445,7 @@ export const InstallationActSettingsTab: React.FC<InstallationActSettingsTabProp
 
                       <td className="p-3">
                         <select
-                          value={item.unit}
+                          value={item.unit || "шт"}
                           onChange={(e) => handleUpdateWorkItem(item.id, 'unit', e.target.value)}
                           className="w-full px-2 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-bold text-slate-800 outline-none cursor-pointer"
                         >
@@ -463,7 +463,7 @@ export const InstallationActSettingsTab: React.FC<InstallationActSettingsTabProp
                             type="number"
                             min="0"
                             step="50"
-                            value={item.price}
+                            value={item.price ?? 0}
                             onChange={(e) => handleUpdateWorkItem(item.id, 'price', parseFloat(e.target.value) || 0)}
                             className="w-full px-3 py-1.5 rounded-xl bg-white border border-slate-200 text-xs font-mono font-bold text-slate-900 outline-none focus:ring-2 focus:ring-amber-500 pr-7"
                           />

@@ -594,6 +594,8 @@ export interface ERPCompanySettings {
 
   // Настройки Акта приема-передачи и версионируемых Дополнительных работ
   installationActSettings?: InstallationActSettings;
+  extraWorksCatalog?: ExtraWorkItem[];
+  tariffs?: ExtraWorksTariffVersion[];
 
   // Настройки внешнего хранилища фото (Яндекс.Диск, Битрикс24 или оба сразу)
   photoStorageTarget?: 'yandex_disk' | 'bitrix24' | 'both';

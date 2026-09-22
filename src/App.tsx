@@ -1479,6 +1479,79 @@ export const matchProductCategory = (prodCat?: string, targetCat?: string | null
   return p.includes(t) || t.includes(p);
 };
 
+const DEFAULT_READY_MADE_CATEGORIES = [
+  "Кухни",
+  "Шкафы",
+  "Прихожие",
+  "Столы",
+  "Комоды",
+];
+
+const isReadyMadeCategoryName = (
+  catName: string,
+  readyMadeCategories?: string[]
+): boolean => {
+  if (!catName || typeof catName !== "string") return false;
+  const cLower = catName.toLowerCase().trim();
+  if (
+    cLower.includes("модул") ||
+    cLower.includes("фурнитур") ||
+    cLower.includes("мойка") ||
+    cLower.includes("мойк") ||
+    cLower.includes("техник") ||
+    cLower.includes("смесител") ||
+    cLower.includes("петл") ||
+    cLower.includes("ручк") ||
+    cLower.includes("крепеж") ||
+    cLower.includes("цокол") ||
+    cLower.includes("столешниц") ||
+    cLower.includes("стенов") ||
+    cLower.includes("панел") ||
+    cLower.includes("выдвижен") ||
+    cLower.includes("корзин") ||
+    cLower.includes("посудосуш") ||
+    cLower.includes("подъемн") ||
+    cLower.includes("освещен") ||
+    cLower.includes("оснащен") ||
+    cLower.includes("наполнен") ||
+    cLower.includes("опор") ||
+    cLower.includes("ножк") ||
+    cLower.includes("сопутствующ") ||
+    cLower.includes("кром") ||
+    cLower.includes("edge") ||
+    cLower.includes("материал") ||
+    cLower.includes("профил")
+  ) {
+    return false;
+  }
+  const defaultList = [
+    ...(readyMadeCategories && readyMadeCategories.length > 0
+      ? readyMadeCategories
+      : DEFAULT_READY_MADE_CATEGORIES),
+    "Кухонные гарнитуры",
+    "Кухонный гарнитур",
+  ];
+  for (const rc of defaultList) {
+    if (!rc) continue;
+    const rcLower = rc.toLowerCase().trim();
+    if (rcLower.includes("модул") || rcLower.includes("фурнитур")) continue;
+    if (cLower === rcLower || cLower.includes(rcLower) || rcLower.includes(cLower)) {
+      return true;
+    }
+  }
+  const readyKeywords = ["кухн", "кухя", "кухi", "гарнитур", "шкаф", "прихож", "стол", "комод"];
+  if (readyKeywords.some((kw) => cLower.includes(kw))) {
+    return true;
+  }
+  return false;
+};
+
+export const isEdgeCategory = (c: string | null | undefined): boolean => {
+  if (!c || typeof c !== "string") return false;
+  const l = c.toLowerCase().trim();
+  return l.includes("кром") || l.includes("edge");
+};
+
 const INITIAL_PRODUCT_CATEGORIES = [
   "Столешницы и стеновые",
   "Крепежные элементы и цоколь",
@@ -1492,20 +1565,14 @@ const INITIAL_PRODUCT_CATEGORIES = [
   "Освещение",
   "Оснащение шкафов",
   "Кухонные модули",
-  "Кухонные гарнитуры",
-  "Кухни",
-  "Шкафы",
-  "Прихожие",
-  "Столы",
-  "Комоды",
   "Сопутствующие товары",
-  "Акционные товары",
   "Мебельные ноги и опоры",
 ];
 
 const mergeCategories = (
   catsList: string[] | undefined | null,
   extraCats?: string[],
+  readyMadeCats?: string[],
 ): string[] => {
   const list = [
     ...(Array.isArray(catsList) ? catsList : []),
@@ -1515,7 +1582,12 @@ const mergeCategories = (
     .filter(
       (c: string) =>
         typeof c === "string" &&
-        c.trim().length > 0,
+        c.trim().length > 0 &&
+        !isReadyMadeCategoryName(c, readyMadeCats) &&
+        c.trim() !== "Акционные товары" &&
+        !isEdgeCategory(c) &&
+        c.trim() !== "Кухонные гарнитуры" &&
+        c.trim() !== "Кухонный гарнитур",
     )
     .map((c: string) => c.trim());
   return Array.from(new Set([...INITIAL_PRODUCT_CATEGORIES, ...filtered]));
@@ -2419,7 +2491,7 @@ const ProductionView = ({
                     </div>
                     <input
                       type="text"
-                      value={ownProductionConfig.address}
+                      value={ownProductionConfig.address || ""}
                       onChange={(e) =>
                         setOwnProductionConfig((prev) => ({
                           ...prev,
@@ -3354,7 +3426,7 @@ const FacadePriceGrid = ({
           <div>
             <div className="flex items-center gap-2">
               <input
-                value={title}
+                value={title || ""}
                 onChange={(e) => onUpdateTitle?.(e.target.value)}
                 className="text-lg font-black text-gray-900 leading-none outline-none focus:ring-2 focus:ring-blue-500 rounded bg-transparent px-1"
                 placeholder="Название типа фасадов"
@@ -3385,7 +3457,7 @@ const FacadePriceGrid = ({
               <input
                 type="number"
                 step="0.1"
-                value={currentSettings.minOrderVolume || 0}
+                value={currentSettings.minOrderVolume ?? 0}
                 onChange={(e) =>
                   onUpdate((prev) => ({
                     ...prev,
@@ -3485,7 +3557,7 @@ const FacadePriceGrid = ({
                 <input
                   autoFocus
                   type="number"
-                  value={newThickVal}
+                  value={newThickVal || ""}
                   onChange={(e) => setNewThickVal(e.target.value)}
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none font-bold text-gray-900"
                   onKeyPress={(e) => e.key === "Enter" && handleAddThick()}
@@ -3613,20 +3685,34 @@ const FacadePriceGrid = ({
                         <input
                           type="number"
                           value={
-                            currentSettings.priceGrid?.[gridKey] === 0
+                            currentSettings.priceGrid?.[gridKey] === 0 || currentSettings.priceGrid?.[gridKey] == null
                               ? ""
                               : currentSettings.priceGrid?.[gridKey]
                           }
                           onFocus={(e) => e.target.select()}
                           onChange={(e) => {
                             const val = e.target.value.replace(",", ".").replace(/[^0-9.]/g, "");
-                            onUpdate((prev) => ({
-                              ...prev,
-                              priceGrid: {
+                            const numVal = val === "" ? 0 : parseFloat(val);
+                            onUpdate((prev) => {
+                              const newPriceGrid = {
                                 ...(prev.priceGrid || {}),
-                                [gridKey]: val === "" ? 0 : parseFloat(val),
-                              },
-                            }));
+                                [gridKey]: numVal,
+                              };
+                              const allPricesForCat = Object.entries(newPriceGrid)
+                                .filter(([k]) => k.startsWith(`${catItem.id}:`))
+                                .map(([, p]) => Number(p) || 0)
+                                .filter((p) => p > 0);
+                              const basePrice = allPricesForCat.length > 0 ? Math.min(...allPricesForCat) : numVal;
+                              return {
+                                ...prev,
+                                categories: (prev.categories || []).map((c) =>
+                                  c.id === catItem.id
+                                    ? { ...c, purchasePrice: basePrice, price: basePrice }
+                                    : c,
+                                ),
+                                priceGrid: newPriceGrid,
+                              };
+                            });
                           }}
                           onBlur={() => onSaveConfig?.()}
                           className="w-full h-14 p-4 text-center text-sm font-black text-blue-600 bg-transparent outline-none focus:ring-2 focus:ring-blue-500 focus:bg-blue-50/50 transition-all [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
@@ -3672,7 +3758,11 @@ const FacadePriceGrid = ({
                       <div className="relative group/cell">
                         <input
                           type="number"
-                          value={currentSettings.thicknessGrid?.[gridKey] || 0}
+                          value={
+                            currentSettings.thicknessGrid?.[gridKey] === 0 || currentSettings.thicknessGrid?.[gridKey] == null
+                              ? ""
+                              : currentSettings.thicknessGrid?.[gridKey]
+                          }
                           onFocus={(e) => e.target.select()}
                           onChange={(e) => {
                             const val = parseFloat(e.target.value) || 0;
@@ -5160,7 +5250,7 @@ const PriceView = ({
                               <input
                                 type="text"
                                 placeholder="Например: Врезка подсветки"
-                                value={serviceForm.name}
+                                value={serviceForm.name || ""}
                                 onChange={(e) => setServiceForm({ ...serviceForm, name: e.target.value })}
                                 className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-medium"
                               />
@@ -5173,7 +5263,7 @@ const PriceView = ({
                               <input
                                 type="text"
                                 placeholder="шт, м.п., м2, усл, компл..."
-                                value={serviceForm.unit}
+                                value={serviceForm.unit || ""}
                                 onChange={(e) => setServiceForm({ ...serviceForm, unit: e.target.value })}
                                 className="w-full px-3.5 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 outline-none font-medium mb-2"
                               />
@@ -5910,28 +6000,45 @@ const PriceView = ({
                                     .map((t) => t.trim())
                                     .filter((t) => t);
                                   const id = "facade_" + Date.now();
-                                  setOwnProductionConfig((prev) => ({
-                                    ...prev,
-                                    extraFacadeTypes: [
+                                  const newTypeItem = {
+                                    id,
+                                    name: id,
+                                    displayName: name,
+                                    thicknesses:
+                                      thicknesses.length > 0
+                                        ? thicknesses
+                                        : ["16", "19", "22"],
+                                    settings: {
+                                      displayName: name,
+                                      minOrderVolume: 0,
+                                      categories: [
+                                        { id: "c1", name: "Категория 1", purchasePrice: 0 }
+                                      ],
+                                      millings: [
+                                        { id: "m1", name: "Мыло", purchasePrice: 0 }
+                                      ],
+                                      thicknessPrices: {},
+                                      priceGrid: {},
+                                      thicknessGrid: {},
+                                    },
+                                  };
+                                  setOwnProductionConfig((prev) => {
+                                    const nextList = [
                                       ...(prev.extraFacadeTypes || []),
-                                      {
-                                        id,
-                                        name: id,
-                                        displayName: name,
-                                        thicknesses:
-                                          thicknesses.length > 0
-                                            ? thicknesses
-                                            : ["16", "19", "22"],
-                                        settings: {
-                                          categories: [],
-                                          millings: [],
-                                          thicknessPrices: {},
-                                          priceGrid: {},
-                                          thicknessGrid: {},
-                                        },
-                                      },
-                                    ],
-                                  }));
+                                      newTypeItem,
+                                    ];
+                                    if (companyId) {
+                                      setDoc(
+                                        doc(db, "companies", companyId, "settings", "production"),
+                                        { extraFacadeTypes: nextList },
+                                        { merge: true }
+                                      ).catch((err) => console.error("Direct save extraFacadeTypes failed:", err));
+                                    }
+                                    return {
+                                      ...prev,
+                                      extraFacadeTypes: nextList,
+                                    };
+                                  });
                                 },
                               );
                             }
@@ -5960,9 +6067,8 @@ const PriceView = ({
                       ]
                     }
                     onUpdateThicknesses={(newThicknesses) => {
-                      setOwnProductionConfig((prev) => ({
-                        ...prev,
-                        facadeSettings: {
+                      setOwnProductionConfig((prev) => {
+                        const updated = {
                           ...(prev.facadeSettings || {
                             categories: [],
                             millings: [],
@@ -5971,13 +6077,20 @@ const PriceView = ({
                             thicknessGrid: {},
                           }),
                           thicknesses: newThicknesses,
-                        },
-                      }));
+                        };
+                        if (companyId) {
+                          setDoc(
+                            doc(db, "companies", companyId, "settings", "production"),
+                            { facadeSettings: updated },
+                            { merge: true }
+                          ).catch(console.error);
+                        }
+                        return { ...prev, facadeSettings: updated };
+                      });
                     }}
                     onUpdate={(updater) => {
-                      setOwnProductionConfig((prev) => ({
-                        ...prev,
-                        facadeSettings: updater(
+                      setOwnProductionConfig((prev) => {
+                        const updated = updater(
                           prev.facadeSettings || {
                             categories: [],
                             millings: [],
@@ -5985,13 +6098,20 @@ const PriceView = ({
                             priceGrid: {},
                             thicknessGrid: {},
                           },
-                        ),
-                      }));
+                        );
+                        if (companyId) {
+                          setDoc(
+                            doc(db, "companies", companyId, "settings", "production"),
+                            { facadeSettings: updated },
+                            { merge: true }
+                          ).catch(console.error);
+                        }
+                        return { ...prev, facadeSettings: updated };
+                      });
                     }}
                     onUpdateTitle={(newTitle) => {
-                      setOwnProductionConfig((prev) => ({
-                        ...prev,
-                        facadeSettings: {
+                      setOwnProductionConfig((prev) => {
+                        const updated = {
                           ...(prev.facadeSettings || {
                             categories: [],
                             millings: [],
@@ -6000,8 +6120,16 @@ const PriceView = ({
                             thicknessGrid: {},
                           }),
                           displayName: newTitle,
-                        },
-                      }));
+                        };
+                        if (companyId) {
+                          setDoc(
+                            doc(db, "companies", companyId, "settings", "production"),
+                            { facadeSettings: updated },
+                            { merge: true }
+                          ).catch(console.error);
+                        }
+                        return { ...prev, facadeSettings: updated };
+                      });
                     }}
                     showConfirm={showConfirm}
                     onSaveConfig={() => onSave?.(true)}
@@ -6021,9 +6149,8 @@ const PriceView = ({
                       ]
                     }
                     onUpdateThicknesses={(newThicknesses) => {
-                      setOwnProductionConfig((prev) => ({
-                        ...prev,
-                        enamelSettings: {
+                      setOwnProductionConfig((prev) => {
+                        const updated = {
                           ...(prev.enamelSettings || {
                             categories: [],
                             millings: [],
@@ -6032,13 +6159,20 @@ const PriceView = ({
                             thicknessGrid: {},
                           }),
                           thicknesses: newThicknesses,
-                        },
-                      }));
+                        };
+                        if (companyId) {
+                          setDoc(
+                            doc(db, "companies", companyId, "settings", "production"),
+                            { enamelSettings: updated },
+                            { merge: true }
+                          ).catch(console.error);
+                        }
+                        return { ...prev, enamelSettings: updated };
+                      });
                     }}
                     onUpdate={(updater) => {
-                      setOwnProductionConfig((prev) => ({
-                        ...prev,
-                        enamelSettings: updater(
+                      setOwnProductionConfig((prev) => {
+                        const updated = updater(
                           prev.enamelSettings || {
                             categories: [],
                             millings: [],
@@ -6046,13 +6180,20 @@ const PriceView = ({
                             priceGrid: {},
                             thicknessGrid: {},
                           },
-                        ),
-                      }));
+                        );
+                        if (companyId) {
+                          setDoc(
+                            doc(db, "companies", companyId, "settings", "production"),
+                            { enamelSettings: updated },
+                            { merge: true }
+                          ).catch(console.error);
+                        }
+                        return { ...prev, enamelSettings: updated };
+                      });
                     }}
                     onUpdateTitle={(newTitle) => {
-                      setOwnProductionConfig((prev) => ({
-                        ...prev,
-                        enamelSettings: {
+                      setOwnProductionConfig((prev) => {
+                        const updated = {
                           ...(prev.enamelSettings || {
                             categories: [],
                             millings: [],
@@ -6061,8 +6202,16 @@ const PriceView = ({
                             thicknessGrid: {},
                           }),
                           displayName: newTitle,
-                        },
-                      }));
+                        };
+                        if (companyId) {
+                          setDoc(
+                            doc(db, "companies", companyId, "settings", "production"),
+                            { enamelSettings: updated },
+                            { merge: true }
+                          ).catch(console.error);
+                        }
+                        return { ...prev, enamelSettings: updated };
+                      });
                     }}
                     showConfirm={showConfirm}
                     onSaveConfig={() => onSave?.(true)}
@@ -6076,46 +6225,74 @@ const PriceView = ({
                       settings={extraType.settings}
                       surchargeThicknesses={extraType.thicknesses}
                       onUpdateThicknesses={(newThicknesses) => {
-                        setOwnProductionConfig((prev) => ({
-                          ...prev,
-                          extraFacadeTypes: prev.extraFacadeTypes?.map((t) =>
+                        setOwnProductionConfig((prev) => {
+                          const updatedList = (prev.extraFacadeTypes || []).map((t) =>
                             t.id === extraType.id
                               ? { ...t, thicknesses: newThicknesses }
                               : t,
-                          ),
-                        }));
+                          );
+                          if (companyId) {
+                            setDoc(
+                              doc(db, "companies", companyId, "settings", "production"),
+                              { extraFacadeTypes: updatedList },
+                              { merge: true }
+                            ).catch(console.error);
+                          }
+                          return { ...prev, extraFacadeTypes: updatedList };
+                        });
                       }}
                       onUpdate={(updater) => {
-                        setOwnProductionConfig((prev) => ({
-                          ...prev,
-                          extraFacadeTypes: prev.extraFacadeTypes?.map((t) =>
+                        setOwnProductionConfig((prev) => {
+                          const updatedList = (prev.extraFacadeTypes || []).map((t) =>
                             t.id === extraType.id
                               ? { ...t, settings: updater(t.settings) }
                               : t,
-                          ),
-                        }));
+                          );
+                          if (companyId) {
+                            setDoc(
+                              doc(db, "companies", companyId, "settings", "production"),
+                              { extraFacadeTypes: updatedList },
+                              { merge: true }
+                            ).catch(console.error);
+                          }
+                          return { ...prev, extraFacadeTypes: updatedList };
+                        });
                       }}
                       onUpdateTitle={(newTitle) => {
-                        setOwnProductionConfig((prev) => ({
-                          ...prev,
-                          extraFacadeTypes: prev.extraFacadeTypes?.map((t) =>
+                        setOwnProductionConfig((prev) => {
+                          const updatedList = (prev.extraFacadeTypes || []).map((t) =>
                             t.id === extraType.id
                               ? { ...t, displayName: newTitle }
                               : t,
-                          ),
-                        }));
+                          );
+                          if (companyId) {
+                            setDoc(
+                              doc(db, "companies", companyId, "settings", "production"),
+                              { extraFacadeTypes: updatedList },
+                              { merge: true }
+                            ).catch(console.error);
+                          }
+                          return { ...prev, extraFacadeTypes: updatedList };
+                        });
                       }}
                       onRemove={() => {
                         showConfirm(
                           "Удалить тип",
                           `Удалить тип фасадов "${extraType.displayName}"?`,
                           () => {
-                            setOwnProductionConfig((prev) => ({
-                              ...prev,
-                              extraFacadeTypes: prev.extraFacadeTypes?.filter(
+                            setOwnProductionConfig((prev) => {
+                              const updatedList = (prev.extraFacadeTypes || []).filter(
                                 (t) => t.id !== extraType.id,
-                              ),
-                            }));
+                              );
+                              if (companyId) {
+                                setDoc(
+                                  doc(db, "companies", companyId, "settings", "production"),
+                                  { extraFacadeTypes: updatedList, _allowEmptyExtraFacades: updatedList.length === 0 },
+                                  { merge: true }
+                                ).catch(console.error);
+                              }
+                              return { ...prev, extraFacadeTypes: updatedList };
+                            });
                           },
                         );
                       }}
@@ -8528,7 +8705,7 @@ const WorktopCutModal = ({
                 </span>
                 <input
                   type="text"
-                  value={edgeDecor}
+                  value={edgeDecor || ""}
                   onChange={(e) => setEdgeDecor(e.target.value)}
                   placeholder="Напр. Дуб Сонома"
                   className="w-full mt-1 px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none"
@@ -8568,7 +8745,7 @@ const WorktopCutModal = ({
                         </span>
                         <input
                           type="text"
-                          value={part.width === 0 ? "" : part.width}
+                          value={part.width === 0 || part.width == null ? "" : part.width}
                           onChange={(e) => {
                             const val = e.target.value.replace(",", ".").replace(/[^0-9]/g, "");
                             updatePart(
@@ -8586,7 +8763,7 @@ const WorktopCutModal = ({
                         </span>
                         <input
                           type="text"
-                          value={part.height === 0 ? "" : part.height}
+                          value={part.height === 0 || part.height == null ? "" : part.height}
                           onChange={(e) => {
                             const val = e.target.value.replace(",", ".").replace(/[^0-9]/g, "");
                             updatePart(
@@ -14841,7 +15018,7 @@ const SettingsView = ({
           <input
             type="text"
             value={
-              deliveryTariffs[fieldKey] === 0
+              deliveryTariffs[fieldKey] === 0 || deliveryTariffs[fieldKey] == null
                 ? ""
                 : deliveryTariffs[fieldKey]
             }
@@ -14881,7 +15058,7 @@ const SettingsView = ({
               type="text"
               placeholder={String(prodVal)}
               value={
-                deliveryTariffs[fieldKey] === 0
+                deliveryTariffs[fieldKey] === 0 || deliveryTariffs[fieldKey] == null
                   ? ""
                   : deliveryTariffs[fieldKey]
               }
@@ -16417,7 +16594,7 @@ const SettingsView = ({
                       <input
                         type="text"
                         placeholder="Наименование компании"
-                        value={companyInfo.name}
+                        value={companyInfo.name || ""}
                         onChange={(e) =>
                           setCompanyInfo({
                             ...companyInfo,
@@ -16500,7 +16677,7 @@ const SettingsView = ({
                         <input
                           type="text"
                           placeholder="Генеральный директор"
-                          value={companyInfo.director}
+                          value={companyInfo.director || ""}
                           onChange={(e) =>
                             setCompanyInfo({
                               ...companyInfo,
@@ -16519,7 +16696,7 @@ const SettingsView = ({
                       <input
                         type="text"
                         placeholder="ИНН"
-                        value={companyInfo.inn}
+                        value={companyInfo.inn || ""}
                         onChange={(e) =>
                           setCompanyInfo({
                             ...companyInfo,
@@ -16537,7 +16714,7 @@ const SettingsView = ({
                       <input
                         type="text"
                         placeholder={companyInfo.legalForm === "ИП" ? "ОГРНИП" : "ОГРН"}
-                        value={companyInfo.ogrn}
+                        value={companyInfo.ogrn || ""}
                         onChange={(e) =>
                           setCompanyInfo({
                             ...companyInfo,
@@ -16585,7 +16762,7 @@ const SettingsView = ({
                         </label>
                         <input
                           type="number"
-                          value={companyInfo.taxRate}
+                          value={companyInfo.taxRate ?? 0}
                           onChange={(e) =>
                             setCompanyInfo({
                               ...companyInfo,
@@ -16695,7 +16872,7 @@ const SettingsView = ({
                       <input
                         type="text"
                         placeholder="Наименование банка"
-                        value={companyInfo.bankName}
+                        value={companyInfo.bankName || ""}
                         onChange={(e) =>
                           setCompanyInfo({
                             ...companyInfo,
@@ -16713,7 +16890,7 @@ const SettingsView = ({
                       <input
                         type="text"
                         placeholder="БИК"
-                        value={companyInfo.bik}
+                        value={companyInfo.bik || ""}
                         onChange={(e) =>
                           setCompanyInfo({
                             ...companyInfo,
@@ -16731,7 +16908,7 @@ const SettingsView = ({
                       <input
                         type="text"
                         placeholder="Расчетный счет"
-                        value={companyInfo.rs}
+                        value={companyInfo.rs || ""}
                         onChange={(e) =>
                           setCompanyInfo({
                             ...companyInfo,
@@ -16749,7 +16926,7 @@ const SettingsView = ({
                       <input
                         type="text"
                         placeholder="Корреспондентский счет"
-                        value={companyInfo.ks}
+                        value={companyInfo.ks || ""}
                         onChange={(e) =>
                           setCompanyInfo({
                             ...companyInfo,
@@ -18009,7 +18186,7 @@ const SettingsView = ({
                       type="text"
                       list="brand-coeff-suggestions"
                       placeholder="Выберите или введите бренд..."
-                      value={brandCoeffForm.brand}
+                      value={brandCoeffForm.brand || ""}
                       onChange={(e) =>
                         setBrandCoeffForm({
                           ...brandCoeffForm,
@@ -18046,7 +18223,7 @@ const SettingsView = ({
                   <input
                     type="number"
                     step="0.01"
-                    value={brandCoeffForm.retail}
+                    value={brandCoeffForm.retail ?? 0}
                     onChange={(e) =>
                       setBrandCoeffForm({
                         ...brandCoeffForm,
@@ -18063,7 +18240,7 @@ const SettingsView = ({
                   <input
                     type="number"
                     step="0.01"
-                    value={brandCoeffForm.designer}
+                    value={brandCoeffForm.designer ?? 0}
                     onChange={(e) =>
                       setBrandCoeffForm({
                         ...brandCoeffForm,
@@ -18080,7 +18257,7 @@ const SettingsView = ({
                   <input
                     type="number"
                     step="0.01"
-                    value={brandCoeffForm.standardSalon}
+                    value={brandCoeffForm.standardSalon ?? 0}
                     onChange={(e) =>
                       setBrandCoeffForm({
                         ...brandCoeffForm,
@@ -18653,7 +18830,7 @@ const ServicesView = ({
             <input
               type="text"
               placeholder="Цена"
-              value={newService.price === 0 ? "" : newService.price}
+              value={newService.price === 0 || newService.price == null ? "" : newService.price}
               onChange={handlePriceChange}
               className="w-24 px-4 py-2 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none font-bold"
             />
@@ -18977,7 +19154,7 @@ const ServiceSectionView = ({
             </label>
             <input
               type="text"
-              value={data.address.street}
+              value={data.address.street || ""}
               onChange={(e) => updateAddress("street", e.target.value)}
               placeholder="Введите название улицы"
               className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
@@ -18989,7 +19166,7 @@ const ServiceSectionView = ({
             </label>
             <input
               type="text"
-              value={data.address.house}
+              value={data.address.house || ""}
               onChange={(e) => updateAddress("house", e.target.value)}
               className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
             />
@@ -19000,7 +19177,7 @@ const ServiceSectionView = ({
             </label>
             <input
               type="text"
-              value={data.address.apartment}
+              value={data.address.apartment || ""}
               onChange={(e) => updateAddress("apartment", e.target.value)}
               className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
             />
@@ -19011,7 +19188,7 @@ const ServiceSectionView = ({
             </label>
             <input
               type="text"
-              value={data.address.floor}
+              value={data.address.floor || ""}
               onChange={(e) => updateAddress("floor", e.target.value)}
               className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
             />
@@ -19021,7 +19198,7 @@ const ServiceSectionView = ({
               Наличие лифта
             </label>
             <select
-              value={data.address.elevator}
+              value={data.address.elevator || "none"}
               onChange={(e) => updateAddress("elevator", e.target.value)}
               className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all bg-white"
             >
@@ -19295,7 +19472,7 @@ const ServiceSectionView = ({
                                   <input
                                     type="number"
                                     min="0"
-                                    value={currentQty === 0 ? "" : currentQty}
+                                    value={currentQty === 0 || currentQty == null ? "" : currentQty}
                                     placeholder="0"
                                     onClick={(e) => e.stopPropagation()}
                                     onChange={(e) => {
@@ -22375,14 +22552,22 @@ const ProductsView = ({
   }, [selectedProductForDetail]);
 
   const availableCategoriesForStd = useMemo(() => {
+    const readyCats = companyData?.readyMadeConfig?.categories || DEFAULT_READY_MADE_CATEGORIES;
     const cats = new Set<string>();
     catalogProducts.forEach((p) => {
-      if (p.category && p.category !== "Кухонные модули") {
+      if (
+        p.category &&
+        p.category !== "Кухонные модули" &&
+        !isEdgeCategory(p.category) &&
+        !isReadyMadeCategoryName(p.category, readyCats) &&
+        p.category !== "Кухонные гарнитуры" &&
+        p.category !== "Кухонный гарнитур"
+      ) {
         cats.add(p.category);
       }
     });
     return Array.from(cats).sort();
-  }, [catalogProducts]);
+  }, [catalogProducts, companyData?.readyMadeConfig?.categories]);
 
   const subCategoriesForSelectedStd = useMemo(() => {
     if (!stdCategoryFilter) return [];
@@ -22403,7 +22588,7 @@ const ProductsView = ({
     return catalogProducts.filter((p) => {
       if (p.id === (editingProduct?.id || null)) return false;
       if (p.category === "Кухонные модули") return false;
-      if (p.category === "Кромочные материалы" || p.category === "Кромка") return false;
+      if (isEdgeCategory(p.category)) return false;
       
       const matchCat = !stdCategoryFilter || p.category === stdCategoryFilter;
       
@@ -22478,40 +22663,56 @@ const ProductsView = ({
   }, [configuredReadyCats, disabledReadyMadeCats]);
 
   const isReadyMadeCategory = useCallback((catName: string): boolean => {
-    if (!catName) return false;
-    const cLower = catName.toLowerCase().trim();
-    if (cLower.includes("модул") || cLower.includes("фурнитур") || cLower.includes("мойка") || cLower.includes("техник") || cLower.includes("смесител")) {
-      return false;
-    }
-    const readyKeywords = ["кухн", "кухя", "кухi", "гарнитур", "шкаф", "прихож", "стол", "комод"];
-    if (readyKeywords.some(kw => cLower.includes(kw))) {
-      return true;
-    }
-    return activeReadyMadeCats.some(ac => {
-      const acLower = ac.toLowerCase().trim();
-      if (acLower.includes("модул") || acLower.includes("фурнитур")) return false;
-      return cLower === acLower || cLower.includes(acLower) || acLower.includes(cLower);
-    });
+    return isReadyMadeCategoryName(catName, activeReadyMadeCats);
   }, [activeReadyMadeCats]);
 
   const displayProductCategories = useMemo(() => {
+    const readyCats = companyData?.readyMadeConfig?.categories || DEFAULT_READY_MADE_CATEGORIES;
     const catSet = new Set<string>();
+    const isValidCategory = (c: any) => {
+      if (!c || typeof c !== "string") return false;
+      const trimmed = c.trim();
+      if (!trimmed || trimmed === "Акционные товары") return false;
+      if (isEdgeCategory(trimmed)) return false;
+      if (isReadyMadeCategory(trimmed)) return false;
+      if (isReadyMadeCategoryName(trimmed, readyCats)) return false;
+      if (trimmed === "Кухонные гарнитуры" || trimmed === "Кухонный гарнитур") return false;
+      return true;
+    };
+
     (productCategories || []).forEach((c) => {
-      if (c && typeof c === "string" && c.trim().length > 0) catSet.add(c.trim());
+      if (isValidCategory(c)) {
+        catSet.add(c.trim());
+      }
     });
     (catalogProducts || []).forEach((p: any) => {
-      if (p && p.category && typeof p.category === "string" && p.category.trim().length > 0) {
+      if (p && isValidCategory(p.category)) {
         catSet.add(p.category.trim());
       }
     });
     return Array.from(catSet);
-  }, [productCategories, catalogProducts]);
+  }, [productCategories, catalogProducts, isReadyMadeCategory, companyData?.readyMadeConfig?.categories]);
 
   // Kitchen Modules Picker Modal State
   const [isKitchenModulesModalOpen, setIsKitchenModulesModalOpen] = useState(false);
   const [kitchenModuleSearch, setKitchenModuleSearch] = useState("");
   const [kitchenModuleGroupFilter, setKitchenModuleGroupFilter] = useState("Все");
   const [kitchenModuleWidthFilter, setKitchenModuleWidthFilter] = useState("Все");
+
+  useEffect(() => {
+    if (selectedCategory && selectedCategory !== "Акционные товары") {
+      const readyCats = companyData?.readyMadeConfig?.categories || DEFAULT_READY_MADE_CATEGORIES;
+      if (
+        isReadyMadeCategory(selectedCategory) ||
+        isReadyMadeCategoryName(selectedCategory, readyCats) ||
+        isEdgeCategory(selectedCategory) ||
+        selectedCategory === "Кухонные гарнитуры" ||
+        selectedCategory === "Кухонный гарнитур"
+      ) {
+        setSelectedCategory(null);
+      }
+    }
+  }, [selectedCategory, isReadyMadeCategory, companyData?.readyMadeConfig?.categories, setSelectedCategory]);
 
   const [newProduct, setNewProduct] = useState({
     name: "",
@@ -23350,7 +23551,19 @@ const ProductsView = ({
       }
 
       // Исключаем кромочные материалы из товарного каталога
-      if (p.category === "Кромочные материалы" || p.category === "Кромка") {
+      if (isEdgeCategory(p.category)) {
+        return false;
+      }
+
+      // Исключаем готовую мебель из товарного каталога (для нее есть отдельный раздел "Готовая мебель")
+      const readyCats = companyData?.readyMadeConfig?.categories || DEFAULT_READY_MADE_CATEGORIES;
+      if (
+        isReadyMadeCategory(p.category) ||
+        isReadyMadeCategoryName(p.category, readyCats) ||
+        p.category === "Кухонные гарнитуры" ||
+        p.category === "Кухонный гарнитур" ||
+        p.isReadyMade
+      ) {
         return false;
       }
 
@@ -24364,6 +24577,21 @@ const ProductsView = ({
                 (newCat) => {
                   if (newCat && newCat.trim()) {
                     const trimmed = newCat.trim();
+                    const readyCats = companyData?.readyMadeConfig?.categories || DEFAULT_READY_MADE_CATEGORIES;
+                    if (isReadyMadeCategory(trimmed) || isReadyMadeCategoryName(trimmed, readyCats)) {
+                      showAlert(
+                        "Внимание",
+                        `Категория "${trimmed}" относится к разделу «Готовая мебель». В разделе «Товары» добавляются категории для фурнитуры, комплектующих и модулей.`
+                      );
+                      return;
+                    }
+                    if (isEdgeCategory(trimmed)) {
+                      showAlert(
+                        "Внимание",
+                        `Кромка и кромочные материалы настраиваются в разделе «Прайс-лист» (вкладка «Материалы»), так как являются материалом для расчёта изделий, а не отдельным товаром каталога.`
+                      );
+                      return;
+                    }
                     if (!productCategories.includes(trimmed)) {
                       const updated = [...productCategories, trimmed];
                       setProductCategories(updated);
@@ -25636,7 +25864,7 @@ const ProductsView = ({
                     </label>
                     <input
                       type="text"
-                      value={newProduct.name}
+                      value={newProduct.name || ""}
                       onChange={(e) =>
                         setNewProduct((prev) => ({
                           ...prev,
@@ -25657,7 +25885,7 @@ const ProductsView = ({
                         </label>
                         <input
                           type="text"
-                          value={newProduct.manufacturerArticle}
+                          value={newProduct.manufacturerArticle || ""}
                           onChange={(e) =>
                             setNewProduct((prev) => ({
                               ...prev,
@@ -25684,7 +25912,7 @@ const ProductsView = ({
                           </label>
                           <input
                             type="text"
-                            value={newProduct.article}
+                            value={newProduct.article || ""}
                             onChange={(e) =>
                               setNewProduct((prev) => ({
                                 ...prev,
@@ -25701,7 +25929,7 @@ const ProductsView = ({
                           </label>
                           <input
                             type="text"
-                            value={newProduct.vendorArticle}
+                            value={newProduct.vendorArticle || ""}
                             onChange={(e) =>
                               setNewProduct((prev) => ({
                                 ...prev,
@@ -25980,7 +26208,7 @@ const ProductsView = ({
                                       <label className="block text-[10px] font-black uppercase text-gray-400 mb-1">Название / Размер</label>
                                       <input
                                         type="text"
-                                        value={v.name}
+                                        value={v.name || ""}
                                         onChange={(e) => {
                                           const updated = [...(newProduct.variations || [])];
                                           updated[idx] = { ...v, name: e.target.value };
@@ -32369,10 +32597,12 @@ export default function App() {
     });
   };
 
+  const isProductionConfigLoadedRef = useRef<boolean>(false);
   const lastSavedProductionConfigRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!companyData?.id || !ownProductionConfig) return;
+    if (!isProductionConfigLoadedRef.current) return;
 
     const configStr = JSON.stringify(ownProductionConfig);
     if (lastSavedProductionConfigRef.current === null) {
@@ -32566,7 +32796,7 @@ export default function App() {
           try {
             const data = JSON.parse(cached);
             if (key.includes('categories')) {
-              const loadedCats = mergeCategories(data.categories);
+              const loadedCats = mergeCategories(data.categories, undefined, companyData?.readyMadeConfig?.categories);
               setProductCategories(loadedCats);
               setCoefficients((prev: any) => ({ ...prev, products: data.coefficients || {} }));
             }
@@ -32574,15 +32804,35 @@ export default function App() {
               try {
                 const prods = data.map((d: any) => ({ id: d.id, ...(d.data || d) }));
                 setOwnProducts(prods);
-                const itemCategories = prods.map((p: any) => p.category).filter(Boolean);
+                const itemCategories = prods
+                  .map((p: any) => p.category)
+                  .filter((c: any) => c && typeof c === "string" && !isReadyMadeCategoryName(c, companyData?.readyMadeConfig?.categories) && !isEdgeCategory(c));
                 if (itemCategories.length > 0) {
-                  setProductCategories((prev) => mergeCategories(prev, itemCategories));
+                  setProductCategories((prev) => mergeCategories(prev, itemCategories, companyData?.readyMadeConfig?.categories));
                 }
               } catch (e) {}
             }
             if (key.includes('production')) {
-              setContractConfig((prev) => ({ ...prev, ...data }));
-              setOwnProductionConfig((prev: any) => ({ ...prev, ...data }));
+              setContractConfig((prev) => ({
+                ...prev,
+                cabinet: data.cabinet || prev.cabinet,
+                facades: typeof data.facades?.enabled === 'boolean' ? data.facades : prev.facades,
+                hardware: data.hardware || prev.hardware,
+                assembly: data.assembly || prev.assembly,
+                delivery: data.delivery || prev.delivery,
+                city: data.city || prev.city,
+                productionId: data.productionId || prev.productionId,
+              }));
+              setOwnProductionConfig((prev: any) => ({
+                ...prev,
+                ...data,
+                extraFacadeTypes: (Array.isArray(data.extraFacadeTypes) && data.extraFacadeTypes.length > 0)
+                  ? data.extraFacadeTypes
+                  : (prev?.extraFacadeTypes || []),
+              }));
+              lastSavedProductionConfigRef.current = JSON.stringify(data);
+              lastSavedOwnConfig.current = data;
+              isProductionConfigLoadedRef.current = true;
             }
             if (key.includes('general')) {
               if (data.defaultCuttingType) setDefaultCuttingType(data.defaultCuttingType);
@@ -32671,7 +32921,8 @@ export default function App() {
 
       if (catData) {
         await safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyId}/settings/categories`, JSON.stringify(catData));
-        const loadedCats = mergeCategories(catData.categories);
+        const readyCats = genData?.readyMadeConfig?.categories || companyData?.readyMadeConfig?.categories;
+        const loadedCats = mergeCategories(catData.categories, undefined, readyCats);
         setProductCategories(loadedCats);
         setCoefficients((prev: any) => ({ ...prev, products: catData.coefficients || {} }));
       }
@@ -32690,8 +32941,28 @@ export default function App() {
       
       if (prodData) {
         await safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyId}/settings/production`, JSON.stringify(prodData));
-        setContractConfig((prev) => ({ ...prev, ...prodData }));
-        setOwnProductionConfig((prev: any) => ({ ...prev, ...prodData }));
+        setContractConfig((prev) => ({
+          ...prev,
+          cabinet: prodData.cabinet || prev.cabinet,
+          facades: typeof prodData.facades?.enabled === 'boolean' ? prodData.facades : prev.facades,
+          hardware: prodData.hardware || prev.hardware,
+          assembly: prodData.assembly || prev.assembly,
+          delivery: prodData.delivery || prev.delivery,
+          city: prodData.city || prev.city,
+          productionId: prodData.productionId || prev.productionId,
+        }));
+        setOwnProductionConfig((prev: any) => ({
+          ...prev,
+          ...prodData,
+          extraFacadeTypes: (Array.isArray(prodData.extraFacadeTypes) && prodData.extraFacadeTypes.length > 0)
+            ? prodData.extraFacadeTypes
+            : (prev?.extraFacadeTypes || []),
+        }));
+        lastSavedProductionConfigRef.current = JSON.stringify(prodData);
+        lastSavedOwnConfig.current = prodData;
+        isProductionConfigLoadedRef.current = true;
+      } else {
+        isProductionConfigLoadedRef.current = true;
       }
 
       if (genData) {
@@ -32746,9 +33017,12 @@ export default function App() {
         await safeSetLocalStorage(`meb_cache:/api/db/col/companies/${companyId}/products`, JSON.stringify(prodColData));
         const prods = prodColData.map((d: any) => ({ id: d.id, ...d.data }));
         setOwnProducts(prods);
-        const itemCategories = prods.map((p: any) => p.category).filter(Boolean);
+        const readyCats = genData?.readyMadeConfig?.categories || companyData?.readyMadeConfig?.categories;
+        const itemCategories = prods
+          .map((p: any) => p.category)
+          .filter((c: any) => c && typeof c === "string" && !isReadyMadeCategoryName(c, readyCats) && !isEdgeCategory(c));
         if (itemCategories.length > 0) {
-          setProductCategories((prev) => mergeCategories(prev, itemCategories));
+          setProductCategories((prev) => mergeCategories(prev, itemCategories, readyCats));
         }
       }
       
@@ -35369,6 +35643,7 @@ export default function App() {
   const lastSavedContractConfig = useRef<any>(null);
   useEffect(() => {
     if (!companyData?.id) return;
+    if (!isProductionConfigLoadedRef.current) return;
     const isOwn = companyData?.type === "Мебельное производство" || productionFormat === "own";
     
     if (isOwn) {
@@ -35835,10 +36110,16 @@ export default function App() {
       );
       console.log("setDoc completed successfully");
 
-      // Auto-persist new category if product has a previously unlisted category
+      // Auto-persist new category if product has a previously unlisted category (excluding ready made furniture)
       if (finalProduct.category && typeof finalProduct.category === "string") {
         const catName = finalProduct.category.trim();
-        if (catName && !productCategories.includes(catName)) {
+        const readyCats = companyData?.readyMadeConfig?.categories || DEFAULT_READY_MADE_CATEGORIES;
+        if (
+          catName &&
+          !productCategories.includes(catName) &&
+          !isReadyMadeCategoryName(catName, readyCats) &&
+          catName !== "Акционные товары"
+        ) {
           const updatedCats = Array.from(new Set([...productCategories, catName]));
           setProductCategories(updatedCats);
           saveProductCategories(updatedCats);
@@ -35957,6 +36238,7 @@ export default function App() {
         setDoc(
           doc(db, "companies", companyData.id, "settings", "production"),
           updated,
+          { merge: true }
         ).catch((err) => console.error("Error saving production config directly:", err));
       }
       return updated;
@@ -35996,6 +36278,7 @@ export default function App() {
                   setDoc(
                     doc(db, "companies", companyData.id, "settings", "production"),
                     updated,
+                    { merge: true }
                   ).catch((err) => console.error("Error saving production config directly:", err));
                 }
                 return updated;
@@ -36021,6 +36304,7 @@ export default function App() {
             setDoc(
               doc(db, "companies", companyData.id, "settings", "production"),
               updated,
+              { merge: true }
             ).catch((err) => console.error("Error saving production config directly:", err));
           }
           return updated;
@@ -36035,9 +36319,21 @@ export default function App() {
       const isOwn =
         productionFormat === "own" ||
         companyData?.type === "Мебельное производство";
-      const config = configToSave 
-        ? { ...contractConfig, ...ownProductionConfig, ...configToSave }
-        : { ...contractConfig, ...ownProductionConfig };
+
+      const targetExtraFacades = (
+        (configToSave?.extraFacadeTypes && Array.isArray(configToSave.extraFacadeTypes) && configToSave.extraFacadeTypes.length > 0)
+          ? configToSave.extraFacadeTypes
+          : (ownProductionConfig?.extraFacadeTypes && Array.isArray(ownProductionConfig.extraFacadeTypes) && ownProductionConfig.extraFacadeTypes.length > 0)
+            ? ownProductionConfig.extraFacadeTypes
+            : (configToSave?.extraFacadeTypes || ownProductionConfig?.extraFacadeTypes || [])
+      );
+
+      const config = {
+        ...contractConfig,
+        ...ownProductionConfig,
+        ...(configToSave || {}),
+        extraFacadeTypes: targetExtraFacades,
+      };
 
       await setDoc(
         doc(db, "companies", companyData.id, "settings", "production"),
@@ -38402,12 +38698,15 @@ export default function App() {
             ownProductionConfig={ownProductionConfig}
             onAddProduct={onAddProduct}
             catalogProducts={catalogProducts}
-            productCategories={productCategories}
+            productCategories={productCategories.filter((c: string) => !isReadyMadeCategoryName(c, companyData?.readyMadeConfig?.categories) && c.trim() !== "Акционные товары" && !isEdgeCategory(c) && c.trim() !== "Кухонные гарнитуры" && c.trim() !== "Кухонный гарнитур")}
             setProductCategories={(catsOrFn) => {
-              const newCats =
+              const raw =
                 typeof catsOrFn === "function"
                   ? (catsOrFn as any)(productCategories)
                   : catsOrFn;
+              const newCats = (raw || []).filter(
+                (c: string) => !isReadyMadeCategoryName(c, companyData?.readyMadeConfig?.categories) && c.trim() !== "Акционные товары" && !isEdgeCategory(c) && c.trim() !== "Кухонные гарнитуры" && c.trim() !== "Кухонный гарнитур"
+              );
               setProductCategories(newCats);
               saveProductCategories(newCats);
             }}
@@ -39596,7 +39895,7 @@ export default function App() {
                           <input
                             type="number"
                             min="1"
-                            value={item.selectedQty}
+                            value={item.selectedQty ?? 1}
                             onChange={(e) => {
                               const val = Math.max(1, parseInt(e.target.value) || 1);
                               const updated = [...requiredProductsModal.requiredItems];
@@ -39820,7 +40119,7 @@ export default function App() {
                 {modal.type === "prompt" && (
                   <input
                     type="text"
-                    value={modal.value}
+                    value={modal.value || ""}
                     onChange={(e) =>
                       setModal({ ...modal, value: e.target.value })
                     }

@@ -2083,7 +2083,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                     />
                     <input
                       type="text"
-                      value={doc.name}
+                      value={doc.name || ""}
                       onChange={(e) => {
                         const defaultDocs = [
                           { id: 'doc-1', name: 'Чертежи для сборки', enabled: true },
@@ -2264,7 +2264,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                               <MapPin className={`w-4 h-4 shrink-0 ${item.storageCell ? 'text-emerald-600' : 'text-slate-300'}`} />
                               <input
                                 type="text"
-                                value={item.storageCell}
+                                value={item.storageCell || ""}
                                 onChange={(e) => {
                                   handleUpdateItemCell(
                                     itemKey,
@@ -2378,7 +2378,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Поисковый паттерн</label>
                     <input
                       type="text"
-                      value={rule.pattern}
+                      value={rule.pattern || ""}
                       onChange={(e) => handleUpdateNoteRule(rule.id, 'pattern', e.target.value)}
                       placeholder="паз, присадка, 4-8-36"
                       className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-mono font-bold text-slate-900 text-xs focus:ring-2 focus:ring-purple-500 outline-none"
@@ -2389,7 +2389,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                     <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Инструкция для мастера на станке</label>
                     <input
                       type="text"
-                      value={rule.instruction}
+                      value={rule.instruction || ""}
                       onChange={(e) => handleUpdateNoteRule(rule.id, 'instruction', e.target.value)}
                       placeholder="Фрезеровка паза 4 мм под заднюю стенку ХДФ"
                       className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-900 text-xs focus:ring-2 focus:ring-purple-500 outline-none"
@@ -3517,7 +3517,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                     <div className="w-full md:w-1/4">
                       <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Участок</label>
                       <select
-                        value={eq.department}
+                        value={eq.department || "cutting"}
                         onChange={(e) => handleUpdateEquipment(eIdx, 'department', e.target.value)}
                         className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-bold text-slate-900 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
                       >
@@ -3547,7 +3547,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                     <div className="w-full md:w-36">
                       <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">Статус</label>
                       <select
-                        value={eq.status}
+                        value={eq.status || "working"}
                         onChange={(e) => handleUpdateEquipment(eIdx, 'status', e.target.value)}
                         className="w-full px-3 py-2 rounded-xl bg-white border border-slate-200 font-bold text-slate-900 text-xs focus:ring-2 focus:ring-blue-500 outline-none"
                       >

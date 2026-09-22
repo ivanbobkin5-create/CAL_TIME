@@ -854,7 +854,7 @@ export const AdminSettingsView = ({
                       <input 
                         type="number" 
                         min="0"
-                        value={tariffRequest.extraEmployees}
+                        value={tariffRequest.extraEmployees ?? 0}
                         onChange={(e) => setTariffRequest(prev => ({ ...prev, extraEmployees: parseInt(e.target.value) || 0 }))}
                         className="w-20 px-3 py-1.5 border border-gray-200 rounded-lg text-center"
                       />
@@ -864,7 +864,7 @@ export const AdminSettingsView = ({
                       <input 
                         type="number" 
                         min="0"
-                        value={tariffRequest.extraSalons}
+                        value={tariffRequest.extraSalons ?? 0}
                         onChange={(e) => setTariffRequest(prev => ({ ...prev, extraSalons: parseInt(e.target.value) || 0 }))}
                         className="w-20 px-3 py-1.5 border border-gray-200 rounded-lg text-center"
                       />
@@ -874,7 +874,7 @@ export const AdminSettingsView = ({
                       <input 
                         type="number" 
                         min="0"
-                        value={tariffRequest.extraDesigners}
+                        value={tariffRequest.extraDesigners ?? 0}
                         onChange={(e) => setTariffRequest(prev => ({ ...prev, extraDesigners: parseInt(e.target.value) || 0 }))}
                         className="w-20 px-3 py-1.5 border border-gray-200 rounded-lg text-center"
                       />
@@ -889,7 +889,7 @@ export const AdminSettingsView = ({
                       <input 
                         type="number" 
                         min="0"
-                        value={tariffRequest.extraEmployees}
+                        value={tariffRequest.extraEmployees ?? 0}
                         onChange={(e) => setTariffRequest(prev => ({ ...prev, extraEmployees: parseInt(e.target.value) || 0 }))}
                         className="w-20 px-3 py-1.5 border border-gray-200 rounded-lg text-center"
                       />
@@ -899,7 +899,7 @@ export const AdminSettingsView = ({
                       <input 
                         type="number" 
                         min="0"
-                        value={tariffRequest.extraCities}
+                        value={tariffRequest.extraCities ?? 0}
                         onChange={(e) => setTariffRequest(prev => ({ ...prev, extraCities: parseInt(e.target.value) || 0 }))}
                         className="w-20 px-3 py-1.5 border border-gray-200 rounded-lg text-center"
                       />
@@ -913,7 +913,7 @@ export const AdminSettingsView = ({
                     <input 
                       type="number" 
                       min="0"
-                      value={tariffRequest.extraCities}
+                      value={tariffRequest.extraCities ?? 0}
                       onChange={(e) => setTariffRequest(prev => ({ ...prev, extraCities: parseInt(e.target.value) || 0 }))}
                       className="w-20 px-3 py-1.5 border border-gray-200 rounded-lg text-center"
                     />
