@@ -35,16 +35,26 @@ export const BazisHardwareImportModal: React.FC<BazisHardwareImportModalProps> =
   onConfirm,
 }) => {
   const [items, setItems] = useState<BazisHardwareImportItem[]>(() =>
-    data.items.map((it: any) => ({
-      ...it,
-      selected: it.selected !== undefined ? it.selected : (it.checked !== undefined ? it.checked : true),
-      category: it.category || (it.isFastener ? "fastener" : "hardware"),
-      categoryType: it.categoryType || (it.isFastener ? "Метизы" : "Фурнитура"),
-      price: it.price || 0,
-      unit: it.unit || "шт",
-      article: it.article || "",
-      rawPartName: it.rawPartName || it.name,
-    }))
+    data.items.map((it: any) => {
+      const isWorktop = it.category === "worktop" || it.categoryType === "Столешницы" || /столешниц|стеновая\s+панель|скинали|постформинг/i.test(it.name || "") || /столешниц|стеновая\s+панель|скинали|постформинг/i.test(it.rawPartName || "");
+      const isFast = it.isFastener || it.category === "fastener" || it.categoryType === "Метизы" || it.name?.toLowerCase()?.includes("полкодержател") || it.rawPartName?.toLowerCase()?.includes("полкодержател");
+      const isProfile = it.category === "profile" || it.categoryType === "Профиль" || /профил|лента|подсветк/i.test(it.name || "") || /профил|лента|подсветк/i.test(it.rawPartName || "");
+
+      const cat = isWorktop ? "worktop" : isFast ? "fastener" : isProfile ? "profile" : (it.category || "hardware");
+      const catType = isWorktop ? "Столешницы" : isFast ? "Метизы" : isProfile ? "Профиль" : (it.categoryType || "Фурнитура");
+
+      return {
+        ...it,
+        selected: it.selected !== undefined ? it.selected : (it.checked !== undefined ? it.checked : true),
+        category: cat,
+        categoryType: catType,
+        isFastener: isFast,
+        price: it.price || 0,
+        unit: it.unit || "шт",
+        article: it.article || "",
+        rawPartName: it.rawPartName || it.name,
+      };
+    })
   );
   const [searchQuery, setSearchQuery] = useState("");
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<string>("all");
@@ -66,6 +76,18 @@ export const BazisHardwareImportModal: React.FC<BazisHardwareImportModalProps> =
     setItems((prev) => prev.map((item) => ({ ...item, selected: select })));
   };
 
+  const isWorktopItem = (it: BazisHardwareImportItem) =>
+    it.category === "worktop" || it.categoryType === "Столешницы" || /столешниц|стеновая\s+панель|скинали|постформинг/i.test(it.name || "");
+
+  const isFastenerItem = (it: BazisHardwareImportItem) =>
+    it.isFastener || it.category === "fastener" || it.categoryType === "Метизы";
+
+  const isProfileItem = (it: BazisHardwareImportItem) =>
+    it.category === "profile" || it.categoryType === "Профиль" || /профил|лента|подсветк/i.test(it.name || "");
+
+  const isHardwareItem = (it: BazisHardwareImportItem) =>
+    !isWorktopItem(it) && !isFastenerItem(it) && !isProfileItem(it);
+
   const filteredItems = items.filter((item) => {
     const matchesSearch =
       !searchQuery ||
@@ -77,21 +99,19 @@ export const BazisHardwareImportModal: React.FC<BazisHardwareImportModalProps> =
 
     if (activeCategoryFilter === "all") return true;
     if (activeCategoryFilter === "matched") return !!item.matchedProduct;
-    if (activeCategoryFilter === "hardware") return item.category === "hardware";
-    if (activeCategoryFilter === "fastener") return item.category === "fastener";
-    if (activeCategoryFilter === "worktop") return item.category === "worktop";
+    if (activeCategoryFilter === "hardware") return isHardwareItem(item);
+    if (activeCategoryFilter === "fastener") return isFastenerItem(item);
+    if (activeCategoryFilter === "worktop") return isWorktopItem(item);
+    if (activeCategoryFilter === "profile") return isProfileItem(item);
     return true;
   });
 
   const selectedCount = items.filter((it) => it.selected).length;
   const matchedCount = items.filter((it) => !!it.matchedProduct).length;
-  const hardwareCount = items.filter((it) => it.category === "hardware").length;
-  const fastenerCount = items.filter((it) => it.category === "fastener").length;
-  const worktopCount = items.filter((it) => itemIsWorktop(it)).length;
-
-  function itemIsWorktop(it: BazisHardwareImportItem) {
-    return it.category === "worktop" || it.categoryType === "Столешницы";
-  }
+  const hardwareCount = items.filter((it) => isHardwareItem(it)).length;
+  const fastenerCount = items.filter((it) => isFastenerItem(it)).length;
+  const worktopCount = items.filter((it) => isWorktopItem(it)).length;
+  const profileCount = items.filter((it) => isProfileItem(it)).length;
 
   return (
     <div
@@ -180,6 +200,19 @@ export const BazisHardwareImportModal: React.FC<BazisHardwareImportModalProps> =
               >
                 <Layers className="w-3.5 h-3.5" />
                 Столешницы ({worktopCount})
+              </button>
+            )}
+            {profileCount > 0 && (
+              <button
+                onClick={() => setActiveCategoryFilter("profile")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  activeCategoryFilter === "profile"
+                    ? "bg-amber-600 text-white shadow-xs"
+                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                <Package className="w-3.5 h-3.5" />
+                Профиль ({profileCount})
               </button>
             )}
             {matchedCount > 0 && (

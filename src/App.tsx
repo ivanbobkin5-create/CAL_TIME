@@ -34810,6 +34810,93 @@ export default function App() {
     return false;
   };
 
+  const normalizeMatchKey = (str: any): string => {
+    if (str === undefined || str === null) return "";
+    return String(str)
+      .trim()
+      .toLowerCase()
+      .replace(/ё/g, "е")
+      .replace(/[\s\-_.,/\\()]+/g, "");
+  };
+
+  const findMatchingCatalogProduct = (
+    catalogList: any[],
+    params: {
+      article?: string;
+      name?: string;
+      rawPartName?: string;
+      rawMaterial?: string;
+      rowCells?: any[];
+    }
+  ) => {
+    if (!catalogList || catalogList.length === 0) return undefined;
+
+    const rawArt = String(params.article || "").trim();
+    const rawName = String(params.name || "").trim();
+    const rawPart = String(params.rawPartName || "").trim();
+    const rawMat = String(params.rawMaterial || "").trim();
+
+    const normArt = normalizeMatchKey(rawArt);
+    const normName = normalizeMatchKey(rawName);
+    const normPart = normalizeMatchKey(rawPart);
+    const normMat = normalizeMatchKey(rawMat);
+
+    const isValidArt = normArt && normArt !== "-" && normArt !== "нет" && normArt !== "none" && normArt !== "0";
+
+    const rowNormCells: string[] = (params.rowCells || [])
+      .map((c) => normalizeMatchKey(c))
+      .filter((c) => c && c.length >= 2 && c !== "-" && c !== "нет" && c !== "none" && c !== "0" && !/^\d{1,2}$/.test(c));
+
+    // 1. Exact article or SKU match
+    for (const p of catalogList) {
+      const pArt = normalizeMatchKey(p.article || p.sku || p.code || "");
+      const pSkus = [
+        ...(Array.isArray(p.skuList) ? p.skuList : []),
+        ...(Array.isArray(p.accountingSkus) ? p.accountingSkus : []),
+      ].map((s: any) => normalizeMatchKey(s)).filter(Boolean);
+
+      if (isValidArt) {
+        if (pArt && pArt === normArt) return p;
+        if (pSkus.includes(normArt)) return p;
+      }
+
+      for (const cellNorm of rowNormCells) {
+        if (pArt && pArt === cellNorm) return p;
+        if (pSkus.includes(cellNorm)) return p;
+      }
+    }
+
+    // 2. Exact name or SKU alias match
+    for (const p of catalogList) {
+      const pName = normalizeMatchKey(p.name || "");
+      const pSkus = [
+        ...(Array.isArray(p.skuList) ? p.skuList : []),
+        ...(Array.isArray(p.accountingSkus) ? p.accountingSkus : []),
+      ].map((s: any) => normalizeMatchKey(s)).filter(Boolean);
+
+      if (pName) {
+        if (normName && pName === normName) return p;
+        if (normMat && pName === normMat) return p;
+        if (normPart && pName === normPart) return p;
+      }
+
+      if (normName && pSkus.includes(normName)) return p;
+      if (normMat && pSkus.includes(normMat)) return p;
+      if (normPart && pSkus.includes(normPart)) return p;
+    }
+
+    // 3. Substring match for substantial names (>= 5 chars)
+    for (const p of catalogList) {
+      const pName = normalizeMatchKey(p.name || "");
+      if (pName.length >= 5) {
+        if (normMat.length >= 5 && (pName.includes(normMat) || normMat.includes(pName))) return p;
+        if (normName.length >= 5 && (pName.includes(normName) || normName.includes(pName))) return p;
+      }
+    }
+
+    return undefined;
+  };
+
   const isBazisPanelsReport = (data: any[][]) => {
     if (!data || data.length === 0) return false;
     for (let i = 0; i < Math.min(data.length, 35); i++) {
@@ -34826,8 +34913,23 @@ export default function App() {
         rowStr.includes("толщина с учетом облицовки") ||
         (rowStr.includes("обозначение[l1]") && rowStr.includes("материал")) ||
         (rowStr.includes("обозначение[w1]") && rowStr.includes("обозначение[w2]")) ||
-        (rowStr.includes("длина") && rowStr.includes("ширина") && (rowStr.includes("кромк") || rowStr.includes("толщин") || rowStr.includes("материал")))
+        (rowStr.includes("кромка l1") && rowStr.includes("кромка w1"))
       ) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const isPro100Report = (data: any[][]) => {
+    if (!data || data.length === 0) return false;
+    if (isBazisPanelsReport(data)) return false;
+    for (let i = 0; i < Math.min(data.length, 15); i++) {
+      const row = data[i] || [];
+      const rowStr = row.map((c) => String(c).toLowerCase()).join(" ");
+      const hasDimensions = (rowStr.includes("высота") || rowStr.includes("height")) && (rowStr.includes("ширина") || rowStr.includes("width"));
+      const hasName = rowStr.includes("название") || rowStr.includes("имя") || rowStr.includes("name");
+      if (hasDimensions && (hasName || rowStr.includes("толщина") || rowStr.includes("кромка") || rowStr.includes("кол-во"))) {
         return true;
       }
     }
@@ -34836,7 +34938,7 @@ export default function App() {
 
   const isBazisHardwareReport = (data: any[][]) => {
     if (!data || data.length === 0) return false;
-    if (isBazisPanelsReport(data)) return false;
+    if (isBazisPanelsReport(data) || isPro100Report(data)) return false;
     for (let i = 0; i < Math.min(data.length, 30); i++) {
       const row = data[i] || [];
       const rowStr = row.map((c) => String(c).toLowerCase()).join(" ");
@@ -34899,6 +35001,7 @@ export default function App() {
     if (!rawData || rawData.length === 0) return [];
 
     let colName = -1;
+    let colMaterial = -1;
     let colArticle = -1;
     let colQty = -1;
     let colUnit = -1;
@@ -34919,8 +35022,10 @@ export default function App() {
         headerRowIdx = i;
         row.forEach((cell: any, cIdx: number) => {
           const h = String(cell || "").toLowerCase().trim();
-          if (h.includes("наименование") || h.includes("номенклатура") || h.includes("название") || (h === "материал" && colName === -1)) {
+          if (h.includes("наименование") || h.includes("номенклатура") || h.includes("название")) {
             colName = cIdx;
+          } else if (h.includes("материал")) {
+            colMaterial = cIdx;
           } else if (h.includes("артикул") || h.includes("код детали") || (h.includes("код") && !h.includes("штрих") && !h.includes("детали_"))) {
             colArticle = cIdx;
           } else if (h.includes("кол-во") || h.includes("количество") || h.includes("расчет") || h.includes("расчёт") || h.includes("в заказе") || h.includes("к-во") || h === "кол.") {
@@ -34964,7 +35069,7 @@ export default function App() {
       for (let r = (headerRowIdx !== -1 ? headerRowIdx + 1 : 0); r < Math.min(rawData.length, 10); r++) {
         const row = rawData[r] || [];
         row.forEach((cell: any, cIdx: number) => {
-          if (cIdx !== colName && cIdx !== colArticle) {
+          if (cIdx !== colName && cIdx !== colArticle && cIdx !== colMaterial) {
             const num = parseNum(cell);
             if (num > 0 && num < 100000 && colQty === -1) {
               colQty = cIdx;
@@ -34975,7 +35080,7 @@ export default function App() {
       if (colQty === -1) colQty = colName === 0 ? 1 : 2;
     }
 
-    if (colArticle === -1 && colName !== 0 && colQty !== 0) {
+    if (colArticle === -1 && colName !== 0 && colQty !== 0 && colMaterial !== 0) {
       colArticle = 0;
     }
 
@@ -35015,62 +35120,46 @@ export default function App() {
       const row = rawData[i];
       if (!row || !Array.isArray(row) || row.length === 0) continue;
 
-      const rawName = colName !== -1 ? String(row[colName] || "").trim() : "";
+      const rawPart = colName !== -1 ? String(row[colName] || "").trim() : "";
+      const rawMat = colMaterial !== -1 ? String(row[colMaterial] || "").trim() : "";
       const article = colArticle !== -1 ? String(row[colArticle] || "").trim() : "";
-      if (!rawName && !article) continue;
-      if (isTechnicalRow(rawName) || (article && isTechnicalRow(article))) continue;
+
+      if (!rawPart && !rawMat && !article) continue;
+      if (isTechnicalRow(rawPart) || isTechnicalRow(rawMat) || (article && isTechnicalRow(article))) continue;
 
       const qty = colQty !== -1 ? parseNum(row[colQty]) || 1 : 1;
       const unit = colUnit !== -1 ? String(row[colUnit] || "шт").trim() || "шт" : "шт";
       const price = colPrice !== -1 ? parseNum(row[colPrice]) || 0 : 0;
 
-      const hasPolko = rawName.toLowerCase().includes("полкодержател");
-      const isFast = hasPolko || isFastener(rawName) || rawName.toLowerCase().includes("метиз");
-      const isWorktop = /столешниц|стеновая\s+панель|скинали|постформинг/i.test(rawName);
-      const isPlinth = /цокол/i.test(rawName);
-      const isProfile = /профил|лента/i.test(rawName);
-      const isHinge = /петл/i.test(rawName);
-      const isSlide = /направляющ/i.test(rawName);
+      const rawMatClean = (rawMat && rawMat !== "-" && rawMat !== "—") ? rawMat : "";
+      const rawPartClean = (rawPart && rawPart !== "-" && rawPart !== "—") ? rawPart : "";
+      const displayName = (rawMatClean && rawMatClean.length >= rawPartClean.length) ? rawMatClean : (rawMatClean || rawPartClean || article);
+
+      const hasPolko = displayName.toLowerCase().includes("полкодержател") || rawPartClean.toLowerCase().includes("полкодержател");
+      const isFast = hasPolko || isFastener(displayName) || isFastener(rawPartClean);
+      const isWorktop = /столешниц|стеновая\s+панель|скинали|постформинг/i.test(displayName) || /столешниц|стеновая\s+панель|скинали|постформинг/i.test(rawPartClean);
+      const isPlinth = /цокол/i.test(displayName) || /цокол/i.test(rawPartClean);
+      const isProfile = /профил|лента|подсветк/i.test(displayName) || /профил|лента|подсветк/i.test(rawPartClean);
+      const isHinge = /петл/i.test(displayName) || /петл/i.test(rawPartClean);
+      const isSlide = /направляющ/i.test(displayName) || /направляющ/i.test(rawPartClean);
 
       const cat = isWorktop ? "Столешницы" : isPlinth ? "Цоколь" : isProfile ? "Профиль" : isHinge ? "Петли" : isSlide ? "Направляющие" : isFast ? "Метизы" : "Фурнитура";
 
-      let matchedProduct: any = undefined;
-      if (catalogProducts && catalogProducts.length > 0) {
-        const normArt = article.toLowerCase().trim();
-        const normName = rawName.toLowerCase().trim();
-        const isValidArt = normArt && normArt !== "-" && normArt !== "—" && normArt !== "нет" && normArt !== "none" && normArt !== "0";
+      const matchedProduct = findMatchingCatalogProduct(catalogProducts || [], {
+        article,
+        name: displayName,
+        rawPartName: rawPartClean,
+        rawMaterial: rawMatClean,
+        rowCells: row,
+      });
 
-        matchedProduct = catalogProducts.find((p: any) => {
-          const manualSkus = [
-            ...(Array.isArray(p.skuList) ? p.skuList : []),
-            ...(Array.isArray(p.accountingSkus) ? p.accountingSkus : []),
-          ].map((s: any) => String(s).trim().toLowerCase()).filter(Boolean);
-
-          const pArt = String(p.article || p.sku || "").toLowerCase().trim();
-          const pName = String(p.name || "").toLowerCase().trim();
-
-          // 1. Explicit user SKU/alias bindings
-          if (manualSkus.length > 0) {
-            if (isValidArt && manualSkus.includes(normArt)) return true;
-            if (normName && manualSkus.includes(normName)) return true;
-          }
-
-          // 2. Strict exact Article match
-          if (isValidArt && pArt && normArt === pArt) return true;
-
-          // 3. Strict exact Name match
-          if (normName && pName && normName === pName) return true;
-
-          return false;
-        });
-      }
-
-      const matchedPrice = matchedProduct?.price || (prices ? (prices[rawName] || (article ? prices[article] : 0)) : 0) || price || 0;
+      const matchedPrice = matchedProduct?.price || (prices ? (prices[displayName] || (rawMatClean ? prices[rawMatClean] : 0) || (rawPartClean ? prices[rawPartClean] : 0) || (article ? prices[article] : 0)) : 0) || price || 0;
 
       items.push({
         id: `bazis-item-${Math.random().toString(36).substring(2, 9)}`,
-        name: rawName || article,
-        article,
+        name: displayName,
+        rawPartName: rawPartClean && rawPartClean !== displayName ? rawPartClean : undefined,
+        article: article || (matchedProduct?.article || matchedProduct?.sku || ""),
         qty: qty > 0 ? qty : 1,
         unit,
         price: matchedPrice,
@@ -35114,7 +35203,7 @@ export default function App() {
           const h = String(cell || "").toLowerCase().trim();
           if (h.includes("наименование") && !h.includes("материал")) colPartName = cIdx;
           else if (h.includes("материал")) colMaterial = cIdx;
-          else if (h.includes("артикул") || (h.includes("обозначение") && !h.includes("l1") && !h.includes("w1") && !h.includes("l2") && !h.includes("w2"))) colArticle = cIdx;
+          else if (h.includes("артикул") || h.includes("код") || (h.includes("обозначение") && !h.includes("l1") && !h.includes("w1") && !h.includes("l2") && !h.includes("w2"))) colArticle = cIdx;
           else if (h.includes("толщина")) colThickness = cIdx;
           else if (h.includes("кол-во") || h.includes("количество")) colQty = cIdx;
           else if (h.includes("готовая деталь_длина") || h.includes("готовая деталь [l]")) colReadyLength = cIdx;
@@ -35326,7 +35415,7 @@ export default function App() {
         // Take name from column 7 (Material) if available, as in Bazis reports column 5 might be general like "Лента", "Полкодержатель", etc.
         const rawMatClean = (rawMaterial && rawMaterial.trim() !== "" && rawMaterial.trim() !== "-") ? rawMaterial.trim() : "";
         const rawPartClean = (rawPartName && rawPartName.trim() !== "" && rawPartName.trim() !== "-") ? rawPartName.trim() : "";
-        const displayName = rawMatClean || rawPartClean || "Фурнитура";
+        const displayName = (rawMatClean && rawMatClean.length >= rawPartClean.length) ? rawMatClean : (rawMatClean || rawPartClean || "Фурнитура");
 
         const hasPolko = displayName.toLowerCase().includes("полкодержател") || rawPartClean.toLowerCase().includes("полкодержател") || rawMatClean.toLowerCase().includes("полкодержател");
         const isFast = hasPolko || isFastener(displayName) || isFastener(rawPartClean) || isFastener(rawMatClean);
@@ -35336,49 +35425,21 @@ export default function App() {
 
         const cat = isWorktop ? "Столешницы" : isPlinth ? "Цоколь" : isProfileOrLighting ? "Профиль" : isFast ? "Метизы" : "Фурнитура";
 
-        let matchedProduct: any = undefined;
-        if (catalogProducts && catalogProducts.length > 0) {
-          const normArt = article.toLowerCase().trim();
-          const normName = displayName.toLowerCase().trim();
-          const normPart = rawPartClean.toLowerCase().trim();
-          const normMat = rawMatClean.toLowerCase().trim();
-          const isValidArt = normArt && normArt !== "-" && normArt !== "—" && normArt !== "нет" && normArt !== "none" && normArt !== "0";
-
-          matchedProduct = catalogProducts.find((p: any) => {
-            const manualSkus = [
-              ...(Array.isArray(p.skuList) ? p.skuList : []),
-              ...(Array.isArray(p.accountingSkus) ? p.accountingSkus : []),
-            ].map((s: any) => String(s).trim().toLowerCase()).filter(Boolean);
-
-            const pArt = String(p.article || p.sku || "").toLowerCase().trim();
-            const pName = String(p.name || "").toLowerCase().trim();
-
-            // 1. Explicit user SKU/alias bindings
-            if (manualSkus.length > 0) {
-              if (isValidArt && manualSkus.includes(normArt)) return true;
-              if (normName && manualSkus.includes(normName)) return true;
-              if (normMat && manualSkus.includes(normMat)) return true;
-              if (normPart && manualSkus.includes(normPart)) return true;
-            }
-
-            // 2. Strict exact Article match from column 8 / file
-            if (isValidArt && pArt && normArt === pArt) return true;
-
-            // 3. Strict exact Name match
-            if (normName && pName && normName === pName) return true;
-            if (normMat && pName && normMat === pName) return true;
-
-            return false;
-          });
-        }
+        const matchedProduct = findMatchingCatalogProduct(catalogProducts || [], {
+          article,
+          name: displayName,
+          rawPartName: rawPartClean,
+          rawMaterial: rawMatClean,
+          rowCells: row,
+        });
 
         const matchedPrice = matchedProduct?.price || (prices ? (prices[displayName] || (rawMatClean ? prices[rawMatClean] : 0) || (rawPartClean ? prices[rawPartClean] : 0) || (article ? prices[article] : 0)) : 0) || 0;
 
         discoveredHardware.push({
           id: `bazis-item-${Math.random().toString(36).substring(2, 9)}`,
           name: displayName,
-          rawPartName: rawPartClean || displayName,
-          article: article,
+          rawPartName: rawPartClean && rawPartClean !== displayName ? rawPartClean : undefined,
+          article: article || (matchedProduct?.article || matchedProduct?.sku || ""),
           qty: qty > 0 ? qty : 1,
           unit: "шт",
           price: matchedPrice,
@@ -35615,32 +35676,10 @@ export default function App() {
 
       let isCatalogMatch = false;
       if (options.importHardware && companyData?.accountingMappingConfig?.enabled !== false && catalogProducts && catalogProducts.length > 0) {
-        const normArt = article.toLowerCase().trim();
-        const normName = rawName.toLowerCase().trim();
-        const isValidArt = normArt && normArt !== "-" && normArt !== "—" && normArt !== "нет" && normArt !== "none" && normArt !== "0";
-
-        const foundProd = catalogProducts.find((p: any) => {
-          const manualSkus = [
-            ...(Array.isArray(p.skuList) ? p.skuList : []),
-            ...(Array.isArray(p.accountingSkus) ? p.accountingSkus : [])
-          ].map((s: any) => String(s).trim().toLowerCase()).filter(Boolean);
-
-          const pArt = String(p.article || p.sku || "").toLowerCase().trim();
-          const pName = String(p.name || "").toLowerCase().trim();
-
-          // 1. Explicit user SKU/alias bindings
-          if (manualSkus.length > 0) {
-            if (isValidArt && manualSkus.includes(normArt)) return true;
-            if (normName && manualSkus.includes(normName)) return true;
-          }
-
-          // 2. Strict exact Article match
-          if (isValidArt && pArt && normArt === pArt) return true;
-
-          // 3. Strict exact Name match
-          if (normName && pName && normName === pName) return true;
-
-          return false;
+        const foundProd = findMatchingCatalogProduct(catalogProducts, {
+          article,
+          name: rawName,
+          rowCells: row,
         });
 
         if (foundProd) {
@@ -36192,6 +36231,379 @@ export default function App() {
     });
   };
 
+  const parsePro100Report = (rawData: any[][], fileName: string) => {
+    let headerRowIdx = -1;
+    for (let i = 0; i < Math.min(rawData.length, 10); i++) {
+      const row = rawData[i];
+      const hasSignificantKeywords = row.some((cell) =>
+        /название|имя|name|height|высота|width|ширина|длина|длинна|толщина|thickness|кол-во|количество|qty|цвет|color|материал|material|кромка|edge/i.test(
+          cell,
+        ),
+      );
+      if (hasSignificantKeywords) {
+        headerRowIdx = i;
+        break;
+      }
+    }
+
+    const headerRow = headerRowIdx !== -1 ? rawData[headerRowIdx] : null;
+
+    let nameIdx = -1;
+    let heightIdx = -1;
+    let widthIdx = -1;
+    let thickIdx = -1;
+    let qtyIdx = -1;
+    let colorIdx = -1;
+    let materialIdx = -1;
+    const edgeCols: number[] = [];
+
+    if (headerRow) {
+      headerRow.forEach((cell, idx) => {
+        const h = (cell || "").toString().toLowerCase().trim();
+        if (/название|имя|^имя|^name$/i.test(h)) { if (nameIdx === -1) nameIdx = idx; }
+        else if (/высота|height/i.test(h)) heightIdx = idx;
+        else if (/ширина|длина|width|length/i.test(h) && h !== "высота") widthIdx = idx;
+        else if (/толщина|thickness/i.test(h)) thickIdx = idx;
+        else if (/кол-во|количество|qty|quantity/i.test(h)) qtyIdx = idx;
+        else if (/цвет|color/i.test(h)) colorIdx = idx;
+        else if (/кромка|edge/i.test(h)) {
+          if (!edgeCols.includes(idx)) edgeCols.push(idx);
+        }
+        else if (/материал|material/i.test(h)) materialIdx = idx;
+      });
+    }
+
+    if (nameIdx === -1) nameIdx = 0;
+    if (heightIdx === -1) heightIdx = 1;
+    if (widthIdx === -1) widthIdx = 3;
+    if (thickIdx === -1) thickIdx = 5;
+    if (qtyIdx === -1) qtyIdx = 6;
+    if (colorIdx === -1) colorIdx = 7;
+
+    if (edgeCols.length === 0) {
+      edgeCols.push(2);
+      edgeCols.push(4);
+    }
+
+    const parsedDetails = rawData
+      .slice(headerRowIdx + 1)
+      .map((row) => {
+        if (row.length < 3) return null;
+        const name = (row[nameIdx] || "Без имени").toString();
+        const height = parseFloat((row[heightIdx]?.toString() || "0").replace(",", "."));
+        const width = parseFloat((row[widthIdx]?.toString() || "0").replace(",", "."));
+        const thickness = parseFloat((row[thickIdx]?.toString() || "0").replace(",", "."));
+        const qty = parseInt(row[qtyIdx] || "1");
+        const color = (row[colorIdx] || (materialIdx !== -1 ? row[materialIdx] : "Default")).toString();
+
+        const isOneEdge = (s: any) => {
+          if (s === undefined || s === null) return false;
+          const p = s.toString().toLowerCase().trim();
+          return p === "1" || p === "." || p === "-" || p === "—" || p === "–";
+        };
+
+        const isTwoEdges = (s: any) => {
+          if (s === undefined || s === null) return false;
+          const p = s.toString().toLowerCase().trim();
+          return p === "2" || p === ":" || p === "=" || p === "==" || p === "4";
+        };
+
+        const edgeSides = { top: false, bottom: false, left: false, right: false };
+
+        if (edgeCols.length >= 4) {
+          if (isOneEdge(row[edgeCols[0]]) || isTwoEdges(row[edgeCols[0]])) edgeSides.left = true;
+          if (isOneEdge(row[edgeCols[1]]) || isTwoEdges(row[edgeCols[1]])) edgeSides.right = true;
+          if (isOneEdge(row[edgeCols[2]]) || isTwoEdges(row[edgeCols[2]])) edgeSides.top = true;
+          if (isOneEdge(row[edgeCols[3]]) || isTwoEdges(row[edgeCols[3]])) edgeSides.bottom = true;
+        } else if (edgeCols.length === 2) {
+          const hE = row[edgeCols[0]];
+          if (isTwoEdges(hE)) { edgeSides.left = true; edgeSides.right = true; }
+          else if (isOneEdge(hE)) { edgeSides.left = true; }
+
+          const wE = row[edgeCols[1]];
+          if (isTwoEdges(wE)) { edgeSides.top = true; edgeSides.bottom = true; }
+          else if (isOneEdge(wE)) { edgeSides.top = true; }
+        } else if (edgeCols.length === 1 || edgeCols.length > 0) {
+          const p = (row[edgeCols[0] || 0] || "").toString().toLowerCase().trim();
+          const separator = p.includes(".") ? "." : p.includes(":") ? ":" : p.includes(",") ? "," : p.includes("|") ? "|" : p.includes(" ") ? " " : null;
+
+          if (separator) {
+            const segments = p.split(separator).map(s => s.trim());
+            if (segments.length >= 4) {
+              edgeSides.left = isOneEdge(segments[0]) || isTwoEdges(segments[0]);
+              edgeSides.right = isOneEdge(segments[1]) || isTwoEdges(segments[1]);
+              edgeSides.top = isOneEdge(segments[2]) || isTwoEdges(segments[2]);
+              edgeSides.bottom = isOneEdge(segments[3]) || isTwoEdges(segments[3]);
+            } else if (segments.length >= 2) {
+              if (isTwoEdges(segments[0])) { edgeSides.left = true; edgeSides.right = true; }
+              else if (isOneEdge(segments[0])) { edgeSides.left = true; }
+
+              if (isTwoEdges(segments[1])) { edgeSides.top = true; edgeSides.bottom = true; }
+              else if (isOneEdge(segments[1])) { edgeSides.top = true; }
+            }
+          } else {
+            if (p.length === 4) {
+              edgeSides.left = isOneEdge(p[0]);
+              edgeSides.right = isOneEdge(p[1]);
+              edgeSides.top = isOneEdge(p[2]);
+              edgeSides.bottom = isOneEdge(p[3]);
+            } else if (isTwoEdges(p)) {
+              edgeSides.left = true; edgeSides.right = true;
+            } else if (isOneEdge(p)) {
+              edgeSides.left = true;
+            }
+          }
+        }
+
+        const edgeLength = ((edgeSides.top ? width : 0) + (edgeSides.bottom ? width : 0) + (edgeSides.left ? height : 0) + (edgeSides.right ? height : 0)) / 1000;
+        const area = (height * width) / 1000000;
+        let type: Detail["type"] = "ЛДСП";
+        const lName = name.toLowerCase();
+        const lColor = color.toLowerCase();
+        const lMaterial = (materialIdx !== -1 && row[materialIdx] ? row[materialIdx].toLowerCase() : "");
+
+        if (thickness < 10 || lName.includes("хдф") || lName.includes("двп") || lColor.includes("хдф") || lColor.includes("двп")) {
+          type = "ХДФ";
+        } else if (lName.includes("фасад") || lColor.includes("фасад") || lMaterial.includes("фасад")) {
+          type = "Фасад";
+        } else if (lName.includes("мдф") || lColor.includes("мдф") || lMaterial.includes("мдф")) {
+          type = "МДФ";
+        } else if (lName.includes("столешница") || lName.includes("worktop") || lColor.includes("столешница") || lMaterial.includes("столешница")) {
+          type = "Столешница";
+        } else if (lName.includes("стеновая") || lName.includes("backsplash") || lColor.includes("стеновая") || lMaterial.includes("стеновая")) {
+          type = "Стеновая панель";
+        } else if (lName.includes("лдсп") || lColor.includes("лдсп") || lMaterial.includes("лдсп")) {
+          type = "ЛДСП";
+        }
+
+        if (lName.includes("модуль") || lColor.includes("модуль") || lMaterial.includes("модуль")) return null;
+
+        return {
+          id: Math.random().toString(36).substring(2, 9),
+          type,
+          name,
+          height,
+          edgeProc: "",
+          width,
+          thickness,
+          qty,
+          color,
+          area,
+          edgeLength,
+          edgeSides,
+          canRotate: type === "ХДФ",
+        };
+      })
+      .filter((d) => d !== null) as Detail[];
+
+    if (parsedDetails.length === 0) {
+      showAlert(
+        "Ошибка",
+        "Не удалось найти данные в файле. Проверьте структуру колонок.",
+      );
+      return;
+    }
+
+    const grouped: any = {};
+    const initialSheetConfigs: Record<string, SheetConfig> = {};
+    const initialExpanded: Set<string> = new Set();
+    const initialRotations: Record<string, boolean> = { ...rotations };
+    const initialEdgeToEdge: Record<string, boolean> = { ...edgeToEdge };
+
+    parsedDetails.forEach((d) => {
+      const key = `${d.type}|${d.color}|${d.thickness}`;
+
+      if (!grouped[key]) {
+        if (d.type === "ХДФ") initialRotations[key] = true;
+        grouped[key] = {
+          type: d.type,
+          name:
+            d.type === "Фасад"
+              ? "Фасады"
+              : d.type === "ХДФ"
+                ? "ДВП/ХДФ"
+                : d.type === "ЛДСП"
+                  ? "ЛДСП"
+                  : d.name,
+          color: d.color,
+          thickness: d.thickness,
+          area: 0,
+          edgeLength: 0,
+          details: [],
+        };
+
+        const configToUse =
+          productionFormat === "contract" &&
+          productionSettings?.production
+            ? productionSettings.production
+            : ownProductionConfig;
+
+        const brandString = (d.color + " " + d.name).toLowerCase();
+        const brandMatch =
+          configToUse?.ldspBrands?.find((b: any) =>
+            brandString.includes(b.brand.toLowerCase()),
+          ) ||
+          LDSP_BRANDS.find((b) =>
+            brandString.includes(b.name.split(" ")[0].toLowerCase()),
+          );
+
+        if (brandMatch) {
+          if ("format" in brandMatch && brandMatch.format) {
+            const [w, h] = brandMatch.format
+              .split("x")
+              .map((n: string) => parseInt(n));
+            if (w && h)
+              initialSheetConfigs[key] = {
+                width: w,
+                height: h,
+                name: brandMatch.brand,
+              };
+          } else if ("width" in brandMatch) {
+            initialSheetConfigs[key] = {
+              width: brandMatch.width,
+              height: brandMatch.height,
+              name: brandMatch.name,
+            };
+          }
+        } else {
+          initialSheetConfigs[key] = {
+            width: 2800,
+            height: 2070,
+            name: "Default",
+          };
+        }
+        initialExpanded.add(key);
+      }
+
+      grouped[key].area += d.area * d.qty;
+      grouped[key].edgeLength += d.edgeLength * d.qty;
+      for (let i = 0; i < d.qty; i++) {
+        grouped[key].details.push({
+          ...d,
+          id: `${d.id}-${i}`,
+          rotated: false,
+        });
+      }
+    });
+
+    const isSkuMappingEnabled = companyData?.accountingMappingConfig?.enabled !== false;
+    let matchedProductsList: any[] = [];
+
+    if (isSkuMappingEnabled && catalogProducts && catalogProducts.length > 0) {
+      const skuLookupMap: Record<string, any> = {};
+      catalogProducts.forEach((p: any) => {
+        const skus: string[] = [];
+        if (p.article) skus.push(String(p.article).trim());
+        if (Array.isArray(p.skuList)) {
+          p.skuList.forEach((s: any) => { if (s) skus.push(String(s).trim()); });
+        }
+        if (Array.isArray(p.accountingSkus)) {
+          p.accountingSkus.forEach((s: any) => { if (s) skus.push(String(s).trim()); });
+        }
+        skus.forEach((sku) => {
+          const norm = normalizeMatchKey(sku);
+          if (norm) skuLookupMap[norm] = p;
+        });
+      });
+
+      if (Object.keys(skuLookupMap).length > 0) {
+        const matchedMap: Record<string, { product: any; qty: number }> = {};
+
+        rawData.forEach((row) => {
+          if (!row || !Array.isArray(row) || row.length === 0) return;
+
+          let matchedProduct: any = null;
+          let foundSku = "";
+
+          for (let c = 0; c < Math.min(row.length, 6); c++) {
+            const cellVal = normalizeMatchKey(row[c]);
+            if (cellVal && skuLookupMap[cellVal]) {
+              matchedProduct = skuLookupMap[cellVal];
+              foundSku = cellVal;
+              break;
+            }
+          }
+
+          if (matchedProduct) {
+            let qty = 1;
+            for (let c = 0; c < row.length; c++) {
+              const cellRaw = (row[c] || "").toString().trim();
+              if (cellRaw && normalizeMatchKey(cellRaw) !== foundSku) {
+                const parsed = parseInt(cellRaw.replace(/\s+/g, ""));
+                if (!isNaN(parsed) && parsed > 0 && parsed < 10000) {
+                  qty = parsed;
+                  if (qtyIdx !== -1 && c === qtyIdx) break;
+                }
+              }
+            }
+
+            const pId = String(matchedProduct.id);
+            if (matchedMap[pId]) {
+              matchedMap[pId].qty += qty;
+            } else {
+              matchedMap[pId] = { product: matchedProduct, qty };
+            }
+          }
+        });
+
+        matchedProductsList = Object.values(matchedMap).map((item) => ({
+          ...item.product,
+          quantity: item.qty,
+          qty: item.qty,
+          fromSkuMapping: true,
+        }));
+      }
+    }
+
+    if (matchedProductsList.length > 0) {
+      setAddedProducts((prev) => {
+        const updated = [...prev];
+        matchedProductsList.forEach((mp) => {
+          const existingIdx = updated.findIndex((p) => String(p.id) === String(mp.id));
+          if (existingIdx !== -1) {
+            const currentQty = updated[existingIdx].quantity || updated[existingIdx].qty || 0;
+            updated[existingIdx] = {
+              ...updated[existingIdx],
+              quantity: currentQty + mp.quantity,
+              qty: currentQty + mp.quantity,
+            };
+          } else {
+            updated.push(mp);
+          }
+        });
+        return updated;
+      });
+
+      const totalQty = matchedProductsList.reduce((acc, item) => acc + item.quantity, 0);
+      showAlert(
+        "Соответствие учета",
+        `Распознано товаров по артикулам и добавлено в расчёт: ${matchedProductsList.length} наим. (всего ${totalQty} шт.)`
+      );
+    }
+
+    setSheetConfigs((prev) => ({ ...prev, ...initialSheetConfigs }));
+    setRotations(initialRotations);
+    setEdgeToEdge((prev) => ({ ...prev, ...initialEdgeToEdge }));
+    setExpandedResults((prev) => new Set([...prev, ...initialExpanded]));
+    setResults(grouped);
+
+    const fileNameWithoutExt = fileName.replace(/\.[^/.]+$/, "");
+    const newProjectId = Date.now().toString();
+    setCurrentProjectId(newProjectId);
+    setCurrentProjectName(fileNameWithoutExt);
+
+    saveProject(fileNameWithoutExt, true, {
+      projectId: newProjectId,
+      results: grouped,
+      currentProjectTotal: 0,
+      currentSummaryRows: [],
+      addedProducts: matchedProductsList,
+      addedServices: []
+    });
+
+    setActiveTab("calculator");
+  };
+
   const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files || []);
     if (files.length === 0) return;
@@ -36213,8 +36625,11 @@ export default function App() {
         return;
       }
 
-      // 1. Identify which file is the Panels (cutting) report
+      // 1. Identify which file is the Panels (cutting) report (Bazis or Pro100)
       let panelsFile = parsedList.find((pf) => isBazisPanelsReport(pf.rawData));
+      if (!panelsFile) {
+        panelsFile = parsedList.find((pf) => isPro100Report(pf.rawData));
+      }
       if (!panelsFile) {
         // Fallback: check if any file has dimensions / cutting detail columns
         panelsFile = parsedList.find((pf) => {
@@ -36224,7 +36639,9 @@ export default function App() {
               s.includes("готовая деталь") ||
               s.includes("деталь без") ||
               s.includes("заготовка") ||
-              ((s.includes("длина") || s.includes("[l]")) && (s.includes("ширина") || s.includes("[w]")) && (s.includes("кромк") || s.includes("толщин") || s.includes("материал")))
+              ((s.includes("длина") || s.includes("высота") || s.includes("[l]")) &&
+               (s.includes("ширина") || s.includes("[w]")) &&
+               (s.includes("кромк") || s.includes("толщин") || s.includes("материал")))
             );
           });
         });
@@ -36233,10 +36650,18 @@ export default function App() {
       const otherFiles = parsedList.filter((pf) => pf !== panelsFile);
 
       if (panelsFile) {
-        // Parse panels and gather hardware from panels report
-        const panelsHardware = parseBazisPanelsReport(panelsFile.rawData, panelsFile.fileName, {
-          skipHardwareModal: otherFiles.length > 0,
-        });
+        let panelsHardware: any[] = [];
+        if (isBazisPanelsReport(panelsFile.rawData)) {
+          panelsHardware = parseBazisPanelsReport(panelsFile.rawData, panelsFile.fileName, {
+            skipHardwareModal: otherFiles.length > 0,
+          }) || [];
+        } else if (isPro100Report(panelsFile.rawData)) {
+          parsePro100Report(panelsFile.rawData, panelsFile.fileName);
+        } else {
+          panelsHardware = parseBazisPanelsReport(panelsFile.rawData, panelsFile.fileName, {
+            skipHardwareModal: otherFiles.length > 0,
+          }) || [];
+        }
 
         if (otherFiles.length > 0) {
           const allItems: any[] = [...(Array.isArray(panelsHardware) ? panelsHardware : [])];
@@ -36306,6 +36731,10 @@ export default function App() {
 
             if (existing) {
               existing.qty = (Number(existing.qty) || 0) + (Number(item.qty) || 1);
+              if (!existing.matchedProduct && item.matchedProduct) {
+                existing.matchedProduct = item.matchedProduct;
+                existing.price = item.price;
+              }
             } else {
               mergedHardware.push({ ...item });
             }
@@ -36344,6 +36773,8 @@ export default function App() {
           }
           if (isBazisPanelsReport(rawData)) {
             parseBazisPanelsReport(rawData, file.name);
+          } else if (isPro100Report(rawData)) {
+            parsePro100Report(rawData, file.name);
           } else if (isBazisHardwareReport(rawData)) {
             parseBazisHardwareReport(rawData, file.name);
           } else if (isBazisLegacyReport(rawData)) {
@@ -36382,6 +36813,8 @@ export default function App() {
 
             if (isBazisPanelsReport(rawData)) {
               parseBazisPanelsReport(rawData, file.name);
+            } else if (isPro100Report(rawData)) {
+              parsePro100Report(rawData, file.name);
             } else if (isBazisHardwareReport(rawData)) {
               parseBazisHardwareReport(rawData, file.name);
             } else if (isBazisLegacyReport(rawData)) {
@@ -36394,377 +36827,7 @@ export default function App() {
                 return;
               }
 
-              // Standard Pro100 CSV Parser
-              let headerRowIdx = -1;
-              for (let i = 0; i < Math.min(rawData.length, 10); i++) {
-                const row = rawData[i];
-                const hasSignificantKeywords = row.some((cell) =>
-                  /название|имя|name|height|высота|width|ширина|длина|длинна|толщина|thickness|кол-во|количество|qty|цвет|color|материал|material|кромка|edge/i.test(
-                    cell,
-                  ),
-                );
-                if (hasSignificantKeywords) {
-                  headerRowIdx = i;
-                  break;
-                }
-              }
-
-              const headerRow = headerRowIdx !== -1 ? rawData[headerRowIdx] : null;
-
-              let nameIdx = -1;
-              let heightIdx = -1;
-              let widthIdx = -1;
-              let thickIdx = -1;
-              let qtyIdx = -1;
-              let colorIdx = -1;
-              let materialIdx = -1;
-              const edgeCols: number[] = [];
-
-              if (headerRow) {
-                headerRow.forEach((cell, idx) => {
-                  const h = (cell || "").toString().toLowerCase().trim();
-                  if (/название|имя|^имя|^name$/i.test(h)) { if (nameIdx === -1) nameIdx = idx; }
-                  else if (/высота|height/i.test(h)) heightIdx = idx;
-                  else if (/ширина|длина|width|length/i.test(h) && h !== "высота") widthIdx = idx;
-                  else if (/толщина|thickness/i.test(h)) thickIdx = idx;
-                  else if (/кол-во|количество|qty|quantity/i.test(h)) qtyIdx = idx;
-                  else if (/цвет|color/i.test(h)) colorIdx = idx;
-                  else if (/кромка|edge/i.test(h)) {
-                    if (!edgeCols.includes(idx)) edgeCols.push(idx);
-                  }
-                  else if (/материал|material/i.test(h)) materialIdx = idx;
-                });
-              }
-
-              if (nameIdx === -1) nameIdx = 0;
-              if (heightIdx === -1) heightIdx = 1;
-              if (widthIdx === -1) widthIdx = 3;
-              if (thickIdx === -1) thickIdx = 5;
-              if (qtyIdx === -1) qtyIdx = 6;
-              if (colorIdx === -1) colorIdx = 7;
-
-              if (edgeCols.length === 0) {
-                edgeCols.push(2);
-                edgeCols.push(4);
-              }
-
-              const parsedDetails = rawData
-                .slice(headerRowIdx + 1)
-                .map((row) => {
-                  if (row.length < 3) return null;
-                  const name = (row[nameIdx] || "Без имени").toString();
-                  const height = parseFloat((row[heightIdx]?.toString() || "0").replace(",", "."));
-                  const width = parseFloat((row[widthIdx]?.toString() || "0").replace(",", "."));
-                  const thickness = parseFloat((row[thickIdx]?.toString() || "0").replace(",", "."));
-                  const qty = parseInt(row[qtyIdx] || "1");
-                  const color = (row[colorIdx] || (materialIdx !== -1 ? row[materialIdx] : "Default")).toString();
-
-                  const isOneEdge = (s: any) => {
-                    if (s === undefined || s === null) return false;
-                    const p = s.toString().toLowerCase().trim();
-                    return p === "1" || p === "." || p === "-" || p === "—" || p === "–";
-                  };
-
-                  const isTwoEdges = (s: any) => {
-                    if (s === undefined || s === null) return false;
-                    const p = s.toString().toLowerCase().trim();
-                    return p === "2" || p === ":" || p === "=" || p === "==" || p === "4";
-                  };
-
-                  const edgeSides = { top: false, bottom: false, left: false, right: false };
-
-                  if (edgeCols.length >= 4) {
-                    if (isOneEdge(row[edgeCols[0]]) || isTwoEdges(row[edgeCols[0]])) edgeSides.left = true;
-                    if (isOneEdge(row[edgeCols[1]]) || isTwoEdges(row[edgeCols[1]])) edgeSides.right = true;
-                    if (isOneEdge(row[edgeCols[2]]) || isTwoEdges(row[edgeCols[2]])) edgeSides.top = true;
-                    if (isOneEdge(row[edgeCols[3]]) || isTwoEdges(row[edgeCols[3]])) edgeSides.bottom = true;
-                  } else if (edgeCols.length === 2) {
-                    const hE = row[edgeCols[0]];
-                    if (isTwoEdges(hE)) { edgeSides.left = true; edgeSides.right = true; }
-                    else if (isOneEdge(hE)) { edgeSides.left = true; }
-
-                    const wE = row[edgeCols[1]];
-                    if (isTwoEdges(wE)) { edgeSides.top = true; edgeSides.bottom = true; }
-                    else if (isOneEdge(wE)) { edgeSides.top = true; }
-                  } else if (edgeCols.length === 1 || edgeCols.length > 0) {
-                    const p = (row[edgeCols[0] || 0] || "").toString().toLowerCase().trim();
-                    const separator = p.includes(".") ? "." : p.includes(":") ? ":" : p.includes(",") ? "," : p.includes("|") ? "|" : p.includes(" ") ? " " : null;
-
-                    if (separator) {
-                      const segments = p.split(separator).map(s => s.trim());
-                      if (segments.length >= 4) {
-                        edgeSides.left = isOneEdge(segments[0]) || isTwoEdges(segments[0]);
-                        edgeSides.right = isOneEdge(segments[1]) || isTwoEdges(segments[1]);
-                        edgeSides.top = isOneEdge(segments[2]) || isTwoEdges(segments[2]);
-                        edgeSides.bottom = isOneEdge(segments[3]) || isTwoEdges(segments[3]);
-                      } else if (segments.length >= 2) {
-                        if (isTwoEdges(segments[0])) { edgeSides.left = true; edgeSides.right = true; }
-                        else if (isOneEdge(segments[0])) { edgeSides.left = true; }
-
-                        if (isTwoEdges(segments[1])) { edgeSides.top = true; edgeSides.bottom = true; }
-                        else if (isOneEdge(segments[1])) { edgeSides.top = true; }
-                      }
-                    } else {
-                      if (p.length === 4) {
-                        edgeSides.left = isOneEdge(p[0]);
-                        edgeSides.right = isOneEdge(p[1]);
-                        edgeSides.top = isOneEdge(p[2]);
-                        edgeSides.bottom = isOneEdge(p[3]);
-                      } else if (isTwoEdges(p)) {
-                        edgeSides.left = true; edgeSides.right = true;
-                      } else if (isOneEdge(p)) {
-                        edgeSides.left = true;
-                      }
-                    }
-                  }
-
-                  const edgeLength = ((edgeSides.top ? width : 0) + (edgeSides.bottom ? width : 0) + (edgeSides.left ? height : 0) + (edgeSides.right ? height : 0)) / 1000;
-                  const area = (height * width) / 1000000;
-                  let type: Detail["type"] = "ЛДСП";
-                  const lName = name.toLowerCase();
-                  const lColor = color.toLowerCase();
-                  const lMaterial = (materialIdx !== -1 && row[materialIdx] ? row[materialIdx].toLowerCase() : "");
-
-                  if (thickness < 10 || lName.includes("хдф") || lName.includes("двп") || lColor.includes("хдф") || lColor.includes("двп")) {
-                    type = "ХДФ";
-                  } else if (lName.includes("фасад") || lColor.includes("фасад") || lMaterial.includes("фасад")) {
-                    type = "Фасад";
-                  } else if (lName.includes("мдф") || lColor.includes("мдф") || lMaterial.includes("мдф")) {
-                    type = "МДФ";
-                  } else if (lName.includes("столешница") || lName.includes("worktop") || lColor.includes("столешница") || lMaterial.includes("столешница")) {
-                    type = "Столешница";
-                  } else if (lName.includes("стеновая") || lName.includes("backsplash") || lColor.includes("стеновая") || lMaterial.includes("стеновая")) {
-                    type = "Стеновая панель";
-                  } else if (lName.includes("лдсп") || lColor.includes("лдсп") || lMaterial.includes("лдсп")) {
-                    type = "ЛДСП";
-                  }
-
-                  if (lName.includes("модуль") || lColor.includes("модуль") || lMaterial.includes("модуль")) return null;
-
-                  return {
-                    id: Math.random().toString(36).substring(2, 9),
-                    type,
-                    name,
-                    height,
-                    edgeProc: "",
-                    width,
-                    thickness,
-                    qty,
-                    color,
-                    area,
-                    edgeLength,
-                    edgeSides,
-                    canRotate: type === "ХДФ",
-                  };
-                })
-                .filter((d) => d !== null) as Detail[];
-
-              if (parsedDetails.length === 0) {
-                showAlert(
-                  "Ошибка",
-                  "Не удалось найти данные в файле. Проверьте структуру колонок.",
-                );
-                return;
-              }
-
-              const grouped: any = {};
-              const initialSheetConfigs: Record<string, SheetConfig> = {};
-              const initialExpanded: Set<string> = new Set();
-              const initialRotations: Record<string, boolean> = { ...rotations };
-              const initialEdgeToEdge: Record<string, boolean> = { ...edgeToEdge };
-
-              parsedDetails.forEach((d) => {
-                const key = `${d.type}|${d.color}|${d.thickness}`;
-
-                if (!grouped[key]) {
-                  if (d.type === "ХДФ") initialRotations[key] = true;
-                  grouped[key] = {
-                    type: d.type,
-                    name:
-                      d.type === "Фасад"
-                        ? "Фасады"
-                        : d.type === "ХДФ"
-                          ? "ДВП/ХДФ"
-                          : d.type === "ЛДСП"
-                            ? "ЛДСП"
-                            : d.name,
-                    color: d.color,
-                    thickness: d.thickness,
-                    area: 0,
-                    edgeLength: 0,
-                    details: [],
-                  };
-
-                  const configToUse =
-                    productionFormat === "contract" &&
-                    productionSettings?.production
-                      ? productionSettings.production
-                      : ownProductionConfig;
-
-                  const brandString = (d.color + " " + d.name).toLowerCase();
-                  const brandMatch =
-                    configToUse?.ldspBrands?.find((b: any) =>
-                      brandString.includes(b.brand.toLowerCase()),
-                    ) ||
-                    LDSP_BRANDS.find((b) =>
-                      brandString.includes(b.name.split(" ")[0].toLowerCase()),
-                    );
-
-                  if (brandMatch) {
-                    if ("format" in brandMatch && brandMatch.format) {
-                      const [w, h] = brandMatch.format
-                        .split("x")
-                        .map((n: string) => parseInt(n));
-                      if (w && h)
-                        initialSheetConfigs[key] = {
-                          width: w,
-                          height: h,
-                          name: brandMatch.brand,
-                        };
-                    } else if ("width" in brandMatch) {
-                      initialSheetConfigs[key] = {
-                        width: brandMatch.width,
-                        height: brandMatch.height,
-                        name: brandMatch.name,
-                      };
-                    }
-                  } else {
-                    initialSheetConfigs[key] = {
-                      width: 2800,
-                      height: 2070,
-                      name: "Default",
-                    };
-                  }
-                  initialExpanded.add(key);
-                }
-
-                grouped[key].area += d.area * d.qty;
-                grouped[key].edgeLength += d.edgeLength * d.qty;
-                for (let i = 0; i < d.qty; i++) {
-                  grouped[key].details.push({
-                    ...d,
-                    id: `${d.id}-${i}`,
-                    rotated: false,
-                  });
-                }
-              });
-
-              const isSkuMappingEnabled = companyData?.accountingMappingConfig?.enabled !== false;
-              let matchedProductsList: any[] = [];
-
-              if (isSkuMappingEnabled && catalogProducts && catalogProducts.length > 0) {
-                const skuLookupMap: Record<string, any> = {};
-                catalogProducts.forEach((p: any) => {
-                  const skus: string[] = [];
-                  if (p.article) skus.push(String(p.article).trim());
-                  if (Array.isArray(p.skuList)) {
-                    p.skuList.forEach((s: any) => { if (s) skus.push(String(s).trim()); });
-                  }
-                  if (Array.isArray(p.accountingSkus)) {
-                    p.accountingSkus.forEach((s: any) => { if (s) skus.push(String(s).trim()); });
-                  }
-                  skus.forEach((sku) => {
-                    const norm = sku.toLowerCase();
-                    if (norm) skuLookupMap[norm] = p;
-                  });
-                });
-
-                if (Object.keys(skuLookupMap).length > 0) {
-                  const matchedMap: Record<string, { product: any; qty: number }> = {};
-
-                  rawData.forEach((row) => {
-                    if (!row || !Array.isArray(row) || row.length === 0) return;
-
-                    let matchedProduct: any = null;
-                    let foundSku = "";
-
-                    for (let c = 0; c < Math.min(row.length, 6); c++) {
-                      const cellVal = (row[c] || "").toString().trim().toLowerCase();
-                      if (cellVal && skuLookupMap[cellVal]) {
-                        matchedProduct = skuLookupMap[cellVal];
-                        foundSku = cellVal;
-                        break;
-                      }
-                    }
-
-                    if (matchedProduct) {
-                      let qty = 1;
-                      for (let c = 0; c < row.length; c++) {
-                        const cellRaw = (row[c] || "").toString().trim();
-                        if (cellRaw && cellRaw.toLowerCase() !== foundSku) {
-                          const parsed = parseInt(cellRaw.replace(/\s+/g, ""));
-                          if (!isNaN(parsed) && parsed > 0 && parsed < 10000) {
-                            qty = parsed;
-                            if (qtyIdx !== -1 && c === qtyIdx) break;
-                          }
-                        }
-                      }
-
-                      const pId = String(matchedProduct.id);
-                      if (matchedMap[pId]) {
-                        matchedMap[pId].qty += qty;
-                      } else {
-                        matchedMap[pId] = { product: matchedProduct, qty };
-                      }
-                    }
-                  });
-
-                  matchedProductsList = Object.values(matchedMap).map((item) => ({
-                    ...item.product,
-                    quantity: item.qty,
-                    qty: item.qty,
-                    fromSkuMapping: true,
-                  }));
-                }
-              }
-
-              if (matchedProductsList.length > 0) {
-                setAddedProducts((prev) => {
-                  const updated = [...prev];
-                  matchedProductsList.forEach((mp) => {
-                    const existingIdx = updated.findIndex((p) => String(p.id) === String(mp.id));
-                    if (existingIdx !== -1) {
-                      const currentQty = updated[existingIdx].quantity || updated[existingIdx].qty || 0;
-                      updated[existingIdx] = {
-                        ...updated[existingIdx],
-                        quantity: currentQty + mp.quantity,
-                        qty: currentQty + mp.quantity,
-                      };
-                    } else {
-                      updated.push(mp);
-                    }
-                  });
-                  return updated;
-                });
-
-                const totalQty = matchedProductsList.reduce((acc, item) => acc + item.quantity, 0);
-                showAlert(
-                  "Соответствие учета",
-                  `Распознано товаров по артикулам и добавлено в расчёт: ${matchedProductsList.length} наим. (всего ${totalQty} шт.)`
-                );
-              }
-
-              setSheetConfigs((prev) => ({ ...prev, ...initialSheetConfigs }));
-              setRotations(initialRotations);
-              setEdgeToEdge((prev) => ({ ...prev, ...initialEdgeToEdge }));
-              setExpandedResults((prev) => new Set([...prev, ...initialExpanded]));
-              setResults(grouped);
-
-              const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
-              const newProjectId = Date.now().toString();
-              setCurrentProjectId(newProjectId);
-              setCurrentProjectName(fileNameWithoutExt);
-
-              saveProject(fileNameWithoutExt, true, {
-                projectId: newProjectId,
-                results: grouped,
-                currentProjectTotal: 0,
-                currentSummaryRows: [],
-                addedProducts: matchedProductsList,
-                addedServices: []
-              });
-
-              setActiveTab("calculator");
+              parsePro100Report(rawData, file.name);
             }
           },
           error: (error) => {
