@@ -18,6 +18,7 @@ import { BazisHardwareImportModal } from "./components/BazisHardwareImportModal"
 import { ProductKitBuilder } from "./components/ProductKitBuilder";
 import { FastenersPriceTable } from "./components/FastenersPriceTable";
 import type { KitItem } from "./components/ProductKitPickerModal";
+import { initBitrix24, sendToBitrix24Deal, type Bitrix24Context } from "./services/bitrix24";
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
@@ -9858,6 +9859,10 @@ const SummaryView = ({
   setDetailedFastenersMode,
   onBindUnmatchedItem,
   productCategories = [],
+  b24Context,
+  setShowB24Modal,
+  b24DealIdInput,
+  setB24DealIdInput,
 }: {
   productCategories?: string[];
   unmatchedBazisItems?: any[];
@@ -9965,6 +9970,10 @@ const SummaryView = ({
   selectedProjectCoefficientsMode?: 'saved' | 'current';
   setSelectedProjectCoefficientsMode?: (mode: 'saved' | 'current') => void;
   manufacturerCoefficients?: any;
+  b24Context?: Bitrix24Context;
+  setShowB24Modal?: (show: boolean) => void;
+  b24DealIdInput?: string;
+  setB24DealIdInput?: (id: string) => void;
 }) => {
   const [activeWorktopForCut, setActiveWorktopForCut] = useState<any | null>(null);
 
@@ -13573,7 +13582,24 @@ const SummaryView = ({
       </div>
 
         {finalTotal > 0 && (
-          <div className="mt-8 flex items-center justify-end gap-4">
+          <div className="mt-8 flex flex-wrap items-center justify-end gap-3 sm:gap-4">
+            <button
+              onClick={() => {
+                if (b24Context?.dealId && !b24DealIdInput && setB24DealIdInput) {
+                  setB24DealIdInput(String(b24Context.dealId));
+                }
+                if (setShowB24Modal) {
+                  setShowB24Modal(true);
+                }
+              }}
+              className="flex items-center gap-2 px-5 py-3.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-2xl font-extrabold shadow-md shadow-blue-200/50 hover:scale-[1.02] transition-all cursor-pointer"
+              title="Передать сумму и спецификацию в сделку Битрикс24"
+            >
+              <div className="w-6 h-6 rounded-lg bg-white/20 text-white flex items-center justify-center text-xs font-black">
+                24
+              </div>
+              <span>В Битрикс24</span>
+            </button>
             <button
               onClick={() => {
                 if (onSaveProject) {
@@ -18366,6 +18392,38 @@ const SettingsView = ({
                         </div>
                       </div>
                     )}
+
+                  <div className="p-5 bg-gradient-to-r from-blue-50 to-indigo-50/60 rounded-2xl border border-blue-100 my-4 space-y-3">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-xs shadow-xs">
+                          24
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-bold text-gray-900 font-sans">
+                            Локальное приложение Битрикс24 (Вкладка сделки / Меню)
+                          </h4>
+                          <span className="text-[11px] font-semibold text-gray-500">
+                            Автоматическая передача расчётов и товарных позиций в CRM
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-white border border-emerald-200 text-emerald-800 shadow-2xs">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span>JS SDK встроен</span>
+                      </div>
+                    </div>
+
+                    <div className="text-xs text-gray-600 bg-white/80 backdrop-blur-xs p-3.5 rounded-xl border border-gray-100 space-y-2">
+                      <p className="font-bold text-gray-800">Как встроить приложение во вкладку Сделки Битрикс24:</p>
+                      <ol className="list-decimal list-inside space-y-1 text-[11px] text-gray-600">
+                        <li>В Битрикс24 перейдите в раздел <b>Разработчикам &rarr; Другое &rarr; Локальное приложение</b>.</li>
+                        <li>Укажите название (например: <i>Калькулятор Мебели</i>).</li>
+                        <li>В поле <b>URL карточки</b> вставьте адрес приложения: <code className="bg-gray-100 px-1.5 py-0.5 rounded font-mono text-blue-600 select-all">{typeof window !== "undefined" ? window.location.origin : "https://ваше-приложение.ru"}</code></li>
+                        <li>Укажите место размещения: <b>Вкладка карточки сделки (`CRM_DEAL_DETAIL_TAB`)</b> и права доступа (<i>CRM</i>, <i>Пользователи</i>).</li>
+                      </ol>
+                    </div>
+                  </div>
 
                   <p className="text-[11px] text-gray-500 mt-3 leading-relaxed">
                     Инструкция: Зайдите в Битрикс24 &rarr; Приложения &rarr;
@@ -33264,6 +33322,20 @@ export default function App() {
 
   const [isSavingConfig, setIsSavingConfig] = useState(false);
 
+  const [b24Context, setB24Context] = useState<Bitrix24Context>({ isBitrix24: false });
+  const [showB24Modal, setShowB24Modal] = useState(false);
+  const [b24DealIdInput, setB24DealIdInput] = useState<string>("");
+  const [b24Sending, setB24Sending] = useState(false);
+
+  useEffect(() => {
+    initBitrix24().then((ctx) => {
+      setB24Context(ctx);
+      if (ctx.dealId) {
+        setB24DealIdInput(String(ctx.dealId));
+      }
+    });
+  }, []);
+
   const [productionFormat, setProductionFormat] =
     useState<ProductionFormat>("contract");
   const [productionSettings, setProductionSettings] = useState<any>(null);
@@ -40327,6 +40399,10 @@ export default function App() {
               }}
               currentProjectName={currentProjectName}
               onSaveProject={saveProject}
+              b24Context={b24Context}
+              setShowB24Modal={setShowB24Modal}
+              b24DealIdInput={b24DealIdInput}
+              setB24DealIdInput={setB24DealIdInput}
               loadedProjectCoefficientsSnapshot={loadedProjectCoefficientsSnapshot}
               currentProjectId={currentProjectId}
               selectedProjectCoefficientsMode={selectedProjectCoefficientsMode}
@@ -42160,6 +42236,110 @@ export default function App() {
                     Отмена
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {showB24Modal && (
+          <div className="fixed inset-0 z-[998] flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+            <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-200">
+              <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
+                <div className="flex items-center gap-2.5 text-blue-600 font-bold text-lg">
+                  <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-xs shadow-md shadow-blue-200">
+                    24
+                  </div>
+                  Передача в Битрикс24
+                </div>
+                <button
+                  onClick={() => setShowB24Modal(false)}
+                  className="text-gray-400 hover:text-gray-600 p-1.5 rounded-xl hover:bg-gray-100 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+                Сумма и подробный товарный состав текущего расчета будут переданы в выбранную сделку CRM Битрикс24.
+              </p>
+
+              <div className="space-y-3.5 mb-6">
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1">
+                    Проект
+                  </label>
+                  <div className="p-3 bg-gray-50 rounded-xl text-xs font-bold text-gray-800 border border-gray-200/80 truncate">
+                    {currentProjectName || "Новый проект"}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1">
+                    Итоговая сумма
+                  </label>
+                  <div className="p-3 bg-blue-50/80 rounded-xl text-xl font-black text-blue-700 border border-blue-100">
+                    {currentProjectTotal.toLocaleString("ru-RU")} ₽
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1">
+                    ID Сделки в Битрикс24
+                  </label>
+                  <input
+                    type="number"
+                    value={b24DealIdInput}
+                    onChange={(e) => setB24DealIdInput(e.target.value)}
+                    placeholder="Например: 12450"
+                    className="w-full p-3 border border-gray-200 rounded-xl text-sm font-bold text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                  />
+                  {b24Context.dealId ? (
+                    <p className="text-[11px] text-emerald-600 font-bold mt-1.5 flex items-center gap-1">
+                      ✓ Авто-определение из карточки Битрикс24 (Сделка #{b24Context.dealId})
+                    </p>
+                  ) : (
+                    <p className="text-[11px] text-gray-400 font-medium mt-1">
+                      Укажите ID сделки из адресной строки Битрикс24 (`/crm/deal/details/12345/`)
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-gray-100">
+                <button
+                  onClick={() => setShowB24Modal(false)}
+                  className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-bold text-xs transition-all"
+                >
+                  Отмена
+                </button>
+                <button
+                  disabled={b24Sending || !b24DealIdInput}
+                  onClick={async () => {
+                    setB24Sending(true);
+                    const targetDeal = parseInt(b24DealIdInput, 10);
+                    const res = await sendToBitrix24Deal({
+                      dealId: targetDeal,
+                      totalPrice: currentProjectTotal,
+                      projectName: currentProjectName || "Расчет мебели",
+                      summaryRows: currentSummaryRows,
+                    });
+                    setB24Sending(false);
+                    setShowB24Modal(false);
+                    if (res.success) {
+                      showAlert("Битрикс24", res.message);
+                    } else {
+                      showAlert("Ошибка Битрикс24", res.message);
+                    }
+                  }}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-md transition-all disabled:opacity-50"
+                >
+                  {b24Sending ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <CheckCircle2 className="w-4 h-4" />
+                  )}
+                  Сохранить в сделку
+                </button>
               </div>
             </div>
           </div>
