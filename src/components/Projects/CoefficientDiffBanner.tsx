@@ -205,8 +205,8 @@ export const CoefficientDiffBanner: React.FC<CoefficientDiffBannerProps> = ({
 
   const isCurrentMode = activeMode === 'current';
 
-  // When no diffs exist or price didn't actually change, show reassuring green status block
-  if (diffs.length === 0 || Math.abs(calcSavedTotal - calcCurrentTotal) < 1) {
+  // When no diffs exist, show reassuring green status block
+  if (diffs.length === 0) {
     return (
       <div className={cn(
         "rounded-2xl border border-emerald-200/80 bg-emerald-50/50 p-3.5 sm:p-4 transition-all duration-200 shadow-2xs",

@@ -16,6 +16,7 @@ import { ProductRequiredProductsList } from "./components/ProductRequiredProduct
 import { BlockSaleModal, isSaleBlocked, formatBlockedUntil } from "./components/BlockSaleModal";
 import { BazisHardwareImportModal } from "./components/BazisHardwareImportModal";
 import { ProductKitBuilder } from "./components/ProductKitBuilder";
+import { FastenersPriceTable } from "./components/FastenersPriceTable";
 import type { KitItem } from "./components/ProductKitPickerModal";
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
@@ -4057,6 +4058,8 @@ const PriceView = ({
   resolveBrandCoefficient,
   isSavingConfig,
   productCategories = [],
+  onSaveProduct,
+  onDeleteProduct,
 }: {
   productCategories?: string[];
   calcMode: string;
@@ -4099,6 +4102,8 @@ const PriceView = ({
   setCustomEdgeMapping?: React.Dispatch<React.SetStateAction<Record<string, { edgeBrand?: string; edgeDecor?: string }>>>;
   resolveBrandCoefficient?: (category: string, brand?: string) => number;
   isSavingConfig?: boolean;
+  onSaveProduct?: (product: any) => Promise<void> | void;
+  onDeleteProduct?: (productId: string | number) => Promise<void> | void;
 }) => {
   const [priceSearch, setPriceSearch] = useState("");
   const [isSaving, setIsSaving] = useState(false);
@@ -4368,187 +4373,219 @@ const PriceView = ({
       const sheetData: any[] = [];
       const dynamicKeys = new Set<string>();
 
-      // Fixed Headers
-      const fixedHeaders = [
-        "Категория",
-        "Подкатегория/Бренд",
-        "Тип данных",
-        "Наименование",
-        "Цена",
-        "Мин. объем",
-        "Коэффициент Розница",
-        "Коэффициент Опт",
-        "Коэффициент Дизайнер",
-      ];
-      fixedHeaders.forEach((h) => dynamicKeys.add(h));
+      // 1. Materials Category
+      if (cat.title === "Материалы") {
+        const materialHeaders = [
+          "Категория",
+          "Бренд",
+          "Декор / Цвет",
+          "Цена за лист (₽)",
+          "Мин. объем",
+        ];
+        materialHeaders.forEach((h) => dynamicKeys.add(h));
 
-      // 1. Materials, Services and Facades
-      cat.brands.forEach((brand) => {
-        const isServices = brand === "Услуги";
-
-        let facadeSettings: FacadeSettings | null = null;
-        if (ownProductionConfig.facadeSettings?.displayName === brand) {
-          facadeSettings = ownProductionConfig.facadeSettings;
-        } else if (ownProductionConfig.enamelSettings?.displayName === brand) {
-          facadeSettings = ownProductionConfig.enamelSettings;
-        } else {
-          const extra = ownProductionConfig.extraFacadeTypes?.find(
-            (t) => t.displayName === brand,
+        cat.brands.forEach((brand) => {
+          const ldspBrand = ownProductionConfig.ldspBrands?.find(
+            (b) => b.brand === brand,
           );
-          if (extra) facadeSettings = extra.settings;
-        }
-
-        if (facadeSettings) {
-          // Categories
-          facadeSettings.categories.forEach((c) => {
-            const row: any = {
-              Категория: cat.title,
-              "Подкатегория/Бренд": brand,
-              "Тип данных": "Категория фасада",
-              Наименование: c.name,
-              Цена: c.purchasePrice || 0,
-              "Мин. объем": facadeSettings?.minOrderVolume || 0,
-              "ID/Ключ": `facade|${brand}|cat|${c.id}`,
-            };
-            sheetData.push(row);
-            Object.keys(row).forEach((k) => dynamicKeys.add(k));
-          });
-          // Millings
-          facadeSettings.millings.forEach((m) => {
-            const row: any = {
-              Категория: cat.title,
-              "Подкатегория/Бренд": brand,
-              "Тип данных": "Фрезеровка фасада",
-              Наименование: m.name,
-              Цена: m.purchasePrice || 0,
-              "Мин. объем": "-",
-              "ID/Ключ": `facade|${brand}|mill|${m.id}`,
-            };
-            sheetData.push(row);
-            Object.keys(row).forEach((k) => dynamicKeys.add(k));
-          });
-          // Thicknesses
-          if (facadeSettings.thicknessPrices) {
-            Object.entries(facadeSettings.thicknessPrices).forEach(
-              ([thickness, price]) => {
-                const row: any = {
-                  Категория: cat.title,
-                  "Подкатегория/Бренд": brand,
-                  "Тип данных": "Толщина фасада (доплата)",
-                  Наименование: `${thickness} мм`,
-                  Цена: price || 0,
-                  "Мин. объем": "-",
-                  "ID/Ключ": `facade|${brand}|thick|${thickness}`,
-                };
-                sheetData.push(row);
-                Object.keys(row).forEach((k) => dynamicKeys.add(k));
-              },
-            );
-          }
-          return;
-        }
-
-        const ldspBrand = ownProductionConfig.ldspBrands?.find(
-          (b) => b.brand === brand,
-        );
-        const decors = isServices
-          ? catalogServices.map((s) => s.name)
-          : ldspBrand
+          const decors = ldspBrand
             ? catalogMaterials[brand] || []
             : LDSP_DATABASE[brand as keyof typeof LDSP_DATABASE] ||
               catalogMaterials[brand] ||
               [];
 
-        decors.forEach((decor) => {
-          const priceKey = isServices ? decor : `${brand}|${decor}`;
-          const row: any = {
-            Категория: cat.title,
-            "Подкатегория/Бренд": brand,
-            "Тип данных": isServices ? "Услуга" : "Декор / Цвет",
-            Наименование: decor,
-            Цена: prices[priceKey] || 0,
-            "Мин. объем": "-",
-            "ID/Ключ": priceKey,
+          decors.forEach((decor) => {
+            const priceKey = `${brand}|${decor}`;
+            const row = {
+              Категория: "Материалы",
+              Бренд: brand,
+              "Декор / Цвет": decor,
+              "Цена за лист (₽)": prices[priceKey] || 0,
+              "Мин. объем": "-",
+            };
+            sheetData.push(row);
+          });
+        });
+      }
+      // 2. Services Category
+      else if (cat.title === "Услуги производства") {
+        const serviceHeaders = [
+          "Категория",
+          "Наименование услуги",
+          "Ед. изм.",
+          "Цена (₽)",
+        ];
+        serviceHeaders.forEach((h) => dynamicKeys.add(h));
+
+        catalogServices.forEach((srv) => {
+          const row = {
+            Категория: "Услуги производства",
+            "Наименование услуги": srv.name,
+            "Ед. изм.": srv.unit || "шт",
+            "Цена (₽)": prices[srv.name] !== undefined ? prices[srv.name] : srv.price || 0,
           };
           sheetData.push(row);
-          Object.keys(row).forEach((k) => dynamicKeys.add(k));
         });
-      });
-
-      // 2. Simple Products with dynamic characteristics
-      cat.products.forEach((product) => {
-        const row: any = {
-          Категория: cat.title,
-          "Подкатегория/Бренд": product.brand || "-",
-          "Тип данных": product.type || "Товар",
-          Наименование: product.name,
-          Цена: product.purchasePrice || product.price || 0,
-          "Мин. объем": "-",
-          "Коэффициент Розница": product.useCustomCoeffs ? (product.customCoeffRetail || "-") : "-",
-          "Коэффициент Опт": product.useCustomCoeffs ? (product.customCoeffWholesale || "-") : "-",
-          "Коэффициент Дизайнер": product.useCustomCoeffs ? (product.customCoeffDesigner || "-") : "-",
-          "ID/Ключ": `product|${product.id}`,
-        };
-
-        // Find all characteristics
-        const skipKeys = [
-          "id",
-          "category",
-          "brand",
-          "type",
-          "name",
-          "price",
-          "description",
-          "image",
-          "purchasePrice",
-          "useCustomCoeffs",
-          "customCoeffRetail",
-          "customCoeffWholesale",
-          "customCoeffDesigner",
+      }
+      // 3. Facades Category
+      else if (cat.title === "Фасады заказные") {
+        const facadeHeaders = [
+          "Категория",
+          "Бренд / Тип фасада",
+          "Тип элемента",
+          "Наименование",
+          "Цена (₽)",
+          "Мин. объем (м²)",
         ];
-        Object.entries(product).forEach(([k, v]) => {
-          // ONLY add if it's a real value, NOT '-', NOT null/undefined/empty
-          if (
-            !skipKeys.includes(k) &&
-            v !== undefined &&
-            v !== null &&
-            v !== "" &&
-            v !== "-"
-          ) {
-            const labelMap: Record<string, string> = {
-              depth: "Глубина",
-              width: "Ширина",
-              height: "Высота",
-              material: "Материал",
-              color: "Цвет",
-              manufacturer: "Производитель",
-              surfaceType: "Тип поверхности",
-              openingType: "Тип открывания",
-              closingType: "Тип закрывания",
-              loadCapacity: "Грузоподъемность",
-              length: "Длина",
-              thickness: "Толщина",
-              unit: "Ед. изм.",
-              article: "Артикул",
-            };
-            const label = labelMap[k] || k;
-            row[label] = v;
-            dynamicKeys.add(label);
+        facadeHeaders.forEach((h) => dynamicKeys.add(h));
+
+        cat.brands.forEach((brand) => {
+          let facadeSettings: FacadeSettings | null = null;
+          if (ownProductionConfig.facadeSettings?.displayName === brand) {
+            facadeSettings = ownProductionConfig.facadeSettings;
+          } else if (ownProductionConfig.enamelSettings?.displayName === brand) {
+            facadeSettings = ownProductionConfig.enamelSettings;
+          } else {
+            const extra = ownProductionConfig.extraFacadeTypes?.find(
+              (t) => t.displayName === brand,
+            );
+            if (extra) facadeSettings = extra.settings;
+          }
+
+          if (facadeSettings) {
+            facadeSettings.categories.forEach((c) => {
+              sheetData.push({
+                Категория: "Фасады заказные",
+                "Бренд / Тип фасада": brand,
+                "Тип элемента": "Категория фасада",
+                Наименование: c.name,
+                "Цена (₽)": c.purchasePrice || 0,
+                "Мин. объем (м²)": facadeSettings?.minOrderVolume || 0,
+              });
+            });
+            facadeSettings.millings.forEach((m) => {
+              sheetData.push({
+                Категория: "Фасады заказные",
+                "Бренд / Тип фасада": brand,
+                "Тип элемента": "Фрезеровка фасада",
+                Наименование: m.name,
+                "Цена (₽)": m.purchasePrice || 0,
+                "Мин. объем (м²)": "-",
+              });
+            });
+            if (facadeSettings.thicknessPrices) {
+              Object.entries(facadeSettings.thicknessPrices).forEach(
+                ([thickness, price]) => {
+                  sheetData.push({
+                    Категория: "Фасады заказные",
+                    "Бренд / Тип фасада": brand,
+                    "Тип элемента": "Толщина фасада (доплата)",
+                    Наименование: `${thickness} мм`,
+                    "Цена (₽)": price || 0,
+                    "Мин. объем (м²)": "-",
+                  });
+                },
+              );
+            }
           }
         });
+      }
+      // 4. Fasteners (Метизы) Category
+      else if (cat.title === "Метизы") {
+        const metizHeaders = [
+          "Категория",
+          "Наименование",
+          "Артикул",
+          "Артикулы сопоставления (Базис/1С)",
+          "Сопоставление по наименованию (синонимы)",
+          "Цена закупки (₽)",
+          "Цена продажи (₽)",
+          "Ед. изм.",
+        ];
+        metizHeaders.forEach((h) => dynamicKeys.add(h));
 
-        sheetData.push(row);
-      });
+        cat.products.forEach((product) => {
+          const matchArts = product.matchingArticles || (Array.isArray(product.accountingSkus) ? product.accountingSkus.join(", ") : product.accountingSkus || "");
+          const matchNames = product.matchingNames || (Array.isArray(product.synonyms) ? product.synonyms.join(", ") : product.synonyms || "");
+          const row = {
+            Категория: "Метизы",
+            Наименование: product.name,
+            Артикул: product.article || "",
+            "Артикулы сопоставления (Базис/1С)": matchArts,
+            "Сопоставление по наименованию (синонимы)": matchNames,
+            "Цена закупки (₽)": product.purchasePrice !== undefined ? product.purchasePrice : product.price || 0,
+            "Цена продажи (₽)": product.price || 0,
+            "Ед. изм.": product.unit || "шт",
+          };
+          sheetData.push(row);
+        });
+      }
+      // 5. Standard Product Categories (Петли, Направляющие, Ручки и др.)
+      else {
+        const productBaseHeaders = [
+          "Категория",
+          "Подкатегория/Бренд",
+          "Наименование",
+          "Артикул",
+          "Арт. производителя",
+          "Цена закупки (₽)",
+          "Цена продажи (₽)",
+          "Ед. изм.",
+        ];
+        productBaseHeaders.forEach((h) => dynamicKeys.add(h));
+
+        cat.products.forEach((product) => {
+          const row: any = {
+            Категория: cat.title,
+            "Подкатегория/Бренд": product.brand || "-",
+            Наименование: product.name,
+            Артикул: product.article || "-",
+            "Арт. производителя": product.manufacturerArticle || "-",
+            "Цена закупки (₽)": product.purchasePrice !== undefined ? product.purchasePrice : product.price || 0,
+            "Цена продажи (₽)": product.price || 0,
+            "Ед. изм.": product.unit || "шт",
+          };
+
+          if (product.useCustomCoeffs) {
+            row["Коэффициент Розница"] = product.customCoeffRetail || "-";
+            row["Коэффициент Опт"] = product.customCoeffWholesale || "-";
+            row["Коэффициент Дизайнер"] = product.customCoeffDesigner || "-";
+            dynamicKeys.add("Коэффициент Розница");
+            dynamicKeys.add("Коэффициент Опт");
+            dynamicKeys.add("Коэффициент Дизайнер");
+          }
+
+          // Characteristics
+          const labelMap: Record<string, string> = {
+            depth: "Глубина (мм)",
+            width: "Ширина (мм)",
+            height: "Высота (мм)",
+            length: "Длина (мм)",
+            thickness: "Толщина (мм)",
+            color: "Цвет",
+            material: "Материал",
+            manufacturer: "Производитель",
+            surfaceType: "Тип поверхности",
+            openingType: "Тип открывания",
+            closingType: "Тип закрывания",
+            loadCapacity: "Грузоподъемность (кг)",
+            segment: "Ценовой сегмент",
+          };
+
+          Object.entries(labelMap).forEach(([field, label]) => {
+            const val = product[field];
+            if (val !== undefined && val !== null && val !== "" && val !== "-") {
+              row[label] = val;
+              dynamicKeys.add(label);
+            }
+          });
+
+          sheetData.push(row);
+        });
+      }
 
       if (sheetData.length > 0) {
-        // Build final data ensure every row has all columns from dynamicKeys
-        const allColumns = Array.from(dynamicKeys);
-        // Ensure ID/Ключ is always at the end
-        const technicalColumns = ["ID/Ключ"];
-        const contentColumns = allColumns.filter(
-          (c) => !technicalColumns.includes(c),
-        );
-        const finalHeaders = [...contentColumns, ...technicalColumns];
+        const finalHeaders = Array.from(dynamicKeys);
 
         const finalRows = sheetData.map((row) => {
           const fullRow: any = {};
@@ -4628,24 +4665,60 @@ const PriceView = ({
 
         data.forEach((row) => {
           const key = row["ID/Ключ"];
-          const price = parseFloat(row["Цена"]);
-          const name = row["Наименование"];
+          const rawPurchase = parseFloat(
+            row["Цена закупки (₽)"] || row["Цена закупки"] || row["Закупка"]
+          );
+          const rawSelling = parseFloat(
+            row["Цена продажи (₽)"] ||
+              row["Цена продажи"] ||
+              row["Розница"] ||
+              row["Цена за лист (₽)"] ||
+              row["Цена"]
+          );
+          const price = !isNaN(rawPurchase)
+            ? rawPurchase
+            : !isNaN(rawSelling)
+            ? rawSelling
+            : parseFloat(row["Цена"]);
+
+          const name = row["Наименование"] || row["Наименование услуги"] || row["Название"];
           const category = row["Категория"];
           const type = row["Тип"];
 
-          const brand = row["Подкатегория/Бренд"];
-          const dataType = row["Тип данных"];
+          const brand = row["Подкатегория/Бренд"] || row["Бренд"] || row["Бренд / Тип фасада"];
+          const dataType = row["Тип данных"] || row["Тип элемента"];
+          const article = row["Артикул"] || row["Арт."] || "";
+          const manufacturerArticle = row["Арт. производителя"] || "";
+          const matchArts = row["Артикулы сопоставления (Базис/1С)"] || row["Артикулы сопоставления"] || "";
+          const matchNames = row["Сопоставление по наименованию (синонимы)"] || row["Сопоставление по наименованию"] || "";
 
           // Dynamically parse all other columns as characteristics
           const charMap: any = {};
           const knownFixedKeys = [
             "Категория",
             "Подкатегория/Бренд",
+            "Бренд",
+            "Бренд / Тип фасада",
             "Тип данных",
+            "Тип элемента",
             "Наименование",
+            "Наименование услуги",
+            "Название",
             "Цена",
+            "Цена за лист (₽)",
+            "Цена закупки (₽)",
+            "Цена закупки",
+            "Закупка",
+            "Цена продажи (₽)",
+            "Цена продажи",
+            "Розница",
             "Мин. объем",
+            "Мин. объем (м²)",
             "ID/Ключ",
+            "Артикулы сопоставления (Базис/1С)",
+            "Артикулы сопоставления",
+            "Сопоставление по наименованию (синонимы)",
+            "Сопоставление по наименованию",
           ];
 
           Object.entries(row).forEach(([k, v]) => {
@@ -4657,8 +4730,11 @@ const PriceView = ({
             ) {
               // Map common Russian labels back to internal keys
               const reverseLabelMap: Record<string, string> = {
+                "Глубина (мм)": "depth",
                 Глубина: "depth",
+                "Ширина (мм)": "width",
                 Ширина: "width",
+                "Высота (мм)": "height",
                 Высота: "height",
                 Материал: "material",
                 Цвет: "color",
@@ -4666,11 +4742,16 @@ const PriceView = ({
                 "Тип поверхности": "surfaceType",
                 "Тип открывания": "openingType",
                 "Тип закрывания": "closingType",
+                "Грузоподъемность (кг)": "loadCapacity",
                 Грузоподъемность: "loadCapacity",
+                "Длина (мм)": "length",
                 Длина: "length",
+                "Толщина (мм)": "thickness",
                 Толщина: "thickness",
                 "Ед. изм.": "unit",
                 Артикул: "article",
+                "Арт. производителя": "manufacturerArticle",
+                "Ценовой сегмент": "segment",
               };
               const internalKey = reverseLabelMap[k] || k;
               charMap[internalKey] = String(v).replace("мм", "").trim();
@@ -4679,19 +4760,40 @@ const PriceView = ({
 
           if (isNaN(price)) return;
 
-          // Handle custom facades
-          if (key && String(key).startsWith("facade|")) {
-            const parts = String(key).split("|");
-            const brandName = parts[1];
+          // 1. Handle Materials without key
+          if (category === "Материалы" || row["Цена за лист (₽)"] !== undefined) {
+            const b = brand || "";
+            const d = row["Декор / Цвет"] || name || "";
+            if (b && d) {
+              const priceKey = `${b}|${d}`;
+              newPrices[priceKey] = price;
+            }
+            return;
+          }
+
+          // 2. Handle Services without key
+          if (category === "Услуги производства" || row["Наименование услуги"]) {
+            const sName = row["Наименование услуги"] || name;
+            if (sName) {
+              newPrices[sName] = price;
+            }
+            return;
+          }
+
+          // 3. Handle custom facades (with or without key)
+          if ((key && String(key).startsWith("facade|")) || category === "Фасады заказные" || dataType === "Категория фасада" || dataType === "Фрезеровка фасада" || dataType === "Толщина фасада (доплата)") {
+            const brandName = (key ? String(key).split("|")[1] : brand) || "";
+            const typeTag = key ? String(key).split("|")[2] : (dataType === "Категория фасада" ? "cat" : dataType === "Фрезеровка фасада" ? "mill" : "thick");
+            const targetId = key ? String(key).split("|")[3] : "";
 
             const updateSettings = (s: FacadeSettings | null) => {
               if (!s) return null;
-              const typeTag = parts[2];
-              const targetId = parts[3];
 
               if (typeTag === "cat") {
                 const newCats = s.categories.map((c) =>
-                  c.id === targetId ? { ...c, purchasePrice: price } : c,
+                  (targetId ? c.id === targetId : c.name.toLowerCase() === String(name).toLowerCase())
+                    ? { ...c, purchasePrice: price }
+                    : c,
                 );
                 if (JSON.stringify(newCats) !== JSON.stringify(s.categories)) {
                   hasFacadeChanges = true;
@@ -4699,16 +4801,19 @@ const PriceView = ({
                 }
               } else if (typeTag === "mill") {
                 const newMills = s.millings.map((m) =>
-                  m.id === targetId ? { ...m, purchasePrice: price } : m,
+                  (targetId ? m.id === targetId : m.name.toLowerCase() === String(name).toLowerCase())
+                    ? { ...m, purchasePrice: price }
+                    : m,
                 );
                 if (JSON.stringify(newMills) !== JSON.stringify(s.millings)) {
                   hasFacadeChanges = true;
                   return { ...s, millings: newMills };
                 }
               } else if (typeTag === "thick") {
+                const thickKey = targetId || String(name).replace(/\D+/g, "");
                 const newThickPrices = {
                   ...(s.thicknessPrices || {}),
-                  [targetId]: price,
+                  [thickKey]: price,
                 };
                 if (
                   JSON.stringify(newThickPrices) !==
@@ -4741,126 +4846,117 @@ const PriceView = ({
             return;
           }
 
-          // If it has a product key, try to find existing
+          // 4. Products matching (Key-based or Name/Article based)
+          let existingProduct: any = null;
           if (key && String(key).startsWith("product|")) {
             const productId = String(key).replace("product|", "");
-            const product = catalogProducts.find(
+            existingProduct = catalogProducts.find(
               (p) => String(p.id) === productId,
             );
-            if (product) {
-              const updatedProduct = {
-                ...product,
-                price: price,
-                purchasePrice: price,
-              };
+          }
 
-              if (protectCoefficients) {
-                // Keep existing custom coefficients intact
-                updatedProduct.useCustomCoeffs = product.useCustomCoeffs;
-                updatedProduct.customCoeffRetail = product.customCoeffRetail;
-                updatedProduct.customCoeffWholesale = product.customCoeffWholesale;
-                updatedProduct.customCoeffDesigner = product.customCoeffDesigner;
-              } else {
-                // If not protecting, see if the Excel row specifies custom coefficient columns
-                const excelRetail = parseFloat(row["Коэффициент Розница"] || row["Коэф розница"] || row["Наценка розница"]);
-                const excelWholesale = parseFloat(row["Коэффициент Опт"] || row["Коэф опт"] || row["Наценка опт"]);
-                const excelDesigner = parseFloat(row["Коэффициент Дизайнер"] || row["Коэф дизайнер"] || row["Наценка дизайнер"]);
+          if (!existingProduct && article && article !== "-") {
+            const normArt = String(article).trim().toLowerCase();
+            existingProduct = catalogProducts.find(
+              (p) =>
+                p.article &&
+                String(p.article).trim().toLowerCase() === normArt &&
+                (!category || p.category === category)
+            );
+          }
 
-                if (!isNaN(excelRetail) || !isNaN(excelWholesale) || !isNaN(excelDesigner)) {
-                  updatedProduct.useCustomCoeffs = true;
-                  if (!isNaN(excelRetail)) updatedProduct.customCoeffRetail = excelRetail;
-                  if (!isNaN(excelWholesale)) updatedProduct.customCoeffWholesale = excelWholesale;
-                  if (!isNaN(excelDesigner)) updatedProduct.customCoeffDesigner = excelDesigner;
-                }
-              }
-
-              productsToUpdate.push(updatedProduct);
-              return;
+          if (!existingProduct && name) {
+            const normName = String(name).trim().toLowerCase();
+            existingProduct = catalogProducts.find(
+              (p) =>
+                p.name &&
+                String(p.name).trim().toLowerCase() === normName &&
+                (!category || p.category === category)
+            );
+            if (!existingProduct) {
+              existingProduct = catalogProducts.find(
+                (p) =>
+                  p.name &&
+                  String(p.name).trim().toLowerCase() === normName
+              );
             }
           }
 
-          // If no key or product not found by key, check if we should create a new one
-          const pCategories = PRICE_LIST_CATEGORIES.filter(
-            (c) =>
-              !["Материалы", "Фасады заказные", "Услуги производства"].includes(
-                c.title,
-              ),
-          ).map((c) => c.title);
+          if (existingProduct) {
+            const finalPurchase = !isNaN(rawPurchase) ? rawPurchase : price;
+            const finalSelling = !isNaN(rawSelling) ? rawSelling : (existingProduct.price || price);
 
-          const isProductCategory = pCategories.includes(String(category));
+            const updatedProduct: any = {
+              ...existingProduct,
+              price: finalSelling,
+              purchasePrice: finalPurchase,
+            };
 
-          if (
-            type === "Товар" ||
-            isProductCategory ||
-            (!key && name && category)
-          ) {
-            // Check for duplicate by name in the same category
-            const isDuplicate = catalogProducts.some(
-              (p) =>
-                p.category === category &&
-                p.name.toLowerCase() === String(name).toLowerCase(),
-            );
+            if (brand && brand !== "-") updatedProduct.brand = String(brand);
+            if (article && article !== "-") updatedProduct.article = String(article);
+            if (manufacturerArticle && manufacturerArticle !== "-") updatedProduct.manufacturerArticle = String(manufacturerArticle);
+            if (matchArts) {
+              updatedProduct.matchingArticles = matchArts;
+              updatedProduct.accountingSkus = String(matchArts).split(",").map((s) => s.trim()).filter(Boolean);
+            }
+            if (matchNames) {
+              updatedProduct.matchingNames = matchNames;
+              updatedProduct.synonyms = String(matchNames).split(",").map((s) => s.trim()).filter(Boolean);
+            }
 
-            if (!isDuplicate && name && category) {
-              newProducts.push({
-                id: Math.random().toString(36).substring(2, 11),
-                name: String(name),
-                category: String(category),
-                brand: brand && brand !== "-" ? String(brand) : "",
-                type: dataType && dataType !== "Товар" ? String(dataType) : "",
-                price: price,
-                ...charMap,
-                description: `Импортировано из Excel (${new Date().toLocaleDateString()})`,
-                image: "",
-              });
-            } else if (isDuplicate) {
-              // If it's a duplicate by name, update the price and potentially other fields
-              const existingProduct = catalogProducts.find(
-                (p) =>
-                  p.category === category &&
-                  p.name.toLowerCase() === String(name).toLowerCase(),
-              );
-              if (existingProduct) {
-                const updatedProduct = {
-                  ...existingProduct,
-                  price,
-                  purchasePrice: price,
-                  brand:
-                    brand && brand !== "-"
-                      ? String(brand)
-                      : existingProduct.brand,
-                  type:
-                    dataType && dataType !== "Товар"
-                      ? String(dataType)
-                      : existingProduct.type,
-                  ...charMap,
-                };
+            // Assign characteristics
+            Object.assign(updatedProduct, charMap);
 
-                if (protectCoefficients) {
-                  // Keep existing custom coefficients intact
-                  updatedProduct.useCustomCoeffs = existingProduct.useCustomCoeffs;
-                  updatedProduct.customCoeffRetail = existingProduct.customCoeffRetail;
-                  updatedProduct.customCoeffWholesale = existingProduct.customCoeffWholesale;
-                  updatedProduct.customCoeffDesigner = existingProduct.customCoeffDesigner;
-                } else {
-                  // If not protecting, see if the Excel row specifies custom coefficient columns
-                  const excelRetail = parseFloat(row["Коэффициент Розница"] || row["Коэф розница"] || row["Наценка розница"]);
-                  const excelWholesale = parseFloat(row["Коэффициент Опт"] || row["Коэф опт"] || row["Наценка опт"]);
-                  const excelDesigner = parseFloat(row["Коэффициент Дизайнер"] || row["Коэф дизайнер"] || row["Наценка дизайнер"]);
+            if (protectCoefficients) {
+              updatedProduct.useCustomCoeffs = existingProduct.useCustomCoeffs;
+              updatedProduct.customCoeffRetail = existingProduct.customCoeffRetail;
+              updatedProduct.customCoeffWholesale = existingProduct.customCoeffWholesale;
+              updatedProduct.customCoeffDesigner = existingProduct.customCoeffDesigner;
+            } else {
+              const excelRetail = parseFloat(row["Коэффициент Розница"] || row["Коэф розница"] || row["Наценка розница"]);
+              const excelWholesale = parseFloat(row["Коэффициент Опт"] || row["Коэф опт"] || row["Наценка опт"]);
+              const excelDesigner = parseFloat(row["Коэффициент Дизайнер"] || row["Коэф дизайнер"] || row["Наценка дизайнер"]);
 
-                  if (!isNaN(excelRetail) || !isNaN(excelWholesale) || !isNaN(excelDesigner)) {
-                    updatedProduct.useCustomCoeffs = true;
-                    if (!isNaN(excelRetail)) updatedProduct.customCoeffRetail = excelRetail;
-                    if (!isNaN(excelWholesale)) updatedProduct.customCoeffWholesale = excelWholesale;
-                    if (!isNaN(excelDesigner)) updatedProduct.customCoeffDesigner = excelDesigner;
-                  }
-                }
-
-                productsToUpdate.push(updatedProduct);
+              if (!isNaN(excelRetail) || !isNaN(excelWholesale) || !isNaN(excelDesigner)) {
+                updatedProduct.useCustomCoeffs = true;
+                if (!isNaN(excelRetail)) updatedProduct.customCoeffRetail = excelRetail;
+                if (!isNaN(excelWholesale)) updatedProduct.customCoeffWholesale = excelWholesale;
+                if (!isNaN(excelDesigner)) updatedProduct.customCoeffDesigner = excelDesigner;
               }
             }
+
+            productsToUpdate.push(updatedProduct);
+            return;
+          }
+
+          // If product does not exist, create new
+          if (name && category) {
+            const finalPurchase = !isNaN(rawPurchase) ? rawPurchase : price;
+            const finalSelling = !isNaN(rawSelling) ? rawSelling : price;
+
+            newProducts.push({
+              id: Math.random().toString(36).substring(2, 11),
+              name: String(name),
+              category: String(category),
+              brand: brand && brand !== "-" ? String(brand) : "",
+              article: article && article !== "-" ? String(article) : "",
+              manufacturerArticle: manufacturerArticle && manufacturerArticle !== "-" ? String(manufacturerArticle) : "",
+              matchingArticles: matchArts || "",
+              accountingSkus: matchArts ? String(matchArts).split(",").map((s) => s.trim()).filter(Boolean) : [],
+              matchingNames: matchNames || "",
+              synonyms: matchNames ? String(matchNames).split(",").map((s) => s.trim()).filter(Boolean) : [],
+              type: dataType && dataType !== "Товар" ? String(dataType) : "",
+              price: finalSelling,
+              purchasePrice: finalPurchase,
+              unit: charMap.unit || "шт",
+              ...charMap,
+              description: `Импортировано из Excel (${new Date().toLocaleDateString()})`,
+              image: "",
+              status: "approved",
+              updatedAt: new Date().toISOString(),
+            });
           } else if (key) {
-            // It's a material or service price key
+            // It's a material or service price key (legacy format)
             newPrices[key] = price;
 
             // If it's a service (dataType is Услуга), ensure it exists in catalogServices
@@ -5857,6 +5953,15 @@ const PriceView = ({
                       </div>
                     )}
                   </div>
+                ) : cat.title === "Метизы" ? (
+                  <FastenersPriceTable
+                    catalogProducts={catalogProducts}
+                    onSaveProduct={onSaveProduct}
+                    onDeleteProduct={onDeleteProduct}
+                    canEdit={canEdit}
+                    showAlert={showAlert}
+                    showConfirm={showConfirm}
+                  />
                 ) : (
                   cat.brands.map((brand) => {
                     const isServices = brand === "Услуги";
@@ -6076,7 +6181,7 @@ const PriceView = ({
               </div>
 
               {/* Products in this category */}
-              {cat.products.length > 0 && cat.title !== "Фасады заказные" && cat.title !== "Кромочные материалы" && (
+              {cat.products.length > 0 && cat.title !== "Фасады заказные" && cat.title !== "Кромочные материалы" && cat.title !== "Метизы" && (
                 <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm mt-4">
                   <div className="px-6 py-4 bg-gray-50 border-b border-gray-100 flex items-center gap-3">
                     <ShoppingBag className="w-5 h-5 text-emerald-600" />
@@ -6717,8 +6822,8 @@ const CalculatorView = ({
               {/* Bazis dedicated button */}
               <div className="relative group">
                 <label className="block text-xs font-bold uppercase tracking-wider text-indigo-900 mb-1.5 flex items-center justify-between">
-                  <span>Отчеты Базис-Мебельщик</span>
-                  <span className="text-[10px] bg-indigo-100 text-indigo-800 font-black px-1.5 py-0.5 rounded">XLSX / XLS / CSV</span>
+                  <span>Отчеты Базис</span>
+                  <span className="text-[10px] bg-indigo-100 text-indigo-800 font-black px-1.5 py-0.5 rounded">XLSX / CSV</span>
                 </label>
                 <input
                   type="file"
@@ -10537,172 +10642,173 @@ const SummaryView = ({
 
           const groupKey = `${thickness}|${decor}`;
 
-          if (!edgeGroups[groupKey]) {
-            // Find base price if missing in edgePrices
-            let basePrice = edgePrices[ck] || 0;
-            if (basePrice === 0) {
-              const normThick = thickness === "1" || thickness === "1.0" ? "1.0" : thickness === "2" || thickness === "2.0" ? "2.0" : thickness;
-              const dAndTKey = `edgePrice_${decor}_${normThick}`;
-              basePrice = edgePrices[dAndTKey] || edgePrices[`edgePrice_${decor}_${thickness}`] || 0;
-            }
-            if (basePrice === 0 && decor !== "Не указан" && decor !== "Не выбран") {
-              const normThick = thickness === "1" || thickness === "1.0" ? "1.0" : thickness === "2" || thickness === "2.0" ? "2.0" : thickness;
-              const catalogEdge = catalogProducts.find(
-                (p: any) =>
-                  p.category === "Кромочные материалы" &&
-                  p.decor === decor &&
-                  (p.thickness === normThick || p.thickness === thickness)
-              );
-              if (catalogEdge && catalogEdge.price) {
-                basePrice = catalogEdge.price;
-              }
-            }
-            if (basePrice === 0 && decor !== "Не указан") {
-              // Try variations of decor string to find in price list
-              const possibleKeys = [
-                decor,
-                decor.replace(/ /g, "|"),
-                decor.toUpperCase(),
-                decor.toLowerCase()
-              ];
-              
-              for (const pk of possibleKeys) {
-                if (configToUse.prices?.[pk]) {
-                  basePrice = configToUse.prices[pk];
-                  break;
+            const normThick = thickness === "1" || thickness === "1.0" ? "1.0" : thickness === "2" || thickness === "2.0" ? "2.0" : thickness;
+            const dAndTKey = `edgePrice_${decor}_${normThick}`;
+
+            if (!edgeGroups[groupKey]) {
+              // Find base price: prioritize price list (edgePrices[dAndTKey]), then catalog, then settings prices
+              let basePrice = edgePrices[dAndTKey] || edgePrices[`edgePrice_${decor}_${thickness}`] || edgePrices[ck] || 0;
+              if (basePrice === 0 && decor !== "Не указан" && decor !== "Не выбран") {
+                const catalogEdge = catalogProducts.find(
+                  (p: any) =>
+                    p.category === "Кромочные материалы" &&
+                    p.decor === decor &&
+                    (p.thickness === normThick || p.thickness === thickness)
+                );
+                if (catalogEdge && catalogEdge.price) {
+                  basePrice = catalogEdge.price;
                 }
               }
-            }
+              if (basePrice === 0 && decor !== "Не указан") {
+                // Try variations of decor string to find in price list
+                const possibleKeys = [
+                  decor,
+                  decor.replace(/ /g, "|"),
+                  decor.toUpperCase(),
+                  decor.toLowerCase()
+                ];
+                
+                for (const pk of possibleKeys) {
+                  if (configToUse.prices?.[pk]) {
+                    basePrice = configToUse.prices[pk];
+                    break;
+                  }
+                }
+              }
 
-            edgeGroups[groupKey] = {
-              thickness,
-              decor,
-              qty: 0,
-              price: basePrice,
-              key: ck,
-              coef,
-              totalLength: 0,
-            };
-          }
-          edgeGroups[groupKey].totalLength += edgeLenActual;
-
-          // Glued edge row
-          if (gluedEdgeLength > 0) {
-            const gluedGroupKey = `glued|${ck}`;
-            const priceKey = `${ck}-glued`;
-            if (!edgeGroups[gluedGroupKey]) {
-              edgeGroups[gluedGroupKey] = {
-                thickness: "Склейка (доп.)",
-                decor: decor,
+              edgeGroups[groupKey] = {
+                thickness,
+                decor,
                 qty: 0,
-                price: edgePrices[priceKey] || 0,
-                priceKey: priceKey,
+                price: basePrice,
                 key: ck,
+                priceKey: dAndTKey,
                 coef,
                 totalLength: 0,
               };
             }
-            edgeGroups[gluedGroupKey].totalLength += gluedEdgeLength;
-          }
-        });
+            edgeGroups[groupKey].totalLength += edgeLenActual;
 
-        Object.values(edgeGroups).forEach((group) => {
-          const edgeLenRounded = Math.ceil(group.totalLength);
-          const brandStr = selectedDecor[group.key] || "";
-          const brandName =
-            Object.keys(catalogMaterials).find((b) => brandStr.startsWith(b)) ||
-            "";
-          const thickness = group.thickness;
-
-          const detectedEdgeBrand = brandName
-            ? LDSP_TO_EDGE_BRANDS[brandName]?.find((eb) =>
-                String(group.decor)
-                  .toLowerCase()
-                  .includes(String(eb).toLowerCase()),
-              )
-            : null;
-
-          const mKey = detectedEdgeBrand
-            ? `${brandName}:${detectedEdgeBrand}:${thickness}`
-            : `${brandName}:${thickness}`;
-
-          const configToUse =
-            productionFormat === "contract" && productionSettings?.production
-              ? productionSettings.production
-              : ownProductionConfig;
-
-          const multiplicity = configToUse.edgeMultiplicity?.[mKey] || 0;
-
-          let effectiveCalcMode = calcMode;
-          if (ownProductionConfig?.clientCalcModesEnabled && ownProductionConfig?.clientCalcModes) {
-            if (selectedSalonId || customerType === "wholesale") {
-              effectiveCalcMode = ownProductionConfig.clientCalcModes.salon || calcMode;
-            } else if (customerType === "designer") {
-              effectiveCalcMode = ownProductionConfig.clientCalcModes.designer || calcMode;
-            } else {
-              effectiveCalcMode = ownProductionConfig.clientCalcModes.retail || calcMode;
-            }
-          }
-
-          const parentMatItem = results[group.key];
-          const matWorkKey = parentMatItem ? getMaterialWorkTypeKey(parentMatItem, sheetConfigs[group.key]) : "";
-          const workCostsObj = effectiveCalcMode === "area" ? ownProductionConfig?.areaWorkCosts : ownProductionConfig?.sheetWorkCosts;
-          const matWorkConfig = matWorkKey ? workCostsObj?.[matWorkKey] : undefined;
-          const includeEdgeWork = matWorkConfig?.includeEdgeWork ?? true;
-
-          let edgeWorkPrice = 0;
-          if (effectiveCalcMode !== "coefficients" && !includeEdgeWork) {
-            const normThick = String(thickness).replace(" мм", "").trim();
-            edgeWorkPrice = matWorkConfig?.edgeWorkPrices?.[normThick] || matWorkConfig?.edgeWorkPrices?.[String(parseFloat(normThick))] || 0;
-          }
-
-          const effectiveUnitPrice = group.price + edgeWorkPrice;
-
-          let eCost = edgeLenRounded * effectiveUnitPrice * (effectiveCalcMode === "coefficients" ? group.coef : 1);
-          let displayQty = `${edgeLenRounded} м`;
-
-          if (multiplicity > 0) {
-            const buyLen =
-              Math.ceil(group.totalLength / multiplicity) * multiplicity;
-            if (buyLen > edgeLenRounded) {
-              if (effectiveCalcMode === "coefficients") {
-                eCost =
-                  buyLen * effectiveUnitPrice +
-                  edgeLenRounded * effectiveUnitPrice * (group.coef - 1);
-              } else {
-                eCost = buyLen * effectiveUnitPrice;
+            // Glued edge row
+            if (gluedEdgeLength > 0) {
+              const gluedGroupKey = `glued|${ck}`;
+              const priceKey = `${ck}-glued`;
+              if (!edgeGroups[gluedGroupKey]) {
+                edgeGroups[gluedGroupKey] = {
+                  thickness: "Склейка (доп.)",
+                  decor: decor,
+                  qty: 0,
+                  price: edgePrices[priceKey] || 0,
+                  priceKey: priceKey,
+                  key: ck,
+                  coef,
+                  totalLength: 0,
+                };
               }
-              displayQty = `${buyLen} м`;
+              edgeGroups[gluedGroupKey].totalLength += gluedEdgeLength;
             }
-          }
-
-          if (group.price === 0) allDataEntered = false;
-
-          const showPurchasePrice =
-            userRole === "admin" || companyType === "Дизайнер";
-          
-          // Column "Price" should show the BASE price (per unit)
-          // Column "Total" shows unit * qty * coef
-          const displayPrice = group.price;
-
-          rows.push({
-            type: "edge",
-            name: String(thickness).includes("Склейка")
-              ? "Кромка (Склейка)"
-              : `Кромка ${group.decor !== "Не указан" && group.decor !== "Не выбран" ? group.decor + " " : ""}${thickness} мм`,
-            sub: group.decor,
-            decor: group.decor,
-            qty: displayQty,
-            price: displayPrice,
-            rawPrice: group.price,
-            total: Math.round(eCost),
-            isEdge: true,
-            key: group.key,
-            priceKey: group.priceKey,
-            coef: group.coef,
-            thickness: thickness,
           });
-        });
+
+          Object.values(edgeGroups).forEach((group) => {
+            const edgeLenRounded = Math.ceil(group.totalLength);
+            const brandStr = selectedDecor[group.key] || "";
+            const brandName =
+              Object.keys(catalogMaterials).find((b) => brandStr.startsWith(b)) ||
+              "";
+            const thickness = group.thickness;
+
+            const detectedEdgeBrand = brandName
+              ? LDSP_TO_EDGE_BRANDS[brandName]?.find((eb) =>
+                  String(group.decor)
+                    .toLowerCase()
+                    .includes(String(eb).toLowerCase()),
+                )
+              : null;
+
+            const mKey = detectedEdgeBrand
+              ? `${brandName}:${detectedEdgeBrand}:${thickness}`
+              : `${brandName}:${thickness}`;
+
+            const configToUse =
+              productionFormat === "contract" && productionSettings?.production
+                ? productionSettings.production
+                : ownProductionConfig;
+
+            const multiplicity = configToUse.edgeMultiplicity?.[mKey] || 0;
+
+            let effectiveCalcMode = calcMode;
+            if (ownProductionConfig?.clientCalcModesEnabled && ownProductionConfig?.clientCalcModes) {
+              if (selectedSalonId || customerType === "wholesale") {
+                effectiveCalcMode = ownProductionConfig.clientCalcModes.salon || calcMode;
+              } else if (customerType === "designer") {
+                effectiveCalcMode = ownProductionConfig.clientCalcModes.designer || calcMode;
+              } else {
+                effectiveCalcMode = ownProductionConfig.clientCalcModes.retail || calcMode;
+              }
+            }
+
+            const parentMatItem = results[group.key];
+            const matWorkKey = parentMatItem ? getMaterialWorkTypeKey(parentMatItem, sheetConfigs[group.key]) : "";
+            const workCostsObj = effectiveCalcMode === "area" ? ownProductionConfig?.areaWorkCosts : ownProductionConfig?.sheetWorkCosts;
+            const matWorkConfig = matWorkKey ? workCostsObj?.[matWorkKey] : undefined;
+            const includeEdgeWork = matWorkConfig?.includeEdgeWork ?? true;
+
+            let edgeWorkPrice = 0;
+            if (effectiveCalcMode !== "coefficients" && !includeEdgeWork) {
+              const normThick = String(thickness).replace(" мм", "").trim();
+              edgeWorkPrice = matWorkConfig?.edgeWorkPrices?.[normThick] || matWorkConfig?.edgeWorkPrices?.[String(parseFloat(normThick))] || 0;
+            }
+
+            const effectiveUnitPrice = group.price + edgeWorkPrice;
+
+            let eCost = edgeLenRounded * effectiveUnitPrice * (effectiveCalcMode === "coefficients" ? group.coef : 1);
+            let displayQty = `${edgeLenRounded} м`;
+
+            if (multiplicity > 0) {
+              const buyLen =
+                Math.ceil(group.totalLength / multiplicity) * multiplicity;
+              if (buyLen > edgeLenRounded) {
+                if (effectiveCalcMode === "coefficients") {
+                  eCost =
+                    buyLen * effectiveUnitPrice +
+                    edgeLenRounded * effectiveUnitPrice * (group.coef - 1);
+                } else {
+                  eCost = buyLen * effectiveUnitPrice;
+                }
+                displayQty = `${buyLen} м`;
+              }
+            }
+
+            if (group.price === 0) allDataEntered = false;
+
+            const showPurchasePrice =
+              userRole === "admin" || companyType === "Дизайнер";
+            
+            // Column "Price" should show the BASE price (per unit)
+            // Column "Total" shows unit * qty * coef
+            const displayPrice = group.price;
+
+            const finalNormThick = thickness === "1" || thickness === "1.0" ? "1.0" : thickness === "2" || thickness === "2.0" ? "2.0" : thickness;
+            const finalEdgePriceKey = group.priceKey || `edgePrice_${group.decor}_${finalNormThick}`;
+
+            rows.push({
+              type: "edge",
+              name: String(thickness).includes("Склейка")
+                ? "Кромка (Склейка)"
+                : `Кромка ${group.decor !== "Не указан" && group.decor !== "Не выбран" ? group.decor + " " : ""}${thickness} мм`,
+              sub: group.decor,
+              decor: group.decor,
+              qty: displayQty,
+              price: displayPrice,
+              rawPrice: group.price,
+              total: Math.round(eCost),
+              isEdge: true,
+              key: group.key,
+              priceKey: finalEdgePriceKey,
+              coef: group.coef,
+              thickness: thickness,
+            });
+          });
 
         return rows;
       })
@@ -12419,24 +12525,24 @@ const SummaryView = ({
         </div>
       )}
 
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden max-w-full">
-        <div className="overflow-x-auto max-w-full">
-          <table className="w-full text-left border-collapse">
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden w-full max-w-full">
+        <div className="overflow-x-auto w-full">
+          <table className="w-full text-left border-collapse table-auto">
             <thead>
-              <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="px-4 sm:px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider">
+              <tr className="bg-gray-50 border-b border-gray-200 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                <th className="px-3 sm:px-4 py-3 min-w-[180px]">
                   Материал / Параметры
                 </th>
-                <th className="px-4 sm:px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider w-36 sm:w-48">
+                <th className="px-3 sm:px-4 py-3 w-32 sm:w-44">
                   Декор
                 </th>
-                <th className="px-3 sm:px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider text-right w-20 sm:w-28 whitespace-nowrap">
+                <th className="px-2 sm:px-3 py-3 text-right w-16 sm:w-24 whitespace-nowrap">
                   Кол-во
                 </th>
-                <th className="px-3 sm:px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider text-right w-24 sm:w-28 whitespace-nowrap">
+                <th className="px-2 sm:px-3 py-3 text-right w-20 sm:w-28 whitespace-nowrap">
                   Цена
                 </th>
-                <th className="px-4 sm:px-6 py-3 text-xs font-bold text-gray-500 uppercase tracking-wider text-right w-24 sm:w-32 whitespace-nowrap">
+                <th className="px-3 sm:px-4 py-3 text-right w-20 sm:w-28 whitespace-nowrap">
                   Итого
                 </th>
               </tr>
@@ -12462,7 +12568,7 @@ const SummaryView = ({
                       isMaterial && idx > 0 && "border-t border-gray-200/60",
                     )}
                   >
-                    <td className="px-6 py-2">
+                    <td className="px-3 sm:px-4 py-2 min-w-0 max-w-full">
                       <div className="flex items-center gap-3">
                         {(row.image || row.rawProduct) && (
                           <div 
@@ -12603,7 +12709,7 @@ const SummaryView = ({
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-2">
+                    <td className="px-3 sm:px-4 py-2 max-w-[130px] sm:max-w-[180px] break-words">
                       {row.name.includes("Склейка") ? (
                         <div className="pl-6">
                           <input
@@ -12626,7 +12732,7 @@ const SummaryView = ({
                           (row.rawProduct.name && /скиф/i.test(row.rawProduct.name))
                         )
                       )) ? (
-                        <div className="min-w-[120px]">
+                        <div className="min-w-[110px]">
                           <input
                             type="text"
                             value={selectedDecor[row.key!] || ""}
@@ -12639,7 +12745,7 @@ const SummaryView = ({
                               }
                             }}
                             placeholder="Введите декор Скиф..."
-                            className="w-full max-w-[180px] px-2.5 py-1 border border-blue-200 rounded-lg text-xs font-semibold text-blue-700 bg-blue-50/20 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all placeholder:text-blue-300 placeholder:font-normal"
+                            className="w-full max-w-[180px] px-2 py-1 border border-blue-200 rounded-lg text-xs font-semibold text-blue-700 bg-blue-50/20 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all placeholder:text-blue-300 placeholder:font-normal"
                           />
                         </div>
                       ) : (
@@ -12658,7 +12764,7 @@ const SummaryView = ({
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-2 text-right text-sm font-medium whitespace-nowrap">
+                    <td className="px-2 sm:px-3 py-2 text-right text-sm font-medium whitespace-nowrap">
                       {row.isComputedFitting ? (
                         <div className="flex items-center justify-end gap-1 px-1 py-0.5 rounded-lg bg-emerald-50/60 border border-emerald-100/50 w-fit ml-auto">
                           <input
@@ -12697,7 +12803,7 @@ const SummaryView = ({
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-2 text-right text-sm font-medium whitespace-nowrap">
+                    <td className="px-2 sm:px-3 py-2 text-right text-sm font-medium whitespace-nowrap">
                       {row.type === "edge" ? (
                         <div className="flex items-center justify-end gap-2">
                           <input
@@ -12720,15 +12826,19 @@ const SummaryView = ({
                               }
                             }}
                             onBlur={async () => {
-                              const newPrice = edgePrices[row.priceKey || row.key!] || row.rawPrice || 0;
+                              const targetKey = row.priceKey || row.key!;
+                              const newPrice = edgePrices[targetKey] || row.rawPrice || 0;
                               if (newPrice > 0) {
                                 const decor = row.decor || "Не указан";
-                                const thickness = row.thickness || "0.4";
-                                const dAndTKey = `edgePrice_${decor}_${thickness}`;
+                                const rawThick = row.thickness || "0.4";
+                                const normThick = rawThick === "1" || rawThick === "1.0" ? "1.0" : rawThick === "2" || rawThick === "2.0" ? "2.0" : rawThick;
+                                const dAndTKey = `edgePrice_${decor}_${normThick}`;
                                 
                                 setEdgePrices((prev) => ({
                                   ...prev,
+                                  [targetKey]: newPrice,
                                   [dAndTKey]: newPrice,
+                                  ...(row.key ? { [row.key]: newPrice } : {}),
                                 }));
 
                                 const companyId = (auth.currentUser as any)?.companyId || auth.currentUser?.uid;
@@ -12738,8 +12848,9 @@ const SummaryView = ({
                                     { 
                                       edgePrices: { 
                                         ...edgePrices, 
-                                        [row.priceKey || row.key!]: newPrice,
+                                        [targetKey]: newPrice,
                                         [dAndTKey]: newPrice,
+                                        ...(row.key ? { [row.key]: newPrice } : {}),
                                       } 
                                     },
                                     { merge: true }
@@ -12747,7 +12858,7 @@ const SummaryView = ({
 
                                   const boardBrand = sheetConfigs[row.key!]?.name || "Egger";
                                   if (upsertEdgeToPriceList) {
-                                    await upsertEdgeToPriceList(decor, thickness, newPrice, boardBrand);
+                                    await upsertEdgeToPriceList(decor, normThick, newPrice, boardBrand);
                                   }
                                 }
                               }
@@ -12831,7 +12942,7 @@ const SummaryView = ({
                         ) : `${(row.price ?? 0).toLocaleString()} ₽`
                       )}
                     </td>
-                    <td className="px-6 py-2 text-right font-bold text-gray-900 whitespace-nowrap">
+                    <td className="px-3 sm:px-4 py-2 text-right font-bold text-gray-900 whitespace-nowrap">
                       {row.displayTotal !== row.total ? (
                         <div className="flex flex-col items-end">
                           <span className="text-xs line-through text-gray-400 font-normal">{(row.displayTotal ?? row.total).toLocaleString()} ₽</span>
@@ -12858,13 +12969,13 @@ const SummaryView = ({
 
             {/* Итого по материалам */}
             <tr className="bg-blue-50/20 border-t border-gray-200">
-              <td colSpan={4} className="px-6 py-3 text-right">
+              <td colSpan={4} className="px-3 sm:px-4 py-2.5 text-right">
                 <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">
                   Итого по материалам:
                 </span>
               </td>
-              <td className="px-6 py-3 text-right">
-                <span className="text-lg font-black text-blue-600">
+              <td className="px-3 sm:px-4 py-2.5 text-right">
+                <span className="text-base sm:text-lg font-black text-blue-600">
                   {materialsSubtotalValue.toLocaleString()} ₽
                 </span>
               </td>
@@ -12872,13 +12983,13 @@ const SummaryView = ({
 
             {/* Итого по фурнитуре */}
             <tr className="bg-blue-50/20 border-t border-gray-200">
-              <td colSpan={4} className="px-6 py-3 text-right">
+              <td colSpan={4} className="px-3 sm:px-4 py-2.5 text-right">
                 <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">
                   Итого по фурнитуре:
                 </span>
               </td>
-              <td className="px-6 py-3 text-right">
-                <span className="text-lg font-black text-blue-600">
+              <td className="px-3 sm:px-4 py-2.5 text-right">
+                <span className="text-base sm:text-lg font-black text-blue-600">
                   {hardwareSubtotalValue.toLocaleString()} ₽
                 </span>
               </td>
@@ -12908,7 +13019,7 @@ const SummaryView = ({
                 ).map(([category, rows]) => (
                   <React.Fragment key={category}>
                     <tr className="bg-gray-50/50">
-                      <td colSpan={5} className="px-6 py-2">
+                      <td colSpan={5} className="px-3 sm:px-4 py-2">
                         <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest">
                           {category}
                         </span>
@@ -12922,7 +13033,7 @@ const SummaryView = ({
                             row.type === "product_edge" && "bg-gray-50/50",
                           )}
                         >
-                        <td className="px-6 py-2">
+                        <td className="px-3 sm:px-4 py-2 min-w-0 max-w-full">
                           <div className="flex items-center gap-3">
                             {(row.image || row.rawProduct) && (
                               <div 
@@ -13039,7 +13150,7 @@ const SummaryView = ({
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-2">
+                        <td className="px-3 sm:px-4 py-2 max-w-[130px] sm:max-w-[180px] break-words">
                           {row.rawProduct && (
                             (row.rawProduct.category === "Столешницы и стеновые") && (
                               row.rawProduct.wtManufacturer === "Скиф" || 
@@ -13047,7 +13158,7 @@ const SummaryView = ({
                               (row.rawProduct.name && /скиф/i.test(row.rawProduct.name))
                             )
                           ) ? (
-                            <div className="min-w-[120px]">
+                            <div className="min-w-[110px]">
                               <input
                                 type="text"
                                 value={selectedDecor[row.key!] || ""}
@@ -13060,7 +13171,7 @@ const SummaryView = ({
                                   }
                                 }}
                                 placeholder="Введите декор Скиф..."
-                                className="w-full max-w-[180px] px-2.5 py-1 border border-blue-200 rounded-lg text-xs font-semibold text-blue-700 bg-blue-50/20 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all placeholder:text-blue-300 placeholder:font-normal"
+                                className="w-full max-w-[180px] px-2 py-1 border border-blue-200 rounded-lg text-xs font-semibold text-blue-700 bg-blue-50/20 focus:ring-2 focus:ring-blue-500 focus:bg-white outline-none transition-all placeholder:text-blue-300 placeholder:font-normal"
                               />
                             </div>
                           ) : (
@@ -13077,7 +13188,7 @@ const SummaryView = ({
                             </span>
                           )}
                         </td>
-                        <td className="px-6 py-2 text-right text-sm whitespace-nowrap">
+                        <td className="px-2 sm:px-3 py-2 text-right text-sm whitespace-nowrap">
                           {row.type === "product" ? (
                             <div className="flex items-center justify-end gap-2">
                               <button
@@ -13112,10 +13223,10 @@ const SummaryView = ({
                             </span>
                           )}
                         </td>
-                        <td className="px-6 py-2 text-right text-sm font-medium whitespace-nowrap">
+                        <td className="px-2 sm:px-3 py-2 text-right text-sm font-medium whitespace-nowrap">
                           {(row.price ?? 0).toLocaleString()} ₽
                         </td>
-                        <td className="px-6 py-2 text-right font-bold text-gray-900 whitespace-nowrap">
+                        <td className="px-3 sm:px-4 py-2 text-right font-bold text-gray-900 whitespace-nowrap">
                           {row.displayTotal !== row.total ? (
                             <div className="flex flex-col items-end">
                               <span className="text-xs line-through text-gray-400 font-normal">{(row.displayTotal ?? row.total).toLocaleString()} ₽</span>
@@ -13131,7 +13242,7 @@ const SummaryView = ({
                       </tr>
                       {row.rawProduct?.category === "Кухонные гарнитуры" && expandedKitchens[row.key || String(row.id)] && (
                         <tr className="bg-indigo-50/30 border-b border-indigo-100/60">
-                          <td colSpan={5} className="px-6 py-4">
+                          <td colSpan={5} className="px-3 sm:px-4 py-3">
                             <div className="bg-white p-4 rounded-2xl border border-indigo-100 shadow-sm space-y-4">
                               <div className="flex items-center justify-between border-b border-gray-100 pb-2">
                                 <span className="font-extrabold text-indigo-950 text-xs flex items-center gap-2">
@@ -13312,7 +13423,7 @@ const SummaryView = ({
                 <tr className="bg-gray-50/50">
                   <td
                     colSpan={5}
-                    className="px-6 py-2 border-b border-gray-100"
+                    className="px-3 sm:px-4 py-2 border-b border-gray-100"
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-black text-blue-600 uppercase tracking-widest italic">
@@ -13334,21 +13445,21 @@ const SummaryView = ({
                       key={`serv-${idx}`}
                       className="hover:bg-gray-50 transition-colors"
                     >
-                      <td className="px-6 py-2">
+                      <td className="px-3 sm:px-4 py-2 min-w-0 max-w-full">
                         <div className="font-medium text-gray-900">
                           {row.name}
                         </div>
                         <div className="text-xs text-gray-500">{row.sub}</div>
                       </td>
-                      <td className="px-6 py-2">
+                      <td className="px-3 sm:px-4 py-2">
                         <span className="text-sm font-medium text-gray-400">
                           -
                         </span>
                       </td>
-                      <td className="px-6 py-2 text-right text-sm font-medium text-green-600 whitespace-nowrap">
+                      <td className="px-2 sm:px-3 py-2 text-right text-sm font-medium text-green-600 whitespace-nowrap">
                         {row.qty}
                       </td>
-                      <td className="px-6 py-2 text-right text-sm font-medium text-green-600 whitespace-nowrap">
+                      <td className="px-2 sm:px-3 py-2 text-right text-sm font-medium text-green-600 whitespace-nowrap">
                         {row.isManual ? (
                           <div className="flex items-center justify-end gap-2">
                             <input
@@ -13375,7 +13486,7 @@ const SummaryView = ({
                           `${(row.price ?? 0).toLocaleString()} ₽`
                         )}
                       </td>
-                      <td className="px-6 py-2 text-right font-bold text-green-600 whitespace-nowrap">
+                      <td className="px-3 sm:px-4 py-2 text-right font-bold text-green-600 whitespace-nowrap">
                         {row.displayTotal !== row.total ? (
                           <div className="flex flex-col items-end">
                             <span className="text-xs line-through text-gray-400 font-normal">{(row.displayTotal ?? row.total).toLocaleString()} ₽</span>
@@ -13398,13 +13509,13 @@ const SummaryView = ({
               <tr className="border-t border-gray-100 bg-gray-50/40">
                 <td
                   colSpan={3}
-                  className="px-6 py-3 text-right text-gray-500 font-bold text-sm"
+                  className="px-3 sm:px-4 py-3 text-right text-gray-500 font-bold text-sm"
                 >
                   Стоимость без доставки и сборки:
                 </td>
                 <td
                   colSpan={2}
-                  className="px-6 py-3 text-right text-base font-black text-gray-800 whitespace-nowrap"
+                  className="px-3 sm:px-4 py-3 text-right text-base font-black text-gray-800 whitespace-nowrap"
                 >
                   {sumWithoutDeliveryAndAssembly.toLocaleString()} ₽
                 </td>
@@ -13413,13 +13524,13 @@ const SummaryView = ({
             <tr className="bg-gradient-to-r from-blue-50 to-indigo-50/70">
               <td
                 colSpan={3}
-                className="px-6 py-4 text-right font-bold text-gray-700 text-lg"
+                className="px-3 sm:px-4 py-4 text-right font-bold text-gray-700 text-base sm:text-lg"
               >
                 Общая стоимость:
               </td>
               <td
                 colSpan={2}
-                className="px-6 py-4 text-right whitespace-nowrap"
+                className="px-3 sm:px-4 py-4 text-right whitespace-nowrap"
               >
                 {(totalPromoDiscount > 0 || totalPromoCashback > 0 || totalPromoMarkup > 0) ? (
                   <div className="flex flex-col items-end space-y-1">
@@ -23238,6 +23349,28 @@ const ProductsView = ({
     }));
   };
 
+  const setMainImage = (index: number) => {
+    if (index <= 0) return;
+    setNewProduct((prev) => {
+      const list = [...(Array.isArray(prev.images) ? prev.images.filter(Boolean) : [])];
+      const target = list.splice(index, 1)[0];
+      list.unshift(target);
+      return { ...prev, images: list };
+    });
+  };
+
+  const moveImage = (index: number, direction: 'left' | 'right') => {
+    setNewProduct((prev) => {
+      const list = [...(Array.isArray(prev.images) ? prev.images.filter(Boolean) : [])];
+      const targetIdx = direction === 'left' ? index - 1 : index + 1;
+      if (targetIdx < 0 || targetIdx >= list.length) return prev;
+      const temp = list[index];
+      list[index] = list[targetIdx];
+      list[targetIdx] = temp;
+      return { ...prev, images: list };
+    });
+  };
+
   const handleAdd = (product: any) => {
     if (isSaleBlocked(product)) {
       showAlert(
@@ -30871,30 +31004,88 @@ const ProductsView = ({
                 {/* Right Side: Media & Details */}
                 <div className="space-y-6">
                   <div>
-                    <label className="block text-sm font-bold text-gray-700 mb-2">
-                      Фотографии товара
-                    </label>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="block text-sm font-bold text-gray-700">
+                        Фотографии товара
+                      </label>
+                      <span className="text-[11px] text-gray-400">
+                        Первое фото — главное
+                      </span>
+                    </div>
                     <div className="grid grid-cols-3 gap-3 mb-4">
-                      {(Array.isArray(newProduct.images) ? newProduct.images.filter(Boolean) : []).map((img: string, idx: number) => (
-                        <div
-                          key={idx}
-                          className="relative aspect-square rounded-xl overflow-hidden border border-gray-200 group"
-                        >
-                          <img
-                            src={img}
-                            alt={`фото ${idx + 1}`}
-                            className="w-full h-full object-cover"
-                            referrerPolicy="no-referrer"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => removeImage(idx)}
-                            className="absolute top-1 right-1 p-1 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity"
+                      {(Array.isArray(newProduct.images) ? newProduct.images.filter(Boolean) : []).map((img: string, idx: number) => {
+                        const totalImgs = (newProduct.images || []).filter(Boolean).length;
+                        return (
+                          <div
+                            key={idx}
+                            className={cn(
+                              "relative aspect-square rounded-xl overflow-hidden border group transition-all",
+                              idx === 0 ? "border-blue-500 ring-2 ring-blue-400/40 shadow-sm" : "border-gray-200"
+                            )}
                           >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                      ))}
+                            <img
+                              src={img}
+                              alt={`фото ${idx + 1}`}
+                              className="w-full h-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                            
+                            {/* Main photo badge */}
+                            {idx === 0 ? (
+                              <div className="absolute top-1.5 left-1.5 px-2 py-0.5 bg-blue-600/95 backdrop-blur-xs text-white text-[10px] font-black rounded-lg shadow-sm flex items-center gap-1 uppercase tracking-wider">
+                                <span>★</span>
+                                <span>Главное</span>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setMainImage(idx)}
+                                title="Сделать главным фото"
+                                className="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-black/60 hover:bg-blue-600 text-white text-[10px] font-bold rounded-lg shadow-sm opacity-0 group-hover:opacity-100 transition-all flex items-center gap-1"
+                              >
+                                <span>★</span>
+                                <span>Сделать главным</span>
+                              </button>
+                            )}
+
+                            {/* Reorder arrows */}
+                            {totalImgs > 1 && (
+                              <div className="absolute bottom-1.5 left-1.5 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                {idx > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => moveImage(idx, 'left')}
+                                    title="Переместить левее"
+                                    className="p-1 bg-black/60 hover:bg-black/90 text-white rounded-md text-[10px] font-bold transition-colors"
+                                  >
+                                    ←
+                                  </button>
+                                )}
+                                {idx < totalImgs - 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => moveImage(idx, 'right')}
+                                    title="Переместить правее"
+                                    className="p-1 bg-black/60 hover:bg-black/90 text-white rounded-md text-[10px] font-bold transition-colors"
+                                  >
+                                    →
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Remove button */}
+                            <button
+                              type="button"
+                              onClick={() => removeImage(idx)}
+                              title="Удалить фото"
+                              className="absolute top-1.5 right-1.5 p-1 bg-red-500/90 hover:bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        );
+                      })}
                       {(!newProduct.images || newProduct.images.length < 6) && (
                         <label className="aspect-square rounded-xl border-2 border-dashed border-gray-200 flex flex-col items-center justify-center cursor-pointer hover:border-blue-400 hover:bg-blue-50/50 transition-all text-gray-400">
                           <Upload className="w-6 h-6 mb-1" />
@@ -35124,12 +35315,21 @@ export default function App() {
   const isPro100Report = (data: any[][]) => {
     if (!data || data.length === 0) return false;
     if (isBazisPanelsReport(data)) return false;
-    for (let i = 0; i < Math.min(data.length, 15); i++) {
+    for (let i = 0; i < Math.min(data.length, 25); i++) {
       const row = data[i] || [];
       const rowStr = row.map((c) => String(c).toLowerCase()).join(" ");
-      const hasDimensions = (rowStr.includes("высота") || rowStr.includes("height")) && (rowStr.includes("ширина") || rowStr.includes("width"));
-      const hasName = rowStr.includes("название") || rowStr.includes("имя") || rowStr.includes("name");
-      if (hasDimensions && (hasName || rowStr.includes("толщина") || rowStr.includes("кромка") || rowStr.includes("кол-во"))) {
+      const hasDimensions =
+        ((rowStr.includes("высота") || rowStr.includes("height")) && (rowStr.includes("ширина") || rowStr.includes("width"))) ||
+        ((rowStr.includes("длина") || rowStr.includes("length")) && (rowStr.includes("ширина") || rowStr.includes("width"))) ||
+        (rowStr.includes("размер") && (rowStr.includes("толщина") || rowStr.includes("кромка")));
+      const hasNameOrMat =
+        rowStr.includes("название") ||
+        rowStr.includes("имя") ||
+        rowStr.includes("name") ||
+        rowStr.includes("деталь") ||
+        rowStr.includes("материал") ||
+        rowStr.includes("material");
+      if (hasDimensions && (hasNameOrMat || rowStr.includes("толщина") || rowStr.includes("кромка") || rowStr.includes("кол-во") || rowStr.includes("qty"))) {
         return true;
       }
     }
@@ -35139,16 +35339,30 @@ export default function App() {
   const isBazisHardwareReport = (data: any[][]) => {
     if (!data || data.length === 0) return false;
     if (isBazisPanelsReport(data) || isPro100Report(data)) return false;
+
+    // Check if the file is clearly a cutting/panels report (has length, width, thickness, edge)
+    let hasCuttingSignals = false;
+    for (let i = 0; i < Math.min(data.length, 20); i++) {
+      const rowStr = (data[i] || []).map((c) => String(c).toLowerCase()).join(" ");
+      if (
+        (rowStr.includes("длина") || rowStr.includes("высота")) &&
+        rowStr.includes("ширина") &&
+        (rowStr.includes("толщина") || rowStr.includes("кромка") || rowStr.includes("материал"))
+      ) {
+        hasCuttingSignals = true;
+        break;
+      }
+    }
+
     for (let i = 0; i < Math.min(data.length, 30); i++) {
       const row = data[i] || [];
       const rowStr = row.map((c) => String(c).toLowerCase()).join(" ");
       if (
-        rowStr.includes("код детали") ||
-        rowStr.includes("обозн. в проекте") ||
-        rowStr.includes("пользовательский") ||
         rowStr.includes("ведомость фурнитуры") ||
         rowStr.includes("ведомость крепежа") ||
-        rowStr.includes("ведомость") ||
+        rowStr.includes("ведомость покупных") ||
+        rowStr.includes("обозн. в проекте") ||
+        rowStr.includes("пользовательский") ||
         rowStr.includes("фурнитур") ||
         rowStr.includes("крепеж") ||
         rowStr.includes("метиз") ||
@@ -35157,13 +35371,16 @@ export default function App() {
         rowStr.includes("ручк") ||
         rowStr.includes("полкодержател") ||
         rowStr.includes("саморез") ||
-        rowStr.includes("стяжк")
+        rowStr.includes("стяжк") ||
+        rowStr.includes("евровинт") ||
+        rowStr.includes("конфирмат")
       ) {
         return true;
       }
       if (
+        !hasCuttingSignals &&
         rowStr.includes("наименование") &&
-        (rowStr.includes("артикул") || rowStr.includes("код") || rowStr.includes("кол-во") || rowStr.includes("количество") || rowStr.includes("ед.") || rowStr.includes("цена"))
+        (rowStr.includes("артикул") || rowStr.includes("код детали") || (rowStr.includes("код") && rowStr.includes("цена")) || (rowStr.includes("кол-во") && rowStr.includes("ед.")))
       ) {
         return true;
       }
@@ -35247,6 +35464,14 @@ export default function App() {
       const p = parseFloat(s);
       return isNaN(p) ? 0 : p;
     };
+
+    // If no valid hardware/specification header was found, check if this is actually a panels/cutting report
+    if (headerRowIdx === -1) {
+      const isCuttingFile = rawData.slice(0, 15).some(r => (r || []).some(c => /длина|высота|ширина|толщина|кромка|заготовка|деталь без|размер/i.test(String(c))));
+      if (isCuttingFile) {
+        return [];
+      }
+    }
 
     // Default column fallback if not found in header
     if (colName === -1) {
@@ -36755,25 +36980,15 @@ export default function App() {
       }
     }
 
-    if (matchedProductsList.length > 0) {
-      setAddedProducts((prev) => {
-        const updated = [...prev];
-        matchedProductsList.forEach((mp) => {
-          const existingIdx = updated.findIndex((p) => String(p.id) === String(mp.id));
-          if (existingIdx !== -1) {
-            const currentQty = updated[existingIdx].quantity || updated[existingIdx].qty || 0;
-            updated[existingIdx] = {
-              ...updated[existingIdx],
-              quantity: currentQty + mp.quantity,
-              qty: currentQty + mp.quantity,
-            };
-          } else {
-            updated.push(mp);
-          }
-        });
-        return updated;
-      });
+    setUnmatchedBazisItems([]);
+    setBazisFasteners([]);
+    setDetailedFastenersMode(false);
+    setManualFittings({});
+    setCustomFittingQuantities({});
+    setRemovedFittings({});
+    setAddedProducts(matchedProductsList);
 
+    if (matchedProductsList.length > 0) {
       const totalQty = matchedProductsList.reduce((acc, item) => acc + item.quantity, 0);
       showAlert(
         "Соответствие учета",
@@ -36798,7 +37013,13 @@ export default function App() {
       currentProjectTotal: 0,
       currentSummaryRows: [],
       addedProducts: matchedProductsList,
-      addedServices: []
+      addedServices: [],
+      unmatchedBazisItems: [],
+      bazisFasteners: [],
+      detailedFastenersMode: false,
+      manualFittings: {},
+      customFittingQuantities: {},
+      removedFittings: {}
     });
 
     setActiveTab("calculator");
@@ -40459,6 +40680,8 @@ export default function App() {
               customEdgeMapping={customEdgeMapping}
               setCustomEdgeMapping={setCustomEdgeMapping}
               isSavingConfig={isSavingConfig}
+              onSaveProduct={saveProduct}
+              onDeleteProduct={deleteProduct}
             />
           ) : activeTab === "production" && userRole === "admin" ? (
             <ProductionView
