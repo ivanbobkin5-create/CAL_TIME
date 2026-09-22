@@ -585,6 +585,10 @@ export const PRICE_LIST_CATEGORIES = [
     brands: ["Услуги"]
   },
   {
+    title: "Метизы",
+    brands: []
+  },
+  {
     title: "Столешницы и стеновые",
     brands: []
   },

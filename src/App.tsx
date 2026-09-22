@@ -14,6 +14,9 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { ProductRequiredProductsList } from "./components/ProductRequiredProductsList";
 import { BlockSaleModal, isSaleBlocked, formatBlockedUntil } from "./components/BlockSaleModal";
+import { BazisHardwareImportModal } from "./components/BazisHardwareImportModal";
+import { ProductKitBuilder } from "./components/ProductKitBuilder";
+import type { KitItem } from "./components/ProductKitPickerModal";
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
@@ -229,6 +232,7 @@ import {
   ArrowLeftRight,
   AlertCircle,
   ExternalLink,
+  PackagePlus,
 } from "lucide-react";
 
 // --- START OF OFFLINE CACHE AND SYNC ENGINE ---
@@ -6323,6 +6327,7 @@ const normThicknessForConfig = (t: string) => {
 
 const CalculatorView = ({
   handleFileUpload,
+  handleHardwareFileUpload,
   handleCuttingTypeChange,
   cuttingType,
   kerf,
@@ -6387,6 +6392,7 @@ const CalculatorView = ({
 }: {
   customEdgeMapping?: Record<string, { edgeBrand?: string; edgeDecor?: string }>;
   handleFileUpload: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  handleHardwareFileUpload?: (event: React.ChangeEvent<HTMLInputElement>) => void;
   handleCuttingTypeChange: (type: "nesting" | "saw") => void;
   cuttingType: "nesting" | "saw";
   kerf: number;
@@ -6542,24 +6548,53 @@ const CalculatorView = ({
         )}
 
         <div className="mb-8 p-6 bg-gray-50 rounded-2xl border border-gray-200 grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Загрузить отчет из Pro100 (CSV) или Базис-Мебельщик (XLS, XLSX)
-            </label>
-            <div className="relative group">
-              <input
-                type="file"
-                accept=".csv,.xls,.xlsx,.txt"
-                onChange={handleFileUpload}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
-              />
-              <div className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center group-hover:border-blue-500 transition-colors bg-white">
-                <Calculator className="w-8 h-8 text-gray-400 mx-auto mb-2 group-hover:text-blue-500" />
-                <span className="text-sm text-gray-500">
-                  Нажмите или перетащите файл
-                </span>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Загрузить отчет Pro100 (CSV) или Базис-Мебельщик (XLS, XLSX)
+              </label>
+              <div className="relative group">
+                <input
+                  type="file"
+                  multiple
+                  accept=".csv,.xls,.xlsx,.txt"
+                  onChange={handleFileUpload}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                />
+                <div className="border-2 border-dashed border-gray-300 rounded-xl p-5 text-center group-hover:border-blue-500 transition-colors bg-white shadow-xs">
+                  <Calculator className="w-7 h-7 text-gray-400 mx-auto mb-1.5 group-hover:text-blue-500" />
+                  <span className="text-sm font-medium text-gray-700 block">
+                    Нажмите или перетащите файл(ы) спецификации деталей / фурнитуры
+                  </span>
+                  <span className="text-[11px] text-gray-400 block mt-0.5">
+                    XLS, XLSX, CSV (Раскрой деталей, ведомость фурнитуры и метизов)
+                  </span>
+                </div>
               </div>
             </div>
+
+            {handleHardwareFileUpload && (
+              <div className="pt-1 border-t border-gray-200/60">
+                <label className="block text-xs font-semibold text-gray-600 mb-1.5 flex items-center justify-between">
+                  <span>Дополнительный файл фурнитуры и крепежа</span>
+                  <span className="text-[10px] text-amber-700 bg-amber-100/80 px-1.5 py-0.5 rounded font-medium">Базис-Мебельщик</span>
+                </label>
+                <div className="relative group">
+                  <input
+                    type="file"
+                    accept=".csv,.xls,.xlsx,.txt"
+                    onChange={handleHardwareFileUpload}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                  />
+                  <div className="border border-dashed border-amber-300 hover:border-amber-500 bg-amber-50/50 hover:bg-amber-50 rounded-xl py-2.5 px-4 text-center transition-all cursor-pointer flex items-center justify-center gap-2 shadow-xs">
+                    <PackagePlus className="w-4 h-4 text-amber-600" />
+                    <span className="text-xs font-bold text-amber-900">
+                      + Загрузить ведомость фурнитуры и метизов
+                    </span>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -10530,6 +10565,7 @@ const SummaryView = ({
     : effectiveKitQty * currentHardwareKitPriceLocal;
 
   if (effectiveKitQty > 0 || (bazisFasteners && bazisFasteners.length > 0)) {
+    const fastenerCoef = resolveBrandCoefficient ? (resolveBrandCoefficient("fasteners", "") || resolveBrandCoefficient("Метизы", "") || 1.5) : 1.5;
     summaryRows.push({
       type: "material",
       name: "Комплект метизов",
@@ -10539,8 +10575,8 @@ const SummaryView = ({
       decor: "-",
       qty: detailedFastenersMode && bazisFasteners && bazisFasteners.length > 0 ? "1 компл." : `${effectiveKitQty} шт`,
       price: detailedFastenersMode && bazisFasteners && bazisFasteners.length > 0 ? detailedFastenerCost : currentHardwareKitPriceLocal,
-      total: Math.round(kitCost),
-      coef: 1,
+      total: Math.round(kitCost * fastenerCoef),
+      coef: fastenerCoef,
     });
   }
 
@@ -13634,6 +13670,9 @@ const CoefficientsTableSection = ({
     if (normalizedId === "hardware" || normalizedId === "фурнитура") {
       return manufacturerCoefficients.hardware ?? 1.0;
     }
+    if (normalizedId === "fasteners" || normalizedId === "метизы" || normalizedId === "крепеж" || normalizedId === "крепёж") {
+      return manufacturerCoefficients.fasteners ?? manufacturerCoefficients.products?.["Метизы"] ?? 1.0;
+    }
     if (normalizedId === "ldsp" || normalizedId === "лдсп") {
       return manufacturerCoefficients.ldsp ?? 1.0;
     }
@@ -15164,7 +15203,8 @@ const SettingsView = ({
     { id: "facadeSheet", label: "Фасад (плита)" },
     { id: "facadeCustom", label: "Фасад (заказной)" },
     { id: "hardware", label: "Фурнитура" },
-    ...productCategories.map((cat) => ({ id: `cat_${cat}`, label: cat })),
+    { id: "fasteners", label: "Метизы" },
+    ...productCategories.filter((cat) => cat !== "Метизы" && cat !== "Крепеж").map((cat) => ({ id: `cat_${cat}`, label: cat })),
   ];
 
   const getBrandsForCategory = (catId: string) => {
@@ -22540,6 +22580,50 @@ const ProductsView = ({
   const [relatedCategoryFilter, setRelatedCategoryFilter] = useState("");
   const [relatedSearchQuery, setRelatedSearchQuery] = useState("");
   const [relatedProductFilterId, setRelatedProductFilterId] = useState("");
+  const [selectedKitProductIds, setSelectedKitProductIds] = useState<Record<string, boolean>>({});
+
+  const handleBuildKitFromSelected = () => {
+    const selectedProds = catalogProducts.filter((p) => selectedKitProductIds[String(p.id)]);
+    if (selectedProds.length < 2) {
+      showAlert("Создание комплекта", "Выберите как минимум 2 товара из каталога для создания комплекта.");
+      return;
+    }
+
+    const kitItems: KitItem[] = selectedProds.map((p) => ({
+      productId: p.id,
+      name: p.name || "Товар",
+      article: p.article || p.manufacturerArticle || "",
+      category: p.category || "",
+      qty: 1,
+      unit: p.unit || "шт",
+      purchasePrice: Number(p.purchasePrice || p.price || 0),
+      price: Number(p.price || p.purchasePrice || 0),
+      image: p.images?.[0] || p.image || "",
+      manufacturer: p.manufacturer || p.brand || "",
+    }));
+
+    const totalPurchase = kitItems.reduce((acc, it) => acc + (it.purchasePrice * it.qty), 0);
+    const totalSelling = kitItems.reduce((acc, it) => acc + (it.price * it.qty), 0);
+    const suggestedName = `Комплект: ${selectedProds.map((p) => p.name).join(" + ")}`;
+
+    resetForm(selectedProds[0]?.category || "Комплекты");
+    setNewProduct((prev: any) => ({
+      ...prev,
+      name: suggestedName,
+      isKit: true,
+      kitItems: kitItems,
+      unit: "компл",
+      purchasePrice: totalPurchase,
+      price: totalSelling,
+      autoSyncKitPrices: true,
+      description: `В состав комплекта входит:\n${selectedProds
+        .map((p, idx) => `${idx + 1}. ${p.name} (арт. ${p.article || "—"}) — 1 ${p.unit || "шт"}`)
+        .join("\n")}`,
+    }));
+
+    setSelectedKitProductIds({});
+    setIsAddingProduct(true);
+  };
 
   useEffect(() => {
     if (selectedProductForDetail && selectedProductForDetail.id) {
@@ -22718,6 +22802,10 @@ const ProductsView = ({
     name: "",
     category: displayProductCategories[0] || productCategories[0],
     purchasePrice: 0,
+    price: 0,
+    isKit: false,
+    kitItems: [] as KitItem[],
+    autoSyncKitPrices: true,
     images: [] as string[],
     article: "",
     analogs: [] as string[],
@@ -23057,17 +23145,23 @@ const ProductsView = ({
       return;
     }
     const isKitchen = newProduct.category === "Кухонные гарнитуры" || newProduct.category === "Кухонный гарнитур";
+    const isKit = !!newProduct.isKit || (Array.isArray(newProduct.kitItems) && newProduct.kitItems.length > 0);
     const actualPurchasePrice = isKitchen
       ? calculateKitchenPurchasePrice(newProduct, catalogProducts)
       : newProduct.purchasePrice;
     const coeff = getProductCoefficient(newProduct, customerType, resolveBrandCoefficient);
     const finalPrice = isKitchen
       ? calculateKitchenTotalPrice(newProduct, catalogProducts, customerType, resolveBrandCoefficient)
+      : (isKit && newProduct.autoSyncKitPrices !== false && newProduct.price)
+      ? newProduct.price
       : Math.round(actualPurchasePrice * coeff);
 
     const product = {
       ...newProduct,
       id: editingProduct?.id || Date.now().toString(),
+      isKit: isKit,
+      kitItems: isKit ? (newProduct.kitItems || []) : [],
+      autoSyncKitPrices: newProduct.autoSyncKitPrices !== false,
       purchasePrice: actualPurchasePrice,
       price: finalPrice,
       image: newProduct.images[0] || "", // Keep for legacy compatibility
@@ -23104,12 +23198,16 @@ const ProductsView = ({
       name: "",
       category: defaultCat,
       purchasePrice: 0,
+      price: 0,
       images: [],
       article: "",
       variations: [],
       analogs: [],
       vendorArticle: "",
       manufacturerArticle: "",
+      isKit: false,
+      kitItems: [],
+      autoSyncKitPrices: true,
       vat: companyInfo?.vat !== undefined ? companyInfo.vat : 20,
       includeVat: true,
       color: "",
@@ -23221,11 +23319,15 @@ const ProductsView = ({
       name: product.name || "",
       category: product.category || displayProductCategories[0] || productCategories[0],
       purchasePrice: product.purchasePrice || 0,
+      price: product.price || 0,
       images: product.images || (product.image ? [product.image] : []),
       article: product.article || "",
       analogs: product.analogs || [],
       vendorArticle: product.vendorArticle || "",
       manufacturerArticle: product.manufacturerArticle || "",
+      isKit: !!product.isKit || (Array.isArray(product.kitItems) && product.kitItems.length > 0),
+      kitItems: product.kitItems || [],
+      autoSyncKitPrices: product.autoSyncKitPrices !== false,
       kitchenType: product.kitchenType || "Прямая",
       kitchenStyle: product.kitchenStyle || "Современный",
       kitchenWidth: product.kitchenWidth || "",
@@ -23327,11 +23429,15 @@ const ProductsView = ({
       name: product.name ? `${product.name} (копия)` : "",
       category: product.category || displayProductCategories[0] || productCategories[0],
       purchasePrice: product.purchasePrice || 0,
+      price: product.price || 0,
       images: product.images || (product.image ? [product.image] : []),
       article: product.article ? `${product.article}_копия` : "",
       analogs: product.analogs || [],
       vendorArticle: product.vendorArticle || "",
       manufacturerArticle: product.manufacturerArticle || "",
+      isKit: !!product.isKit || (Array.isArray(product.kitItems) && product.kitItems.length > 0),
+      kitItems: product.kitItems || [],
+      autoSyncKitPrices: product.autoSyncKitPrices !== false,
       kitchenType: product.kitchenType || "Прямая",
       kitchenStyle: product.kitchenStyle || "Современный",
       kitchenWidth: product.kitchenWidth || "",
@@ -25833,6 +25939,43 @@ const ProductsView = ({
                   ))}
                 </select>
               </div>
+
+              {/* Product Kit Builder */}
+              <ProductKitBuilder
+                isKit={!!newProduct.isKit}
+                onToggleIsKit={(isKitVal) => {
+                  setNewProduct((prev: any) => ({
+                    ...prev,
+                    isKit: isKitVal,
+                    unit: isKitVal && prev.unit === "шт" ? "компл" : prev.unit,
+                  }));
+                }}
+                kitItems={newProduct.kitItems || []}
+                onChangeKitItems={(items) => {
+                  setNewProduct((prev: any) => ({
+                    ...prev,
+                    kitItems: items,
+                  }));
+                }}
+                catalogProducts={catalogProducts}
+                excludeProductId={editingProduct?.id}
+                autoSyncPrices={newProduct.autoSyncKitPrices !== false}
+                onToggleAutoSyncPrices={(autoSync) => {
+                  setNewProduct((prev: any) => ({
+                    ...prev,
+                    autoSyncKitPrices: autoSync,
+                  }));
+                }}
+                onUpdatePrices={(purchasePrice, price) => {
+                  setNewProduct((prev: any) => ({
+                    ...prev,
+                    purchasePrice,
+                    price,
+                  }));
+                }}
+                currentPurchasePrice={newProduct.purchasePrice || 0}
+                currentPrice={newProduct.price || 0}
+              />
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
                 {/* Left Side: Basic Info */}
@@ -31529,6 +31672,12 @@ const ProductsView = ({
 
                   {/* Overlay Badges */}
                   <div className="absolute top-4 left-4 flex flex-col gap-2">
+                    {(product.isKit || (Array.isArray(product.kitItems) && product.kitItems.length > 0)) && (
+                      <span className="flex items-center gap-1.5 px-2.5 py-1 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-[9px] font-black uppercase tracking-widest rounded-lg shadow-lg z-10">
+                        <Layers className="w-3 h-3" />
+                        Комплект ({product.kitItems?.length || 2})
+                      </span>
+                    )}
                     {isSaleBlocked(product) && (
                       <div
                         onClick={(e) => {
@@ -31670,6 +31819,30 @@ const ProductsView = ({
                                 title="Создать на основании"
                               >
                                 <Copy className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                            {canEditOrDelete && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedKitProductIds((prev) => ({
+                                    ...prev,
+                                    [String(product.id)]: !prev[String(product.id)],
+                                  }));
+                                }}
+                                className={`p-1.5 rounded-lg shadow-lg transition-all cursor-pointer ${
+                                  selectedKitProductIds[String(product.id)]
+                                    ? "bg-indigo-600 text-white hover:bg-indigo-700"
+                                    : "bg-white text-indigo-600 hover:bg-indigo-600 hover:text-white"
+                                }`}
+                                title={
+                                  selectedKitProductIds[String(product.id)]
+                                    ? "Убрать из выбора комплекта"
+                                    : "Выбрать для создания комплекта"
+                                }
+                              >
+                                <Layers className="w-3.5 h-3.5" />
                               </button>
                             )}
 
@@ -32065,6 +32238,45 @@ const ProductsView = ({
         </div>
       )}
         </>
+      )}
+
+      {/* Floating Kit Creator Bar */}
+      {Object.values(selectedKitProductIds).filter(Boolean).length > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[105] bg-gray-900/95 backdrop-blur-md text-white px-6 py-3.5 rounded-2xl shadow-2xl border border-gray-700/60 flex items-center gap-4 animate-in slide-in-from-bottom-5 duration-300">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-600 to-purple-600 flex items-center justify-center text-white font-black text-xs shadow-md shadow-indigo-500/40">
+              {Object.values(selectedKitProductIds).filter(Boolean).length}
+            </div>
+            <div>
+              <span className="font-bold text-gray-100 text-xs block">
+                Выбрано товаров: {Object.values(selectedKitProductIds).filter(Boolean).length} шт.
+              </span>
+              <span className="text-[10px] text-gray-400 block">
+                {Object.values(selectedKitProductIds).filter(Boolean).length < 2
+                  ? "Выберите ещё как минимум 1 товар"
+                  : "Готово к объединению в один комплект"}
+              </span>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleBuildKitFromSelected}
+            disabled={Object.values(selectedKitProductIds).filter(Boolean).length < 2}
+            className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 disabled:opacity-40 text-white text-xs font-black rounded-xl transition-all shadow-lg shadow-indigo-900/40 flex items-center gap-2 cursor-pointer active:scale-95 disabled:cursor-not-allowed"
+          >
+            <Layers className="w-4 h-4" />
+            <span>Создать комплект ({Object.values(selectedKitProductIds).filter(Boolean).length})</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSelectedKitProductIds({})}
+            className="text-xs text-gray-400 hover:text-white px-2 py-1 transition-colors cursor-pointer"
+          >
+            Сбросить
+          </button>
+        </div>
       )}
 
       <BlockSaleModal
@@ -34078,6 +34290,24 @@ export default function App() {
   const [unmatchedBazisItems, setUnmatchedBazisItems] = useState<any[]>([]);
   const [bazisFasteners, setBazisFasteners] = useState<any[]>([]);
   const [detailedFastenersMode, setDetailedFastenersMode] = useState<boolean>(false);
+  const [bazisHardwareModalData, setBazisHardwareModalData] = useState<{
+    isOpen: boolean;
+    fileName: string;
+    items: Array<{
+      id: string;
+      name: string;
+      rawPartName?: string;
+      article: string;
+      qty: number;
+      unit: string;
+      price: number;
+      checked: boolean;
+      isFastener: boolean;
+      categoryType: string;
+      matchedProduct?: any;
+    }>;
+    sourceType: "panels_report" | "hardware_report";
+  } | null>(null);
 
   const [companyInfo, setCompanyInfoRaw] = useState<any>({
     name: "",
@@ -34409,7 +34639,96 @@ export default function App() {
     };
   }, [companyData?.manufacturerId, isPreloaded]);
 
-  const isBazisReport = (data: any[][]) => {
+  const isFastener = (str: string) => {
+    const s = String(str || "").toLowerCase();
+    // Exclusions
+    if (/заглушк/i.test(s)) return false;
+    if (/навес|камар|camar/i.test(s)) return false;
+    if (/опора\s+(?!м[68]|m[68])/i.test(s) && !/опора\s+м[68]/i.test(s) && !/опора\s+m[68]/i.test(s)) return false;
+    if (/петл|направляющ|подъемник|подъёмник|ручк|профиль|кронштейн|замок|кабель|планка|толкатель|соединение/i.test(s)) return false;
+
+    // Inclusions
+    if (/гвозд/i.test(s)) return true;
+    if (/саморез/i.test(s)) return true;
+    if (/шуруп/i.test(s)) return true;
+    if (/стяжка|стяжк/i.test(s)) return true;
+    if (/уголок/i.test(s)) return true;
+    if (/шкант/i.test(s)) return true;
+    if (/конфирмат|конфират/i.test(s)) return true;
+    if (/\bvb\b|эксцентрик|минификс/i.test(s)) return true;
+    if (/евровинт|винт|болт|гайка|шайба|футорка|шток/i.test(s)) return true;
+    if (/опора\s+м[68]|опора\s+m[68]|ножка\s+м[68]/i.test(s)) return true;
+    if (/полкодержател/i.test(s)) return true;
+
+    return false;
+  };
+
+  const isHardwareOrAccessory = (rawName: string) => {
+    const s = String(rawName || "").toLowerCase();
+    const isSheetMaterial = /(хдф|двп|лхдф|лдвп|орголит|оргалит|лдсп|дсп|мдф)/i.test(s) || /фасад|пленка|плёнка|эмаль|шпон|патина|акрил|\bagt\b|агт/i.test(s);
+    const hasHardwareKeyword = /гвозди|гвоздь|саморез|шуруп|винт|евровинт|конфирмат|болт|гайка|шайба|крепеж|крепление|уголок|кляймер|петля|ручка|направляющ|заглушк|опора|ножка|профиль|держатель|полкодержател|kamar|кронштейн|стяжка|шкант|эксцентрик|минификс|амортизатор|доводчик|демпфер|навес|замок|магнит|комплект\s+метизов|метизы/i.test(s);
+
+    if (isSheetMaterial) {
+      return hasHardwareKeyword;
+    }
+    if (hasHardwareKeyword) return true;
+    if (/для\s+(двп|хдф|лдсп|дсп|столешниц|фасад|кромки)/i.test(s)) return true;
+    if (/столешниц|стеновая\s+панель|скинали|постформинг/i.test(s)) return true;
+    return false;
+  };
+
+  const isBazisPanelsReport = (data: any[][]) => {
+    if (!data || data.length === 0) return false;
+    for (let i = 0; i < Math.min(data.length, 35); i++) {
+      const row = data[i] || [];
+      const rowStr = row.map((c) => String(c).toLowerCase()).join(" ");
+      if (
+        rowStr.includes("готовая деталь_длина") ||
+        rowStr.includes("готовая деталь [l]") ||
+        rowStr.includes("заготовка_длина[l]") ||
+        rowStr.includes("деталь без облиц") ||
+        rowStr.includes("облицовка[llww]") ||
+        rowStr.includes("толщина с учетом облицовки") ||
+        (rowStr.includes("обозначение[l1]") && rowStr.includes("материал")) ||
+        (rowStr.includes("обозначение[w1]") && rowStr.includes("обозначение[w2]"))
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const isBazisHardwareReport = (data: any[][]) => {
+    if (!data || data.length === 0) return false;
+    if (isBazisPanelsReport(data)) return false;
+    for (let i = 0; i < Math.min(data.length, 25); i++) {
+      const row = data[i] || [];
+      const rowStr = row.map((c) => String(c).toLowerCase()).join(" ");
+      if (
+        rowStr.includes("код детали") ||
+        rowStr.includes("обозн. в проекте") ||
+        rowStr.includes("пользовательский") ||
+        rowStr.includes("ведомость фурнитуры") ||
+        rowStr.includes("ведомость крепежа")
+      ) {
+        return true;
+      }
+    }
+    if (data.length > 2) {
+      for (let i = 0; i < Math.min(data.length, 5); i++) {
+        const row = data[i] || [];
+        const col4 = String(row[4] || "").toLowerCase();
+        const col6 = String(row[6] || "").toLowerCase();
+        const col7 = String(row[7] || "").toLowerCase();
+        if (col4.includes("наименование") && (col6.includes("артикул") || col6.includes("код")) && (col7.includes("кол-во") || col7.includes("количество"))) {
+          return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  const isBazisLegacyReport = (data: any[][]) => {
     if (!data || data.length === 0) return false;
     for (let i = 0; i < Math.min(data.length, 25); i++) {
       const rowStr = (data[i] || []).map((c) => String(c).toLowerCase()).join(" ");
@@ -34430,7 +34749,504 @@ export default function App() {
     return false;
   };
 
-  const parseBazisReport = (
+  const isBazisReport = (data: any[][]) => {
+    if (!data || data.length === 0) return false;
+    return isBazisPanelsReport(data) || isBazisHardwareReport(data) || isBazisLegacyReport(data);
+  };
+
+  const parseBazisPanelsReport = (rawData: any[][], fileName: string) => {
+    if (!rawData || rawData.length === 0) return false;
+
+    let colPartName = 4;
+    let colMaterial = 6;
+    let colArticle = 7;
+    let colThickness = 8;
+    let colQty = 10;
+    let colReadyLength = 19;
+    let colReadyWidth = 20;
+    let colBlankLength = 11;
+    let colBlankWidth = 12;
+    let colEdgeL1 = 25;
+    let colEdgeL2 = 27;
+    let colEdgeW1 = 29;
+    let colEdgeW2 = 31;
+
+    let headerRowIdx = -1;
+    for (let i = 0; i < Math.min(rawData.length, 30); i++) {
+      const row = rawData[i] || [];
+      const rowStr = row.map((c) => String(c).toLowerCase()).join(" ");
+      if (
+        rowStr.includes("материал") &&
+        (rowStr.includes("толщина") || rowStr.includes("длина") || rowStr.includes("готовая деталь") || rowStr.includes("обозначение[l1]"))
+      ) {
+        headerRowIdx = i;
+        row.forEach((cell: any, cIdx: number) => {
+          const h = String(cell || "").toLowerCase().trim();
+          if (h.includes("наименование") && !h.includes("материал")) colPartName = cIdx;
+          else if (h.includes("материал")) colMaterial = cIdx;
+          else if (h.includes("артикул") || (h.includes("обозначение") && !h.includes("l1") && !h.includes("w1") && !h.includes("l2") && !h.includes("w2"))) colArticle = cIdx;
+          else if (h.includes("толщина")) colThickness = cIdx;
+          else if (h.includes("кол-во") || h.includes("количество")) colQty = cIdx;
+          else if (h.includes("готовая деталь_длина") || h.includes("готовая деталь [l]")) colReadyLength = cIdx;
+          else if (h.includes("готовая деталь_ширина") || h.includes("готовая деталь [w]")) colReadyWidth = cIdx;
+          else if (h.includes("заготовка_длина") || h.includes("деталь без облиц._длина")) colBlankLength = cIdx;
+          else if (h.includes("заготовка_ширина") || h.includes("деталь без облиц._ширина")) colBlankWidth = cIdx;
+          else if (h.includes("обозначение[l1]") || h.includes("кромка l1") || h.includes("[l1]")) colEdgeL1 = cIdx;
+          else if (h.includes("обозначение[l2]") || h.includes("кромка l2") || h.includes("[l2]")) colEdgeL2 = cIdx;
+          else if (h.includes("обозначение[w1]") || h.includes("кромка w1") || h.includes("[w1]")) colEdgeW1 = cIdx;
+          else if (h.includes("обозначение[w2]") || h.includes("кромка w2") || h.includes("[w2]")) colEdgeW2 = cIdx;
+        });
+        break;
+      }
+    }
+
+    const startIdx = headerRowIdx !== -1 ? headerRowIdx + 1 : 1;
+
+    const parseNum = (val: any): number => {
+      if (val === undefined || val === null) return 0;
+      if (typeof val === "number") return val;
+      const s = String(val).replace(/\s+/g, "").replace(",", ".");
+      const p = parseFloat(s);
+      return isNaN(p) ? 0 : p;
+    };
+
+    const hasEdge = (val: any): boolean => {
+      if (val === undefined || val === null) return false;
+      const s = String(val).trim();
+      if (!s || s === "-" || s === "—" || s === "нет" || s === "0" || s.toLowerCase() === "false") return false;
+      return true;
+    };
+
+    const cleanMaterialDecorName = (str: string) => {
+      if (!str) return "";
+      return str
+        .replace(/хдф|двп|лхдф|лдвп|лдсп|дсп|e1|e0\.5|e05|p2|p1|\bхд\b/gi, "")
+        .replace(/\b\d{3,4}\s*[*xхxX]\s*\d{3,4}(\s*[*xхxX]\s*\d{1,2}([.,]\d+)?\s*(мм)?)?\b/gi, "")
+        .replace(/\b\d{1,2}([.,]\d+)?\s*мм\b/gi, "")
+        .replace(/\s+/g, " ")
+        .trim();
+    };
+
+    const isTechnicalRow = (str: string) => {
+      const s = str.toLowerCase();
+      return (
+        s.includes("наименование") ||
+        s.includes("материал") ||
+        s.includes("итого") ||
+        s.includes("всего в заказе") ||
+        s.includes("спецификация") ||
+        s.includes("разраб") ||
+        s.includes("пров.") ||
+        s.includes("утв.") ||
+        s.includes("чертеж")
+      );
+    };
+
+    const grouped: Record<string, any> = {};
+    const initialSheetConfigs: Record<string, SheetConfig> = {};
+    const initialExpanded: Set<string> = new Set();
+    const initialRotations: Record<string, boolean> = { ...rotations };
+    const initialEdgeToEdge: Record<string, boolean> = { ...edgeToEdge };
+
+    const discoveredHardware: Array<{
+      id: string;
+      name: string;
+      rawPartName?: string;
+      article: string;
+      qty: number;
+      unit: string;
+      price: number;
+      checked: boolean;
+      isFastener: boolean;
+      categoryType: string;
+      matchedProduct?: any;
+    }> = [];
+
+    let totalCutParts = 0;
+    let totalCutArea = 0;
+    let totalEdgeMeters = 0;
+
+    for (let i = startIdx; i < rawData.length; i++) {
+      const row = rawData[i];
+      if (!row || !Array.isArray(row) || row.length === 0) continue;
+
+      const rawPartName = String(row[colPartName] || "").trim();
+      const rawMaterial = String(row[colMaterial] || "").trim();
+      const article = String(row[colArticle] || "").trim();
+
+      if (!rawPartName && !rawMaterial) continue;
+      if (isTechnicalRow(rawPartName) || isTechnicalRow(rawMaterial)) continue;
+
+      const thickness = parseNum(row[colThickness]);
+      const qty = parseNum(row[colQty]) || 1;
+      const readyLength = parseNum(row[colReadyLength]);
+      const readyWidth = parseNum(row[colReadyWidth]);
+      const blankLength = parseNum(row[colBlankLength]);
+      const blankWidth = parseNum(row[colBlankWidth]);
+      const length = readyLength || blankLength || 0;
+      const width = readyWidth || blankWidth || 0;
+
+      const edgeL1 = row[colEdgeL1];
+      const edgeL2 = row[colEdgeL2];
+      const edgeW1 = row[colEdgeW1];
+      const edgeW2 = row[colEdgeW2];
+
+      const nameL = rawPartName.toLowerCase();
+      const matL = rawMaterial.toLowerCase();
+
+      const isPlinth = nameL.includes("цоколь") || matL.includes("цоколь");
+      const isWorktop = nameL.includes("столешниц") || matL.includes("столешниц") || nameL.includes("барная") || matL.includes("барная") || nameL.includes("стеновая") || matL.includes("стеновая") || matL.includes("скинали") || matL.includes("постформинг");
+      const isProfileOrLighting = nameL.includes("профиль") || matL.includes("профиль") || nameL.includes("лента") || matL.includes("лента") || matL.includes("светодиодн") || matL.includes("ручка-профиль");
+
+      // Categorization rules:
+      let isDetailForCutting = false;
+
+      if (isPlinth) {
+        // Exception Rule for Цоколь: if Material contains MDF or LDSP or HDF -> Detail for cutting; otherwise hardware
+        if (matL.includes("мдф") || matL.includes("лдсп") || matL.includes("хдф") || matL.includes("дсп")) {
+          isDetailForCutting = true;
+        } else {
+          isDetailForCutting = false;
+        }
+      } else if (isWorktop) {
+        // Exception Rule for Столешница: if <= 18mm and contains ЛДСП or МДФ -> Detail in general cutting; otherwise finished goods / hardware
+        if (thickness <= 18 && (matL.includes("лдсп") || matL.includes("мдф"))) {
+          isDetailForCutting = true;
+        } else {
+          isDetailForCutting = false;
+        }
+      } else if (isProfileOrLighting) {
+        isDetailForCutting = false;
+      } else if (isHardwareOrAccessory(rawPartName) || isFastener(rawPartName) || isHardwareOrAccessory(rawMaterial) || isFastener(rawMaterial)) {
+        isDetailForCutting = false;
+      } else if (length > 0 && width > 0 && (thickness > 0 || matL.includes("лдсп") || matL.includes("мдф") || matL.includes("хдф") || matL.includes("дсп") || matL.includes("двп"))) {
+        isDetailForCutting = true;
+      } else {
+        isDetailForCutting = false;
+      }
+
+      if (isDetailForCutting) {
+        let catType: "ЛДСП" | "МДФ" | "ХДФ" | "Фасад" = "ЛДСП";
+        if (thickness <= 4 || matL.includes("хдф") || matL.includes("двп") || matL.includes("оргалит")) {
+          catType = "ХДФ";
+        } else if (matL.includes("фасад") || nameL.includes("фасад") || nameL.includes("дверь") || nameL.includes("фальшфасад") || matL.includes("эмаль") || matL.includes("пленка") || matL.includes("шпон") || matL.includes("акрил") || matL.includes("agt") || matL.includes("агт")) {
+          catType = "Фасад";
+        } else if (matL.includes("мдф") && !matL.includes("хдф")) {
+          catType = "МДФ";
+        } else {
+          catType = "ЛДСП";
+        }
+
+        let decor = cleanMaterialDecorName(rawMaterial);
+        if (!decor) decor = rawMaterial || `${catType} ${thickness || 16} мм`;
+
+        const key = `${catType}|${decor}|${thickness || 16}`;
+        if (!grouped[key]) {
+          grouped[key] = {
+            type: catType,
+            name: catType === "ХДФ" ? "ДВП/ХДФ" : catType === "Фасад" ? "Фасады" : catType,
+            color: decor,
+            thickness: thickness || 16,
+            area: 0,
+            edgeLength: 0,
+            details: [],
+          };
+          initialSheetConfigs[key] = { width: 2800, height: 2070, name: "Default" };
+          initialExpanded.add(key);
+          if (catType === "ХДФ") initialRotations[key] = true;
+        }
+
+        const edgeSides = {
+          top: hasEdge(edgeW1),
+          bottom: hasEdge(edgeW2),
+          left: hasEdge(edgeL1),
+          right: hasEdge(edgeL2),
+        };
+
+        const singleArea = (length * width) / 1000000;
+        const totalPartArea = singleArea * qty;
+        const singleEdgeLength = ((edgeSides.top ? width : 0) + (edgeSides.bottom ? width : 0) + (edgeSides.left ? length : 0) + (edgeSides.right ? length : 0)) / 1000;
+        const totalPartEdge = singleEdgeLength * qty;
+
+        grouped[key].area += totalPartArea;
+        grouped[key].edgeLength += totalPartEdge;
+
+        totalCutParts += qty;
+        totalCutArea += totalPartArea;
+        totalEdgeMeters += totalPartEdge;
+
+        for (let q = 0; q < qty; q++) {
+          grouped[key].details.push({
+            id: `bazis-detail-${Math.random().toString(36).substring(2, 9)}`,
+            type: catType,
+            name: rawPartName || rawMaterial || "Деталь",
+            height: length,
+            width: width,
+            thickness: thickness || 16,
+            qty: 1,
+            color: decor,
+            area: singleArea,
+            edgeLength: singleEdgeLength,
+            edgeSides: { ...edgeSides },
+            canRotate: catType === "ХДФ",
+          });
+        }
+      } else {
+        // For non-cutting elements (fittings, fasteners, lighting, etc.):
+        // Take name from column 7 (Material) if available, as in Bazis reports column 5 might be general like "Лента", "Полкодержатель", etc.
+        const rawMatClean = (rawMaterial && rawMaterial.trim() !== "" && rawMaterial.trim() !== "-") ? rawMaterial.trim() : "";
+        const rawPartClean = (rawPartName && rawPartName.trim() !== "" && rawPartName.trim() !== "-") ? rawPartName.trim() : "";
+        const displayName = rawMatClean || rawPartClean || "Фурнитура";
+
+        const hasPolko = displayName.toLowerCase().includes("полкодержател") || rawPartClean.toLowerCase().includes("полкодержател") || rawMatClean.toLowerCase().includes("полкодержател");
+        const isFast = hasPolko || isFastener(displayName) || isFastener(rawPartClean) || isFastener(rawMatClean);
+        const isWorktop = /столешниц|стеновая\s+панель|скинали|постформинг/i.test(displayName) || /столешниц|стеновая\s+панель|скинали|постформинг/i.test(rawPartClean);
+        const isPlinth = /цокол/i.test(displayName) || /цокол/i.test(rawPartClean);
+        const isProfileOrLighting = /профил|лента|подсветк|свет/i.test(displayName) || /профил|лента|подсветк|свет/i.test(rawPartClean);
+
+        const cat = isWorktop ? "Столешницы" : isPlinth ? "Цоколь" : isProfileOrLighting ? "Профиль" : isFast ? "Метизы" : "Фурнитура";
+
+        let matchedProduct: any = undefined;
+        if (catalogProducts && catalogProducts.length > 0) {
+          const normArt = article.toLowerCase().trim();
+          const normName = displayName.toLowerCase().trim();
+          const normPart = rawPartClean.toLowerCase().trim();
+          const normMat = rawMatClean.toLowerCase().trim();
+
+          matchedProduct = catalogProducts.find((p: any) => {
+            const manualSkus = [
+              ...(Array.isArray(p.skuList) ? p.skuList : []),
+              ...(Array.isArray(p.accountingSkus) ? p.accountingSkus : []),
+            ].map((s: any) => String(s).trim().toLowerCase()).filter(Boolean);
+
+            const pArt = String(p.article || p.sku || "").toLowerCase().trim();
+            const pName = String(p.name || "").toLowerCase().trim();
+
+            if (manualSkus.length > 0) {
+              if (normArt && manualSkus.includes(normArt)) return true;
+              if (normName && manualSkus.includes(normName)) return true;
+              if (normMat && manualSkus.includes(normMat)) return true;
+              if (normPart && manualSkus.includes(normPart)) return true;
+            }
+
+            if (normArt && pArt && (normArt === pArt || pArt.includes(normArt) || normArt.includes(pArt))) return true;
+            if (normName && pName && (normName === pName || pName.includes(normName) || normName.includes(pName))) return true;
+            if (normMat && pName && (normMat === pName || pName.includes(normMat) || normMat.includes(pName))) return true;
+            if (normPart && pName && (normPart === pName || pName.includes(normPart) || normPart.includes(pName))) return true;
+
+            return false;
+          });
+        }
+
+        const matchedPrice = matchedProduct?.price || (prices ? (prices[displayName] || (rawMatClean ? prices[rawMatClean] : 0) || (rawPartClean ? prices[rawPartClean] : 0) || (article ? prices[article] : 0)) : 0) || 0;
+
+        discoveredHardware.push({
+          id: `bazis-item-${Math.random().toString(36).substring(2, 9)}`,
+          name: displayName,
+          rawPartName: rawPartClean || displayName,
+          article: article,
+          qty: qty > 0 ? qty : 1,
+          unit: "шт",
+          price: matchedPrice,
+          checked: true,
+          isFastener: isFast,
+          categoryType: cat,
+          matchedProduct,
+        });
+      }
+    }
+
+    setSheetConfigs((prev) => ({ ...prev, ...initialSheetConfigs }));
+    setRotations(initialRotations);
+    setEdgeToEdge((prev) => ({ ...prev, ...initialEdgeToEdge }));
+    setExpandedResults((prev) => new Set([...prev, ...initialExpanded]));
+    setResults(grouped);
+
+    const fileNameWithoutExt = fileName.replace(/\.[^/.]+$/, "");
+    const newProjectId = Date.now().toString();
+    setCurrentProjectId(newProjectId);
+    setCurrentProjectName(fileNameWithoutExt);
+
+    saveProject(fileNameWithoutExt, true, {
+      projectId: newProjectId,
+      results: grouped,
+      currentProjectTotal: 0,
+      currentSummaryRows: [],
+      addedProducts: [],
+      addedServices: [],
+      unmatchedBazisItems: [],
+      bazisFasteners: [],
+      detailedFastenersMode: false,
+    });
+
+    setActiveTab("calculator");
+
+    if (discoveredHardware.length > 0) {
+      setBazisHardwareModalData({
+        isOpen: true,
+        fileName,
+        items: discoveredHardware,
+        sourceType: "panels_report",
+      });
+    } else {
+      showAlert(
+        "Раскрой Базис-Мебельщик загружен",
+        `Успешно обработано: ${totalCutParts} деталей (${totalCutArea.toFixed(2)} м²), кромка: ${totalEdgeMeters.toFixed(1)} м.`
+      );
+    }
+
+    return true;
+  };
+
+  const parseBazisHardwareReport = (rawData: any[][], fileName: string) => {
+    if (!rawData || rawData.length === 0) return false;
+
+    let colName = 4;
+    let colArticle = 6;
+    let colQty = 7;
+    let colUnit = 5;
+    let colPrice = 8;
+
+    let headerRowIdx = -1;
+    for (let i = 0; i < Math.min(rawData.length, 25); i++) {
+      const row = rawData[i] || [];
+      const rowStr = row.map((c) => String(c).toLowerCase()).join(" ");
+      if (
+        rowStr.includes("наименование") &&
+        (rowStr.includes("артикул") || rowStr.includes("код") || rowStr.includes("кол-во") || rowStr.includes("количество"))
+      ) {
+        headerRowIdx = i;
+        row.forEach((cell: any, cIdx: number) => {
+          const h = String(cell || "").toLowerCase().trim();
+          if (h.includes("наименование")) colName = cIdx;
+          else if (h.includes("артикул") || h.includes("код детали") || (h.includes("код") && !h.includes("штрих"))) colArticle = cIdx;
+          else if (h.includes("кол-во") || h.includes("количество") || h.includes("расчет") || h.includes("расчёт")) colQty = cIdx;
+          else if (h.includes("ед.") || h.includes("единица") || h.includes("изм")) colUnit = cIdx;
+          else if (h.includes("цена") || h.includes("стоимость")) colPrice = cIdx;
+        });
+        break;
+      }
+    }
+
+    const startIdx = headerRowIdx !== -1 ? headerRowIdx + 1 : 1;
+
+    const parseNum = (val: any): number => {
+      if (val === undefined || val === null) return 0;
+      if (typeof val === "number") return val;
+      const s = String(val).replace(/\s+/g, "").replace(",", ".");
+      const p = parseFloat(s);
+      return isNaN(p) ? 0 : p;
+    };
+
+    const isTechnicalRow = (str: string) => {
+      const s = str.toLowerCase();
+      return (
+        s.includes("наименование") ||
+        s.includes("артикул") ||
+        s.includes("итого") ||
+        s.includes("всего в заказе") ||
+        s.includes("спецификация") ||
+        s.includes("ведомость") ||
+        s.includes("разраб") ||
+        s.includes("пров.") ||
+        s.includes("утв.")
+      );
+    };
+
+    const items: Array<{
+      id: string;
+      name: string;
+      rawPartName?: string;
+      article: string;
+      qty: number;
+      unit: string;
+      price: number;
+      checked: boolean;
+      isFastener: boolean;
+      categoryType: string;
+      matchedProduct?: any;
+    }> = [];
+
+    for (let i = startIdx; i < rawData.length; i++) {
+      const row = rawData[i];
+      if (!row || !Array.isArray(row) || row.length === 0) continue;
+
+      const rawName = String(row[colName] || "").trim();
+      const article = String(row[colArticle] || "").trim();
+      if (!rawName && !article) continue;
+      if (isTechnicalRow(rawName)) continue;
+
+      const qty = parseNum(row[colQty]) || 1;
+      const unit = String(row[colUnit] || "шт").trim() || "шт";
+      const price = parseNum(row[colPrice]) || 0;
+
+      const hasPolko = rawName.toLowerCase().includes("полкодержател");
+      const isFast = hasPolko || isFastener(rawName);
+      const isWorktop = /столешниц|стеновая\s+панель|скинали|постформинг/i.test(rawName);
+      const isPlinth = /цокол/i.test(rawName);
+      const isProfile = /профил/i.test(rawName);
+      const isHinge = /петл/i.test(rawName);
+      const isSlide = /направляющ/i.test(rawName);
+
+      const cat = isWorktop ? "Столешницы" : isPlinth ? "Цоколь" : isProfile ? "Профиль" : isHinge ? "Петли" : isSlide ? "Направляющие" : isFast ? "Метизы" : "Фурнитура";
+
+      let matchedProduct: any = undefined;
+      if (catalogProducts && catalogProducts.length > 0) {
+        const normArt = article.toLowerCase().trim();
+        const normName = rawName.toLowerCase().trim();
+        matchedProduct = catalogProducts.find((p: any) => {
+          const manualSkus = [
+            ...(Array.isArray(p.skuList) ? p.skuList : []),
+            ...(Array.isArray(p.accountingSkus) ? p.accountingSkus : []),
+          ].map((s: any) => String(s).trim().toLowerCase()).filter(Boolean);
+
+          const pArt = String(p.article || p.sku || "").toLowerCase().trim();
+          const pName = String(p.name || "").toLowerCase().trim();
+
+          if (manualSkus.length > 0) {
+            if (normArt && manualSkus.includes(normArt)) return true;
+            if (normName && manualSkus.includes(normName)) return true;
+          }
+
+          if (normArt && pArt && (normArt === pArt || pArt.includes(normArt) || normArt.includes(pArt))) return true;
+          if (normName && pName && (normName === pName || pName.includes(normName) || normName.includes(pName))) return true;
+
+          return false;
+        });
+      }
+
+      const matchedPrice = matchedProduct?.price || (prices ? (prices[rawName] || (article ? prices[article] : 0)) : 0) || price || 0;
+
+      items.push({
+        id: `bazis-item-${Math.random().toString(36).substring(2, 9)}`,
+        name: rawName,
+        article,
+        qty: qty > 0 ? qty : 1,
+        unit,
+        price: matchedPrice,
+        checked: true,
+        isFastener: isFast,
+        categoryType: cat,
+        matchedProduct,
+      });
+    }
+
+    if (items.length === 0) {
+      showAlert("Внимание", "В файле не найдено строк с фурнитурой или метизами.");
+      return false;
+    }
+
+    setBazisHardwareModalData({
+      isOpen: true,
+      fileName,
+      items,
+      sourceType: "hardware_report",
+    });
+
+    return true;
+  };
+
+  const parseBazisLegacyReport = (
     rawData: any[][],
     fileName: string,
     options: {
@@ -34548,7 +35364,6 @@ export default function App() {
     let foundHdfSheets = 0;
     let foundHdfM2 = 0;
     let foundFacadeM2 = 0;
-    let foundWorktopM2 = 0;
     let foundEdgeMeters = 0;
 
     const cleanMaterialDecorName = (str: string) => {
@@ -34569,72 +35384,8 @@ export default function App() {
         s.includes("итого") ||
         s.includes("всего в заказе") ||
         s.includes("стоимость заказа") ||
-        s.includes("количество изделий в заказе") ||
-        s.includes("кол-во изделий в заказе") ||
-        s.includes("количество изделий") ||
-        s.includes("кол-во изделий") ||
-        s.includes("спецификация") ||
-        s.includes("разраб") ||
-        s.includes("пров.") ||
-        s.includes("техн. контр.") ||
-        s.includes("н. контр.") ||
-        s.includes("утв.") ||
-        s.includes("чертеж") ||
-        s.includes("чертёж")
+        s.includes("спецификация")
       );
-    };
-
-    const isHardwareOrAccessory = (rawName: string) => {
-      const s = rawName.toLowerCase();
-
-      // Explicit exclusions (it's sheet material, NOT hardware)
-      // Unless it explicitly contains a hardware keyword like "гвозди для хдф", "уголок для лдсп", etc.
-      const isSheetMaterial = /(хдф|двп|лхдф|лдвп|орголит|оргалит|лдсп|дсп|мдф)/i.test(s) || /фасад|пленка|плёнка|эмаль|шпон|патина|акрил|\bagt\b|агт/i.test(s);
-      const hasHardwareKeyword = /гвозди|гвоздь|саморез|шуруп|винт|евровинт|конфирмат|болт|гайка|шайба|крепеж|крепление|уголок|кляймер|петля|ручка|направляющ|заглушк|опора|ножка|профиль|держатель|kamar|кронштейн|стяжка|шкант|эксцентрик|минификс|амортизатор|доводчик|демпфер|навес|замок|магнит|комплект\s+метизов|метизы/i.test(s);
-
-      if (isSheetMaterial) {
-        if (hasHardwareKeyword) {
-          return true;
-        }
-        return false;
-      }
-
-      if (hasHardwareKeyword) {
-        return true;
-      }
-
-      if (/для\s+(двп|хдф|лдсп|дсп|столешниц|фасад|кромки)/i.test(s)) {
-        return true;
-      }
-
-      // Worktops/wall panels are finished goods (товары), not sheet cutting materials!
-      if (/столешниц|стеновая\s+панель|скинали|постформинг/i.test(s)) {
-        return true;
-      }
-
-      return false;
-    };
-
-    const isFastener = (str: string) => {
-      const s = str.toLowerCase();
-      // Absolute exclusions (NOT fasteners)
-      if (/заглушк/i.test(s)) return false;
-      if (/навес|камар|camar/i.test(s)) return false;
-      if (/опора\s+(?!м[68]|m[68])/i.test(s) && !/опора\s+м[68]/i.test(s) && !/опора\s+m[68]/i.test(s)) return false;
-      if (/петл|направляющ|подъемник|подъёмник|ручк|профиль|кронштейн|замок|кабель/i.test(s)) return false;
-
-      // Inclusions (fasteners)
-      if (/гвозд/i.test(s)) return true;
-      if (/саморез/i.test(s)) return true;
-      if (/стяжка|стяжк/i.test(s)) return true;
-      if (/уголок/i.test(s)) return true;
-      if (/шкант/i.test(s)) return true;
-      if (/конфирмат|конфират/i.test(s)) return true;
-      if (/\bvb\b|эксцентрик|минификс/i.test(s)) return true;
-      if (/евровинт|винт|болт|гайка|шайба|футорка/i.test(s)) return true;
-      if (/опора\s+м[68]|опора\s+m[68]|ножка\s+м[68]/i.test(s)) return true;
-
-      return false;
     };
 
     for (let i = startIdx; i < rawData.length; i++) {
@@ -34644,7 +35395,6 @@ export default function App() {
       if (!rawName || isTechnicalRow(rawName)) continue;
 
       const lName = rawName.toLowerCase();
-
       const article = String(row[colArticle] || "").trim();
       const unit = String(row[colUnit] || "").trim();
       const calcQty = parseNum(row[colCalcQty]);
@@ -34652,7 +35402,6 @@ export default function App() {
       const price = parseNum(row[colPrice]);
       const modelUnit = String(row[colModelUnit] || "").trim().toLowerCase();
 
-      // 1. Accounting SKU Mapping (Catalog Match)
       let isCatalogMatch = false;
       if (options.importHardware && companyData?.accountingMappingConfig?.enabled !== false && catalogProducts && catalogProducts.length > 0) {
         const normArt = article.toLowerCase();
@@ -34682,7 +35431,6 @@ export default function App() {
         }
       }
 
-      // 2. Identify Category with exclusion rules
       const isHardwareOrFastenerExplicit = isHardwareOrAccessory(rawName) || isFastener(rawName);
 
       const isWorktop = !isHardwareOrFastenerExplicit && (
@@ -34742,10 +35490,6 @@ export default function App() {
         lName.includes("агт") ||
         (lName.includes("мдф") && !lName.includes("хдф") && !lName.includes("двп"))
       );
-
-      // Worktops/wall panels are finished goods (товары), not sheet cutting materials, so exclude isWorktop here
-      const isMaterial = isLdsp || isEdge || isHdf || isFacade;
-      const hardwareOrAcc = !isMaterial && (isHardwareOrAccessory(rawName) || isFastener(rawName));
 
       if (isLdsp && options.importCarcass) {
         let thickness = 16;
@@ -34946,7 +35690,6 @@ export default function App() {
       }
     }
 
-    // Attach pending edgebands to matching LDSP materials
     pendingEdgebands.forEach((pe) => {
       let matchedKey = Object.keys(grouped).find((k) => {
         const item = grouped[k];
@@ -35031,13 +35774,249 @@ export default function App() {
     return true;
   };
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleConfirmBazisHardwareImport = (selectedItems: any[]) => {
+    const hardwareToAdd: any[] = [];
+    const fastenersToAdd: any[] = [];
+    const unmatchedToAdd: any[] = [];
+
+    selectedItems.forEach((item) => {
+      if (item.isFastener) {
+        fastenersToAdd.push({
+          id: item.id || `fastener-${Math.random().toString(36).substring(2, 9)}`,
+          name: item.name,
+          article: item.article || "",
+          qty: Number(item.qty) || 1,
+          unit: item.unit || "шт",
+          price: Number(item.price) || 0,
+        });
+      } else if (item.matchedProduct) {
+        hardwareToAdd.push({
+          ...item.matchedProduct,
+          quantity: Number(item.qty) || 1,
+          qty: Number(item.qty) || 1,
+          fromSkuMapping: true,
+        });
+      } else {
+        unmatchedToAdd.push({
+          id: item.id || `unmatched-${Math.random().toString(36).substring(2, 9)}`,
+          name: item.name,
+          article: item.article || "",
+          qty: Number(item.qty) || 1,
+          unit: item.unit || "шт",
+          price: Number(item.price) || 0,
+          isAmbiguous: /петл|направляющ/i.test(item.name),
+          categoryType: /столешниц/i.test(item.name) ? "Столешницы" : /петл/i.test(item.name) ? "Петли" : /направляющ/i.test(item.name) ? "Направляющие" : /цокол/i.test(item.name) ? "Цоколь" : /профил/i.test(item.name) ? "Профиль" : "Фурнитура",
+        });
+      }
+    });
+
+    if (hardwareToAdd.length > 0) {
+      setAddedProducts((prev) => {
+        const updated = [...prev];
+        hardwareToAdd.forEach((mp) => {
+          const existingIdx = updated.findIndex((p) => String(p.id) === String(mp.id) || (mp.article && p.article && String(p.article) === String(mp.article)));
+          if (existingIdx !== -1) {
+            const currentQty = updated[existingIdx].quantity || updated[existingIdx].qty || 0;
+            updated[existingIdx] = {
+              ...updated[existingIdx],
+              quantity: currentQty + mp.quantity,
+              qty: currentQty + mp.quantity,
+            };
+          } else {
+            updated.push(mp);
+          }
+        });
+        return updated;
+      });
+    }
+
+    if (unmatchedToAdd.length > 0) {
+      setUnmatchedBazisItems((prev) => [...prev, ...unmatchedToAdd]);
+    }
+
+    if (fastenersToAdd.length > 0) {
+      setBazisFasteners((prev) => {
+        const updated = [...prev];
+        fastenersToAdd.forEach((nf) => {
+          const existingIdx = updated.findIndex((f) => f.name.toLowerCase().trim() === nf.name.toLowerCase().trim());
+          if (existingIdx !== -1) {
+            updated[existingIdx] = {
+              ...updated[existingIdx],
+              qty: (updated[existingIdx].qty || 0) + nf.qty,
+            };
+          } else {
+            updated.push(nf);
+          }
+        });
+        return updated;
+      });
+    }
+
+    saveProject(currentProjectName, true, {
+      unmatchedBazisItems: [...unmatchedBazisItems, ...unmatchedToAdd],
+      bazisFasteners: [...bazisFasteners, ...fastenersToAdd],
+      addedProducts: [...addedProducts, ...hardwareToAdd],
+    });
+
+    setBazisHardwareModalData(null);
+
+    const parts: string[] = [];
+    if (hardwareToAdd.length > 0) parts.push(`Сопоставлено товаров: ${hardwareToAdd.length}`);
+    if (unmatchedToAdd.length > 0) parts.push(`Фурнитура: ${unmatchedToAdd.length} поз.`);
+    if (fastenersToAdd.length > 0) parts.push(`Метизы: ${fastenersToAdd.length} поз. (${fastenersToAdd.reduce((s, f) => s + f.qty, 0)} шт)`);
+
+    showAlert("Фурнитура добавлена в проект", `Успешно добавлено: ${parts.join(", ")}`);
+  };
+
+  const handleHardwareFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
+    event.target.value = "";
+
+    const isExcel = file.name.match(/\.xlsx?$/i) || file.type.includes("spreadsheet") || file.type.includes("excel");
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const buffer = e.target?.result as ArrayBuffer;
+      if (isExcel) {
+        try {
+          const workbook = XLSX.read(buffer, { type: "array" });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" }) as any[][];
+          if (!rawData || rawData.length === 0) {
+            showAlert("Ошибка чтения", "Файл пуст или содержит нечитаемые данные");
+            return;
+          }
+          parseBazisHardwareReport(rawData, file.name);
+        } catch (err: any) {
+          console.error("XLSX parse error:", err);
+          showAlert("Ошибка чтения", "Не удалось прочитать Excel файл: " + (err?.message || err));
+        }
+      } else {
+        const decodedResult = await smartDecodeFile(buffer);
+        const decodedText = decodedResult.text;
+        let delimiter = "";
+        const firstLines = decodedText.split("\n").slice(0, 5);
+        const semiCount = (firstLines.join("").match(/;/g) || []).length;
+        const commaCount = (firstLines.join("").match(/,/g) || []).length;
+        if (semiCount > commaCount && semiCount > 3) {
+          delimiter = ";";
+        }
+        Papa.parse(decodedText, {
+          skipEmptyLines: true,
+          header: false,
+          delimiter,
+          complete: (results) => {
+            const rawData = results.data as string[][];
+            if (!rawData || rawData.length === 0) return;
+            parseBazisHardwareReport(rawData, file.name);
+          },
+        });
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const readSingleFileData = async (file: File): Promise<{ rawData: any[][]; fileName: string } | null> => {
+    const isExcel = file.name.match(/\.xlsx?$/i) || file.type.includes("spreadsheet") || file.type.includes("excel");
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const buffer = e.target?.result as ArrayBuffer;
+        if (!buffer) {
+          resolve(null);
+          return;
+        }
+        if (isExcel) {
+          try {
+            const workbook = XLSX.read(buffer, { type: "array" });
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, defval: "" }) as any[][];
+            resolve({ rawData, fileName: file.name });
+          } catch (err) {
+            console.error("XLSX read error:", err);
+            resolve(null);
+          }
+        } else {
+          try {
+            const decodedResult = await smartDecodeFile(buffer);
+            const decodedText = decodedResult.text;
+            let delimiter = "";
+            const firstLines = decodedText.split("\n").slice(0, 5);
+            const semiCount = (firstLines.join("").match(/;/g) || []).length;
+            const commaCount = (firstLines.join("").match(/,/g) || []).length;
+            if (semiCount > commaCount && semiCount > 3) {
+              delimiter = ";";
+            }
+            Papa.parse(decodedText, {
+              skipEmptyLines: true,
+              header: false,
+              delimiter,
+              complete: (results) => {
+                resolve({ rawData: results.data as string[][], fileName: file.name });
+              },
+              error: () => resolve(null),
+            });
+          } catch (err) {
+            console.error("Text decode error:", err);
+            resolve(null);
+          }
+        }
+      };
+      reader.readAsArrayBuffer(file);
+    });
+  };
+
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files || []);
+    if (files.length === 0) return;
 
     // Clear input value so that the onChange event will trigger if the user selects the same file again
     event.target.value = "";
 
+    if (files.length > 1) {
+      const parsedList: { rawData: any[][]; fileName: string }[] = [];
+      for (const f of files) {
+        const p = await readSingleFileData(f);
+        if (p && p.rawData && p.rawData.length > 0) {
+          parsedList.push(p);
+        }
+      }
+
+      if (parsedList.length === 0) {
+        showAlert("Ошибка чтения", "Выбранные файлы пусты или повреждены");
+        return;
+      }
+
+      let panelsFile = parsedList.find((pf) => isBazisPanelsReport(pf.rawData));
+      let hardwareFile = parsedList.find((pf) => isBazisHardwareReport(pf.rawData));
+      let legacyFile = parsedList.find((pf) => isBazisLegacyReport(pf.rawData));
+
+      if (!panelsFile && !hardwareFile) {
+        panelsFile = parsedList[0];
+        hardwareFile = parsedList[1];
+      } else if (!panelsFile && parsedList.length > 1) {
+        panelsFile = parsedList.find((pf) => pf !== hardwareFile) || parsedList[0];
+      } else if (!hardwareFile && parsedList.length > 1) {
+        hardwareFile = parsedList.find((pf) => pf !== panelsFile) || parsedList[1];
+      }
+
+      if (panelsFile) {
+        parseBazisPanelsReport(panelsFile.rawData, panelsFile.fileName);
+      } else if (legacyFile) {
+        setBazisImportModalData({ rawData: legacyFile.rawData, fileName: legacyFile.fileName });
+      }
+
+      if (hardwareFile) {
+        setTimeout(() => {
+          parseBazisHardwareReport(hardwareFile!.rawData, hardwareFile!.fileName);
+        }, 150);
+      }
+      return;
+    }
+
+    const file = files[0];
     const isExcel = file.name.match(/\.xlsx?$/i) || file.type.includes("spreadsheet") || file.type.includes("excel");
 
     const reader = new FileReader();
@@ -35054,10 +36033,14 @@ export default function App() {
             showAlert("Ошибка чтения", "Файл пуст или содержит нечитаемые данные");
             return;
           }
-          if (isBazisReport(rawData)) {
+          if (isBazisPanelsReport(rawData)) {
+            parseBazisPanelsReport(rawData, file.name);
+          } else if (isBazisHardwareReport(rawData)) {
+            parseBazisHardwareReport(rawData, file.name);
+          } else if (isBazisLegacyReport(rawData)) {
             setBazisImportModalData({ rawData, fileName: file.name });
           } else {
-            parseBazisReport(rawData, file.name);
+            parseBazisPanelsReport(rawData, file.name);
           }
         } catch (err: any) {
           console.error("XLSX parse error:", err);
@@ -35083,7 +36066,11 @@ export default function App() {
             const rawData = results.data as string[][];
             if (!rawData || rawData.length === 0) return;
 
-            if (isBazisReport(rawData)) {
+            if (isBazisPanelsReport(rawData)) {
+              parseBazisPanelsReport(rawData, file.name);
+            } else if (isBazisHardwareReport(rawData)) {
+              parseBazisHardwareReport(rawData, file.name);
+            } else if (isBazisLegacyReport(rawData)) {
               setBazisImportModalData({ rawData, fileName: file.name });
             } else {
               // Standard Pro100 CSV Parser
@@ -39680,6 +40667,78 @@ export default function App() {
                       </div>
                     )}
 
+                    {/* Kit composition details in product modal */}
+                    {(selectedProductForDetail.isKit || (Array.isArray(selectedProductForDetail.kitItems) && selectedProductForDetail.kitItems.length > 0)) && (
+                      <div className="bg-gradient-to-br from-indigo-50/70 via-purple-50/40 to-pink-50/20 p-6 rounded-3xl border border-indigo-100/80 space-y-4 shadow-sm">
+                        <div className="flex items-center justify-between border-b border-indigo-100 pb-3">
+                          <h4 className="text-xs font-black text-indigo-950 uppercase tracking-wider flex items-center gap-2">
+                            <Layers className="w-4 h-4 text-indigo-600" />
+                            Состав комплекта ({selectedProductForDetail.kitItems?.length || 0} поз.)
+                          </h4>
+                          <span className="text-[11px] font-bold text-indigo-700 bg-white px-2.5 py-0.5 rounded-full border border-indigo-200 shadow-2xs">
+                            Всего: {selectedProductForDetail.kitItems?.reduce((a: number, c: any) => a + (Number(c.qty) || 1), 0) || 0} шт
+                          </span>
+                        </div>
+
+                        <div className="space-y-2.5 max-h-64 overflow-y-auto pr-1">
+                          {(selectedProductForDetail.kitItems || []).map((item: any, idx: number) => {
+                            const foundProduct = catalogProducts.find((p: any) => String(p.id) === String(item.productId));
+                            const itemImg = item.image || foundProduct?.images?.[0] || foundProduct?.image;
+                            const itemPrice = Number(item.price) || Number(foundProduct?.price) || 0;
+                            const itemQty = Number(item.qty) || 1;
+
+                            return (
+                              <div
+                                key={idx}
+                                className="p-3 bg-white/95 rounded-2xl border border-indigo-100/70 flex items-center justify-between gap-3 text-xs shadow-2xs hover:border-indigo-200 transition-colors"
+                              >
+                                <div className="flex items-center gap-3 min-w-0 flex-1">
+                                  <div className="w-10 h-10 rounded-xl bg-gray-50 overflow-hidden flex-shrink-0 border border-gray-200 flex items-center justify-center">
+                                    {itemImg ? (
+                                      <img
+                                        src={itemImg}
+                                        alt={item.name}
+                                        className="w-full h-full object-cover"
+                                        referrerPolicy="no-referrer"
+                                      />
+                                    ) : (
+                                      <Package className="w-5 h-5 text-gray-300" />
+                                    )}
+                                  </div>
+                                  <div className="min-w-0 flex-1">
+                                    <span className="font-bold text-gray-900 block truncate" title={item.name}>
+                                      {item.name}
+                                    </span>
+                                    <span className="text-[10px] text-gray-500 block truncate">
+                                      {item.category && <span className="text-gray-600">{item.category} • </span>}
+                                      {item.article && <span>Арт: {item.article}</span>}
+                                      {item.manufacturer && <span> • {item.manufacturer}</span>}
+                                    </span>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-3 flex-shrink-0">
+                                  <span className="px-2.5 py-1 bg-indigo-50 text-indigo-800 rounded-xl text-xs font-black border border-indigo-100">
+                                    {itemQty} {item.unit || "шт"}
+                                  </span>
+                                  <div className="text-right min-w-[70px]">
+                                    <div className="text-xs font-black text-gray-900">
+                                      {(itemPrice * itemQty).toLocaleString("ru-RU")} ₽
+                                    </div>
+                                    {itemQty > 1 && (
+                                      <div className="text-[9px] text-gray-400">
+                                        {itemPrice.toLocaleString("ru-RU")} ₽/ед
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+
                     {(() => {
                       let analogsList = [];
                       if (selectedProductForDetail.analogs && selectedProductForDetail.analogs.length > 0) {
@@ -40045,7 +41104,7 @@ export default function App() {
                     onClick={() => {
                       const { rawData, fileName } = bazisImportModalData;
                       setBazisImportModalData(null);
-                      parseBazisReport(rawData, fileName, bazisImportOptions);
+                      parseBazisLegacyReport(rawData, fileName, bazisImportOptions);
                     }}
                     className="px-6 py-2.5 text-xs font-bold bg-amber-600 text-white hover:bg-amber-700 rounded-xl shadow-lg shadow-amber-200 transition-all cursor-pointer"
                   >
@@ -40055,6 +41114,15 @@ export default function App() {
               </div>
             </div>
           </div>
+        )}
+
+        {bazisHardwareModalData?.isOpen && (
+          <BazisHardwareImportModal
+            data={bazisHardwareModalData}
+            onClose={() => setBazisHardwareModalData(null)}
+            onConfirm={(selectedItems) => handleConfirmBazisHardwareImport(selectedItems)}
+            catalogProducts={catalogProducts}
+          />
         )}
 
         {replaceKitchenItemModal && (
