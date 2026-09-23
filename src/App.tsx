@@ -39704,14 +39704,15 @@ export default function App() {
 
       <div className="flex min-h-screen bg-gray-50">
         {/* Mobile Sidebar Overlay */}
-        {isSidebarOpen && (
+        {!b24Context?.isBitrix24 && isSidebarOpen && (
           <div
             className="fixed inset-0 bg-gray-900/20 z-40 lg:hidden transition-opacity"
             onClick={() => setIsSidebarOpen(false)}
           />
         )}
 
-        {/* Sidebar */}
+        {/* Sidebar (Hidden in Bitrix24 iframe) */}
+        {!b24Context?.isBitrix24 && (
         <aside
           className={cn(
             "fixed inset-y-0 left-0 z-50 bg-white border-r border-gray-200 transition-all duration-300 shadow-xl lg:shadow-none",
@@ -40238,6 +40239,7 @@ export default function App() {
             </div>
           </div>
         </aside>
+        )}
 
         {/* Main Content */}
         <main
@@ -40247,59 +40249,136 @@ export default function App() {
           )}
         >
           {b24Context?.isBitrix24 && (
-            <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white px-4 py-3 shadow-lg border-b border-blue-700/50 flex flex-wrap items-center justify-between gap-3 sticky top-0 z-[100]">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-cyan-400 to-blue-600 text-white flex items-center justify-center font-black text-xs shadow-md">
+            <div className="bg-slate-900 text-white px-3 py-2 shadow-lg border-b border-slate-700/80 flex flex-wrap items-center justify-between gap-2 sticky top-0 z-[100]">
+              {/* Left section: App branding + Deal ID + Name */}
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-400 to-blue-600 text-white flex items-center justify-center font-black text-xs shadow-sm">
                   24
                 </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-black uppercase tracking-wider text-cyan-300">CRM Битрикс24</span>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-cyan-300">Битрикс24</span>
                     {b24Context.dealId && (
-                      <span className="px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-blue-500/30 text-blue-200 border border-blue-400/30">
+                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/30 text-blue-200 border border-blue-400/30">
                         Сделка #{b24Context.dealId}
                       </span>
                     )}
                   </div>
-                  <div className="text-[11px] text-gray-300 font-medium">
-                    {currentProjectName || "Расчет мебельного изделия"}
+                  <div 
+                    onClick={() => {
+                      showPrompt(
+                        "Название проекта",
+                        "Введите новое название:",
+                        currentProjectName || "",
+                        (name) => {
+                          if (name.trim()) {
+                            setCurrentProjectName(name.trim());
+                            saveProject(name.trim());
+                          }
+                        }
+                      );
+                    }}
+                    className="text-xs font-bold text-white truncate hover:text-cyan-200 cursor-pointer max-w-[180px]"
+                    title="Нажмите для переименования"
+                  >
+                    {currentProjectName || "Новый расчет ✎"}
                   </div>
                 </div>
               </div>
 
-              {/* Quick Services Toggles for Bitrix24 deal */}
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="flex items-center gap-1.5 bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 text-xs font-bold">
-                  <span>🚚 Доставка</span>
-                  <input
-                    type="checkbox"
-                    checked={serviceData.delivery}
-                    onChange={(e) => setServiceData(prev => ({ ...prev, delivery: e.target.checked }))}
-                    className="w-4 h-4 accent-cyan-400 cursor-pointer rounded"
-                  />
-                </div>
-
-                <div className="flex items-center gap-1.5 bg-white/10 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 text-xs font-bold">
-                  <span>🛠️ Монтаж</span>
-                  <input
-                    type="checkbox"
-                    checked={serviceData.assembly}
-                    onChange={(e) => setServiceData(prev => ({ ...prev, assembly: e.target.checked }))}
-                    className="w-4 h-4 accent-cyan-400 cursor-pointer rounded"
-                  />
-                </div>
+              {/* Middle Section: Clean CRM Navigation Tabs */}
+              <div className="flex items-center gap-1 bg-slate-800/90 p-1 rounded-xl border border-slate-700">
+                <button
+                  onClick={() => setActiveTab("calculator")}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1",
+                    activeTab === "calculator"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "text-slate-300 hover:text-white hover:bg-slate-700/60"
+                  )}
+                >
+                  <Calculator className="w-3.5 h-3.5" />
+                  <span>Калькулятор</span>
+                </button>
 
                 <button
                   onClick={() => setActiveTab("summary")}
                   className={cn(
-                    "px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer border",
+                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1",
                     activeTab === "summary"
-                      ? "bg-cyan-400 text-slate-950 border-cyan-300 shadow-md"
-                      : "bg-white/10 hover:bg-white/20 text-white border-white/15"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "text-slate-300 hover:text-white hover:bg-slate-700/60"
                   )}
                 >
-                  📊 Смета ({currentProjectTotal.toLocaleString("ru-RU")} ₽)
+                  <LayoutDashboard className="w-3.5 h-3.5" />
+                  <span>Смета</span>
                 </button>
+
+                <button
+                  onClick={() => setActiveTab("ready_made")}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1",
+                    activeTab === "ready_made"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "text-slate-300 hover:text-white hover:bg-slate-700/60"
+                  )}
+                >
+                  <Package className="w-3.5 h-3.5" />
+                  <span>Товары</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("service-section")}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1",
+                    activeTab === "service-section"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "text-slate-300 hover:text-white hover:bg-slate-700/60"
+                  )}
+                >
+                  <Truck className="w-3.5 h-3.5" />
+                  <span>Услуги</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("projects")}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1",
+                    activeTab === "projects"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "text-slate-300 hover:text-white hover:bg-slate-700/60"
+                  )}
+                >
+                  <FolderOpen className="w-3.5 h-3.5" />
+                  <span>Проекты</span>
+                </button>
+              </div>
+
+              {/* Right section: Service Toggles + Deal Action */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="flex items-center gap-1.5 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700 text-xs font-semibold cursor-pointer hover:bg-slate-800">
+                  <span>Доставка</span>
+                  <input
+                    type="checkbox"
+                    checked={serviceData.delivery}
+                    onChange={(e) => setServiceData(prev => ({ ...prev, delivery: e.target.checked }))}
+                    className="w-3.5 h-3.5 accent-cyan-400 cursor-pointer rounded"
+                  />
+                </label>
+
+                <label className="flex items-center gap-1.5 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700 text-xs font-semibold cursor-pointer hover:bg-slate-800">
+                  <span>Монтаж</span>
+                  <input
+                    type="checkbox"
+                    checked={serviceData.assembly}
+                    onChange={(e) => setServiceData(prev => ({ ...prev, assembly: e.target.checked }))}
+                    className="w-3.5 h-3.5 accent-cyan-400 cursor-pointer rounded"
+                  />
+                </label>
+
+                <div className="bg-cyan-500/20 text-cyan-200 border border-cyan-500/30 px-2.5 py-1 rounded-lg text-xs font-black">
+                  {currentProjectTotal.toLocaleString("ru-RU")} ₽
+                </div>
 
                 <button
                   onClick={() => {
@@ -40308,7 +40387,7 @@ export default function App() {
                     }
                     setShowB24Modal(true);
                   }}
-                  className="flex items-center gap-1.5 px-4 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl text-xs font-black shadow-md hover:scale-105 transition-all cursor-pointer border border-emerald-400/40"
+                  className="flex items-center gap-1 px-3.5 py-1 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-lg text-xs font-black shadow-sm transition-all cursor-pointer border border-emerald-400/40"
                 >
                   <span>✓ В Сделку</span>
                 </button>
