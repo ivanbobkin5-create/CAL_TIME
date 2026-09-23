@@ -81,6 +81,54 @@ export const getBitrix24Context = (): Bitrix24Context => {
   return bx24Context;
 };
 
+export const fetchBitrix24DealTitle = async (dealId: number): Promise<string | null> => {
+  if (!window.BX24) return null;
+  return new Promise((resolve) => {
+    try {
+      window.BX24.callMethod(
+        "crm.deal.get",
+        { id: dealId },
+        (res: any) => {
+          if (res.error()) {
+            console.warn("BX24 crm.deal.get error:", res.error());
+            resolve(null);
+          } else {
+            const data = res.data();
+            resolve(data?.TITLE || null);
+          }
+        }
+      );
+    } catch (e) {
+      resolve(null);
+    }
+  });
+};
+
+export const updateBitrix24DealTitle = async (dealId: number, title: string): Promise<boolean> => {
+  if (!window.BX24) return false;
+  return new Promise((resolve) => {
+    try {
+      window.BX24.callMethod(
+        "crm.deal.update",
+        {
+          id: dealId,
+          fields: { TITLE: title }
+        },
+        (res: any) => {
+          if (res.error()) {
+            console.warn("BX24 crm.deal.update title error:", res.error());
+            resolve(false);
+          } else {
+            resolve(true);
+          }
+        }
+      );
+    } catch (e) {
+      resolve(false);
+    }
+  });
+};
+
 export const sendToBitrix24Deal = async ({
   dealId,
   totalPrice,

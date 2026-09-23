@@ -18,7 +18,7 @@ import { BazisHardwareImportModal } from "./components/BazisHardwareImportModal"
 import { ProductKitBuilder } from "./components/ProductKitBuilder";
 import { FastenersPriceTable } from "./components/FastenersPriceTable";
 import type { KitItem } from "./components/ProductKitPickerModal";
-import { initBitrix24, sendToBitrix24Deal, registerBitrix24Placement, type Bitrix24Context } from "./services/bitrix24";
+import { initBitrix24, sendToBitrix24Deal, registerBitrix24Placement, fetchBitrix24DealTitle, updateBitrix24DealTitle, type Bitrix24Context } from "./services/bitrix24";
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
@@ -235,6 +235,7 @@ import {
   AlertCircle,
   ExternalLink,
   PackagePlus,
+  HelpCircle,
 } from "lucide-react";
 
 // --- START OF OFFLINE CACHE AND SYNC ENGINE ---
@@ -6722,14 +6723,80 @@ const CalculatorView = ({
   toggleSpareSheet: (materialKey: string) => void;
   getAvailableThicknessesForBrand: (brandName: string) => string[];
 }) => {
+  const [showInstructionHelp, setShowInstructionHelp] = useState(false);
+
   return (
     <div className="p-4 md:p-8">
+      {showInstructionHelp && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[200] flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 shadow-2xl border border-gray-100 relative space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2 text-blue-700 font-extrabold text-lg">
+                <HelpCircle className="w-5 h-5 text-blue-600" />
+                <span>Инструкция по подготовке файлов</span>
+              </div>
+              <button
+                onClick={() => setShowInstructionHelp(false)}
+                className="text-gray-400 hover:text-gray-700 p-1 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="text-sm text-gray-700 space-y-3 leading-relaxed">
+              <p>
+                <strong>Важно для работы с проектом (Pro100 / Базис):</strong> В вашем проекте
+                названия деталей должны соответствовать материалу.
+                «ЛДСП» — ЛДСП или ДСП, все фасады должны иметь имя «Фасад». Все
+                детали из ДВП или ХДФ должны иметь название «ДВП» или «ХДФ».
+              </p>
+              <p>
+                В каждой детали должна присутствовать{" "}
+                <strong>отчетность</strong>, чтобы она фигурировала в списке
+                деталей проекта.
+              </p>
+              <p>
+                Материалы (цвета/декоры) в проекте могут быть любыми (например,
+                «Белый»), но в калькуляторе вы можете выбрать любой цвет из
+                базы. Просто важно помнить, что в вашем проекте «Белый» — это,
+                например, «Супер Белый» в расчете для клиента. Если у вас
+                несколько видов материала с разным цветом, то в проекте они
+                должны иметь разный цвет.
+              </p>
+              <p className="pt-2 border-t border-gray-100">
+                <a
+                  href="#"
+                  className="inline-flex items-center font-bold text-blue-700 hover:text-blue-800 underline underline-offset-4 transition-colors"
+                >
+                  <PlayCircle className="w-4 h-4 mr-1.5" />
+                  Смотреть обучающее видео по подготовке проекта
+                </a>
+              </p>
+            </div>
+            <div className="pt-3 border-t border-gray-100 flex justify-end">
+              <button
+                onClick={() => setShowInstructionHelp(false)}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-sm shadow-md transition-all cursor-pointer"
+              >
+                Понятно
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-5xl mx-auto bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
             <LayoutDashboard className="w-8 h-8 text-blue-600" />
-            <h1 className="text-3xl font-bold text-gray-900">
-              Мебельный калькулятор
+            <h1 className="text-2xl md:text-3xl font-bold text-gray-900 flex items-center gap-2">
+              <span>Мебельный калькулятор</span>
+              <button
+                onClick={() => setShowInstructionHelp(true)}
+                className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-full transition-all cursor-pointer"
+                title="Инструкция по файлам отчетов"
+              >
+                <HelpCircle className="w-5 h-5" />
+              </button>
             </h1>
           </div>
           <div className="flex items-center gap-2">
@@ -6758,41 +6825,7 @@ const CalculatorView = ({
           </div>
         </div>
 
-        {!results && (
-          <div className="mb-8 p-5 bg-blue-50/50 border border-blue-100 rounded-2xl flex items-start gap-4">
-            <Info className="w-6 h-6 text-blue-500 shrink-0 mt-0.5" />
-            <div className="text-sm text-blue-900 space-y-3">
-              <p>
-                <strong>Важно для работы с проектом:</strong> В вашем проекте
-                (Pro100) названия деталей должны соответствовать материалу.
-                «ЛДСП» — ЛДСП или ДСП, все фасады должны иметь имя «Фасад». Все
-                детали из ДВП или ХДФ должны иметь название «ДВП» или «ХДФ».
-              </p>
-              <p>
-                В каждой детали должна присутствовать{" "}
-                <strong>отчетность</strong>, чтобы она фигурировала в списке
-                деталей проекта.
-              </p>
-              <p>
-                Материалы (цвета/декоры) в проекте могут быть любыми (например,
-                «Белый»), но в калькуляторе вы можете выбрать любой цвет из
-                базы. Просто важно помнить, что в вашем проекте «Белый» — это,
-                например, «Супер Белый» в расчете для клиента. Если у вас
-                несколько видов материала с разным цветом, то в проекте они
-                должны иметь разный цвет.
-              </p>
-              <p className="pt-1">
-                <a
-                  href="#"
-                  className="inline-flex items-center font-bold text-blue-700 hover:text-blue-800 underline underline-offset-4 transition-colors"
-                >
-                  <PlayCircle className="w-4 h-4 mr-1.5" />
-                  Смотреть обучающее видео по подготовке проекта
-                </a>
-              </p>
-            </div>
-          </div>
-        )}
+        {/* Instructions are now accessible via the HelpCircle icon next to the title */}
 
         <div className="mb-8 p-6 bg-gray-50 rounded-2xl border border-gray-200 grid grid-cols-1 lg:grid-cols-3 gap-6">
           <div className="lg:col-span-2 space-y-4">
@@ -33345,10 +33378,14 @@ export default function App() {
   const [b24Sending, setB24Sending] = useState(false);
 
   useEffect(() => {
-    initBitrix24().then((ctx) => {
+    initBitrix24().then(async (ctx) => {
       setB24Context(ctx);
       if (ctx.dealId) {
         setB24DealIdInput(String(ctx.dealId));
+        const dealTitle = await fetchBitrix24DealTitle(ctx.dealId);
+        if (dealTitle) {
+          setCurrentProjectName(dealTitle);
+        }
       }
     });
   }, []);
@@ -40267,21 +40304,25 @@ export default function App() {
                   <div 
                     onClick={() => {
                       showPrompt(
-                        "Название проекта",
-                        "Введите новое название:",
+                        "Название проекта и сделки",
+                        "Введите новое название (обновится в калькуляторе и Сделке Битрикс24):",
                         currentProjectName || "",
-                        (name) => {
-                          if (name.trim()) {
-                            setCurrentProjectName(name.trim());
-                            saveProject(name.trim());
+                        async (name) => {
+                          const trimmed = name.trim();
+                          if (trimmed) {
+                            setCurrentProjectName(trimmed);
+                            saveProject(trimmed);
+                            if (b24Context?.dealId) {
+                              await updateBitrix24DealTitle(b24Context.dealId, trimmed);
+                            }
                           }
                         }
                       );
                     }}
-                    className="text-xs font-bold text-white truncate hover:text-cyan-200 cursor-pointer max-w-[180px]"
-                    title="Нажмите для переименования"
+                    className="text-xs font-bold text-white truncate hover:text-cyan-200 cursor-pointer max-w-[200px]"
+                    title="Нажмите для переименования сделки и проекта"
                   >
-                    {currentProjectName || "Новый расчет ✎"}
+                    {currentProjectName || "Расчет сделки ✎"}
                   </div>
                 </div>
               </div>
@@ -40291,7 +40332,7 @@ export default function App() {
                 <button
                   onClick={() => setActiveTab("calculator")}
                   className={cn(
-                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1",
+                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
                     activeTab === "calculator"
                       ? "bg-blue-600 text-white shadow-sm"
                       : "text-slate-300 hover:text-white hover:bg-slate-700/60"
@@ -40304,7 +40345,7 @@ export default function App() {
                 <button
                   onClick={() => setActiveTab("summary")}
                   className={cn(
-                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1",
+                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
                     activeTab === "summary"
                       ? "bg-blue-600 text-white shadow-sm"
                       : "text-slate-300 hover:text-white hover:bg-slate-700/60"
@@ -40315,22 +40356,35 @@ export default function App() {
                 </button>
 
                 <button
-                  onClick={() => setActiveTab("ready_made")}
+                  onClick={() => setActiveTab("products")}
                   className={cn(
-                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1",
-                    activeTab === "ready_made"
+                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                    activeTab === "products"
                       ? "bg-blue-600 text-white shadow-sm"
                       : "text-slate-300 hover:text-white hover:bg-slate-700/60"
                   )}
                 >
                   <Package className="w-3.5 h-3.5" />
-                  <span>Товары</span>
+                  <span>Каталог товаров</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("ready_made")}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                    activeTab === "ready_made"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "text-slate-300 hover:text-white hover:bg-slate-700/60"
+                  )}
+                >
+                  <ShoppingBag className="w-3.5 h-3.5" />
+                  <span>Готовая мебель</span>
                 </button>
 
                 <button
                   onClick={() => setActiveTab("service-section")}
                   className={cn(
-                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1",
+                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
                     activeTab === "service-section"
                       ? "bg-blue-600 text-white shadow-sm"
                       : "text-slate-300 hover:text-white hover:bg-slate-700/60"
@@ -40339,44 +40393,11 @@ export default function App() {
                   <Truck className="w-3.5 h-3.5" />
                   <span>Услуги</span>
                 </button>
-
-                <button
-                  onClick={() => setActiveTab("projects")}
-                  className={cn(
-                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1",
-                    activeTab === "projects"
-                      ? "bg-blue-600 text-white shadow-sm"
-                      : "text-slate-300 hover:text-white hover:bg-slate-700/60"
-                  )}
-                >
-                  <FolderOpen className="w-3.5 h-3.5" />
-                  <span>Проекты</span>
-                </button>
               </div>
 
-              {/* Right section: Service Toggles + Deal Action */}
+              {/* Right section: Total & Send to Deal Button */}
               <div className="flex items-center gap-2 flex-wrap">
-                <label className="flex items-center gap-1.5 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700 text-xs font-semibold cursor-pointer hover:bg-slate-800">
-                  <span>Доставка</span>
-                  <input
-                    type="checkbox"
-                    checked={serviceData.delivery}
-                    onChange={(e) => setServiceData(prev => ({ ...prev, delivery: e.target.checked }))}
-                    className="w-3.5 h-3.5 accent-cyan-400 cursor-pointer rounded"
-                  />
-                </label>
-
-                <label className="flex items-center gap-1.5 bg-slate-800/80 px-2.5 py-1 rounded-lg border border-slate-700 text-xs font-semibold cursor-pointer hover:bg-slate-800">
-                  <span>Монтаж</span>
-                  <input
-                    type="checkbox"
-                    checked={serviceData.assembly}
-                    onChange={(e) => setServiceData(prev => ({ ...prev, assembly: e.target.checked }))}
-                    className="w-3.5 h-3.5 accent-cyan-400 cursor-pointer rounded"
-                  />
-                </label>
-
-                <div className="bg-cyan-500/20 text-cyan-200 border border-cyan-500/30 px-2.5 py-1 rounded-lg text-xs font-black">
+                <div className="bg-cyan-500/20 text-cyan-200 border border-cyan-500/30 px-3 py-1 rounded-lg text-xs font-black">
                   {currentProjectTotal.toLocaleString("ru-RU")} ₽
                 </div>
 
