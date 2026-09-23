@@ -9893,74 +9893,102 @@ const Bitrix24DashboardView = ({
       </div>
 
       {/* Main Big Action Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
         {/* 1. New Variant */}
         <button
           onClick={onNewVariant}
-          className="group bg-white p-5 rounded-2xl border border-gray-200 hover:border-blue-500 hover:shadow-lg transition-all text-left flex flex-col justify-between space-y-4 cursor-pointer hover:-translate-y-0.5"
+          className="group bg-white p-4 rounded-2xl border border-gray-200 hover:border-blue-500 hover:shadow-lg transition-all text-left flex flex-col justify-between space-y-3 cursor-pointer hover:-translate-y-0.5"
         >
-          <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-all shadow-xs">
-            <Plus className="w-6 h-6" />
+          <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-all shadow-xs">
+            <Plus className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="font-extrabold text-gray-900 text-base">Новый вариант</h3>
-            <p className="text-xs text-gray-500 mt-1">Создать ещё один вариант расчёта</p>
+            <h3 className="font-extrabold text-gray-900 text-sm">Новый вариант</h3>
+            <p className="text-[11px] text-gray-500 mt-0.5">Создать расчёт</p>
           </div>
         </button>
 
         {/* 2. Calculator */}
         <button
           onClick={() => setActiveTab("calculator")}
-          className="group bg-white p-5 rounded-2xl border border-gray-200 hover:border-indigo-500 hover:shadow-lg transition-all text-left flex flex-col justify-between space-y-4 cursor-pointer hover:-translate-y-0.5"
+          className="group bg-white p-4 rounded-2xl border border-gray-200 hover:border-indigo-500 hover:shadow-lg transition-all text-left flex flex-col justify-between space-y-3 cursor-pointer hover:-translate-y-0.5"
         >
-          <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-xs">
-            <Calculator className="w-6 h-6" />
+          <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-xs">
+            <Calculator className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="font-extrabold text-gray-900 text-base">Калькулятор</h3>
-            <p className="text-xs text-gray-500 mt-1">Загрузить Pro100 или Базис</p>
+            <h3 className="font-extrabold text-gray-900 text-sm">Калькулятор</h3>
+            <p className="text-[11px] text-gray-500 mt-0.5">Загрузить Pro100/Базис</p>
           </div>
         </button>
 
         {/* 3. Summary */}
         <button
           onClick={() => setActiveTab("summary")}
-          className="group bg-white p-5 rounded-2xl border border-gray-200 hover:border-purple-500 hover:shadow-lg transition-all text-left flex flex-col justify-between space-y-4 cursor-pointer hover:-translate-y-0.5"
+          className="group bg-white p-4 rounded-2xl border border-gray-200 hover:border-purple-500 hover:shadow-lg transition-all text-left flex flex-col justify-between space-y-3 cursor-pointer hover:-translate-y-0.5"
         >
-          <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:bg-purple-600 group-hover:text-white transition-all shadow-xs">
-            <LayoutDashboard className="w-6 h-6" />
+          <div className="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:bg-purple-600 group-hover:text-white transition-all shadow-xs">
+            <LayoutDashboard className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="font-extrabold text-gray-900 text-base">Смета заказа</h3>
-            <p className="text-xs text-gray-500 mt-1">Полная детализация стоимости</p>
+            <h3 className="font-extrabold text-gray-900 text-sm">Смета заказа</h3>
+            <p className="text-[11px] text-gray-500 mt-0.5">Детализация стоимости</p>
           </div>
         </button>
 
         {/* 4. Checkout / Order */}
         <button
           onClick={() => setActiveTab("checkout_current")}
-          className="group bg-white p-5 rounded-2xl border border-gray-200 hover:border-emerald-500 hover:shadow-lg transition-all text-left flex flex-col justify-between space-y-4 cursor-pointer hover:-translate-y-0.5"
+          className="group bg-white p-4 rounded-2xl border border-gray-200 hover:border-emerald-500 hover:shadow-lg transition-all text-left flex flex-col justify-between space-y-3 cursor-pointer hover:-translate-y-0.5"
         >
-          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-xs">
-            <ClipboardCheck className="w-6 h-6" />
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-xs">
+            <ClipboardCheck className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="font-extrabold text-gray-900 text-base">Оформить</h3>
-            <p className="text-xs text-gray-500 mt-1">Подготовить спецификацию</p>
+            <h3 className="font-extrabold text-gray-900 text-sm">Оформить</h3>
+            <p className="text-[11px] text-gray-500 mt-0.5">Спецификация</p>
           </div>
         </button>
 
-        {/* 5. Client Requisites */}
+        {/* 5. Price Database (База Цен) */}
         <button
-          onClick={onOpenContactRequisites}
-          className="group bg-white p-5 rounded-2xl border border-gray-200 hover:border-cyan-500 hover:shadow-lg transition-all text-left flex flex-col justify-between space-y-4 cursor-pointer hover:-translate-y-0.5"
+          onClick={() => setActiveTab("price")}
+          className="group bg-white p-4 rounded-2xl border border-gray-200 hover:border-amber-500 hover:shadow-lg transition-all text-left flex flex-col justify-between space-y-3 cursor-pointer hover:-translate-y-0.5"
         >
-          <div className="w-12 h-12 rounded-2xl bg-cyan-50 text-cyan-600 flex items-center justify-center group-hover:bg-cyan-600 group-hover:text-white transition-all shadow-xs">
-            <Building2 className="w-6 h-6" />
+          <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center group-hover:bg-amber-600 group-hover:text-white transition-all shadow-xs">
+            <Tag className="w-5 h-5" />
           </div>
           <div>
-            <h3 className="font-extrabold text-gray-900 text-base">Реквизиты</h3>
-            <p className="text-xs text-gray-500 mt-1">Открыть карточку в CRM</p>
+            <h3 className="font-extrabold text-gray-900 text-sm">База цен</h3>
+            <p className="text-[11px] text-gray-500 mt-0.5">Материалы, кромка, ЛДСП</p>
+          </div>
+        </button>
+
+        {/* 6. Settings (Настройки) */}
+        <button
+          onClick={() => setActiveTab("settings")}
+          className="group bg-white p-4 rounded-2xl border border-gray-200 hover:border-slate-600 hover:shadow-lg transition-all text-left flex flex-col justify-between space-y-3 cursor-pointer hover:-translate-y-0.5"
+        >
+          <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center group-hover:bg-slate-700 group-hover:text-white transition-all shadow-xs">
+            <Settings className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900 text-sm">Настройки</h3>
+            <p className="text-[11px] text-gray-500 mt-0.5">Наценки, печать, логотип</p>
+          </div>
+        </button>
+
+        {/* 7. Client Requisites */}
+        <button
+          onClick={onOpenContactRequisites}
+          className="group bg-white p-4 rounded-2xl border border-gray-200 hover:border-cyan-500 hover:shadow-lg transition-all text-left flex flex-col justify-between space-y-3 cursor-pointer hover:-translate-y-0.5"
+        >
+          <div className="w-10 h-10 rounded-xl bg-cyan-50 text-cyan-600 flex items-center justify-center group-hover:bg-cyan-600 group-hover:text-white transition-all shadow-xs">
+            <Building2 className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900 text-sm">Реквизиты</h3>
+            <p className="text-[11px] text-gray-500 mt-0.5">Карточка в CRM</p>
           </div>
         </button>
       </div>
@@ -40725,6 +40753,32 @@ export default function App() {
                 >
                   <Package className="w-3.5 h-3.5" />
                   <span>Каталог товаров</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("price")}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                    activeTab === "price"
+                      ? "bg-amber-600 text-white shadow-sm"
+                      : "text-amber-300 hover:text-white hover:bg-amber-700/60"
+                  )}
+                >
+                  <Tag className="w-3.5 h-3.5" />
+                  <span>База цен</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("settings")}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                    activeTab === "settings"
+                      ? "bg-slate-600 text-white shadow-sm"
+                      : "text-slate-300 hover:text-white hover:bg-slate-700/60"
+                  )}
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>Настройки</span>
                 </button>
 
                 <button
