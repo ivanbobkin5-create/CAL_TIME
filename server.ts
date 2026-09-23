@@ -15,11 +15,11 @@ let adjustedDbUrl: string | undefined = undefined;
 if (dbUrl) {
   try {
     const urlObj = new URL(dbUrl);
-    urlObj.searchParams.set("connection_limit", "20");
-    urlObj.searchParams.set("pool_timeout", "30");
+    urlObj.searchParams.set("connection_limit", "30");
+    urlObj.searchParams.set("pool_timeout", "15");
     adjustedDbUrl = urlObj.toString();
   } catch (e) {
-    adjustedDbUrl = dbUrl + (dbUrl.includes("?") ? "&" : "?") + "connection_limit=20&pool_timeout=30";
+    adjustedDbUrl = dbUrl + (dbUrl.includes("?") ? "&" : "?") + "connection_limit=30&pool_timeout=15";
   }
 }
 
@@ -30,20 +30,48 @@ const prisma = new PrismaClient(
 );
 const JWT_SECRET = process.env.JWT_SECRET || "default_jwt_secret_change_me";
 
+// Simple in-memory concurrency queue to limit active database queries and prevent connection pool starvation
+class ConcurrencyLimiter {
+  private activeCount = 0;
+  private queue: (() => void)[] = [];
+
+  constructor(private maxConcurrency: number) {}
+
+  async run<T>(fn: () => Promise<T>): Promise<T> {
+    if (this.activeCount >= this.maxConcurrency) {
+      await new Promise<void>((resolve) => this.queue.push(resolve));
+    }
+    this.activeCount++;
+    try {
+      return await fn();
+    } finally {
+      this.activeCount--;
+      if (this.queue.length > 0) {
+        const next = this.queue.shift();
+        if (next) next();
+      }
+    }
+  }
+}
+
+const dbLimiter = new ConcurrencyLimiter(25);
+let isReconnecting = false;
+
 // Simple in-memory cache is disabled to prevent stale/divergent data in multi-instance Cloud Run containers
 function invalidateCache(docPath: string) {
   // In-memory caching fully disabled
 }
 
 // Robust database query wrapper with exponential backoff retry to handle transient connection drops/timeouts/shutdowns
-async function dbQueryWithRetry<T>(fn: () => Promise<T>, retries = 15, delayMs = 600): Promise<T> {
+async function dbQueryWithRetry<T>(fn: () => Promise<T>, retries = 10, delayMs = 300): Promise<T> {
   let lastErr: any;
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      return await fn();
+      return await dbLimiter.run(fn);
     } catch (err: any) {
       lastErr = err;
       const isValidationError = err?.name === 'PrismaClientValidationError';
+      const isPoolTimeout = err?.code === 'P2024' || (err?.message && err.message.includes('connection pool'));
       const shouldRetry = !isValidationError;
       
       if (shouldRetry && attempt < retries) {
@@ -54,17 +82,36 @@ async function dbQueryWithRetry<T>(fn: () => Promise<T>, retries = 15, delayMs =
           errorDetails = String(err);
         }
         const errMsg = errorDetails.replace(/\r?\n/g, " -- ");
-        console.warn(`[DB RETRY] Database query failed (attempt ${attempt}/${retries}). Retrying in ${Math.round(delayMs)}ms... Error: ${errMsg}`);
+        if (attempt === 1 || attempt % 3 === 0) {
+          console.warn(`[DB RETRY] Database query failed (attempt ${attempt}/${retries}). Retrying in ${Math.round(delayMs)}ms... Error: ${errMsg}`);
+        }
         
-        // Disconnect & reconnect Prisma client if error is connection/shutdown related so it re-establishes pool on next attempt
-        const errStr = (errMsg + " " + String(err?.code || "")).toLowerCase();
-        if (errStr.includes('shutting down') || errStr.includes('closed') || errStr.includes('connection') || errStr.includes('fatal') || errStr.includes('econnreset') || errStr.startsWith('p1') || errStr.startsWith('p100')) {
-          await prisma.$disconnect().catch(() => {});
-          await prisma.$connect().catch(() => {});
+        // ONLY disconnect & reconnect Prisma client for hard socket/connection drops or server shutdowns.
+        // DO NOT disconnect for connection pool timeouts (P2024), as tearing down the pool breaks active queries for concurrent requests!
+        if (!isPoolTimeout && !isReconnecting) {
+          const errCode = String(err?.code || "").toLowerCase();
+          const errStr = (errMsg + " " + errCode).toLowerCase();
+          const isHardDisconnectErr = 
+            errStr.includes('shutting down') || 
+            errStr.includes('closed') || 
+            errStr.includes('econnreset') || 
+            errStr.includes('epipe') ||
+            errCode === 'p1001' || 
+            errCode === 'p1002';
+
+          if (isHardDisconnectErr) {
+            isReconnecting = true;
+            try {
+              await prisma.$disconnect().catch(() => {});
+              await prisma.$connect().catch(() => {});
+            } finally {
+              isReconnecting = false;
+            }
+          }
         }
 
         await new Promise(resolve => setTimeout(resolve, delayMs));
-        delayMs = Math.min(delayMs * 1.5, 3000);
+        delayMs = Math.min(delayMs * 1.5, 2000);
       } else {
         throw err;
       }

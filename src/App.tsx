@@ -9850,45 +9850,33 @@ const Bitrix24DashboardView = ({
 
   return (
     <div className="p-4 md:p-8 space-y-8 max-w-7xl mx-auto animate-in fade-in duration-300">
-      {/* Top Banner with Deal Title & Contact Quick Requisites */}
-      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-900 rounded-3xl p-6 md:p-8 text-white shadow-xl relative overflow-hidden border border-slate-700/60">
-        <div className="relative z-10 flex flex-wrap items-center justify-between gap-6">
-          <div className="space-y-2 max-w-2xl">
-            <div className="flex items-center gap-2">
-              <span className="px-3 py-1 bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 rounded-full text-xs font-black uppercase tracking-wider">
-                Битрикс24 CRM
-              </span>
-              {b24Context?.dealId && (
-                <span className="px-3 py-1 bg-blue-500/20 text-blue-200 border border-blue-400/30 rounded-full text-xs font-bold">
-                  Сделка #{b24Context.dealId}
-                </span>
-              )}
-            </div>
-            <h1 className="text-2xl md:text-4xl font-black text-white tracking-tight">
-              {currentProjectName || "Панель расчетов сделки"}
-            </h1>
-            <p className="text-slate-300 text-sm">
-              Управляйте вариантами расчётов, формируйте коммерческие предложения и выгружайте спецификации прямо в CRM Битрикс24.
-            </p>
-          </div>
+      {/* Top Bar with Deal Info & Quick Action */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-900 rounded-2xl p-4 md:p-5 text-white shadow-md border border-slate-700/60 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <span className="px-2.5 py-1 bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 rounded-lg text-xs font-black uppercase tracking-wider">
+            Битрикс24 CRM
+          </span>
+          {b24Context?.dealId && (
+            <span className="px-2.5 py-1 bg-blue-500/20 text-blue-200 border border-blue-400/30 rounded-lg text-xs font-bold">
+              Сделка #{b24Context.dealId}
+            </span>
+          )}
+          <h1 className="text-base md:text-xl font-black text-white tracking-tight ml-1">
+            {currentProjectName || "Панель расчетов сделки"}
+          </h1>
+        </div>
 
-          <div className="flex items-center gap-3 flex-wrap">
-            {/* Contact / Requisites Button */}
-            <button
-              onClick={onOpenContactRequisites}
-              className="group flex items-center gap-3 px-5 py-3 bg-white/10 hover:bg-white/20 text-white rounded-2xl backdrop-blur-md border border-white/20 transition-all shadow-md cursor-pointer hover:scale-[1.02]"
-              title="Открыть карточку клиента и реквизиты в Битрикс24"
-            >
-              <div className="w-10 h-10 rounded-xl bg-cyan-500/30 text-cyan-200 flex items-center justify-center font-bold group-hover:bg-cyan-500 group-hover:text-white transition-all">
-                <User className="w-5 h-5" />
-              </div>
-              <div className="text-left">
-                <span className="block text-[11px] text-cyan-300 font-bold uppercase tracking-wider">Клиент</span>
-                <span className="block text-sm font-black truncate max-w-[150px]">Реквизиты CRM</span>
-              </div>
-              <ExternalLink className="w-4 h-4 text-cyan-300 opacity-70 group-hover:opacity-100 transition-opacity ml-1" />
-            </button>
-          </div>
+        <div className="flex items-center gap-2">
+          {/* Contact / Requisites Button */}
+          <button
+            onClick={onOpenContactRequisites}
+            className="group flex items-center gap-2 px-3.5 py-1.5 bg-white/10 hover:bg-white/20 text-white rounded-xl border border-white/20 transition-all text-xs font-bold cursor-pointer"
+            title="Открыть карточку клиента и реквизиты в Битрикс24"
+          >
+            <User className="w-4 h-4 text-cyan-300" />
+            <span>Реквизиты CRM</span>
+            <ExternalLink className="w-3 h-3 text-cyan-300 opacity-70 group-hover:opacity-100 ml-0.5" />
+          </button>
         </div>
       </div>
 
