@@ -19,27 +19,68 @@ let bx24Context: Bitrix24Context = {
 
 export const initBitrix24 = (): Promise<Bitrix24Context> => {
   return new Promise((resolve) => {
-    if (typeof window === "undefined" || !window.BX24) {
+    if (typeof window === "undefined") {
       bx24Context = { isBitrix24: false };
+      resolve(bx24Context);
+      return;
+    }
+
+    // Read URL query params fallback
+    let urlDomain: string | undefined = undefined;
+    let urlPlacement = "";
+    let urlPlacementOptions: Record<string, any> = {};
+    let urlDealId: number | null = null;
+    let isB24Url = false;
+
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      if (searchParams.has("DOMAIN") || searchParams.has("member_id") || searchParams.has("PLACEMENT") || searchParams.has("AUTH_ID")) {
+        isB24Url = true;
+        urlDomain = searchParams.get("DOMAIN") || undefined;
+        urlPlacement = searchParams.get("PLACEMENT") || "";
+        const rawOpts = searchParams.get("PLACEMENT_OPTIONS");
+        if (rawOpts) {
+          try {
+            urlPlacementOptions = JSON.parse(rawOpts);
+          } catch (_) {}
+        }
+        if (urlPlacementOptions?.ID) {
+          urlDealId = parseInt(String(urlPlacementOptions.ID), 10) || null;
+        } else if (urlPlacementOptions?.entityTypeId === 2 && urlPlacementOptions?.entityId) {
+          urlDealId = parseInt(String(urlPlacementOptions.entityId), 10) || null;
+        } else if (searchParams.get("deal_id")) {
+          urlDealId = parseInt(String(searchParams.get("deal_id")), 10) || null;
+        }
+      }
+    } catch (_) {}
+
+    if (!window.BX24) {
+      bx24Context = {
+        isBitrix24: isB24Url,
+        domain: urlDomain,
+        placement: urlPlacement,
+        placementOptions: urlPlacementOptions,
+        dealId: urlDealId,
+      };
       resolve(bx24Context);
       return;
     }
 
     try {
       window.BX24.init(() => {
-        let placement = "";
-        let placementOptions: Record<string, any> = {};
+        let placement = urlPlacement;
+        let placementOptions: Record<string, any> = urlPlacementOptions;
 
         try {
           const info = window.BX24.placement?.info?.() || {};
-          placement = info.placement || "";
-          placementOptions = info.options || {};
+          if (info.placement) placement = info.placement;
+          if (info.options) placementOptions = info.options || {};
         } catch (e) {
           console.warn("Could not read placement info:", e);
         }
 
         // Detect Deal ID from CRM placement options
-        let dealId: number | null = null;
+        let dealId: number | null = urlDealId;
         if (placementOptions?.ID) {
           dealId = parseInt(String(placementOptions.ID), 10) || null;
         } else if (placementOptions?.entityTypeId === 2 && placementOptions?.entityId) {
@@ -48,9 +89,9 @@ export const initBitrix24 = (): Promise<Bitrix24Context> => {
           dealId = parseInt(String(placementOptions.ENTITY_ID), 10) || null;
         }
 
-        let domain: string | undefined = undefined;
+        let domain: string | undefined = urlDomain;
         try {
-          domain = window.BX24.getDomain?.();
+          domain = window.BX24.getDomain?.() || urlDomain;
         } catch (e) {}
 
         bx24Context = {
@@ -71,7 +112,13 @@ export const initBitrix24 = (): Promise<Bitrix24Context> => {
       });
     } catch (e) {
       console.warn("Bitrix24 init error:", e);
-      bx24Context = { isBitrix24: false };
+      bx24Context = {
+        isBitrix24: isB24Url,
+        domain: urlDomain,
+        placement: urlPlacement,
+        placementOptions: urlPlacementOptions,
+        dealId: urlDealId,
+      };
       resolve(bx24Context);
     }
   });

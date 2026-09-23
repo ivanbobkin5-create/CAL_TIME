@@ -33714,30 +33714,41 @@ export default function App() {
   useEffect(() => {
     initBitrix24().then(async (ctx) => {
       setB24Context(ctx);
-      if (ctx.dealId) {
-        const b24ProjectId = `b24_deal_${ctx.dealId}`;
-        setB24DealIdInput(String(ctx.dealId));
-        setCurrentProjectId(b24ProjectId);
-        setActiveTab("b24_dashboard");
+      if (ctx.isBitrix24) {
+        setIsAuthenticated(true);
+        if (!userData) {
+          setUserData({
+            uid: `b24_${ctx.domain || "user"}`,
+            email: "b24@bitrix24.ru",
+            name: "Сотрудник Битрикс24",
+            role: "manager",
+          });
+        }
+        if (ctx.dealId) {
+          const b24ProjectId = `b24_deal_${ctx.dealId}`;
+          setB24DealIdInput(String(ctx.dealId));
+          setCurrentProjectId(b24ProjectId);
+          setActiveTab("b24_dashboard");
 
-        // Try restoring project state instantly from local storage cache for this deal
-        try {
-          const cached = localStorage.getItem(`b24_project_data_${ctx.dealId}`);
-          if (cached) {
-            const parsed = JSON.parse(cached);
-            if (parsed) {
-              loadProject(parsed);
+          // Try restoring project state instantly from local storage cache for this deal
+          try {
+            const cached = localStorage.getItem(`b24_project_data_${ctx.dealId}`);
+            if (cached) {
+              const parsed = JSON.parse(cached);
+              if (parsed) {
+                loadProject(parsed);
+              }
             }
+          } catch (e) {
+            console.warn("Failed to parse cached B24 project", e);
           }
-        } catch (e) {
-          console.warn("Failed to parse cached B24 project", e);
-        }
 
-        const details = await fetchBitrix24DealDetails(ctx.dealId);
-        if (details.title) {
-          setCurrentProjectName(details.title);
+          const details = await fetchBitrix24DealDetails(ctx.dealId);
+          if (details.title) {
+            setCurrentProjectName(details.title);
+          }
+          setB24ContactDetails({ contactId: details.contactId, companyId: details.companyId });
         }
-        setB24ContactDetails({ contactId: details.contactId, companyId: details.companyId });
       }
     });
   }, []);
@@ -39875,7 +39886,7 @@ export default function App() {
     );
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated && !b24Context.isBitrix24) {
     if (authMode === "landing") {
       return (
         <>
