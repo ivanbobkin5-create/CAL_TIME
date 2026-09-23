@@ -33698,6 +33698,7 @@ export default function App() {
   const [showB24Modal, setShowB24Modal] = useState(false);
   const [b24DealIdInput, setB24DealIdInput] = useState<string>("");
   const [b24Sending, setB24Sending] = useState(false);
+  const [b24MoreMenuOpen, setB24MoreMenuOpen] = useState(false);
 
   useEffect(() => {
     initBitrix24().then(async (ctx) => {
@@ -40674,18 +40675,18 @@ export default function App() {
           )}
         >
           {b24Context?.isBitrix24 && (
-            <div className="bg-slate-900 text-white px-3 py-2 shadow-lg border-b border-slate-700/80 flex flex-wrap items-center justify-between gap-2 sticky top-0 z-[100]">
+            <div className="bg-slate-900 text-white px-3 py-2 shadow-lg border-b border-slate-700/80 flex items-center justify-between gap-2.5 sticky top-0 z-[100] select-none">
               {/* Left section: App branding + Deal ID + Name */}
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-400 to-blue-600 text-white flex items-center justify-center font-black text-xs shadow-sm">
+              <div className="flex items-center gap-2.5 min-w-0 shrink-0">
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-400 to-blue-600 text-white flex items-center justify-center font-black text-xs shadow-xs shrink-0">
                   24
                 </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-cyan-300">Битрикс24</span>
+                <div className="min-w-0 flex flex-col justify-center">
+                  <div className="flex items-center gap-1.5 leading-none">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-cyan-300 shrink-0">Битрикс24</span>
                     {b24Context.dealId && (
-                      <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/30 text-blue-200 border border-blue-400/30">
-                        Сделка #{b24Context.dealId}
+                      <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-blue-500/25 text-blue-200 border border-blue-400/30 shrink-0">
+                        #{b24Context.dealId}
                       </span>
                     )}
                   </div>
@@ -40707,7 +40708,7 @@ export default function App() {
                         }
                       );
                     }}
-                    className="text-xs font-bold text-white truncate hover:text-cyan-200 cursor-pointer max-w-[200px]"
+                    className="text-xs font-bold text-white truncate hover:text-cyan-200 cursor-pointer max-w-[140px] md:max-w-[200px] mt-0.5"
                     title="Нажмите для переименования сделки и проекта"
                   >
                     {currentProjectName || "Расчет сделки ✎"}
@@ -40716,15 +40717,16 @@ export default function App() {
               </div>
 
               {/* Middle Section: Clean CRM Navigation Tabs */}
-              <div className="flex items-center gap-1 bg-slate-800/90 p-1 rounded-xl border border-slate-700">
+              <div className="flex items-center gap-1 bg-slate-800/90 p-1 rounded-xl border border-slate-700/80 shrink-0">
                 <button
                   onClick={() => setActiveTab("b24_dashboard")}
                   className={cn(
                     "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
                     activeTab === "b24_dashboard"
-                      ? "bg-blue-600 text-white shadow-sm"
+                      ? "bg-blue-600 text-white shadow-xs"
                       : "text-slate-300 hover:text-white hover:bg-slate-700/60"
                   )}
+                  title="Рабочий стол сделки"
                 >
                   <FolderOpen className="w-3.5 h-3.5" />
                   <span>Главная</span>
@@ -40735,9 +40737,10 @@ export default function App() {
                   className={cn(
                     "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
                     activeTab === "calculator"
-                      ? "bg-blue-600 text-white shadow-sm"
+                      ? "bg-blue-600 text-white shadow-xs"
                       : "text-slate-300 hover:text-white hover:bg-slate-700/60"
                   )}
+                  title="Калькулятор мебели"
                 >
                   <Calculator className="w-3.5 h-3.5" />
                   <span>Калькулятор</span>
@@ -40748,9 +40751,10 @@ export default function App() {
                   className={cn(
                     "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
                     activeTab === "summary"
-                      ? "bg-blue-600 text-white shadow-sm"
+                      ? "bg-blue-600 text-white shadow-xs"
                       : "text-slate-300 hover:text-white hover:bg-slate-700/60"
                   )}
+                  title="Смета и наценки"
                 >
                   <LayoutDashboard className="w-3.5 h-3.5" />
                   <span>Смета</span>
@@ -40761,92 +40765,134 @@ export default function App() {
                   className={cn(
                     "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
                     activeTab === "checkout_current"
-                      ? "bg-emerald-600 text-white shadow-sm"
-                      : "text-emerald-300 hover:text-white hover:bg-emerald-700/60 font-black"
+                      ? "bg-emerald-600 text-white shadow-xs"
+                      : "text-emerald-300 hover:text-white hover:bg-emerald-700/50 font-black"
                   )}
+                  title="Оформить заказ и спецификацию"
                 >
                   <ClipboardCheck className="w-3.5 h-3.5" />
                   <span>Оформить</span>
                 </button>
 
-                <button
-                  onClick={() => setActiveTab("products")}
-                  className={cn(
-                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
-                    activeTab === "products"
-                      ? "bg-blue-600 text-white shadow-sm"
-                      : "text-slate-300 hover:text-white hover:bg-slate-700/60"
-                  )}
-                >
-                  <Package className="w-3.5 h-3.5" />
-                  <span>Каталог товаров</span>
-                </button>
+                {/* Additional tabs dropdown */}
+                <div className="relative">
+                  <button
+                    onClick={() => setB24MoreMenuOpen((prev) => !prev)}
+                    className={cn(
+                      "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                      ["products", "price", "settings", "ready_made", "service-section"].includes(activeTab)
+                        ? "bg-indigo-600 text-white shadow-xs"
+                        : "text-slate-300 hover:text-white hover:bg-slate-700/60"
+                    )}
+                    title="Каталоги, база цен и настройки"
+                  >
+                    <span>
+                      {activeTab === "price"
+                        ? "База цен"
+                        : activeTab === "settings"
+                        ? "Настройки"
+                        : activeTab === "products"
+                        ? "Каталог"
+                        : activeTab === "ready_made"
+                        ? "Готовая мебель"
+                        : activeTab === "service-section"
+                        ? "Услуги"
+                        : "Ещё"}
+                    </span>
+                    <ChevronDown className={cn("w-3.5 h-3.5 transition-transform duration-200", b24MoreMenuOpen && "rotate-180")} />
+                  </button>
 
-                <button
-                  onClick={() => setActiveTab("price")}
-                  className={cn(
-                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
-                    activeTab === "price"
-                      ? "bg-amber-600 text-white shadow-sm"
-                      : "text-amber-300 hover:text-white hover:bg-amber-700/60"
+                  {b24MoreMenuOpen && (
+                    <>
+                      <div 
+                        className="fixed inset-0 z-40"
+                        onClick={() => setB24MoreMenuOpen(false)}
+                      />
+                      <div className="absolute left-0 mt-1.5 w-48 bg-slate-800 rounded-xl shadow-2xl border border-slate-700 py-1 z-50 animate-in fade-in zoom-in-95 duration-150">
+                        <button
+                          onClick={() => {
+                            setActiveTab("products");
+                            setB24MoreMenuOpen(false);
+                          }}
+                          className={cn(
+                            "w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-700/80 transition-colors cursor-pointer",
+                            activeTab === "products" ? "text-cyan-300 font-bold bg-slate-700/50" : "text-slate-200"
+                          )}
+                        >
+                          <Package className="w-4 h-4 text-cyan-400" />
+                          <span>Каталог товаров</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActiveTab("price");
+                            setB24MoreMenuOpen(false);
+                          }}
+                          className={cn(
+                            "w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-700/80 transition-colors cursor-pointer",
+                            activeTab === "price" ? "text-amber-300 font-bold bg-slate-700/50" : "text-slate-200"
+                          )}
+                        >
+                          <Tag className="w-4 h-4 text-amber-400" />
+                          <span>База цен</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActiveTab("ready_made");
+                            setB24MoreMenuOpen(false);
+                          }}
+                          className={cn(
+                            "w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-700/80 transition-colors cursor-pointer",
+                            activeTab === "ready_made" ? "text-blue-300 font-bold bg-slate-700/50" : "text-slate-200"
+                          )}
+                        >
+                          <ShoppingBag className="w-4 h-4 text-blue-400" />
+                          <span>Готовая мебель</span>
+                        </button>
+                        <button
+                          onClick={() => {
+                            setActiveTab("service-section");
+                            setB24MoreMenuOpen(false);
+                          }}
+                          className={cn(
+                            "w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-700/80 transition-colors cursor-pointer",
+                            activeTab === "service-section" ? "text-emerald-300 font-bold bg-slate-700/50" : "text-slate-200"
+                          )}
+                        >
+                          <Truck className="w-4 h-4 text-emerald-400" />
+                          <span>Услуги</span>
+                        </button>
+                        <div className="h-px bg-slate-700 my-1" />
+                        <button
+                          onClick={() => {
+                            setActiveTab("settings");
+                            setB24MoreMenuOpen(false);
+                          }}
+                          className={cn(
+                            "w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-700/80 transition-colors cursor-pointer",
+                            activeTab === "settings" ? "text-purple-300 font-bold bg-slate-700/50" : "text-slate-200"
+                          )}
+                        >
+                          <Settings className="w-4 h-4 text-purple-400" />
+                          <span>Настройки</span>
+                        </button>
+                      </div>
+                    </>
                   )}
-                >
-                  <Tag className="w-3.5 h-3.5" />
-                  <span>База цен</span>
-                </button>
-
-                <button
-                  onClick={() => setActiveTab("settings")}
-                  className={cn(
-                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
-                    activeTab === "settings"
-                      ? "bg-slate-600 text-white shadow-sm"
-                      : "text-slate-300 hover:text-white hover:bg-slate-700/60"
-                  )}
-                >
-                  <Settings className="w-3.5 h-3.5" />
-                  <span>Настройки</span>
-                </button>
-
-                <button
-                  onClick={() => setActiveTab("ready_made")}
-                  className={cn(
-                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
-                    activeTab === "ready_made"
-                      ? "bg-blue-600 text-white shadow-sm"
-                      : "text-slate-300 hover:text-white hover:bg-slate-700/60"
-                  )}
-                >
-                  <ShoppingBag className="w-3.5 h-3.5" />
-                  <span>Готовая мебель</span>
-                </button>
-
-                <button
-                  onClick={() => setActiveTab("service-section")}
-                  className={cn(
-                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
-                    activeTab === "service-section"
-                      ? "bg-blue-600 text-white shadow-sm"
-                      : "text-slate-300 hover:text-white hover:bg-slate-700/60"
-                  )}
-                >
-                  <Truck className="w-3.5 h-3.5" />
-                  <span>Услуги</span>
-                </button>
+                </div>
               </div>
 
               {/* Right section: Total & Requisites & Send to Deal Button */}
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-2 shrink-0">
                 <button
                   onClick={() => openBitrix24Contact(b24ContactDetails.contactId, b24ContactDetails.companyId, b24Context?.dealId)}
-                  className="flex items-center gap-1 px-3 py-1 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-500/40 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 border border-cyan-500/35 rounded-xl text-xs font-bold transition-all cursor-pointer"
                   title="Открыть карточку клиента и реквизиты в Битрикс24"
                 >
                   <User className="w-3.5 h-3.5 text-cyan-300" />
-                  <span>Реквизиты CRM</span>
+                  <span className="hidden sm:inline">Реквизиты CRM</span>
                 </button>
 
-                <div className="bg-cyan-500/20 text-cyan-200 border border-cyan-500/30 px-3 py-1 rounded-lg text-xs font-black">
+                <div className="bg-slate-800 text-cyan-300 border border-cyan-500/30 px-2.5 py-1 rounded-xl text-xs font-black tracking-wide">
                   {currentProjectTotal.toLocaleString("ru-RU")} ₽
                 </div>
 
@@ -40857,7 +40903,8 @@ export default function App() {
                     }
                     setShowB24Modal(true);
                   }}
-                  className="flex items-center gap-1 px-3.5 py-1 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-lg text-xs font-black shadow-sm transition-all cursor-pointer border border-emerald-400/40"
+                  className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-xl text-xs font-black shadow-xs transition-all cursor-pointer border border-emerald-400/30"
+                  title="Выгрузить товары и расчет в сделку Битрикс24"
                 >
                   <span>✓ В Сделку</span>
                 </button>
