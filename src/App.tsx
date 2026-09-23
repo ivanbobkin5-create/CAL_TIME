@@ -33716,12 +33716,40 @@ export default function App() {
       setB24Context(ctx);
       if (ctx.isBitrix24) {
         setIsAuthenticated(true);
+        const compId = ctx.domain
+          ? `b24_${ctx.domain.replace(/[^a-zA-Z0-9_-]/g, "_")}`
+          : "b24_default_company";
+
+        try {
+          const compRef = doc(db, "companies", compId);
+          const compSnap = await getDoc(compRef);
+          if (compSnap.exists()) {
+            const data = { id: compId, ...compSnap.data() };
+            setCompanyData(data);
+          } else {
+            const initialCompany = {
+              id: compId,
+              name: ctx.domain ? `Компания (${ctx.domain})` : "Компания Битрикс24",
+              type: "Мебельное производство",
+              bitrix24: {
+                domain: ctx.domain || "",
+                webhookUrl: "",
+              },
+            };
+            await setDoc(compRef, initialCompany, { merge: true });
+            setCompanyData(initialCompany);
+          }
+        } catch (e) {
+          console.warn("Could not sync B24 company doc with server DB:", e);
+        }
+
         if (!userData) {
           setUserData({
             uid: `b24_${ctx.domain || "user"}`,
-            email: "b24@bitrix24.ru",
+            email: `admin@${ctx.domain || "bitrix24.ru"}`,
             name: "Сотрудник Битрикс24",
             role: "manager",
+            companyId: compId,
           });
         }
         if (ctx.dealId) {
