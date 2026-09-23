@@ -18,7 +18,7 @@ import { BazisHardwareImportModal } from "./components/BazisHardwareImportModal"
 import { ProductKitBuilder } from "./components/ProductKitBuilder";
 import { FastenersPriceTable } from "./components/FastenersPriceTable";
 import type { KitItem } from "./components/ProductKitPickerModal";
-import { initBitrix24, sendToBitrix24Deal, registerBitrix24Placement, fetchBitrix24DealTitle, updateBitrix24DealTitle, type Bitrix24Context } from "./services/bitrix24";
+import { initBitrix24, sendToBitrix24Deal, registerBitrix24Placement, fetchBitrix24DealTitle, fetchBitrix24DealDetails, openBitrix24Contact, updateBitrix24DealTitle, type Bitrix24Context } from "./services/bitrix24";
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
@@ -9789,6 +9789,311 @@ const CompactCatalogMatcher = ({
       >
         Привязать
       </button>
+    </div>
+  );
+};
+
+const Bitrix24DashboardView = ({
+  b24Context,
+  b24ContactDetails,
+  projects,
+  currentProjectId,
+  currentProjectName,
+  currentProjectTotal,
+  onLoadProject,
+  onNewVariant,
+  onSendProjectToB24,
+  onOpenCommercialProposal,
+  onCheckoutSelectedProjects,
+  onOpenContactRequisites,
+  setActiveTab,
+}: {
+  b24Context: Bitrix24Context;
+  b24ContactDetails: { contactId: number | null; companyId: number | null };
+  projects: any[];
+  currentProjectId: string | null;
+  currentProjectName: string;
+  currentProjectTotal: number;
+  onLoadProject: (project: any) => void;
+  onNewVariant: () => void;
+  onSendProjectToB24: (project: any) => void;
+  onOpenCommercialProposal: (project: any) => void;
+  onCheckoutSelectedProjects: (selectedProjects: any[]) => void;
+  onOpenContactRequisites: () => void;
+  setActiveTab: (tab: any) => void;
+}) => {
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
+
+  // Filter projects for this deal or show associated ones
+  const dealProjects = useMemo(() => {
+    if (!b24Context?.dealId) return projects;
+    return projects.filter((p: any) => {
+      return (
+        p.id?.startsWith(`b24_deal_${b24Context.dealId}`) ||
+        p.data?.b24DealId === b24Context.dealId ||
+        p.id === currentProjectId
+      );
+    });
+  }, [projects, b24Context?.dealId, currentProjectId]);
+
+  const toggleSelectProject = (id: string) => {
+    setSelectedProjectIds((prev) =>
+      prev.includes(id) ? prev.filter((item) => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleCheckoutSelected = () => {
+    const selected = dealProjects.filter((p: any) => selectedProjectIds.includes(p.id));
+    if (selected.length === 0) return;
+    onCheckoutSelectedProjects(selected);
+  };
+
+  return (
+    <div className="p-4 md:p-8 space-y-8 max-w-7xl mx-auto animate-in fade-in duration-300">
+      {/* Top Banner with Deal Title & Contact Quick Requisites */}
+      <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-blue-900 rounded-3xl p-6 md:p-8 text-white shadow-xl relative overflow-hidden border border-slate-700/60">
+        <div className="relative z-10 flex flex-wrap items-center justify-between gap-6">
+          <div className="space-y-2 max-w-2xl">
+            <div className="flex items-center gap-2">
+              <span className="px-3 py-1 bg-cyan-500/20 text-cyan-300 border border-cyan-400/30 rounded-full text-xs font-black uppercase tracking-wider">
+                Битрикс24 CRM
+              </span>
+              {b24Context?.dealId && (
+                <span className="px-3 py-1 bg-blue-500/20 text-blue-200 border border-blue-400/30 rounded-full text-xs font-bold">
+                  Сделка #{b24Context.dealId}
+                </span>
+              )}
+            </div>
+            <h1 className="text-2xl md:text-4xl font-black text-white tracking-tight">
+              {currentProjectName || "Панель расчетов сделки"}
+            </h1>
+            <p className="text-slate-300 text-sm">
+              Управляйте вариантами расчётов, формируйте коммерческие предложения и выгружайте спецификации прямо в CRM Битрикс24.
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3 flex-wrap">
+            {/* Contact / Requisites Button */}
+            <button
+              onClick={onOpenContactRequisites}
+              className="group flex items-center gap-3 px-5 py-3 bg-white/10 hover:bg-white/20 text-white rounded-2xl backdrop-blur-md border border-white/20 transition-all shadow-md cursor-pointer hover:scale-[1.02]"
+              title="Открыть карточку клиента и реквизиты в Битрикс24"
+            >
+              <div className="w-10 h-10 rounded-xl bg-cyan-500/30 text-cyan-200 flex items-center justify-center font-bold group-hover:bg-cyan-500 group-hover:text-white transition-all">
+                <User className="w-5 h-5" />
+              </div>
+              <div className="text-left">
+                <span className="block text-[11px] text-cyan-300 font-bold uppercase tracking-wider">Клиент</span>
+                <span className="block text-sm font-black truncate max-w-[150px]">Реквизиты CRM</span>
+              </div>
+              <ExternalLink className="w-4 h-4 text-cyan-300 opacity-70 group-hover:opacity-100 transition-opacity ml-1" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Big Action Grid */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        {/* 1. New Variant */}
+        <button
+          onClick={onNewVariant}
+          className="group bg-white p-5 rounded-2xl border border-gray-200 hover:border-blue-500 hover:shadow-lg transition-all text-left flex flex-col justify-between space-y-4 cursor-pointer hover:-translate-y-0.5"
+        >
+          <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center group-hover:bg-blue-600 group-hover:text-white transition-all shadow-xs">
+            <Plus className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900 text-base">Новый вариант</h3>
+            <p className="text-xs text-gray-500 mt-1">Создать ещё один вариант расчёта</p>
+          </div>
+        </button>
+
+        {/* 2. Calculator */}
+        <button
+          onClick={() => setActiveTab("calculator")}
+          className="group bg-white p-5 rounded-2xl border border-gray-200 hover:border-indigo-500 hover:shadow-lg transition-all text-left flex flex-col justify-between space-y-4 cursor-pointer hover:-translate-y-0.5"
+        >
+          <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-all shadow-xs">
+            <Calculator className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900 text-base">Калькулятор</h3>
+            <p className="text-xs text-gray-500 mt-1">Загрузить Pro100 или Базис</p>
+          </div>
+        </button>
+
+        {/* 3. Summary */}
+        <button
+          onClick={() => setActiveTab("summary")}
+          className="group bg-white p-5 rounded-2xl border border-gray-200 hover:border-purple-500 hover:shadow-lg transition-all text-left flex flex-col justify-between space-y-4 cursor-pointer hover:-translate-y-0.5"
+        >
+          <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center group-hover:bg-purple-600 group-hover:text-white transition-all shadow-xs">
+            <LayoutDashboard className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900 text-base">Смета заказа</h3>
+            <p className="text-xs text-gray-500 mt-1">Полная детализация стоимости</p>
+          </div>
+        </button>
+
+        {/* 4. Checkout / Order */}
+        <button
+          onClick={() => setActiveTab("checkout_current")}
+          className="group bg-white p-5 rounded-2xl border border-gray-200 hover:border-emerald-500 hover:shadow-lg transition-all text-left flex flex-col justify-between space-y-4 cursor-pointer hover:-translate-y-0.5"
+        >
+          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center group-hover:bg-emerald-600 group-hover:text-white transition-all shadow-xs">
+            <ClipboardCheck className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900 text-base">Оформить</h3>
+            <p className="text-xs text-gray-500 mt-1">Подготовить спецификацию</p>
+          </div>
+        </button>
+
+        {/* 5. Client Requisites */}
+        <button
+          onClick={onOpenContactRequisites}
+          className="group bg-white p-5 rounded-2xl border border-gray-200 hover:border-cyan-500 hover:shadow-lg transition-all text-left flex flex-col justify-between space-y-4 cursor-pointer hover:-translate-y-0.5"
+        >
+          <div className="w-12 h-12 rounded-2xl bg-cyan-50 text-cyan-600 flex items-center justify-center group-hover:bg-cyan-600 group-hover:text-white transition-all shadow-xs">
+            <Building2 className="w-6 h-6" />
+          </div>
+          <div>
+            <h3 className="font-extrabold text-gray-900 text-base">Реквизиты</h3>
+            <p className="text-xs text-gray-500 mt-1">Открыть карточку в CRM</p>
+          </div>
+        </button>
+      </div>
+
+      {/* Projects / Variants List Section */}
+      <div className="bg-white rounded-3xl p-6 md:p-8 border border-gray-200 shadow-sm space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-100 pb-5">
+          <div>
+            <h2 className="text-xl font-extrabold text-gray-900 flex items-center gap-2">
+              <FolderOpen className="w-6 h-6 text-blue-600" />
+              <span>Варианты расчётов по Сделке</span>
+            </h2>
+            <p className="text-xs text-gray-500 mt-0.5">
+              Выберите один или несколько расчётов для выгрузки в Битрикс24 или составления общего комплекта.
+            </p>
+          </div>
+
+          {selectedProjectIds.length > 0 && (
+            <button
+              onClick={handleCheckoutSelected}
+              className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl font-bold text-xs shadow-md transition-all cursor-pointer animate-in zoom-in-95"
+            >
+              <Combine className="w-4 h-4" />
+              <span>Собрать комплект из ({selectedProjectIds.length}) расчётов</span>
+            </button>
+          )}
+        </div>
+
+        {dealProjects.length === 0 ? (
+          <div className="text-center py-12 bg-gray-50 rounded-2xl border border-dashed border-gray-200 space-y-3">
+            <FolderOpen className="w-12 h-12 text-gray-300 mx-auto" />
+            <h3 className="font-bold text-gray-700 text-base">Варианты расчётов пока не созданы</h3>
+            <p className="text-xs text-gray-400 max-w-sm mx-auto">
+              Загрузите отчёт в калькулятор или нажмите кнопку «Новый вариант», чтобы добавить альтернативный расчёт для клиента.
+            </p>
+            <button
+              onClick={() => setActiveTab("calculator")}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-xs shadow-sm hover:bg-blue-700 transition-all cursor-pointer mt-2"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Перейти в Калькулятор</span>
+            </button>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {dealProjects.map((proj: any) => {
+              const isCurrent = proj.id === currentProjectId;
+              const isSelected = selectedProjectIds.includes(proj.id);
+              const projTotal = proj.totalPrice || proj.data?.totalPrice || 0;
+              const dateStr = proj.updatedAt ? new Date(proj.updatedAt).toLocaleDateString("ru-RU") : "";
+
+              return (
+                <div
+                  key={proj.id}
+                  className={cn(
+                    "rounded-2xl border p-5 space-y-4 transition-all relative flex flex-col justify-between",
+                    isCurrent
+                      ? "border-blue-500 bg-blue-50/30 shadow-md ring-2 ring-blue-500/20"
+                      : "border-gray-200 hover:border-gray-300 bg-white hover:shadow-md"
+                  )}
+                >
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleSelectProject(proj.id)}
+                          className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer shrink-0"
+                          title="Выделить вариант для комплекта"
+                        />
+                        <h3 className="font-extrabold text-gray-900 text-sm truncate" title={proj.name}>
+                          {proj.name}
+                        </h3>
+                      </div>
+                      {isCurrent && (
+                        <span className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-black rounded-md uppercase tracking-wider shrink-0">
+                          Активный
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-baseline justify-between pt-1">
+                      <span className="text-xs text-gray-500 font-medium">Стоимость:</span>
+                      <span className="text-lg font-black text-blue-700">
+                        {projTotal.toLocaleString("ru-RU")} ₽
+                      </span>
+                    </div>
+
+                    {dateStr && (
+                      <div className="text-[11px] text-gray-400 font-medium">
+                        Обновлено: {dateStr}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="pt-3 border-t border-gray-100 grid grid-cols-2 gap-2">
+                    {/* Select / Load button */}
+                    <button
+                      onClick={() => onLoadProject(proj)}
+                      className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                      title="Загрузить вариант в калькулятор"
+                    >
+                      <Edit2 className="w-3.5 h-3.5 text-gray-600" />
+                      <span>Открыть</span>
+                    </button>
+
+                    {/* Commercial Proposal (КП) button */}
+                    <button
+                      onClick={() => onOpenCommercialProposal(proj)}
+                      className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer border border-indigo-100"
+                      title="Открыть и напечатать Коммерческое предложение"
+                    >
+                      <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>КП</span>
+                    </button>
+
+                    {/* Send to Bitrix24 Deal button */}
+                    <button
+                      onClick={() => onSendProjectToB24(proj)}
+                      className="col-span-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                      title="Выгрузить товары и спецификацию именно этого варианта в CRM Сделку"
+                    >
+                      <Send className="w-3.5 h-3.5" />
+                      <span>В Битрикс24</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -33373,6 +33678,7 @@ export default function App() {
   const [isSavingConfig, setIsSavingConfig] = useState(false);
 
   const [b24Context, setB24Context] = useState<Bitrix24Context>({ isBitrix24: false });
+  const [b24ContactDetails, setB24ContactDetails] = useState<{ contactId: number | null; companyId: number | null }>({ contactId: null, companyId: null });
   const [showB24Modal, setShowB24Modal] = useState(false);
   const [b24DealIdInput, setB24DealIdInput] = useState<string>("");
   const [b24Sending, setB24Sending] = useState(false);
@@ -33384,6 +33690,7 @@ export default function App() {
         const b24ProjectId = `b24_deal_${ctx.dealId}`;
         setB24DealIdInput(String(ctx.dealId));
         setCurrentProjectId(b24ProjectId);
+        setActiveTab("b24_dashboard");
 
         // Try restoring project state instantly from local storage cache for this deal
         try {
@@ -33398,10 +33705,11 @@ export default function App() {
           console.warn("Failed to parse cached B24 project", e);
         }
 
-        const dealTitle = await fetchBitrix24DealTitle(ctx.dealId);
-        if (dealTitle) {
-          setCurrentProjectName(dealTitle);
+        const details = await fetchBitrix24DealDetails(ctx.dealId);
+        if (details.title) {
+          setCurrentProjectName(details.title);
         }
+        setB24ContactDetails({ contactId: details.contactId, companyId: details.companyId });
       }
     });
   }, []);
@@ -34408,6 +34716,7 @@ export default function App() {
     | "ready_made"
     | "partner_orders"
     | "b3d_test"
+    | "b24_dashboard"
   >("calculator");
   const [isReadyMadeExpanded, setIsReadyMadeExpanded] = useState(false);
   const [selectedReadyMadeCategory, setSelectedReadyMadeCategory] = useState<string | null>(null);
@@ -40354,6 +40663,19 @@ export default function App() {
               {/* Middle Section: Clean CRM Navigation Tabs */}
               <div className="flex items-center gap-1 bg-slate-800/90 p-1 rounded-xl border border-slate-700">
                 <button
+                  onClick={() => setActiveTab("b24_dashboard")}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                    activeTab === "b24_dashboard"
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "text-slate-300 hover:text-white hover:bg-slate-700/60"
+                  )}
+                >
+                  <FolderOpen className="w-3.5 h-3.5" />
+                  <span>Главная</span>
+                </button>
+
+                <button
                   onClick={() => setActiveTab("calculator")}
                   className={cn(
                     "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
@@ -40377,6 +40699,19 @@ export default function App() {
                 >
                   <LayoutDashboard className="w-3.5 h-3.5" />
                   <span>Смета</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("checkout_current")}
+                  className={cn(
+                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                    activeTab === "checkout_current"
+                      ? "bg-emerald-600 text-white shadow-sm"
+                      : "text-emerald-300 hover:text-white hover:bg-emerald-700/60 font-black"
+                  )}
+                >
+                  <ClipboardCheck className="w-3.5 h-3.5" />
+                  <span>Оформить</span>
                 </button>
 
                 <button
@@ -40419,8 +40754,17 @@ export default function App() {
                 </button>
               </div>
 
-              {/* Right section: Total & Send to Deal Button */}
+              {/* Right section: Total & Requisites & Send to Deal Button */}
               <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => openBitrix24Contact(b24ContactDetails.contactId, b24ContactDetails.companyId, b24Context?.dealId)}
+                  className="flex items-center gap-1 px-3 py-1 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-200 border border-cyan-500/40 rounded-lg text-xs font-bold transition-all cursor-pointer"
+                  title="Открыть карточку клиента и реквизиты в Битрикс24"
+                >
+                  <User className="w-3.5 h-3.5 text-cyan-300" />
+                  <span>Реквизиты CRM</span>
+                </button>
+
                 <div className="bg-cyan-500/20 text-cyan-200 border border-cyan-500/30 px-3 py-1 rounded-lg text-xs font-black">
                   {currentProjectTotal.toLocaleString("ru-RU")} ₽
                 </div>
@@ -40438,6 +40782,62 @@ export default function App() {
                 </button>
               </div>
             </div>
+          )}
+
+          {activeTab === "b24_dashboard" && (
+            <Bitrix24DashboardView
+              b24Context={b24Context}
+              b24ContactDetails={b24ContactDetails}
+              projects={projects}
+              currentProjectId={currentProjectId}
+              currentProjectName={currentProjectName}
+              currentProjectTotal={currentProjectTotal}
+              onLoadProject={(proj) => {
+                loadProject(proj);
+                setActiveTab("calculator");
+              }}
+              onNewVariant={() => {
+                handleNewProject();
+                const newVariantName = `${currentProjectName || "Вариант"} (${projects.filter(p => p.id?.startsWith(`b24_deal_${b24Context.dealId}`)).length + 1})`;
+                setCurrentProjectName(newVariantName);
+                if (b24Context.dealId) {
+                  setCurrentProjectId(`b24_deal_${b24Context.dealId}_${Date.now()}`);
+                }
+                setActiveTab("calculator");
+              }}
+              onSendProjectToB24={async (proj) => {
+                if (b24Context?.dealId) {
+                  const res = await sendToBitrix24Deal({
+                    dealId: b24Context.dealId,
+                    totalPrice: proj.totalPrice || proj.data?.totalPrice || 0,
+                    projectName: proj.name,
+                    summaryRows: proj.data?.summaryRows || currentSummaryRows,
+                  });
+                  if (res.success) {
+                    showAlert("Битрикс24", `Вариант «${proj.name}» успешно выгружен в товары и таймлайн сделки!`);
+                  } else {
+                    showAlert("Ошибка", res.message || "Не удалось отправить в Битрикс24");
+                  }
+                }
+              }}
+              onOpenCommercialProposal={(proj) => {
+                setPrintProposalData({
+                  projects: [proj],
+                  data: {
+                    proposalTitle: "Коммерческое предложение",
+                    clientName: proj.name,
+                  },
+                });
+              }}
+              onCheckoutSelectedProjects={(selectedProjs) => {
+                setSelectedProjectsForCheckout(selectedProjs);
+                setActiveTab("checkout_current");
+              }}
+              onOpenContactRequisites={() => {
+                openBitrix24Contact(b24ContactDetails.contactId, b24ContactDetails.companyId, b24Context?.dealId);
+              }}
+              setActiveTab={setActiveTab}
+            />
           )}
           {activeTab === "calculator" && (
             <CalculatorView

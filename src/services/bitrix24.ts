@@ -81,8 +81,8 @@ export const getBitrix24Context = (): Bitrix24Context => {
   return bx24Context;
 };
 
-export const fetchBitrix24DealTitle = async (dealId: number): Promise<string | null> => {
-  if (!window.BX24) return null;
+export const fetchBitrix24DealDetails = async (dealId: number): Promise<{ title: string | null; contactId: number | null; companyId: number | null }> => {
+  if (!window.BX24) return { title: null, contactId: null, companyId: null };
   return new Promise((resolve) => {
     try {
       window.BX24.callMethod(
@@ -91,17 +91,53 @@ export const fetchBitrix24DealTitle = async (dealId: number): Promise<string | n
         (res: any) => {
           if (res.error()) {
             console.warn("BX24 crm.deal.get error:", res.error());
-            resolve(null);
+            resolve({ title: null, contactId: null, companyId: null });
           } else {
-            const data = res.data();
-            resolve(data?.TITLE || null);
+            const data = res.data() || {};
+            const contactId = data.CONTACT_ID ? parseInt(String(data.CONTACT_ID), 10) : null;
+            const companyId = data.COMPANY_ID ? parseInt(String(data.COMPANY_ID), 10) : null;
+            resolve({
+              title: data.TITLE || null,
+              contactId: contactId || null,
+              companyId: companyId || null,
+            });
           }
         }
       );
     } catch (e) {
-      resolve(null);
+      resolve({ title: null, contactId: null, companyId: null });
     }
   });
+};
+
+export const openBitrix24Contact = (contactId?: number | null, companyId?: number | null, dealId?: number | null) => {
+  if (typeof window === "undefined") return;
+  
+  if (window.BX24?.openPath) {
+    if (contactId) {
+      window.BX24.openPath(`/crm/contact/details/${contactId}/`);
+    } else if (companyId) {
+      window.BX24.openPath(`/crm/company/details/${companyId}/`);
+    } else if (dealId) {
+      window.BX24.openPath(`/crm/deal/details/${dealId}/`);
+    } else {
+      window.BX24.openPath(`/crm/contact/`);
+    }
+  } else {
+    // Fallback if not inside BX24 frame
+    const domain = window.BX24?.getDomain?.() || "";
+    if (domain) {
+      const url = contactId 
+        ? `https://${domain}/crm/contact/details/${contactId}/` 
+        : (companyId ? `https://${domain}/crm/company/details/${companyId}/` : `https://${domain}/crm/deal/details/${dealId}/`);
+      window.open(url, "_blank");
+    }
+  }
+};
+
+export const fetchBitrix24DealTitle = async (dealId: number): Promise<string | null> => {
+  const details = await fetchBitrix24DealDetails(dealId);
+  return details.title;
 };
 
 export const updateBitrix24DealTitle = async (dealId: number, title: string): Promise<boolean> => {
@@ -191,18 +227,28 @@ export const sendToBitrix24Deal = async ({
             );
           }
 
-          // 3. Add timeline comment with summary
-          let textComment = `📋 **Расчёт мебельного заказа: ${projectName}**\n`;
-          textComment += `Итоговая сумма: **${totalPrice.toLocaleString("ru-RU")} ₽**\n\n`;
-          textComment += `Состав проекта:\n`;
+          // 3. Add timeline comment with full specification
+          let textComment = `📋 СПЕЦИФИКАЦИЯ К СДЕЛКЕ: ${projectName}\n`;
+          textComment += `─────────────────────────────────────────\n`;
+          textComment += `💰 Итоговая сумма заказа: ${totalPrice.toLocaleString("ru-RU")} ₽\n\n`;
 
-          (summaryRows || []).slice(0, 15).forEach((row: any, idx: number) => {
-            const rowTotal = row.total !== undefined ? row.total : (row.price * row.qty);
-            textComment += `${idx + 1}. ${row.name} — ${row.qty} x ${row.price} ₽ = ${Math.round(rowTotal)} ₽\n`;
-          });
+          if (summaryRows && summaryRows.length > 0) {
+            textComment += `СОСТАВ ПРОЕКТА И СМЕТА:\n`;
+            textComment += `─────────────────────────────────────────\n`;
 
-          if ((summaryRows || []).length > 15) {
-            textComment += `... и ещё ${(summaryRows || []).length - 15} позиций.\n`;
+            summaryRows.forEach((row: any, idx: number) => {
+              const rowName = row.name || "Позиция спецификации";
+              const qty = row.qty !== undefined ? row.qty : 1;
+              const unit = row.unit || row.measure || "шт";
+              const price = row.price ? Math.round(row.price) : 0;
+              const rowTotal = row.total !== undefined ? Math.round(row.total) : Math.round(price * qty);
+
+              textComment += `${idx + 1}. ${rowName}\n`;
+              textComment += `   Количество: ${qty} ${unit} | Цена: ${price.toLocaleString("ru-RU")} ₽ | Сумма: ${rowTotal.toLocaleString("ru-RU")} ₽\n\n`;
+            });
+
+            textComment += `─────────────────────────────────────────\n`;
+            textComment += `ВСЕГО ПО СПЕЦИФИКАЦИИ: ${totalPrice.toLocaleString("ru-RU")} ₽\n`;
           }
 
           window.BX24.callMethod(
