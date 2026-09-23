@@ -33381,7 +33381,23 @@ export default function App() {
     initBitrix24().then(async (ctx) => {
       setB24Context(ctx);
       if (ctx.dealId) {
+        const b24ProjectId = `b24_deal_${ctx.dealId}`;
         setB24DealIdInput(String(ctx.dealId));
+        setCurrentProjectId(b24ProjectId);
+
+        // Try restoring project state instantly from local storage cache for this deal
+        try {
+          const cached = localStorage.getItem(`b24_project_data_${ctx.dealId}`);
+          if (cached) {
+            const parsed = JSON.parse(cached);
+            if (parsed) {
+              loadProject(parsed);
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to parse cached B24 project", e);
+        }
+
         const dealTitle = await fetchBitrix24DealTitle(ctx.dealId);
         if (dealTitle) {
           setCurrentProjectName(dealTitle);
@@ -37671,6 +37687,14 @@ export default function App() {
           setQuotaExceeded(true);
         }
       });
+
+      if (b24Context?.dealId) {
+        try {
+          localStorage.setItem(`b24_project_data_${b24Context.dealId}`, JSON.stringify(projectData));
+        } catch (e) {
+          console.warn("Could not save to B24 local cache", e);
+        }
+      }
 
       setCurrentProjectId(projectId);
       setCurrentProjectName(projectName);
