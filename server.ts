@@ -9,6 +9,7 @@ import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
 import jwt from "jsonwebtoken";
 import compression from "compression";
+import { localStore } from "./src/services/localStore";
 
 const dbUrl = process.env.DATABASE_URL || "";
 let adjustedDbUrl: string | undefined = undefined;
@@ -29,6 +30,66 @@ const prisma = new PrismaClient(
     : undefined
 );
 const JWT_SECRET = process.env.JWT_SECRET || "default_jwt_secret_change_me";
+
+// Circuit Breaker & Health State for remote PostgreSQL
+let isPostgresAvailable = true;
+let lastPostgresCheck = 0;
+let isCheckingPostgres = false;
+
+async function checkPostgresStatus(): Promise<boolean> {
+  if (isCheckingPostgres) return isPostgresAvailable;
+  isCheckingPostgres = true;
+  try {
+    await prisma.$queryRaw`SELECT 1;`;
+    if (!isPostgresAvailable) {
+      console.log("--- [DATABASE] Remote PostgreSQL is back ONLINE and ready! ---");
+      isPostgresAvailable = true;
+      syncPendingDocsToPostgres().catch(() => {});
+    }
+  } catch (err: any) {
+    if (isPostgresAvailable) {
+      console.warn("--- [DATABASE] Remote PostgreSQL is currently unavailable or shutting down. Active fallback to resilient local store. ---");
+      isPostgresAvailable = false;
+    }
+  } finally {
+    isCheckingPostgres = false;
+    lastPostgresCheck = Date.now();
+  }
+  return isPostgresAvailable;
+}
+
+// Background sync for any documents updated while PostgreSQL was unreachable
+async function syncPendingDocsToPostgres() {
+  const pending = localStore.getPendingSyncDocs();
+  if (pending.length === 0) return;
+  console.log(`--- [DATABASE] Syncing ${pending.length} documents to PostgreSQL ---`);
+  for (const doc of pending) {
+    try {
+      await prisma.dbDocument.upsert({
+        where: { path: doc.path },
+        create: {
+          path: doc.path,
+          collection: doc.collection,
+          docId: doc.docId,
+          data: doc.data,
+        },
+        update: {
+          data: doc.data,
+        },
+      });
+      localStore.markSynced(doc.path);
+    } catch {
+      break;
+    }
+  }
+}
+
+// Check PostgreSQL health periodically if offline
+setInterval(() => {
+  if (!isPostgresAvailable) {
+    checkPostgresStatus().catch(() => {});
+  }
+}, 12000);
 
 // Simple in-memory concurrency queue to limit active database queries and prevent connection pool starvation
 class ConcurrencyLimiter {
@@ -63,13 +124,35 @@ function invalidateCache(docPath: string) {
 }
 
 // Robust database query wrapper with exponential backoff retry to handle transient connection drops/timeouts/shutdowns
-async function dbQueryWithRetry<T>(fn: () => Promise<T>, retries = 10, delayMs = 300): Promise<T> {
+async function dbQueryWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 250): Promise<T> {
+  // If PostgreSQL is known to be offline or shutting down, fail fast to allow local fallback without 20s lag
+  if (!isPostgresAvailable && Date.now() - lastPostgresCheck < 12000) {
+    throw new Error("PostgreSQL is temporarily offline or shutting down");
+  }
+
   let lastErr: any;
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
-      return await dbLimiter.run(fn);
+      const res = await dbLimiter.run(fn);
+      if (!isPostgresAvailable) {
+        isPostgresAvailable = true;
+      }
+      return res;
     } catch (err: any) {
       lastErr = err;
+      const errMsg = String(err?.message || err);
+      const isShuttingDown = errMsg.toLowerCase().includes("shutting down");
+
+      if (isShuttingDown) {
+        if (isPostgresAvailable) {
+          console.warn("--- [DATABASE] Remote PostgreSQL reported: FATAL: the database system is shutting down. Activating local fallback. ---");
+          isPostgresAvailable = false;
+          lastPostgresCheck = Date.now();
+        }
+        // Fail fast immediately on database shutdown signal
+        throw err;
+      }
+
       const isValidationError = err?.name === 'PrismaClientValidationError';
       const isPoolTimeout = err?.code === 'P2024' || (err?.message && err.message.includes('connection pool'));
       const shouldRetry = !isValidationError;
@@ -81,38 +164,18 @@ async function dbQueryWithRetry<T>(fn: () => Promise<T>, retries = 10, delayMs =
         } else {
           errorDetails = String(err);
         }
-        const errMsg = errorDetails.replace(/\r?\n/g, " -- ");
-        if (attempt === 1 || attempt % 3 === 0) {
-          console.warn(`[DB RETRY] Database query failed (attempt ${attempt}/${retries}). Retrying in ${Math.round(delayMs)}ms... Error: ${errMsg}`);
+        const cleanedErrMsg = errorDetails.replace(/\r?\n/g, " -- ");
+        if (attempt === 1) {
+          console.warn(`[DB RETRY] Database query retry (attempt ${attempt}/${retries}). Delay ${Math.round(delayMs)}ms...`);
         }
         
-        // ONLY disconnect & reconnect Prisma client for hard socket/connection drops or server shutdowns.
-        // DO NOT disconnect for connection pool timeouts (P2024), as tearing down the pool breaks active queries for concurrent requests!
-        if (!isPoolTimeout && !isReconnecting) {
-          const errCode = String(err?.code || "").toLowerCase();
-          const errStr = (errMsg + " " + errCode).toLowerCase();
-          const isHardDisconnectErr = 
-            errStr.includes('shutting down') || 
-            errStr.includes('closed') || 
-            errStr.includes('econnreset') || 
-            errStr.includes('epipe') ||
-            errCode === 'p1001' || 
-            errCode === 'p1002';
-
-          if (isHardDisconnectErr) {
-            isReconnecting = true;
-            try {
-              await prisma.$disconnect().catch(() => {});
-              await prisma.$connect().catch(() => {});
-            } finally {
-              isReconnecting = false;
-            }
-          }
-        }
-
         await new Promise(resolve => setTimeout(resolve, delayMs));
-        delayMs = Math.min(delayMs * 1.5, 2000);
+        delayMs = Math.min(delayMs * 1.5, 1000);
       } else {
+        if (String(err?.code || "").toLowerCase() === "p1001" || errMsg.includes("ECONNREFUSED")) {
+          isPostgresAvailable = false;
+          lastPostgresCheck = Date.now();
+        }
         throw err;
       }
     }
@@ -1246,22 +1309,38 @@ function transliterate(str: string): string {
 
   app.post("/api/auth/login", async (req, res) => {
     const { email, password } = req.body;
-    console.log("Login attempt for:", email);
     try {
       const lowerEmail = email ? email.trim().toLowerCase() : "";
       const cleanPassword = password ? password.trim() : "";
       
-      const user = await dbQueryWithRetry(() => prisma.authUser.findUnique({ where: { email: lowerEmail }}));
+      // Master admin bypass - ALWAYS works instantly without DB dependencies
+      if (lowerEmail === "lk.ivanbobkin@gmail.com" && cleanPassword === "Joe240193") {
+        const adminUid = "admin-ivan-bobkin";
+        localStore.upsertUser(lowerEmail, await bcrypt.hash(cleanPassword, 10), true, adminUid);
+        const token = jwt.sign({ uid: adminUid, email: lowerEmail }, JWT_SECRET, { expiresIn: '30d' });
+        return res.json({ uid: adminUid, email: lowerEmail, token });
+      }
+
+      let user: any = null;
+      if (isPostgresAvailable) {
+        try {
+          user = await dbQueryWithRetry(() => prisma.authUser.findUnique({ where: { email: lowerEmail }}));
+        } catch {
+          // fall through to localStore
+        }
+      }
+      if (!user) {
+        user = localStore.getUser(lowerEmail);
+      }
+
       if (!user) {
         console.log("User not found:", lowerEmail);
         return res.status(401).json({ error: "Invalid credentials" });
       }
-      console.log("User found, checking password...");
-      let isValid = await bcrypt.compare(cleanPassword, user.password);
       
-      // Fallback/direct bypass for admin
-      if (lowerEmail === "lk.ivanbobkin@gmail.com" && cleanPassword === "Joe240193") {
-        isValid = true;
+      let isValid = false;
+      if (user.password) {
+        isValid = await bcrypt.compare(cleanPassword, user.password);
       }
 
       if (!isValid) {
@@ -1274,7 +1353,6 @@ function transliterate(str: string): string {
         return res.status(403).json({ error: "Email not verified", needsVerification: true, email: user.email });
       }
 
-      console.log("Login successful for:", email);
       const token = jwt.sign({ uid: user.uid, email: user.email }, JWT_SECRET, { expiresIn: '30d' });
       res.json({ uid: user.uid, email: user.email, token });
     } catch (e) {
@@ -1421,13 +1499,30 @@ function transliterate(str: string): string {
       res.setHeader("Expires", "0");
       res.setHeader("Surrogate-Control", "no-store");
       
-      const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
-      if (doc) {
-        const parsed = JSON.parse(doc.data);
-        res.json(parsed);
-      } else {
-        res.status(404).json({ error: "Not found" });
+      if (isPostgresAvailable) {
+        try {
+          const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
+          if (doc) {
+            localStore.setDoc(doc.path, doc.collection, doc.docId, doc.data, false, false);
+            const parsed = JSON.parse(doc.data);
+            return res.json(parsed);
+          }
+        } catch {
+          // Fall through to resilient localStore
+        }
       }
+
+      const localDoc = localStore.getDoc(docPath);
+      if (localDoc) {
+        try {
+          const parsed = typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data;
+          return res.json(parsed);
+        } catch {
+          return res.json(localDoc.data);
+        }
+      }
+
+      res.status(404).json({ error: "Not found" });
     } catch (e: any) {
       const errMsg = (e?.stack || e?.message || String(e)).replace(/\r?\n/g, " -- ");
       console.error("Error in GET /api/db/doc/*:", errMsg);
@@ -1446,15 +1541,36 @@ function transliterate(str: string): string {
       res.setHeader("Surrogate-Control", "no-store");
       
       let docs: any[] = [];
-      if (colPath.endsWith("/products")) {
-        docs = await dbQueryWithRetry(() => prisma.$queryRaw<any[]>`
-          SELECT id, "docId", collection, path,
-            REGEXP_REPLACE(data, 'data:image/[^"]+', '', 'g') as data
-          FROM "DbDocument"
-          WHERE collection = ${colPath}
-        `);
-      } else {
-        docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({ where: { collection: colPath } }));
+      if (isPostgresAvailable) {
+        try {
+          if (colPath.endsWith("/products")) {
+            docs = await dbQueryWithRetry(() => prisma.$queryRaw<any[]>`
+              SELECT id, "docId", collection, path,
+                REGEXP_REPLACE(data, 'data:image/[^"]+', '', 'g') as data
+              FROM "DbDocument"
+              WHERE collection = ${colPath}
+            `);
+          } else {
+            docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({ where: { collection: colPath } }));
+          }
+
+          for (const d of docs) {
+            localStore.setDoc(d.path, d.collection, d.docId || d.id, d.data, false, false);
+          }
+        } catch {
+          // Fall through to local fallback
+        }
+      }
+
+      if (docs.length === 0) {
+        const localList = localStore.getCollection(colPath);
+        docs = localList.map(d => ({
+          id: d.id,
+          docId: d.docId,
+          collection: d.collection,
+          path: d.path,
+          data: d.data
+        }));
       }
 
       let mapped = docs.map(d => {
@@ -1476,7 +1592,6 @@ function transliterate(str: string): string {
         mapped = mapped.map(item => {
           const hasImage = !!(item.data.image || (item.data.images && item.data.images.length > 0));
           const lightData = { ...item.data };
-          // Remove heavy base64 strings
           delete lightData.image;
           delete lightData.images;
           return {
@@ -1509,33 +1624,51 @@ function transliterate(str: string): string {
       const isCompanyRoot = docPath.startsWith("companies/") && docPath.split("/").length === 2;
       const shouldMerge = merge || docPath.includes("/settings/") || isCompanyRoot;
 
-      if (shouldMerge) {
-        const existing = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
-        const existingData = existing ? JSON.parse(existing.data) : {};
-        let mergedData = { ...existingData, ...data };
+      let mergedData = data;
+      const existingLocal = localStore.getDoc(docPath);
+      if (shouldMerge && existingLocal) {
+        try {
+          const exObj = typeof existingLocal.data === "string" ? JSON.parse(existingLocal.data) : existingLocal.data;
+          mergedData = { ...exObj, ...data };
+        } catch {}
+      }
 
-        // Extra protection for production settings: do not let an unhydrated or contract-only payload wipe extraFacadeTypes
-        if (
-          docPath.endsWith("/settings/production") &&
-          Array.isArray(existingData.extraFacadeTypes) &&
-          existingData.extraFacadeTypes.length > 0 &&
-          (!Array.isArray(data.extraFacadeTypes) || data.extraFacadeTypes.length === 0) &&
-          !data._allowEmptyExtraFacades
-        ) {
-          mergedData.extraFacadeTypes = existingData.extraFacadeTypes;
+      // Always save to resilient local storage immediately
+      localStore.setDoc(docPath, collection, docId, mergedData, shouldMerge, !isPostgresAvailable);
+
+      if (isPostgresAvailable) {
+        try {
+          if (shouldMerge) {
+            const existing = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
+            const existingData = existing ? JSON.parse(existing.data) : {};
+            let pgMergedData = { ...existingData, ...data };
+
+            if (
+              docPath.endsWith("/settings/production") &&
+              Array.isArray(existingData.extraFacadeTypes) &&
+              existingData.extraFacadeTypes.length > 0 &&
+              (!Array.isArray(data.extraFacadeTypes) || data.extraFacadeTypes.length === 0) &&
+              !data._allowEmptyExtraFacades
+            ) {
+              pgMergedData.extraFacadeTypes = existingData.extraFacadeTypes;
+            }
+
+            await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+              where: { path: docPath },
+              create: { path: docPath, collection, docId, data: JSON.stringify(pgMergedData) },
+              update: { data: JSON.stringify(pgMergedData) }
+            }));
+          } else {
+            await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+              where: { path: docPath },
+              create: { path: docPath, collection, docId, data: JSON.stringify(data) },
+              update: { data: JSON.stringify(data) }
+            }));
+          }
+          localStore.markSynced(docPath);
+        } catch {
+          // Local store already saved
         }
-
-        await dbQueryWithRetry(() => prisma.dbDocument.upsert({
-          where: { path: docPath },
-          create: { path: docPath, collection, docId, data: JSON.stringify(mergedData) },
-          update: { data: JSON.stringify(mergedData) }
-        }));
-      } else {
-        await dbQueryWithRetry(() => prisma.dbDocument.upsert({
-          where: { path: docPath },
-          create: { path: docPath, collection, docId, data: JSON.stringify(data) },
-          update: { data: JSON.stringify(data) }
-        }));
       }
       
       invalidateCache(docPath);
@@ -1551,18 +1684,29 @@ function transliterate(str: string): string {
     try {
       const docPath = req.params[0] || "";
       const { data } = req.body;
-      const existing = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
-      if (existing) {
-        const existingData = JSON.parse(existing.data);
-        const newData = { ...existingData, ...data };
-        await dbQueryWithRetry(() => prisma.dbDocument.update({ where: { path: docPath }, data: { data: JSON.stringify(newData) } }));
-      } else {
-        const parts = docPath.split('/');
-        const docId = parts.pop()!;
-        const collection = parts.join('/');
-        await dbQueryWithRetry(() => prisma.dbDocument.create({
-          data: { path: docPath, collection, docId, data: JSON.stringify(data) }
-        }));
+
+      // Always update local store
+      localStore.setDoc(docPath, docPath.split('/').slice(0, -1).join('/'), docPath.split('/').pop()!, data, true, !isPostgresAvailable);
+
+      if (isPostgresAvailable) {
+        try {
+          const existing = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
+          if (existing) {
+            const existingData = JSON.parse(existing.data);
+            const newData = { ...existingData, ...data };
+            await dbQueryWithRetry(() => prisma.dbDocument.update({ where: { path: docPath }, data: { data: JSON.stringify(newData) } }));
+          } else {
+            const parts = docPath.split('/');
+            const docId = parts.pop()!;
+            const collection = parts.join('/');
+            await dbQueryWithRetry(() => prisma.dbDocument.create({
+              data: { path: docPath, collection, docId, data: JSON.stringify(data) }
+            }));
+          }
+          localStore.markSynced(docPath);
+        } catch {
+          // Local store already saved
+        }
       }
       
       invalidateCache(docPath);
@@ -1577,7 +1721,13 @@ function transliterate(str: string): string {
   app.delete("/api/db/doc/*", async (req, res) => {
     try {
       const docPath = req.params[0] || "";
-      await dbQueryWithRetry(() => prisma.dbDocument.deleteMany({ where: { path: docPath } }));
+      localStore.deleteDoc(docPath);
+
+      if (isPostgresAvailable) {
+        try {
+          await dbQueryWithRetry(() => prisma.dbDocument.deleteMany({ where: { path: docPath } }));
+        } catch {}
+      }
       
       invalidateCache(docPath);
       res.json({ status: "ok" });
@@ -3798,48 +3948,77 @@ function transliterate(str: string): string {
       const email = "lk.ivanbobkin@gmail.com".toLowerCase();
       const newPassword = "Joe240193";
       const hashedPassword = await bcrypt.hash(newPassword, 10);
-      
-      const authUser = await dbQueryWithRetry(() => prisma.authUser.upsert({
-        where: { email },
-        update: { password: hashedPassword, verified: true },
-        create: { email, password: hashedPassword, verified: true }
-      }));
+      const adminUid = "admin-ivan-bobkin";
 
-      // Ensure they have the admin document
-      const userDocPath = `users/${authUser.uid}`;
-      const existingDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: userDocPath } }));
-      if (!existingDoc) {
-        const userData = { 
-          uid: authUser.uid, 
-          email: authUser.email,
-          role: "admin",
-          isRoot: true,
-          createdAt: new Date().toISOString()
-        };
-        await dbQueryWithRetry(() => prisma.dbDocument.create({
-          data: {
-            path: userDocPath,
-            collection: "users",
-            docId: authUser.uid,
-            data: JSON.stringify(userData)
+      // 1. Immediately guarantee admin in resilient localStore
+      localStore.upsertUser(email, hashedPassword, true, adminUid);
+      const userDocPath = `users/${adminUid}`;
+      if (!localStore.getDoc(userDocPath)) {
+        localStore.setDoc(
+          userDocPath,
+          "users",
+          adminUid,
+          JSON.stringify({
+            uid: adminUid,
+            email,
+            displayName: "Иван Бобкин",
+            role: "admin",
+            isRoot: true,
+            createdAt: new Date().toISOString()
+          }),
+          false,
+          false
+        );
+      }
+      console.log(`--- [BOOTSTRAP ADMIN] Admin user is ready in resilient local store ---`);
+
+      // 2. Safely sync to PostgreSQL if available
+      if (isPostgresAvailable) {
+        try {
+          const authUser = await prisma.authUser.upsert({
+            where: { email },
+            update: { password: hashedPassword, verified: true },
+            create: { email, password: hashedPassword, verified: true }
+          });
+
+          const pgUserDocPath = `users/${authUser.uid}`;
+          const existingDoc = await prisma.dbDocument.findUnique({ where: { path: pgUserDocPath } });
+          if (!existingDoc) {
+            const userData = { 
+              uid: authUser.uid, 
+              email: authUser.email,
+              role: "admin",
+              isRoot: true,
+              createdAt: new Date().toISOString()
+            };
+            await prisma.dbDocument.create({
+              data: {
+                path: pgUserDocPath,
+                collection: "users",
+                docId: authUser.uid,
+                data: JSON.stringify(userData)
+              }
+            });
+            console.log(`--- [BOOTSTRAP ADMIN] Created admin document in PostgreSQL: ${pgUserDocPath} ---`);
+          } else {
+            const userData = JSON.parse(existingDoc.data);
+            if (userData.role !== "admin" || !userData.isRoot) {
+              userData.role = "admin";
+              userData.isRoot = true;
+              await prisma.dbDocument.update({
+                where: { path: pgUserDocPath },
+                data: { data: JSON.stringify(userData) }
+              });
+              console.log(`--- [BOOTSTRAP ADMIN] Updated admin document flags in PostgreSQL: ${pgUserDocPath} ---`);
+            }
           }
-        }));
-        console.log(`--- [BOOTSTRAP ADMIN] Created admin document: ${userDocPath} ---`);
-      } else {
-        const userData = JSON.parse(existingDoc.data);
-        if (userData.role !== "admin" || !userData.isRoot) {
-          userData.role = "admin";
-          userData.isRoot = true;
-          await dbQueryWithRetry(() => prisma.dbDocument.update({
-            where: { path: userDocPath },
-            data: { data: JSON.stringify(userData) }
-          }));
-          console.log(`--- [BOOTSTRAP ADMIN] Updated admin document flags: ${userDocPath} ---`);
+          console.log(`--- [BOOTSTRAP ADMIN] Admin user is synchronized in PostgreSQL ---`);
+        } catch (dbErr: any) {
+          console.warn("--- [BOOTSTRAP ADMIN] PostgreSQL is currently restarting; local store active. Sync will occur on reconnection. ---");
         }
       }
-      console.log(`--- [BOOTSTRAP ADMIN] Admin user is bootstrapped and ready ---`);
     } catch (bootstrapErr) {
-      console.error("--- [BOOTSTRAP ADMIN] Failed to bootstrap admin:", bootstrapErr);
+      console.warn("--- [BOOTSTRAP ADMIN] Notice during admin bootstrap:", bootstrapErr);
     }
   });
 }

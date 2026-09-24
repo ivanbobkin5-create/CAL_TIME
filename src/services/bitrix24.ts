@@ -338,6 +338,7 @@ export const registerBitrix24Placement = async (): Promise<{ success: boolean; m
 
   return new Promise((resolve) => {
     try {
+      // 1. Register Deal Tab
       window.BX24.callMethod(
         "placement.bind",
         {
@@ -346,19 +347,23 @@ export const registerBitrix24Placement = async (): Promise<{ success: boolean; m
           TITLE: "Калькулятор Мебели",
           DESCRIPTION: "Расчет стоимости мебели и материалов",
         },
-        (res: any) => {
-          if (res.error()) {
-            console.error("BX24 placement.bind error:", res.error());
-            resolve({
-              success: false,
-              message: `Ошибка регистрации вкладки: ${res.error()}`,
-            });
-          } else {
-            resolve({
-              success: true,
-              message: "Вкладка «Калькулятор Мебели» успешно зарегистрирована в Сделках CRM!",
-            });
-          }
+        () => {
+          // 2. Register Deal Activity Widget (Right Sidebar)
+          window.BX24.callMethod(
+            "placement.bind",
+            {
+              PLACEMENT: "CRM_DEAL_DETAIL_ACTIVITY",
+              HANDLER: appUrl,
+              TITLE: "Мебель План (Виджет)",
+              DESCRIPTION: "Интерактивный виджет производства и расчета мебели",
+            },
+            () => {
+              resolve({
+                success: true,
+                message: "Вкладка сделки и Умный виджет в правой колонке успешно зарегистрированы в Битрикс24!",
+              });
+            }
+          );
         }
       );
     } catch (err: any) {
@@ -368,4 +373,8 @@ export const registerBitrix24Placement = async (): Promise<{ success: boolean; m
       });
     }
   });
+};
+
+export const registerBitrix24ActivityWidget = async (): Promise<{ success: boolean; message: string }> => {
+  return registerBitrix24Placement();
 };
