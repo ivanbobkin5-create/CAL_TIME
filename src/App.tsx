@@ -1904,6 +1904,14 @@ interface OwnProductionConfig {
     retail?: "coefficients" | "area" | "sheet";
     salon?: "coefficients" | "area" | "sheet";
     designer?: "coefficients" | "area" | "sheet";
+    custom?: Record<string, "coefficients" | "area" | "sheet">;
+  };
+  areaCalculationBasis?: "material_volume" | "finished_parts";
+  clientAreaCalcBasis?: {
+    retail?: "material_volume" | "finished_parts";
+    salon?: "material_volume" | "finished_parts";
+    designer?: "material_volume" | "finished_parts";
+    custom?: Record<string, "material_volume" | "finished_parts">;
   };
   areaWorkCosts?: Record<string, MaterialWorkCost>;
   sheetWorkCosts?: Record<string, MaterialWorkCost>;
@@ -9829,13 +9837,6 @@ const Bitrix24DashboardView = ({
   companyData?: any;
 }) => {
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
-  const [showQrModal, setShowQrModal] = useState(false);
-  const [activeDocModal, setActiveDocModal] = useState<"contract" | "specification" | "act" | null>(null);
-  const [docSending, setDocSending] = useState(false);
-  const [docSendSuccess, setDocSendSuccess] = useState(false);
-  const [isRegisteringWidget, setIsRegisteringWidget] = useState(false);
-  const [widgetRegisterMessage, setWidgetRegisterMessage] = useState<string | null>(null);
-  const [copiedLink, setCopiedLink] = useState(false);
 
   // Filter projects for this deal or show associated ones
   const dealProjects = useMemo(() => {
@@ -9860,8 +9861,6 @@ const Bitrix24DashboardView = ({
     if (selected.length === 0) return;
     onCheckoutSelectedProjects(selected);
   };
-
-  const customerPortalUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/p/b24_deal_${b24Context?.dealId || "demo"}`;
 
   return (
     <div className="p-4 md:p-8 space-y-7 max-w-7xl mx-auto animate-in fade-in duration-300">
@@ -9964,330 +9963,6 @@ const Bitrix24DashboardView = ({
             <p className="text-[11px] text-gray-500 mt-0.5">Карточка в CRM</p>
           </div>
         </button>
-      </div>
-
-      {/* 1. Customer Portal Banner & Share Card */}
-      <div className="bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-800 rounded-3xl p-6 md:p-7 text-white shadow-lg border border-blue-400/30 relative overflow-hidden">
-        <div className="absolute right-0 top-0 translate-x-8 -translate-y-8 w-64 h-64 bg-white/10 rounded-full blur-2xl pointer-events-none" />
-        
-        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-          <div className="space-y-2 max-w-2xl">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/20 backdrop-blur-md text-white text-xs font-black uppercase tracking-wider">
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>Интерактивный Портал Заказчика</span>
-            </div>
-            <h2 className="text-xl md:text-2xl font-black text-white tracking-tight">
-              Персональный Кабинет Покупателя Мебели
-            </h2>
-            <p className="text-xs md:text-sm text-blue-100/90 leading-relaxed">
-              Отправьте клиенту ссылку в мессенджер: заказчик сможет со смартфона посмотреть чертежи, материалы, декоры и утвердить спецификацию онлайн без необходимости ехать в салон.
-            </p>
-          </div>
-
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
-            <button
-              onClick={() => {
-                const text = `Здравствуйте! Ваш персональный проект мебели готов к согласованию.\nСумма: ${currentProjectTotal.toLocaleString("ru-RU")} ₽\nОзнакомиться со спецификацией и утвердить можно по ссылке:\n${customerPortalUrl}`;
-                navigator.clipboard.writeText(text);
-                setCopiedLink(true);
-                setTimeout(() => setCopiedLink(false), 3000);
-                window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, "_blank");
-              }}
-              className="px-4 py-3 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold rounded-2xl text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <MessageSquare className="w-4 h-4" />
-              <span>{copiedLink ? "✓ Скопировано! Открываем..." : "Отправить в WhatsApp"}</span>
-            </button>
-
-            <a
-              href={customerPortalUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="px-4 py-3 bg-white hover:bg-blue-50 text-blue-900 font-extrabold rounded-2xl text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
-            >
-              <ExternalLink className="w-4 h-4 text-blue-600" />
-              <span>Открыть Кабинет</span>
-            </a>
-
-            <button
-              onClick={() => setShowQrModal(true)}
-              className="px-3.5 py-3 bg-white/15 hover:bg-white/25 text-white font-extrabold rounded-2xl text-xs transition-all border border-white/25 flex items-center justify-center gap-1.5 cursor-pointer"
-              title="Показать QR-код для сканирования телефоном клиента"
-            >
-              <QrCode className="w-4 h-4" />
-              <span>QR-код</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Link strip */}
-        <div className="mt-5 pt-4 border-t border-white/15 flex flex-wrap items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2 text-blue-100 font-medium">
-            <span className="opacity-70">Прямая ссылка для клиента:</span>
-            <code className="px-2.5 py-1 rounded-lg bg-black/20 text-cyan-200 font-mono text-[11px] select-all">
-              {customerPortalUrl}
-            </code>
-          </div>
-          <div className="flex items-center gap-1.5 text-emerald-300 font-bold text-xs">
-            <CheckCircle2 className="w-4 h-4" />
-            <span>Готов к согласованию и подписанию онлайн</span>
-          </div>
-        </div>
-      </div>
-
-      {/* 2. Right Sidebar CRM Activity Widget Control & Live Preview */}
-      <div className="bg-white rounded-3xl p-6 md:p-7 border border-slate-200 shadow-sm space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-cyan-500 to-blue-600 text-white flex items-center justify-center font-black shadow-sm">
-              <Activity className="w-5 h-5" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-extrabold text-slate-900">
-                  Виджет в правой панели Карточки Сделки (CRM Activity Widget)
-                </h3>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-cyan-100 text-cyan-800 uppercase tracking-wider">
-                  Битрикс24
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Отображается в правой колонке сделки CRM прямо рядом с историей и делами: статус производства, маржинальность и быстрые действия.
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={async () => {
-              setIsRegisteringWidget(true);
-              const res = await registerBitrix24Placement();
-              setIsRegisteringWidget(false);
-              setWidgetRegisterMessage(res.message);
-              setTimeout(() => setWidgetRegisterMessage(null), 6000);
-            }}
-            disabled={isRegisteringWidget}
-            className="px-4 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl text-xs font-black shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 disabled:opacity-50"
-          >
-            <Activity className="w-4 h-4" />
-            <span>{isRegisteringWidget ? "Активация..." : "Установить виджет в правую панель Битрикс24"}</span>
-          </button>
-        </div>
-
-        {widgetRegisterMessage && (
-          <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>{widgetRegisterMessage}</span>
-          </div>
-        )}
-
-        {/* Live Interactive Preview of CRM Activity Widget */}
-        <div className="bg-slate-900 rounded-2xl p-4 md:p-5 text-white space-y-4 border border-slate-800">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-              <span className="text-xs font-black uppercase tracking-wider text-slate-300">
-                Пульс производства заказа • #{b24Context?.dealId || "13045"}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-slate-400">Сумма заказа:</span>
-              <span className="text-sm font-black text-cyan-300">
-                {currentProjectTotal.toLocaleString("ru-RU")} ₽
-              </span>
-              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                Маржа ~36%
-              </span>
-            </div>
-          </div>
-
-          {/* Production pipeline steps */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2 text-center text-xs">
-            <div className="p-2.5 rounded-xl bg-slate-800/90 border border-emerald-500/50">
-              <span className="block text-[10px] text-emerald-400 font-extrabold uppercase">1. Замер</span>
-              <span className="text-xs font-bold text-white mt-1 block">✓ Выполнен</span>
-            </div>
-            <div className="p-2.5 rounded-xl bg-slate-800/90 border border-emerald-500/50">
-              <span className="block text-[10px] text-emerald-400 font-extrabold uppercase">2. Предоплата</span>
-              <span className="text-xs font-bold text-white mt-1 block">✓ 50% внесено</span>
-            </div>
-            <div className="p-2.5 rounded-xl bg-slate-800/90 border border-emerald-500/50">
-              <span className="block text-[10px] text-emerald-400 font-extrabold uppercase">3. Закупка</span>
-              <span className="text-xs font-bold text-white mt-1 block">✓ На складе</span>
-            </div>
-            <div className="p-2.5 rounded-xl bg-blue-900/40 border border-blue-400/60 shadow-sm">
-              <span className="block text-[10px] text-blue-300 font-extrabold uppercase animate-pulse">4. Распил / ЧПУ</span>
-              <span className="text-xs font-black text-cyan-200 mt-1 block">⏳ В работе (65%)</span>
-            </div>
-            <div className="p-2.5 rounded-xl bg-slate-800/40 border border-slate-700/60 opacity-70">
-              <span className="block text-[10px] text-slate-400 font-bold uppercase">5. Кромление</span>
-              <span className="text-xs font-medium text-slate-300 mt-1 block">В очереди</span>
-            </div>
-            <div className="p-2.5 rounded-xl bg-slate-800/40 border border-slate-700/60 opacity-70">
-              <span className="block text-[10px] text-slate-400 font-bold uppercase">6. Сборка</span>
-              <span className="text-xs font-medium text-slate-300 mt-1 block">Ожидает</span>
-            </div>
-            <div className="p-2.5 rounded-xl bg-slate-800/40 border border-slate-700/60 opacity-70">
-              <span className="block text-[10px] text-slate-400 font-bold uppercase">7. Монтаж</span>
-              <span className="text-xs font-medium text-slate-300 mt-1 block">По графику</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* 3. Bitrix24 Document Generator Section */}
-      <div className="bg-white rounded-3xl p-6 md:p-7 border border-slate-200 shadow-sm space-y-5">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center font-black shadow-xs">
-              <FileText className="w-5 h-5 text-emerald-600" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="text-base font-extrabold text-slate-900">
-                  Авто-генератор Мебельных Документов Битрикс24
-                </h3>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 uppercase tracking-wider">
-                  Печать & CRM
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Формирование официального Договора подряда, Спецификации материалов и Акта сдачи с авто-прикреплением в Сделку Битрикс24.
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={async () => {
-              if (!b24Context?.dealId) {
-                alert("Откройте приложение внутри карточки сделки Битрикс24 для сохранения в таймлайн.");
-                return;
-              }
-              setDocSending(true);
-              try {
-                const totalPrice = currentProjectTotal || 0;
-                const commentText = `📄 **Сформирован комплект мебельных документов по Сделке #${b24Context.dealId}**\n\n` +
-                  `• **Проект / Вариант:** ${currentProjectName || "Кухня / Шкаф"}\n` +
-                  `• **Сумма договора:** ${totalPrice.toLocaleString("ru-RU")} ₽\n` +
-                  `• **Договор подряда:** №${b24Context.dealId} от ${new Date().toLocaleDateString("ru-RU")}\n` +
-                  `• **Спецификация:** Согласована с клиентом\n` +
-                  `• **Ссылка на Кабинет Покупателя:** ${customerPortalUrl}\n\n` +
-                  `*Документ автоматически сформирован и закреплен в истории сделки.*`;
-
-                await fetch("/api/bitrix24/query", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({
-                    webhookUrl: companyData?.bitrix24?.webhookUrl,
-                    method: "crm.timeline.comment.add",
-                    params: {
-                      fields: {
-                        ENTITY_ID: b24Context.dealId,
-                        ENTITY_TYPE: "deal",
-                        COMMENT: commentText,
-                      },
-                    },
-                  }),
-                });
-                setDocSendSuccess(true);
-                setTimeout(() => setDocSendSuccess(false), 5000);
-              } catch (e) {
-                setDocSendSuccess(true);
-              } finally {
-                setDocSending(false);
-              }
-            }}
-            disabled={docSending}
-            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-black shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer shrink-0 disabled:opacity-50"
-          >
-            <Send className="w-4 h-4" />
-            <span>{docSending ? "Отправка..." : "Прикрепить комплект документов в таймлайн Сделки"}</span>
-          </button>
-        </div>
-
-        {docSendSuccess && (
-          <div className="p-3 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2 animate-in fade-in">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>Комплект документов успешно сформирован и прикреплён к Таймлайну сделки #{b24Context?.dealId}!</span>
-          </div>
-        )}
-
-        {/* 3 Document Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {/* Card 1: Contract */}
-          <div className="border border-slate-200 hover:border-blue-400 rounded-2xl p-4.5 bg-slate-50/50 hover:bg-white transition-all flex flex-col justify-between space-y-3">
-            <div>
-              <div className="flex items-center justify-between">
-                <span className="w-8 h-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-black text-xs">
-                  01
-                </span>
-                <span className="text-[10px] font-bold text-slate-400">PDF / Печать</span>
-              </div>
-              <h4 className="font-extrabold text-slate-900 text-sm mt-2.5">
-                Договор подряда на изготовление мебели
-              </h4>
-              <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                Полный юридический договор с указанием сторон, сроков изготовления (25-35 дней), порядка оплаты и гарантии 24 месяца.
-              </p>
-            </div>
-            <button
-              onClick={() => setActiveDocModal("contract")}
-              className="w-full py-2 bg-white hover:bg-blue-50 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>Просмотр и печать Договора</span>
-            </button>
-          </div>
-
-          {/* Card 2: Specification */}
-          <div className="border border-slate-200 hover:border-emerald-400 rounded-2xl p-4.5 bg-slate-50/50 hover:bg-white transition-all flex flex-col justify-between space-y-3">
-            <div>
-              <div className="flex items-center justify-between">
-                <span className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-black text-xs">
-                  02
-                </span>
-                <span className="text-[10px] font-bold text-slate-400">Декоры & Фурнитура</span>
-              </div>
-              <h4 className="font-extrabold text-slate-900 text-sm mt-2.5">
-                Спецификация материалов и декоров
-              </h4>
-              <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                Подробная ведомость: декоры корпуса ЛДСП, кромка, тип фрезеровки фасадов, столешница, направляющие и петли.
-              </p>
-            </div>
-            <button
-              onClick={() => setActiveDocModal("specification")}
-              className="w-full py-2 bg-white hover:bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-            >
-              <ClipboardList className="w-3.5 h-3.5" />
-              <span>Открыть Спецификацию</span>
-            </button>
-          </div>
-
-          {/* Card 3: Acceptance Act */}
-          <div className="border border-slate-200 hover:border-purple-400 rounded-2xl p-4.5 bg-slate-50/50 hover:bg-white transition-all flex flex-col justify-between space-y-3">
-            <div>
-              <div className="flex items-center justify-between">
-                <span className="w-8 h-8 rounded-xl bg-purple-100 text-purple-700 flex items-center justify-center font-black text-xs">
-                  03
-                </span>
-                <span className="text-[10px] font-bold text-slate-400">Монтаж & Гарантия</span>
-              </div>
-              <h4 className="font-extrabold text-slate-900 text-sm mt-2.5">
-                Акт сдачи-приемки и гарантийный талон
-              </h4>
-              <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                Акт приема выполненных работ монтажниками, чек-лист осмотра качества и фирменный гарантийный талон на 2 года.
-              </p>
-            </div>
-            <button
-              onClick={() => setActiveDocModal("act")}
-              className="w-full py-2 bg-white hover:bg-purple-50 text-purple-700 border border-purple-200 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
-            >
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              <span>Открыть Акт приема</span>
-            </button>
-          </div>
-        </div>
       </div>
 
       {/* Projects / Variants List Section */}
@@ -10419,235 +10094,6 @@ const Bitrix24DashboardView = ({
           </div>
         )}
       </div>
-
-      {/* QR Code Modal for Customer Portal */}
-      {showQrModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-[200] p-4 animate-in fade-in">
-          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl space-y-5 text-center relative border border-slate-100">
-            <button
-              onClick={() => setShowQrModal(false)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-600 p-1.5 rounded-full hover:bg-slate-100 transition-colors"
-            >
-              ✕
-            </button>
-            <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mx-auto">
-              <QrCode className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="text-lg font-black text-slate-900">QR-код Кабинета Покупателя</h3>
-              <p className="text-xs text-slate-500 mt-1">
-                Покажите клиенту на экране смартфона или распечатайте для замерщика / салона:
-              </p>
-            </div>
-
-            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 inline-block mx-auto">
-              <img
-                src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(customerPortalUrl)}`}
-                alt="QR Code"
-                className="w-52 h-52 mx-auto rounded-lg"
-              />
-            </div>
-
-            <div className="text-[11px] text-slate-400 break-all font-mono px-2 py-1.5 bg-slate-100 rounded-lg">
-              {customerPortalUrl}
-            </div>
-
-            <div className="grid grid-cols-2 gap-2 pt-2">
-              <button
-                onClick={() => {
-                  navigator.clipboard.writeText(customerPortalUrl);
-                  alert("Ссылка скопирована в буфер обмена!");
-                }}
-                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-xl text-xs transition-colors cursor-pointer"
-              >
-                Скопировать ссылку
-              </button>
-              <button
-                onClick={() => window.print()}
-                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition-colors shadow-sm cursor-pointer"
-              >
-                Распечатать QR
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Document View & Print Modal */}
-      {activeDocModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center z-[200] p-4 animate-in fade-in overflow-y-auto">
-          <div className="bg-white rounded-3xl p-6 md:p-8 max-w-3xl w-full shadow-2xl space-y-6 my-8 border border-slate-200">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-2.5">
-                <FileText className="w-6 h-6 text-blue-600" />
-                <h3 className="text-lg font-black text-slate-900">
-                  {activeDocModal === "contract" && "Договор подряда на изготовление мебели"}
-                  {activeDocModal === "specification" && "Спецификация материалов и декоров"}
-                  {activeDocModal === "act" && "Акт сдачи-приемки и гарантийный талон"}
-                </h3>
-              </div>
-              <button
-                onClick={() => setActiveDocModal(null)}
-                className="text-slate-400 hover:text-slate-600 p-2 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Document Content */}
-            <div className="bg-slate-50 p-6 rounded-2xl border border-slate-200 text-xs text-slate-800 space-y-4 max-h-[60vh] overflow-y-auto font-sans leading-relaxed">
-              {activeDocModal === "contract" && (
-                <div className="space-y-4">
-                  <div className="text-center border-b border-slate-300 pb-3">
-                    <h2 className="text-sm font-black uppercase tracking-wider">ДОГОВОР ПОДРЯДА № {b24Context?.dealId || "13045"}</h2>
-                    <p className="text-[11px] text-slate-500">на изготовление и поставку индивидуальной корпусной мебели</p>
-                    <p className="text-[11px] text-slate-500 mt-1">г. Москва • {new Date().toLocaleDateString("ru-RU")}</p>
-                  </div>
-
-                  <p>
-                    <strong>Исполнитель:</strong> {companyData?.name || "Мебельное производство «Мебель План»"}, в лице Генерального директора, с одной стороны, и
-                  </p>
-                  <p>
-                    <strong>Заказчик:</strong> {currentProjectName ? `Клиент по сделке #${b24Context?.dealId || ""}` : "Физическое лицо / Организация"}, с другой стороны, заключили настоящий Договор о нижеследующем:
-                  </p>
-
-                  <div>
-                    <strong className="block text-slate-900 mb-1">1. ПРЕДМЕТ ДОГОВОРА</strong>
-                    <p>1.1. Исполнитель обязуется изготовить по индивидуальному заказу корпусную мебель «{currentProjectName || "Кухонный гарнитур / Шкаф"}» в соответствии с утвержденной Спецификацией, а Заказчик обязуется принять и оплатить выполненную работу.</p>
-                  </div>
-
-                  <div>
-                    <strong className="block text-slate-900 mb-1">2. СТОИМОСТЬ И ПОРЯДОК ОПЛАТЫ</strong>
-                    <p>2.1. Общая стоимость заказа составляет: <strong>{currentProjectTotal.toLocaleString("ru-RU")} руб.</strong></p>
-                    <p>2.2. Предоплата при подписании договора и запуске в производство составляет 50% ({(currentProjectTotal * 0.5).toLocaleString("ru-RU")} руб.).</p>
-                    <p>2.3. Оставшаяся сумма ({(currentProjectTotal * 0.5).toLocaleString("ru-RU")} руб.) вносится Заказчиком перед доставкой и сборкой изделия.</p>
-                  </div>
-
-                  <div>
-                    <strong className="block text-slate-900 mb-1">3. СРОКИ ИЗГОТОВЛЕНИЯ И ГАРАНТИЯ</strong>
-                    <p>3.1. Срок изготовления мебели составляет от 20 до 35 рабочих дней с момента внесения предоплаты и согласования декоров.</p>
-                    <p>3.2. Гарантийный срок на изготовленную мебель и фурнитуру составляет <strong>24 месяца</strong> со дня подписания Акта приема-передачи.</p>
-                  </div>
-
-                  <div className="pt-4 border-t border-slate-300 grid grid-cols-2 gap-4 text-[11px]">
-                    <div>
-                      <p className="font-bold">Исполнитель:</p>
-                      <p>{companyData?.name || "ООО «Мебель План»"}</p>
-                      <p>ИНН/КПП: {companyData?.inn || "7701234567"}</p>
-                      <p className="mt-4">Подпись / М.П. _______________</p>
-                    </div>
-                    <div>
-                      <p className="font-bold">Заказчик:</p>
-                      <p>Сделка CRM #{b24Context?.dealId || "13045"}</p>
-                      <p>Телефон клиента: подтвержден в Битрикс24</p>
-                      <p className="mt-4">Подпись: _______________</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {activeDocModal === "specification" && (
-                <div className="space-y-4">
-                  <div className="text-center border-b border-slate-300 pb-3">
-                    <h2 className="text-sm font-black uppercase tracking-wider">СПЕЦИФИКАЦИЯ МАТЕРИАЛОВ И КОМПЛЕКТУЮЩИХ</h2>
-                    <p className="text-[11px] text-slate-500">Приложение №1 к Договору № {b24Context?.dealId || "13045"}</p>
-                  </div>
-
-                  <table className="w-full text-left border-collapse">
-                    <thead>
-                      <tr className="border-b border-slate-300 text-[11px] text-slate-600 uppercase">
-                        <th className="py-2">Элемент</th>
-                        <th className="py-2">Материал / Декор</th>
-                        <th className="py-2">Толщина / Особенности</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200">
-                      <tr>
-                        <td className="py-2 font-bold">Корпус изделий</td>
-                        <td className="py-2">ЛДСП первого сорта класс эмиссии E1</td>
-                        <td className="py-2">16 мм, кромление ПВХ 1.0 мм по периметру</td>
-                      </tr>
-                      <tr>
-                        <td className="py-2 font-bold">Фасады</td>
-                        <td className="py-2">МДФ премиум в пленке ПВХ / Soft-Touch</td>
-                        <td className="py-2">19 мм, радиусная фрезеровка торцов</td>
-                      </tr>
-                      <tr>
-                        <td className="py-2 font-bold">Столешница</td>
-                        <td className="py-2">Влагостойкая постформинг HPL пластик</td>
-                        <td className="py-2">38 мм, кромление еврозапил и герметизация</td>
-                      </tr>
-                      <tr>
-                        <td className="py-2 font-bold">Фурнитура и петли</td>
-                        <td className="py-2">Петли с плавным доводчиком Clip-On</td>
-                        <td className="py-2">Ресурс 80 000 циклов открывания</td>
-                      </tr>
-                      <tr>
-                        <td className="py-2 font-bold">Выдвижные ящики</td>
-                        <td className="py-2">Направляющие скрытого монтажа Soft-Close</td>
-                        <td className="py-2">Полное выдвижение, нагрузка до 35 кг</td>
-                      </tr>
-                    </tbody>
-                  </table>
-
-                  <div className="pt-3 border-t border-slate-300 flex justify-between items-center font-bold">
-                    <span>Итого по спецификации:</span>
-                    <span className="text-blue-700 text-sm">{currentProjectTotal.toLocaleString("ru-RU")} ₽</span>
-                  </div>
-                </div>
-              )}
-
-              {activeDocModal === "act" && (
-                <div className="space-y-4">
-                  <div className="text-center border-b border-slate-300 pb-3">
-                    <h2 className="text-sm font-black uppercase tracking-wider">АКТ СДАЧИ-ПРИЕМКИ ВЫПОЛНЕННЫХ РАБОТ</h2>
-                    <p className="text-[11px] text-slate-500">по Договору № {b24Context?.dealId || "13045"}</p>
-                  </div>
-
-                  <p>
-                    Мы, нижеподписавшиеся, Исполнитель и Заказчик, составили настоящий Акт о том, что мебель «{currentProjectName || "Заказ"}» изготовлена, доставлена и смонтирована в полном объеме и в соответствии с условиями Договора и Спецификацией.
-                  </p>
-                  <p>
-                    Претензий по качеству, комплектности, внешнему виду и сборке Заказчик <strong>не имеет</strong>. Мебель проверена в присутствии монтажной бригады.
-                  </p>
-                  <p>
-                    С момента подписания настоящего Акта вступает в силу гарантия сроком <strong>24 месяца</strong>.
-                  </p>
-
-                  <div className="pt-6 border-t border-slate-300 grid grid-cols-2 gap-4 text-[11px]">
-                    <div>
-                      <p className="font-bold">Работу сдал (Исполнитель):</p>
-                      <p className="mt-4">Подпись / М.П. _______________</p>
-                    </div>
-                    <div>
-                      <p className="font-bold">Работу принял (Заказчик):</p>
-                      <p className="mt-4">Подпись: _______________</p>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Modal Actions */}
-            <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-              <button
-                onClick={() => window.print()}
-                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition-colors shadow-sm flex items-center gap-2 cursor-pointer"
-              >
-                <Printer className="w-4 h-4" />
-                <span>Печать / Экспорт в PDF</span>
-              </button>
-
-              <button
-                onClick={() => setActiveDocModal(null)}
-                className="px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-xl text-xs transition-colors cursor-pointer"
-              >
-                Закрыть
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
@@ -11335,7 +10781,9 @@ const SummaryView = ({
 
           let effectiveCalcMode = calcMode;
           if (ownProductionConfig?.clientCalcModesEnabled && ownProductionConfig?.clientCalcModes) {
-            if (selectedSalonId || customerType === "wholesale") {
+            if (selectedSalonId && ownProductionConfig.clientCalcModes.custom?.[selectedSalonId]) {
+              effectiveCalcMode = ownProductionConfig.clientCalcModes.custom[selectedSalonId]!;
+            } else if (selectedSalonId || customerType === "wholesale") {
               effectiveCalcMode = ownProductionConfig.clientCalcModes.salon || calcMode;
             } else if (customerType === "designer") {
               effectiveCalcMode = ownProductionConfig.clientCalcModes.designer || calcMode;
@@ -11344,10 +10792,33 @@ const SummaryView = ({
             }
           }
 
+          let effectiveAreaBasis: "material_volume" | "finished_parts" =
+            ownProductionConfig?.areaCalculationBasis || "material_volume";
+          if (selectedSalonId && ownProductionConfig?.clientAreaCalcBasis?.custom?.[selectedSalonId]) {
+            effectiveAreaBasis = ownProductionConfig.clientAreaCalcBasis.custom[selectedSalonId]!;
+          } else if (selectedSalonId || customerType === "wholesale") {
+            effectiveAreaBasis =
+              ownProductionConfig?.clientAreaCalcBasis?.salon ||
+              ownProductionConfig?.areaCalculationBasis ||
+              "material_volume";
+          } else if (customerType === "designer") {
+            effectiveAreaBasis =
+              ownProductionConfig?.clientAreaCalcBasis?.designer ||
+              ownProductionConfig?.areaCalculationBasis ||
+              "material_volume";
+          } else if (ownProductionConfig?.clientAreaCalcBasis?.retail) {
+            effectiveAreaBasis = ownProductionConfig.clientAreaCalcBasis.retail;
+          }
+
           const matWorkKey = getMaterialWorkTypeKey(item, sheetConfigs[key]);
 
           if (effectiveCalcMode === "area") {
-            const totalArea = sheetCount * sheetArea;
+            const sheetGrossArea = sheetCount * sheetArea;
+            const detailsNetArea = combinedDetails.reduce(
+              (sum, d) => sum + (d.area || ((d.width * d.height) / 1000000) * (d.qty || 1)),
+              0,
+            );
+            const totalArea = effectiveAreaBasis === "finished_parts" ? detailsNetArea : sheetGrossArea;
             const workCostObj = ownProductionConfig?.areaWorkCosts?.[matWorkKey];
             let workCostPerM2 = 0;
             if (selectedSalonId && workCostObj?.salons?.[selectedSalonId] !== undefined) {
@@ -11634,7 +11105,9 @@ const SummaryView = ({
 
             let effectiveCalcMode = calcMode;
             if (ownProductionConfig?.clientCalcModesEnabled && ownProductionConfig?.clientCalcModes) {
-              if (selectedSalonId || customerType === "wholesale") {
+              if (selectedSalonId && ownProductionConfig.clientCalcModes.custom?.[selectedSalonId]) {
+                effectiveCalcMode = ownProductionConfig.clientCalcModes.custom[selectedSalonId]!;
+              } else if (selectedSalonId || customerType === "wholesale") {
                 effectiveCalcMode = ownProductionConfig.clientCalcModes.salon || calcMode;
               } else if (customerType === "designer") {
                 effectiveCalcMode = ownProductionConfig.clientCalcModes.designer || calcMode;
@@ -12804,24 +12277,36 @@ const SummaryView = ({
           </div>
 
           {isProduction &&
-            customerType === "wholesale" &&
+            (customerType === "wholesale" || customerType === "designer") &&
             salonsUsingMe.length > 0 &&
             setSelectedSalonId && (
               <div className="flex items-center gap-3 ml-6 pl-6 border-l border-gray-200">
                 <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
-                  Выбрать салон:
+                  {customerType === "designer" ? "Выбрать дизайнера:" : "Выбрать салон:"}
                 </span>
                 <select
                   value={selectedSalonId}
                   onChange={(e) => setSelectedSalonId(e.target.value)}
-                  className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[180px]"
+                  className="px-3 py-1.5 bg-white border border-gray-200 rounded-lg text-sm font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-[200px]"
                 >
-                  <option value="">Стандартные (салоны)</option>
-                  {salonsUsingMe.map((salon) => (
-                    <option key={salon.id} value={salon.id}>
-                      {salon.name || "Без названия"}
-                    </option>
-                  ))}
+                  <option value="">
+                    {customerType === "designer" ? "Все дизайнеры (Стандарт)" : "Стандартные (салоны)"}
+                  </option>
+                  {(customerType === "designer"
+                    ? (salonsUsingMe.filter((s) => s.type === "Дизайнер").length > 0
+                        ? salonsUsingMe.filter((s) => s.type === "Дизайнер")
+                        : salonsUsingMe)
+                    : (salonsUsingMe.filter((s) => s.type !== "Дизайнер").length > 0
+                        ? salonsUsingMe.filter((s) => s.type !== "Дизайнер")
+                        : salonsUsingMe)
+                  ).map((partner) => {
+                    const isSpec = ownProductionConfig.specialConditionIds?.includes(partner.id);
+                    return (
+                      <option key={partner.id} value={partner.id}>
+                        {partner.name || "Без названия"}{isSpec ? " ★ (Спец условия)" : ""}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             )}
@@ -15385,6 +14870,55 @@ const MaterialWorkCostsSection = ({
         )}
       </div>
 
+      {isArea && (
+        <div className="mb-4 p-3.5 bg-blue-50/60 rounded-xl border border-blue-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div>
+            <span className="text-xs font-bold text-gray-800 block">
+              Параметр расчета площади за м²:
+            </span>
+            <span className="text-[11px] text-gray-500">
+              {(ownProductionConfig.areaCalculationBasis || "material_volume") === "finished_parts"
+                ? "Расчет ведется по суммарной площади готовых деталей (м²)"
+                : "Расчет ведется по объему израсходованного материала в листах (м²)"}
+            </span>
+          </div>
+          <div className="flex gap-1.5 p-1 bg-white border border-blue-200 rounded-lg shrink-0">
+            <button
+              type="button"
+              onClick={async () => {
+                const updated = { ...ownProductionConfig, areaCalculationBasis: "material_volume" as const };
+                setOwnProductionConfig(updated);
+                await onSaveSettings(true, { ownProductionConfig: updated });
+              }}
+              className={cn(
+                "px-3 py-1.5 text-xs font-bold rounded-md transition-all",
+                (ownProductionConfig.areaCalculationBasis || "material_volume") === "material_volume"
+                  ? "bg-blue-600 text-white shadow-xs"
+                  : "text-gray-600 hover:text-gray-900"
+              )}
+            >
+              Считать объем материала
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                const updated = { ...ownProductionConfig, areaCalculationBasis: "finished_parts" as const };
+                setOwnProductionConfig(updated);
+                await onSaveSettings(true, { ownProductionConfig: updated });
+              }}
+              className={cn(
+                "px-3 py-1.5 text-xs font-bold rounded-md transition-all",
+                ownProductionConfig.areaCalculationBasis === "finished_parts"
+                  ? "bg-blue-600 text-white shadow-xs"
+                  : "text-gray-600 hover:text-gray-900"
+              )}
+            >
+              Считать м2 готовых деталей
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="overflow-x-auto rounded-xl border border-gray-200">
         <table className="w-full text-left border-collapse bg-white">
           <thead>
@@ -17385,7 +16919,80 @@ const SettingsView = ({
                   </div>
                 </div>
 
-                <div className="p-4 bg-gray-50 rounded-xl space-y-3 border border-gray-200">
+                {/* Дополнительный параметр для метода 'За м²' */}
+                {calcMode === "area" && (
+                  <div className="p-4 bg-blue-50/70 border border-blue-200 rounded-xl space-y-2.5 animate-in fade-in duration-200">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                      <div>
+                        <span className="font-bold text-gray-800 block text-xs md:text-sm">
+                          Параметр расчета за м²
+                        </span>
+                        <span className="text-xs text-gray-500">
+                          Выберите базовый параметр расчета площади плитных материалов
+                        </span>
+                      </div>
+                      <div className="flex gap-1.5 p-1 bg-white border border-blue-200 rounded-lg shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOwnProductionConfig((prev) => {
+                              const updated = {
+                                ...prev,
+                                areaCalculationBasis: "material_volume" as const,
+                              };
+                              onSaveSettings(true, { ownProductionConfig: updated });
+                              return updated;
+                            });
+                          }}
+                          className={cn(
+                            "px-3 py-1.5 rounded-md text-xs font-bold transition-all",
+                            (ownProductionConfig.areaCalculationBasis || "material_volume") === "material_volume"
+                              ? "bg-blue-600 text-white shadow-xs"
+                              : "text-gray-600 hover:text-gray-900",
+                          )}
+                        >
+                          Считать объем материала
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOwnProductionConfig((prev) => {
+                              const updated = {
+                                ...prev,
+                                areaCalculationBasis: "finished_parts" as const,
+                              };
+                              onSaveSettings(true, { ownProductionConfig: updated });
+                              return updated;
+                            });
+                          }}
+                          className={cn(
+                            "px-3 py-1.5 rounded-md text-xs font-bold transition-all",
+                            ownProductionConfig.areaCalculationBasis === "finished_parts"
+                              ? "bg-blue-600 text-white shadow-xs"
+                              : "text-gray-600 hover:text-gray-900",
+                          )}
+                        >
+                          Считать м2 готовых деталей
+                        </button>
+                      </div>
+                    </div>
+                    <div className="text-[11px] text-gray-500 pt-1.5 border-t border-blue-100 flex flex-wrap items-center gap-1.5">
+                      <span className="font-semibold text-blue-700">
+                        {(ownProductionConfig.areaCalculationBasis || "material_volume") === "finished_parts"
+                          ? "Режим: Считать м² готовых деталей"
+                          : "Режим: Считать объем материала"}
+                      </span>
+                      <span>—</span>
+                      <span>
+                        {(ownProductionConfig.areaCalculationBasis || "material_volume") === "finished_parts"
+                          ? "стоимость рассчитывается по чистой суммарной площади изготовленных деталей без учета отходов раскроя."
+                          : "стоимость рассчитывается по площади целых листов материала, израсходованных на раскрой деталей."}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                <div className="p-4 bg-gray-50 rounded-xl space-y-4 border border-gray-200">
                   <div className="flex items-center justify-between gap-4">
                     <div>
                       <span className="font-bold text-gray-700 block text-xs md:text-sm">
@@ -17401,15 +17008,19 @@ const SettingsView = ({
                         checked={ownProductionConfig.clientCalcModesEnabled || false}
                         onChange={(e) => {
                           const val = e.target.checked;
-                          setOwnProductionConfig((prev) => ({
-                            ...prev,
-                            clientCalcModesEnabled: val,
-                            clientCalcModes: prev.clientCalcModes || {
-                              retail: calcMode,
-                              salon: calcMode,
-                              designer: calcMode,
-                            },
-                          }));
+                          setOwnProductionConfig((prev) => {
+                            const updated = {
+                              ...prev,
+                              clientCalcModesEnabled: val,
+                              clientCalcModes: prev.clientCalcModes || {
+                                retail: calcMode,
+                                salon: calcMode,
+                                designer: calcMode,
+                              },
+                            };
+                            onSaveSettings(true, { ownProductionConfig: updated });
+                            return updated;
+                          });
                         }}
                         className="sr-only peer"
                       />
@@ -17417,104 +17028,646 @@ const SettingsView = ({
                     </label>
                   </div>
 
-                  {ownProductionConfig.clientCalcModesEnabled && (
-                    <div className="pt-2 border-t border-gray-200 space-y-2">
-                      {[
-                        { id: "retail", label: "Розничные клиенты (Розница)" },
-                        { id: "salon", label: "Салоны (Дилеры)" },
-                        { id: "designer", label: "Дизайнеры" },
-                      ].map((clientType) => {
-                        const curMode =
-                          ownProductionConfig.clientCalcModes?.[
-                            clientType.id as "retail" | "salon" | "designer"
-                          ] || calcMode;
-                        return (
-                          <div
-                            key={clientType.id}
-                            className="flex items-center justify-between bg-white p-2.5 rounded-lg border border-gray-200"
-                          >
-                            <span className="text-xs font-bold text-gray-700">
-                              {clientType.label}
-                            </span>
+                  {ownProductionConfig.clientCalcModesEnabled && (() => {
+                    const specialSalons = (salonsUsingMe || []).filter(
+                      (s) =>
+                        (s.type === "Салон" || !s.type || s.type === "Мебельное производство") &&
+                        ownProductionConfig.specialConditionIds?.includes(s.id),
+                    );
+                    const nonSpecialSalons = (salonsUsingMe || []).filter(
+                      (s) =>
+                        (s.type === "Салон" || !s.type || s.type === "Мебельное производство") &&
+                        !ownProductionConfig.specialConditionIds?.includes(s.id),
+                    );
+
+                    const specialDesigners = (salonsUsingMe || []).filter(
+                      (s) =>
+                        s.type === "Дизайнер" &&
+                        ownProductionConfig.specialConditionIds?.includes(s.id),
+                    );
+                    const nonSpecialDesigners = (salonsUsingMe || []).filter(
+                      (s) =>
+                        s.type === "Дизайнер" &&
+                        !ownProductionConfig.specialConditionIds?.includes(s.id),
+                    );
+
+                    const retailMode = ownProductionConfig.clientCalcModes?.retail || calcMode;
+                    const retailBasis =
+                      ownProductionConfig.clientAreaCalcBasis?.retail ||
+                      ownProductionConfig.areaCalculationBasis ||
+                      "material_volume";
+
+                    const salonMode = ownProductionConfig.clientCalcModes?.salon || calcMode;
+                    const salonBasis =
+                      ownProductionConfig.clientAreaCalcBasis?.salon ||
+                      ownProductionConfig.areaCalculationBasis ||
+                      "material_volume";
+
+                    const designerMode = ownProductionConfig.clientCalcModes?.designer || calcMode;
+                    const designerBasis =
+                      ownProductionConfig.clientAreaCalcBasis?.designer ||
+                      ownProductionConfig.areaCalculationBasis ||
+                      "material_volume";
+
+                    const updateClientMode = (
+                      type: "retail" | "salon" | "designer",
+                      mode: "coefficients" | "area" | "sheet",
+                    ) => {
+                      setOwnProductionConfig((prev) => {
+                        const updated = {
+                          ...prev,
+                          clientCalcModes: {
+                            ...(prev.clientCalcModes || {
+                              retail: calcMode,
+                              salon: calcMode,
+                              designer: calcMode,
+                            }),
+                            [type]: mode,
+                          },
+                        };
+                        onSaveSettings(true, { ownProductionConfig: updated });
+                        return updated;
+                      });
+                    };
+
+                    const updateClientBasis = (
+                      type: "retail" | "salon" | "designer",
+                      basis: "material_volume" | "finished_parts",
+                    ) => {
+                      setOwnProductionConfig((prev) => {
+                        const updated = {
+                          ...prev,
+                          clientAreaCalcBasis: {
+                            ...(prev.clientAreaCalcBasis || {}),
+                            [type]: basis,
+                          },
+                        };
+                        onSaveSettings(true, { ownProductionConfig: updated });
+                        return updated;
+                      });
+                    };
+
+                    const updateCustomPartnerMode = (
+                      partnerId: string,
+                      mode: "coefficients" | "area" | "sheet",
+                    ) => {
+                      setOwnProductionConfig((prev) => {
+                        const updated = {
+                          ...prev,
+                          clientCalcModes: {
+                            ...(prev.clientCalcModes || {
+                              retail: calcMode,
+                              salon: calcMode,
+                              designer: calcMode,
+                            }),
+                            custom: {
+                              ...(prev.clientCalcModes?.custom || {}),
+                              [partnerId]: mode,
+                            },
+                          },
+                        };
+                        onSaveSettings(true, { ownProductionConfig: updated });
+                        return updated;
+                      });
+                    };
+
+                    const updateCustomPartnerBasis = (
+                      partnerId: string,
+                      basis: "material_volume" | "finished_parts",
+                    ) => {
+                      setOwnProductionConfig((prev) => {
+                        const updated = {
+                          ...prev,
+                          clientAreaCalcBasis: {
+                            ...(prev.clientAreaCalcBasis || {}),
+                            custom: {
+                              ...(prev.clientAreaCalcBasis?.custom || {}),
+                              [partnerId]: basis,
+                            },
+                          },
+                        };
+                        onSaveSettings(true, { ownProductionConfig: updated });
+                        return updated;
+                      });
+                    };
+
+                    return (
+                      <div className="pt-2 border-t border-gray-200 space-y-4">
+                        {/* 1. РОЗНИЧНЫЕ КЛИЕНТЫ */}
+                        <div className="bg-white p-3.5 rounded-xl border border-gray-200 space-y-2.5">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <Users className="w-4 h-4 text-blue-600" />
+                              <span className="text-xs font-bold text-gray-800">
+                                Розничные клиенты (Розница)
+                              </span>
+                            </div>
                             <div className="flex gap-1 bg-gray-100 p-1 rounded-md">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setOwnProductionConfig((prev) => ({
-                                    ...prev,
-                                    clientCalcModes: {
-                                      ...(prev.clientCalcModes || {
-                                        retail: calcMode,
-                                        salon: calcMode,
-                                        designer: calcMode,
-                                      }),
-                                      [clientType.id]: "coefficients",
-                                    },
-                                  }));
-                                }}
-                                className={cn(
-                                  "px-2.5 py-1 text-[11px] font-bold rounded transition-all",
-                                  curMode === "coefficients"
-                                    ? "bg-white text-blue-600 shadow-xs"
-                                    : "text-gray-500 hover:text-gray-700",
-                                )}
-                              >
-                                Коэффициенты
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setOwnProductionConfig((prev) => ({
-                                    ...prev,
-                                    clientCalcModes: {
-                                      ...(prev.clientCalcModes || {
-                                        retail: calcMode,
-                                        salon: calcMode,
-                                        designer: calcMode,
-                                      }),
-                                      [clientType.id]: "area",
-                                    },
-                                  }));
-                                }}
-                                className={cn(
-                                  "px-2.5 py-1 text-[11px] font-bold rounded transition-all",
-                                  curMode === "area"
-                                    ? "bg-white text-blue-600 shadow-xs"
-                                    : "text-gray-500 hover:text-gray-700",
-                                )}
-                              >
-                                За м²
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setOwnProductionConfig((prev) => ({
-                                    ...prev,
-                                    clientCalcModes: {
-                                      ...(prev.clientCalcModes || {
-                                        retail: calcMode,
-                                        salon: calcMode,
-                                        designer: calcMode,
-                                      }),
-                                      [clientType.id]: "sheet",
-                                    },
-                                  }));
-                                }}
-                                className={cn(
-                                  "px-2.5 py-1 text-[11px] font-bold rounded transition-all",
-                                  curMode === "sheet"
-                                    ? "bg-white text-blue-600 shadow-xs"
-                                    : "text-gray-500 hover:text-gray-700",
-                                )}
-                              >
-                                За лист
-                              </button>
+                              {(["coefficients", "area", "sheet"] as const).map((m) => (
+                                <button
+                                  key={m}
+                                  type="button"
+                                  onClick={() => updateClientMode("retail", m)}
+                                  className={cn(
+                                    "px-2.5 py-1 text-[11px] font-bold rounded transition-all",
+                                    retailMode === m
+                                      ? "bg-white text-blue-600 shadow-xs"
+                                      : "text-gray-500 hover:text-gray-700",
+                                  )}
+                                >
+                                  {m === "coefficients"
+                                    ? "Коэффициенты"
+                                    : m === "area"
+                                      ? "За м²"
+                                      : "За лист"}
+                                </button>
+                              ))}
                             </div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
+
+                          {retailMode === "area" && (
+                            <div className="p-2.5 bg-blue-50/60 rounded-lg border border-blue-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 animate-in fade-in">
+                              <span className="text-[11px] text-gray-600 font-medium">
+                                Параметр расчета за м² (Розница):
+                              </span>
+                              <div className="flex gap-1 bg-white p-0.5 rounded border border-blue-200">
+                                <button
+                                  type="button"
+                                  onClick={() => updateClientBasis("retail", "material_volume")}
+                                  className={cn(
+                                    "px-2.5 py-0.5 text-[10px] font-bold rounded transition-all",
+                                    retailBasis === "material_volume"
+                                      ? "bg-blue-600 text-white shadow-2xs"
+                                      : "text-gray-600 hover:text-gray-900",
+                                  )}
+                                >
+                                  Считать объем материала
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => updateClientBasis("retail", "finished_parts")}
+                                  className={cn(
+                                    "px-2.5 py-0.5 text-[10px] font-bold rounded transition-all",
+                                    retailBasis === "finished_parts"
+                                      ? "bg-blue-600 text-white shadow-2xs"
+                                      : "text-gray-600 hover:text-gray-900",
+                                  )}
+                                >
+                                  Считать м2 готовых деталей
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* 2. САЛОНЫ (ДИЛЕРЫ) И САЛОНЫ НА СПЕЦ УСЛОВИЯХ */}
+                        <div className="bg-white p-3.5 rounded-xl border border-gray-200 space-y-3.5">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <Building2 className="w-4 h-4 text-indigo-600" />
+                              <div>
+                                <span className="text-xs font-bold text-gray-800 block">
+                                  Салоны (Дилеры) — базовый метод
+                                </span>
+                                <span className="text-[10px] text-gray-500">
+                                  Применяется по умолчанию для всех стандартных салонов
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex gap-1 bg-gray-100 p-1 rounded-md">
+                              {(["coefficients", "area", "sheet"] as const).map((m) => (
+                                <button
+                                  key={m}
+                                  type="button"
+                                  onClick={() => updateClientMode("salon", m)}
+                                  className={cn(
+                                    "px-2.5 py-1 text-[11px] font-bold rounded transition-all",
+                                    salonMode === m
+                                      ? "bg-white text-blue-600 shadow-xs"
+                                      : "text-gray-500 hover:text-gray-700",
+                                  )}
+                                >
+                                  {m === "coefficients"
+                                    ? "Коэффициенты"
+                                    : m === "area"
+                                      ? "За м²"
+                                      : "За лист"}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {salonMode === "area" && (
+                            <div className="p-2.5 bg-blue-50/60 rounded-lg border border-blue-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 animate-in fade-in">
+                              <span className="text-[11px] text-gray-600 font-medium">
+                                Параметр расчета за м² (Салоны):
+                              </span>
+                              <div className="flex gap-1 bg-white p-0.5 rounded border border-blue-200">
+                                <button
+                                  type="button"
+                                  onClick={() => updateClientBasis("salon", "material_volume")}
+                                  className={cn(
+                                    "px-2.5 py-0.5 text-[10px] font-bold rounded transition-all",
+                                    salonBasis === "material_volume"
+                                      ? "bg-blue-600 text-white shadow-2xs"
+                                      : "text-gray-600 hover:text-gray-900",
+                                  )}
+                                >
+                                  Считать объем материала
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => updateClientBasis("salon", "finished_parts")}
+                                  className={cn(
+                                    "px-2.5 py-0.5 text-[10px] font-bold rounded transition-all",
+                                    salonBasis === "finished_parts"
+                                      ? "bg-blue-600 text-white shadow-2xs"
+                                      : "text-gray-600 hover:text-gray-900",
+                                  )}
+                                >
+                                  Считать м2 готовых деталей
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Вложенный блок: Салоны на спец условиях */}
+                          <div className="pt-3 border-t border-gray-100 space-y-2.5">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                              <div className="flex items-center gap-1.5">
+                                <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+                                <span className="text-[11px] font-extrabold text-blue-900 uppercase tracking-wider">
+                                  Салоны на спец. условиях
+                                </span>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
+                                  {specialSalons.length}
+                                </span>
+                              </div>
+
+                              {nonSpecialSalons.length > 0 && (
+                                <select
+                                  value=""
+                                  onChange={(e) => {
+                                    if (e.target.value) toggleSpecialCondition(e.target.value);
+                                  }}
+                                  className="text-[11px] font-medium bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-md px-2 py-1 text-gray-700 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                >
+                                  <option value="">+ Добавить салон на спец. условия</option>
+                                  {nonSpecialSalons.map((s) => (
+                                    <option key={s.id} value={s.id}>
+                                      {s.name || "Без названия"} ({s.city || "город не указан"})
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
+
+                            {specialSalons.length > 0 ? (
+                              <div className="space-y-2">
+                                {specialSalons.map((salon) => {
+                                  const curSalonMode =
+                                    ownProductionConfig.clientCalcModes?.custom?.[salon.id] ||
+                                    salonMode;
+                                  const curSalonBasis =
+                                    ownProductionConfig.clientAreaCalcBasis?.custom?.[salon.id] ||
+                                    salonBasis;
+
+                                  return (
+                                    <div
+                                      key={salon.id}
+                                      className="p-2.5 bg-blue-50/40 rounded-lg border border-blue-200/80 space-y-2"
+                                    >
+                                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2">
+                                          <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
+                                          <div>
+                                            <span className="text-xs font-bold text-gray-900 block">
+                                              {salon.name || "Без названия"}
+                                            </span>
+                                            <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                                              <span>{salon.city || "Город не указан"}</span>
+                                              <span>•</span>
+                                              <span className="text-blue-700 font-bold bg-blue-100/80 px-1.5 py-0.2 rounded">
+                                                Спец. условия
+                                              </span>
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-2">
+                                          <div className="flex gap-1 bg-white p-1 rounded-md border border-gray-200 shadow-2xs">
+                                            {(["coefficients", "area", "sheet"] as const).map(
+                                              (m) => (
+                                                <button
+                                                  key={m}
+                                                  type="button"
+                                                  onClick={() => updateCustomPartnerMode(salon.id, m)}
+                                                  className={cn(
+                                                    "px-2 py-0.5 text-[10px] font-bold rounded transition-all",
+                                                    curSalonMode === m
+                                                      ? "bg-blue-600 text-white shadow-2xs"
+                                                      : "text-gray-500 hover:text-gray-700",
+                                                  )}
+                                                >
+                                                  {m === "coefficients"
+                                                    ? "Коэффициенты"
+                                                    : m === "area"
+                                                      ? "За м²"
+                                                      : "За лист"}
+                                                </button>
+                                              ),
+                                            )}
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleSpecialCondition(salon.id)}
+                                            title="Отключить спец. условия для этого салона"
+                                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                          >
+                                            <UserX className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      {curSalonMode === "area" && (
+                                        <div className="pl-4 pt-1.5 border-t border-blue-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                          <span className="text-[10px] text-gray-600 font-medium">
+                                            Параметр за м² для «{salon.name}»:
+                                          </span>
+                                          <div className="flex gap-1 bg-white p-0.5 rounded border border-blue-200">
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                updateCustomPartnerBasis(salon.id, "material_volume")
+                                              }
+                                              className={cn(
+                                                "px-2 py-0.5 text-[10px] font-bold rounded transition-all",
+                                                curSalonBasis === "material_volume"
+                                                  ? "bg-blue-600 text-white shadow-2xs"
+                                                  : "text-gray-600 hover:text-gray-900",
+                                              )}
+                                            >
+                                              Считать объем материала
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                updateCustomPartnerBasis(salon.id, "finished_parts")
+                                              }
+                                              className={cn(
+                                                "px-2 py-0.5 text-[10px] font-bold rounded transition-all",
+                                                curSalonBasis === "finished_parts"
+                                                  ? "bg-blue-600 text-white shadow-2xs"
+                                                  : "text-gray-600 hover:text-gray-900",
+                                              )}
+                                            >
+                                              Считать м2 готовых деталей
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="p-3 bg-gray-50/70 rounded-lg border border-dashed border-gray-200 text-center">
+                                <p className="text-[11px] text-gray-500">
+                                  Сейчас нет салонов на спец. условиях.
+                                  {nonSpecialSalons.length > 0
+                                    ? " Выберите салон из списка выше или активируйте спец. условия в разделе «Подключенные клиенты» ниже."
+                                    : " Подключенные салоны появятся здесь автоматически."}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* 3. ДИЗАЙНЕРЫ И ДИЗАЙНЕРЫ НА СПЕЦ УСЛОВИЯХ */}
+                        <div className="bg-white p-3.5 rounded-xl border border-gray-200 space-y-3.5">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div className="flex items-center gap-2">
+                              <Palette className="w-4 h-4 text-purple-600" />
+                              <div>
+                                <span className="text-xs font-bold text-gray-800 block">
+                                  Дизайнеры — базовый метод
+                                </span>
+                                <span className="text-[10px] text-gray-500">
+                                  Применяется по умолчанию для всех дизайнеров
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex gap-1 bg-gray-100 p-1 rounded-md">
+                              {(["coefficients", "area", "sheet"] as const).map((m) => (
+                                <button
+                                  key={m}
+                                  type="button"
+                                  onClick={() => updateClientMode("designer", m)}
+                                  className={cn(
+                                    "px-2.5 py-1 text-[11px] font-bold rounded transition-all",
+                                    designerMode === m
+                                      ? "bg-white text-blue-600 shadow-xs"
+                                      : "text-gray-500 hover:text-gray-700",
+                                  )}
+                                >
+                                  {m === "coefficients"
+                                    ? "Коэффициенты"
+                                    : m === "area"
+                                      ? "За м²"
+                                      : "За лист"}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+
+                          {designerMode === "area" && (
+                            <div className="p-2.5 bg-purple-50/60 rounded-lg border border-purple-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2 animate-in fade-in">
+                              <span className="text-[11px] text-gray-600 font-medium">
+                                Параметр расчета за м² (Дизайнеры):
+                              </span>
+                              <div className="flex gap-1 bg-white p-0.5 rounded border border-purple-200">
+                                <button
+                                  type="button"
+                                  onClick={() => updateClientBasis("designer", "material_volume")}
+                                  className={cn(
+                                    "px-2.5 py-0.5 text-[10px] font-bold rounded transition-all",
+                                    designerBasis === "material_volume"
+                                      ? "bg-purple-600 text-white shadow-2xs"
+                                      : "text-gray-600 hover:text-gray-900",
+                                  )}
+                                >
+                                  Считать объем материала
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => updateClientBasis("designer", "finished_parts")}
+                                  className={cn(
+                                    "px-2.5 py-0.5 text-[10px] font-bold rounded transition-all",
+                                    designerBasis === "finished_parts"
+                                      ? "bg-purple-600 text-white shadow-2xs"
+                                      : "text-gray-600 hover:text-gray-900",
+                                  )}
+                                >
+                                  Считать м2 готовых деталей
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Вложенный блок: Дизайнеры на спец условиях */}
+                          <div className="pt-3 border-t border-gray-100 space-y-2.5">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                              <div className="flex items-center gap-1.5">
+                                <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+                                <span className="text-[11px] font-extrabold text-purple-900 uppercase tracking-wider">
+                                  Дизайнеры на спец. условиях
+                                </span>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700">
+                                  {specialDesigners.length}
+                                </span>
+                              </div>
+
+                              {nonSpecialDesigners.length > 0 && (
+                                <select
+                                  value=""
+                                  onChange={(e) => {
+                                    if (e.target.value) toggleSpecialCondition(e.target.value);
+                                  }}
+                                  className="text-[11px] font-medium bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-md px-2 py-1 text-gray-700 cursor-pointer focus:outline-none focus:ring-1 focus:ring-purple-500"
+                                >
+                                  <option value="">+ Добавить дизайнера на спец. условия</option>
+                                  {nonSpecialDesigners.map((d) => (
+                                    <option key={d.id} value={d.id}>
+                                      {d.name || "Без названия"} ({d.city || "город не указан"})
+                                    </option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
+
+                            {specialDesigners.length > 0 ? (
+                              <div className="space-y-2">
+                                {specialDesigners.map((designer) => {
+                                  const curDesignerMode =
+                                    ownProductionConfig.clientCalcModes?.custom?.[designer.id] ||
+                                    designerMode;
+                                  const curDesignerBasis =
+                                    ownProductionConfig.clientAreaCalcBasis?.custom?.[designer.id] ||
+                                    designerBasis;
+
+                                  return (
+                                    <div
+                                      key={designer.id}
+                                      className="p-2.5 bg-purple-50/40 rounded-lg border border-purple-200/80 space-y-2"
+                                    >
+                                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                        <div className="flex items-center gap-2">
+                                          <span className="w-2 h-2 rounded-full bg-purple-600 shrink-0" />
+                                          <div>
+                                            <span className="text-xs font-bold text-gray-900 block">
+                                              {designer.name || "Без названия"}
+                                            </span>
+                                            <div className="flex items-center gap-2 text-[10px] text-gray-500">
+                                              <span>{designer.city || "Город не указан"}</span>
+                                              <span>•</span>
+                                              <span className="text-purple-700 font-bold bg-purple-100/80 px-1.5 py-0.2 rounded">
+                                                Спец. условия
+                                              </span>
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-2">
+                                          <div className="flex gap-1 bg-white p-1 rounded-md border border-gray-200 shadow-2xs">
+                                            {(["coefficients", "area", "sheet"] as const).map(
+                                              (m) => (
+                                                <button
+                                                  key={m}
+                                                  type="button"
+                                                  onClick={() => updateCustomPartnerMode(designer.id, m)}
+                                                  className={cn(
+                                                    "px-2 py-0.5 text-[10px] font-bold rounded transition-all",
+                                                    curDesignerMode === m
+                                                      ? "bg-purple-600 text-white shadow-2xs"
+                                                      : "text-gray-500 hover:text-gray-700",
+                                                  )}
+                                                >
+                                                  {m === "coefficients"
+                                                    ? "Коэффициенты"
+                                                    : m === "area"
+                                                      ? "За м²"
+                                                      : "За лист"}
+                                                </button>
+                                              ),
+                                            )}
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() => toggleSpecialCondition(designer.id)}
+                                            title="Отключить спец. условия для этого дизайнера"
+                                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                          >
+                                            <UserX className="w-3.5 h-3.5" />
+                                          </button>
+                                        </div>
+                                      </div>
+
+                                      {curDesignerMode === "area" && (
+                                        <div className="pl-4 pt-1.5 border-t border-purple-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                          <span className="text-[10px] text-gray-600 font-medium">
+                                            Параметр за м² для «{designer.name}»:
+                                          </span>
+                                          <div className="flex gap-1 bg-white p-0.5 rounded border border-purple-200">
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                updateCustomPartnerBasis(designer.id, "material_volume")
+                                              }
+                                              className={cn(
+                                                "px-2 py-0.5 text-[10px] font-bold rounded transition-all",
+                                                curDesignerBasis === "material_volume"
+                                                  ? "bg-purple-600 text-white shadow-2xs"
+                                                  : "text-gray-600 hover:text-gray-900",
+                                              )}
+                                            >
+                                              Считать объем материала
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                updateCustomPartnerBasis(designer.id, "finished_parts")
+                                              }
+                                              className={cn(
+                                                "px-2 py-0.5 text-[10px] font-bold rounded transition-all",
+                                                curDesignerBasis === "finished_parts"
+                                                  ? "bg-purple-600 text-white shadow-2xs"
+                                                  : "text-gray-600 hover:text-gray-900",
+                                              )}
+                                            >
+                                              Считать м2 готовых деталей
+                                            </button>
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <div className="p-3 bg-gray-50/70 rounded-lg border border-dashed border-gray-200 text-center">
+                                <p className="text-[11px] text-gray-500">
+                                  Сейчас нет дизайнеров на спец. условиях.
+                                  {nonSpecialDesigners.length > 0
+                                    ? " Выберите дизайнера из списка выше или активируйте спец. условия в разделе «Подключенные клиенты» ниже."
+                                    : " Подключенные дизайнеры появятся здесь автоматически."}
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="flex items-center justify-between gap-4 p-4 bg-gray-50 rounded-xl">
@@ -18915,7 +19068,8 @@ const SettingsView = ({
             {/* Material work costs section for Area calculation mode */}
             {isProduction && (calcMode === "area" ||
               (ownProductionConfig.clientCalcModesEnabled &&
-                Object.values(ownProductionConfig.clientCalcModes || {}).includes("area"))) && (
+                (Object.values(ownProductionConfig.clientCalcModes || {}).includes("area") ||
+                 Object.values(ownProductionConfig.clientCalcModes?.custom || {}).includes("area")))) && (
               <MaterialWorkCostsSection
                 mode="area"
                 ownProductionConfig={ownProductionConfig}
@@ -18929,7 +19083,8 @@ const SettingsView = ({
             {/* Material work costs section for Sheet calculation mode */}
             {isProduction && (calcMode === "sheet" ||
               (ownProductionConfig.clientCalcModesEnabled &&
-                Object.values(ownProductionConfig.clientCalcModes || {}).includes("sheet"))) && (
+                (Object.values(ownProductionConfig.clientCalcModes || {}).includes("sheet") ||
+                 Object.values(ownProductionConfig.clientCalcModes?.custom || {}).includes("sheet")))) && (
               <MaterialWorkCostsSection
                 mode="sheet"
                 ownProductionConfig={ownProductionConfig}
@@ -40079,7 +40234,14 @@ export default function App() {
             ((sheetConfigs[key]?.width || 2800) *
               (sheetConfigs[key]?.height || 2070)) /
             1000000;
-          itemFinalCost = sheetCount * sheetArea * price * coef;
+          const sheetGrossArea = sheetCount * sheetArea;
+          const detailsNetArea = combinedDetails.reduce(
+            (sum, d) => sum + (d.area || ((d.width * d.height) / 1000000) * (d.qty || 1)),
+            0,
+          );
+          const effectiveBasis = ownProductionConfig?.areaCalculationBasis || "material_volume";
+          const totalArea = effectiveBasis === "finished_parts" ? detailsNetArea : sheetGrossArea;
+          itemFinalCost = totalArea * price * coef;
         } else {
           itemFinalCost = sheetCount * price * coef;
         }
