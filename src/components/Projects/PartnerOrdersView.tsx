@@ -106,10 +106,13 @@ import {
   Package,
   Eye,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  Link,
+  ExternalLink
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { DealAnalysisModal } from "./DealAnalysisModal";
+import { createBitrix24DealForPartnerOrder } from "../../services/bitrix24";
 
 interface PartnerOrdersViewProps {
   companyId: string;
@@ -267,6 +270,25 @@ export const PartnerOrdersView = ({
         }
       }
     );
+  };
+
+  const handleCreateDealInB24 = async (setRecord: any, subProjs: any[], totalPrice: number) => {
+    const title = `Заказ от ${setRecord.originalSalonName || 'Салона'}: ${setRecord.name || ('Договор №' + (setRecord.contractNumber || setRecord.id.slice(0, 6)))}`;
+    const details = `Состав проекта (${subProjs.length} изд.):\n` + subProjs.map((p: any) => `- ${p.name}`).join('\n');
+    
+    const res = await createBitrix24DealForPartnerOrder({
+      title,
+      opportunity: totalPrice || 0,
+      salonName: setRecord.originalSalonName,
+      contractNumber: setRecord.contractNumber || setRecord.id.slice(0, 6),
+      details
+    });
+
+    if (res.success) {
+      showAlert("Сделка создана в Битрикс24", `Создана сделка №${res.dealId} на сумму ${(totalPrice || 0).toLocaleString()} руб.`);
+    } else {
+      showAlert("Битрикс24", res.message || "Не удалось создать сделку в Битрикс24");
+    }
   };
 
   // Confirm accept order with revisions
@@ -448,6 +470,17 @@ export const PartnerOrdersView = ({
                     </div>
 
                     <div className="flex items-center gap-2.5 w-full sm:w-auto">
+                      {typeof window !== "undefined" && (window.BX24 || (window.location.search && window.location.search.includes('DOMAIN'))) && (
+                        <button
+                          onClick={() => handleCreateDealInB24(setRecord, subProjs, totalProductionPrice)}
+                          className="px-4 py-3.5 bg-blue-50 hover:bg-blue-100 text-blue-700 font-extrabold text-xs rounded-xl border border-blue-200 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                          title="Передать этот заказ салона в сделку Битрикс24"
+                        >
+                          <Link className="w-4 h-4 text-blue-600" />
+                          Передать в сделку Б24
+                        </button>
+                      )}
+
                       <button
                         onClick={() => setSelectedSetForAnalysis({ ...setRecord, subProjects: subProjs })}
                         className="flex-1 sm:flex-none px-5 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-md shadow-indigo-100 transition-all flex items-center justify-center gap-2"

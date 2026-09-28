@@ -147,6 +147,7 @@ import { SpecificationPrintView } from "./components/Projects/SpecificationPrint
 import { CommercialProposalPrintView } from "./components/Projects/CommercialProposalPrintView";
 import { UserProfileView } from "./components/Profile/UserProfileView";
 import { PromotionsView } from "./components/Promotions/PromotionsView";
+import { Bitrix24OnboardingModal } from "./components/Auth/Bitrix24OnboardingModal";
 import { B3DTestView } from "./components/B3DTest/B3DTestView";
 import {
   Menu,
@@ -34427,6 +34428,7 @@ export default function App() {
   const [b24DealIdInput, setB24DealIdInput] = useState<string>("");
   const [b24Sending, setB24Sending] = useState(false);
   const [b24MoreMenuOpen, setB24MoreMenuOpen] = useState(false);
+  const [showB24Onboarding, setShowB24Onboarding] = useState(false);
 
   useEffect(() => {
     initBitrix24().then(async (ctx) => {
@@ -34440,11 +34442,12 @@ export default function App() {
         try {
           const compRef = doc(db, "companies", compId);
           const compSnap = await getDoc(compRef);
+          let compDocData: any = null;
           if (compSnap.exists()) {
-            const data = { id: compId, ...compSnap.data() };
-            setCompanyData(data);
+            compDocData = { id: compId, ...compSnap.data() };
+            setCompanyData(compDocData);
           } else {
-            const initialCompany = {
+            compDocData = {
               id: compId,
               name: ctx.domain ? `Компания (${ctx.domain})` : "Компания Битрикс24",
               type: "Мебельное производство",
@@ -34453,19 +34456,63 @@ export default function App() {
                 webhookUrl: "",
               },
             };
-            await setDoc(compRef, initialCompany, { merge: true });
-            setCompanyData(initialCompany);
+            await setDoc(compRef, compDocData, { merge: true });
+            setCompanyData(compDocData);
+          }
+
+          if (!compDocData?.onboardingCompleted) {
+            setShowB24Onboarding(true);
+          }
+
+          // Welcome Email sending if real user email is retrieved and not sent before
+          if (ctx.userEmail && !ctx.userEmail.includes('bitrix24.ru') && !compDocData?.welcomeEmailSent) {
+            const genPassword = 'Mebel-' + Math.floor(100000 + Math.random() * 900000);
+            fetch('/api/auth/send-b24-welcome', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email: ctx.userEmail,
+                password: genPassword,
+                domain: ctx.domain,
+                companyName: compDocData?.name
+              })
+            }).catch((err) => console.warn("Could not send welcome B24 email:", err));
+
+            // Also register authUser in server DB so they can log in via website
+            fetch('/api/auth/register', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                email: ctx.userEmail,
+                password: genPassword,
+                verified: true,
+                adminName: ctx.userName || 'Сотрудник Битрикс24',
+                phone: ctx.userPhone || '',
+                companyName: compDocData?.name,
+                companyType: compDocData?.type,
+                city: 'Битрикс24',
+                workFormat: 'own'
+              })
+            }).catch(() => {});
+
+            updateDoc(compRef, { welcomeEmailSent: true }, { merge: true }).catch(() => {});
           }
         } catch (e) {
           console.warn("Could not sync B24 company doc with server DB:", e);
         }
 
-        if (!userData) {
+        const b24Email = ctx.userEmail || `admin@${ctx.domain || "bitrix24.ru"}`;
+        const b24Name = ctx.userName || "Сотрудник Битрикс24";
+        const b24Phone = ctx.userPhone || "";
+
+        if (!userData || userData.email?.includes('bitrix24.ru')) {
           setUserData({
             uid: `b24_${ctx.domain || "user"}`,
-            email: `admin@${ctx.domain || "bitrix24.ru"}`,
-            name: "Сотрудник Битрикс24",
-            role: "manager",
+            email: b24Email,
+            displayName: b24Name,
+            name: b24Name,
+            phone: b24Phone,
+            role: "admin",
             companyId: compId,
           });
         }
@@ -43933,6 +43980,33 @@ export default function App() {
               </div>
             </div>
           </div>
+        )}
+
+        {showB24Onboarding && (
+          <Bitrix24OnboardingModal
+            companyName={companyData?.name}
+            onSave={async (selectedType, workFormat) => {
+              if (companyData?.id) {
+                const compRef = doc(db, "companies", companyData.id);
+                await updateDoc(compRef, {
+                  type: selectedType,
+                  companyType: selectedType,
+                  productionFormat: workFormat,
+                  onboardingCompleted: true
+                }, { merge: true });
+
+                setCompanyData((prev: any) => ({
+                  ...prev,
+                  type: selectedType,
+                  companyType: selectedType,
+                  productionFormat: workFormat,
+                  onboardingCompleted: true
+                }));
+              }
+              setShowB24Onboarding(false);
+              showAlert("Настройка завершена", `Профиль «${selectedType}» установлен.`);
+            }}
+          />
         )}
 
         {modal.isOpen && (

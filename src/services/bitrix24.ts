@@ -11,6 +11,9 @@ export interface Bitrix24Context {
   placement?: string;
   placementOptions?: Record<string, any>;
   dealId?: number | null;
+  userEmail?: string;
+  userName?: string;
+  userPhone?: string;
 }
 
 let bx24Context: Bitrix24Context = {
@@ -101,6 +104,30 @@ export const initBitrix24 = (): Promise<Bitrix24Context> => {
           placementOptions,
           dealId: dealId || null,
         };
+
+        // Fetch current user info from Bitrix24
+        try {
+          if (typeof window.BX24.callMethod === 'function') {
+            window.BX24.callMethod('user.current', {}, (res: any) => {
+              if (res && typeof res.data === 'function') {
+                const uData = res.data();
+                if (uData) {
+                  const email = uData.EMAIL || uData.email;
+                  const name = [uData.NAME, uData.LAST_NAME].filter(Boolean).join(' ') || uData.NAME;
+                  const phone = uData.WORK_PHONE || uData.PERSONAL_PHONE || uData.PERSONAL_MOBILE;
+                  if (email) bx24Context.userEmail = email.trim().toLowerCase();
+                  if (name) bx24Context.userName = name.trim();
+                  if (phone) bx24Context.userPhone = phone.trim();
+                }
+              }
+              resolve(bx24Context);
+            });
+          } else {
+            resolve(bx24Context);
+          }
+        } catch (_) {
+          resolve(bx24Context);
+        }
 
         // Automatically adjust iframe height inside Bitrix24
         try {
@@ -248,6 +275,51 @@ export const updateBitrix24DealTitle = async (dealId: number, title: string): Pr
       );
     } catch (e) {
       resolve(false);
+    }
+  });
+};
+
+export const createBitrix24DealForPartnerOrder = async ({
+  title,
+  opportunity,
+  salonName,
+  contractNumber,
+  details
+}: {
+  title: string;
+  opportunity: number;
+  salonName?: string;
+  contractNumber?: string;
+  details?: string;
+}): Promise<{ success: boolean; dealId?: number; message: string }> => {
+  if (typeof window === "undefined" || !window.BX24) {
+    return { success: false, message: "Окружение Битрикс24 не обнаружено." };
+  }
+
+  return new Promise((resolve) => {
+    try {
+      const commentText = `Заказ от партнера: ${salonName || 'Салон'}\nДоговор: ${contractNumber || 'Б/Н'}\nСумма производства: ${opportunity.toLocaleString()} руб.\n\n${details || ''}`;
+      window.BX24.callMethod(
+        "crm.deal.add",
+        {
+          fields: {
+            TITLE: title,
+            OPPORTUNITY: opportunity,
+            CURRENCY_ID: "RUB",
+            COMMENTS: commentText,
+          }
+        },
+        (res: any) => {
+          if (res.error()) {
+            resolve({ success: false, message: res.error().toString() });
+          } else {
+            const newDealId = res.data();
+            resolve({ success: true, dealId: newDealId, message: "Сделка успешно создана!" });
+          }
+        }
+      );
+    } catch (e: any) {
+      resolve({ success: false, message: e.message || String(e) });
     }
   });
 };

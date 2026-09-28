@@ -1266,6 +1266,38 @@ function transliterate(str: string): string {
     }
   });
 
+  app.post("/api/auth/send-b24-welcome", async (req, res) => {
+    try {
+      const { email, password, domain, companyName } = req.body;
+      if (!email || email.includes('bitrix24.ru')) {
+        return res.json({ status: "skipped", reason: "no_valid_email" });
+      }
+
+      const subject = `Добро пожаловать в "Мебельный калькулятор"! Ваши данные для входа`;
+      const message = `Здравствуйте!
+
+Ваша компания "${companyName || domain || 'Битрикс24'}" успешно зарегистрирована в сервисе "Мебельный калькулятор".
+
+🔑 Ваши данные для входа в WEB-версию с любого устройства:
+• Адрес сайта: https://mebel-plan.ru
+• Логин (Email): ${email}
+• Пароль: ${password}
+
+💡 Инструкция по входу:
+1. Вы можете продолжать комфортно работать внутри вашего портала Битрикс24 без авторизации.
+2. Если вам или вашим сотрудникам понадобится открыть калькулятор или ERP-систему вне Битрикс24 (на телефоне, планшете или ноутбуке), перейдите на https://mebel-plan.ru и используйте логин и пароль выше.
+
+С уважением,
+Команда "Мебельный калькулятор"`;
+
+      await sendEmail(email, subject, message);
+      res.json({ status: "ok" });
+    } catch (e: any) {
+      console.error("Failed to send B24 welcome email:", e);
+      res.status(500).json({ error: e.message || String(e) });
+    }
+  });
+
   app.post("/api/auth/notify-registration", async (req, res) => {
     try {
       const { adminName, phone, companyName, companyType, city, workFormat, email } = req.body;
