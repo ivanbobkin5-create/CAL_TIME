@@ -32,7 +32,8 @@ import {
   Globe,
   UserCheck,
   UserX,
-  Plus
+  Plus,
+  Phone
 } from 'lucide-react';
 import { cn, transliterate } from '../../lib/utils';
 
@@ -129,12 +130,15 @@ interface Company {
   slug?: string;
   crmPipelineId?: string;
   crmStageId?: string;
+  phone?: string;
+  adminPhone?: string;
 }
 
 interface User {
   uid: string;
   email: string;
   displayName: string;
+  phone?: string;
   role: string;
   companyId: string;
   isBlocked?: boolean;
@@ -383,8 +387,14 @@ export const AppAdminView = () => {
 
   // Filter companies
   const filteredCompanies = companies.filter(c => {
+    const owner = users.find(u => u.uid === c.ownerUid);
     const matchesSearch = c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          c.city?.toLowerCase().includes(searchQuery.toLowerCase());
+                          c.city?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          c.phone?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          c.adminPhone?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          owner?.phone?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          owner?.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          owner?.email?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesType = typeFilter === 'all' || (
       typeFilter === 'Мебельное производство'
         ? (c.type === 'Мебельное производство' || c.type === 'Производство' || (c.type && c.type.toLowerCase().includes('производств')))
@@ -399,6 +409,7 @@ export const AppAdminView = () => {
     const company = companies.find(c => c.id === u.companyId);
     const matchesSearch = u.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          u.phone?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           company?.name?.toLowerCase().includes(searchQuery.toLowerCase());
     return matchesSearch;
   });
@@ -571,6 +582,8 @@ export const AppAdminView = () => {
                 const companyEmployees = users.filter(u => u.companyId === company.id);
                 const isExpanded = !!expandedCompanyIds[company.id];
                 const activeTabForCompany = activeSettingsTab[company.id] || 'limits';
+                const companyOwner = users.find(u => u.uid === company.ownerUid) || companyEmployees.find(u => u.uid === company.ownerUid);
+                const companyPhone = company.phone || company.adminPhone || companyOwner?.phone;
 
                 return (
                   <div 
@@ -620,6 +633,22 @@ export const AppAdminView = () => {
                             <span className="flex items-center gap-1 text-slate-600">
                               <MapPin className="w-3.5 h-3.5 text-slate-400" /> {company.city || 'Город не указан'}
                             </span>
+
+                            {companyPhone && (
+                              <a 
+                                href={`tel:${companyPhone}`}
+                                className="flex items-center gap-1 font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 text-[11px] transition-colors"
+                                title="Позвонить"
+                              >
+                                <Phone className="w-3 h-3 text-emerald-600" /> {companyPhone}
+                              </a>
+                            )}
+
+                            {companyOwner && (
+                              <span className="flex items-center gap-1 text-slate-600">
+                                <UserCheck className="w-3.5 h-3.5 text-blue-500" /> {companyOwner.displayName || companyOwner.email}
+                              </span>
+                            )}
                             
                             <span className="flex items-center gap-1 font-semibold text-slate-700">
                               <BarChart3 className="w-3.5 h-3.5 text-blue-600" /> {company.projectCount || 0} расчетов
@@ -826,6 +855,11 @@ export const AppAdminView = () => {
                                         )}
                                       </div>
                                       <div className="text-[10px] text-slate-500 truncate font-mono">{user.email}</div>
+                                      {user.phone && (
+                                        <a href={`tel:${user.phone}`} className="text-[10px] text-emerald-600 hover:text-emerald-700 font-semibold flex items-center gap-1">
+                                          <Phone className="w-2.5 h-2.5 text-emerald-500" /> {user.phone}
+                                        </a>
+                                      )}
                                     </div>
                                   </div>
 
@@ -986,6 +1020,11 @@ export const AppAdminView = () => {
                               <div>
                                 <div className="font-bold text-slate-900">{user.displayName || 'Без имени'}</div>
                                 <div className="text-[11px] text-slate-400 font-mono">{user.email}</div>
+                                {user.phone && (
+                                  <a href={`tel:${user.phone}`} className="text-[11px] text-emerald-600 hover:text-emerald-700 font-semibold flex items-center gap-1 mt-0.5">
+                                    <Phone className="w-3 h-3 text-emerald-500" /> {user.phone}
+                                  </a>
+                                )}
                               </div>
                             </div>
                           </td>

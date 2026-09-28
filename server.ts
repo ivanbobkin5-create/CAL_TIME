@@ -1190,7 +1190,7 @@ function transliterate(str: string): string {
   });
 
   app.post("/api/auth/register", async (req, res) => {
-    const { email, password, verified } = req.body;
+    const { email, password, verified, adminName, phone, companyName, companyType, city, workFormat } = req.body;
     let user;
     try {
       const lowerEmail = email.toLowerCase();
@@ -1233,11 +1233,67 @@ function transliterate(str: string): string {
         }
       }
 
+      // Send admin notification to lk.ivanbobkin@yandex.ru about new company registration
+      const adminNotificationEmail = 'lk.ivanbobkin@yandex.ru';
+      const notificationSubject = `Новая регистрация компании: ${companyName || 'Без названия'}`;
+      const nowStr = new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' });
+      const formatsStr = Array.isArray(workFormat) ? workFormat.join(', ') : (workFormat || 'Не указан');
+      const notificationBody = `Зарегистрирована новая компания на платформе "Мебельный калькулятор"!
+
+Информация о компании:
+- Название компании: ${companyName || 'Не указано'}
+- Тип компании: ${companyType || 'Мебельное производство'}
+- Город: ${city || 'Не указан'}
+- Формат работы: ${formatsStr}
+
+Контактные данные администратора:
+- ФИО: ${adminName || 'Не указано'}
+- Телефон: ${phone || 'Не указан'}
+- Email: ${lowerEmail}
+- Дата и время (МСК): ${nowStr}
+
+Личный кабинет суперадминистратора: https://mebel-plan.ru/admin`;
+
+      sendEmail(adminNotificationEmail, notificationSubject, notificationBody).catch((err: any) => {
+        console.error("Failed to send admin registration notification to", adminNotificationEmail, err);
+      });
+
       res.json({ uid: user.uid, email: user.email, needsVerification: !verified });
     } catch (e) {
       console.error("Error creating user:", e);
       if ((e as any).code === 'P2002') return res.status(400).json({ code: 'auth/email-already-in-use' });
       res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/auth/notify-registration", async (req, res) => {
+    try {
+      const { adminName, phone, companyName, companyType, city, workFormat, email } = req.body;
+      const adminNotificationEmail = 'lk.ivanbobkin@yandex.ru';
+      const notificationSubject = `Новая регистрация компании: ${companyName || 'Без названия'}`;
+      const nowStr = new Date().toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' });
+      const formatsStr = Array.isArray(workFormat) ? workFormat.join(', ') : (workFormat || 'Не указан');
+      const notificationBody = `Зарегистрирована новая компания на платформе "Мебельный калькулятор"!
+
+Информация о компании:
+- Название компании: ${companyName || 'Не указано'}
+- Тип компании: ${companyType || 'Мебельное производство'}
+- Город: ${city || 'Не указан'}
+- Формат работы: ${formatsStr}
+
+Контактные данные администратора:
+- ФИО: ${adminName || 'Не указано'}
+- Телефон: ${phone || 'Не указан'}
+- Email: ${email || 'Не указан'}
+- Дата и время (МСК): ${nowStr}
+
+Личный кабинет суперадминистратора: https://mebel-plan.ru/admin`;
+
+      await sendEmail(adminNotificationEmail, notificationSubject, notificationBody);
+      res.json({ status: "ok" });
+    } catch (e: any) {
+      console.error("Failed in /api/auth/notify-registration:", e);
+      res.status(500).json({ error: e.message || String(e) });
     }
   });
 

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Building2, User, Mail, Lock, MapPin, Briefcase, ArrowRight, CheckCircle2, Check, Search } from 'lucide-react';
+import { Building2, User, Mail, Lock, Phone, MapPin, Briefcase, ArrowRight, CheckCircle2, Check, Search } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { RUSSIAN_CITIES } from '../../lib/cities';
 
@@ -16,8 +16,10 @@ export interface RegistrationData {
   city: string;
   workFormat: WorkFormat[];
   adminName: string;
+  adminPhone: string;
   adminEmail: string;
   adminPassword: string;
+  agreedToConsent?: boolean;
 }
 
 const WORK_FORMATS = {
@@ -56,8 +58,10 @@ export const RegistrationForm = ({
       city: '',
       workFormat: [],
       adminName: '',
+      adminPhone: '',
       adminEmail: '',
       adminPassword: '',
+      agreedToConsent: false,
     };
   });
 
@@ -126,7 +130,7 @@ export const RegistrationForm = ({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (data.adminName && data.adminEmail && data.adminPassword) {
+    if (data.adminName && data.adminPhone && data.adminEmail && data.adminPassword && data.agreedToConsent) {
       setLoading(true);
       try {
         await onRegister(data);
@@ -427,6 +431,25 @@ export const RegistrationForm = ({
               </div>
 
               <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Телефон для связи <span className="text-red-500">*</span>
+                </label>
+                <div className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                    <Phone className="h-5 w-5 text-gray-400" />
+                  </div>
+                  <input
+                    type="tel"
+                    required
+                    value={data.adminPhone}
+                    onChange={(e) => setData({ ...data, adminPhone: e.target.value })}
+                    className="block w-full pl-10 pr-3 py-3 border border-gray-300 rounded-xl focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                    placeholder="+7 (999) 000-00-00"
+                  />
+                </div>
+              </div>
+
+              <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Email (Логин)</label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -460,6 +483,21 @@ export const RegistrationForm = ({
                 </div>
               </div>
 
+              <div className="pt-1">
+                <label className="flex items-start gap-2.5 text-xs text-gray-600 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    required
+                    checked={!!data.agreedToConsent}
+                    onChange={(e) => setData({ ...data, agreedToConsent: e.target.checked })}
+                    className="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                  />
+                  <span>
+                    Я даю согласие на <a href="/privacy" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline font-semibold">обработку персональных данных</a> и принимаю условия <a href="/terms" target="_blank" rel="noreferrer" className="text-blue-600 hover:underline font-semibold">лицензионного соглашения</a>.
+                  </span>
+                </label>
+              </div>
+
               <div className="flex gap-3">
                 <button
                   type="button"
@@ -470,7 +508,7 @@ export const RegistrationForm = ({
                 </button>
                 <button
                   type="submit"
-                  disabled={!data.adminName || !data.adminEmail || !data.adminPassword || loading}
+                  disabled={!data.adminName || !data.adminPhone || !data.adminEmail || !data.adminPassword || !data.agreedToConsent || loading}
                   className="flex-1 flex justify-center items-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {loading ? (

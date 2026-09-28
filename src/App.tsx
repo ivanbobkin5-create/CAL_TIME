@@ -34347,7 +34347,7 @@ export default function App() {
   const isSuperAdminEmail = (email?: string | null) => {
     if (!email) return false;
     const clean = email.trim().toLowerCase();
-    return clean === 'lk.ivanbobkin@gmail.com' || clean === 'lk.ivanbobkin@yandex.ru' || clean === 'admin@mebel-plan.ru';
+    return clean === 'lk.ivanbobkin@gmail.com' || clean === 'admin@mebel-plan.ru';
   };
 
   const isUserSuperAdmin = (u: any) => {
@@ -35359,7 +35359,16 @@ export default function App() {
       const response = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: data.adminEmail, password: data.adminPassword })
+        body: JSON.stringify({ 
+          email: data.adminEmail, 
+          password: data.adminPassword,
+          adminName: data.adminName,
+          phone: data.adminPhone,
+          companyName: data.companyName,
+          companyType: data.companyType,
+          city: data.city,
+          workFormat: data.workFormat
+        })
       });
       
       if (!response.ok) {
@@ -35401,6 +35410,8 @@ export default function App() {
           type: normalizedRegType,
           companyType: normalizedRegType,
           city: data.city,
+          phone: data.adminPhone || "",
+          adminPhone: data.adminPhone || "",
           ownerUid: user.uid,
           tariffExpiration: expirationDate.toISOString(),
           productionFormat: prodFormat,
@@ -35415,6 +35426,7 @@ export default function App() {
           uid: user.uid,
           email: data.adminEmail,
           displayName: data.adminName,
+          phone: data.adminPhone || "",
           role: "admin",
           companyId: companyId,
           createdAt: new Date().toISOString(),
