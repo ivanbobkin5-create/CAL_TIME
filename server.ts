@@ -194,6 +194,8 @@ async function startServer() {
 
   // Handle Bitrix24 POST requests to SPA routes (e.g., POST /) by rewriting method to GET
   app.use((req, res, next) => {
+    // Ensure iframes are allowed in Bitrix24 portals
+    res.removeHeader('X-Frame-Options');
     if (req.method === 'POST' && !req.path.startsWith('/api/')) {
       req.method = 'GET';
     }
@@ -239,6 +241,26 @@ async function startServer() {
     }
     res.setHeader("Content-Type", "application/xml; charset=utf-8");
     res.send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://mebel-plan.ru/</loc><lastmod>2026-08-01</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url></urlset>`);
+  });
+
+  // EULA & License Agreement endpoint
+  app.get(["/eula", "/eula.html", "/license", "/license.html"], (req, res) => {
+    const eulaPath = path.join(process.cwd(), "public", "eula.html");
+    if (fs.existsSync(eulaPath)) {
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.sendFile(eulaPath);
+    }
+    res.status(404).send("EULA not found");
+  });
+
+  // Privacy Policy endpoint (152-FZ)
+  app.get(["/privacy", "/privacy.html", "/policy", "/policy.html"], (req, res) => {
+    const privacyPath = path.join(process.cwd(), "public", "privacy.html");
+    if (fs.existsSync(privacyPath)) {
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.sendFile(privacyPath);
+    }
+    res.status(404).send("Privacy Policy not found");
   });
 
 function transliterate(str: string): string {

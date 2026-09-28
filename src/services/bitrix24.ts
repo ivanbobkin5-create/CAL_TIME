@@ -107,6 +107,46 @@ export const initBitrix24 = (): Promise<Bitrix24Context> => {
           window.BX24.fitWindow?.();
         } catch (e) {}
 
+        // Handle Bitrix24 Marketplace Installation
+        try {
+          const isInstallMode = 
+            (typeof window.BX24.isInstall === "function" && window.BX24.isInstall()) ||
+            window.location.search.includes("INSTALL=Y") ||
+            window.location.search.includes("status=L");
+
+          if (isInstallMode && typeof window.BX24.installFinish === "function") {
+            console.log("Bitrix24 Marketplace Installation detected. Registering placements and finishing install...");
+            const appUrl = typeof window !== "undefined" ? window.location.origin : "";
+            window.BX24.callMethod(
+              "placement.bind",
+              {
+                PLACEMENT: "CRM_DEAL_DETAIL_TAB",
+                HANDLER: appUrl,
+                TITLE: "Калькулятор Мебели",
+                DESCRIPTION: "Расчет стоимости мебели и материалов",
+              },
+              () => {
+                window.BX24.callMethod(
+                  "placement.bind",
+                  {
+                    PLACEMENT: "CRM_DEAL_DETAIL_ACTIVITY",
+                    HANDLER: appUrl,
+                    TITLE: "Мебель План (Виджет)",
+                    DESCRIPTION: "Интерактивный виджет производства и расчета мебели",
+                  },
+                  () => {
+                    try {
+                      window.BX24.installFinish?.();
+                    } catch (_) {}
+                  }
+                );
+              }
+            );
+          }
+        } catch (err) {
+          console.warn("Bitrix24 install handling error:", err);
+        }
+
         console.log("Bitrix24 SDK Initialized:", bx24Context);
         resolve(bx24Context);
       });
