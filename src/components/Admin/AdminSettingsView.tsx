@@ -114,7 +114,7 @@ export const AdminSettingsView = ({
   const [showTariffModal, setShowTariffModal] = useState(false);
   const [tariffRequests, setTariffRequests] = useState<any[]>([]);
   const [tariffRequest, setTariffRequest] = useState({
-    type: 'Производство',
+    type: 'Мебельное производство',
     period: 'month',
     extraSalons: 0,
     extraDesigners: 0,
@@ -470,7 +470,7 @@ export const AdminSettingsView = ({
             <div>
               <h2 className="text-xl font-bold text-gray-900 mb-2">Ваш тариф</h2>
               <div className="flex items-center gap-2 text-gray-600">
-                <span className="font-medium text-gray-900">{companyData?.type || 'Не указан'}</span>
+                <span className="font-medium text-gray-900">{companyData?.type === 'Производство' ? 'Мебельное производство' : (companyData?.type || 'Мебельное производство')}</span>
                 <span>•</span>
                 <span>
                   Действует до:{' '}
@@ -803,11 +803,11 @@ export const AdminSettingsView = ({
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Выберите тариф</label>
                 <select 
-                  value={tariffRequest.type}
+                  value={tariffRequest.type === 'Производство' ? 'Мебельное производство' : tariffRequest.type}
                   onChange={(e) => setTariffRequest(prev => ({ ...prev, type: e.target.value }))}
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
                 >
-                  <option value="Производство">Производство (4990 ₽/мес)</option>
+                  <option value="Мебельное производство">Производство (4990 ₽/мес)</option>
                   <option value="Салон">Салон (7990 ₽/мес)</option>
                   <option value="Дизайнер">Дизайнер (1990 ₽/мес)</option>
                 </select>
@@ -847,7 +847,7 @@ export const AdminSettingsView = ({
               <div className="space-y-4">
                 <h3 className="font-medium text-gray-900">Дополнительные опции</h3>
                 
-                {tariffRequest.type === 'Производство' && (
+                {(tariffRequest.type === 'Мебельное производство' || tariffRequest.type === 'Производство') && (
                   <>
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-gray-600">Доп. сотрудники (+1000 ₽)</span>

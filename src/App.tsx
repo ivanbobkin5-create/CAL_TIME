@@ -2069,7 +2069,8 @@ const ProductionView = ({
 
   // Force production format based on company type
   React.useEffect(() => {
-    if (companyType === "Мебельное производство") {
+    const isProd = companyType === "Мебельное производство" || companyType === "Производство" || (typeof companyType === 'string' && companyType.toLowerCase().includes("производств"));
+    if (isProd) {
       if (productionFormat !== "own") {
         setProductionFormat("own");
       }
@@ -2171,7 +2172,7 @@ const ProductionView = ({
       <div className="mb-8">
         <h2 className="text-2xl font-bold text-gray-800">Производство</h2>
         <p className="text-sm text-gray-500">
-          {companyType === "Мебельное производство"
+          {(companyType === "Мебельное производство" || companyType === "Производство" || (typeof companyType === 'string' && companyType.toLowerCase().includes("производств")))
             ? "Настройка параметров собственного производства"
             : "Настройка взаимодействия с контрактным производством"}
         </p>
@@ -2179,7 +2180,9 @@ const ProductionView = ({
 
       <div className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm space-y-8">
         {(productionFormat === "own" ||
-          companyType === "Мебельное производство") && (
+          companyType === "Мебельное производство" ||
+          companyType === "Производство" ||
+          (typeof companyType === 'string' && companyType.toLowerCase().includes("производств"))) && (
           <div className="space-y-8">
             <div>
               <h3 className="text-lg font-bold text-gray-800 mb-4">
@@ -2818,7 +2821,10 @@ const ProductionView = ({
           </div>
       )}
 
-        {productionFormat === "contract" && (
+        {productionFormat === "contract" && 
+          companyType !== "Мебельное производство" && 
+          companyType !== "Производство" && 
+          !(typeof companyType === 'string' && companyType.toLowerCase().includes("производств")) && (
           <div className="space-y-8">
             {contractConfig.productionId && (
               <div className="space-y-6">
@@ -16095,7 +16101,7 @@ const SettingsView = ({
   };
 
   const isContract = productionFormat === "contract";
-  const isProduction = companyType === "Мебельное производство";
+  const isProduction = companyType === "Мебельное производство" || companyType === "Производство" || (typeof companyType === 'string' && companyType.toLowerCase().includes("производств"));
   const prodGen = productionSettings?.general;
   const prodCoeffs = prodGen?.coefficients?.wholesale || {};
   const prodHardware =
@@ -34338,8 +34344,37 @@ export default function App() {
   const [preloadProgress, setPreloadProgress] = useState<number>(0);
   const [isPreloaded, setIsPreloaded] = useState(false);
   const [preloadStatus, setPreloadStatus] = useState<string>("Инициализация...");
-  const [isAppAdmin, setIsAppAdmin] = useState(false);
-  const [showAdminPanel, setShowAdminPanel] = useState(false);
+  const isSuperAdminEmail = (email?: string | null) => {
+    if (!email) return false;
+    const clean = email.trim().toLowerCase();
+    return clean === 'lk.ivanbobkin@gmail.com' || clean === 'lk.ivanbobkin@yandex.ru' || clean === 'admin@mebel-plan.ru';
+  };
+
+  const isUserSuperAdmin = (u: any) => {
+    if (!u) return false;
+    return !!u.isRoot || !!u.isSuperAdmin || u.role === 'superadmin' || u.productionRole === 'superadmin' || isSuperAdminEmail(u.email);
+  };
+
+  const [isAppAdmin, setIsAppAdmin] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const email = localStorage.getItem('auth_email')?.toLowerCase().trim();
+      if (email && isSuperAdminEmail(email)) return true;
+      try {
+        const u = JSON.parse(localStorage.getItem('auth_user') || '{}');
+        if (isUserSuperAdmin(u)) return true;
+      } catch (_) {}
+    }
+    return false;
+  });
+  const [showAdminPanel, setShowAdminPanel] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const p = window.location.pathname;
+      const s = window.location.search;
+      const h = window.location.hash;
+      return p === '/admin' || p.startsWith('/admin') || s.includes('admin=true') || h === '#admin';
+    }
+    return false;
+  });
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
@@ -35070,7 +35105,17 @@ export default function App() {
                   const compRes = await fetch(`/api/db/doc/companies/${docData.companyId}`);
                   if (compRes.ok) {
                     compData = await compRes.json();
-                    const fullCompData = { id: docData.companyId, ...compData };
+                    const rawType = compData?.type || compData?.companyType;
+                    const normalizedType = (rawType === "Производство" || (typeof rawType === 'string' && rawType.toLowerCase().includes("производств")))
+                      ? "Мебельное производство"
+                      : (rawType || "Мебельное производство");
+                    const fullCompData = { 
+                      id: docData.companyId, 
+                      ...compData,
+                      type: normalizedType,
+                      companyType: normalizedType,
+                      productionFormat: normalizedType === "Мебельное производство" ? "own" : "contract"
+                    };
                     setCompanyData(fullCompData);
                     safeAuthStorageSet('auth_company', serializeEssentialCompany(fullCompData));
                   }
@@ -35099,7 +35144,8 @@ export default function App() {
                 await preloadAllData(docData.companyId, savedUid, { ...docData, ...compData });
               }
               
-              if (docData.isRoot || docData.email === 'lk.ivanbobkin@gmail.com') {
+              const isSuper = isUserSuperAdmin(docData) || isSuperAdminEmail(savedEmail) || isSuperAdminEmail(docData.email);
+              if (isSuper) {
                 setIsAppAdmin(true);
                 setUserRole('admin');
               }
@@ -35143,8 +35189,20 @@ export default function App() {
   }, [isAuthenticated, userData?.uid, sessionId]);
 
   useEffect(() => {
-    if (userData?.email === 'lk.ivanbobkin@gmail.com') {
-      setShowAdminPanel(true);
+    const isSuper = isUserSuperAdmin(userData) || isSuperAdminEmail(userData?.email) || isUserSuperAdmin(auth.currentUser);
+    if (isSuper) {
+      setIsAppAdmin(true);
+    }
+    if (typeof window !== 'undefined') {
+      const p = window.location.pathname;
+      const s = window.location.search;
+      const h = window.location.hash;
+      if (p === '/admin' || p.startsWith('/admin') || s.includes('admin=true') || h === '#admin') {
+        if (isSuper || isSuperAdminEmail(localStorage.getItem('auth_email'))) {
+          setIsAppAdmin(true);
+          setShowAdminPanel(true);
+        }
+      }
     }
   }, [userData]);
 
@@ -35225,8 +35283,19 @@ export default function App() {
            const compRes = await fetch(`/api/db/doc/companies/${docData.companyId}`);
            if (compRes.ok) {
              compData = await compRes.json();
-             setCompanyData({ id: docData.companyId, ...compData });
-             console.log("Loaded company data:", compData);
+             const rawType = compData?.type || compData?.companyType;
+             const normalizedType = (rawType === "Производство" || (typeof rawType === 'string' && rawType.toLowerCase().includes("производств")))
+               ? "Мебельное производство"
+               : (rawType || "Мебельное производство");
+             const fullCompData = { 
+               id: docData.companyId, 
+               ...compData,
+               type: normalizedType,
+               companyType: normalizedType,
+               productionFormat: normalizedType === "Мебельное производство" ? "own" : "contract"
+             };
+             setCompanyData(fullCompData);
+             console.log("Loaded company data:", fullCompData);
            }
            const empRes = await fetch(`/api/db/doc/companies/${docData.companyId}/employees/${authUser.uid}`);
            if (empRes.ok) {
@@ -35255,10 +35324,18 @@ export default function App() {
          if (authUser.token) safeAuthStorageSet('auth_token', authUser.token);
          
          // Set global admin status
-         if (docData.isRoot || docData.email === 'lk.ivanbobkin@gmail.com') {
+         const isSuper = isUserSuperAdmin(docData) || isSuperAdminEmail(authUser.email) || isSuperAdminEmail(docData.email);
+         if (isSuper) {
            setIsAppAdmin(true);
-           setShowAdminPanel(true);
            setUserRole('admin');
+           if (typeof window !== 'undefined') {
+             const p = window.location.pathname;
+             const s = window.location.search;
+             const h = window.location.hash;
+             if (p === '/admin' || p.startsWith('/admin') || s.includes('admin=true') || h === '#admin') {
+               setShowAdminPanel(true);
+             }
+           }
          }
          
          setIsAuthenticated(true);
@@ -35310,14 +35387,19 @@ export default function App() {
       expirationDate.setDate(expirationDate.getDate() + 14);
 
       console.log("Creating company doc...");
-      const prodFormat = data.companyType === "Мебельное производство" ? "own" : "contract";
+      const rawRegType = (data.companyType || "") as string;
+      const normalizedRegType = (rawRegType === "Производство" || rawRegType === "Мебельное производство" || rawRegType.toLowerCase().includes('производств'))
+        ? "Мебельное производство"
+        : (data.companyType || "Мебельное производство");
+      const prodFormat = normalizedRegType === "Мебельное производство" ? "own" : "contract";
       
       await fetch(`/api/db/doc/companies/${companyId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ data: {
           name: data.companyName,
-          type: data.companyType,
+          type: normalizedRegType,
+          companyType: normalizedRegType,
           city: data.city,
           ownerUid: user.uid,
           tariffExpiration: expirationDate.toISOString(),
@@ -35525,14 +35607,16 @@ export default function App() {
   const [results, setResults] = useState<any>(null);
 
   useEffect(() => {
-    if (companyData?.type) {
-      if (companyData.type === "Мебельное производство") {
+    const rawType = companyData?.type || companyData?.companyType;
+    if (rawType) {
+      const isProd = rawType === "Мебельное производство" || rawType === "Производство" || (typeof rawType === 'string' && rawType.toLowerCase().includes("производств"));
+      if (isProd) {
         setProductionFormat("own");
       } else {
         setProductionFormat("contract");
       }
     }
-  }, [companyData?.type]);
+  }, [companyData?.type, companyData?.companyType]);
   const [rotations, setRotations] = useState<Record<string, boolean>>({});
   const [textureAlignments, setTextureAlignments] = useState<Record<string, boolean>>({});
   const [edgeToEdge, setEdgeToEdge] = useState<Record<string, boolean>>({});
@@ -38779,7 +38863,7 @@ export default function App() {
   useEffect(() => {
     if (!companyData?.id) return;
     if (!isProductionConfigLoadedRef.current) return;
-    const isOwn = companyData?.type === "Мебельное производство" || productionFormat === "own";
+    const isOwn = companyData?.type === "Мебельное производство" || companyData?.type === "Производство" || (typeof companyData?.type === 'string' && companyData.type.toLowerCase().includes('производств')) || productionFormat === "own";
     
     if (isOwn) {
       if (!ownProductionConfig) return;
@@ -39463,7 +39547,9 @@ export default function App() {
     try {
       const isOwn =
         productionFormat === "own" ||
-        companyData?.type === "Мебельное производство";
+        companyData?.type === "Мебельное производство" ||
+        companyData?.type === "Производство" ||
+        (typeof companyData?.type === 'string' && companyData.type.toLowerCase().includes('производств'));
 
       const targetExtraFacades = (
         (configToSave?.extraFacadeTypes && Array.isArray(configToSave.extraFacadeTypes) && configToSave.extraFacadeTypes.length > 0)
@@ -39629,6 +39715,8 @@ export default function App() {
     try {
       const isOwn =
         companyData.type === "Мебельное производство" ||
+        companyData.type === "Производство" ||
+        (typeof companyData.type === 'string' && companyData.type.toLowerCase().includes('производств')) ||
         productionFormat === "own";
 
       const currentErpConfig = overrides?.erpConfig || companyData.erpConfig || companyData.erpSettings || {
@@ -39996,7 +40084,7 @@ export default function App() {
     // If we are a production and viewing as a Salon (wholesale), prioritize specific salon or use standard
     if (
       customerType === "wholesale" &&
-      companyData?.type === "Мебельное производство"
+      (companyData?.type === "Мебельное производство" || companyData?.type === "Производство" || (typeof companyData?.type === 'string' && companyData.type.toLowerCase().includes('производств')))
     ) {
       if (
         selectedSalonId &&
@@ -40089,7 +40177,7 @@ export default function App() {
       if (match) {
         if (
           customerType === "wholesale" &&
-          companyData?.type === "Мебельное производство"
+          (companyData?.type === "Мебельное производство" || companyData?.type === "Производство" || (typeof companyData?.type === 'string' && companyData.type.toLowerCase().includes('производств')))
         ) {
           if (selectedSalonId && match.salonCoeffs?.[selectedSalonId]) {
             return match.salonCoeffs[selectedSalonId];
@@ -40664,7 +40752,9 @@ export default function App() {
     );
   }
 
-  if (isAppAdmin && showAdminPanel) {
+  const effectiveIsAppAdmin = isAppAdmin || isUserSuperAdmin(userData) || isSuperAdminEmail(userData?.email) || isUserSuperAdmin(auth.currentUser);
+
+  if (effectiveIsAppAdmin && showAdminPanel) {
     return (
       <div className="flex min-h-screen bg-gray-50">
         <aside
@@ -40687,7 +40777,7 @@ export default function App() {
               )}
               <button
                 onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                className="p-2 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer"
               >
                 {isSidebarOpen ? (
                   <X className="w-5 h-5" />
@@ -40701,7 +40791,7 @@ export default function App() {
               <button
                 onClick={() => setActiveTab("calculator")}
                 className={cn(
-                  "w-full flex items-center gap-4 p-3 rounded-xl transition-all",
+                  "w-full flex items-center gap-4 p-3 rounded-xl transition-all cursor-pointer",
                   activeTab === "calculator"
                     ? "bg-blue-600 text-white shadow-lg shadow-blue-200"
                     : "text-gray-600 hover:bg-gray-100",
@@ -40714,23 +40804,44 @@ export default function App() {
               </button>
             </nav>
 
-            <div className="p-4 border-t border-gray-100">
-              {companyData && userData?.email !== 'lk.ivanbobkin@gmail.com' && (
+            <div className="p-4 border-t border-gray-100 space-y-2">
+              <button
+                onClick={() => {
+                  setShowAdminPanel(false);
+                  if (typeof window !== 'undefined' && window.location.pathname === '/admin') {
+                    window.history.pushState({}, '', '/');
+                  }
+                }}
+                className="w-full flex items-center gap-3 p-3 rounded-xl text-blue-600 hover:bg-blue-50 transition-all font-bold cursor-pointer border border-blue-100"
+                title="Перейти в калькулятор и управление вашей компанией"
+              >
+                <Calculator className="w-5 h-5 flex-shrink-0" />
+                {isSidebarOpen && (
+                  <div className="flex flex-col text-left overflow-hidden">
+                    <span className="text-xs font-black truncate leading-tight">В приложение</span>
+                    <span className="text-[10px] text-gray-400 font-normal truncate">{companyData?.name || 'Компания'}</span>
+                  </div>
+                )}
+              </button>
+              {companyData?.id && (
                 <button
-                  onClick={() => setShowAdminPanel(false)}
-                  className="w-full flex items-center gap-4 p-3 rounded-xl text-blue-600 hover:bg-blue-50 transition-all mb-4"
+                  onClick={() => {
+                    window.location.href = `/c/${companyData.id}/erp`;
+                  }}
+                  className="w-full flex items-center gap-3 p-3 rounded-xl text-emerald-600 hover:bg-emerald-50 transition-all font-bold cursor-pointer border border-emerald-100"
+                  title="Перейти в ERP модуль производства"
                 >
-                  <Calculator className="w-6 h-6 flex-shrink-0" />
+                  <Factory className="w-5 h-5 flex-shrink-0" />
                   {isSidebarOpen && (
-                    <span className="font-bold">Приложение</span>
+                    <span className="text-xs font-black truncate leading-tight">ERP Производство</span>
                   )}
                 </button>
               )}
               <button
                 onClick={handleLogout}
-                className="w-full flex items-center gap-4 p-3 rounded-xl text-red-600 hover:bg-red-50 transition-all font-bold"
+                className="w-full flex items-center gap-3 p-3 rounded-xl text-red-600 hover:bg-red-50 transition-all font-bold cursor-pointer"
               >
-                <LogOut className="w-6 h-6 flex-shrink-0" />
+                <LogOut className="w-5 h-5 flex-shrink-0" />
                 {isSidebarOpen && <span>Выйти</span>}
               </button>
             </div>
@@ -40852,12 +40963,28 @@ export default function App() {
             )}>
               {isSidebarOpen && (
                 <div className="flex flex-col min-w-0">
-                  <span className="font-bold text-lg text-blue-600 truncate leading-tight">
-                    Калькулятор
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-bold text-lg text-blue-600 truncate leading-tight">
+                      Калькулятор
+                    </span>
+                    {effectiveIsAppAdmin && (
+                      <button
+                        onClick={() => {
+                          setShowAdminPanel(true);
+                          if (typeof window !== 'undefined') {
+                            window.history.pushState({}, '', '/admin');
+                          }
+                        }}
+                        className="px-1.5 py-0.5 bg-blue-600 text-white rounded text-[9px] font-black uppercase tracking-wider hover:bg-blue-700 cursor-pointer shrink-0"
+                        title="Открыть кабинет суперадминистратора"
+                      >
+                        Админ
+                      </button>
+                    )}
+                  </div>
                   {companyData?.name && (
                     <span className="text-[9px] text-gray-400 truncate font-semibold uppercase tracking-wider">
-                      {companyData.name}
+                      {companyData.name} ({(companyData.type === 'Мебельное производство' || companyData.type === 'Производство' || (companyData.type && companyData.type.toLowerCase().includes('производств'))) ? 'Производство' : (companyData.type || 'Компания')})
                     </span>
                   )}
                 </div>
@@ -40962,7 +41089,7 @@ export default function App() {
                     )}
                   </button>
 
-                  {companyData?.type === "Мебельное производство" && (
+                  {(companyData?.type === "Мебельное производство" || companyData?.type === "Производство" || (typeof companyData?.type === 'string' && companyData.type.toLowerCase().includes('производств'))) && (
                     <button
                       onClick={() => setActiveTab("partner_orders")}
                       className={cn(
@@ -41251,16 +41378,20 @@ export default function App() {
                         "Пользователь"}
                     </span>
                     <span className="text-[9px] text-gray-500 font-medium truncate uppercase tracking-tighter">
-                      {userRole === "admin"
-                        ? "Администратор"
-                        : userRole === "supervisor"
-                          ? "Руководитель"
-                          : "Сотрудник"}{" "}
+                      {effectiveIsAppAdmin
+                        ? "Суперадминистратор"
+                        : userRole === "admin"
+                          ? "Администратор"
+                          : userRole === "supervisor"
+                            ? "Руководитель"
+                            : "Сотрудник"}{" "}
                       {companyData?.type === "Салон"
                         ? "салона"
                         : companyData?.type === "Дизайнер"
                           ? "дизайнера"
-                          : ""}
+                          : (companyData?.type === "Мебельное производство" || companyData?.type === "Производство")
+                            ? "производства"
+                            : ""}
                     </span>
                   </div>
                 )}
@@ -41336,17 +41467,23 @@ export default function App() {
                   )}
                 </button>
               )}
-              {isAppAdmin && (
+              {effectiveIsAppAdmin && (
                 <button
-                  onClick={() => setShowAdminPanel(true)}
+                  onClick={() => {
+                    setShowAdminPanel(true);
+                    if (typeof window !== 'undefined') {
+                      window.history.pushState({}, '', '/admin');
+                    }
+                  }}
                   className={cn(
-                    "w-full flex items-center rounded-lg text-blue-600 hover:bg-blue-50 transition-all border border-blue-100",
-                    isSidebarOpen ? "gap-2 px-2.5 py-1" : "justify-center py-1"
+                    "w-full flex items-center rounded-xl text-blue-700 bg-blue-50 hover:bg-blue-100 transition-all border border-blue-200 cursor-pointer shadow-xs my-1",
+                    isSidebarOpen ? "gap-2.5 px-3 py-2" : "justify-center py-2"
                   )}
+                  title="Кабинет суперадминистратора"
                 >
-                  <ShieldCheck className="w-4 h-4 flex-shrink-0" />
+                  <ShieldCheck className="w-4 h-4 text-blue-600 flex-shrink-0" />
                   {isSidebarOpen && (
-                    <span className="text-[12px] font-bold">Админ-панель</span>
+                    <span className="text-[12px] font-bold">Кабинет суперадмина</span>
                   )}
                 </button>
               )}
@@ -41894,7 +42031,7 @@ export default function App() {
               selectedSalonId={selectedSalonId}
               setSelectedSalonId={setSelectedSalonId}
               salonsUsingMe={salonsUsingMe}
-              isProduction={companyData?.type === "Мебельное производство"}
+              isProduction={companyData?.type === "Мебельное производство" || companyData?.type === "Производство" || (typeof companyData?.type === 'string' && companyData.type.toLowerCase().includes('производств'))}
               ownProductionConfig={ownProductionConfig}
               productionFormat={productionFormat}
               productionSettings={productionSettings}
@@ -42175,7 +42312,7 @@ export default function App() {
               projects={projects}
               sets={projectSets}
             />
-          ) : activeTab === "partner_orders" && companyData?.type === "Мебельное производство" ? (
+          ) : activeTab === "partner_orders" && (companyData?.type === "Мебельное производство" || companyData?.type === "Производство" || (typeof companyData?.type === 'string' && companyData.type.toLowerCase().includes('производств'))) ? (
             <PartnerOrdersView
               companyId={companyData.id}
               showAlert={showAlert}
@@ -42242,8 +42379,8 @@ export default function App() {
               setPrices={setPrices}
               catalogServices={catalogServices}
               setCatalogServices={setCatalogServices}
-              isSalonOrDesigner={companyData?.type === "Салон" || companyData?.type === "Дизайнер"}
-              isProduction={companyData?.type === "Мебельное производство"}
+              isSalonOrDesigner={!(companyData?.type === "Мебельное производство" || companyData?.type === "Производство" || (typeof companyData?.type === 'string' && companyData.type.toLowerCase().includes('производств'))) && (companyData?.type === "Салон" || companyData?.type === "Дизайнер")}
+              isProduction={companyData?.type === "Мебельное производство" || companyData?.type === "Производство" || (typeof companyData?.type === 'string' && companyData.type.toLowerCase().includes('производств'))}
               serviceCoeff={resolveBrandCoefficient("services", "")}
             />
           ) : activeTab === "service-section" ? (
@@ -42306,6 +42443,8 @@ export default function App() {
               productionFormat={productionFormat}
               isProduction={
                 companyData?.type === "Мебельное производство" ||
+                companyData?.type === "Производство" ||
+                (typeof companyData?.type === 'string' && companyData.type.toLowerCase().includes('производств')) ||
                 productionFormat === "own"
               }
               catalogProducts={catalogProducts}

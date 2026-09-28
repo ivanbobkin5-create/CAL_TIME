@@ -362,9 +362,12 @@ export const AppAdminView = () => {
 
   const updateLimit = async (companyId: string, field: string, value: any) => {
     try {
-      await updateDoc(doc(db, 'companies', companyId), {
-        [field]: value
-      });
+      const patchData: any = { [field]: value };
+      if (field === 'type') {
+        patchData.companyType = value;
+        patchData.productionFormat = (value === 'Мебельное производство' || value === 'Производство') ? 'own' : 'contract';
+      }
+      await updateDoc(doc(db, 'companies', companyId), patchData);
     } catch (error) {
       console.error("Error updating limit:", error);
       handleDbError(error, OperationType.UPDATE, `companies/${companyId}`);
@@ -382,7 +385,11 @@ export const AppAdminView = () => {
   const filteredCompanies = companies.filter(c => {
     const matchesSearch = c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           c.city?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesType = typeFilter === 'all' || c.type === typeFilter;
+    const matchesType = typeFilter === 'all' || (
+      typeFilter === 'Мебельное производство'
+        ? (c.type === 'Мебельное производство' || c.type === 'Производство' || (c.type && c.type.toLowerCase().includes('производств')))
+        : c.type === typeFilter
+    );
     const matchesStatus = statusFilter === 'all' || (statusFilter === 'blocked' ? c.isBlocked : !c.isBlocked);
     return matchesSearch && matchesType && matchesStatus;
   });
@@ -400,7 +407,7 @@ export const AppAdminView = () => {
     totalCompanies: companies.length,
     totalUsers: users.filter(u => u.role !== 'admin').length,
     blockedCompanies: companies.filter(c => c.isBlocked).length,
-    productionCount: companies.filter(c => c.type === 'Мебельное производство').length,
+    productionCount: companies.filter(c => c.type === 'Мебельное производство' || c.type === 'Производство' || (c.type && c.type.toLowerCase().includes('производств'))).length,
     salonCount: companies.filter(c => c.type === 'Салон').length,
     designerCount: companies.filter(c => c.type === 'Дизайнер').length,
     erpActiveCount: companies.filter(c => c.erpAllowed || c.erpEnabled).length,
@@ -582,9 +589,9 @@ export const AppAdminView = () => {
                           "w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 font-bold",
                           company.isBlocked 
                             ? "bg-rose-100 text-rose-600" 
-                            : (company.type === 'Мебельное производство' ? "bg-blue-50 text-blue-600" : (company.type === 'Салон' ? "bg-indigo-50 text-indigo-600" : "bg-purple-50 text-purple-600"))
+                            : ((company.type === 'Мебельное производство' || company.type === 'Производство') ? "bg-blue-50 text-blue-600" : (company.type === 'Салон' ? "bg-indigo-50 text-indigo-600" : "bg-purple-50 text-purple-600"))
                         )}>
-                          {company.type === 'Мебельное производство' ? <Factory className="w-6 h-6" /> : <Building2 className="w-6 h-6" />}
+                          {(company.type === 'Мебельное производство' || company.type === 'Производство') ? <Factory className="w-6 h-6" /> : <Building2 className="w-6 h-6" />}
                         </div>
 
                         <div className="space-y-1.5">
@@ -593,7 +600,7 @@ export const AppAdminView = () => {
                             
                             {/* Company Type Dropdown */}
                             <select 
-                              value={company.type}
+                              value={(company.type === 'Производство' ? 'Мебельное производство' : (company.type || 'Мебельное производство'))}
                               onChange={(e) => updateLimit(company.id, 'type', e.target.value)}
                               className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-slate-100 border border-slate-200 text-slate-700 outline-none cursor-pointer hover:bg-slate-200 transition-colors"
                             >

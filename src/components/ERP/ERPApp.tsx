@@ -31,7 +31,8 @@ import {
   Truck,
   PackageCheck,
   Sparkles,
-  Wrench
+  Wrench,
+  ShieldCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -2071,6 +2072,17 @@ export const ERPApp: React.FC<ERPAppProps> = ({
               </button>
             )}
           </div>
+
+          {(authUser?.email?.toLowerCase() === 'lk.ivanbobkin@gmail.com' || authUser?.email?.toLowerCase() === 'lk.ivanbobkin@yandex.ru' || authUser?.role === 'superadmin' || authUser?.isSuperAdmin || (authUser as any)?.isRoot) && (
+            <a
+              href="/admin"
+              className={`w-full py-2 ${isSidebarCollapsed ? 'px-1' : 'px-2.5'} rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-center shadow-xs`}
+              title="Перейти в кабинет суперадминистратора"
+            >
+              <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+              {!isSidebarCollapsed && <span>Кабинет суперадмина</span>}
+            </a>
+          )}
 
           {!isSidebarCollapsed && (
             <div className="grid grid-cols-2 gap-1.5">
