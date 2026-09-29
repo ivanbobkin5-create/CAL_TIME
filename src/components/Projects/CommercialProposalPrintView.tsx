@@ -1,5 +1,6 @@
 import React, { useRef, useState, useMemo, useEffect } from "react";
-import { Phone, User, MessageSquare, Send, CheckCircle2, Image as ImageIcon, Briefcase, FileText, Printer } from "lucide-react";
+import { Phone, User, MessageSquare, Send, CheckCircle2, Image as ImageIcon, Briefcase, FileText, Printer, Download, Paperclip, Loader2 } from "lucide-react";
+import { attachDocumentPdfToBitrix24Deal } from "../../services/bitrix24";
 
 export const CommercialProposalPrintView = ({
   projects,
@@ -51,6 +52,81 @@ export const CommercialProposalPrintView = ({
   const [showManagerCard, setShowManagerCard] = useState(true);
   const [showCustomIntro, setShowCustomIntro] = useState(true);
   const [showAlternatives, setShowAlternatives] = useState(true);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
+  const [pdfStatus, setPdfStatus] = useState("");
+
+  const handleDownloadPdfFile = async () => {
+    if (!contentRef.current) return;
+    setIsGeneratingPdf(true);
+    setPdfStatus("Формирование PDF...");
+    try {
+      const html2pdf = (await import("html2pdf.js")).default;
+      const opt = {
+        margin: 10,
+        filename: `КП_Проект_${proposalNumber}.pdf`,
+        image: { type: "jpeg" as const, quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, logging: false },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" as const }
+      };
+      await html2pdf().set(opt).from(contentRef.current).save();
+      setPdfStatus("Файл скачан!");
+    } catch (err: any) {
+      console.error("PDF download error:", err);
+      setPdfStatus("Ошибка скачивания PDF");
+    } finally {
+      setIsGeneratingPdf(false);
+      setTimeout(() => setPdfStatus(""), 3000);
+    }
+  };
+
+  const handleAttachPdfToBitrix24 = async () => {
+    if (!contentRef.current) return;
+    const mainProj = projects?.[0];
+    const dealId = mainProj?.data?.b24DealId || mainProj?.b24DealId || specificationConfig?.dealId;
+
+    if (!dealId) {
+      alert("Сделка Битрикс24 не определена. Откройте КП из сделки Битрикс24 или укажите ID сделки в заказе.");
+      return;
+    }
+
+    setIsGeneratingPdf(true);
+    setPdfStatus("Создание PDF файла...");
+
+    try {
+      const html2pdf = (await import("html2pdf.js")).default;
+      const opt = {
+        margin: 10,
+        filename: `КП_Проект_${proposalNumber}.pdf`,
+        image: { type: "jpeg" as const, quality: 0.98 },
+        html2canvas: { scale: 2, useCORS: true, logging: false },
+        jsPDF: { unit: "mm", format: "a4", orientation: "portrait" as const }
+      };
+
+      const pdfBase64 = await html2pdf().set(opt).from(contentRef.current).outputPdf("datauristring");
+
+      setPdfStatus("Отправка в Таймлайн Битрикс24...");
+      const res = await attachDocumentPdfToBitrix24Deal({
+        companyId: mainProj?.companyId || specificationConfig?.companyId,
+        dealId,
+        docName: `Коммерческое_Предложение_${proposalNumber}`,
+        pdfBase64,
+        commentText: `📄 [b]Коммерческое предложение (${proposalNumber})[/b] успешно сформировано и прикреплено к сделке!\nИтоговая сумма: ${(totalSum || 0).toLocaleString()} ₽`
+      });
+
+      if (res.success) {
+        alert("✅ Документ КП в формате PDF прикреплен в Таймлайн сделки Битрикс24!");
+        setPdfStatus("Прикреплено к сделке!");
+      } else {
+        alert(`⚠️ ${res.message}`);
+      }
+    } catch (err: any) {
+      console.error("Error attaching PDF to B24:", err);
+      alert("Ошибка генерации или отправки PDF файла в Битрикс24");
+    } finally {
+      setIsGeneratingPdf(false);
+      setTimeout(() => setPdfStatus(""), 3000);
+    }
+  };
 
   // Config variables
   const config = useMemo(() => {
@@ -525,18 +601,38 @@ export const CommercialProposalPrintView = ({
           </div>
 
           <div className="space-y-2.5">
+            {/* Download PDF file button */}
+            <button
+              onClick={handleDownloadPdfFile}
+              disabled={isGeneratingPdf}
+              className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-2xl transition-all shadow-md active:scale-[0.98] text-xs cursor-pointer disabled:opacity-50"
+            >
+              {isGeneratingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
+              <span>{pdfStatus || "Скачать PDF файл"}</span>
+            </button>
+
+            {/* Attach PDF directly to Bitrix24 Deal Timeline */}
+            <button
+              onClick={handleAttachPdfToBitrix24}
+              disabled={isGeneratingPdf}
+              className="w-full flex items-center justify-center gap-2 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-2xl transition-all shadow-md active:scale-[0.98] text-xs cursor-pointer disabled:opacity-50"
+            >
+              {isGeneratingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
+              <span>Прикрепить к сделке Битрикс24</span>
+            </button>
+
             {/* Native browser print option */}
             <button
               onClick={handlePrint}
-              className="w-full flex items-center justify-center gap-2.5 py-3.5 bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-extrabold rounded-2xl transition-all shadow-lg shadow-indigo-500/10 active:scale-[0.98] text-sm cursor-pointer"
+              className="w-full flex items-center justify-center gap-2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-all text-xs cursor-pointer active:scale-[0.98]"
             >
-              <Printer className="w-4 h-4" />
-              <span>Печать / Сохранить в PDF</span>
+              <Printer className="w-3.5 h-3.5" />
+              <span>Печать через браузер</span>
             </button>
 
             <button
               onClick={onClose}
-              className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl transition-all text-sm cursor-pointer active:scale-[0.98]"
+              className="w-full py-2.5 bg-gray-50 hover:bg-gray-100 text-gray-500 font-bold rounded-xl transition-all text-xs cursor-pointer active:scale-[0.98]"
             >
               Закрыть
             </button>

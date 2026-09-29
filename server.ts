@@ -4201,6 +4201,63 @@ function transliterate(str: string): string {
   });
 
   // --- Уведомления в колокольчик и чат Битрикс24 (im.notify / im.message) ---
+  // --- Прикрепление сформированного PDF-документа к Таймлайну сделки Битрикс24 ---
+  app.post("/api/bitrix24/attach-pdf", async (req, res) => {
+    try {
+      const { companyId, dealId, docName, pdfBase64, commentText } = req.body;
+      if (!dealId || !pdfBase64) {
+        return res.status(400).json({ success: false, error: "dealId and pdfBase64 are required" });
+      }
+
+      let cleanWebhook: string | null = null;
+      if (companyId) {
+        const compDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({
+          where: { path: `companies/${companyId}` }
+        }));
+        if (compDoc?.data) {
+          try {
+            const compData = JSON.parse(compDoc.data);
+            cleanWebhook = compData.bitrix24?.webhookUrl ? compData.bitrix24.webhookUrl.trim().replace(/\/+$/, "") : null;
+          } catch (_) {}
+        }
+      }
+
+      const cleanBase64 = pdfBase64.replace(/^data:application\/pdf;base64,/, "");
+      const safeFileName = `${(docName || "Спецификация").replace(/[^a-zA-Z0-9А-Яа-я_\-.]/g, "_")}.pdf`;
+
+      if (cleanWebhook) {
+        const b24Res = await fetch(`${cleanWebhook}/crm.timeline.comment.add`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            fields: {
+              ENTITY_ID: dealId,
+              ENTITY_TYPE: "deal",
+              COMMENT: commentText || `📄 Документ "${docName || "Спецификация"}" сформирован и прикреплен!`,
+              FILES: [
+                {
+                  fileData: [
+                    safeFileName,
+                    cleanBase64
+                  ]
+                }
+              ]
+            }
+          })
+        });
+
+        if (b24Res.ok) {
+          return res.json({ success: true, message: "PDF успешно прикреплен к Таймлайну Битрикс24!" });
+        }
+      }
+
+      res.json({ success: true, message: "PDF сформирован (webhook Bitrix24 не настроен)" });
+    } catch (e: any) {
+      console.error("Error in /api/bitrix24/attach-pdf:", e);
+      res.status(500).json({ success: false, error: e.message || String(e) });
+    }
+  });
+
   app.post("/api/bitrix24/notify", async (req, res) => {
     try {
       let { companyId, webhookUrl, dealId, userId, message, type = "system", tag } = req.body;

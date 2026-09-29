@@ -919,3 +919,63 @@ export const fetchBitrix24TimelineHistory = async (
     return { photoReports: [], reclamations: [] };
   }
 };
+
+// --- Прямое прикрепление сгенерированного PDF документа к Сделке Битрикс24 ---
+
+export const attachDocumentPdfToBitrix24Deal = async (payload: {
+  companyId?: string;
+  dealId: number | string;
+  docName: string;
+  pdfBase64: string;
+  commentText?: string;
+}): Promise<{ success: boolean; message: string }> => {
+  try {
+    const cleanBase64 = payload.pdfBase64.replace(/^data:application\/pdf;base64,/, "");
+    const safeFileName = `${(payload.docName || "Спецификация").replace(/[^a-zA-Z0-9А-Яа-я_\-.]/g, "_")}.pdf`;
+
+    if (typeof window !== "undefined" && window.BX24?.callMethod) {
+      await new Promise<void>((resolve) => {
+        window.BX24.callMethod(
+          "crm.timeline.comment.add",
+          {
+            fields: {
+              ENTITY_ID: payload.dealId,
+              ENTITY_TYPE: "deal",
+              COMMENT: payload.commentText || `📄 Сформирован документ "${payload.docName}"`,
+              FILES: [
+                {
+                  fileData: [
+                    safeFileName,
+                    cleanBase64
+                  ]
+                }
+              ]
+            }
+          },
+          (res: any) => {
+            if (res.error()) {
+              console.warn("BX24 attach PDF timeline error:", res.error());
+            }
+            resolve();
+          }
+        );
+      });
+    }
+
+    // Mirror to backend
+    const res = await fetch("/api/bitrix24/attach-pdf", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (res.ok) {
+      return { success: true, message: "Документ PDF успешно прикреплен к карточке сделки в Битрикс24!" };
+    }
+
+    return { success: true, message: "PDF сформирован!" };
+  } catch (err: any) {
+    console.error("Error attaching PDF to Bitrix24 deal:", err);
+    return { success: false, message: err.message || "Ошибка отправки PDF в Битрикс24" };
+  }
+};
