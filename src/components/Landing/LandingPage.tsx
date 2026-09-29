@@ -88,7 +88,7 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
         <div className="max-w-7xl mx-auto text-center relative z-10">
           <div className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-50 to-blue-50 border border-indigo-100/80 text-indigo-800 rounded-full text-xs font-black mb-8 shadow-xs">
             <span className="w-2 h-2 rounded-full bg-indigo-600 animate-pulse"></span>
-            <span>Глобальное обновление: ERP 2.0 для мебельных фабрик и цехов</span>
+            <span>Платформа автоматизации мебельного бизнеса</span>
           </div>
 
           <h1 className="text-4xl sm:text-6xl md:text-7xl font-black text-gray-900 mb-6 tracking-tight leading-tight">

@@ -152,7 +152,8 @@ import {
   BitrixPhotoReportModal,
   BitrixReclamationModal,
   BitrixNotificationModal,
-  B2BOrderChatModal
+  B2BOrderChatModal,
+  B24SidebarWidget
 } from "./components/Bitrix24";
 import { B3DTestView } from "./components/B3DTest/B3DTestView";
 import {
@@ -34555,29 +34556,55 @@ export default function App() {
       setB24Context(ctx);
       if (ctx.isBitrix24) {
         setIsAuthenticated(true);
-        const compId = ctx.domain
+        let compDocData: any = null;
+        let compId = ctx.domain
           ? `b24_${ctx.domain.replace(/[^a-zA-Z0-9_-]/g, "_")}`
           : "b24_default_company";
 
         try {
+          // Resolve or link existing Web company automatically
+          if (ctx.domain) {
+            const resolveRes = await fetch('/api/bitrix24/resolve-company', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                domain: ctx.domain,
+                memberId: ctx.memberId,
+                userEmail: ctx.userEmail,
+                userPhone: ctx.userPhone,
+                companyName: ctx.domain ? `Компания (${ctx.domain})` : "Компания Битрикс24"
+              })
+            });
+
+            if (resolveRes.ok) {
+              const resolveJson = await resolveRes.json();
+              if (resolveJson.success && resolveJson.companyData) {
+                compId = resolveJson.companyId;
+                compDocData = resolveJson.companyData;
+                setCompanyData(compDocData);
+              }
+            }
+          }
+
           const compRef = doc(db, "companies", compId);
-          const compSnap = await getDoc(compRef);
-          let compDocData: any = null;
-          if (compSnap.exists()) {
-            compDocData = { id: compId, ...compSnap.data() };
-            setCompanyData(compDocData);
-          } else {
-            compDocData = {
-              id: compId,
-              name: ctx.domain ? `Компания (${ctx.domain})` : "Компания Битрикс24",
-              type: "Мебельное производство",
-              bitrix24: {
-                domain: ctx.domain || "",
-                webhookUrl: "",
-              },
-            };
-            await setDoc(compRef, compDocData, { merge: true });
-            setCompanyData(compDocData);
+          if (!compDocData) {
+            const compSnap = await getDoc(compRef);
+            if (compSnap.exists()) {
+              compDocData = { id: compId, ...compSnap.data() };
+              setCompanyData(compDocData);
+            } else {
+              compDocData = {
+                id: compId,
+                name: ctx.domain ? `Компания (${ctx.domain})` : "Компания Битрикс24",
+                type: "Мебельное производство",
+                bitrix24: {
+                  domain: ctx.domain || "",
+                  webhookUrl: "",
+                },
+              };
+              await setDoc(compRef, compDocData, { merge: true });
+              setCompanyData(compDocData);
+            }
           }
 
           if (!compDocData?.onboardingCompleted) {
@@ -35236,15 +35263,43 @@ export default function App() {
     }
   };
 
-  // Auth Persistence and Session Tracking
+  // Auth Persistence and Instant Session Hydration
   useEffect(() => {
     const savedUid = localStorage.getItem('auth_uid');
     const savedEmail = localStorage.getItem('auth_email');
-    
-    // Safety max timer (4s) so loading never hangs indefinitely
+
+    // 1. Instant Cache Hydration for zero-latency startup
+    try {
+      const cachedUserRaw = localStorage.getItem('auth_user') || localStorage.getItem('currentUser');
+      const cachedCompRaw = localStorage.getItem('auth_company');
+      
+      if (cachedUserRaw) {
+        const parsedUser = typeof cachedUserRaw === 'string' ? JSON.parse(cachedUserRaw) : cachedUserRaw;
+        setUserData(parsedUser);
+        setIsAuthenticated(true);
+        if (parsedUser.role) setUserRole(parsedUser.role);
+        if (isUserSuperAdmin(parsedUser) || isSuperAdminEmail(savedEmail || parsedUser.email)) {
+          setIsAppAdmin(true);
+        }
+      }
+
+      if (cachedCompRaw) {
+        const parsedComp = typeof cachedCompRaw === 'string' ? JSON.parse(cachedCompRaw) : cachedCompRaw;
+        setCompanyData(parsedComp);
+      }
+
+      // If cached session exists or in Bitrix24, unblock UI immediately
+      if (cachedUserRaw || window.location.search.includes('DOMAIN') || window.location.search.includes('member_id')) {
+        setIsLoading(false);
+      }
+    } catch (cacheErr) {
+      console.warn("Could not parse instant auth cache:", cacheErr);
+    }
+
+    // Safety max timer (1s) so loading never hangs
     const maxLoadingTimer = setTimeout(() => {
       setIsLoading(false);
-    }, 4000);
+    }, 1000);
 
     const restoreAuth = async () => {
       if (savedUid) {
@@ -35307,8 +35362,10 @@ export default function App() {
                   console.warn("Could not refresh employee data:", eErr);
                 }
                 
-                // Preload all settings and catalog before unlocking the app
-                await preloadAllData(docData.companyId, savedUid, { ...docData, ...compData });
+                // Preload catalog and settings asynchronously in background without blocking UI
+                preloadAllData(docData.companyId, savedUid, { ...docData, ...compData }).catch(err => {
+                  console.warn("Background preload error:", err);
+                });
               }
               
               const isSuper = isUserSuperAdmin(docData) || isSuperAdminEmail(savedEmail) || isSuperAdminEmail(docData.email);
@@ -35320,7 +35377,6 @@ export default function App() {
               setIsAuthenticated(true);
             }
           } else if (userRes.status === 401) {
-            // Explicitly unauthorized - clean up
             localStorage.removeItem('auth_uid');
             localStorage.removeItem('auth_email');
             localStorage.removeItem('auth_user');
@@ -40868,6 +40924,15 @@ export default function App() {
         </motion.div>
       </div>
     );
+  }
+
+  // Bitrix24 Compact Sidebar / Timeline Widget Mode
+  if (b24Context.isBitrix24 && (
+    b24Context.placement === 'CRM_DEAL_DETAIL_SIDEBAR' ||
+    b24Context.placement === 'CRM_DEAL_DETAIL_ACTIVITY' ||
+    b24Context.placement === 'PLACEMENT_APP_ACTIVITY'
+  )) {
+    return <B24SidebarWidget b24Context={b24Context} companyData={companyData} />;
   }
 
   if (!isAuthenticated && !b24Context.isBitrix24) {

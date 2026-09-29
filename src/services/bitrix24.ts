@@ -162,9 +162,20 @@ export const initBitrix24 = (): Promise<Bitrix24Context> => {
                     DESCRIPTION: "Интерактивный виджет производства и расчета мебели",
                   },
                   () => {
-                    try {
-                      window.BX24.installFinish?.();
-                    } catch (_) {}
+                    window.BX24.callMethod(
+                      "placement.bind",
+                      {
+                        PLACEMENT: "LEFT_MENU",
+                        HANDLER: appUrl,
+                        TITLE: "Заказы от партнеров",
+                        DESCRIPTION: "Входящие заказы от салонов и фабрик",
+                      },
+                      () => {
+                        try {
+                          window.BX24.installFinish?.();
+                        } catch (_) {}
+                      }
+                    );
                   }
                 );
               }
@@ -470,10 +481,22 @@ export const registerBitrix24Placement = async (): Promise<{ success: boolean; m
               DESCRIPTION: "Интерактивный виджет производства и расчета мебели",
             },
             () => {
-              resolve({
-                success: true,
-                message: "Вкладка сделки и Умный виджет в правой колонке успешно зарегистрированы в Битрикс24!",
-              });
+              // 3. Register Left Menu Item
+              window.BX24.callMethod(
+                "placement.bind",
+                {
+                  PLACEMENT: "LEFT_MENU",
+                  HANDLER: appUrl,
+                  TITLE: "Заказы от партнеров",
+                  DESCRIPTION: "Входящие партнерские заказы мебели от салонов"
+                },
+                () => {
+                  resolve({
+                    success: true,
+                    message: "Вкладка сделки, Умный виджет и пункт в Левом меню успешно зарегистрированы в Битрикс24!",
+                  });
+                }
+              );
             }
           );
         }
