@@ -108,11 +108,13 @@ import {
   ChevronDown,
   ChevronUp,
   Link,
-  ExternalLink
+  ExternalLink,
+  MessageSquare
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { DealAnalysisModal } from "./DealAnalysisModal";
 import { createBitrix24DealForPartnerOrder } from "../../services/bitrix24";
+import { B2BOrderChatModal } from "../Bitrix24";
 
 interface PartnerOrdersViewProps {
   companyId: string;
@@ -130,6 +132,7 @@ export const PartnerOrdersView = ({
   const [isLoading, setIsLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<"all" | "pending" | "accepted">("all");
   const [selectedSetForAnalysis, setSelectedSetForAnalysis] = useState<any | null>(null);
+  const [selectedOrderForChat, setSelectedOrderForChat] = useState<any | null>(null);
   const [expandedSetIds, setExpandedSetIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
@@ -482,6 +485,15 @@ export const PartnerOrdersView = ({
                       )}
 
                       <button
+                        onClick={() => setSelectedOrderForChat({ ...setRecord, subProjects: subProjs })}
+                        className="px-4 py-3.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs rounded-xl border border-indigo-200 transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                        title="Обсудить заказ в чате с салоном (с уведомлением в Битрикс24)"
+                      >
+                        <MessageSquare className="w-4 h-4 text-indigo-600" />
+                        <span>Чат с салоном</span>
+                      </button>
+
+                      <button
                         onClick={() => setSelectedSetForAnalysis({ ...setRecord, subProjects: subProjs })}
                         className="flex-1 sm:flex-none px-5 py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-md shadow-indigo-100 transition-all flex items-center justify-center gap-2"
                       >
@@ -546,6 +558,22 @@ export const PartnerOrdersView = ({
           onClose={() => setSelectedSetForAnalysis(null)}
           onAccept={() => handleAcceptOrder(selectedSetForAnalysis)}
           onAcceptWithRevisions={(comment) => handleAcceptOrderWithRevisions(selectedSetForAnalysis, comment)}
+        />
+      )}
+
+      {/* B2B Order Chat with Salon */}
+      {selectedOrderForChat && (
+        <B2BOrderChatModal
+          orderId={selectedOrderForChat.id}
+          orderName={selectedOrderForChat.name || `Договор №${selectedOrderForChat.contractNumber || selectedOrderForChat.id.slice(0, 6)}`}
+          currentCompanyId={companyId}
+          currentCompanyName="Производство"
+          currentCompanyType="Производство"
+          partnerCompanyId={selectedOrderForChat.originalSalonId}
+          partnerCompanyName={selectedOrderForChat.originalSalonName || "Салон-партнер"}
+          partnerDealId={selectedOrderForChat.bitrix24DealId || null}
+          onClose={() => setSelectedOrderForChat(null)}
+          showAlert={showAlert}
         />
       )}
 

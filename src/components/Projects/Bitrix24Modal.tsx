@@ -1,6 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, ExternalLink, Loader2, Send, Settings, Link } from 'lucide-react';
+import { X, ExternalLink, Loader2, Send, Settings, Link, Camera, AlertOctagon, Bell, MessageSquare } from 'lucide-react';
 import { cn } from "../../lib/utils";
+import {
+  BitrixPhotoReportModal,
+  BitrixReclamationModal,
+  BitrixNotificationModal,
+  B2BOrderChatModal
+} from "../Bitrix24";
 
 export const Bitrix24Modal = ({
   project,
@@ -22,6 +28,10 @@ export const Bitrix24Modal = ({
   const [companyType, setCompanyType] = useState<string | null>(null);
   const [currentUserB24Id, setCurrentUserB24Id] = useState<string | null>(null);
   const [associatedProjects, setAssociatedProjects] = useState<any[]>([]);
+  const [showPhotoReport, setShowPhotoReport] = useState(false);
+  const [showReclamation, setShowReclamation] = useState(false);
+  const [showNotification, setShowNotification] = useState(false);
+  const [showB2BChat, setShowB2BChat] = useState(false);
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -858,6 +868,58 @@ export const Bitrix24Modal = ({
                     </a>
                   );
                 })()}
+
+                {/* Direct CRM Timeline & Notification Actions */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 text-left">
+                  <button
+                    type="button"
+                    onClick={() => setShowPhotoReport(true)}
+                    className="p-2.5 bg-white hover:bg-blue-50/80 border border-blue-200/80 rounded-xl text-blue-800 transition-all flex flex-col items-center justify-center gap-1 text-center shadow-2xs group cursor-pointer"
+                    title="Сдать фотоотчет монтажа в таймлайн сделки Битрикс24"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <Camera className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="font-bold text-[10px] leading-tight">Фотоотчет</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowReclamation(true)}
+                    className="p-2.5 bg-white hover:bg-rose-50/80 border border-rose-200/80 rounded-xl text-rose-800 transition-all flex flex-col items-center justify-center gap-1 text-center shadow-2xs group cursor-pointer"
+                    title="Зафиксировать рекламацию и создать задачу в Битрикс24"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-rose-100 text-rose-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <AlertOctagon className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="font-bold text-[10px] leading-tight">Рекламация</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowB2BChat(true)}
+                    className="p-2.5 bg-white hover:bg-emerald-50/80 border border-emerald-200/80 rounded-xl text-emerald-800 transition-all flex flex-col items-center justify-center gap-1 text-center shadow-2xs group cursor-pointer"
+                    title="Сквозной B2B-чат между Салоном и Фабрикой"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <MessageSquare className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="font-bold text-[10px] leading-tight">B2B-Чат</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowNotification(true)}
+                    className="p-2.5 bg-white hover:bg-indigo-50/80 border border-indigo-200/80 rounded-xl text-indigo-800 transition-all flex flex-col items-center justify-center gap-1 text-center shadow-2xs group cursor-pointer"
+                    title="Отправить мгновенное уведомление в колокольчик (im.notify)"
+                  >
+                    <div className="w-7 h-7 rounded-lg bg-indigo-100 text-indigo-600 flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <Bell className="w-3.5 h-3.5" />
+                    </div>
+                    <span className="font-bold text-[10px] leading-tight">Оповестить</span>
+                  </button>
+                </div>
+
                 <div className="pt-2 border-t border-green-100/50">
                   <button
                     onClick={async () => {
@@ -915,6 +977,52 @@ export const Bitrix24Modal = ({
             )}
           </div>
         </div>
+
+        {showPhotoReport && (
+          <BitrixPhotoReportModal
+            dealId={project.bitrix24DealId}
+            dealTitle={project.name}
+            companyId={companyId}
+            onClose={() => setShowPhotoReport(false)}
+            showAlert={showAlert}
+          />
+        )}
+
+        {showReclamation && (
+          <BitrixReclamationModal
+            dealId={project.bitrix24DealId}
+            dealTitle={project.name}
+            companyId={companyId}
+            onClose={() => setShowReclamation(false)}
+            showAlert={showAlert}
+          />
+        )}
+
+        {showNotification && (
+          <BitrixNotificationModal
+            dealId={project.bitrix24DealId}
+            dealTitle={project.name}
+            companyId={companyId}
+            onClose={() => setShowNotification(false)}
+            showAlert={showAlert}
+          />
+        )}
+
+        {showB2BChat && (
+          <B2BOrderChatModal
+            orderId={project.id}
+            orderName={project.name}
+            currentCompanyId={companyId}
+            currentCompanyName={companyType === "Производство" ? "Производство" : "Салон"}
+            currentCompanyType={companyType || "Салон"}
+            partnerCompanyId={project.manufacturerId || project.originalSalonId}
+            partnerCompanyName={project.manufacturerName || project.originalSalonName || "Партнер"}
+            partnerDealId={project.bitrix24DealId}
+            currentDealId={project.bitrix24DealId}
+            onClose={() => setShowB2BChat(false)}
+            showAlert={showAlert}
+          />
+        )}
       </div>
     </div>
   );

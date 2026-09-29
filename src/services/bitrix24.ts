@@ -490,3 +490,409 @@ export const registerBitrix24Placement = async (): Promise<{ success: boolean; m
 export const registerBitrix24ActivityWidget = async (): Promise<{ success: boolean; message: string }> => {
   return registerBitrix24Placement();
 };
+
+// --- Уведомления в колокольчик и чат Битрикс24 (im.notify / im.message) ---
+
+export interface SendBitrix24NotificationParams {
+  companyId?: string;
+  dealId?: number | string | null;
+  userId?: number | string | null;
+  message: string;
+  type?: 'system' | 'personal' | 'chat';
+  tag?: string;
+}
+
+export const getBitrix24DealResponsible = async (dealId: number): Promise<{ id: number | null; name?: string }> => {
+  if (typeof window === "undefined" || !window.BX24) return { id: null };
+  return new Promise((resolve) => {
+    try {
+      window.BX24.callMethod("crm.deal.get", { id: dealId }, (res: any) => {
+        if (res.error()) {
+          resolve({ id: null });
+        } else {
+          const data = res.data() || {};
+          const assignedId = data.ASSIGNED_BY_ID ? parseInt(String(data.ASSIGNED_BY_ID), 10) : null;
+          resolve({ id: assignedId });
+        }
+      });
+    } catch (_) {
+      resolve({ id: null });
+    }
+  });
+};
+
+export const sendBitrix24BellNotification = async ({
+  companyId,
+  dealId,
+  userId,
+  message,
+  type = 'system',
+  tag
+}: SendBitrix24NotificationParams): Promise<{ success: boolean; message: string; recipientUserId?: number | string }> => {
+  // If running inside Bitrix24 iframe
+  if (typeof window !== "undefined" && window.BX24) {
+    let targetUserId = userId;
+
+    if (!targetUserId && dealId) {
+      const resp = await getBitrix24DealResponsible(Number(dealId));
+      if (resp.id) targetUserId = resp.id;
+    }
+
+    if (!targetUserId) {
+      targetUserId = bx24Context.placementOptions?.userId || null;
+    }
+
+    if (!targetUserId) {
+      // Fallback: request via backend proxy
+      try {
+        const res = await fetch("/api/bitrix24/notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ companyId, dealId, userId, message, type, tag })
+        });
+        const json = await res.json();
+        return json;
+      } catch (err: any) {
+        return { success: false, message: err.message || "Не удалось отправить уведомление" };
+      }
+    }
+
+    return new Promise((resolve) => {
+      try {
+        const method = type === 'chat' 
+          ? 'im.message.add' 
+          : (type === 'personal' ? 'im.notify.personal.add' : 'im.notify.system.add');
+
+        const params: any = type === 'chat' 
+          ? { DIALOG_ID: targetUserId, MESSAGE: message }
+          : {
+              USER_ID: targetUserId,
+              MESSAGE: message,
+              TAG: tag || `MEBEL_PLAN_${dealId || 'GENERAL'}_${Date.now()}`
+            };
+
+        window.BX24.callMethod(method, params, (res: any) => {
+          if (res.error()) {
+            console.warn(`BX24 ${method} error:`, res.error());
+            resolve({ success: false, message: res.error().toString() });
+          } else {
+            resolve({
+              success: true,
+              recipientUserId: targetUserId,
+              message: "Уведомление успешно доставлено в колокольчик Битрикс24!"
+            });
+          }
+        });
+      } catch (e: any) {
+        resolve({ success: false, message: e.message || String(e) });
+      }
+    });
+  }
+
+  // Outside Bitrix24 iframe: Call backend proxy with stored webhook
+  try {
+    const res = await fetch("/api/bitrix24/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ companyId, dealId, userId, message, type, tag })
+    });
+    const json = await res.json();
+    return json;
+  } catch (e: any) {
+    return { success: false, message: e.message || "Ошибка соединения с сервером" };
+  }
+};
+
+export const sendBitrix24ChatMessage = async (
+  dialogId: number | string,
+  message: string,
+  companyId?: string
+): Promise<{ success: boolean; message: string }> => {
+  return sendBitrix24BellNotification({
+    companyId,
+    userId: dialogId,
+    message,
+    type: 'chat'
+  });
+};
+
+// --- Прием фотоотчета монтажа в таймлайн Битрикс24 ---
+
+export interface PhotoReportPayload {
+  companyId?: string;
+  webhookUrl?: string;
+  dealId: number | string;
+  installerName: string;
+  installerPhone?: string;
+  status: 'completed' | 'with_remarks' | 'in_progress';
+  comment?: string;
+  checklist?: Record<string, boolean>;
+  photos?: Array<{ name: string; url?: string; base64?: string; category?: string }>;
+  notifyResponsible?: boolean;
+}
+
+export const submitBitrix24PhotoReport = async (
+  payload: PhotoReportPayload
+): Promise<{ success: boolean; message: string; reportId?: string; commentId?: number }> => {
+  try {
+    // 1. If inside BX24, we can post directly to timeline and notify manager
+    if (typeof window !== "undefined" && window.BX24) {
+      const nowStr = new Date().toLocaleString("ru-RU", { timeZone: "Europe/Moscow" });
+      const statusLabels: Record<string, string> = {
+        completed: "✅ Монтаж завершен успешно",
+        with_remarks: "⚠️ Монтаж завершен с замечаниями",
+        in_progress: "⏳ Монтаж в процессе (промежуточный отчет)"
+      };
+      const statusTitle = statusLabels[payload.status] || "📸 Фотоотчет монтажа";
+
+      let timelineText = `📸 ФОТООТЧЕТ МОНТАЖА МЕБЕЛИ\n`;
+      timelineText += `─────────────────────────────────────────\n`;
+      timelineText += `🏷️ Статус: ${statusTitle}\n`;
+      timelineText += `📅 Дата и время: ${nowStr} (МСК)\n`;
+      timelineText += `👷 Монтажник: ${payload.installerName || "Монтажная бригада"}${payload.installerPhone ? ` (${payload.installerPhone})` : ""}\n\n`;
+
+      if (payload.checklist && Object.keys(payload.checklist).length > 0) {
+        timelineText += `📋 ЧЕК-ЛИСТ ПРИЕМКИ:\n`;
+        const checklistTitles: Record<string, string> = {
+          level: "Уровень и геометрия конструкции",
+          hardware: "Регулировка петель, фасадов и доводчиков",
+          appliances: "Врезка и герметизация техники/мойки",
+          cleanliness: "Уборка рабочего места, снятие пленок",
+          actSigned: "Подписан акт приема-передачи клиентом"
+        };
+        for (const [k, v] of Object.entries(payload.checklist)) {
+          const title = checklistTitles[k] || k;
+          timelineText += `  ${v ? "✔" : "✖"} ${title}: ${v ? "Выполнено" : "Не выполнено"}\n`;
+        }
+        timelineText += `\n`;
+      }
+
+      if (payload.comment) {
+        timelineText += `📝 КОММЕНТАРИЙ МОНТАЖНИКА:\n${payload.comment}\n\n`;
+      }
+
+      if (payload.photos && payload.photos.length > 0) {
+        timelineText += `📷 ФОТОГРАФИИ ОБЪЕКТА (${payload.photos.length} шт.):\n`;
+        payload.photos.forEach((photo, idx) => {
+          const pName = photo.name || photo.category || `Фото ${idx + 1}`;
+          const pUrl = photo.url || `[Фото #${idx + 1} прикреплено к отчету]`;
+          timelineText += `  ${idx + 1}. ${pName}: ${pUrl}\n`;
+        });
+        timelineText += `\n`;
+      }
+
+      timelineText += `─────────────────────────────────────────\n`;
+      timelineText += `Отправлено через Мебель План • ERP & Монтаж`;
+
+      // Call crm.timeline.comment.add directly
+      await new Promise<void>((resolve) => {
+        window.BX24.callMethod(
+          "crm.timeline.comment.add",
+          {
+            fields: {
+              ENTITY_ID: payload.dealId,
+              ENTITY_TYPE: "deal",
+              COMMENT: timelineText
+            }
+          },
+          (res: any) => {
+            if (res.error()) {
+              console.warn("BX24 timeline comment error:", res.error());
+            }
+            resolve();
+          }
+        );
+      });
+
+      // Send bell notification to responsible manager
+      if (payload.notifyResponsible !== false) {
+        const resp = await getBitrix24DealResponsible(Number(payload.dealId));
+        if (resp.id) {
+          const bellMsg = `📸 [b]Фотоотчет монтажа по сделке #{payload.dealId}[/b]!\nМонтажник: [b]${payload.installerName}[/b].\nСтатус: ${statusTitle}.\nОтчет добавлен в таймлайн сделки!`;
+          await sendBitrix24BellNotification({
+            userId: resp.id,
+            dealId: payload.dealId,
+            message: bellMsg
+          });
+        }
+      }
+    }
+
+    // Always mirror to backend to persist records and support webhook sync
+    const res = await fetch("/api/bitrix24/timeline/photo-report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    return data;
+  } catch (err: any) {
+    console.error("Error submitting photo report:", err);
+    return { success: false, message: err.message || "Ошибка отправки фотоотчета" };
+  }
+};
+
+// --- Прием рекламаций в таймлайн Битрикс24 ---
+
+export interface ReclamationPayload {
+  companyId?: string;
+  webhookUrl?: string;
+  dealId: number | string;
+  reclamationType: string;
+  partName: string;
+  priority: 'critical' | 'high' | 'normal';
+  department?: string;
+  applicantName?: string;
+  applicantPhone?: string;
+  description: string;
+  requiredAction?: string;
+  photos?: Array<{ name: string; url?: string; base64?: string }>;
+  createTask?: boolean;
+  notifyResponsible?: boolean;
+}
+
+export const submitBitrix24Reclamation = async (
+  payload: ReclamationPayload
+): Promise<{ success: boolean; message: string; reclamationId?: string; commentId?: number; taskId?: number }> => {
+  try {
+    // 1. If inside BX24, we can post directly to timeline, create task and notify
+    if (typeof window !== "undefined" && window.BX24) {
+      const nowStr = new Date().toLocaleString("ru-RU", { timeZone: "Europe/Moscow" });
+      const priorityBadges: Record<string, string> = {
+        critical: "🔴 КРИТИЧНО (СТОП МОНТАЖА)",
+        high: "🟡 ВЫСОКИЙ (ДО СДАЧИ ОБЪЕКТА)",
+        normal: "🟢 СТАНДАРТНЫЙ (ГАРАНТИЙНЫЙ СЛУЧАЙ)"
+      };
+      const priorityLabel = priorityBadges[payload.priority] || "⚠️ ВЫСОКИЙ";
+
+      let timelineText = `🚨 РЕКЛАМАЦИЯ / ПРЕТЕНЗИЯ ПО СДЕЛКЕ #${payload.dealId}\n`;
+      timelineText += `─────────────────────────────────────────\n`;
+      timelineText += `⚠️ Срочность: ${priorityLabel}\n`;
+      timelineText += `🛠️ Тип проблемы: ${payload.reclamationType}\n`;
+      if (payload.partName) timelineText += `📦 Элемент/Деталь: ${payload.partName}\n`;
+      if (payload.department) timelineText += `🏭 Виновный отдел/этап: ${payload.department}\n`;
+      timelineText += `👤 Заявитель: ${payload.applicantName || "Монтажник"}${payload.applicantPhone ? ` (${payload.applicantPhone})` : ""}\n`;
+      timelineText += `📅 Дата регистрации: ${nowStr} (МСК)\n\n`;
+
+      if (payload.description) {
+        timelineText += `📝 ОПИСАНИЕ ДЕФЕКТА:\n${payload.description}\n\n`;
+      }
+
+      if (payload.requiredAction) {
+        timelineText += `⚡ ТРЕБУЕМОЕ ДЕЙСТВИЕ:\n${payload.requiredAction}\n\n`;
+      }
+
+      if (payload.photos && payload.photos.length > 0) {
+        timelineText += `📷 ФОТОГРАФИИ ДЕФЕКТА (${payload.photos.length} шт.):\n`;
+        payload.photos.forEach((photo, idx) => {
+          const pName = photo.name || `Дефект #${idx + 1}`;
+          const pUrl = photo.url || `[Фото дефекта #${idx + 1}]`;
+          timelineText += `  ${idx + 1}. ${pName}: ${pUrl}\n`;
+        });
+        timelineText += `\n`;
+      }
+
+      timelineText += `─────────────────────────────────────────\n`;
+      timelineText += `Зафиксировано через Мебель План • Контроль качества`;
+
+      // Call crm.timeline.comment.add directly
+      await new Promise<void>((resolve) => {
+        window.BX24.callMethod(
+          "crm.timeline.comment.add",
+          {
+            fields: {
+              ENTITY_ID: payload.dealId,
+              ENTITY_TYPE: "deal",
+              COMMENT: timelineText
+            }
+          },
+          (res: any) => {
+            if (res.error()) {
+              console.warn("BX24 timeline comment error:", res.error());
+            }
+            resolve();
+          }
+        );
+      });
+
+      // Get responsible manager
+      const resp = await getBitrix24DealResponsible(Number(payload.dealId));
+
+      // Create Task in CRM if requested
+      if (payload.createTask !== false) {
+        try {
+          const deadline = new Date();
+          if (payload.priority === "critical") {
+            deadline.setHours(deadline.getHours() + 24);
+          } else {
+            deadline.setDate(deadline.getDate() + 3);
+          }
+
+          window.BX24.callMethod(
+            "tasks.task.add",
+            {
+              fields: {
+                TITLE: `🚨 Рекламация по сделке #${payload.dealId}: ${payload.partName || payload.reclamationType}`,
+                DESCRIPTION: `Срочность: ${priorityLabel}\nЗаявитель: ${payload.applicantName || "Монтажник"}\n\nОписание дефекта:\n${payload.description}\n\nТребуемое решение:\n${payload.requiredAction || "Устранить замечания"}\n\nСделка: #${payload.dealId}`,
+                RESPONSIBLE_ID: resp.id || undefined,
+                DEADLINE: deadline.toISOString(),
+                PRIORITY: payload.priority === "critical" ? 2 : 1,
+                UF_CRM_TASK: [`D_${payload.dealId}`]
+              }
+            },
+            (resTask: any) => {
+              if (resTask.error()) {
+                console.warn("BX24 tasks.task.add error:", resTask.error());
+              }
+            }
+          );
+        } catch (_) {}
+      }
+
+      // Send bell notification to manager
+      if (payload.notifyResponsible !== false && resp.id) {
+        const bellMsg = `🚨 [b]РЕКЛАМАЦИЯ по сделке #{payload.dealId}![/b]\nСрочность: ${priorityLabel}\nДеталь: [b]${payload.partName || payload.reclamationType}[/b]\nЗаявитель: ${payload.applicantName || "Монтажник"}.\nПроверьте таймлайн сделки!`;
+        await sendBitrix24BellNotification({
+          userId: resp.id,
+          dealId: payload.dealId,
+          message: bellMsg
+        });
+      }
+    }
+
+    // Always mirror to backend for persistence & history
+    const res = await fetch("/api/bitrix24/timeline/reclamation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    return data;
+  } catch (err: any) {
+    console.error("Error submitting reclamation:", err);
+    return { success: false, message: err.message || "Ошибка фиксации рекламации" };
+  }
+};
+
+// --- История таймлайна по сделке (фотоотчеты и рекламации) ---
+
+export const fetchBitrix24TimelineHistory = async (
+  companyId: string,
+  dealId?: number | string | null
+): Promise<{ photoReports: any[]; reclamations: any[] }> => {
+  try {
+    const url = `/api/bitrix24/timeline/history?companyId=${encodeURIComponent(companyId)}${dealId ? `&dealId=${encodeURIComponent(String(dealId))}` : ''}`;
+    const res = await fetch(url);
+    if (!res.ok) return { photoReports: [], reclamations: [] };
+    const data = await res.json();
+    return {
+      photoReports: data.photoReports || [],
+      reclamations: data.reclamations || []
+    };
+  } catch (err) {
+    console.error("Error fetching timeline history:", err);
+    return { photoReports: [], reclamations: [] };
+  }
+};

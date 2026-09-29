@@ -4011,9 +4011,703 @@ function transliterate(str: string): string {
     }
   });
 
+  // --- Уведомления в колокольчик и чат Битрикс24 (im.notify / im.message) ---
+  app.post("/api/bitrix24/notify", async (req, res) => {
+    try {
+      let { companyId, webhookUrl, dealId, userId, message, type = "system", tag } = req.body;
 
+      if (!webhookUrl && companyId) {
+        const compDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } }));
+        if (compDoc) {
+          const compData = JSON.parse(compDoc.data);
+          webhookUrl = compData.bitrix24?.webhookUrl;
+        }
+      }
 
-  // Environment determination
+      if (!webhookUrl) {
+        return res.status(400).json({ success: false, error: "Вебхук Битрикс24 не настроен" });
+      }
+
+      const cleanWebhook = webhookUrl.replace(/\/$/, "");
+
+      // If no userId but dealId provided, resolve deal's assigned responsible manager
+      if (!userId && dealId) {
+        try {
+          const dealRes = await fetch(`${cleanWebhook}/crm.deal.get`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: dealId })
+          });
+          if (dealRes.ok) {
+            const dealJson = await dealRes.json();
+            userId = dealJson.result?.ASSIGNED_BY_ID;
+          }
+        } catch (dealErr) {
+          console.warn("Could not fetch deal responsible manager:", dealErr);
+        }
+      }
+
+      // If still no userId, get current bot/user or first admin
+      if (!userId) {
+        try {
+          const userRes = await fetch(`${cleanWebhook}/user.current`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" }
+          });
+          if (userRes.ok) {
+            const userJson = await userRes.json();
+            userId = userJson.result?.ID;
+          }
+        } catch (_) {}
+      }
+
+      if (!userId) {
+        return res.status(400).json({ success: false, error: "Не удалось определить ID пользователя в Битрикс24 для отправки уведомления" });
+      }
+
+      let bitrixMethod = "im.notify.system.add";
+      let payload: any = {};
+
+      if (type === "chat") {
+        bitrixMethod = "im.message.add";
+        payload = {
+          DIALOG_ID: userId,
+          MESSAGE: message
+        };
+      } else if (type === "personal") {
+        bitrixMethod = "im.notify.personal.add";
+        payload = {
+          USER_ID: userId,
+          MESSAGE: message,
+          TAG: tag || `MEBEL_PLAN_${dealId || 'GENERAL'}_${Date.now()}`
+        };
+      } else {
+        // default: system bell notification
+        bitrixMethod = "im.notify.system.add";
+        payload = {
+          USER_ID: userId,
+          MESSAGE: message,
+          TAG: tag || `MEBEL_PLAN_${dealId || 'GENERAL'}_${Date.now()}`
+        };
+      }
+
+      const notifyRes = await fetch(`${cleanWebhook}/${bitrixMethod}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const notifyText = await notifyRes.text();
+      let notifyJson: any = {};
+      try {
+        notifyJson = JSON.parse(notifyText);
+      } catch (_) {
+        notifyJson = { raw: notifyText };
+      }
+
+      if (!notifyRes.ok || notifyJson.error) {
+        return res.status(notifyRes.status || 500).json({
+          success: false,
+          error: notifyJson.error_description || notifyJson.error || "Ошибка отправки уведомления в Битрикс24",
+          details: notifyJson
+        });
+      }
+
+      res.json({
+        success: true,
+        method: bitrixMethod,
+        recipientUserId: userId,
+        result: notifyJson.result,
+        message: "Уведомление успешно доставлено в Битрикс24"
+      });
+    } catch (e: any) {
+      console.error("Error in /api/bitrix24/notify:", e);
+      res.status(500).json({ success: false, error: e.message || String(e) });
+    }
+  });
+
+  // --- Прием фотоотчета монтажа в таймлайн сделки Битрикс24 ---
+  app.post("/api/bitrix24/timeline/photo-report", async (req, res) => {
+    try {
+      let {
+        companyId,
+        webhookUrl,
+        dealId,
+        installerName,
+        installerPhone,
+        status = "completed",
+        comment,
+        checklist = {},
+        photos = [],
+        notifyResponsible = true
+      } = req.body;
+
+      if (!dealId) {
+        return res.status(400).json({ success: false, error: "ID сделки обязателен" });
+      }
+
+      if (!webhookUrl && companyId) {
+        const compDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } }));
+        if (compDoc) {
+          const compData = JSON.parse(compDoc.data);
+          webhookUrl = compData.bitrix24?.webhookUrl;
+        }
+      }
+
+      if (!webhookUrl) {
+        return res.status(400).json({ success: false, error: "Вебхук Битрикс24 не настроен" });
+      }
+
+      const cleanWebhook = webhookUrl.replace(/\/$/, "");
+      const nowStr = new Date().toLocaleString("ru-RU", { timeZone: "Europe/Moscow" });
+
+      const statusLabels: Record<string, string> = {
+        completed: "✅ Монтаж завершен успешно",
+        with_remarks: "⚠️ Монтаж завершен с замечаниями",
+        in_progress: "⏳ Монтаж в процессе (промежуточный отчет)"
+      };
+      const statusTitle = statusLabels[status] || "📸 Фотоотчет монтажа";
+
+      // Build structured timeline text
+      let timelineText = `📸 ФОТООТЧЕТ МОНТАЖА МЕБЕЛИ\n`;
+      timelineText += `─────────────────────────────────────────\n`;
+      timelineText += `🏷️ Статус: ${statusTitle}\n`;
+      timelineText += `📅 Дата и время: ${nowStr} (МСК)\n`;
+      timelineText += `👷 Монтажник: ${installerName || "Монтажная бригада"}${installerPhone ? ` (${installerPhone})` : ""}\n\n`;
+
+      if (checklist && Object.keys(checklist).length > 0) {
+        timelineText += `📋 ЧЕК-ЛИСТ ПРИЕМКИ:\n`;
+        const checklistTitles: Record<string, string> = {
+          level: "Уровень и геометрия конструкции",
+          hardware: "Регулировка петель, фасадов и доводчиков",
+          appliances: "Врезка и герметизация техники/мойки",
+          cleanliness: "Уборка рабочего места, снятие пленок",
+          actSigned: "Подписан акт приема-передачи клиентом"
+        };
+        for (const [k, v] of Object.entries(checklist)) {
+          const title = checklistTitles[k] || k;
+          timelineText += `  ${v ? "✔" : "✖"} ${title}: ${v ? "Выполнено" : "Не выполнено"}\n`;
+        }
+        timelineText += `\n`;
+      }
+
+      if (comment) {
+        timelineText += `📝 КОММЕНТАРИЙ МОНТАЖНИКА:\n${comment}\n\n`;
+      }
+
+      if (photos && photos.length > 0) {
+        timelineText += `📷 ФОТОГРАФИИ ОБЪЕКТА (${photos.length} шт.):\n`;
+        photos.forEach((photo: any, idx: number) => {
+          const pName = photo.name || photo.category || `Фото ${idx + 1}`;
+          const pUrl = photo.url || (photo.base64 ? `[Фото прикреплено]` : `[Ссылка]`);
+          timelineText += `  ${idx + 1}. ${pName}: ${pUrl}\n`;
+        });
+        timelineText += `\n`;
+      }
+
+      timelineText += `─────────────────────────────────────────\n`;
+      timelineText += `Отправлено через Мебель План • ERP & Монтаж`;
+
+      // 1. Post to Bitrix24 Deal Timeline
+      const commentRes = await fetch(`${cleanWebhook}/crm.timeline.comment.add`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fields: {
+            ENTITY_ID: dealId,
+            ENTITY_TYPE: "deal",
+            COMMENT: timelineText
+          }
+        })
+      });
+
+      const commentData = await commentRes.json().catch(() => ({}));
+      const commentId = commentData.result;
+
+      // 2. Fetch responsible manager and send bell notification
+      let notificationSent = false;
+      let managerId: any = null;
+
+      if (notifyResponsible) {
+        try {
+          const dealRes = await fetch(`${cleanWebhook}/crm.deal.get`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ id: dealId })
+          });
+          if (dealRes.ok) {
+            const dealJson = await dealRes.json();
+            managerId = dealJson.result?.ASSIGNED_BY_ID;
+            const dealTitle = dealJson.result?.TITLE || `Сделка #${dealId}`;
+
+            if (managerId) {
+              const bellMessage = `📸 [b]Фотоотчет монтажа[/b] по сделке [b]${dealTitle}[/b] (#{dealId})!\nМонтажник: [b]${installerName || "Монтажная бригада"}[/b].\nСтатус: ${statusTitle}.\nПроверьте таймлайн сделки для просмотра фото и отчета.`;
+              await fetch(`${cleanWebhook}/im.notify.system.add`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  USER_ID: managerId,
+                  MESSAGE: bellMessage,
+                  TAG: `MEBEL_PLAN_PHOTO_${dealId}_${Date.now()}`
+                })
+              });
+              notificationSent = true;
+            }
+          }
+        } catch (notifyErr) {
+          console.warn("Could not send bell notification for photo report:", notifyErr);
+        }
+      }
+
+      // 3. Persist photo report in database for records/history
+      const reportId = `report_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      if (companyId) {
+        try {
+          const reportDocData = {
+            id: reportId,
+            dealId,
+            companyId,
+            installerName,
+            installerPhone,
+            status,
+            comment,
+            checklist,
+            photosCount: photos.length,
+            photos: photos.map((p: any) => ({ name: p.name, category: p.category, url: p.url })),
+            commentId,
+            managerId,
+            createdAt: new Date().toISOString()
+          };
+          await dbQueryWithRetry(() => prisma.dbDocument.create({
+            data: {
+              path: `companies/${companyId}/photo_reports/${reportId}`,
+              collection: `companies/${companyId}/photo_reports`,
+              docId: reportId,
+              data: JSON.stringify(reportDocData)
+            }
+          }));
+        } catch (dbErr) {
+          console.warn("Failed to persist photo report in database:", dbErr);
+        }
+      }
+
+      res.json({
+        success: true,
+        reportId,
+        commentId,
+        notificationSent,
+        managerId,
+        message: "Фотоотчет успешно добавлен в таймлайн сделки Битрикс24"
+      });
+    } catch (e: any) {
+      console.error("Error in /api/bitrix24/timeline/photo-report:", e);
+      res.status(500).json({ success: false, error: e.message || String(e) });
+    }
+  });
+
+  // --- Прием рекламаций в таймлайн сделки Битрикс24 + создание задачи ---
+  app.post("/api/bitrix24/timeline/reclamation", async (req, res) => {
+    try {
+      let {
+        companyId,
+        webhookUrl,
+        dealId,
+        reclamationType = "Брак детали",
+        partName,
+        priority = "high", // 'critical' | 'high' | 'normal'
+        department,
+        applicantName,
+        applicantPhone,
+        description,
+        requiredAction,
+        photos = [],
+        createTask = true,
+        notifyResponsible = true
+      } = req.body;
+
+      if (!dealId) {
+        return res.status(400).json({ success: false, error: "ID сделки обязателен" });
+      }
+
+      if (!webhookUrl && companyId) {
+        const compDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } }));
+        if (compDoc) {
+          const compData = JSON.parse(compDoc.data);
+          webhookUrl = compData.bitrix24?.webhookUrl;
+        }
+      }
+
+      if (!webhookUrl) {
+        return res.status(400).json({ success: false, error: "Вебхук Битрикс24 не настроен" });
+      }
+
+      const cleanWebhook = webhookUrl.replace(/\/$/, "");
+      const nowStr = new Date().toLocaleString("ru-RU", { timeZone: "Europe/Moscow" });
+
+      const priorityBadges: Record<string, string> = {
+        critical: "🔴 КРИТИЧНО (СТОП МОНТАЖА)",
+        high: "🟡 ВЫСОКИЙ (ДО СДАЧИ ОБЪЕКТА)",
+        normal: "🟢 СТАНДАРТНЫЙ (ГАРАНТИЙНЫЙ СЛУЧАЙ)"
+      };
+      const priorityLabel = priorityBadges[priority] || "⚠️ ВЫСОКИЙ";
+
+      // Build structured timeline text
+      let timelineText = `🚨 РЕКЛАМАЦИЯ / ПРЕТЕНЗИЯ ПО СДЕЛКЕ #${dealId}\n`;
+      timelineText += `─────────────────────────────────────────\n`;
+      timelineText += `⚠️ Срочность: ${priorityLabel}\n`;
+      timelineText += `🛠️ Тип проблемы: ${reclamationType}\n`;
+      if (partName) timelineText += `📦 Элемент/Деталь: ${partName}\n`;
+      if (department) timelineText += `🏭 Виновный отдел/этап: ${department}\n`;
+      timelineText += `👤 Заявитель: ${applicantName || "Монтажник / Клиент"}${applicantPhone ? ` (${applicantPhone})` : ""}\n`;
+      timelineText += `📅 Дата регистрации: ${nowStr} (МСК)\n\n`;
+
+      if (description) {
+        timelineText += `📝 ОПИСАНИЕ ДЕФЕКТА:\n${description}\n\n`;
+      }
+
+      if (requiredAction) {
+        timelineText += `⚡ ТРЕБУЕМОЕ ДЕЙСТВИЕ:\n${requiredAction}\n\n`;
+      }
+
+      if (photos && photos.length > 0) {
+        timelineText += `📷 ФОТОГРАФИИ ДЕФЕКТА (${photos.length} шт.):\n`;
+        photos.forEach((photo: any, idx: number) => {
+          const pName = photo.name || `Дефект #${idx + 1}`;
+          const pUrl = photo.url || (photo.base64 ? `[Фото прикреплено]` : `[Ссылка]`);
+          timelineText += `  ${idx + 1}. ${pName}: ${pUrl}\n`;
+        });
+        timelineText += `\n`;
+      }
+
+      timelineText += `─────────────────────────────────────────\n`;
+      timelineText += `Зафиксировано через Мебель План • Контроль качества`;
+
+      // 1. Post to Bitrix24 Deal Timeline
+      const commentRes = await fetch(`${cleanWebhook}/crm.timeline.comment.add`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fields: {
+            ENTITY_ID: dealId,
+            ENTITY_TYPE: "deal",
+            COMMENT: timelineText
+          }
+        })
+      });
+
+      const commentData = await commentRes.json().catch(() => ({}));
+      const commentId = commentData.result;
+
+      // 2. Fetch responsible manager of the deal
+      let managerId: any = null;
+      let dealTitle = `Сделка #${dealId}`;
+      try {
+        const dealRes = await fetch(`${cleanWebhook}/crm.deal.get`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: dealId })
+        });
+        if (dealRes.ok) {
+          const dealJson = await dealRes.json();
+          managerId = dealJson.result?.ASSIGNED_BY_ID;
+          if (dealJson.result?.TITLE) dealTitle = dealJson.result.TITLE;
+        }
+      } catch (dealErr) {
+        console.warn("Could not fetch deal details for reclamation:", dealErr);
+      }
+
+      // 3. Create Task in Bitrix24 CRM if requested
+      let taskId: any = null;
+      if (createTask) {
+        try {
+          const deadline = new Date();
+          if (priority === "critical") {
+            deadline.setHours(deadline.getHours() + 24); // 24 hours for critical
+          } else {
+            deadline.setDate(deadline.getDate() + 3); // 3 days for standard/high
+          }
+
+          const taskRes = await fetch(`${cleanWebhook}/tasks.task.add`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              fields: {
+                TITLE: `🚨 Рекламация по сделке #${dealId}: ${partName || reclamationType}`,
+                DESCRIPTION: `Срочность: ${priorityLabel}\nЗаявитель: ${applicantName || "Монтажник"}\n\nОписание дефекта:\n${description || "Без описания"}\n\nТребуемое решение:\n${requiredAction || "Устранить замечания"}\n\nСделка: ${dealTitle} (#${dealId})`,
+                RESPONSIBLE_ID: managerId || undefined,
+                DEADLINE: deadline.toISOString(),
+                PRIORITY: priority === "critical" ? 2 : 1,
+                UF_CRM_TASK: [`D_${dealId}`]
+              }
+            })
+          });
+
+          if (taskRes.ok) {
+            const taskJson = await taskRes.json();
+            taskId = taskJson.result?.task?.id || taskJson.result;
+          }
+        } catch (taskErr) {
+          console.warn("Could not create Bitrix24 task for reclamation:", taskErr);
+        }
+      }
+
+      // 4. Send bell notification (im.notify.system.add) to manager
+      let notificationSent = false;
+      if (notifyResponsible && managerId) {
+        try {
+          const bellMessage = `🚨 [b]РЕКЛАМАЦИЯ по сделке[/b] [b]${dealTitle}[/b] (#{dealId})!\nСрочность: ${priorityLabel}\nДеталь: [b]${partName || reclamationType}[/b]\nЗаявитель: ${applicantName || "Монтажник"}\n${taskId ? `Создана задача в Битрикс24 #${taskId}.\n` : ""}Проверьте таймлайн сделки!`;
+          await fetch(`${cleanWebhook}/im.notify.system.add`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              USER_ID: managerId,
+              MESSAGE: bellMessage,
+              TAG: `MEBEL_PLAN_RECLAMATION_${dealId}_${Date.now()}`
+            })
+          });
+          notificationSent = true;
+        } catch (notifyErr) {
+          console.warn("Could not send bell notification for reclamation:", notifyErr);
+        }
+      }
+
+      // 5. Persist reclamation in database
+      const reclamationId = `reclamation_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      if (companyId) {
+        try {
+          const reclamationDocData = {
+            id: reclamationId,
+            dealId,
+            companyId,
+            reclamationType,
+            partName,
+            priority,
+            department,
+            applicantName,
+            applicantPhone,
+            description,
+            requiredAction,
+            photosCount: photos.length,
+            photos: photos.map((p: any) => ({ name: p.name, url: p.url })),
+            commentId,
+            taskId,
+            managerId,
+            status: "active", // active | resolved | in_work
+            createdAt: new Date().toISOString()
+          };
+          await dbQueryWithRetry(() => prisma.dbDocument.create({
+            data: {
+              path: `companies/${companyId}/reclamations/${reclamationId}`,
+              collection: `companies/${companyId}/reclamations`,
+              docId: reclamationId,
+              data: JSON.stringify(reclamationDocData)
+            }
+          }));
+        } catch (dbErr) {
+          console.warn("Failed to persist reclamation in database:", dbErr);
+        }
+      }
+
+      res.json({
+        success: true,
+        reclamationId,
+        commentId,
+        taskId,
+        notificationSent,
+        managerId,
+        message: "Рекламация успешно зафиксирована в таймлайне сделки Битрикс24"
+      });
+    } catch (e: any) {
+      console.error("Error in /api/bitrix24/timeline/reclamation:", e);
+      res.status(500).json({ success: false, error: e.message || String(e) });
+    }
+  });
+
+  // --- Получение истории фотоотчетов и рекламаций по сделке ---
+  app.get("/api/bitrix24/timeline/history", async (req, res) => {
+    try {
+      const { companyId, dealId } = req.query;
+      if (!companyId) return res.status(400).json({ error: "companyId is required" });
+
+      const [reportsDocs, reclamationsDocs] = await Promise.all([
+        dbQueryWithRetry(() => prisma.dbDocument.findMany({
+          where: { collection: `companies/${companyId}/photo_reports` }
+        })),
+        dbQueryWithRetry(() => prisma.dbDocument.findMany({
+          where: { collection: `companies/${companyId}/reclamations` }
+        }))
+      ]);
+
+      let photoReports = reportsDocs.map(d => JSON.parse(d.data));
+      let reclamations = reclamationsDocs.map(d => JSON.parse(d.data));
+
+      if (dealId) {
+        photoReports = photoReports.filter(r => String(r.dealId) === String(dealId));
+        reclamations = reclamations.filter(r => String(r.dealId) === String(dealId));
+      }
+
+      // Sort descending by date
+      photoReports.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      reclamations.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      res.json({
+        success: true,
+        photoReports,
+        reclamations
+      });
+    } catch (e: any) {
+      console.error("Error fetching timeline history:", e);
+      res.status(500).json({ success: false, error: e.message || String(e) });
+    }
+  });
+
+  // --- Межпортальный B2B Чат между Салоном и Производством (Cross-Portal Order Chat) ---
+  app.get("/api/bitrix24/b2b-chat/messages", async (req, res) => {
+    try {
+      const { orderId } = req.query;
+      if (!orderId) return res.status(400).json({ error: "orderId is required" });
+
+      const messagesDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+        where: { collection: `b2b_order_chats/${orderId}/messages` }
+      }));
+
+      const messages = messagesDocs
+        .map(d => JSON.parse(d.data))
+        .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+      res.json({ success: true, messages });
+    } catch (e: any) {
+      console.error("Error fetching b2b chat messages:", e);
+      res.status(500).json({ success: false, error: e.message || String(e) });
+    }
+  });
+
+  app.post("/api/bitrix24/b2b-chat/send", async (req, res) => {
+    try {
+      const {
+        orderId,
+        orderName,
+        senderCompanyId,
+        senderCompanyName = "Партнер",
+        senderType = "salon", // 'salon' | 'production'
+        senderUserName = "Сотрудник",
+        senderUserPhone,
+        text,
+        attachments = [],
+        targetCompanyId,
+        targetDealId,
+        currentDealId
+      } = req.body;
+
+      if (!orderId || !text) {
+        return res.status(400).json({ success: false, error: "orderId and text are required" });
+      }
+
+      const messageId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const messageDoc = {
+        id: messageId,
+        orderId,
+        senderCompanyId,
+        senderCompanyName,
+        senderType,
+        senderUserName,
+        senderUserPhone,
+        text,
+        attachments,
+        createdAt: new Date().toISOString()
+      };
+
+      // 1. Save to database
+      await dbQueryWithRetry(() => prisma.dbDocument.create({
+        data: {
+          path: `b2b_order_chats/${orderId}/messages/${messageId}`,
+          collection: `b2b_order_chats/${orderId}/messages`,
+          docId: messageId,
+          data: JSON.stringify(messageDoc)
+        }
+      }));
+
+      // 2. Dispatch cross-portal notification to the other party's Bitrix24 portal
+      let notificationSent = false;
+      let targetWebhookUrl: string | null = null;
+      let targetManagerId: any = null;
+
+      if (targetCompanyId) {
+        try {
+          const compDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({
+            where: { path: `companies/${targetCompanyId}` }
+          }));
+          if (compDoc) {
+            const compData = JSON.parse(compDoc.data);
+            targetWebhookUrl = compData.bitrix24?.webhookUrl || null;
+          }
+        } catch (_) {}
+      }
+
+      if (targetWebhookUrl) {
+        const cleanWebhook = targetWebhookUrl.replace(/\/$/, "");
+
+        // Find responsible manager on the target portal
+        if (targetDealId) {
+          try {
+            const dealRes = await fetch(`${cleanWebhook}/crm.deal.get`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: targetDealId })
+            });
+            if (dealRes.ok) {
+              const dealJson = await dealRes.json();
+              targetManagerId = dealJson.result?.ASSIGNED_BY_ID;
+            }
+          } catch (_) {}
+        }
+
+        if (!targetManagerId) {
+          try {
+            const userRes = await fetch(`${cleanWebhook}/user.current`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" }
+            });
+            if (userRes.ok) {
+              const userJson = await userRes.json();
+              targetManagerId = userJson.result?.ID;
+            }
+          } catch (_) {}
+        }
+
+        if (targetManagerId) {
+          try {
+            const orderLabel = orderName || `Заказ #${orderId}`;
+            const shortSnippet = text.length > 120 ? text.substring(0, 117) + "..." : text;
+            const partnerBadge = senderType === "production" ? "🏭 Производство" : "🏬 Салон";
+            const bellMessage = `💬 [b]${partnerBadge} ${senderCompanyName}[/b] (${senderUserName}):\n"${shortSnippet}"\n[b]По заказу:[/b] ${orderLabel}${targetDealId ? ` (Сделка #${targetDealId})` : ""}\nОткройте чат по заказу в приложении для ответа.`;
+
+            await fetch(`${cleanWebhook}/im.notify.system.add`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                USER_ID: targetManagerId,
+                MESSAGE: bellMessage,
+                TAG: `MEBEL_PLAN_B2B_CHAT_${orderId}`
+              })
+            });
+            notificationSent = true;
+          } catch (notifErr) {
+            console.warn("Could not dispatch cross-portal notification:", notifErr);
+          }
+        }
+      }
+
+      res.json({
+        success: true,
+        message: messageDoc,
+        notificationSent
+      });
+    } catch (e: any) {
+      console.error("Error sending b2b chat message:", e);
+      res.status(500).json({ success: false, error: e.message || String(e) });
+    }
+  });
   const isDev = process.env.NODE_ENV === "development";
   const distPath = path.join(process.cwd(), 'dist');
 

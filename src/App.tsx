@@ -148,6 +148,12 @@ import { CommercialProposalPrintView } from "./components/Projects/CommercialPro
 import { UserProfileView } from "./components/Profile/UserProfileView";
 import { PromotionsView } from "./components/Promotions/PromotionsView";
 import { Bitrix24OnboardingModal } from "./components/Auth/Bitrix24OnboardingModal";
+import {
+  BitrixPhotoReportModal,
+  BitrixReclamationModal,
+  BitrixNotificationModal,
+  B2BOrderChatModal
+} from "./components/Bitrix24";
 import { B3DTestView } from "./components/B3DTest/B3DTestView";
 import {
   Menu,
@@ -240,6 +246,9 @@ import {
   QrCode,
   Activity,
   Share2,
+  Camera,
+  Bell,
+  AlertOctagon,
   Printer,
 } from "lucide-react";
 
@@ -9825,6 +9834,10 @@ const Bitrix24DashboardView = ({
   onOpenCommercialProposal,
   onCheckoutSelectedProjects,
   onOpenContactRequisites,
+  onOpenPhotoReport,
+  onOpenReclamation,
+  onOpenNotification,
+  onOpenB2BChat,
   setActiveTab,
   companyData,
 }: {
@@ -9840,6 +9853,10 @@ const Bitrix24DashboardView = ({
   onOpenCommercialProposal: (project: any) => void;
   onCheckoutSelectedProjects: (selectedProjects: any[]) => void;
   onOpenContactRequisites: () => void;
+  onOpenPhotoReport?: () => void;
+  onOpenReclamation?: () => void;
+  onOpenNotification?: () => void;
+  onOpenB2BChat?: () => void;
   setActiveTab: (tab: any) => void;
   companyData?: any;
 }) => {
@@ -9970,6 +9987,105 @@ const Bitrix24DashboardView = ({
             <p className="text-[11px] text-gray-500 mt-0.5">Карточка в CRM</p>
           </div>
         </button>
+      </div>
+
+      {/* CRM Timeline, Photo Reports & Reclamations Quick Actions */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* 1. Photo Report */}
+        <div 
+          onClick={onOpenPhotoReport}
+          className="bg-gradient-to-br from-blue-50/80 via-white to-cyan-50/50 p-4 rounded-2xl border border-blue-200/80 hover:border-blue-400 hover:shadow-md transition-all cursor-pointer flex items-center justify-between group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-md shadow-blue-200 group-hover:scale-105 transition-transform">
+              <Camera className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <h4 className="font-extrabold text-sm text-slate-900">Фотоотчет монтажа</h4>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-blue-100 text-blue-800">CRM</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Сдать фото готовой мебели и Акт в таймлайн сделки
+              </p>
+            </div>
+          </div>
+          <span className="text-xs font-bold text-blue-600 group-hover:translate-x-0.5 transition-transform">
+            Сдать →
+          </span>
+        </div>
+
+        {/* 2. Reclamation */}
+        <div 
+          onClick={onOpenReclamation}
+          className="bg-gradient-to-br from-rose-50/80 via-white to-amber-50/50 p-4 rounded-2xl border border-rose-200/80 hover:border-rose-400 hover:shadow-md transition-all cursor-pointer flex items-center justify-between group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-rose-600 text-white flex items-center justify-center shadow-md shadow-rose-200 group-hover:scale-105 transition-transform">
+              <AlertOctagon className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <h4 className="font-extrabold text-sm text-slate-900">Прием рекламаций</h4>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-100 text-rose-800">Брак</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Фиксация дефекта, задача исполнителю и таймлайн
+              </p>
+            </div>
+          </div>
+          <span className="text-xs font-bold text-rose-600 group-hover:translate-x-0.5 transition-transform">
+            Заявить →
+          </span>
+        </div>
+
+        {/* 3. B2B Chat */}
+        <div 
+          onClick={onOpenB2BChat}
+          className="bg-gradient-to-br from-emerald-50/80 via-white to-teal-50/50 p-4 rounded-2xl border border-emerald-200/80 hover:border-emerald-400 hover:shadow-md transition-all cursor-pointer flex items-center justify-between group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-md shadow-emerald-200 group-hover:scale-105 transition-transform">
+              <MessageSquare className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <h4 className="font-extrabold text-sm text-slate-900">B2B-Чат заказа</h4>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 text-emerald-800">Партнеры</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Сквозной чат между Битрикс24 Салона и Фабрики
+              </p>
+            </div>
+          </div>
+          <span className="text-xs font-bold text-emerald-600 group-hover:translate-x-0.5 transition-transform">
+            Открыть →
+          </span>
+        </div>
+
+        {/* 4. Bell Notification */}
+        <div 
+          onClick={onOpenNotification}
+          className="bg-gradient-to-br from-indigo-50/80 via-white to-purple-50/50 p-4 rounded-2xl border border-indigo-200/80 hover:border-indigo-400 hover:shadow-md transition-all cursor-pointer flex items-center justify-between group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-200 group-hover:scale-105 transition-transform">
+              <Bell className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center gap-1.5">
+                <h4 className="font-extrabold text-sm text-slate-900">Колокольчик (im.notify)</h4>
+                <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-100 text-indigo-800">Push</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Мгновенное уведомление менеджеру сделки в CRM
+              </p>
+            </div>
+          </div>
+          <span className="text-xs font-bold text-indigo-600 group-hover:translate-x-0.5 transition-transform">
+            Отправить →
+          </span>
+        </div>
       </div>
 
       {/* Projects / Variants List Section */}
@@ -34429,6 +34545,10 @@ export default function App() {
   const [b24Sending, setB24Sending] = useState(false);
   const [b24MoreMenuOpen, setB24MoreMenuOpen] = useState(false);
   const [showB24Onboarding, setShowB24Onboarding] = useState(false);
+  const [showB24PhotoReportModal, setShowB24PhotoReportModal] = useState(false);
+  const [showB24ReclamationModal, setShowB24ReclamationModal] = useState(false);
+  const [showB24NotificationModal, setShowB24NotificationModal] = useState(false);
+  const [showB2BChatModal, setShowB2BChatModal] = useState(false);
 
   useEffect(() => {
     initBitrix24().then(async (ctx) => {
@@ -41779,6 +41899,36 @@ export default function App() {
 
               {/* Right section: Total & Requisites & Send to Deal Button */}
               <div className="flex items-center gap-2 shrink-0">
+                {/* 📸 Фотоотчет монтажа */}
+                <button
+                  onClick={() => setShowB24PhotoReportModal(true)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-500/15 hover:bg-blue-500/25 text-blue-200 border border-blue-400/30 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                  title="Сдать фотоотчет монтажа в таймлайн сделки Битрикс24"
+                >
+                  <Camera className="w-3.5 h-3.5 text-blue-300" />
+                  <span className="hidden md:inline">Фотоотчет</span>
+                </button>
+
+                {/* 🚨 Рекламация */}
+                <button
+                  onClick={() => setShowB24ReclamationModal(true)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-200 border border-rose-400/30 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                  title="Зафиксировать рекламацию и создать задачу в Битрикс24"
+                >
+                  <AlertOctagon className="w-3.5 h-3.5 text-rose-300" />
+                  <span className="hidden md:inline">Рекламация</span>
+                </button>
+
+                {/* 🔔 Уведомление в колокольчик */}
+                <button
+                  onClick={() => setShowB24NotificationModal(true)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-200 border border-indigo-400/30 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                  title="Отправить мгновенное уведомление в колокольчик (im.notify)"
+                >
+                  <Bell className="w-3.5 h-3.5 text-indigo-300" />
+                  <span className="hidden lg:inline">Колокольчик</span>
+                </button>
+
                 <button
                   onClick={() => openBitrix24Contact(b24ContactDetails.contactId, b24ContactDetails.companyId, b24Context?.dealId)}
                   className="flex items-center gap-1.5 px-2.5 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 border border-cyan-500/35 rounded-xl text-xs font-bold transition-all cursor-pointer"
@@ -41860,6 +42010,9 @@ export default function App() {
               onOpenContactRequisites={() => {
                 openBitrix24Contact(b24ContactDetails.contactId, b24ContactDetails.companyId, b24Context?.dealId);
               }}
+              onOpenPhotoReport={() => setShowB24PhotoReportModal(true)}
+              onOpenReclamation={() => setShowB24ReclamationModal(true)}
+              onOpenNotification={() => setShowB24NotificationModal(true)}
               setActiveTab={setActiveTab}
               companyData={companyData}
             />
@@ -44006,6 +44159,36 @@ export default function App() {
               setShowB24Onboarding(false);
               showAlert("Настройка завершена", `Профиль «${selectedType}» установлен.`);
             }}
+          />
+        )}
+
+        {showB24PhotoReportModal && (
+          <BitrixPhotoReportModal
+            dealId={b24Context?.dealId}
+            dealTitle={currentProjectName}
+            companyId={companyData?.id || (b24Context.domain ? `b24_${b24Context.domain.replace(/[^a-zA-Z0-9_-]/g, "_")}` : "b24_default_company")}
+            onClose={() => setShowB24PhotoReportModal(false)}
+            showAlert={showAlert}
+          />
+        )}
+
+        {showB24ReclamationModal && (
+          <BitrixReclamationModal
+            dealId={b24Context?.dealId}
+            dealTitle={currentProjectName}
+            companyId={companyData?.id || (b24Context.domain ? `b24_${b24Context.domain.replace(/[^a-zA-Z0-9_-]/g, "_")}` : "b24_default_company")}
+            onClose={() => setShowB24ReclamationModal(false)}
+            showAlert={showAlert}
+          />
+        )}
+
+        {showB24NotificationModal && (
+          <BitrixNotificationModal
+            dealId={b24Context?.dealId}
+            dealTitle={currentProjectName}
+            companyId={companyData?.id || (b24Context.domain ? `b24_${b24Context.domain.replace(/[^a-zA-Z0-9_-]/g, "_")}` : "b24_default_company")}
+            onClose={() => setShowB24NotificationModal(false)}
+            showAlert={showAlert}
           />
         )}
 
