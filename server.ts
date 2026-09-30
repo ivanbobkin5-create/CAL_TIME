@@ -1966,10 +1966,31 @@ function transliterate(str: string): string {
     }
   });
 
+  function normalizeBitrixWebhookUrl(url: string | undefined | null): string | null {
+    if (!url || typeof url !== "string") return null;
+    let clean = url.trim();
+    if (!clean) return null;
+    if (!clean.startsWith("http://") && !clean.startsWith("https://")) {
+      if (clean.includes(".bitrix24.") || clean.includes("/rest/") || clean.includes(".")) {
+        clean = "https://" + clean;
+      } else {
+        return null;
+      }
+    }
+    try {
+      const parsed = new URL(clean);
+      if (!parsed.protocol.startsWith("http")) return null;
+      return clean.replace(/\/+$/, "");
+    } catch (_) {
+      return null;
+    }
+  }
+
   app.post("/api/bitrix24/test", async (req, res) => {
     try {
-      const { webhookUrl } = req.body;
-      if (!webhookUrl) return res.status(400).json({ error: "Webhook URL is required" });
+      const rawUrl = req.body.webhookUrl;
+      const webhookUrl = normalizeBitrixWebhookUrl(rawUrl);
+      if (!webhookUrl) return res.status(400).json({ error: "Укажите корректный URL входящего вебхука (начинается с https://.../rest/...)" });
 
       const bitrixRes = await fetch(`${webhookUrl}/app.info`, {
         method: 'POST',
@@ -2211,8 +2232,9 @@ function transliterate(str: string): string {
 
   app.post("/api/bitrix24/query", async (req, res) => {
     try {
-      const { webhookUrl, method, params } = req.body;
-      if (!webhookUrl) return res.status(400).json({ error: "Webhook URL is required" });
+      const { webhookUrl: rawUrl, method, params } = req.body;
+      const webhookUrl = normalizeBitrixWebhookUrl(rawUrl);
+      if (!webhookUrl) return res.status(400).json({ error: "Некорректный или не настроенный URL вебхука Битрикс24" });
       if (!method) return res.status(400).json({ error: "Method is required" });
 
       const bitrixRes = await fetch(`${webhookUrl}/${method}`, {
@@ -2243,7 +2265,7 @@ function transliterate(str: string): string {
       const companyDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } }));
       if (!companyDoc) return res.status(404).json({ error: "Company not found" });
       const companyData = JSON.parse(companyDoc.data);
-      const webhookUrl = companyData.bitrix24?.webhookUrl;
+      const webhookUrl = normalizeBitrixWebhookUrl(companyData.bitrix24?.webhookUrl || companyData.erpConfig?.bitrix24WebhookUrl);
       if (!webhookUrl) return res.status(400).json({ error: "Bitrix24 not configured" });
 
       const payload = fields ? { fields, ...params } : params;

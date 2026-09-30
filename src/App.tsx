@@ -34477,7 +34477,7 @@ export default function App() {
   >(() => initialAuth.role as any);
   const [userData, setUserData] = useState<any>(() => initialAuth.user);
   const [companyData, setCompanyData] = useState<any>(() => initialAuth.comp);
-  const [isLoading, setIsLoading] = useState<boolean>(() => !initialAuth.isAuth);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
 
   const [isModularProgram, setIsModularProgram] = useState<boolean>(false);
   const [modularAsked, setModularAsked] = useState<boolean>(false);
@@ -34990,13 +34990,16 @@ export default function App() {
   const lastLoadedB24 = useRef<Record<string, string>>({});
 
   const loadB24Categories = useCallback(async (url: string, force = false) => {
-    if (!url || (!force && lastLoadedB24.current.categories === url)) return;
+    if (!url || typeof url !== "string") return;
+    const cleanUrl = url.trim();
+    if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) return;
+    if (!force && lastLoadedB24.current.categories === cleanUrl) return;
     try {
       const res = await fetch("/api/bitrix24/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          webhookUrl: url,
+          webhookUrl: cleanUrl,
           method: "crm.dealcategory.list",
           params: {}
         })
@@ -35023,22 +35026,25 @@ export default function App() {
         });
       }
       setB24Categories(categories);
-      lastLoadedB24.current.categories = url;
+      lastLoadedB24.current.categories = cleanUrl;
     } catch (e) {
       console.error("Error loading categories:", e);
     }
   }, []);
 
   const loadB24Stages = useCallback(async (url: string, categoryId: string, force = false) => {
-    const cacheKey = `${url}_${categoryId}`;
-    if (!url || (!force && lastLoadedB24.current.stages === cacheKey)) return;
+    if (!url || typeof url !== "string") return;
+    const cleanUrl = url.trim();
+    if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) return;
+    const cacheKey = `${cleanUrl}_${categoryId}`;
+    if (!force && lastLoadedB24.current.stages === cacheKey) return;
     try {
       const entityId = !categoryId || categoryId === "0" ? "DEAL_STAGE" : `DEAL_STAGE_${categoryId}`;
       const res = await fetch("/api/bitrix24/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          webhookUrl: url,
+          webhookUrl: cleanUrl,
           method: "crm.status.list",
           params: {
             filter: { ENTITY_ID: entityId }
@@ -35074,15 +35080,18 @@ export default function App() {
   }, []);
 
   const loadProcurementB24Stages = useCallback(async (url: string, categoryId: string, force = false) => {
-    const cacheKey = `${url}_${categoryId}`;
-    if (!url || (!force && lastLoadedB24.current.procurementStages === cacheKey)) return;
+    if (!url || typeof url !== "string") return;
+    const cleanUrl = url.trim();
+    if (!cleanUrl.startsWith("http://") && !cleanUrl.startsWith("https://")) return;
+    const cacheKey = `${cleanUrl}_${categoryId}`;
+    if (!force && lastLoadedB24.current.procurementStages === cacheKey) return;
     try {
       const entityId = !categoryId || categoryId === "0" ? "DEAL_STAGE" : `DEAL_STAGE_${categoryId}`;
       const res = await fetch("/api/bitrix24/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          webhookUrl: url,
+          webhookUrl: cleanUrl,
           method: "crm.status.list",
           params: {
             filter: { ENTITY_ID: entityId }

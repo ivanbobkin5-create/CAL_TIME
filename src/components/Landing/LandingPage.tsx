@@ -61,18 +61,20 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
               <a href="#solutions" className="hover:text-blue-600 transition-colors">Для кого</a>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 relative z-30">
               <div className="hidden lg:flex items-center gap-2 text-xs text-gray-500 font-medium mr-2">
                 <Phone className="w-3.5 h-3.5 text-blue-600" />
                 <span className="hover:text-blue-600 transition-colors font-bold">+7 (812) 507-99-27 <span className="text-gray-400 font-normal">доб. 2</span></span>
               </div>
               <button 
+                type="button"
                 onClick={onLogin}
-                className="text-sm font-bold text-gray-600 hover:text-blue-600 transition-colors cursor-pointer"
+                className="text-sm font-bold text-gray-700 hover:text-blue-600 transition-colors cursor-pointer px-3 py-2 rounded-lg hover:bg-gray-100"
               >
                 Войти
               </button>
               <button 
+                type="button"
                 onClick={onRegister}
                 className="px-5 py-2.5 bg-blue-600 text-white text-xs font-bold rounded-xl hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all cursor-pointer"
               >

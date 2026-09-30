@@ -418,10 +418,14 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
   }, [formData.bitrix24WebhookUrl, companyData]);
 
   const loadBitrix24Data = async (customUrl?: string) => {
-    const url = (customUrl !== undefined ? customUrl : activeWebhookUrl).trim();
-    if (!url) {
-      setB24FetchStatus('Вебхук Битрикс24 не указан. Укажите URL входящего вебхука.');
-      return;
+    let url = (customUrl !== undefined ? customUrl : activeWebhookUrl).trim();
+    if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+      if (url.includes('.bitrix24.') || url.includes('/rest/')) {
+        url = 'https://' + url;
+      } else {
+        setB24FetchStatus('Укажите корректный URL входящего вебхука Битрикс24 (начинается с https://.../rest/...)');
+        return;
+      }
     }
 
     setIsFetchingB24Stages(true);
