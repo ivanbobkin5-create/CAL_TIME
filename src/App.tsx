@@ -14087,8 +14087,12 @@ const SummaryView = ({
           <div className="mt-8 flex flex-wrap items-center justify-end gap-3 sm:gap-4">
             <button
               onClick={() => {
-                if (b24Context?.dealId && !b24DealIdInput && setB24DealIdInput) {
-                  setB24DealIdInput(String(b24Context.dealId));
+                const autoDeal = b24Context?.dealId || (() => {
+                  const m = String(currentProjectId || "").match(/b24_deal_(\d+)/);
+                  return m ? m[1] : "";
+                })();
+                if (autoDeal && setB24DealIdInput) {
+                  setB24DealIdInput(String(autoDeal));
                 }
                 if (setShowB24Modal) {
                   setShowB24Modal(true);
@@ -35082,7 +35086,27 @@ export default function App() {
             if (key.includes('prices') && data.prices) setPrices((curr: any) => ({ ...curr, ...data.prices }));
             if (key.includes('promotions') && Array.isArray(data.promotions)) setPromotions(data.promotions);
             if (key.includes('products')) setOwnProducts(data.map((d: any) => ({ id: d.id, ...d.data })));
-            if (key.includes('projects') && Array.isArray(data)) setProjects(data.map((d: any) => ({ id: d.id, ...(d.data || d) })));
+            if (key.includes('projects') && Array.isArray(data)) {
+              setProjects(data.map((d: any) => {
+                const item = { id: d.id, ...(d.data || d) };
+                if (!item.bitrix24DealId) {
+                  const idMatch = String(item.id || "").match(/b24_deal_(\d+)/);
+                  if (idMatch) {
+                    item.bitrix24DealId = idMatch[1];
+                    item.b24DealId = Number(idMatch[1]);
+                  } else if (item.b24DealId) {
+                    item.bitrix24DealId = String(item.b24DealId);
+                  } else if (item.dealId) {
+                    item.bitrix24DealId = String(item.dealId);
+                  } else if (item.data?.b24DealId) {
+                    item.bitrix24DealId = String(item.data.b24DealId);
+                  } else if (item.data?.bitrix24DealId) {
+                    item.bitrix24DealId = String(item.data.bitrix24DealId);
+                  }
+                }
+                return item;
+              }));
+            }
             if (key.includes('sets') && Array.isArray(data)) setProjectSets(data.map((d: any) => ({ id: d.id, ...(d.data || d) })));
           } catch (e) {
             console.warn("Cache parse error for", key, e);
@@ -35281,7 +35305,25 @@ export default function App() {
       
       if (projData) {
         await safeSetLocalStorage(`meb_cache:/api/db/col/companies/${companyId}/projects`, JSON.stringify(projData));
-        setProjects(projData.map((d: any) => ({ id: d.id, ...d.data })));
+        setProjects(projData.map((d: any) => {
+          const item = { id: d.id, ...d.data };
+          if (!item.bitrix24DealId) {
+            const idMatch = String(item.id || "").match(/b24_deal_(\d+)/);
+            if (idMatch) {
+              item.bitrix24DealId = idMatch[1];
+              item.b24DealId = Number(idMatch[1]);
+            } else if (item.b24DealId) {
+              item.bitrix24DealId = String(item.b24DealId);
+            } else if (item.dealId) {
+              item.bitrix24DealId = String(item.dealId);
+            } else if (item.data?.b24DealId) {
+              item.bitrix24DealId = String(item.data.b24DealId);
+            } else if (item.data?.bitrix24DealId) {
+              item.bitrix24DealId = String(item.data.bitrix24DealId);
+            }
+          }
+          return item;
+        }));
       }
 
       if (setsColData) {
@@ -39015,10 +39057,34 @@ export default function App() {
         companyId: companyData?.id || "",
         manufacturerId: companyData?.manufacturerId || null,
         productionFormat: companyData?.productionFormat || productionFormat || null,
+        bitrix24DealId: (() => {
+          const dId = b24Context?.dealId || existingProject?.bitrix24DealId || existingProject?.b24DealId || existingProject?.dealId || existingProject?.data?.bitrix24DealId || existingProject?.data?.b24DealId;
+          if (dId) return String(dId);
+          const m = String(projectId || "").match(/b24_deal_(\d+)/);
+          return m ? m[1] : undefined;
+        })(),
+        b24DealId: (() => {
+          const dId = b24Context?.dealId || existingProject?.b24DealId || existingProject?.bitrix24DealId || existingProject?.dealId || existingProject?.data?.b24DealId || existingProject?.data?.bitrix24DealId;
+          if (dId) return Number(dId) || dId;
+          const m = String(projectId || "").match(/b24_deal_(\d+)/);
+          return m ? parseInt(m[1], 10) : undefined;
+        })(),
         data: {
           companyId: companyData?.id || "",
           manufacturerId: companyData?.manufacturerId || null,
           productionFormat: companyData?.productionFormat || productionFormat || null,
+          bitrix24DealId: (() => {
+            const dId = b24Context?.dealId || existingProject?.bitrix24DealId || existingProject?.b24DealId || existingProject?.dealId || existingProject?.data?.bitrix24DealId || existingProject?.data?.b24DealId;
+            if (dId) return String(dId);
+            const m = String(projectId || "").match(/b24_deal_(\d+)/);
+            return m ? m[1] : undefined;
+          })(),
+          b24DealId: (() => {
+            const dId = b24Context?.dealId || existingProject?.b24DealId || existingProject?.bitrix24DealId || existingProject?.dealId || existingProject?.data?.b24DealId || existingProject?.data?.bitrix24DealId;
+            if (dId) return Number(dId) || dId;
+            const m = String(projectId || "").match(/b24_deal_(\d+)/);
+            return m ? parseInt(m[1], 10) : undefined;
+          })(),
           createdByPhoto: createdByPhotoValue,
           summaryRows: activeSummaryRows,
           results: activeResults,
@@ -42055,8 +42121,15 @@ export default function App() {
 
                 <button
                   onClick={() => {
-                    if (b24Context?.dealId && !b24DealIdInput) {
-                      setB24DealIdInput(String(b24Context.dealId));
+                    const autoDeal = b24Context?.dealId || 
+                      (currentProjectId && projects.find(p => p.id === currentProjectId)?.bitrix24DealId) ||
+                      (currentProjectId && projects.find(p => p.id === currentProjectId)?.b24DealId) ||
+                      (() => {
+                        const m = String(currentProjectId || "").match(/b24_deal_(\d+)/);
+                        return m ? m[1] : "";
+                      })();
+                    if (autoDeal && setB24DealIdInput) {
+                      setB24DealIdInput(String(autoDeal));
                     }
                     setShowB24Modal(true);
                   }}

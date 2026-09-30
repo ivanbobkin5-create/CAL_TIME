@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, ExternalLink, Loader2, Send, Settings, Link, Camera, AlertOctagon, Bell, MessageSquare } from 'lucide-react';
+import { X, ExternalLink, Loader2, Send, Settings, Link, Camera, AlertOctagon, Bell, MessageSquare, CheckCircle2 } from 'lucide-react';
 import { cn } from "../../lib/utils";
 import {
   BitrixPhotoReportModal,
@@ -21,9 +21,31 @@ export const Bitrix24Modal = ({
   onClose: () => void;
   showAlert: (title: string, message: string) => void;
 }) => {
+  const activeDealId = useMemo(() => {
+    if (project?.bitrix24DealId) return String(project.bitrix24DealId);
+    if (project?.b24DealId) return String(project.b24DealId);
+    if (project?.dealId) return String(project.dealId);
+    if (project?.bitrixDealId) return String(project.bitrixDealId);
+    if (project?.data?.bitrix24DealId) return String(project.data.bitrix24DealId);
+    if (project?.data?.b24DealId) return String(project.data.b24DealId);
+    if (project?.data?.dealId) return String(project.data.dealId);
+    if (project?.data?.bitrixDealId) return String(project.data.bitrixDealId);
+
+    const idStr = String(project?.id || "");
+    const match = idStr.match(/b24_deal_(\d+)/);
+    if (match) return match[1];
+
+    const nameStr = String(project?.name || "");
+    const nameMatch = nameStr.match(/Сделка\s*#?(\d+)/i) || nameStr.match(/Deal\s*#?(\d+)/i);
+    if (nameMatch) return nameMatch[1];
+
+    return null;
+  }, [project]);
+
   const [mode, setMode] = useState<'link' | 'create'>('create');
-  const [dealId, setDealId] = useState('');
+  const [dealId, setDealId] = useState(activeDealId || '');
   const [isLoading, setIsLoading] = useState(false);
+  const [isUpdatingExisting, setIsUpdatingExisting] = useState(false);
   const [settings, setSettings] = useState<any>(null);
   const [companyType, setCompanyType] = useState<string | null>(null);
   const [currentUserB24Id, setCurrentUserB24Id] = useState<string | null>(null);
@@ -32,6 +54,12 @@ export const Bitrix24Modal = ({
   const [showReclamation, setShowReclamation] = useState(false);
   const [showNotification, setShowNotification] = useState(false);
   const [showB2BChat, setShowB2BChat] = useState(false);
+
+  useEffect(() => {
+    if (activeDealId && !dealId) {
+      setDealId(activeDealId);
+    }
+  }, [activeDealId]);
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -261,6 +289,157 @@ export const Bitrix24Modal = ({
       showAlert('Ошибка', `Не удалось связать заказ. Попробуйте еще раз. ${e.message ? '(' + e.message + ')' : ''}`);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const handleUpdateExistingDeal = async () => {
+    const targetDealId = activeDealId || dealId.trim();
+    if (!targetDealId) return;
+    setIsUpdatingExisting(true);
+    try {
+      const mapping = settings?.fieldMappings || {};
+      const data = project.data || {};
+      const totalS = Number(project.totalPrice || data.totalSum || computedSummary.totalOverall || 0);
+
+      const fields: any = {
+        OPPORTUNITY: totalS,
+        CURRENCY_ID: "RUB",
+      };
+
+      if (currentUserB24Id) {
+        fields.ASSIGNED_BY_ID = currentUserB24Id;
+      }
+
+      const contractNum = project.contractNumber || data.contractNumber || "";
+      if (mapping.contractNumber && contractNum) fields[mapping.contractNumber] = contractNum;
+      if (mapping.totalSum && totalS) fields[mapping.totalSum] = totalS;
+      if (mapping.hardwareSum && computedSummary.totalHardwarePrice) {
+        fields[mapping.hardwareSum] = computedSummary.totalHardwarePrice;
+      }
+      if (mapping.cabinetSum && computedSummary.totalMaterialsPrice) {
+        fields[mapping.cabinetSum] = computedSummary.totalMaterialsPrice;
+      }
+      if (mapping.facadeSum && computedSummary.totalFacadePrice) {
+        fields[mapping.facadeSum] = computedSummary.totalFacadePrice;
+      }
+      if (mapping.customFacadeSum && computedSummary.totalCustomFacadePrice) {
+        fields[mapping.customFacadeSum] = computedSummary.totalCustomFacadePrice;
+      }
+      if (mapping.assemblySum && computedSummary.totalAssemblyPrice) {
+        fields[mapping.assemblySum] = computedSummary.totalAssemblyPrice;
+      }
+      if (mapping.deliverySum && computedSummary.totalDeliveryPrice) {
+        fields[mapping.deliverySum] = computedSummary.totalDeliveryPrice;
+      }
+
+      // 1. Update deal opportunity and fields
+      await fetch("/api/bitrix24/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          method: "crm.deal.update",
+          id: targetDealId,
+          fields: fields
+        })
+      });
+
+      // 2. Sync product rows in Bitrix24 deal
+      const itemsList: Array<{ name: string; price: number; quantity: number }> = [];
+      if (computedSummary.materials && computedSummary.materials.length > 0) {
+        computedSummary.materials.forEach((m: any) => {
+          itemsList.push({
+            name: m.name || "Материал корпуса",
+            price: Math.round(m.price || 0),
+            quantity: Math.round(m.quantity || 1)
+          });
+        });
+      }
+      if (computedSummary.hardware && computedSummary.hardware.length > 0) {
+        computedSummary.hardware.forEach((h: any) => {
+          itemsList.push({
+            name: h.name || "Фурнитура",
+            price: Math.round(h.price || 0),
+            quantity: Math.round(h.quantity || 1)
+          });
+        });
+      }
+      if (computedSummary.services && computedSummary.services.length > 0) {
+        computedSummary.services.forEach((s: any) => {
+          itemsList.push({
+            name: s.name || "Услуга",
+            price: Math.round(s.price || 0),
+            quantity: 1
+          });
+        });
+      }
+
+      if (itemsList.length === 0) {
+        itemsList.push({
+          name: project.name || "Изготовление мебели по проекту",
+          price: Math.round(totalS),
+          quantity: 1
+        });
+      }
+
+      const productRows = itemsList.map(item => ({
+        PRODUCT_NAME: item.name,
+        PRICE: item.price,
+        QUANTITY: item.quantity
+      }));
+
+      await fetch("/api/bitrix24/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          method: "crm.deal.productrows.set",
+          id: targetDealId,
+          rows: productRows
+        })
+      }).catch(() => {});
+
+      // 3. Add timeline comment with summary
+      const commentText = `Обновлен расчет по проекту "${project.name}":\n` +
+        `• Итоговая сумма: ${totalS.toLocaleString("ru-RU")} руб.\n` +
+        (computedSummary.totalMaterialsPrice ? `• Материалы корпуса: ${computedSummary.totalMaterialsPrice.toLocaleString()} руб.\n` : "") +
+        (computedSummary.totalFacadePrice ? `• Фасады: ${computedSummary.totalFacadePrice.toLocaleString()} руб.\n` : "") +
+        (computedSummary.totalHardwarePrice ? `• Фурнитура: ${computedSummary.totalHardwarePrice.toLocaleString()} руб.\n` : "") +
+        (computedSummary.totalAssemblyPrice ? `• Сборка: ${computedSummary.totalAssemblyPrice.toLocaleString()} руб.\n` : "") +
+        (computedSummary.totalDeliveryPrice ? `• Доставка: ${computedSummary.totalDeliveryPrice.toLocaleString()} руб.\n` : "") +
+        `Передано из онлайн-кабинета Mebelev.`;
+
+      await fetch("/api/bitrix24/execute", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyId,
+          method: "crm.timeline.comment.add",
+          fields: {
+            ENTITY_ID: targetDealId,
+            ENTITY_TYPE: "deal",
+            COMMENT: commentText
+          }
+        })
+      }).catch(() => {});
+
+      // Ensure local project document has bitrix24DealId persisted
+      const collectionName = project.isSet ? "sets" : "projects";
+      await fetch(`/api/db/doc/companies/${companyId}/${collectionName}/${project.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: { bitrix24DealId: targetDealId, b24DealId: Number(targetDealId) || targetDealId }
+        })
+      }).catch(() => {});
+
+      showAlert('Успешно', `Спецификация и расчет на сумму ${totalS.toLocaleString("ru-RU")} ₽ успешно отправлены в сделку #${targetDealId} в Битрикс24.`);
+      onClose();
+    } catch (e: any) {
+      console.error(e);
+      showAlert('Ошибка', `Не удалось отправить данные в сделку. ${e.message || ''}`);
+    } finally {
+      setIsUpdatingExisting(false);
     }
   };
 
@@ -827,22 +1006,22 @@ export const Bitrix24Modal = ({
           <div className="flex gap-2 p-1 bg-gray-50 rounded-xl relative">
             <button
               onClick={() => setMode('link')}
-              disabled={project.bitrix24DealId}
+              disabled={!!activeDealId}
               className={cn(
                 "flex-1 py-2.5 rounded-lg text-xs font-black transition-all",
                 mode === 'link' ? "bg-white text-gray-900 shadow-sm border border-gray-100/10" : "text-gray-500 hover:text-gray-800",
-                project.bitrix24DealId && "opacity-50 cursor-not-allowed"
+                activeDealId && "opacity-50 cursor-not-allowed"
               )}
             >
               Связать с существующей
             </button>
             <button
               onClick={() => setMode('create')}
-              disabled={project.bitrix24DealId}
+              disabled={!!activeDealId}
               className={cn(
                 "flex-1 py-2.5 rounded-lg text-xs font-black transition-all",
                 mode === 'create' ? "bg-white text-gray-900 shadow-sm border border-gray-100/10" : "text-gray-500 hover:text-gray-800",
-                project.bitrix24DealId && "opacity-50 cursor-not-allowed"
+                activeDealId && "opacity-50 cursor-not-allowed"
               )}
             >
               Создать новую сделку
@@ -850,19 +1029,45 @@ export const Bitrix24Modal = ({
           </div>
 
           <div>
-            {project.bitrix24DealId ? (
-              <div className="bg-green-50/40 p-6 rounded-2xl border border-green-100/60 text-center space-y-4">
-                <div className="text-green-800 font-black text-sm">Этот заказ уже связан со сделкой Bitrix24!</div>
-                <div className="text-xs text-green-600 font-bold">Идентификатор в CRM: {project.bitrix24DealId}</div>
+            {activeDealId ? (
+              <div className="bg-emerald-50/70 p-6 rounded-2xl border border-emerald-200/80 text-center space-y-4 shadow-xs">
+                <div className="flex items-center justify-center gap-2 text-emerald-800 font-black text-sm">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                  <span>Проект автоматически связан со сделкой Bitrix24!</span>
+                </div>
+                <div className="text-xs text-emerald-700 font-bold">
+                  Идентификатор в CRM: <span className="font-mono bg-white px-2 py-0.5 rounded border border-emerald-200 text-slate-800">#{activeDealId}</span>
+                </div>
+
+                {/* Primary Action Button: Send Specification & Product Rows directly into this Deal */}
+                <button
+                  type="button"
+                  disabled={isUpdatingExisting}
+                  onClick={handleUpdateExistingDeal}
+                  className="w-full bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white py-3.5 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/25 cursor-pointer hover:scale-[1.01] active:scale-[0.99]"
+                >
+                  {isUpdatingExisting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Отправка данных в сделку #{activeDealId}...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>Отправить спецификацию и товары в сделку #{activeDealId}</span>
+                    </>
+                  )}
+                </button>
+
                 {(() => {
                   const bUrl = settings?.webhookUrl?.split('/rest/')[0];
                   if (!bUrl) return null;
                   return (
                     <a 
-                      href={`${bUrl}/crm/deal/details/${project.bitrix24DealId}/`} 
+                      href={`${bUrl}/crm/deal/details/${activeDealId}/`} 
                       target="_blank" 
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1.5 text-blue-600 font-extrabold text-xs hover:underline bg-white px-4 py-2 rounded-xl shadow-sm border border-gray-100"
+                      className="inline-flex items-center gap-1.5 text-blue-600 font-extrabold text-xs hover:underline bg-white px-4 py-2 rounded-xl shadow-xs border border-gray-100"
                     >
                       Открыть сделку в CRM <ExternalLink className="w-3.5 h-3.5" />
                     </a>
@@ -920,7 +1125,8 @@ export const Bitrix24Modal = ({
                   </button>
                 </div>
 
-                <div className="pt-2 border-t border-green-100/50">
+                <div className="pt-2 border-t border-emerald-200/60 flex items-center justify-between">
+                  <span className="text-[10px] text-emerald-700 font-medium">Сделка привязана автоматически</span>
                   <button
                     onClick={async () => {
                       try {
@@ -928,7 +1134,7 @@ export const Bitrix24Modal = ({
                         await fetch(`/api/db/doc/companies/${companyId}/${collectionName}/${project.id}`, {
                           method: "PATCH",
                           headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ data: { bitrix24DealId: null } })
+                          body: JSON.stringify({ data: { bitrix24DealId: null, b24DealId: null, dealId: null } })
                         });
                         showAlert('Успешно', 'Связь со сделкой удалена.');
                         onClose();
@@ -936,9 +1142,9 @@ export const Bitrix24Modal = ({
                         showAlert('Ошибка', 'Не удалось удалить связь со сделкой.');
                       }
                     }}
-                    className="text-red-500 hover:text-red-700 text-[10px] font-black tracking-wider uppercase"
+                    className="text-red-500 hover:text-red-700 text-[10px] font-black tracking-wider uppercase cursor-pointer"
                   >
-                    Отвязать сделку c Битрикс
+                    Отвязать сделку
                   </button>
                 </div>
               </div>
