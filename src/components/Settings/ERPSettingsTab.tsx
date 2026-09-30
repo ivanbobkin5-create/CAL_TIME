@@ -686,6 +686,32 @@ export const ERPSettingsTab: React.FC<ERPSettingsTabProps> = ({
                 </label>
               </div>
 
+              {/* Sync Products Row Toggle */}
+              <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl flex items-center justify-between gap-4">
+                <div className="space-y-0.5">
+                  <div className="text-xs font-bold text-slate-800 font-sans flex items-center gap-2">
+                    <span>Синхронизировать состав проекта во вкладку «Товары» сделки Битрикс24</span>
+                    <span className="px-2 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-black rounded-md uppercase">По выбору</span>
+                  </div>
+                  <p className="text-xs text-slate-500 font-sans">
+                    Автоматически выгружать рассчитанную мебель, доставку и монтаж в стандартную вкладку «Товары» карточки сделки в CRM Битрикс24.
+                  </p>
+                </div>
+                
+                <label className="relative inline-flex items-center cursor-pointer select-none shrink-0">
+                  <input
+                    type="checkbox"
+                    className="sr-only peer"
+                    checked={erpConfig.bitrix24SyncProductsEnabled !== false}
+                    onChange={(e) => updateErpConfig('bitrix24SyncProductsEnabled', e.target.checked)}
+                  />
+                  <div className="w-11 h-6 bg-slate-200 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  <span className="ml-3 text-xs font-bold text-slate-700 font-sans">
+                    {erpConfig.bitrix24SyncProductsEnabled !== false ? 'Включено' : 'Выключено'}
+                  </span>
+                </label>
+              </div>
+
               {/* Instruction Guide Card */}
               <div className="bg-blue-50/50 rounded-2xl border border-blue-100 p-5 space-y-3.5">
                 <div className="flex items-center gap-2 text-blue-900">

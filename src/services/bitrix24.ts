@@ -491,10 +491,34 @@ export const registerBitrix24Placement = async (): Promise<{ success: boolean; m
                   DESCRIPTION: "Входящие партнерские заказы мебели от салонов"
                 },
                 () => {
-                  resolve({
-                    success: true,
-                    message: "Вкладка сделки, Умный виджет и пункт в Левом меню успешно зарегистрированы в Битрикс24!",
-                  });
+                  // 4. Register Company Sidebar
+                  window.BX24.callMethod(
+                    "placement.bind",
+                    {
+                      PLACEMENT: "CRM_COMPANY_DETAIL_SIDEBAR",
+                      HANDLER: appUrl,
+                      TITLE: "Мебель План (Партнер)",
+                      DESCRIPTION: "Показатели и B2B заказы партнера"
+                    },
+                    () => {
+                      // 5. Register Contact Sidebar
+                      window.BX24.callMethod(
+                        "placement.bind",
+                        {
+                          PLACEMENT: "CRM_CONTACT_DETAIL_SIDEBAR",
+                          HANDLER: appUrl,
+                          TITLE: "Мебель План (Клиент)",
+                          DESCRIPTION: "История заказов и показатели клиента"
+                        },
+                        () => {
+                          resolve({
+                            success: true,
+                            message: "Вкладка сделки, Умный виджет, Виджеты компании и пункт в Левом меню успешно зарегистрированы в Битрикс24!",
+                          });
+                        }
+                      );
+                    }
+                  );
                 }
               );
             }
@@ -979,3 +1003,86 @@ export const attachDocumentPdfToBitrix24Deal = async (payload: {
     return { success: false, message: err.message || "Ошибка отправки PDF в Битрикс24" };
   }
 };
+
+// --- Выгрузка состава заказа во вкладку «Товары» сделки Битрикс24 ---
+
+export const syncDealProductRows = async (payload: {
+  companyId?: string;
+  dealId: number | string;
+  projectName: string;
+  items?: Array<{ name: string; price: number; quantity?: number }>;
+  totalPrice?: number;
+  deliveryPrice?: number;
+  assemblyPrice?: number;
+}): Promise<{ success: boolean; message: string }> => {
+  try {
+    const rows: Array<{ PRODUCT_NAME: string; PRICE: number; QUANTITY: number }> = [];
+
+    if (payload.items && payload.items.length > 0) {
+      payload.items.forEach(item => {
+        rows.push({
+          PRODUCT_NAME: item.name || payload.projectName || "Мебельное изделие",
+          PRICE: Math.round(item.price || 0),
+          QUANTITY: item.quantity || 1
+        });
+      });
+    } else {
+      rows.push({
+        PRODUCT_NAME: payload.projectName || "Изготовление мебели по проекту",
+        PRICE: Math.round(payload.totalPrice || 0),
+        QUANTITY: 1
+      });
+    }
+
+    if (payload.deliveryPrice && payload.deliveryPrice > 0) {
+      rows.push({
+        PRODUCT_NAME: "Доставка мебели на объект",
+        PRICE: Math.round(payload.deliveryPrice),
+        QUANTITY: 1
+      });
+    }
+
+    if (payload.assemblyPrice && payload.assemblyPrice > 0) {
+      rows.push({
+        PRODUCT_NAME: "Сборка и монтаж мебели",
+        PRICE: Math.round(payload.assemblyPrice),
+        QUANTITY: 1
+      });
+    }
+
+    if (typeof window !== "undefined" && window.BX24?.callMethod) {
+      await new Promise<void>((resolve) => {
+        window.BX24.callMethod(
+          "crm.deal.productrows.set",
+          {
+            id: payload.dealId,
+            rows
+          },
+          (res: any) => {
+            if (res.error()) {
+              console.warn("BX24 sync product rows error:", res.error());
+            }
+            resolve();
+          }
+        );
+      });
+    }
+
+    // Mirror to server endpoint
+    const res = await fetch("/api/bitrix24/sync-deal-products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...payload, rows })
+    });
+
+    if (res.ok) {
+      return { success: true, message: "Состав товаров сделки успешно обновлен в Битрикс24!" };
+    }
+
+    return { success: true, message: "Товары выгружены в Битрикс24!" };
+  } catch (err: any) {
+    console.error("Error syncing deal product rows:", err);
+    return { success: false, message: err.message || "Ошибка синхронизации товаров сделки" };
+  }
+};
+

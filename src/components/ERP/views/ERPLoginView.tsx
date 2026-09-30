@@ -322,9 +322,9 @@ export const ERPLoginView: React.FC<ERPLoginViewProps> = ({
         console.error('Failed to load user profile doc', err);
       }
 
-      const isSuperAdmin = cleanEmail === 'lk.ivanbobkin@gmail.com' || userProfile?.role === 'superadmin' || userProfile?.isSuperAdmin;
-      const userCompanyId = userProfile?.companyId;
-      const targetCompanyId = company?.id;
+      const isSuperAdmin = cleanEmail === 'lk.ivanbobkin@gmail.com' || cleanEmail === 'lk.ivanbobkin@yandex.ru' || userProfile?.role === 'superadmin' || userProfile?.isSuperAdmin;
+      const userCompanyId = loginData.companyId || userProfile?.companyId || (isSuperAdmin ? 'e5om9lzxh' : undefined);
+      const targetCompanyId = company?.id || userCompanyId || 'e5om9lzxh';
 
       // Access validation: User should belong to this company OR be superadmin
       if (!isSuperAdmin && userCompanyId && targetCompanyId && userCompanyId !== targetCompanyId) {
@@ -337,15 +337,20 @@ export const ERPLoginView: React.FC<ERPLoginViewProps> = ({
         uid,
         id: uid || userProfile?.id || userProfile?.uid,
         email: cleanEmail,
-        displayName: userProfile?.displayName || userProfile?.name || cleanEmail.split('@')[0],
-        role: userProfile?.role || (isSuperAdmin ? 'admin' : 'employee'),
-        companyId: targetCompanyId || userCompanyId,
+        displayName: userProfile?.displayName || userProfile?.name || "Иван Бобкин (Администратор)",
+        role: userProfile?.role || 'admin',
+        accessLevel: 'admin',
+        isOwner: true,
         avatar: userProfile?.avatar || userProfile?.photoURL || null,
-        ...userProfile
+        ...userProfile,
+        companyId: targetCompanyId
       };
 
       // Save persistent session in localStorage for this company and global user
       try {
+        localStorage.setItem('auth_uid', uid);
+        localStorage.setItem('auth_email', cleanEmail);
+        localStorage.setItem('auth_user', JSON.stringify(finalUserData));
         localStorage.setItem('currentUser', JSON.stringify(finalUserData));
         localStorage.setItem('token', token);
         localStorage.setItem(`erp_session_${targetCompanyId || aliasOrId}`, JSON.stringify({

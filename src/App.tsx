@@ -18,7 +18,7 @@ import { BazisHardwareImportModal } from "./components/BazisHardwareImportModal"
 import { ProductKitBuilder } from "./components/ProductKitBuilder";
 import { FastenersPriceTable } from "./components/FastenersPriceTable";
 import type { KitItem } from "./components/ProductKitPickerModal";
-import { initBitrix24, sendToBitrix24Deal, registerBitrix24Placement, fetchBitrix24DealTitle, fetchBitrix24DealDetails, openBitrix24Contact, updateBitrix24DealTitle, type Bitrix24Context } from "./services/bitrix24";
+import { initBitrix24, sendToBitrix24Deal, registerBitrix24Placement, fetchBitrix24DealTitle, fetchBitrix24DealDetails, openBitrix24Contact, updateBitrix24DealTitle, syncDealProductRows, type Bitrix24Context } from "./services/bitrix24";
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
@@ -153,7 +153,8 @@ import {
   BitrixReclamationModal,
   BitrixNotificationModal,
   B2BOrderChatModal,
-  B24SidebarWidget
+  B24SidebarWidget,
+  B24PartnerCompanyWidget
 } from "./components/Bitrix24";
 import { B3DTestView } from "./components/B3DTest/B3DTestView";
 import {
@@ -40935,6 +40936,14 @@ export default function App() {
     return <B24SidebarWidget b24Context={b24Context} companyData={companyData} />;
   }
 
+  // Bitrix24 Company or Contact Widget
+  if (b24Context.isBitrix24 && (
+    b24Context.placement?.includes('COMPANY') ||
+    b24Context.placement?.includes('CONTACT')
+  )) {
+    return <B24PartnerCompanyWidget b24Context={b24Context} companyData={companyData} />;
+  }
+
   if (!isAuthenticated && !b24Context.isBitrix24) {
     if (authMode === "landing") {
       return (
@@ -44178,6 +44187,16 @@ export default function App() {
                       projectName: currentProjectName || "Расчет мебели",
                       summaryRows: currentSummaryRows,
                     });
+
+                    // Sync product rows to Bitrix24 Deal tab if setting enabled
+                    if ((companyData as any)?.bitrix24SyncProductsEnabled !== false) {
+                      await syncDealProductRows({
+                        companyId: companyData?.id,
+                        dealId: targetDeal,
+                        projectName: currentProjectName || "Изготовление мебели по проекту",
+                        totalPrice: currentProjectTotal
+                      }).catch((err) => console.warn("Could not sync product rows to B24:", err));
+                    }
                     setB24Sending(false);
                     setShowB24Modal(false);
                     if (res.success) {
