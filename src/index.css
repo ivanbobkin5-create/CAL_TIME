@@ -118,3 +118,11 @@ body.b24-mode .b24-scroll-free {
   max-height: none !important;
 }
 
+/* Ensure modals inside Bitrix24 iframe always stay at visible top instead of centering in a tall virtual container */
+body.b24-mode .fixed.inset-0 {
+  align-items: flex-start !important;
+  padding-top: 32px !important;
+  padding-bottom: 48px !important;
+  overflow-y: auto !important;
+}
+

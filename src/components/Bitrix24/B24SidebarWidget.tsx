@@ -18,6 +18,7 @@ import {
   Sparkles
 } from "lucide-react";
 import { Bitrix24Context, resizeBitrix24WindowToContent } from "../../services/bitrix24";
+import { AppIcon } from "../Common/AppIcon";
 import { B2BOrderChatModal } from "./B2BOrderChatModal";
 import { BitrixPhotoReportModal } from "./BitrixPhotoReportModal";
 import { BitrixReclamationModal } from "./BitrixReclamationModal";
@@ -128,9 +129,7 @@ export const B24SidebarWidget: React.FC<B24SidebarWidgetProps> = ({
         {/* Header Badge & Close Button */}
         <div className="flex items-center justify-between pb-3 border-b border-[#eef2f4]">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs border border-blue-500/30">
-              <Layers className="w-5 h-5 text-white" />
-            </div>
+            <AppIcon className="w-9 h-9 rounded-xl shrink-0 shadow-xs" />
             <div>
               <h4 className="font-extrabold text-sm text-[#1058d0] leading-tight flex items-center gap-1.5">
                 Мебель План

@@ -148,6 +148,7 @@ import { CommercialProposalPrintView } from "./components/Projects/CommercialPro
 import { UserProfileView } from "./components/Profile/UserProfileView";
 import { PromotionsView } from "./components/Promotions/PromotionsView";
 import { Bitrix24OnboardingModal } from "./components/Auth/Bitrix24OnboardingModal";
+import { AppIcon } from "./components/Common/AppIcon";
 import {
   BitrixPhotoReportModal,
   BitrixReclamationModal,
@@ -14120,7 +14121,7 @@ const SummaryView = ({
                 if (onSaveProject) {
                   onSaveProject(currentProjectName || "Новый проект");
                 }
-                setActiveTab("projects");
+                setActiveTab(b24Context?.isBitrix24 ? "b24_dashboard" : "projects");
               }}
               className="flex items-center gap-2 px-6 py-4 bg-white border border-gray-200 text-gray-700 rounded-2xl font-bold shadow-sm hover:bg-gray-50 hover:border-gray-300 hover:scale-[1.02] transition-all"
             >
@@ -19288,6 +19289,55 @@ const SettingsView = ({
               </div>
 
               <div className="space-y-8">
+                {/* 📦 Автоматическая выгрузка в стандартную вкладку «Товары» сделки */}
+                <div className="p-6 bg-white rounded-2xl border border-blue-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="space-y-1">
+                    <div className="text-sm font-extrabold text-gray-900 flex items-center gap-2">
+                      <ShoppingBag className="w-5 h-5 text-blue-600" />
+                      <span>Выгрузка позиций во вкладку «Товары» сделки Битрикс24</span>
+                      <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-black rounded-md uppercase">
+                        CRM Товары
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 max-w-2xl leading-relaxed">
+                      Автоматически передавать рассчитанную мебель, спецификацию материалов, фурнитуру, монтаж и доставку как полноценные товарные позиции (CRM Product Rows) с ценой и количеством в стандартную вкладку «Товары» карточки сделки в Битрикс24.
+                    </p>
+                  </div>
+
+                  <label className="relative inline-flex items-center cursor-pointer select-none shrink-0">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={companyData?.bitrix24SyncProductsEnabled !== false && companyData?.bitrix24?.syncProductsEnabled !== false}
+                      onChange={async (e) => {
+                        const val = e.target.checked;
+                        setCompanyData((prev: any) => ({
+                          ...prev,
+                          bitrix24SyncProductsEnabled: val,
+                          bitrix24: {
+                            ...(prev?.bitrix24 || {}),
+                            syncProductsEnabled: val,
+                          }
+                        }));
+                        if (companyData?.id) {
+                          try {
+                            const compRef = doc(db, "companies", companyData.id);
+                            await updateDoc(compRef, {
+                              bitrix24SyncProductsEnabled: val,
+                              "bitrix24.syncProductsEnabled": val,
+                            });
+                          } catch (err) {
+                            console.warn("Could not save bitrix24SyncProductsEnabled:", err);
+                          }
+                        }
+                      }}
+                    />
+                    <div className="w-11 h-6 bg-slate-200 rounded-full peer peer-focus:ring-2 peer-focus:ring-blue-300 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                    <span className="ml-3 text-xs font-black text-slate-800">
+                      {(companyData?.bitrix24SyncProductsEnabled !== false && companyData?.bitrix24?.syncProductsEnabled !== false) ? 'Включено' : 'Выключено'}
+                    </span>
+                  </label>
+                </div>
                 <div className="p-6 bg-gray-50 rounded-2xl border border-gray-100">
                   <label className="block text-[10px] font-black text-gray-400 uppercase mb-2 font-sans">
                     Ссылка входящего вебхука
@@ -39579,12 +39629,12 @@ export default function App() {
           setPrintSetData(null);
           showAlert("Сохранено", "Комплект сохранен как черновик");
           if (activeTab === "checkout_current") {
-              setActiveTab("projects");
+              setActiveTab(b24Context?.isBitrix24 ? "b24_dashboard" : "projects");
           }
       } else {
           setPrintSetData({ projects: activeProjects, data: setData }); 
           showAlert("Успех", "Спецификация заказа успешно создана и сохранена");
-          setActiveTab("projects");
+          setActiveTab(b24Context?.isBitrix24 ? "b24_dashboard" : "projects");
       }
       setSelectedProjectsForCheckout([]);
     } catch (error) {
@@ -41969,9 +42019,7 @@ export default function App() {
             <div className="bg-white text-[#333333] px-3.5 py-2.5 shadow-2xs border-b border-[#dfe5ec] flex items-center justify-between gap-3 sticky top-0 z-[100] select-none">
               {/* Left section: App branding + Deal ID + Name */}
               <div className="flex items-center gap-2.5 min-w-0 shrink-0">
-                <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black shadow-xs shrink-0 border border-blue-500/30">
-                  <Layers className="w-4 h-4 text-white" />
-                </div>
+                <AppIcon className="w-8 h-8 rounded-xl shrink-0 shadow-xs" />
                 <div className="min-w-0 flex flex-col justify-center">
                   <div className="flex items-center gap-1.5 leading-none">
                     <span className="text-xs font-black text-[#1058d0] tracking-tight shrink-0">Мебель План</span>
@@ -42008,7 +42056,9 @@ export default function App() {
               </div>
 
               {/* Middle Section: Clean CRM Navigation Tabs */}
-              <div className="flex items-center gap-1 bg-[#eef2f4] p-1 rounded-xl border border-[#d5dbe0] shrink-0">
+              {!showB24Onboarding ? (
+                <>
+                <div className="flex items-center gap-1 bg-[#eef2f4] p-1 rounded-xl border border-[#d5dbe0] shrink-0">
                 <button
                   onClick={() => setActiveTab("b24_dashboard")}
                   className={cn(
@@ -42252,9 +42302,43 @@ export default function App() {
                   );
                 })()}
               </div>
+              </>
+              ) : (
+                <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 text-[#1058d0] rounded-xl border border-blue-200 text-xs font-bold shrink-0">
+                  <span>Первоначальная настройка профиля</span>
+                </div>
+              )}
             </div>
           )}
 
+          {showB24Onboarding ? (
+            <Bitrix24OnboardingModal
+              companyName={companyData?.name}
+              isEmbedded={true}
+              onSave={async (selectedType, workFormat) => {
+                if (companyData?.id) {
+                  const compRef = doc(db, "companies", companyData.id);
+                  await updateDoc(compRef, {
+                    type: selectedType,
+                    companyType: selectedType,
+                    productionFormat: workFormat,
+                    onboardingCompleted: true
+                  }, { merge: true });
+
+                  setCompanyData((prev: any) => ({
+                    ...prev,
+                    type: selectedType,
+                    companyType: selectedType,
+                    productionFormat: workFormat,
+                    onboardingCompleted: true
+                  }));
+                }
+                setShowB24Onboarding(false);
+                showAlert("Настройка завершена", `Профиль «${selectedType}» установлен.`);
+              }}
+            />
+          ) : (
+            <>
           {activeTab === "b24_dashboard" && (
             <Bitrix24DashboardView
               b24Context={b24Context}
@@ -42621,7 +42705,7 @@ export default function App() {
               return (
               <ProjectSetCheckoutModal
                 projects={[activeProject]}
-                onClose={() => setActiveTab("summary")}
+                onClose={() => setActiveTab(b24Context?.isBitrix24 ? "b24_dashboard" : "summary")}
                 onSave={async (setData) => {
                   // First save the project to get a proper ID
                   const projId = currentProjectId || Date.now().toString();
@@ -43110,7 +43194,7 @@ export default function App() {
           ) : activeTab === "specification" && selectedProjectForSpec ? (
             <ProjectSpecificationView
               project={selectedProjectForSpec}
-              onClose={() => setActiveTab("projects")}
+              onClose={() => setActiveTab(b24Context?.isBitrix24 ? "b24_dashboard" : "projects")}
               onPrint={(project) => {
                 const singleProjectData = {
                   contractNumber: project.id.slice(0, 8),
@@ -43202,6 +43286,8 @@ export default function App() {
           ) : activeTab === "b3d_test" ? (
             <B3DTestView />
           ) : null}
+            </>
+          )}
         </main>
         
         <div className="fixed bottom-0 left-0 right-0 p-1 bg-white border-t border-gray-200 text-[10px] text-gray-400 flex items-center justify-center gap-2 z-50">
@@ -43225,7 +43311,12 @@ export default function App() {
             projects={printSetData.projects}
             setData={printSetData.data}
             specificationConfig={specificationConfig}
-            onClose={() => setPrintSetData(null)}
+            onClose={() => {
+              setPrintSetData(null);
+              if (b24Context?.isBitrix24) {
+                setActiveTab("b24_dashboard");
+              }
+            }}
           />
         )}
 
@@ -43235,7 +43326,12 @@ export default function App() {
             setData={printProposalData.data}
             specificationConfig={specificationConfig}
             catalogProducts={catalogProducts}
-            onClose={() => setPrintProposalData(null)}
+            onClose={() => {
+              setPrintProposalData(null);
+              if (b24Context?.isBitrix24) {
+                setActiveTab("b24_dashboard");
+              }
+            }}
           />
         )}
 
@@ -44333,9 +44429,7 @@ export default function App() {
             <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-200">
               <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
                 <div className="flex items-center gap-2.5 text-[#1058d0] font-bold text-base sm:text-lg">
-                  <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-xs shadow-md shadow-blue-200">
-                    <Layers className="w-4 h-4 text-white" />
-                  </div>
+                  <AppIcon className="w-8 h-8 rounded-xl shrink-0 shadow-xs" />
                   Мебель План — Передача в Сделку
                 </div>
                 <button
@@ -44468,32 +44562,7 @@ export default function App() {
           </div>
         )}
 
-        {showB24Onboarding && (
-          <Bitrix24OnboardingModal
-            companyName={companyData?.name}
-            onSave={async (selectedType, workFormat) => {
-              if (companyData?.id) {
-                const compRef = doc(db, "companies", companyData.id);
-                await updateDoc(compRef, {
-                  type: selectedType,
-                  companyType: selectedType,
-                  productionFormat: workFormat,
-                  onboardingCompleted: true
-                }, { merge: true });
-
-                setCompanyData((prev: any) => ({
-                  ...prev,
-                  type: selectedType,
-                  companyType: selectedType,
-                  productionFormat: workFormat,
-                  onboardingCompleted: true
-                }));
-              }
-              setShowB24Onboarding(false);
-              showAlert("Настройка завершена", `Профиль «${selectedType}» установлен.`);
-            }}
-          />
-        )}
+        {/* Onboarding handled in-place inside <main> */}
 
         {showB24PhotoReportModal && (
           <BitrixPhotoReportModal
