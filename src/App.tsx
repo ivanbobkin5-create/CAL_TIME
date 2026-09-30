@@ -42386,7 +42386,7 @@ export default function App() {
             </div>
           )}
 
-          {showB24Onboarding ? (
+          {b24Context?.isBitrix24 && showB24Onboarding ? (
             <Bitrix24OnboardingModal
               companyName={companyData?.name}
               isEmbedded={true}
