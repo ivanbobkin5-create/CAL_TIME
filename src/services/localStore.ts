@@ -142,8 +142,27 @@ class LocalStore {
   }
 
   public deleteDoc(docPath: string) {
-    if (this.data.documents[docPath]) {
-      delete this.data.documents[docPath];
+    let changed = false;
+    for (const key in this.data.documents) {
+      if (key === docPath || key.startsWith(docPath + "/")) {
+        delete this.data.documents[key];
+        changed = true;
+      }
+    }
+    if (changed) {
+      this.scheduleSave();
+    }
+  }
+
+  public deleteCollection(colOrPrefix: string) {
+    let changed = false;
+    for (const key in this.data.documents) {
+      if (key === colOrPrefix || key.startsWith(colOrPrefix + "/")) {
+        delete this.data.documents[key];
+        changed = true;
+      }
+    }
+    if (changed) {
       this.scheduleSave();
     }
   }

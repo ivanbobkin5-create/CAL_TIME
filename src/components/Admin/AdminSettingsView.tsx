@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Users, Plus, Shield, Mail, User, Briefcase, Settings, Trash2, Edit2, X, Check, Loader2, Lock, Crown } from 'lucide-react';
 // TimeWeb DB Setup
 const db = {};
@@ -103,6 +103,16 @@ export const AdminSettingsView = ({
   showPrompt: (title: string, message: string, defaultValue: string, onConfirm: (value: string) => void) => void
 }) => {
   const [employees, setEmployees] = useState<Employee[]>([]);
+
+  const uniqueEmployees = useMemo(() => {
+    const seen = new Set<string>();
+    return employees.filter(emp => {
+      const key = (emp.email || emp.id || "").toLowerCase().trim();
+      if (!key || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [employees]);
   const [companyData, setCompanyData] = useState<any>(null);
   const [isAdding, setIsAdding] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -701,7 +711,7 @@ export const AdminSettingsView = ({
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {employees.map((employee) => (
+              {uniqueEmployees.map((employee) => (
                 <tr key={employee.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div className="flex items-center">
@@ -780,7 +790,7 @@ export const AdminSettingsView = ({
               ))}
             </tbody>
           </table>
-          {employees.length === 0 && (
+          {uniqueEmployees.length === 0 && (
             <div className="p-8 text-center text-gray-500">
               Нет добавленных сотрудников
             </div>

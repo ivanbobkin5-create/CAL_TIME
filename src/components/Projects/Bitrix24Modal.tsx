@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { X, ExternalLink, Loader2, Send, Settings, Link, Camera, AlertOctagon, Bell, MessageSquare, CheckCircle2 } from 'lucide-react';
 import { cn } from "../../lib/utils";
+import { useBitrixModalScroll } from "../../hooks/useBitrixModalScroll";
 import {
   BitrixPhotoReportModal,
   BitrixReclamationModal,
@@ -21,6 +22,7 @@ export const Bitrix24Modal = ({
   onClose: () => void;
   showAlert: (title: string, message: string) => void;
 }) => {
+  const modalScrollRef = useBitrixModalScroll(true);
   const activeDealId = useMemo(() => {
     if (project?.bitrix24DealId) return String(project.bitrix24DealId);
     if (project?.b24DealId) return String(project.b24DealId);
@@ -925,7 +927,7 @@ export const Bitrix24Modal = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-fade-in">
+    <div ref={modalScrollRef} className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-fade-in">
       <div className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl border border-gray-50 flex flex-col max-h-[90vh]">
         <div className="flex justify-between items-center mb-6 flex-shrink-0">
           <div>

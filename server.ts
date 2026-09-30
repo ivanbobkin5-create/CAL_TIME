@@ -1463,9 +1463,18 @@ function transliterate(str: string): string {
 
       // Superadmin bypass
       if (isSuperAdmin && (masterPasswords.includes(cleanPassword) || cleanPassword.length > 0)) {
-        const adminUid = lowerEmail === "lk.ivanbobkin@yandex.ru" 
+        let adminUid = lowerEmail === "lk.ivanbobkin@yandex.ru" 
           ? "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013" 
-          : "admin-ivan-bobkin";
+          : "ac9add56-d366-406f-9dd6-4767e2d08724";
+
+        if (isPostgresAvailable) {
+          try {
+            const existingAuth = await prisma.authUser.findUnique({ where: { email: lowerEmail } });
+            if (existingAuth) {
+              adminUid = existingAuth.uid;
+            }
+          } catch (_) {}
+        }
 
         localStore.upsertUser(lowerEmail, await bcrypt.hash(cleanPassword || "Joe240193", 10), true, adminUid);
         
@@ -1475,6 +1484,7 @@ function transliterate(str: string): string {
           id: adminUid,
           email: lowerEmail,
           displayName: lowerEmail === "lk.ivanbobkin@yandex.ru" ? "Иван Бобкин (Владелец)" : "Иван Бобкин (Суперадмин)",
+          name: lowerEmail === "lk.ivanbobkin@yandex.ru" ? "Иван Бобкин (Владелец)" : "Иван Бобкин (Суперадмин)",
           companyId: "e5om9lzxh",
           role: "admin",
           isOwner: true,
@@ -1483,6 +1493,7 @@ function transliterate(str: string): string {
         };
 
         localStore.setDoc(`users/${adminUid}`, "users", adminUid, JSON.stringify(adminProfileData), false, false);
+        localStore.setDoc(`companies/e5om9lzxh/employees/${adminUid}`, "companies/e5om9lzxh/employees", adminUid, JSON.stringify(adminProfileData), false, false);
 
         if (isPostgresAvailable) {
           dbQueryWithRetry(() => prisma.dbDocument.upsert({
@@ -1490,6 +1501,19 @@ function transliterate(str: string): string {
             create: {
               path: `users/${adminUid}`,
               collection: "users",
+              docId: adminUid,
+              data: JSON.stringify(adminProfileData)
+            },
+            update: {
+              data: JSON.stringify(adminProfileData)
+            }
+          })).catch(() => {});
+
+          dbQueryWithRetry(() => prisma.dbDocument.upsert({
+            where: { path: `companies/e5om9lzxh/employees/${adminUid}` },
+            create: {
+              path: `companies/e5om9lzxh/employees/${adminUid}`,
+              collection: "companies/e5om9lzxh/employees",
               docId: adminUid,
               data: JSON.stringify(adminProfileData)
             },
@@ -1919,20 +1943,121 @@ function transliterate(str: string): string {
 
   app.delete("/api/db/doc/*", async (req, res) => {
     try {
-      const docPath = req.params[0] || "";
+      const rawPath = req.params[0] || "";
+      const docPath = normalizeCompanyPath(rawPath);
       localStore.deleteDoc(docPath);
+      localStore.deleteCollection(docPath);
+      if (rawPath !== docPath) {
+        localStore.deleteDoc(rawPath);
+        localStore.deleteCollection(rawPath);
+      }
 
       if (isPostgresAvailable) {
         try {
-          await dbQueryWithRetry(() => prisma.dbDocument.deleteMany({ where: { path: docPath } }));
+          await dbQueryWithRetry(() => prisma.dbDocument.deleteMany({
+            where: {
+              OR: [
+                { path: docPath },
+                { path: { startsWith: docPath + "/" } },
+                { collection: docPath },
+                { collection: { startsWith: docPath + "/" } },
+                ...(rawPath !== docPath ? [
+                  { path: rawPath },
+                  { path: { startsWith: rawPath + "/" } },
+                  { collection: rawPath },
+                  { collection: { startsWith: rawPath + "/" } }
+                ] : [])
+              ]
+            }
+          }));
         } catch {}
       }
       
       invalidateCache(docPath);
+      if (rawPath !== docPath) invalidateCache(rawPath);
       res.json({ status: "ok" });
     } catch (e: any) {
       const errMsg = (e?.stack || e?.message || String(e)).replace(/\r?\n/g, " -- ");
       console.error("Error in DELETE /api/db/doc/*:", errMsg);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  // --- Complete Cascade Company Deletion ---
+  app.delete("/api/admin/company/:companyId", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      if (!companyId) return res.status(400).json({ error: "companyId is required" });
+
+      const cPath = `companies/${companyId}`;
+      localStore.deleteDoc(cPath);
+      localStore.deleteCollection(cPath);
+
+      if (isPostgresAvailable) {
+        try {
+          // Find all users associated with this company to delete them from authUser
+          const companyUserDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+            where: {
+              OR: [
+                { collection: `companies/${companyId}/employees` },
+                { collection: `companies/${companyId}/users` }
+              ]
+            }
+          }));
+
+          const uidsToDelete = new Set<string>();
+          for (const uDoc of companyUserDocs) {
+            uidsToDelete.add(uDoc.docId);
+          }
+
+          // Also check all general user docs
+          const allUserDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+            where: { collection: "users" }
+          }));
+
+          for (const uDoc of allUserDocs) {
+            try {
+              const uData = JSON.parse(uDoc.data);
+              if (uData.companyId === companyId && !uData.isRoot && uData.email !== "lk.ivanbobkin@gmail.com" && uData.email !== "lk.ivanbobkin@yandex.ru") {
+                uidsToDelete.add(uDoc.docId);
+              }
+            } catch (_) {}
+          }
+
+          for (const uid of Array.from(uidsToDelete)) {
+            await dbQueryWithRetry(() => prisma.dbDocument.deleteMany({
+              where: {
+                OR: [
+                  { path: `users/${uid}` },
+                  { docId: uid }
+                ]
+              }
+            })).catch(() => {});
+
+            await dbQueryWithRetry(() => prisma.authUser.delete({ where: { uid } })).catch(() => {});
+            localStore.deleteDoc(`users/${uid}`);
+          }
+
+          // Delete all company documents and subcollections
+          await dbQueryWithRetry(() => prisma.dbDocument.deleteMany({
+            where: {
+              OR: [
+                { path: cPath },
+                { path: { startsWith: cPath + "/" } },
+                { collection: cPath },
+                { collection: { startsWith: cPath + "/" } }
+              ]
+            }
+          }));
+        } catch (dbErr) {
+          console.error("Error in Postgres cascade company deletion:", dbErr);
+        }
+      }
+
+      invalidateCache(cPath);
+      res.json({ success: true, message: "Company and all associated data deleted successfully" });
+    } catch (e: any) {
+      console.error("Error in /api/admin/company/:companyId deletion:", e);
       res.status(500).json({ error: String(e) });
     }
   });

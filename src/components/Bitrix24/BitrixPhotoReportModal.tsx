@@ -18,6 +18,7 @@ import {
   History
 } from "lucide-react";
 import { cn } from "../../lib/utils";
+import { useBitrixModalScroll } from "../../hooks/useBitrixModalScroll";
 import {
   submitBitrix24PhotoReport,
   fetchBitrix24TimelineHistory,
@@ -59,6 +60,7 @@ export const BitrixPhotoReportModal: React.FC<BitrixPhotoReportModalProps> = ({
   showAlert = (title, msg) => alert(`${title}: ${msg}`),
   onSuccess
 }) => {
+  const modalScrollRef = useBitrixModalScroll(true);
   const b24Context = getBitrix24Context();
   const currentDealId = initialDealId || b24Context?.dealId || "";
 
@@ -188,7 +190,7 @@ export const BitrixPhotoReportModal: React.FC<BitrixPhotoReportModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
+    <div ref={modalScrollRef} className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
       <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
         {/* Header */}
         <div className="bg-gradient-to-r from-blue-600 via-indigo-600 to-cyan-600 p-5 text-white flex items-center justify-between shrink-0 shadow-md">

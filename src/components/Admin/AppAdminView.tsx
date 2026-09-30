@@ -320,6 +320,14 @@ export const AppAdminView = () => {
     if (!window.confirm("Вы уверены, что хотите ПОЛНОСТЬЮ УДАЛИТЬ компанию и всех ее сотрудников? Это действие необратимо!")) return;
     
     try {
+      // 1. Immediately remove from local state for instant UI response
+      setCompanies(prev => prev.filter(c => c.id !== companyId));
+      setUsers(prev => prev.filter(u => u.companyId !== companyId));
+
+      // 2. Call backend atomic cascade purge route
+      const purgeRes = await fetch(`/api/admin/company/${companyId}`, { method: 'DELETE' });
+      
+      // 3. Fallback direct document deletion for full certainty
       const companyUsers = users.filter(u => u.companyId === companyId);
       const employeesSnapshot = await getDocs(collection(db, 'companies', companyId, 'employees'));
       const directEmployeeIds = employeesSnapshot.docs.map(d => d.id);
@@ -338,7 +346,7 @@ export const AppAdminView = () => {
         await deleteDoc(doc(db, 'companies', companyId, 'settings', s));
       }
 
-      alert("Компания и сотрудники успешно удалены");
+      alert("Компания и сотрудники полностью и навсегда удалены");
     } catch (error) {
       console.error("Error deleting company:", error);
       alert("Ошибка при полном удалении компании");
@@ -349,6 +357,7 @@ export const AppAdminView = () => {
     if (!window.confirm("Вы уверены, что хотите удалить этого пользователя? Это также удалит его учетную запись для входа!")) return;
     
     try {
+      setUsers(prev => prev.filter(u => u.uid !== uid));
       if (companyId && companyId !== 'none') {
         try {
           await deleteDoc(doc(db, 'companies', companyId, 'employees', uid));
@@ -365,6 +374,7 @@ export const AppAdminView = () => {
   };
 
   const updateLimit = async (companyId: string, field: string, value: any) => {
+    setCompanies(prev => prev.map(c => c.id === companyId ? { ...c, [field]: value } : c));
     try {
       const patchData: any = { [field]: value };
       if (field === 'type') {
@@ -374,6 +384,16 @@ export const AppAdminView = () => {
       await updateDoc(doc(db, 'companies', companyId), patchData);
     } catch (error) {
       console.error("Error updating limit:", error);
+      handleDbError(error, OperationType.UPDATE, `companies/${companyId}`);
+    }
+  };
+
+  const updateCompanyFields = async (companyId: string, fields: Record<string, any>) => {
+    setCompanies(prev => prev.map(c => c.id === companyId ? { ...c, ...fields } : c));
+    try {
+      await updateDoc(doc(db, 'companies', companyId), fields);
+    } catch (error) {
+      console.error("Error updating company fields:", error);
       handleDbError(error, OperationType.UPDATE, `companies/${companyId}`);
     }
   };
@@ -777,8 +797,11 @@ export const AppAdminView = () => {
                             type="checkbox"
                             checked={company.procurementAllowed !== undefined ? !!company.procurementAllowed : !!company.procurementEnabled}
                             onChange={(e) => {
-                              updateLimit(company.id, 'procurementAllowed', e.target.checked);
-                              if (!e.target.checked) updateLimit(company.id, 'procurementEnabled', false);
+                              const val = e.target.checked;
+                              updateCompanyFields(company.id, {
+                                procurementAllowed: val,
+                                procurementEnabled: val
+                              });
                             }}
                             className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
                           />
@@ -793,8 +816,11 @@ export const AppAdminView = () => {
                             type="checkbox"
                             checked={company.erpAllowed !== undefined ? !!company.erpAllowed : !!company.erpEnabled}
                             onChange={(e) => {
-                              updateLimit(company.id, 'erpAllowed', e.target.checked);
-                              updateLimit(company.id, 'erpEnabled', e.target.checked);
+                              const val = e.target.checked;
+                              updateCompanyFields(company.id, {
+                                erpAllowed: val,
+                                erpEnabled: val
+                              });
                             }}
                             className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
                           />
