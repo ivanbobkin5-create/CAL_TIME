@@ -183,6 +183,32 @@ async function dbQueryWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 
   throw lastErr;
 }
 
+function isObject(item: any): boolean {
+  return (item && typeof item === 'object' && !Array.isArray(item));
+}
+
+function safeDeepMerge(target: any, source: any): any {
+  if (!target) return source || {};
+  if (!source) return target || {};
+  const output = { ...target };
+
+  for (const key of Object.keys(source)) {
+    const srcVal = source[key];
+    const tgtVal = target[key];
+
+    if (isObject(srcVal) && isObject(tgtVal)) {
+      output[key] = safeDeepMerge(tgtVal, srcVal);
+    } else if (srcVal !== undefined) {
+      if (srcVal === "" && typeof tgtVal === "string" && tgtVal.trim().length > 0 && (key.toLowerCase().includes("webhook") || key.toLowerCase().includes("stage") || key.toLowerCase().includes("token") || key.toLowerCase().includes("secret"))) {
+        output[key] = tgtVal;
+      } else {
+        output[key] = srcVal;
+      }
+    }
+  }
+  return output;
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -1802,7 +1828,7 @@ function transliterate(str: string): string {
       if (shouldMerge && existingLocal) {
         try {
           const exObj = typeof existingLocal.data === "string" ? JSON.parse(existingLocal.data) : existingLocal.data;
-          mergedData = { ...exObj, ...data };
+          mergedData = safeDeepMerge(exObj, data);
         } catch {}
       }
 
@@ -1814,7 +1840,7 @@ function transliterate(str: string): string {
           if (shouldMerge) {
             const existing = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
             const existingData = existing ? JSON.parse(existing.data) : {};
-            let pgMergedData = { ...existingData, ...data };
+            let pgMergedData = safeDeepMerge(existingData, data);
 
             if (
               docPath.endsWith("/settings/production") &&
@@ -1866,7 +1892,7 @@ function transliterate(str: string): string {
           const existing = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
           if (existing) {
             const existingData = JSON.parse(existing.data);
-            const newData = { ...existingData, ...data };
+            const newData = safeDeepMerge(existingData, data);
             await dbQueryWithRetry(() => prisma.dbDocument.update({ where: { path: docPath }, data: { data: JSON.stringify(newData) } }));
           } else {
             const parts = docPath.split('/');
@@ -2081,16 +2107,14 @@ function transliterate(str: string): string {
 
       if (matchedCompany && matchedDocId) {
         const existingWebhook = matchedCompany.bitrix24?.webhookUrl || matchedCompany.erpConfig?.bitrix24WebhookUrl || matchedCompany.settings?.erp?.bitrix24WebhookUrl || "";
-        const updatedData = {
-          ...matchedCompany,
+        const updatedData = safeDeepMerge(matchedCompany, {
           id: matchedDocId,
           bitrix24: {
-            ...(matchedCompany.bitrix24 || {}),
             domain: cleanDomain,
             memberId: memberId || matchedCompany.bitrix24?.memberId || "",
             ...(existingWebhook ? { webhookUrl: existingWebhook } : {})
           }
-        };
+        });
 
         await dbQueryWithRetry(() => prisma.dbDocument.upsert({
           where: { path: `companies/${matchedDocId}` },
@@ -2134,14 +2158,16 @@ function transliterate(str: string): string {
       }
 
       const existingFallbackWebhook = newCompanyData.bitrix24?.webhookUrl || newCompanyData.erpConfig?.bitrix24WebhookUrl || newCompanyData.settings?.erp?.bitrix24WebhookUrl || "";
-      newCompanyData.alias = newCompanyData.alias || "mebelfaktura";
-      newCompanyData.slug = newCompanyData.slug || "mebelfaktura";
-      newCompanyData.bitrix24 = {
-        ...(newCompanyData.bitrix24 || {}),
-        domain: cleanDomain,
-        memberId: memberId || newCompanyData.bitrix24?.memberId || "",
-        ...(existingFallbackWebhook ? { webhookUrl: existingFallbackWebhook } : {})
-      };
+      const mergedCompanyData = safeDeepMerge(newCompanyData, {
+        id: b24CompanyId,
+        alias: newCompanyData.alias || "mebelfaktura",
+        slug: newCompanyData.slug || "mebelfaktura",
+        bitrix24: {
+          domain: cleanDomain,
+          memberId: memberId || newCompanyData.bitrix24?.memberId || "",
+          ...(existingFallbackWebhook ? { webhookUrl: existingFallbackWebhook } : {})
+        }
+      });
 
       await dbQueryWithRetry(() => prisma.dbDocument.upsert({
         where: { path: `companies/${b24CompanyId}` },
@@ -2149,19 +2175,19 @@ function transliterate(str: string): string {
           path: `companies/${b24CompanyId}`,
           collection: "companies",
           docId: b24CompanyId,
-          data: JSON.stringify(newCompanyData)
+          data: JSON.stringify(mergedCompanyData)
         },
         update: {
-          data: JSON.stringify(newCompanyData)
+          data: JSON.stringify(mergedCompanyData)
         }
       }));
 
-      localStore.setDoc(`companies/${b24CompanyId}`, "companies", b24CompanyId, JSON.stringify(newCompanyData), false, false);
+      localStore.setDoc(`companies/${b24CompanyId}`, "companies", b24CompanyId, JSON.stringify(mergedCompanyData), false, false);
 
       return res.json({
         success: true,
         companyId: b24CompanyId,
-        companyData: newCompanyData,
+        companyData: mergedCompanyData,
         isLinkedExisting: true
       });
     } catch (e: any) {

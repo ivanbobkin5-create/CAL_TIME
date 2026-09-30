@@ -29,6 +29,32 @@ interface LocalStoreData {
 const DATA_DIR = path.resolve(process.cwd(), "data");
 const STORE_FILE = path.join(DATA_DIR, "db_fallback.json");
 
+function isObject(item: any): boolean {
+  return (item && typeof item === 'object' && !Array.isArray(item));
+}
+
+function safeDeepMerge(target: any, source: any): any {
+  if (!target) return source || {};
+  if (!source) return target || {};
+  const output = { ...target };
+
+  for (const key of Object.keys(source)) {
+    const srcVal = source[key];
+    const tgtVal = target[key];
+
+    if (isObject(srcVal) && isObject(tgtVal)) {
+      output[key] = safeDeepMerge(tgtVal, srcVal);
+    } else if (srcVal !== undefined) {
+      if (srcVal === "" && typeof tgtVal === "string" && tgtVal.trim().length > 0 && (key.toLowerCase().includes("webhook") || key.toLowerCase().includes("stage") || key.toLowerCase().includes("token") || key.toLowerCase().includes("secret"))) {
+        output[key] = tgtVal;
+      } else {
+        output[key] = srcVal;
+      }
+    }
+  }
+  return output;
+}
+
 class LocalStore {
   private data: LocalStoreData = {
     documents: {},
@@ -92,7 +118,8 @@ class LocalStore {
       try {
         const prevObj = typeof existing.data === "string" ? JSON.parse(existing.data) : existing.data;
         const newObj = typeof data === "string" ? JSON.parse(data) : data;
-        dataStr = JSON.stringify({ ...prevObj, ...newObj });
+        const mergedObj = safeDeepMerge(prevObj, newObj);
+        dataStr = JSON.stringify(mergedObj);
       } catch {
         // fallback to dataStr
       }
