@@ -19348,15 +19348,35 @@ const SettingsView = ({
                       placeholder="https://yourgroup.bitrix24.ru/rest/..."
                       className="flex-1 px-4 py-3 bg-white border border-gray-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none text-sm font-medium"
                       value={companyData?.bitrix24?.webhookUrl || ""}
-                      onChange={(e) =>
+                      onChange={(e) => {
+                        const newUrl = e.target.value.trim();
                         setCompanyData((prev: any) => ({
                           ...prev,
                           bitrix24: {
                             ...(prev?.bitrix24 || {}),
-                            webhookUrl: e.target.value,
+                            webhookUrl: newUrl,
                           },
-                        }))
-                      }
+                        }));
+                        if (typeof window !== "undefined" && newUrl) {
+                          localStorage.setItem(`b24_saved_webhook_${companyData?.id || 'default'}`, newUrl);
+                          if (companyData?.bitrix24?.domain) {
+                            localStorage.setItem(`b24_saved_webhook_${companyData.bitrix24.domain}`, newUrl);
+                          }
+                          localStorage.setItem('b24_saved_webhook_e5om9lzxh', newUrl);
+                        }
+                      }}
+                      onBlur={async (e) => {
+                        const newUrl = e.target.value.trim();
+                        if (companyData?.id && newUrl) {
+                          try {
+                            const compRef = doc(db, "companies", companyData.id);
+                            await updateDoc(compRef, {
+                              "bitrix24.webhookUrl": newUrl,
+                              "erpConfig.bitrix24WebhookUrl": newUrl,
+                            });
+                          } catch (_) {}
+                        }
+                      }}
                     />
                     <button
                       onClick={async () => {
@@ -19366,6 +19386,22 @@ const SettingsView = ({
                           return;
                         }
                         try {
+                          if (companyData?.id) {
+                            try {
+                              const compRef = doc(db, "companies", companyData.id);
+                              await updateDoc(compRef, {
+                                "bitrix24.webhookUrl": url,
+                                "erpConfig.bitrix24WebhookUrl": url,
+                              });
+                            } catch (_) {}
+                          }
+                          if (typeof window !== "undefined") {
+                            localStorage.setItem(`b24_saved_webhook_${companyData?.id || 'default'}`, url);
+                            if (companyData?.bitrix24?.domain) {
+                              localStorage.setItem(`b24_saved_webhook_${companyData.bitrix24.domain}`, url);
+                            }
+                            localStorage.setItem('b24_saved_webhook_e5om9lzxh', url);
+                          }
                           const res = await fetch("/api/bitrix24/test", {
                             method: "POST",
                             headers: { "Content-Type": "application/json" },
@@ -19373,7 +19409,7 @@ const SettingsView = ({
                           });
                           const data = await res.json();
                           if (data.success) {
-                            showAlert("Успех", "Соединение с Bitrix24 успешно установлено! Списки воронок и стадий обновлены.");
+                            showAlert("Успех", "Соединение с Bitrix24 успешно установлено! Вебхук сохранен, списки воронок и стадий обновлены.");
                             await loadB24Categories(url, true);
                             // Add a small delay to respect Bitrix24 rate limits (2 requests per second)
                             await new Promise(resolve => setTimeout(resolve, 600));
@@ -34650,6 +34686,13 @@ export default function App() {
             }
           }
 
+          const savedLocalWebhook = (typeof window !== "undefined" && (
+            localStorage.getItem(`b24_saved_webhook_${compId}`) ||
+            (ctx.domain && localStorage.getItem(`b24_saved_webhook_${ctx.domain}`)) ||
+            localStorage.getItem('b24_saved_webhook_e5om9lzxh') ||
+            localStorage.getItem('b24_saved_webhook_default')
+          )) || "";
+
           const compRef = doc(db, "companies", compId);
           if (!compDocData) {
             const compSnap = await getDoc(compRef);
@@ -34663,10 +34706,34 @@ export default function App() {
                 type: "Мебельное производство",
                 bitrix24: {
                   domain: ctx.domain || "",
-                  webhookUrl: "",
+                  webhookUrl: savedLocalWebhook || "",
                 },
               };
               await setDoc(compRef, compDocData, { merge: true });
+              setCompanyData(compDocData);
+            }
+          }
+
+          const existingWebhook = compDocData?.bitrix24?.webhookUrl ||
+            compDocData?.erpConfig?.bitrix24WebhookUrl ||
+            compDocData?.settings?.erp?.bitrix24WebhookUrl ||
+            savedLocalWebhook || "";
+
+          if (existingWebhook) {
+            if (typeof window !== "undefined") {
+              localStorage.setItem(`b24_saved_webhook_${compId}`, existingWebhook);
+              if (ctx.domain) localStorage.setItem(`b24_saved_webhook_${ctx.domain}`, existingWebhook);
+              localStorage.setItem('b24_saved_webhook_e5om9lzxh', existingWebhook);
+            }
+            if (compDocData && (!compDocData.bitrix24 || !compDocData.bitrix24.webhookUrl)) {
+              compDocData = {
+                ...compDocData,
+                bitrix24: {
+                  ...(compDocData.bitrix24 || {}),
+                  webhookUrl: existingWebhook,
+                  domain: ctx.domain || compDocData.bitrix24?.domain || "",
+                }
+              };
               setCompanyData(compDocData);
             }
           }
@@ -40221,11 +40288,19 @@ export default function App() {
         qcRatePerOrder: 500,
       };
 
-      const currentBitrix24 = companyData.bitrix24 || {
-        webhookUrl: currentErpConfig.bitrix24WebhookUrl || '',
-        categoryId: currentErpConfig.bitrix24CategoryId || '0',
-        stageId: currentErpConfig.bitrix24StageId || '',
-        doneStageId: currentErpConfig.bitrix24DoneStageId || '',
+      const fallbackLocalWebhook = (typeof window !== "undefined" && (
+        localStorage.getItem(`b24_saved_webhook_${companyData.id}`) ||
+        (companyData.bitrix24?.domain && localStorage.getItem(`b24_saved_webhook_${companyData.bitrix24.domain}`)) ||
+        localStorage.getItem('b24_saved_webhook_e5om9lzxh') ||
+        localStorage.getItem('b24_saved_webhook_default')
+      )) || '';
+
+      const currentBitrix24 = {
+        ...(companyData.bitrix24 || {}),
+        webhookUrl: companyData.bitrix24?.webhookUrl || currentErpConfig.bitrix24WebhookUrl || fallbackLocalWebhook || '',
+        categoryId: companyData.bitrix24?.categoryId || currentErpConfig.bitrix24CategoryId || '0',
+        stageId: companyData.bitrix24?.stageId || currentErpConfig.bitrix24StageId || '',
+        doneStageId: companyData.bitrix24?.doneStageId || currentErpConfig.bitrix24DoneStageId || '',
       };
 
       const savePromises = [

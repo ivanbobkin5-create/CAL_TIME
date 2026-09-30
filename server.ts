@@ -2051,13 +2051,15 @@ function transliterate(str: string): string {
       }
 
       if (matchedCompany && matchedDocId) {
+        const existingWebhook = matchedCompany.bitrix24?.webhookUrl || matchedCompany.erpConfig?.bitrix24WebhookUrl || matchedCompany.settings?.erp?.bitrix24WebhookUrl || "";
         const updatedData = {
           ...matchedCompany,
           id: matchedDocId,
           bitrix24: {
             ...(matchedCompany.bitrix24 || {}),
             domain: cleanDomain,
-            memberId: memberId || matchedCompany.bitrix24?.memberId || ""
+            memberId: memberId || matchedCompany.bitrix24?.memberId || "",
+            ...(existingWebhook ? { webhookUrl: existingWebhook } : {})
           }
         };
 
@@ -2073,6 +2075,8 @@ function transliterate(str: string): string {
             data: JSON.stringify(updatedData)
           }
         }));
+
+        localStore.setDoc(`companies/${matchedDocId}`, "companies", matchedDocId, JSON.stringify(updatedData), false, false);
 
         return res.json({
           success: true,
@@ -2100,12 +2104,14 @@ function transliterate(str: string): string {
         };
       }
 
+      const existingFallbackWebhook = newCompanyData.bitrix24?.webhookUrl || newCompanyData.erpConfig?.bitrix24WebhookUrl || newCompanyData.settings?.erp?.bitrix24WebhookUrl || "";
       newCompanyData.alias = newCompanyData.alias || "mebelfaktura";
       newCompanyData.slug = newCompanyData.slug || "mebelfaktura";
       newCompanyData.bitrix24 = {
         ...(newCompanyData.bitrix24 || {}),
         domain: cleanDomain,
-        memberId: memberId || newCompanyData.bitrix24?.memberId || ""
+        memberId: memberId || newCompanyData.bitrix24?.memberId || "",
+        ...(existingFallbackWebhook ? { webhookUrl: existingFallbackWebhook } : {})
       };
 
       await dbQueryWithRetry(() => prisma.dbDocument.upsert({
