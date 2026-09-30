@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Users, 
   Building2, 
@@ -404,15 +404,25 @@ export const AppAdminView = () => {
     return matchesSearch && matchesType && matchesStatus;
   });
 
-  // Filter users for Users tab
-  const filteredUsers = users.filter(u => {
-    const company = companies.find(c => c.id === u.companyId);
-    const matchesSearch = u.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          u.email?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          u.phone?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          company?.name?.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesSearch;
-  });
+  // Filter users for Users tab with deduplication by email
+  const filteredUsers = useMemo(() => {
+    const seenEmails = new Set<string>();
+    return users.filter(u => {
+      const cleanEmail = u.email?.toLowerCase().trim();
+      if (cleanEmail) {
+        if (seenEmails.has(cleanEmail)) return false;
+        seenEmails.add(cleanEmail);
+      }
+
+      const company = companies.find(c => c.id === u.companyId);
+      const matchesSearch = !searchQuery || 
+                            u.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            cleanEmail?.includes(searchQuery.toLowerCase()) ||
+                            u.phone?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            company?.name?.toLowerCase().includes(searchQuery.toLowerCase());
+      return matchesSearch;
+    });
+  }, [users, companies, searchQuery]);
 
   const stats = {
     totalCompanies: companies.length,

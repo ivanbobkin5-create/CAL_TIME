@@ -1639,10 +1639,18 @@ function transliterate(str: string): string {
     }
   });
 
+  const normalizeCompanyPath = (inputPath: string): string => {
+    if (!inputPath) return inputPath;
+    return inputPath
+      .replace(/^companies\/mebelfaktura(\/|$)/i, 'companies/e5om9lzxh$1')
+      .replace(/^companies\/b24_mebelfaktura_bitrix24_ru(\/|$)/i, 'companies/e5om9lzxh$1')
+      .replace(/^companies\/mebelfaktura_bitrix24_ru(\/|$)/i, 'companies/e5om9lzxh$1');
+  };
+
   // TimeWeb Database Document API
   app.get("/api/db/doc/*", async (req, res) => {
     try {
-      const docPath = req.params[0] || "";
+      const docPath = normalizeCompanyPath(req.params[0] || "");
       
       // Fully prevent any client or intermediary caching of database queries
       res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
@@ -1688,7 +1696,7 @@ function transliterate(str: string): string {
 
   app.get("/api/db/col/*", async (req, res) => {
     try {
-      const colPath = req.params[0] || "";
+      const colPath = normalizeCompanyPath(req.params[0] || "");
       
       // Fully prevent any client or intermediary caching of database queries
       res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
@@ -2081,17 +2089,30 @@ function transliterate(str: string): string {
         });
       }
 
-      // Default B24 company fallback
-      const b24CompanyId = `b24_${cleanDomain.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
-      const newCompanyData = {
-        id: b24CompanyId,
-        name: companyName || `Компания (${cleanDomain})`,
-        type: "Мебельное производство",
-        ownerEmail: cleanEmail || "",
-        bitrix24: {
-          domain: cleanDomain,
-          memberId: memberId || ""
-        }
+      // Default fallback to primary company e5om9lzxh ("Мебель Фактура")
+      const b24CompanyId = "e5om9lzxh";
+      const eDoc = allCompanyDocs.find(d => d.docId === b24CompanyId);
+      let newCompanyData: any = null;
+      if (eDoc) {
+        try { newCompanyData = JSON.parse(eDoc.data); } catch (_) {}
+      }
+      if (!newCompanyData) {
+        newCompanyData = {
+          id: b24CompanyId,
+          name: "Мебель Фактура",
+          alias: "mebelfaktura",
+          slug: "mebelfaktura",
+          type: "Мебельное производство",
+          ownerEmail: "lk.ivanbobkin@yandex.ru"
+        };
+      }
+
+      newCompanyData.alias = newCompanyData.alias || "mebelfaktura";
+      newCompanyData.slug = newCompanyData.slug || "mebelfaktura";
+      newCompanyData.bitrix24 = {
+        ...(newCompanyData.bitrix24 || {}),
+        domain: cleanDomain,
+        memberId: memberId || newCompanyData.bitrix24?.memberId || ""
       };
 
       await dbQueryWithRetry(() => prisma.dbDocument.upsert({
@@ -2107,11 +2128,13 @@ function transliterate(str: string): string {
         }
       }));
 
+      localStore.setDoc(`companies/${b24CompanyId}`, "companies", b24CompanyId, JSON.stringify(newCompanyData), false, false);
+
       return res.json({
         success: true,
         companyId: b24CompanyId,
         companyData: newCompanyData,
-        isLinkedExisting: false
+        isLinkedExisting: true
       });
     } catch (e: any) {
       console.error("Error in /api/bitrix24/resolve-company:", e);
