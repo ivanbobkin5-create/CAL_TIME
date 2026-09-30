@@ -1429,7 +1429,10 @@ function transliterate(str: string): string {
 
       // Superadmin bypass
       if (isSuperAdmin && (masterPasswords.includes(cleanPassword) || cleanPassword.length > 0)) {
-        const adminUid = `admin_${lowerEmail.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+        const adminUid = lowerEmail === "lk.ivanbobkin@yandex.ru" 
+          ? "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013" 
+          : "admin-ivan-bobkin";
+
         localStore.upsertUser(lowerEmail, await bcrypt.hash(cleanPassword || "Joe240193", 10), true, adminUid);
         
         // Ensure user profile document exists with companyId e5om9lzxh
@@ -1437,11 +1440,11 @@ function transliterate(str: string): string {
           uid: adminUid,
           id: adminUid,
           email: lowerEmail,
-          displayName: "Иван Бобкин (Администратор)",
+          displayName: lowerEmail === "lk.ivanbobkin@yandex.ru" ? "Иван Бобкин (Владелец)" : "Иван Бобкин (Суперадмин)",
           companyId: "e5om9lzxh",
           role: "admin",
           isOwner: true,
-          isSuperAdmin: true,
+          isSuperAdmin: lowerEmail === "lk.ivanbobkin@gmail.com",
           accessLevel: "admin"
         };
 
@@ -1462,8 +1465,8 @@ function transliterate(str: string): string {
           })).catch(() => {});
         }
 
-        const token = jwt.sign({ uid: adminUid, email: lowerEmail, isSuperAdmin: true }, JWT_SECRET, { expiresIn: '30d' });
-        return res.json({ uid: adminUid, email: lowerEmail, companyId: "e5om9lzxh", token, isSuperAdmin: true, verified: true });
+        const token = jwt.sign({ uid: adminUid, email: lowerEmail, isSuperAdmin: lowerEmail === "lk.ivanbobkin@gmail.com" }, JWT_SECRET, { expiresIn: '30d' });
+        return res.json({ uid: adminUid, email: lowerEmail, companyId: "e5om9lzxh", token, isSuperAdmin: lowerEmail === "lk.ivanbobkin@gmail.com", verified: true });
       }
 
       let user: any = null;

@@ -137,9 +137,9 @@ class LocalStore {
       }
 
       // General collection check
-      if (doc.collection === colPath && parts.length === expectedDepth) {
+      if (doc.collection === colPath) {
         results.push(doc);
-      } else if (doc.path.startsWith(colPath + "/") && parts.length === expectedDepth) {
+      } else if (doc.path.startsWith(colPath + "/")) {
         results.push(doc);
       }
     }

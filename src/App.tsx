@@ -35082,12 +35082,47 @@ export default function App() {
             if (key.includes('prices') && data.prices) setPrices((curr: any) => ({ ...curr, ...data.prices }));
             if (key.includes('promotions') && Array.isArray(data.promotions)) setPromotions(data.promotions);
             if (key.includes('products')) setOwnProducts(data.map((d: any) => ({ id: d.id, ...d.data })));
-            if (key.includes('projects')) setProjects(data.map((d: any) => ({ id: d.id, ...d.data })));
-            if (key.includes('sets')) setProjectSets(data.map((d: any) => ({ id: d.id, ...d.data })));
+            if (key.includes('projects') && Array.isArray(data)) setProjects(data.map((d: any) => ({ id: d.id, ...(d.data || d) })));
+            if (key.includes('sets') && Array.isArray(data)) setProjectSets(data.map((d: any) => ({ id: d.id, ...(d.data || d) })));
           } catch (e) {
             console.warn("Cache parse error for", key, e);
           }
         }
+      }
+
+      // Legacy project/set cache migration across all browser localStorage keys
+      try {
+        const allLocalKeys = Object.keys(localStorage);
+        const legacyProjKeys = allLocalKeys.filter(k => 
+          (k.includes('/projects') || k.includes('/sets') || k.includes('erp_orders_') || k.includes('saved_projects')) &&
+          !k.includes(`companies/${companyId}/`)
+        );
+
+        for (const legKey of legacyProjKeys) {
+          const rawLeg = localStorage.getItem(legKey);
+          if (rawLeg) {
+            const parsedLeg = JSON.parse(rawLeg);
+            const items = Array.isArray(parsedLeg) ? parsedLeg : (parsedLeg.projects || parsedLeg.orders || []);
+            if (Array.isArray(items) && items.length > 0) {
+              console.log(`Migrating ${items.length} legacy cached projects/sets from key ${legKey} to current company ${companyId}...`);
+              if (legKey.includes('project') || legKey.includes('order')) {
+                setProjects(prev => {
+                  const existingIds = new Set(prev.map(p => p.id));
+                  const newProjs = items.map((d: any) => ({ id: d.id || `proj_${Date.now()}`, ...(d.data || d), companyId })).filter((p: any) => !existingIds.has(p.id));
+                  return [...prev, ...newProjs];
+                });
+              } else if (legKey.includes('set')) {
+                setProjectSets(prev => {
+                  const existingIds = new Set(prev.map(s => s.id));
+                  const newSets = items.map((d: any) => ({ id: d.id || `set_${Date.now()}`, ...(d.data || d), companyId })).filter((s: any) => !existingIds.has(s.id));
+                  return [...prev, ...newSets];
+                });
+              }
+            }
+          }
+        }
+      } catch (legErr) {
+        console.warn("Legacy project cache migration error:", legErr);
       }
 
       // If we have some basic cached data, let's open the app immediately
