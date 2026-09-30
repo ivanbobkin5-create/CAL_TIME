@@ -18,7 +18,7 @@ import { BazisHardwareImportModal } from "./components/BazisHardwareImportModal"
 import { ProductKitBuilder } from "./components/ProductKitBuilder";
 import { FastenersPriceTable } from "./components/FastenersPriceTable";
 import type { KitItem } from "./components/ProductKitPickerModal";
-import { initBitrix24, sendToBitrix24Deal, registerBitrix24Placement, fetchBitrix24DealTitle, fetchBitrix24DealDetails, openBitrix24Contact, updateBitrix24DealTitle, syncDealProductRows, type Bitrix24Context } from "./services/bitrix24";
+import { initBitrix24, sendToBitrix24Deal, registerBitrix24Placement, fetchBitrix24DealTitle, fetchBitrix24DealDetails, openBitrix24Contact, updateBitrix24DealTitle, syncDealProductRows, resizeBitrix24WindowToContent, type Bitrix24Context } from "./services/bitrix24";
 
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
@@ -10210,7 +10210,7 @@ const Bitrix24DashboardView = ({
                       title="Выгрузить товары и спецификацию именно этого варианта в CRM Сделку"
                     >
                       <Send className="w-3.5 h-3.5" />
-                      <span>В Битрикс24</span>
+                      <span>Выгрузить в сделку</span>
                     </button>
                   </div>
                 </div>
@@ -14085,27 +14085,36 @@ const SummaryView = ({
 
         {finalTotal > 0 && (
           <div className="mt-8 flex flex-wrap items-center justify-end gap-3 sm:gap-4">
-            <button
-              onClick={() => {
-                const autoDeal = b24Context?.dealId || (() => {
+            {(() => {
+              const activeDeal = b24DealIdInput ||
+                b24Context?.dealId ||
+                (() => {
                   const m = String(currentProjectId || "").match(/b24_deal_(\d+)/);
                   return m ? m[1] : "";
+                })() ||
+                (() => {
+                  const m = String(currentProjectName || "").match(/Сделка\s*#?(\d+)/i) || String(currentProjectName || "").match(/Deal\s*#?(\d+)/i);
+                  return m ? m[1] : "";
                 })();
-                if (autoDeal && setB24DealIdInput) {
-                  setB24DealIdInput(String(autoDeal));
-                }
-                if (setShowB24Modal) {
-                  setShowB24Modal(true);
-                }
-              }}
-              className="flex items-center gap-2 px-5 py-3.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-2xl font-extrabold shadow-md shadow-blue-200/50 hover:scale-[1.02] transition-all cursor-pointer"
-              title="Передать сумму и спецификацию в сделку Битрикс24"
-            >
-              <div className="w-6 h-6 rounded-lg bg-white/20 text-white flex items-center justify-center text-xs font-black">
-                24
-              </div>
-              <span>В Битрикс24</span>
-            </button>
+
+              return (
+                <button
+                  onClick={() => {
+                    if (activeDeal && setB24DealIdInput) {
+                      setB24DealIdInput(String(activeDeal));
+                    }
+                    if (setShowB24Modal) {
+                      setShowB24Modal(true);
+                    }
+                  }}
+                  className="flex items-center gap-2 px-5 py-3.5 bg-[#1058d0] hover:bg-[#0c47a8] text-white rounded-2xl font-extrabold shadow-md shadow-blue-200/50 hover:scale-[1.02] transition-all cursor-pointer"
+                  title={activeDeal ? `Передать расчет в привязанную сделку CRM #${activeDeal}` : "Передать сумму и спецификацию в сделку CRM"}
+                >
+                  <Send className="w-4 h-4" />
+                  <span>{activeDeal ? `В Сделку #${activeDeal}` : "В Сделку CRM"}</span>
+                </button>
+              );
+            })()}
             <button
               onClick={() => {
                 if (onSaveProject) {
@@ -35948,6 +35957,86 @@ export default function App() {
   );
   const [loadedProjectCoefficientsSnapshot, setLoadedProjectCoefficientsSnapshot] = useState<any | null>(null);
   const [selectedProjectCoefficientsMode, setSelectedProjectCoefficientsMode] = useState<'saved' | 'current'>('saved');
+
+  // Auto-resize Bitrix24 iframe and eliminate double scrollbars
+  useEffect(() => {
+    if (!b24Context.isBitrix24 || typeof window === "undefined") return;
+
+    if (document.documentElement) document.documentElement.classList.add("b24-mode");
+    if (document.body) document.body.classList.add("b24-mode");
+
+    const resizeBitrixFrame = () => {
+      try {
+        resizeBitrix24WindowToContent(45);
+      } catch (_) {}
+    };
+
+    resizeBitrixFrame();
+    const t0 = setTimeout(resizeBitrixFrame, 50);
+    const t1 = setTimeout(resizeBitrixFrame, 200);
+    const t2 = setTimeout(resizeBitrixFrame, 600);
+    const t3 = setTimeout(resizeBitrixFrame, 1500);
+    const t4 = setTimeout(resizeBitrixFrame, 3000);
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined" && document.body) {
+      resizeObserver = new ResizeObserver(() => {
+        resizeBitrixFrame();
+      });
+      resizeObserver.observe(document.body);
+      const rootEl = document.getElementById("root");
+      if (rootEl) resizeObserver.observe(rootEl);
+      const mainEl = document.querySelector("main");
+      if (mainEl) resizeObserver.observe(mainEl);
+    }
+
+    let mutationObserver: MutationObserver | null = null;
+    if (typeof MutationObserver !== "undefined" && document.body) {
+      let mutTimer: any = null;
+      mutationObserver = new MutationObserver(() => {
+        if (mutTimer) clearTimeout(mutTimer);
+        mutTimer = setTimeout(resizeBitrixFrame, 80);
+      });
+      mutationObserver.observe(document.body, { childList: true, subtree: true, attributes: true });
+    }
+
+    window.addEventListener("resize", resizeBitrixFrame);
+
+    return () => {
+      clearTimeout(t0);
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      clearTimeout(t4);
+      if (resizeObserver) resizeObserver.disconnect();
+      if (mutationObserver) mutationObserver.disconnect();
+      window.removeEventListener("resize", resizeBitrixFrame);
+    };
+  }, [b24Context.isBitrix24, activeTab, currentProjectId, currentProjectTotal, results, currentSummaryRows]);
+
+  useEffect(() => {
+    if (showB24Modal || currentProjectId) {
+      const curProj = currentProjectId ? projects?.find((p: any) => p.id === currentProjectId) : null;
+      const linked = b24DealIdInput ||
+        b24Context?.dealId ||
+        curProj?.bitrix24DealId ||
+        curProj?.b24DealId ||
+        curProj?.dealId ||
+        curProj?.data?.bitrix24DealId ||
+        curProj?.data?.b24DealId ||
+        (() => {
+          const m = String(currentProjectId || "").match(/b24_deal_(\d+)/);
+          return m ? m[1] : "";
+        })() ||
+        (() => {
+          const m = String(curProj?.name || "").match(/Сделка\s*#?(\d+)/i) || String(curProj?.name || "").match(/Deal\s*#?(\d+)/i);
+          return m ? m[1] : "";
+        })();
+      if (linked && !b24DealIdInput) {
+        setB24DealIdInput(String(linked));
+      }
+    }
+  }, [showB24Modal, currentProjectId, projects, b24Context?.dealId]);
   
   const [activeWorktopForCut, setActiveWorktopForCut] = useState<any | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -39582,6 +39671,15 @@ export default function App() {
     setCurrentProjectId(project.id);
     setCurrentProjectName(project.name);
     setCurrentProjectTotal(project.totalPrice || 0);
+
+    const linkedDeal = project.bitrix24DealId || project.b24DealId || project.dealId || project.data?.bitrix24DealId || project.data?.b24DealId || (() => {
+      const m = String(project.id || "").match(/b24_deal_(\d+)/);
+      return m ? m[1] : "";
+    })();
+    if (linkedDeal) {
+      setB24DealIdInput(String(linkedDeal));
+    }
+
     setActiveTab("calculator");
   };
 
@@ -41295,7 +41393,7 @@ export default function App() {
         </div>
       )}
 
-      <div className="flex min-h-screen bg-gray-50">
+      <div className={cn("flex bg-gray-50", b24Context?.isBitrix24 ? "min-h-full h-auto overflow-visible" : "min-h-screen")}>
         {/* Mobile Sidebar Overlay */}
         {!b24Context?.isBitrix24 && isSidebarOpen && (
           <div
@@ -41864,21 +41962,21 @@ export default function App() {
         <main
           className={cn(
             "flex-1 transition-all duration-300 min-w-0",
-            b24Context?.isBitrix24 ? "ml-0" : (isSidebarOpen ? "ml-14 lg:ml-64" : "ml-14 lg:ml-20"),
+            b24Context?.isBitrix24 ? "ml-0 min-h-full h-auto overflow-visible" : (isSidebarOpen ? "ml-14 lg:ml-64" : "ml-14 lg:ml-20"),
           )}
         >
           {b24Context?.isBitrix24 && (
-            <div className="bg-slate-900 text-white px-3 py-2 shadow-lg border-b border-slate-700/80 flex items-center justify-between gap-2.5 sticky top-0 z-[100] select-none">
+            <div className="bg-white text-[#333333] px-3.5 py-2.5 shadow-2xs border-b border-[#dfe5ec] flex items-center justify-between gap-3 sticky top-0 z-[100] select-none">
               {/* Left section: App branding + Deal ID + Name */}
               <div className="flex items-center gap-2.5 min-w-0 shrink-0">
-                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-cyan-400 to-blue-600 text-white flex items-center justify-center font-black text-xs shadow-xs shrink-0">
-                  24
+                <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black shadow-xs shrink-0 border border-blue-500/30">
+                  <Layers className="w-4 h-4 text-white" />
                 </div>
                 <div className="min-w-0 flex flex-col justify-center">
                   <div className="flex items-center gap-1.5 leading-none">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-cyan-300 shrink-0">Битрикс24</span>
+                    <span className="text-xs font-black text-[#1058d0] tracking-tight shrink-0">Мебель План</span>
                     {b24Context.dealId && (
-                      <span className="px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-blue-500/25 text-blue-200 border border-blue-400/30 shrink-0">
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-[#eef2f4] text-[#1058d0] border border-[#b2d1ef] shrink-0 font-mono">
                         #{b24Context.dealId}
                       </span>
                     )}
@@ -41901,7 +41999,7 @@ export default function App() {
                         }
                       );
                     }}
-                    className="text-xs font-bold text-white truncate hover:text-cyan-200 cursor-pointer max-w-[140px] md:max-w-[200px] mt-0.5"
+                    className="text-xs font-extrabold text-[#333333] truncate hover:text-[#1058d0] cursor-pointer max-w-[140px] md:max-w-[200px] mt-0.5"
                     title="Нажмите для переименования сделки и проекта"
                   >
                     {currentProjectName || "Расчет сделки ✎"}
@@ -41910,14 +42008,14 @@ export default function App() {
               </div>
 
               {/* Middle Section: Clean CRM Navigation Tabs */}
-              <div className="flex items-center gap-1 bg-slate-800/90 p-1 rounded-xl border border-slate-700/80 shrink-0">
+              <div className="flex items-center gap-1 bg-[#eef2f4] p-1 rounded-xl border border-[#d5dbe0] shrink-0">
                 <button
                   onClick={() => setActiveTab("b24_dashboard")}
                   className={cn(
                     "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
                     activeTab === "b24_dashboard"
-                      ? "bg-blue-600 text-white shadow-xs"
-                      : "text-slate-300 hover:text-white hover:bg-slate-700/60"
+                      ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
+                      : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
                   )}
                   title="Рабочий стол сделки"
                 >
@@ -41930,8 +42028,8 @@ export default function App() {
                   className={cn(
                     "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
                     activeTab === "calculator"
-                      ? "bg-blue-600 text-white shadow-xs"
-                      : "text-slate-300 hover:text-white hover:bg-slate-700/60"
+                      ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
+                      : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
                   )}
                   title="Калькулятор мебели"
                 >
@@ -41944,8 +42042,8 @@ export default function App() {
                   className={cn(
                     "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
                     activeTab === "summary"
-                      ? "bg-blue-600 text-white shadow-xs"
-                      : "text-slate-300 hover:text-white hover:bg-slate-700/60"
+                      ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
+                      : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
                   )}
                   title="Смета и наценки"
                 >
@@ -41958,8 +42056,8 @@ export default function App() {
                   className={cn(
                     "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
                     activeTab === "checkout_current"
-                      ? "bg-emerald-600 text-white shadow-xs"
-                      : "text-emerald-300 hover:text-white hover:bg-emerald-700/50 font-black"
+                      ? "bg-emerald-600 text-white shadow-xs font-black"
+                      : "text-emerald-700 hover:text-emerald-800 hover:bg-emerald-50/80 font-black"
                   )}
                   title="Оформить заказ и спецификацию"
                 >
@@ -41974,8 +42072,8 @@ export default function App() {
                     className={cn(
                       "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
                       ["products", "price", "settings", "ready_made", "service-section"].includes(activeTab)
-                        ? "bg-indigo-600 text-white shadow-xs"
-                        : "text-slate-300 hover:text-white hover:bg-slate-700/60"
+                        ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
+                        : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
                     )}
                     title="Каталоги, база цен и настройки"
                   >
@@ -42001,18 +42099,18 @@ export default function App() {
                         className="fixed inset-0 z-40"
                         onClick={() => setB24MoreMenuOpen(false)}
                       />
-                      <div className="absolute left-0 mt-1.5 w-48 bg-slate-800 rounded-xl shadow-2xl border border-slate-700 py-1 z-50 animate-in fade-in zoom-in-95 duration-150">
+                      <div className="absolute left-0 mt-1.5 w-48 bg-white rounded-xl shadow-2xl border border-[#d5dbe0] py-1 z-50 animate-in fade-in zoom-in-95 duration-150 text-[#333333]">
                         <button
                           onClick={() => {
                             setActiveTab("products");
                             setB24MoreMenuOpen(false);
                           }}
                           className={cn(
-                            "w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-700/80 transition-colors cursor-pointer",
-                            activeTab === "products" ? "text-cyan-300 font-bold bg-slate-700/50" : "text-slate-200"
+                            "w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-[#f5f7f8] transition-colors cursor-pointer",
+                            activeTab === "products" ? "text-[#1058d0] font-bold bg-[#eef2f4]" : "text-[#535c69]"
                           )}
                         >
-                          <Package className="w-4 h-4 text-cyan-400" />
+                          <Package className="w-4 h-4 text-[#1058d0]" />
                           <span>Каталог товаров</span>
                         </button>
                         <button
@@ -42021,11 +42119,11 @@ export default function App() {
                             setB24MoreMenuOpen(false);
                           }}
                           className={cn(
-                            "w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-700/80 transition-colors cursor-pointer",
-                            activeTab === "price" ? "text-amber-300 font-bold bg-slate-700/50" : "text-slate-200"
+                            "w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-[#f5f7f8] transition-colors cursor-pointer",
+                            activeTab === "price" ? "text-amber-600 font-bold bg-[#eef2f4]" : "text-[#535c69]"
                           )}
                         >
-                          <Tag className="w-4 h-4 text-amber-400" />
+                          <Tag className="w-4 h-4 text-amber-500" />
                           <span>База цен</span>
                         </button>
                         <button
@@ -42034,11 +42132,11 @@ export default function App() {
                             setB24MoreMenuOpen(false);
                           }}
                           className={cn(
-                            "w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-700/80 transition-colors cursor-pointer",
-                            activeTab === "ready_made" ? "text-blue-300 font-bold bg-slate-700/50" : "text-slate-200"
+                            "w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-[#f5f7f8] transition-colors cursor-pointer",
+                            activeTab === "ready_made" ? "text-blue-600 font-bold bg-[#eef2f4]" : "text-[#535c69]"
                           )}
                         >
-                          <ShoppingBag className="w-4 h-4 text-blue-400" />
+                          <ShoppingBag className="w-4 h-4 text-blue-500" />
                           <span>Готовая мебель</span>
                         </button>
                         <button
@@ -42047,25 +42145,25 @@ export default function App() {
                             setB24MoreMenuOpen(false);
                           }}
                           className={cn(
-                            "w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-700/80 transition-colors cursor-pointer",
-                            activeTab === "service-section" ? "text-emerald-300 font-bold bg-slate-700/50" : "text-slate-200"
+                            "w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-[#f5f7f8] transition-colors cursor-pointer",
+                            activeTab === "service-section" ? "text-emerald-700 font-bold bg-[#eef2f4]" : "text-[#535c69]"
                           )}
                         >
-                          <Truck className="w-4 h-4 text-emerald-400" />
+                          <Truck className="w-4 h-4 text-emerald-600" />
                           <span>Услуги</span>
                         </button>
-                        <div className="h-px bg-slate-700 my-1" />
+                        <div className="h-px bg-[#eef2f4] my-1" />
                         <button
                           onClick={() => {
                             setActiveTab("settings");
                             setB24MoreMenuOpen(false);
                           }}
                           className={cn(
-                            "w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-slate-700/80 transition-colors cursor-pointer",
-                            activeTab === "settings" ? "text-purple-300 font-bold bg-slate-700/50" : "text-slate-200"
+                            "w-full text-left px-3 py-2 text-xs font-semibold flex items-center gap-2 hover:bg-[#f5f7f8] transition-colors cursor-pointer",
+                            activeTab === "settings" ? "text-purple-600 font-bold bg-[#eef2f4]" : "text-[#535c69]"
                           )}
                         >
-                          <Settings className="w-4 h-4 text-purple-400" />
+                          <Settings className="w-4 h-4 text-purple-500" />
                           <span>Настройки</span>
                         </button>
                       </div>
@@ -42079,65 +42177,80 @@ export default function App() {
                 {/* 📸 Фотоотчет монтажа */}
                 <button
                   onClick={() => setShowB24PhotoReportModal(true)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-blue-500/15 hover:bg-blue-500/25 text-blue-200 border border-blue-400/30 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white hover:bg-[#eef2f4] text-[#1058d0] border border-[#b2d1ef] rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
                   title="Сдать фотоотчет монтажа в таймлайн сделки Битрикс24"
                 >
-                  <Camera className="w-3.5 h-3.5 text-blue-300" />
+                  <Camera className="w-3.5 h-3.5 text-[#1058d0]" />
                   <span className="hidden md:inline">Фотоотчет</span>
                 </button>
 
                 {/* 🚨 Рекламация */}
                 <button
                   onClick={() => setShowB24ReclamationModal(true)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-rose-500/15 hover:bg-rose-500/25 text-rose-200 border border-rose-400/30 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
                   title="Зафиксировать рекламацию и создать задачу в Битрикс24"
                 >
-                  <AlertOctagon className="w-3.5 h-3.5 text-rose-300" />
+                  <AlertOctagon className="w-3.5 h-3.5 text-rose-500" />
                   <span className="hidden md:inline">Рекламация</span>
                 </button>
 
                 {/* 🔔 Уведомление в колокольчик */}
                 <button
                   onClick={() => setShowB24NotificationModal(true)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-200 border border-indigo-400/30 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-indigo-600 border border-indigo-200 rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
                   title="Отправить мгновенное уведомление в колокольчик (im.notify)"
                 >
-                  <Bell className="w-3.5 h-3.5 text-indigo-300" />
+                  <Bell className="w-3.5 h-3.5 text-indigo-500" />
                   <span className="hidden lg:inline">Колокольчик</span>
                 </button>
 
                 <button
                   onClick={() => openBitrix24Contact(b24ContactDetails.contactId, b24ContactDetails.companyId, b24Context?.dealId)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-200 border border-cyan-500/35 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 bg-white hover:bg-[#eef2f4] text-[#535c69] border border-[#d5dbe0] rounded-xl text-xs font-bold transition-all cursor-pointer shadow-2xs"
                   title="Открыть карточку клиента и реквизиты в Битрикс24"
                 >
-                  <User className="w-3.5 h-3.5 text-cyan-300" />
+                  <User className="w-3.5 h-3.5 text-[#535c69]" />
                   <span className="hidden sm:inline">Реквизиты CRM</span>
                 </button>
 
-                <div className="bg-slate-800 text-cyan-300 border border-cyan-500/30 px-2.5 py-1 rounded-xl text-xs font-black tracking-wide">
+                <div className="bg-white text-[#1058d0] border border-[#b2d1ef] px-2.5 py-1 rounded-xl text-xs font-black tracking-wide shadow-2xs">
                   {currentProjectTotal.toLocaleString("ru-RU")} ₽
                 </div>
 
-                <button
-                  onClick={() => {
-                    const autoDeal = b24Context?.dealId || 
-                      (currentProjectId && projects.find(p => p.id === currentProjectId)?.bitrix24DealId) ||
-                      (currentProjectId && projects.find(p => p.id === currentProjectId)?.b24DealId) ||
-                      (() => {
-                        const m = String(currentProjectId || "").match(/b24_deal_(\d+)/);
-                        return m ? m[1] : "";
-                      })();
-                    if (autoDeal && setB24DealIdInput) {
-                      setB24DealIdInput(String(autoDeal));
-                    }
-                    setShowB24Modal(true);
-                  }}
-                  className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-xl text-xs font-black shadow-xs transition-all cursor-pointer border border-emerald-400/30"
-                  title="Выгрузить товары и расчет в сделку Битрикс24"
-                >
-                  <span>✓ В Сделку</span>
-                </button>
+                {(() => {
+                  const curProj = currentProjectId ? projects.find(p => p.id === currentProjectId) : null;
+                  const autoDeal = b24Context?.dealId || 
+                    b24DealIdInput ||
+                    curProj?.bitrix24DealId ||
+                    curProj?.b24DealId ||
+                    curProj?.dealId ||
+                    curProj?.data?.bitrix24DealId ||
+                    curProj?.data?.b24DealId ||
+                    (() => {
+                      const m = String(currentProjectId || "").match(/b24_deal_(\d+)/);
+                      return m ? m[1] : "";
+                    })() ||
+                    (() => {
+                      const m = String(curProj?.name || "").match(/Сделка\s*#?(\d+)/i) || String(curProj?.name || "").match(/Deal\s*#?(\d+)/i);
+                      return m ? m[1] : "";
+                    })();
+
+                  return (
+                    <button
+                      onClick={() => {
+                        if (autoDeal && setB24DealIdInput) {
+                          setB24DealIdInput(String(autoDeal));
+                        }
+                        setShowB24Modal(true);
+                      }}
+                      className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#bbed21] hover:bg-[#b0e616] text-[#333333] rounded-xl text-xs font-black shadow-xs transition-all cursor-pointer border border-[#a5db12] hover:scale-[1.02] active:scale-[0.98]"
+                      title={autoDeal ? `Выгрузить товары и расчет в сделку CRM #${autoDeal}` : "Выгрузить товары и расчет в сделку CRM"}
+                    >
+                      <Send className="w-3.5 h-3.5 text-[#333333]" />
+                      <span>{autoDeal ? `✓ В Сделку #${autoDeal}` : "✓ В Сделку"}</span>
+                    </button>
+                  );
+                })()}
               </div>
             </div>
           )}
@@ -44219,11 +44332,11 @@ export default function App() {
           <div className="fixed inset-0 z-[998] flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-200">
             <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-200">
               <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
-                <div className="flex items-center gap-2.5 text-blue-600 font-bold text-lg">
+                <div className="flex items-center gap-2.5 text-[#1058d0] font-bold text-base sm:text-lg">
                   <div className="w-8 h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center font-black text-xs shadow-md shadow-blue-200">
-                    24
+                    <Layers className="w-4 h-4 text-white" />
                   </div>
-                  Передача в Битрикс24
+                  Мебель План — Передача в Сделку
                 </div>
                 <button
                   onClick={() => setShowB24Modal(false)}
@@ -44233,9 +44346,35 @@ export default function App() {
                 </button>
               </div>
 
-              <p className="text-xs text-gray-500 mb-4 leading-relaxed">
-                Сумма и подробный товарный состав текущего расчета будут переданы в выбранную сделку CRM Битрикс24.
-              </p>
+              {(() => {
+                const autoLinkedDeal = b24DealIdInput ||
+                  b24Context.dealId ||
+                  (currentProjectId && projects.find(p => p.id === currentProjectId)?.bitrix24DealId) ||
+                  (currentProjectId && projects.find(p => p.id === currentProjectId)?.b24DealId) ||
+                  (currentProjectId && projects.find(p => p.id === currentProjectId)?.dealId) ||
+                  (currentProjectId && projects.find(p => p.id === currentProjectId)?.data?.bitrix24DealId) ||
+                  (currentProjectId && projects.find(p => p.id === currentProjectId)?.data?.b24DealId) ||
+                  (() => {
+                    const m = String(currentProjectId || "").match(/b24_deal_(\d+)/);
+                    return m ? m[1] : "";
+                  })();
+
+                return autoLinkedDeal ? (
+                  <div className="mb-4 p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs font-bold text-emerald-800 flex items-center justify-between shadow-2xs">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span>Проект автоматически связан со сделкой:</span>
+                    </div>
+                    <span className="font-mono bg-white px-2 py-0.5 rounded border border-emerald-300 text-slate-900 font-black">
+                      #{autoLinkedDeal}
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-xs text-gray-500 mb-4 leading-relaxed">
+                    Сумма и подробный товарный состав текущего расчета будут переданы в выбранную сделку CRM.
+                  </p>
+                );
+              })()}
 
               <div className="space-y-3.5 mb-6">
                 <div>
@@ -44258,7 +44397,7 @@ export default function App() {
 
                 <div>
                   <label className="block text-[10px] font-black text-gray-400 uppercase tracking-wider mb-1">
-                    ID Сделки в Битрикс24
+                    ID Сделки в CRM
                   </label>
                   <input
                     type="number"
@@ -44267,9 +44406,9 @@ export default function App() {
                     placeholder="Например: 12450"
                     className="w-full p-3 border border-gray-200 rounded-xl text-sm font-bold text-gray-900 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
                   />
-                  {b24Context.dealId ? (
+                  {b24DealIdInput ? (
                     <p className="text-[11px] text-emerald-600 font-bold mt-1.5 flex items-center gap-1">
-                      ✓ Авто-определение из карточки Битрикс24 (Сделка #{b24Context.dealId})
+                      ✓ Привязанная сделка CRM #{b24DealIdInput}
                     </p>
                   ) : (
                     <p className="text-[11px] text-gray-400 font-medium mt-1">
@@ -44322,7 +44461,7 @@ export default function App() {
                   ) : (
                     <CheckCircle2 className="w-4 h-4" />
                   )}
-                  Сохранить в сделку
+                  {b24DealIdInput ? `Отправить в сделку #${b24DealIdInput}` : "Сохранить в сделку"}
                 </button>
               </div>
             </div>

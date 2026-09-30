@@ -29,6 +29,17 @@ try {
       if (frame) {
         frame.src = origin + search;
       }
+
+      window.addEventListener("message", function(e) {
+        if (e.data && e.data.type === "B24_RESIZE" && e.data.height) {
+          try {
+            if (typeof BX24 !== "undefined") {
+              if (BX24.resizeWindow) BX24.resizeWindow(window.innerWidth || 1200, e.data.height);
+              if (BX24.fitWindow) BX24.fitWindow();
+            }
+          } catch (_) {}
+        }
+      });
     });
   </script>
 </body>
@@ -95,8 +106,8 @@ try {
         {
           PLACEMENT: "CRM_DEAL_DETAIL_TAB",
           HANDLER: appUrl,
-          TITLE: "Калькулятор Мебели",
-          DESCRIPTION: "Расчет стоимости мебели, распила и материалов"
+          TITLE: "Мебель План",
+          DESCRIPTION: "Расчет стоимости мебели, распила и спецификаций"
         },
         function(res1) {
           // 2. Привязка виджета в правой колонке

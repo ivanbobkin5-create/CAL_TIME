@@ -91,3 +91,30 @@
   }
 }
 
+/* Bitrix24 Embedded Frame Auto-Height & Double Scrollbar Elimination */
+html.b24-mode,
+html.b24-mode body,
+body.b24-mode,
+body.b24-mode #root {
+  overflow-y: visible !important;
+  overflow-x: hidden !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+}
+
+body.b24-mode main,
+body.b24-mode .b24-layout-container {
+  overflow: visible !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+}
+
+/* Ensure no inner nested scrollbars in Bitrix24 tabs */
+body.b24-mode .b24-scroll-free {
+  overflow: visible !important;
+  height: auto !important;
+  max-height: none !important;
+}
+

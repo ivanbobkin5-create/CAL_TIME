@@ -20,6 +20,52 @@ let bx24Context: Bitrix24Context = {
   isBitrix24: false,
 };
 
+/**
+ * Auto-resize the Bitrix24 iframe window to fit its inner content completely,
+ * eliminating internal vertical scrollbars so only the CRM page has a scrollbar.
+ */
+export const resizeBitrix24WindowToContent = (extraPadding = 45): number => {
+  if (typeof window === "undefined") return 0;
+  try {
+    const body = document.body;
+    const html = document.documentElement;
+    const root = document.getElementById("root");
+    const main = document.querySelector("main");
+
+    const fullHeight = Math.max(
+      body ? body.scrollHeight : 0,
+      body ? body.offsetHeight : 0,
+      html ? html.scrollHeight : 0,
+      html ? html.offsetHeight : 0,
+      root ? root.scrollHeight : 0,
+      main ? main.scrollHeight : 0
+    );
+
+    if (fullHeight > 80) {
+      const targetHeight = fullHeight + extraPadding;
+      const targetWidth = window.innerWidth || body?.clientWidth || 1200;
+
+      // Method 1: BX24.resizeWindow (most authoritative in Bitrix24 REST API)
+      if ((window as any).BX24?.resizeWindow) {
+        (window as any).BX24.resizeWindow(targetWidth, targetHeight);
+      }
+      // Method 2: BX24.fitWindow
+      if ((window as any).BX24?.fitWindow) {
+        (window as any).BX24.fitWindow();
+      }
+      // Method 3: PostMessage to parent frame (if loaded through custom iframe wrapper)
+      try {
+        window.parent?.postMessage({ type: "B24_RESIZE", height: targetHeight, width: targetWidth }, "*");
+      } catch (_) {}
+
+      return targetHeight;
+    }
+  } catch (err) {
+    console.warn("Could not resize Bitrix24 window:", err);
+  }
+  return 0;
+};
+
 export const initBitrix24 = (): Promise<Bitrix24Context> => {
   return new Promise((resolve) => {
     if (typeof window === "undefined") {
@@ -131,7 +177,7 @@ export const initBitrix24 = (): Promise<Bitrix24Context> => {
 
         // Automatically adjust iframe height inside Bitrix24
         try {
-          window.BX24.fitWindow?.();
+          resizeBitrix24WindowToContent();
         } catch (e) {}
 
         // Handle Bitrix24 Marketplace Installation
@@ -149,8 +195,8 @@ export const initBitrix24 = (): Promise<Bitrix24Context> => {
               {
                 PLACEMENT: "CRM_DEAL_DETAIL_TAB",
                 HANDLER: appUrl,
-                TITLE: "Калькулятор Мебели",
-                DESCRIPTION: "Расчет стоимости мебели и материалов",
+                TITLE: "Мебель План",
+                DESCRIPTION: "Расчет стоимости мебели, распила и спецификаций",
               },
               () => {
                 window.BX24.callMethod(
@@ -167,8 +213,8 @@ export const initBitrix24 = (): Promise<Bitrix24Context> => {
                       {
                         PLACEMENT: "LEFT_MENU",
                         HANDLER: appUrl,
-                        TITLE: "Заказы от партнеров",
-                        DESCRIPTION: "Входящие заказы от салонов и фабрик",
+                        TITLE: "Мебель План",
+                        DESCRIPTION: "Калькулятор мебели и заказы от партнеров",
                       },
                       () => {
                         try {
@@ -467,8 +513,8 @@ export const registerBitrix24Placement = async (): Promise<{ success: boolean; m
         {
           PLACEMENT: "CRM_DEAL_DETAIL_TAB",
           HANDLER: appUrl,
-          TITLE: "Калькулятор Мебели",
-          DESCRIPTION: "Расчет стоимости мебели и материалов",
+          TITLE: "Мебель План",
+          DESCRIPTION: "Расчет стоимости мебели, распила и спецификаций",
         },
         () => {
           // 2. Register Deal Activity Widget (Right Sidebar)
@@ -487,8 +533,8 @@ export const registerBitrix24Placement = async (): Promise<{ success: boolean; m
                 {
                   PLACEMENT: "LEFT_MENU",
                   HANDLER: appUrl,
-                  TITLE: "Заказы от партнеров",
-                  DESCRIPTION: "Входящие партнерские заказы мебели от салонов"
+                  TITLE: "Мебель План",
+                  DESCRIPTION: "Калькулятор мебели и заказы от партнеров"
                 },
                 () => {
                   // 4. Register Company Sidebar

@@ -42,7 +42,7 @@ export const Bitrix24Modal = ({
     return null;
   }, [project]);
 
-  const [mode, setMode] = useState<'link' | 'create'>('create');
+  const [mode, setMode] = useState<'link' | 'create'>(activeDealId ? 'link' : 'create');
   const [dealId, setDealId] = useState(activeDealId || '');
   const [isLoading, setIsLoading] = useState(false);
   const [isUpdatingExisting, setIsUpdatingExisting] = useState(false);
@@ -56,8 +56,9 @@ export const Bitrix24Modal = ({
   const [showB2BChat, setShowB2BChat] = useState(false);
 
   useEffect(() => {
-    if (activeDealId && !dealId) {
+    if (activeDealId) {
       setDealId(activeDealId);
+      setMode('link');
     }
   }, [activeDealId]);
 

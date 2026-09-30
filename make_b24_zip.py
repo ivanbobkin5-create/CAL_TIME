@@ -6,7 +6,7 @@ index_html = """<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mebel-Plan.ru — Калькулятор мебели</title>
+  <title>Mebel-Plan.ru — Мебель План</title>
   <script src="//api.bitrix24.com/api/v1/"></script>
   <style>
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #f8fafc; font-family: sans-serif; }
@@ -24,6 +24,17 @@ index_html = """<!DOCTYPE html>
       if (frame) {
         frame.src = origin + search;
       }
+
+      window.addEventListener("message", function(e) {
+        if (e.data && e.data.type === "B24_RESIZE" && e.data.height) {
+          try {
+            if (typeof BX24 !== "undefined") {
+              if (BX24.resizeWindow) BX24.resizeWindow(window.innerWidth || 1200, e.data.height);
+              if (BX24.fitWindow) BX24.fitWindow();
+            }
+          } catch (_) {}
+        }
+      });
     });
   </script>
 </body>
@@ -34,7 +45,7 @@ install_html = """<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Установка Mebel-Plan.ru</title>
+  <title>Установка Мебель План</title>
   <script src="//api.bitrix24.com/api/v1/"></script>
   <style>
     body {
@@ -75,7 +86,7 @@ install_html = """<!DOCTYPE html>
 <body>
   <div class="card">
     <div id="loader" class="spinner"></div>
-    <h2 id="title">Установка приложения Mebel-Plan...</h2>
+    <h2 id="title">Установка приложения Мебель План...</h2>
     <p id="desc">Настраиваем интеграцию, вкладку в сделке и умный виджет в CRM Битрикс24.</p>
     <div id="success-msg" class="success">✓ Приложение успешно установлено!</div>
   </div>
@@ -90,8 +101,8 @@ install_html = """<!DOCTYPE html>
         {
           PLACEMENT: "CRM_DEAL_DETAIL_TAB",
           HANDLER: appUrl,
-          TITLE: "Калькулятор Мебели",
-          DESCRIPTION: "Расчет стоимости мебели, распила и материалов"
+          TITLE: "Мебель План",
+          DESCRIPTION: "Расчет стоимости мебели, распила и спецификаций"
         },
         function(res1) {
           // 2. Привязка виджета в правой колонке

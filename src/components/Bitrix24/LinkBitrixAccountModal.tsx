@@ -62,21 +62,21 @@ export const LinkBitrixAccountModal: React.FC<LinkBitrixAccountModalProps> = ({
       <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden animate-zoomIn">
         
         {/* Header */}
-        <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 p-6 text-white flex items-center justify-between">
+        <div className="bg-white border-b border-[#dfe5ec] p-6 text-[#333333] flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shrink-0">
-              <Link2 className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-2xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-xs border border-blue-500/20">
+              <Link2 className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h3 className="font-extrabold text-base">Связать с аккаунтом на сайте</h3>
-              <p className="text-xs text-slate-300">Объедините базу данных сайта и Битрикс24</p>
+              <h3 className="font-extrabold text-base text-[#1058d0]">Мебель План</h3>
+              <p className="text-xs text-[#535c69]">Объедините базу данных сайта и Битрикс24</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all cursor-pointer"
+            className="w-8 h-8 rounded-xl bg-[#f5f7f8] hover:bg-[#eef2f4] text-[#535c69] hover:text-[#333333] flex items-center justify-center transition-all cursor-pointer border border-[#d5dbe0]"
           >
-            <X className="w-4 h-4 text-white" />
+            <X className="w-4 h-4" />
           </button>
         </div>
 
