@@ -149,6 +149,7 @@ import { UserProfileView } from "./components/Profile/UserProfileView";
 import { PromotionsView } from "./components/Promotions/PromotionsView";
 import { Bitrix24OnboardingModal } from "./components/Auth/Bitrix24OnboardingModal";
 import { AppIcon } from "./components/Common/AppIcon";
+import { SmartModalOverlay } from "./components/Common/SmartModalOverlay";
 import {
   BitrixPhotoReportModal,
   BitrixReclamationModal,
@@ -9964,82 +9965,7 @@ const Bitrix24DashboardView = ({
         </div>
       )}
 
-      {/* 2. Chronological Stage History Timeline (Битрикс24) */}
-      <div className="bg-white rounded-3xl p-6 md:p-8 border border-gray-200 shadow-sm space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-100 pb-5">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shadow-xs shrink-0">
-              <Clock className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
-                  Текущий этап сделки в Битрикс24
-                </span>
-                <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-blue-100 text-blue-800 uppercase">
-                  CRM Статус
-                </span>
-              </div>
-              <h2 className="text-xl font-extrabold text-gray-900 flex items-center gap-2 mt-0.5">
-                <span>{stageInfo?.stageName || "Расчет и Договор"}</span>
-              </h2>
-            </div>
-          </div>
-
-          <div className="bg-blue-50/80 px-4 py-2.5 rounded-2xl border border-blue-200/60 text-right shrink-0">
-            <span className="text-[10px] text-blue-600 font-bold block uppercase tracking-wider">
-              Время в текущем этапе
-            </span>
-            <span className="text-sm font-black text-blue-900 font-mono">
-              ⏱ {stageInfo?.currentStageDuration || "2 дн. 8 ч."}
-            </span>
-          </div>
-        </div>
-
-        {/* Timeline list */}
-        <div>
-          <h3 className="text-xs font-extrabold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
-            <History className="w-4 h-4 text-blue-600" />
-            <span>Хронологическая история нахождения сделки на этапах</span>
-          </h3>
-
-          <div className="relative pl-6 space-y-3.5 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-blue-100">
-            {(stageInfo?.history && stageInfo.history.length > 0 ? stageInfo.history : defaultHistory).map(
-              (item, idx) => (
-                <div
-                  key={idx}
-                  className="relative flex flex-wrap items-center justify-between gap-3 bg-gray-50/80 p-3.5 rounded-2xl border border-gray-100 hover:border-blue-200 transition-all"
-                >
-                  <div
-                    className={`absolute -left-6 top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full border-2 ${
-                      item.isCurrent
-                        ? "bg-blue-600 border-blue-200 ring-4 ring-blue-100"
-                        : "bg-gray-300 border-white"
-                    }`}
-                  />
-                  <div>
-                    <div className="font-bold text-sm text-gray-900 flex items-center gap-2">
-                      <span>{item.stageName}</span>
-                      {item.isCurrent && (
-                        <span className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-black rounded uppercase">
-                          Текущий
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs text-gray-400 mt-0.5">Вход на этап: {item.enteredAt}</div>
-                  </div>
-                  <div className="text-xs font-bold text-gray-700 bg-white px-3 py-1.5 rounded-xl border border-gray-200 shadow-2xs">
-                    Время на этапе:{" "}
-                    <span className="font-mono text-blue-700 font-black">{item.durationFormatted}</span>
-                  </div>
-                </div>
-              )
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* 3. Projects / Variants List Section */}
+      {/* 2. Projects / Variants List Section */}
       <div className="bg-white rounded-3xl p-6 md:p-8 border border-gray-200 shadow-sm space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-100 pb-5">
           <div>
@@ -10214,6 +10140,81 @@ const Bitrix24DashboardView = ({
             })}
           </div>
         )}
+      </div>
+
+      {/* 3. Chronological Stage History Timeline (Битрикс24) - ПОД Варианты расчётов */}
+      <div className="bg-white rounded-3xl p-6 md:p-8 border border-gray-200 shadow-sm space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-100 pb-5">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shadow-xs shrink-0">
+              <Clock className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                  Текущий этап сделки в Битрикс24
+                </span>
+                <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-blue-100 text-blue-800 uppercase">
+                  CRM Статус
+                </span>
+              </div>
+              <h2 className="text-xl font-extrabold text-gray-900 flex items-center gap-2 mt-0.5">
+                <span>{stageInfo?.stageName || "Расчет и Договор"}</span>
+              </h2>
+            </div>
+          </div>
+
+          <div className="bg-blue-50/80 px-4 py-2.5 rounded-2xl border border-blue-200/60 text-right shrink-0">
+            <span className="text-[10px] text-blue-600 font-bold block uppercase tracking-wider">
+              Время в текущем этапе
+            </span>
+            <span className="text-sm font-black text-blue-900 font-mono">
+              ⏱ {stageInfo?.currentStageDuration || "2 дн. 8 ч."}
+            </span>
+          </div>
+        </div>
+
+        {/* Timeline list */}
+        <div>
+          <h3 className="text-xs font-extrabold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+            <History className="w-4 h-4 text-blue-600" />
+            <span>Хронологическая история нахождения сделки на этапах</span>
+          </h3>
+
+          <div className="relative pl-6 space-y-3.5 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-blue-100">
+            {(stageInfo?.history && stageInfo.history.length > 0 ? stageInfo.history : defaultHistory).map(
+              (item, idx) => (
+                <div
+                  key={idx}
+                  className="relative flex flex-wrap items-center justify-between gap-3 bg-gray-50/80 p-3.5 rounded-2xl border border-gray-100 hover:border-blue-200 transition-all"
+                >
+                  <div
+                    className={`absolute -left-6 top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full border-2 ${
+                      item.isCurrent
+                        ? "bg-blue-600 border-blue-200 ring-4 ring-blue-100"
+                        : "bg-gray-300 border-white"
+                    }`}
+                  />
+                  <div>
+                    <div className="font-bold text-sm text-gray-900 flex items-center gap-2">
+                      <span>{item.stageName}</span>
+                      {item.isCurrent && (
+                        <span className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-black rounded uppercase">
+                          Текущий
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-xs text-gray-400 mt-0.5">Вход на этап: {item.enteredAt}</div>
+                  </div>
+                  <div className="text-xs font-bold text-gray-700 bg-white px-3 py-1.5 rounded-xl border border-gray-200 shadow-2xs">
+                    Время на этапе:{" "}
+                    <span className="font-mono text-blue-700 font-black">{item.durationFormatted}</span>
+                  </div>
+                </div>
+              )
+            )}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -34834,6 +34835,22 @@ export default function App() {
             setCurrentProjectName(details.title);
           }
           setB24ContactDetails({ contactId: details.contactId, companyId: details.companyId });
+        } else {
+          // Bitrix24 Left Menu mode (no deal context)
+          const searchParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
+          const reqTab = (searchParams.get("tab") || searchParams.get("mode") || ctx.placementOptions?.tab || ctx.placementOptions?.mode || "").toLowerCase();
+
+          if (reqTab === "price" || reqTab === "price_base") {
+            setActiveTab("price");
+          } else if (reqTab === "partner" || reqTab === "partner_orders" || reqTab === "orders") {
+            setActiveTab("partner_orders");
+          } else if (reqTab === "calculator") {
+            setActiveTab("calculator");
+          } else if (reqTab === "projects") {
+            setActiveTab("projects");
+          } else {
+            setActiveTab("settings");
+          }
         }
       }
     });
@@ -39542,7 +39559,9 @@ export default function App() {
               leadTimeDays: setData.leadTimeDays,
               readyDate: setData.readyDate,
               sketches: setData.sketches,
-              status: isFinal ? "sent" : "draft",
+              status: isFinal ? "formalized" : "draft",
+              isFormalized: isFinal ? true : (p.isFormalized || false),
+              isContractSigned: isFinal ? true : (p.isContractSigned || false),
               totalPrice: setData.totalPrice,
               summary: setData.summary,
               paymentMethod: setData.paymentMethod || null,
@@ -39565,6 +39584,8 @@ export default function App() {
                 paymentPercentages: setData.paymentPercentages || null,
                 paymentAmounts: setData.paymentAmounts || null,
                 paymentRestAmount: setData.paymentRestAmount || null,
+                isFormalized: isFinal ? true : p.data?.isFormalized,
+                status: isFinal ? "formalized" : p.data?.status,
               }
           }, { merge: true });
           
@@ -39581,7 +39602,9 @@ export default function App() {
                     leadTimeDays: setData.leadTimeDays,
                     readyDate: setData.readyDate,
                     sketches: setData.sketches,
-                    status: isFinal ? "sent" : "draft",
+                    status: isFinal ? "formalized" : "draft",
+                    isFormalized: isFinal ? true : p.isFormalized,
+                    isContractSigned: isFinal ? true : p.isContractSigned,
                     totalPrice: setData.totalPrice,
                     summary: setData.summary,
                     paymentMethod: setData.paymentMethod,
@@ -39603,6 +39626,8 @@ export default function App() {
                       paymentPercentages: setData.paymentPercentages,
                       paymentAmounts: setData.paymentAmounts,
                       paymentRestAmount: setData.paymentRestAmount,
+                      isFormalized: isFinal ? true : p.data?.isFormalized,
+                      status: isFinal ? "formalized" : p.data?.status,
                     }
                   } 
                 : p
@@ -39646,7 +39671,8 @@ export default function App() {
             paymentPercentages: setData.paymentPercentages || null,
             paymentAmounts: setData.paymentAmounts || null,
             paymentRestAmount: setData.paymentRestAmount || null,
-            status: isFinal ? "sent" : "draft",
+            status: isFinal ? "formalized" : "draft",
+            isFormalized: isFinal ? true : false,
           };
 
           batch.set(setDocRef, setRecord);
@@ -39668,7 +39694,9 @@ export default function App() {
                 paymentRestAmount: setData.paymentRestAmount || null,
             };
             if (isFinal) {
-                statusUpdate.status = "sent";
+                statusUpdate.status = "formalized";
+                statusUpdate.isFormalized = true;
+                statusUpdate.isContractSigned = true;
             }
             batch.set(projectDocRef, statusUpdate, { merge: true });
           }
@@ -39682,7 +39710,9 @@ export default function App() {
                 ? { 
                     ...p, 
                     setId: setId, 
-                    status: isFinal ? "sent" : p.status,
+                    status: isFinal ? "formalized" : p.status,
+                    isFormalized: isFinal ? true : p.isFormalized,
+                    isContractSigned: isFinal ? true : p.isContractSigned,
                     contractNumber: setData.contractNumber,
                     contractDate: setData.contractDate,
                     leadTimeDays: setData.leadTimeDays,
@@ -39693,7 +39723,12 @@ export default function App() {
                     paymentPercentages: setData.paymentPercentages,
                     paymentAmounts: setData.paymentAmounts,
                     paymentRestAmount: setData.paymentRestAmount,
-                  }
+                    data: {
+                      ...(p.data || {}),
+                      isFormalized: isFinal ? true : p.data?.isFormalized,
+                      status: isFinal ? "formalized" : p.data?.status,
+                    }
+                  } 
                 : p
             )
           );
@@ -41552,8 +41587,8 @@ export default function App() {
           />
         )}
 
-        {/* Sidebar (Hidden in Bitrix24 iframe) */}
-        {!b24Context?.isBitrix24 && (
+        {/* Sidebar (Hidden in Bitrix24 deal detail tab iframe, shown in Left Menu mode) */}
+        {(!b24Context?.isBitrix24 || !b24Context?.dealId || b24Context?.placement === 'LEFT_MENU' || b24Context?.placement === 'DEFAULT') && (
         <aside
           className={cn(
             "fixed inset-y-0 left-0 z-50 bg-white border-r border-gray-200 transition-all duration-300 shadow-xl lg:shadow-none",
@@ -41693,7 +41728,7 @@ export default function App() {
                     )}
                   </button>
 
-                  {(companyData?.type === "Мебельное производство" || companyData?.type === "Производство" || (typeof companyData?.type === 'string' && companyData.type.toLowerCase().includes('производств'))) && (
+                  {(b24Context?.isBitrix24 || userRole === "admin" || companyData?.type === "Мебельное производство" || companyData?.type === "Производство" || (typeof companyData?.type === 'string' && companyData.type.toLowerCase().includes('производств'))) && (
                     <button
                       onClick={() => setActiveTab("partner_orders")}
                       className={cn(
@@ -42112,10 +42147,10 @@ export default function App() {
         <main
           className={cn(
             "flex-1 transition-all duration-300 min-w-0",
-            b24Context?.isBitrix24 ? "ml-0 min-h-full h-auto overflow-visible" : (isSidebarOpen ? "ml-14 lg:ml-64" : "ml-14 lg:ml-20"),
+            (b24Context?.isBitrix24 && b24Context?.dealId) ? "ml-0 min-h-full h-auto overflow-visible" : (isSidebarOpen ? "ml-14 lg:ml-64" : "ml-14 lg:ml-20"),
           )}
         >
-          {b24Context?.isBitrix24 && (
+          {b24Context?.isBitrix24 && b24Context?.dealId && (
             <div className="bg-white text-[#333333] px-3.5 py-2.5 shadow-2xs border-b border-[#dfe5ec] flex items-center justify-between gap-3 sticky top-0 z-[100] select-none">
               {/* Left section: App branding + Deal ID + Name */}
               <div className="flex items-center gap-2.5 min-w-0 shrink-0">
@@ -42317,9 +42352,8 @@ export default function App() {
 
               {/* Right section: Total display */}
               <div className="flex items-center gap-1.5 shrink-0">
-                <div className="bg-[#eef2f4] px-2.5 py-0.5 rounded-lg border border-[#d5dbe0] text-right h-6 flex items-center gap-1.5">
-                  <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider leading-none">Сумма:</span>
-                  <span className="text-xs font-black text-blue-700 font-mono leading-none">
+                <div className="bg-gradient-to-r from-blue-700 to-indigo-700 px-3 py-1 rounded-xl shadow-xs text-white flex items-center h-7 shrink-0">
+                  <span className="text-sm sm:text-base font-black font-mono tracking-tight leading-none text-white">
                     {(currentProjectTotal || 0).toLocaleString("ru-RU")} ₽
                   </span>
                 </div>
@@ -42365,6 +42399,89 @@ export default function App() {
                   <span>Первоначальная настройка профиля</span>
                 </div>
               )}
+            </div>
+          )}
+
+          {b24Context?.isBitrix24 && !b24Context?.dealId && (
+            <div className="bg-white text-[#333333] px-3.5 py-2.5 shadow-2xs border-b border-[#dfe5ec] flex flex-wrap items-center justify-between gap-3 sticky top-0 z-[100] select-none">
+              <div className="flex items-center gap-2.5 min-w-0 shrink-0">
+                <AppIcon className="w-8 h-8 rounded-xl shrink-0 shadow-xs" />
+                <div className="min-w-0 flex flex-col justify-center">
+                  <div className="flex items-center gap-1.5 leading-none">
+                    <span className="text-xs font-black text-[#1058d0] tracking-tight shrink-0">Мебель План — Панель Управления</span>
+                  </div>
+                  <span className="text-[11px] font-bold text-gray-500 truncate mt-0.5">
+                    {companyData?.name || "Настройки компании, база цен и заказы"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1 bg-[#eef2f4] p-1 rounded-xl border border-[#d5dbe0] shrink-0">
+                <button
+                  onClick={() => setActiveTab("settings")}
+                  className={cn(
+                    "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                    activeTab === "settings"
+                      ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
+                      : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
+                  )}
+                >
+                  <Settings className="w-3.5 h-3.5" />
+                  <span>Настройки</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("price")}
+                  className={cn(
+                    "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                    activeTab === "price"
+                      ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
+                      : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
+                  )}
+                >
+                  <Tag className="w-3.5 h-3.5 text-blue-600" />
+                  <span>База цен</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("partner_orders")}
+                  className={cn(
+                    "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                    activeTab === "partner_orders"
+                      ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
+                      : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
+                  )}
+                >
+                  <Handshake className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Заявки от партнеров</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("calculator")}
+                  className={cn(
+                    "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                    activeTab === "calculator"
+                      ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
+                      : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
+                  )}
+                >
+                  <Calculator className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Калькулятор</span>
+                </button>
+
+                <button
+                  onClick={() => setActiveTab("projects")}
+                  className={cn(
+                    "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                    activeTab === "projects"
+                      ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
+                      : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
+                  )}
+                >
+                  <FolderOpen className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Проекты</span>
+                </button>
+              </div>
             </div>
           )}
 
@@ -43091,7 +43208,7 @@ export default function App() {
               }, 0)}
             />
           ) : activeTab === "price" &&
-            (userRole === "admin" || userRole === "manager") ? (
+            (userRole === "admin" || userRole === "manager" || b24Context?.isBitrix24) ? (
             <PriceView
               productCategories={productCategories}
               calcMode={calcMode}
@@ -43163,7 +43280,7 @@ export default function App() {
               showConfirm={showConfirm}
               showPrompt={showPrompt}
             />
-          ) : activeTab === "settings" && userRole === "admin" ? (
+          ) : activeTab === "settings" && (userRole === "admin" || b24Context?.isBitrix24) ? (
             <SettingsView
               specificationConfig={specificationConfig}
               setSpecificationConfig={setSpecificationConfig}
@@ -44494,7 +44611,7 @@ export default function App() {
         )}
 
         {showB24Modal && (
-          <div className="fixed inset-0 z-[998] flex items-center justify-center bg-black/50 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <SmartModalOverlay isOpen={showB24Modal} onClose={() => setShowB24Modal(false)} zIndex="z-[998]">
             <div className="bg-white rounded-3xl p-6 max-w-md w-full shadow-2xl border border-gray-100 animate-in zoom-in-95 duration-200">
               <div className="flex items-center justify-between mb-4 pb-3 border-b border-gray-100">
                 <div className="flex items-center gap-2.5 text-[#1058d0] font-bold text-base sm:text-lg">
@@ -44628,7 +44745,7 @@ export default function App() {
                 </button>
               </div>
             </div>
-          </div>
+          </SmartModalOverlay>
         )}
 
         {/* Onboarding handled in-place inside <main> */}

@@ -58,7 +58,7 @@ export const B2BOrderChatModal: React.FC<B2BOrderChatModalProps> = ({
   onClose,
   showAlert = (t, m) => alert(`${t}: ${m}`)
 }) => {
-  const modalScrollRef = useBitrixModalScroll(true);
+  const { modalRef, paddingTop } = useBitrixModalScroll(true);
   const b24Context = getBitrix24Context();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState("");
@@ -172,7 +172,7 @@ export const B2BOrderChatModal: React.FC<B2BOrderChatModalProps> = ({
   };
 
   return (
-    <div ref={modalScrollRef} className="fixed inset-0 z-[100] flex items-center justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
+    <div ref={modalRef} style={{ paddingTop: paddingTop > 0 ? `${paddingTop}px` : undefined }} className="fixed inset-0 z-[100] flex items-start justify-center p-3 sm:p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200 overflow-y-auto">
       <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-2xl h-[85vh] max-h-[750px] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
         
         {/* Header */}
