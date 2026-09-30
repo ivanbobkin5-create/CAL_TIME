@@ -1707,14 +1707,7 @@ function transliterate(str: string): string {
       let docs: any[] = [];
       if (isPostgresAvailable) {
         try {
-          if (colPath.endsWith("/products")) {
-            docs = await dbQueryWithRetry(() => prisma.$queryRaw<any[]>`
-              SELECT id, "docId", collection, path,
-                REGEXP_REPLACE(data, 'data:image/[^"]+', '', 'g') as data
-              FROM "DbDocument"
-              WHERE collection = ${colPath}
-            `);
-          } else if (colPath === "companies") {
+          if (colPath === "companies") {
             docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({ 
               where: { 
                 collection: "companies",
