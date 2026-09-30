@@ -20,6 +20,8 @@ let bx24Context: Bitrix24Context = {
   isBitrix24: false,
 };
 
+let lastResizedHeight = 0;
+
 /**
  * Auto-resize the Bitrix24 iframe window to fit its inner content completely,
  * eliminating internal vertical scrollbars so only the CRM page has a scrollbar.
@@ -34,15 +36,17 @@ export const resizeBitrix24WindowToContent = (extraPadding = 45): number => {
 
     const fullHeight = Math.max(
       body ? body.scrollHeight : 0,
-      body ? body.offsetHeight : 0,
       html ? html.scrollHeight : 0,
-      html ? html.offsetHeight : 0,
       root ? root.scrollHeight : 0,
       main ? main.scrollHeight : 0
     );
 
     if (fullHeight > 80) {
       const targetHeight = fullHeight + extraPadding;
+      if (Math.abs(targetHeight - lastResizedHeight) < 15) {
+        return targetHeight;
+      }
+      lastResizedHeight = targetHeight;
       const targetWidth = window.innerWidth || body?.clientWidth || 1200;
 
       // Method 1: BX24.resizeWindow (most authoritative in Bitrix24 REST API)

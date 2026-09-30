@@ -118,3 +118,16 @@ body.b24-mode .b24-scroll-free {
   max-height: none !important;
 }
 
+/* Position all popup modals in Bitrix24 in the visible top reading area instead of tall center */
+body.b24-mode .fixed.inset-0.flex {
+  align-items: flex-start !important;
+  padding-top: 16px !important;
+  padding-bottom: 24px !important;
+  overflow-y: auto !important;
+}
+
+body.b24-mode .fixed.inset-0.flex > div {
+  margin-top: 0 !important;
+  max-height: calc(100vh - 32px);
+}
+

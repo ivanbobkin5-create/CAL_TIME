@@ -36121,9 +36121,9 @@ export default function App() {
       let mutTimer: any = null;
       mutationObserver = new MutationObserver(() => {
         if (mutTimer) clearTimeout(mutTimer);
-        mutTimer = setTimeout(resizeBitrixFrame, 80);
+        mutTimer = setTimeout(resizeBitrixFrame, 250);
       });
-      mutationObserver.observe(document.body, { childList: true, subtree: true, attributes: true });
+      mutationObserver.observe(document.body, { childList: true, subtree: true });
     }
 
     window.addEventListener("resize", resizeBitrixFrame);
