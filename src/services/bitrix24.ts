@@ -103,9 +103,11 @@ export const initBitrix24 = (): Promise<Bitrix24Context> => {
       }
     } catch (_) {}
 
-    if (!window.BX24) {
+    const isActuallyInBitrix24 = isB24Url || (typeof window !== "undefined" && window.parent !== window && Boolean(window.BX24));
+
+    if (!isActuallyInBitrix24 || !window.BX24) {
       bx24Context = {
-        isBitrix24: isB24Url,
+        isBitrix24: false,
         domain: urlDomain,
         placement: urlPlacement,
         placementOptions: urlPlacementOptions,
@@ -115,8 +117,27 @@ export const initBitrix24 = (): Promise<Bitrix24Context> => {
       return;
     }
 
+    let isResolved = false;
+    const finishResolve = (ctx: Bitrix24Context) => {
+      if (isResolved) return;
+      isResolved = true;
+      resolve(ctx);
+    };
+
+    // Safety timeout: if BX24.init takes more than 1200ms, resolve with fallback context
+    const initTimer = setTimeout(() => {
+      finishResolve({
+        isBitrix24: isActuallyInBitrix24,
+        domain: urlDomain,
+        placement: urlPlacement,
+        placementOptions: urlPlacementOptions,
+        dealId: urlDealId,
+      });
+    }, 1200);
+
     try {
       window.BX24.init(() => {
+        clearTimeout(initTimer);
         let placement = urlPlacement;
         let placementOptions: Record<string, any> = urlPlacementOptions;
 
@@ -166,13 +187,13 @@ export const initBitrix24 = (): Promise<Bitrix24Context> => {
                   if (phone) bx24Context.userPhone = phone.trim();
                 }
               }
-              resolve(bx24Context);
+              finishResolve(bx24Context);
             });
           } else {
-            resolve(bx24Context);
+            finishResolve(bx24Context);
           }
         } catch (_) {
-          resolve(bx24Context);
+          finishResolve(bx24Context);
         }
 
         // Automatically adjust iframe height inside Bitrix24

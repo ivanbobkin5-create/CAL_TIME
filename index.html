@@ -43,8 +43,23 @@
     <meta name="theme-color" content="#2563eb" />
     <link rel="manifest" href="/manifest.json" />
     
-    <!-- Bitrix24 JS SDK -->
-    <script src="https://api.bitrix24.com/api/v1/"></script>
+    <!-- Bitrix24 JS SDK (loaded when embedded in Bitrix24 to avoid hijacking focus on standard website) -->
+    <script>
+      (function() {
+        var isFramed = window.parent !== window;
+        var hasB24Params = window.location.search && (
+          window.location.search.indexOf('DOMAIN=') !== -1 ||
+          window.location.search.indexOf('member_id=') !== -1 ||
+          window.location.search.indexOf('PLACEMENT=') !== -1 ||
+          window.location.search.indexOf('AUTH_ID=') !== -1
+        );
+        if (isFramed || hasB24Params) {
+          var s = document.createElement('script');
+          s.src = 'https://api.bitrix24.com/api/v1/';
+          document.head.appendChild(s);
+        }
+      })();
+    </script>
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
