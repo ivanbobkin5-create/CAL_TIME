@@ -34,12 +34,9 @@ export const resizeBitrix24WindowToContent = (extraPadding = 45): number => {
     const root = document.getElementById("root");
     const main = document.querySelector("main");
 
-    const fullHeight = Math.max(
-      body ? body.scrollHeight : 0,
-      html ? html.scrollHeight : 0,
-      root ? root.scrollHeight : 0,
-      main ? main.scrollHeight : 0
-    );
+    const mainContent = main?.firstElementChild as HTMLElement;
+    const contentHeight = mainContent ? mainContent.offsetHeight || mainContent.scrollHeight : (main ? main.scrollHeight : (body ? body.scrollHeight : 600));
+    const fullHeight = Math.max(400, contentHeight);
 
     if (fullHeight > 80) {
       const targetHeight = fullHeight + extraPadding;
@@ -699,40 +696,52 @@ export const registerBitrix24Placement = async (): Promise<{ success: boolean; m
               DESCRIPTION: "Интерактивный виджет производства и расчета мебели",
             },
             () => {
-              // 3. Register Left Menu Item
+              // 3. Register Left Menu Item (Main / Settings)
               window.BX24.callMethod(
                 "placement.bind",
                 {
                   PLACEMENT: "LEFT_MENU",
-                  HANDLER: appUrl,
+                  HANDLER: `${appUrl}?tab=settings`,
                   TITLE: "Мебель План",
-                  DESCRIPTION: "Калькулятор мебели и заказы от партнеров"
+                  DESCRIPTION: "Калькулятор мебели и настройки компании"
                 },
                 () => {
-                  // 4. Register Company Sidebar
+                  // 3b. Register Dedicated Partner Orders Left Menu Item
                   window.BX24.callMethod(
                     "placement.bind",
                     {
-                      PLACEMENT: "CRM_COMPANY_DETAIL_SIDEBAR",
-                      HANDLER: appUrl,
-                      TITLE: "Мебель План (Партнер)",
-                      DESCRIPTION: "Показатели и B2B заказы партнера"
+                      PLACEMENT: "LEFT_MENU",
+                      HANDLER: `${appUrl}?tab=partner_orders`,
+                      TITLE: "Заявки от партнеров",
+                      DESCRIPTION: "B2B Заказы и заявки от партнеров салонов"
                     },
                     () => {
-                      // 5. Register Contact Sidebar
+                      // 4. Register Company Sidebar
                       window.BX24.callMethod(
                         "placement.bind",
                         {
-                          PLACEMENT: "CRM_CONTACT_DETAIL_SIDEBAR",
+                          PLACEMENT: "CRM_COMPANY_DETAIL_SIDEBAR",
                           HANDLER: appUrl,
-                          TITLE: "Мебель План (Клиент)",
-                          DESCRIPTION: "История заказов и показатели клиента"
+                          TITLE: "Мебель План (Партнер)",
+                          DESCRIPTION: "Показатели и B2B заказы партнера"
                         },
                         () => {
-                          resolve({
-                            success: true,
-                            message: "Вкладка сделки, Умный виджет, Виджеты компании и пункт в Левом меню успешно зарегистрированы в Битрикс24!",
-                          });
+                          // 5. Register Contact Sidebar
+                          window.BX24.callMethod(
+                            "placement.bind",
+                            {
+                              PLACEMENT: "CRM_CONTACT_DETAIL_SIDEBAR",
+                              HANDLER: appUrl,
+                              TITLE: "Мебель План (Клиент)",
+                              DESCRIPTION: "История заказов и показатели клиента"
+                            },
+                            () => {
+                              resolve({
+                                success: true,
+                                message: "Вкладка сделки, Настройки и пункт Заявки от партнеров в Левом меню успешно зарегистрированы в Битрикс24!",
+                              });
+                            }
+                          );
                         }
                       );
                     }
@@ -1293,14 +1302,40 @@ export const syncDealProductRows = async (payload: {
       body: JSON.stringify({ ...payload, rows })
     });
 
-    if (res.ok) {
-      return { success: true, message: "Состав товаров сделки успешно обновлен в Битрикс24!" };
-    }
-
-    return { success: true, message: "Товары выгружены в Битрикс24!" };
+    return await res.json();
   } catch (err: any) {
-    console.error("Error syncing deal product rows:", err);
-    return { success: false, message: err.message || "Ошибка синхронизации товаров сделки" };
+    console.warn("syncDealProductRows failed:", err);
+    return { success: false, message: err.message };
+  }
+};
+
+/**
+ * Updates the red counter badge on Bitrix24 Left Menu placements (e.g., new partner orders badge)
+ */
+export const updateBitrixLeftMenuCounter = (count: number) => {
+  if (typeof window === "undefined" || !window.BX24) return;
+  const numVal = Math.max(0, count || 0);
+
+  try {
+    if (typeof window.BX24.callMethod === "function") {
+      window.BX24.callMethod("placement.setCounter", {
+        PLACEMENT: "LEFT_MENU",
+        VALUE: numVal,
+      });
+      window.BX24.callMethod("user.counters.set", {
+        COUNTER: "partner_orders",
+        VALUE: numVal,
+      });
+      window.BX24.callMethod("user.option.set", {
+        option: "counter_partner_orders",
+        value: numVal,
+      });
+    }
+    if (window.BX24.placement && typeof window.BX24.placement.setCounter === "function") {
+      window.BX24.placement.setCounter(numVal);
+    }
+  } catch (err) {
+    console.warn("Could not set Bitrix24 left menu counter badge:", err);
   }
 };
 

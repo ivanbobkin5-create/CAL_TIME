@@ -1231,6 +1231,17 @@ function transliterate(str: string): string {
       // Check if user already exists
       const existingUser = await dbQueryWithRetry(() => prisma.authUser.findUnique({ where: { email: lowerEmail } }));
       if (existingUser) {
+        if (verified) {
+          const hashedPassword = await bcrypt.hash(password, 10);
+          if (isPostgresAvailable) {
+            await dbQueryWithRetry(() => prisma.authUser.update({
+              where: { email: lowerEmail },
+              data: { password: hashedPassword, verified: true }
+            }));
+          }
+          localStore.upsertUser(lowerEmail, hashedPassword, true, existingUser.uid);
+          return res.json({ uid: existingUser.uid, email: existingUser.email, needsVerification: false });
+        }
         return res.status(400).json({ code: 'auth/email-already-in-use', error: 'Email already in use' });
       }
 
@@ -1307,6 +1318,59 @@ function transliterate(str: string): string {
         return res.json({ status: "skipped", reason: "no_valid_email" });
       }
 
+      const lowerEmail = String(email).trim().toLowerCase();
+      const cleanPassword = String(password).trim();
+      const hashedPassword = await bcrypt.hash(cleanPassword, 10);
+
+      let userUid = `b24_${Date.now()}`;
+      if (isPostgresAvailable) {
+        try {
+          const existing = await dbQueryWithRetry(() => prisma.authUser.findUnique({ where: { email: lowerEmail } }));
+          if (existing) {
+            userUid = existing.uid;
+            await dbQueryWithRetry(() => prisma.authUser.update({
+              where: { email: lowerEmail },
+              data: { password: hashedPassword, verified: true }
+            }));
+          } else {
+            const created = await dbQueryWithRetry(() => prisma.authUser.create({
+              data: { email: lowerEmail, password: hashedPassword, verified: true }
+            }));
+            userUid = created.uid;
+          }
+        } catch (err) {
+          console.warn("Could not upsert authUser in Postgres for B24 welcome:", err);
+        }
+      }
+      localStore.upsertUser(lowerEmail, hashedPassword, true, userUid);
+
+      const userProfileData = {
+        uid: userUid,
+        id: userUid,
+        email: lowerEmail,
+        displayName: companyName || domain || 'Битрикс24 Пользователь',
+        name: companyName || domain || 'Битрикс24 Пользователь',
+        role: "admin",
+        verified: true,
+        companyId: domain ? `b24_${domain.replace(/[^a-zA-Z0-9_-]/g, "_")}` : "b24_default_company"
+      };
+      localStore.setDoc(`users/${userUid}`, "users", userUid, JSON.stringify(userProfileData), false, false);
+
+      if (isPostgresAvailable) {
+        dbQueryWithRetry(() => prisma.dbDocument.upsert({
+          where: { path: `users/${userUid}` },
+          create: {
+            path: `users/${userUid}`,
+            collection: "users",
+            docId: userUid,
+            data: JSON.stringify(userProfileData)
+          },
+          update: {
+            data: JSON.stringify(userProfileData)
+          }
+        })).catch(() => {});
+      }
+
       const subject = `Добро пожаловать в "Мебельный калькулятор"! Ваши данные для входа`;
       const message = `Здравствуйте!
 
@@ -1314,8 +1378,8 @@ function transliterate(str: string): string {
 
 🔑 Ваши данные для входа в WEB-версию с любого устройства:
 • Адрес сайта: https://mebel-plan.ru
-• Логин (Email): ${email}
-• Пароль: ${password}
+• Логин (Email): ${lowerEmail}
+• Пароль: ${cleanPassword}
 
 💡 Инструкция по входу:
 1. Вы можете продолжать комфортно работать внутри вашего портала Битрикс24 без авторизации.
@@ -1324,8 +1388,8 @@ function transliterate(str: string): string {
 С уважением,
 Команда "Мебельный калькулятор"`;
 
-      await sendEmail(email, subject, message);
-      res.json({ status: "ok" });
+      await sendEmail(lowerEmail, subject, message);
+      res.json({ status: "ok", uid: userUid });
     } catch (e: any) {
       console.error("Failed to send B24 welcome email:", e);
       res.status(500).json({ error: e.message || String(e) });

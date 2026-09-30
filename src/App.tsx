@@ -15707,6 +15707,9 @@ const AccountingMappingSettings = ({
 };
 
 const SettingsView = ({
+  userData,
+  setUserData,
+  onLogout,
   coefficients,
   specificationConfig,
   setSpecificationConfig,
@@ -15886,6 +15889,9 @@ const SettingsView = ({
   loadProcurementB24Stages: (url: string, categoryId: string, force?: boolean) => Promise<void>;
   specificationConfig?: any;
   setSpecificationConfig?: React.Dispatch<React.SetStateAction<any>>;
+  userData?: any;
+  setUserData?: any;
+  onLogout?: () => void;
 }) => {
   const isProcurementAllowed = companyData?.procurementAllowed !== undefined ? !!companyData.procurementAllowed : !!companyData?.procurementEnabled;
   const isErpActive = (companyData?.erpAllowed !== undefined ? !!companyData.erpAllowed : !!companyData?.erpEnabled);
@@ -16353,6 +16359,7 @@ const SettingsView = ({
           { id: "suppliers", label: "Поставщики", icon: Database },
           { id: "mapping", label: "Соответствие учета", icon: ArrowLeftRight },
           { id: "specification", label: "Настройки спецификаций и КП", icon: ClipboardList },
+          { id: "account", label: "Профиль и сессии", icon: User },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -19863,12 +19870,67 @@ const SettingsView = ({
           </div>
         )}
 
-        <div className="pt-6 border-t border-gray-100">
-          <p className="text-xs text-gray-400 leading-relaxed italic">
+        {activeSubTab === "account" && (
+          <div className="space-y-6 animate-in fade-in duration-300">
+            <UserProfileView 
+              userData={userData}
+              onUpdateUser={async (updates: any) => {
+                if (userData?.uid) {
+                  try {
+                    if (updates.password) {
+                      await fetch(`/api/auth/user/${userData.uid}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ password: updates.password })
+                      });
+                    }
+
+                    const docUpdates = { ...updates };
+                    delete docUpdates.password;
+
+                    await updateDoc(doc(db, "users", userData.uid), docUpdates);
+                    setUserData((prev: any) => ({ ...prev, ...docUpdates }));
+                    showAlert("Успех", "Данные профиля обновлены");
+                  } catch (e) {
+                    console.error("Profile update error:", e);
+                    showAlert("Ошибка", "Не удалось обновить данные");
+                  }
+                }
+              }}
+              onLogout={onLogout}
+            />
+          </div>
+        )}
+
+        <div className="pt-6 border-t border-gray-100 flex flex-wrap items-center justify-between gap-4">
+          <p className="text-xs text-gray-400 leading-relaxed italic max-w-lg">
             * Коэффициенты применяются к базовой цене материала в итоговом
             расчете. Например, если цена листа 1000₽ и коэффициент 4, итоговая
             цена за лист будет 4000₽.
           </p>
+          {userData && (
+            <div className="flex items-center gap-3 bg-gray-50 border border-gray-100 p-3 rounded-2xl">
+              <div className="w-9 h-9 bg-blue-100 text-blue-600 rounded-xl font-bold flex items-center justify-center uppercase shadow-2xs font-sans text-sm select-none">
+                {String(userData.displayName || userData.email || "U").substring(0, 2)}
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-black text-gray-800 leading-none truncate max-w-[120px]">
+                  {userData.displayName || "Пользователь"}
+                </div>
+                <div className="text-[10px] text-gray-400 font-bold truncate max-w-[120px] mt-1 font-mono">
+                  {userData.email}
+                </div>
+              </div>
+              <button
+                onClick={onLogout}
+                className="ml-2 px-3 py-1.5 text-rose-600 hover:bg-rose-50 text-xs font-bold rounded-xl transition-all flex items-center gap-1 border border-transparent hover:border-rose-100 cursor-pointer"
+                title="Выйти из аккаунта на всех устройствах"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+                <span>Выйти</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -34767,23 +34829,6 @@ export default function App() {
               })
             }).catch((err) => console.warn("Could not send welcome B24 email:", err));
 
-            // Also register authUser in server DB so they can log in via website
-            fetch('/api/auth/register', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                email: ctx.userEmail,
-                password: genPassword,
-                verified: true,
-                adminName: ctx.userName || 'Сотрудник Битрикс24',
-                phone: ctx.userPhone || '',
-                companyName: compDocData?.name,
-                companyType: compDocData?.type,
-                city: 'Битрикс24',
-                workFormat: 'own'
-              })
-            }).catch(() => {});
-
             updateDoc(compRef, { welcomeEmailSent: true }, { merge: true }).catch(() => {});
           }
         } catch (e) {
@@ -35471,10 +35516,59 @@ export default function App() {
         }
       }
       
-      if (projData) {
-        await safeSetLocalStorage(`meb_cache:/api/db/col/companies/${companyId}/projects`, JSON.stringify(projData));
-        setProjects(projData.map((d: any) => {
-          const item = { id: d.id, ...d.data };
+      let allFetchedProjs = Array.isArray(projData) ? [...projData] : [];
+      let allFetchedSets = Array.isArray(setsColData) ? [...setsColData] : [];
+
+      // Always query candidate project paths to merge projects across merged accounts
+      const candidateCompanyPaths = [
+        "e5om9lzxh",
+        "b24_default_company",
+        "company_1",
+        "b24_mebelfaktura_bitrix24_ru",
+        "mebelfaktura"
+      ].filter(cid => cid !== companyId);
+
+      for (const cid of candidateCompanyPaths) {
+        try {
+          const resP = await fetchWithTimeout(`/api/db/col/companies/${cid}/projects`, 4000).catch(() => null);
+          if (resP && resP.ok) {
+            const pData = await resP.json();
+            if (Array.isArray(pData)) {
+              allFetchedProjs = [...allFetchedProjs, ...pData];
+            }
+          }
+          const resS = await fetchWithTimeout(`/api/db/col/companies/${cid}/sets`, 4000).catch(() => null);
+          if (resS && resS.ok) {
+            const sData = await resS.json();
+            if (Array.isArray(sData)) {
+              allFetchedSets = [...allFetchedSets, ...sData];
+            }
+          }
+        } catch (_) {}
+      }
+
+      // Also try root collection /api/db/col/projects
+      try {
+        const rootProjsRes = await fetchWithTimeout(`/api/db/col/projects`, 4000).catch(() => null);
+        if (rootProjsRes && rootProjsRes.ok) {
+          const rootProjs = await rootProjsRes.json();
+          if (Array.isArray(rootProjs)) {
+            allFetchedProjs = [...allFetchedProjs, ...rootProjs];
+          }
+        }
+      } catch (_) {}
+
+      if (allFetchedProjs.length > 0) {
+        const seenIds = new Set<string>();
+        const uniqueProjs = allFetchedProjs.filter((d: any) => {
+          if (!d.id || seenIds.has(d.id)) return false;
+          seenIds.add(d.id);
+          return true;
+        });
+
+        await safeSetLocalStorage(`meb_cache:/api/db/col/companies/${companyId}/projects`, JSON.stringify(uniqueProjs));
+        setProjects(uniqueProjs.map((d: any) => {
+          const item = { id: d.id, ...(d.data || d) };
           if (!item.bitrix24DealId) {
             const idMatch = String(item.id || "").match(/b24_deal_(\d+)/);
             if (idMatch) {
@@ -35494,9 +35588,16 @@ export default function App() {
         }));
       }
 
-      if (setsColData) {
-        await safeSetLocalStorage(`meb_cache:/api/db/col/companies/${companyId}/sets`, JSON.stringify(setsColData));
-        setProjectSets(setsColData.map((d: any) => ({ id: d.id, ...d.data })));
+      if (allFetchedSets.length > 0) {
+        const seenSetIds = new Set<string>();
+        const uniqueSets = allFetchedSets.filter((d: any) => {
+          if (!d.id || seenSetIds.has(d.id)) return false;
+          seenSetIds.add(d.id);
+          return true;
+        });
+
+        await safeSetLocalStorage(`meb_cache:/api/db/col/companies/${companyId}/sets`, JSON.stringify(uniqueSets));
+        setProjectSets(uniqueSets.map((d: any) => ({ id: d.id, ...(d.data || d) })));
       }
 
       setPreloadProgress(100);
@@ -41587,8 +41688,8 @@ export default function App() {
           />
         )}
 
-        {/* Sidebar (Hidden in Bitrix24 deal detail tab iframe, shown in Left Menu mode) */}
-        {(!b24Context?.isBitrix24 || !b24Context?.dealId || b24Context?.placement === 'LEFT_MENU' || b24Context?.placement === 'DEFAULT') && (
+        {/* Sidebar (Hidden in Bitrix24) */}
+        {!b24Context?.isBitrix24 && (
         <aside
           className={cn(
             "fixed inset-y-0 left-0 z-50 bg-white border-r border-gray-200 transition-all duration-300 shadow-xl lg:shadow-none",
@@ -42147,7 +42248,7 @@ export default function App() {
         <main
           className={cn(
             "flex-1 transition-all duration-300 min-w-0",
-            (b24Context?.isBitrix24 && b24Context?.dealId) ? "ml-0 min-h-full h-auto overflow-visible" : (isSidebarOpen ? "ml-14 lg:ml-64" : "ml-14 lg:ml-20"),
+            b24Context?.isBitrix24 ? "ml-0 min-h-full h-auto overflow-visible" : (isSidebarOpen ? "ml-14 lg:ml-64" : "ml-14 lg:ml-20"),
           )}
         >
           {b24Context?.isBitrix24 && b24Context?.dealId && (
@@ -42408,80 +42509,58 @@ export default function App() {
                 <AppIcon className="w-8 h-8 rounded-xl shrink-0 shadow-xs" />
                 <div className="min-w-0 flex flex-col justify-center">
                   <div className="flex items-center gap-1.5 leading-none">
-                    <span className="text-xs font-black text-[#1058d0] tracking-tight shrink-0">Мебель План — Панель Управления</span>
+                    <span className="text-xs font-black text-[#1058d0] tracking-tight shrink-0">
+                      {activeTab === "partner_orders" ? "Мебель План — Заявки от партнеров" : "Мебель План — Настройки приложения"}
+                    </span>
                   </div>
                   <span className="text-[11px] font-bold text-gray-500 truncate mt-0.5">
-                    {companyData?.name || "Настройки компании, база цен и заказы"}
+                    {companyData?.name || "Управление заказами салонов и настройки"}
                   </span>
                 </div>
               </div>
 
-              <div className="flex items-center gap-1 bg-[#eef2f4] p-1 rounded-xl border border-[#d5dbe0] shrink-0">
-                <button
-                  onClick={() => setActiveTab("settings")}
-                  className={cn(
-                    "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
-                    activeTab === "settings"
-                      ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
-                      : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
-                  )}
-                >
-                  <Settings className="w-3.5 h-3.5" />
-                  <span>Настройки</span>
-                </button>
+              {activeTab !== "partner_orders" && (
+                <div className="flex items-center gap-1 bg-[#eef2f4] p-1 rounded-xl border border-[#d5dbe0] shrink-0">
+                  <button
+                    onClick={() => setActiveTab("settings")}
+                    className={cn(
+                      "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                      activeTab === "settings"
+                        ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
+                        : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
+                    )}
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                    <span>Настройки</span>
+                  </button>
 
-                <button
-                  onClick={() => setActiveTab("price")}
-                  className={cn(
-                    "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
-                    activeTab === "price"
-                      ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
-                      : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
-                  )}
-                >
-                  <Tag className="w-3.5 h-3.5 text-blue-600" />
-                  <span>База цен</span>
-                </button>
+                  <button
+                    onClick={() => setActiveTab("price")}
+                    className={cn(
+                      "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                      activeTab === "price"
+                        ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
+                        : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
+                    )}
+                  >
+                    <Tag className="w-3.5 h-3.5 text-blue-600" />
+                    <span>База цен</span>
+                  </button>
 
-                <button
-                  onClick={() => setActiveTab("partner_orders")}
-                  className={cn(
-                    "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
-                    activeTab === "partner_orders"
-                      ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
-                      : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
-                  )}
-                >
-                  <Handshake className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Заявки от партнеров</span>
-                </button>
-
-                <button
-                  onClick={() => setActiveTab("calculator")}
-                  className={cn(
-                    "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
-                    activeTab === "calculator"
-                      ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
-                      : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
-                  )}
-                >
-                  <Calculator className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Калькулятор</span>
-                </button>
-
-                <button
-                  onClick={() => setActiveTab("projects")}
-                  className={cn(
-                    "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
-                    activeTab === "projects"
-                      ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
-                      : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
-                  )}
-                >
-                  <FolderOpen className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Проекты</span>
-                </button>
-              </div>
+                  <button
+                    onClick={() => setActiveTab("partner_orders")}
+                    className={cn(
+                      "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                      (activeTab as string) === "partner_orders"
+                        ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
+                        : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
+                    )}
+                  >
+                    <Handshake className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Заявки от партнеров</span>
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
@@ -43091,7 +43170,7 @@ export default function App() {
               projects={projects}
               sets={projectSets}
             />
-          ) : activeTab === "partner_orders" && (companyData?.type === "Мебельное производство" || companyData?.type === "Производство" || (typeof companyData?.type === 'string' && companyData.type.toLowerCase().includes('производств'))) ? (
+          ) : activeTab === "partner_orders" && companyData?.id ? (
             <PartnerOrdersView
               companyId={companyData.id}
               showAlert={showAlert}
@@ -43282,6 +43361,9 @@ export default function App() {
             />
           ) : activeTab === "settings" && (userRole === "admin" || b24Context?.isBitrix24) ? (
             <SettingsView
+              userData={userData}
+              setUserData={setUserData}
+              onLogout={handleLogout}
               specificationConfig={specificationConfig}
               setSpecificationConfig={setSpecificationConfig}
               suppliers={suppliers}

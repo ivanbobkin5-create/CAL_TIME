@@ -113,7 +113,7 @@ import {
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { DealAnalysisModal } from "./DealAnalysisModal";
-import { createBitrix24DealForPartnerOrder } from "../../services/bitrix24";
+import { createBitrix24DealForPartnerOrder, updateBitrixLeftMenuCounter } from "../../services/bitrix24";
 import { B2BOrderChatModal } from "../Bitrix24";
 
 interface PartnerOrdersViewProps {
@@ -153,6 +153,9 @@ export const PartnerOrdersView = ({
       const loadedSets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setSets(loadedSets);
       setIsLoading(false);
+
+      const unreadCount = loadedSets.filter((s: any) => !s.status || s.status === 'pending' || s.status === 'new' || s.status === 'draft').length;
+      updateBitrixLeftMenuCounter(unreadCount);
     }, (err) => {
       console.error("Error loading partner sets:", err);
       setIsLoading(false);
