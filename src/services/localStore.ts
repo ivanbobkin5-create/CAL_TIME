@@ -123,9 +123,23 @@ class LocalStore {
 
   public getCollection(colPath: string): LocalDoc[] {
     const results: LocalDoc[] = [];
+    const expectedDepth = colPath.split("/").filter(Boolean).length + 1;
     for (const key in this.data.documents) {
       const doc = this.data.documents[key];
-      if (doc.collection === colPath || doc.path.startsWith(colPath + "/")) {
+      const parts = doc.path.split("/").filter(Boolean);
+      
+      // Top-level companies check
+      if (colPath === "companies") {
+        if (parts.length === 2 && parts[0] === "companies" && !parts[1].includes("/")) {
+          results.push(doc);
+        }
+        continue;
+      }
+
+      // General collection check
+      if (doc.collection === colPath && parts.length === expectedDepth) {
+        results.push(doc);
+      } else if (doc.path.startsWith(colPath + "/") && parts.length === expectedDepth) {
         results.push(doc);
       }
     }

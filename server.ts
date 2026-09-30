@@ -1703,6 +1703,14 @@ function transliterate(str: string): string {
               FROM "DbDocument"
               WHERE collection = ${colPath}
             `);
+          } else if (colPath === "companies") {
+            docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({ 
+              where: { 
+                collection: "companies",
+                path: { not: { contains: "/products" } }
+              } 
+            }));
+            docs = docs.filter(d => d.path.split("/").filter(Boolean).length === 2);
           } else {
             docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({ where: { collection: colPath } }));
           }
