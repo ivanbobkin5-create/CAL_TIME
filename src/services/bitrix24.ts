@@ -336,6 +336,153 @@ export const fetchBitrix24DealTitle = async (dealId: number): Promise<string | n
   return details.title;
 };
 
+export interface B24StageHistoryItem {
+  stageId: string;
+  stageName: string;
+  enteredAt: string;
+  durationFormatted: string;
+  isCurrent: boolean;
+}
+
+export interface B24DealStageInfo {
+  dealId: number | string;
+  stageId: string;
+  stageName: string;
+  currentStageDuration: string;
+  history: B24StageHistoryItem[];
+  allCategoryStages: { id: string; name: string; isCurrent: boolean }[];
+}
+
+export const fetchBitrix24DealStageInfo = async (dealId: number | string, webhookUrl?: string): Promise<B24DealStageInfo | null> => {
+  try {
+    let dealData: any = null;
+    let stagesMap: Record<string, string> = {};
+
+    if (typeof window !== "undefined" && window.BX24) {
+      dealData = await new Promise((resolve) => {
+        window.BX24.callMethod("crm.deal.get", { id: dealId }, (res: any) => {
+          if (!res.error()) resolve(res.data());
+          else resolve(null);
+        });
+      });
+    }
+
+    if (!dealData && webhookUrl) {
+      try {
+        const res = await fetch("/api/bitrix24/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ webhookUrl, method: "crm.deal.get", params: { id: dealId } })
+        });
+        if (res.ok) {
+          const json = await res.json();
+          dealData = json.result;
+        }
+      } catch (_) {}
+    }
+
+    if (!dealData) return null;
+
+    const categoryId = dealData.CATEGORY_ID || 0;
+    const currentStageId = dealData.STAGE_ID || "";
+    const dateCreate = dealData.DATE_CREATE ? new Date(dealData.DATE_CREATE) : new Date();
+    const dateModify = dealData.DATE_MODIFY ? new Date(dealData.DATE_MODIFY) : dateCreate;
+
+    if (typeof window !== "undefined" && window.BX24) {
+      const stagesRes: any = await new Promise((resolve) => {
+        window.BX24.callMethod("crm.dealcategory.stage.list", { id: categoryId }, (res: any) => {
+          if (!res.error()) resolve(res.data());
+          else resolve([]);
+        });
+      });
+      if (Array.isArray(stagesRes)) {
+        stagesRes.forEach((s: any) => {
+          stagesMap[s.STATUS_ID || s.ID] = s.NAME || s.TITLE;
+        });
+      }
+    }
+
+    if (Object.keys(stagesMap).length === 0 && webhookUrl) {
+      try {
+        const res = await fetch("/api/bitrix24/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ webhookUrl, method: "crm.dealcategory.stage.list", params: { id: categoryId } })
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (Array.isArray(json.result)) {
+            json.result.forEach((s: any) => {
+              stagesMap[s.STATUS_ID || s.ID] = s.NAME || s.TITLE;
+            });
+          }
+        }
+      } catch (_) {}
+    }
+
+    const knownStageNames: Record<string, string> = {
+      NEW: "Новая сделка",
+      PREPARATION: "Замер и ТЗ",
+      PREPAYMENT_INVOICE: "Расчет и Договор",
+      EXECUTECUTOR: "В производстве",
+      FINAL_INVOICE: "Контроль качества",
+      WON: "Сделка успешно завершена (Монтаж)",
+      LOSE: "Сделка проиграна",
+      ...stagesMap
+    };
+
+    const currentStageName = knownStageNames[currentStageId] || stagesMap[currentStageId] || currentStageId || "В работе";
+
+    const now = new Date();
+    const diffMs = Math.max(0, now.getTime() - dateModify.getTime());
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    
+    let durationFormatted = "";
+    if (diffDays > 0) {
+      durationFormatted = `${diffDays} дн. ${diffHours} ч.`;
+    } else if (diffHours > 0) {
+      durationFormatted = `${diffHours} ч.`;
+    } else {
+      const diffMins = Math.max(1, Math.floor(diffMs / (1000 * 60)));
+      durationFormatted = `${diffMins} мин.`;
+    }
+
+    const allCategoryStages = Object.keys(knownStageNames).map(id => ({
+      id,
+      name: knownStageNames[id],
+      isCurrent: id === currentStageId
+    }));
+
+    return {
+      dealId,
+      stageId: currentStageId,
+      stageName: currentStageName,
+      currentStageDuration: durationFormatted,
+      history: [
+        {
+          stageId: "NEW",
+          stageName: knownStageNames["NEW"] || "Создание сделки",
+          enteredAt: dateCreate.toLocaleDateString("ru-RU") + " " + dateCreate.toLocaleTimeString("ru-RU", { hour: '2-digit', minute: '2-digit' }),
+          durationFormatted: "Пройден",
+          isCurrent: false
+        },
+        {
+          stageId: currentStageId,
+          stageName: currentStageName,
+          enteredAt: dateModify.toLocaleDateString("ru-RU") + " " + dateModify.toLocaleTimeString("ru-RU", { hour: '2-digit', minute: '2-digit' }),
+          durationFormatted,
+          isCurrent: true
+        }
+      ],
+      allCategoryStages
+    };
+  } catch (err) {
+    console.warn("fetchBitrix24DealStageInfo error:", err);
+    return null;
+  }
+};
+
 export const updateBitrix24DealTitle = async (dealId: number, title: string): Promise<boolean> => {
   if (!window.BX24) return false;
   return new Promise((resolve) => {
