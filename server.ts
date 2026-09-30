@@ -391,7 +391,15 @@ function transliterate(str: string): string {
         });
       }
       
-      const isErpAllowed = companyData.erpAllowed !== undefined ? !!companyData.erpAllowed : (companyData.erpEnabled !== undefined ? !!companyData.erpEnabled : false);
+      const isProdType = companyData.type === "Мебельное производство" || 
+        companyData.type === "Производство" || 
+        (typeof companyData.type === 'string' && companyData.type.toLowerCase().includes('производств'));
+
+      const isErpAllowed = companyData.erpAllowed !== undefined 
+        ? !!companyData.erpAllowed 
+        : (companyData.erpEnabled !== undefined 
+          ? !!companyData.erpEnabled 
+          : (isProdType || Boolean(companyData.erpConfig || companyData.erpSettings || companyData.bitrix24?.webhookUrl)));
 
       const responseData = {
         company: {
