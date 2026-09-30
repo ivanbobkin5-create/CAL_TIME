@@ -34748,7 +34748,7 @@ export default function App() {
             }
           }
 
-          if (!compDocData?.onboardingCompleted) {
+          if (!compDocData?.onboardingCompleted || !compDocData?.type || compDocData?.type === "Не указано") {
             setShowB24Onboarding(true);
           }
 
@@ -42155,91 +42155,91 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Middle Section: Clean CRM Navigation Tabs */}
+              {/* Middle Section: Clean Compact CRM Navigation Tabs */}
               {!showB24Onboarding ? (
                 <>
-                <div className="flex items-center gap-1 bg-[#eef2f4] p-1 rounded-xl border border-[#d5dbe0] shrink-0">
+                <div className="flex items-center gap-0.5 bg-[#eef2f4] p-0.5 rounded-lg border border-[#d5dbe0] shrink-0">
                 <button
                   onClick={() => setActiveTab("b24_dashboard")}
                   className={cn(
-                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                    "px-2 py-0.5 rounded text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer h-6",
                     activeTab === "b24_dashboard"
-                      ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
+                      ? "bg-white text-[#1058d0] shadow-2xs border border-[#c6cdd3] font-black"
                       : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
                   )}
                   title="Рабочий стол сделки"
                 >
-                  <FolderOpen className="w-3.5 h-3.5" />
+                  <FolderOpen className="w-3 h-3" />
                   <span>Главная</span>
                 </button>
 
                 <button
                   onClick={() => setActiveTab("calculator")}
                   className={cn(
-                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                    "px-2 py-0.5 rounded text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer h-6",
                     activeTab === "calculator"
-                      ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
+                      ? "bg-white text-[#1058d0] shadow-2xs border border-[#c6cdd3] font-black"
                       : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
                   )}
                   title="Калькулятор мебели"
                 >
-                  <Calculator className="w-3.5 h-3.5" />
+                  <Calculator className="w-3 h-3" />
                   <span>Калькулятор</span>
                 </button>
 
                 <button
                   onClick={() => setActiveTab("summary")}
                   className={cn(
-                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                    "px-2 py-0.5 rounded text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer h-6",
                     activeTab === "summary"
-                      ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
+                      ? "bg-white text-[#1058d0] shadow-2xs border border-[#c6cdd3] font-black"
                       : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
                   )}
                   title="Смета и наценки"
                 >
-                  <LayoutDashboard className="w-3.5 h-3.5" />
+                  <LayoutDashboard className="w-3 h-3" />
                   <span>Смета</span>
                 </button>
 
                 <button
                   onClick={() => setActiveTab("products")}
                   className={cn(
-                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                    "px-2 py-0.5 rounded text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer h-6",
                     activeTab === "products"
-                      ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
+                      ? "bg-white text-[#1058d0] shadow-2xs border border-[#c6cdd3] font-black"
                       : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
                   )}
                   title="Каталог товаров"
                 >
-                  <Package className="w-3.5 h-3.5 text-[#1058d0]" />
+                  <Package className="w-3 h-3 text-[#1058d0]" />
                   <span>Каталог</span>
                 </button>
 
                 <button
                   onClick={() => setActiveTab("ready_made")}
                   className={cn(
-                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                    "px-2 py-0.5 rounded text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer h-6",
                     activeTab === "ready_made"
-                      ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
+                      ? "bg-white text-[#1058d0] shadow-2xs border border-[#c6cdd3] font-black"
                       : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
                   )}
                   title="Готовая мебель"
                 >
-                  <ShoppingBag className="w-3.5 h-3.5 text-blue-500" />
+                  <ShoppingBag className="w-3 h-3 text-blue-500" />
                   <span>Готовая мебель</span>
                 </button>
 
                 <button
                   onClick={() => setActiveTab("service-section")}
                   className={cn(
-                    "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                    "px-2 py-0.5 rounded text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer h-6",
                     activeTab === "service-section"
-                      ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
+                      ? "bg-white text-[#1058d0] shadow-2xs border border-[#c6cdd3] font-black"
                       : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
                   )}
                   title="Услуги и доставка"
                 >
-                  <Truck className="w-3.5 h-3.5 text-emerald-600" />
+                  <Truck className="w-3 h-3 text-emerald-600" />
                   <span>Услуги</span>
                 </button>
 
@@ -42248,15 +42248,15 @@ export default function App() {
                   <button
                     onClick={() => setB24MoreMenuOpen((prev) => !prev)}
                     className={cn(
-                      "px-2.5 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1 cursor-pointer",
+                      "px-2 py-0.5 rounded text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer h-6",
                       b24MoreMenuOpen
-                        ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
+                        ? "bg-white text-[#1058d0] shadow-2xs border border-[#c6cdd3] font-black"
                         : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
                     )}
                     title="Операции по сделке Битрикс24"
                   >
                     <span>Ещё</span>
-                    <ChevronDown className={cn("w-3.5 h-3.5 transition-transform duration-200", b24MoreMenuOpen && "rotate-180")} />
+                    <ChevronDown className={cn("w-3 h-3 transition-transform duration-200", b24MoreMenuOpen && "rotate-180")} />
                   </button>
 
                   {b24MoreMenuOpen && (
@@ -42265,15 +42265,15 @@ export default function App() {
                         className="fixed inset-0 z-40"
                         onClick={() => setB24MoreMenuOpen(false)}
                       />
-                      <div className="absolute right-0 mt-1.5 w-56 bg-white rounded-xl shadow-2xl border border-[#d5dbe0] py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150 text-[#333333]">
+                      <div className="absolute right-0 mt-1.5 w-52 bg-white rounded-xl shadow-2xl border border-[#d5dbe0] py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150 text-[#333333]">
                         <button
                           onClick={() => {
                             setShowB24PhotoReportModal(true);
                             setB24MoreMenuOpen(false);
                           }}
-                          className="w-full text-left px-3.5 py-2 text-xs font-bold flex items-center gap-2.5 hover:bg-[#f5f7f8] transition-colors cursor-pointer text-[#1058d0]"
+                          className="w-full text-left px-3 py-1.5 text-xs font-bold flex items-center gap-2 hover:bg-[#f5f7f8] transition-colors cursor-pointer text-[#1058d0]"
                         >
-                          <Camera className="w-4 h-4 text-[#1058d0]" />
+                          <Camera className="w-3.5 h-3.5 text-[#1058d0]" />
                           <span>Фотоотчет монтажа</span>
                         </button>
 
@@ -42282,9 +42282,9 @@ export default function App() {
                             setShowB24ReclamationModal(true);
                             setB24MoreMenuOpen(false);
                           }}
-                          className="w-full text-left px-3.5 py-2 text-xs font-bold flex items-center gap-2.5 hover:bg-[#f5f7f8] transition-colors cursor-pointer text-rose-600"
+                          className="w-full text-left px-3 py-1.5 text-xs font-bold flex items-center gap-2 hover:bg-[#f5f7f8] transition-colors cursor-pointer text-rose-600"
                         >
-                          <AlertOctagon className="w-4 h-4 text-rose-500" />
+                          <AlertOctagon className="w-3.5 h-3.5 text-rose-500" />
                           <span>Прием рекламаций (Брак)</span>
                         </button>
 
@@ -42293,9 +42293,9 @@ export default function App() {
                             setShowB2BChatModal(true);
                             setB24MoreMenuOpen(false);
                           }}
-                          className="w-full text-left px-3.5 py-2 text-xs font-bold flex items-center gap-2.5 hover:bg-[#f5f7f8] transition-colors cursor-pointer text-emerald-700"
+                          className="w-full text-left px-3 py-1.5 text-xs font-bold flex items-center gap-2 hover:bg-[#f5f7f8] transition-colors cursor-pointer text-emerald-700"
                         >
-                          <MessageSquare className="w-4 h-4 text-emerald-600" />
+                          <MessageSquare className="w-3.5 h-3.5 text-emerald-600" />
                           <span>B2B-Чат заказа</span>
                         </button>
 
@@ -42304,9 +42304,9 @@ export default function App() {
                             setShowB24NotificationModal(true);
                             setB24MoreMenuOpen(false);
                           }}
-                          className="w-full text-left px-3.5 py-2 text-xs font-bold flex items-center gap-2.5 hover:bg-[#f5f7f8] transition-colors cursor-pointer text-indigo-600"
+                          className="w-full text-left px-3 py-1.5 text-xs font-bold flex items-center gap-2 hover:bg-[#f5f7f8] transition-colors cursor-pointer text-indigo-600"
                         >
-                          <Bell className="w-4 h-4 text-indigo-500" />
+                          <Bell className="w-3.5 h-3.5 text-indigo-500" />
                           <span>Уведомление в колокольчик</span>
                         </button>
                       </div>
@@ -42316,10 +42316,10 @@ export default function App() {
               </div>
 
               {/* Right section: Total display */}
-              <div className="flex items-center gap-2 shrink-0">
-                <div className="bg-[#eef2f4] px-3 py-1 rounded-xl border border-[#d5dbe0] text-right">
-                  <span className="text-[10px] text-gray-500 font-bold block uppercase tracking-wider leading-tight">Сумма расчёта:</span>
-                  <span className="text-sm font-black text-blue-700 font-mono">
+              <div className="flex items-center gap-1.5 shrink-0">
+                <div className="bg-[#eef2f4] px-2.5 py-0.5 rounded-lg border border-[#d5dbe0] text-right h-6 flex items-center gap-1.5">
+                  <span className="text-[9px] text-gray-500 font-bold uppercase tracking-wider leading-none">Сумма:</span>
+                  <span className="text-xs font-black text-blue-700 font-mono leading-none">
                     {(currentProjectTotal || 0).toLocaleString("ru-RU")} ₽
                   </span>
                 </div>
@@ -42350,10 +42350,10 @@ export default function App() {
                         }
                         setShowB24Modal(true);
                       }}
-                      className="flex items-center gap-1.5 px-3.5 py-1.5 bg-[#bbed21] hover:bg-[#b0e616] text-[#333333] rounded-xl text-xs font-black shadow-xs transition-all cursor-pointer border border-[#a5db12] hover:scale-[1.02] active:scale-[0.98]"
+                      className="flex items-center gap-1 px-2.5 py-0.5 bg-[#bbed21] hover:bg-[#b0e616] text-[#333333] rounded-lg text-[11px] font-extrabold shadow-2xs transition-all cursor-pointer border border-[#a5db12] hover:scale-[1.01] active:scale-[0.99] h-6"
                       title={autoDeal ? `Выгрузить товары и расчет в сделку CRM #${autoDeal}` : "Выгрузить товары и расчет в сделку CRM"}
                     >
-                      <Send className="w-3.5 h-3.5 text-[#333333]" />
+                      <Send className="w-3 h-3 text-[#333333]" />
                       <span>{autoDeal ? `✓ В Сделку #${autoDeal}` : "✓ В Сделку"}</span>
                     </button>
                   );
@@ -42361,7 +42361,7 @@ export default function App() {
               </div>
               </>
               ) : (
-                <div className="flex items-center gap-2 px-3 py-1 bg-blue-50 text-[#1058d0] rounded-xl border border-blue-200 text-xs font-bold shrink-0">
+                <div className="flex items-center gap-2 px-2.5 py-0.5 bg-blue-50 text-[#1058d0] rounded-lg border border-blue-200 text-xs font-bold shrink-0 h-6">
                   <span>Первоначальная настройка профиля</span>
                 </div>
               )}
@@ -42390,8 +42390,20 @@ export default function App() {
                     onboardingCompleted: true
                   }));
                 }
+
+                // Automatically bind Bitrix24 placements (Left Menu & Deal Widget)
+                let placementMsg = "";
+                try {
+                  const pRes = await registerBitrix24Placement();
+                  if (pRes.success) {
+                    placementMsg = " Пункт в левом меню и Виджет сделки успешно добавлены в Битрикс24!";
+                  }
+                } catch (err) {
+                  console.warn("Auto placement registration error:", err);
+                }
+
                 setShowB24Onboarding(false);
-                showAlert("Настройка завершена", `Профиль «${selectedType}» установлен.`);
+                showAlert("Настройка завершена", `Профиль «${selectedType}» установлен.${placementMsg}`);
               }}
             />
           ) : (

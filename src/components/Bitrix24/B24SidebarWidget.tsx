@@ -42,8 +42,18 @@ export const B24SidebarWidget: React.FC<B24SidebarWidgetProps> = ({
   const [showNotification, setShowNotification] = useState(false);
 
   useEffect(() => {
-    resizeBitrix24WindowToContent();
-    const t = setTimeout(resizeBitrix24WindowToContent, 300);
+    if (typeof window !== "undefined" && window.BX24?.resizeWindow) {
+      window.BX24.resizeWindow(500, 650);
+    } else {
+      resizeBitrix24WindowToContent();
+    }
+    const t = setTimeout(() => {
+      if (typeof window !== "undefined" && window.BX24?.resizeWindow) {
+        window.BX24.resizeWindow(500, 650);
+      } else {
+        resizeBitrix24WindowToContent();
+      }
+    }, 300);
     return () => clearTimeout(t);
   }, [loading, dealData]);
 
@@ -124,7 +134,7 @@ export const B24SidebarWidget: React.FC<B24SidebarWidgetProps> = ({
   return (
     <div className="min-h-screen bg-[#f5f7f8] text-[#333333] flex flex-col items-center justify-start p-3 sm:p-5 font-sans">
       {/* Centered compact widget container matching Bitrix24 CRM UI */}
-      <div className="w-full max-w-md bg-white border border-[#dfe5ec] rounded-2xl p-4 sm:p-5 shadow-sm space-y-4">
+      <div className="w-full max-w-[480px] bg-white border border-[#dfe5ec] rounded-2xl p-3.5 sm:p-4 shadow-sm space-y-3.5 mx-auto">
         
         {/* Header Badge & Close Button */}
         <div className="flex items-center justify-between pb-3 border-b border-[#eef2f4]">
