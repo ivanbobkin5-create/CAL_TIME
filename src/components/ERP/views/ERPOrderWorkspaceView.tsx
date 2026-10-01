@@ -38,7 +38,7 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ERPEmployee, MaterialResidual } from '../types';
 import { parseBirkaFile, BirkaParseResult, BirkaDetail, consolidateDetails } from '../utils/birkaParser';
-import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, getStageNameRussian, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, speakText, matchDetailToScannedCode, cleanRawScannedString, processQRCommand, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, getSmartOrderDisplay } from '../utils';
+import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, getStageNameRussian, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, speakText, matchDetailToScannedCode, cleanRawScannedString, processQRCommand, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, getSmartOrderDisplay, applyOrderRequirementsAnalysis } from '../utils';
 import { CuttingOffcutsModal } from '../components/CuttingOffcutsModal';
 import { EdgingRemainsModal } from '../components/EdgingRemainsModal';
 import { RemainsLabelPrintModal } from '../components/RemainsLabelPrintModal';
@@ -325,7 +325,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
         throw new Error('Файл не содержит распознанных деталей или пуст');
       }
 
-      const updatedOrder: ProductionOrder = {
+      const rawUpdated: ProductionOrder = {
         ...localOrder,
         totalAreaM2: parseRes.totalAreaM2,
         totalEdgeM: parseRes.totalEdgeMeters,
@@ -340,9 +340,14 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
         }
       };
 
+      const { updatedOrder, analysis } = applyOrderRequirementsAnalysis(rawUpdated, settings);
+
       setLocalOrder(updatedOrder);
       onUpdateOrder(updatedOrder);
       playSoundEffect('success');
+      if (analysis.hasExcludedStages && analysis.notificationText) {
+        alert(analysis.notificationText);
+      }
       if (parseRes.materialGroups.length > 0) {
         setSelectedMaterial(parseRes.materialGroups[0].materialName);
       }
@@ -856,7 +861,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
 
   // Finalize stage completion logic (regular or forced)
   const finalizeStageCompletion = (isForced: boolean = false, forcedReasonText?: string) => {
-    const nextSt = getNextRequiredStage(order, currentStage);
+    const nextSt = getNextRequiredStage(order, currentStage, settings?.enabledStages, settings);
     const nowIso = new Date().toISOString();
     const stageProgress = order.stageScanningProgress?.[currentStage] || {};
     let completedPartsOnStage = 0;
@@ -1833,7 +1838,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                 <span>Последствия принудительного завершения:</span>
               </div>
               <ul className="list-disc list-inside space-y-1 text-rose-800 text-[11.5px] leading-relaxed">
-                <li>Заказ будет передан на следующий этап: <strong>{getStageNameRussian(getNextRequiredStage(order, currentStage))}</strong>.</li>
+                <li>Заказ будет передан на следующий этап: <strong>{getStageNameRussian(getNextRequiredStage(order, currentStage, settings?.enabledStages, settings))}</strong>.</li>
                 <li>Все неотсканированные детали на следующем участке <strong>будут подсвечены красным цветом</strong>.</li>
                 <li>Будет указано ваше имя (<strong className="underline">{empName !== 'Сотрудник' ? empName : (order.responsibleEmployeeName || 'Оператор')}</strong>) как сотрудника, завершившего этап принудительно.</li>
               </ul>

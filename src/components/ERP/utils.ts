@@ -38,21 +38,16 @@ export function formatDeadlineDate(dateStr?: string): string {
   return cleanStr;
 }
 
-export function orderRequiresEdging(order: ProductionOrder): boolean {
-  if (order.totalEdgeM && order.totalEdgeM > 0) return true;
-  if (order.birkaData?.allEdges && order.birkaData.allEdges.length > 0) return true;
-  if (order.birkaData?.details) {
-    return order.birkaData.details.some(d => !!(d.edgeL1 || d.edgeL2 || d.edgeW1 || d.edgeW2));
-  }
-  return false;
-}
+import { orderRequiresEdging, orderRequiresPrisadka, orderRequiresKitting, isStageRequiredForOrder, analyzeOrderRequirements, applyOrderRequirementsAnalysis } from './utils/stageReadiness';
+
+export { orderRequiresEdging, orderRequiresPrisadka, orderRequiresKitting, isStageRequiredForOrder, analyzeOrderRequirements, applyOrderRequirementsAnalysis };
 
 export function getNextRequiredStage(
   order: ProductionOrder, 
   currentStage: ProductionStageId,
-  enabledStages?: ProductionStageId[]
+  enabledStages?: ProductionStageId[],
+  settings?: ERPCompanySettings
 ): ProductionStageId | null {
-  const hasEdge = orderRequiresEdging(order);
   const defaultSequence: ProductionStageId[] = ['queue', 'cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing', 'shipping'];
   
   // Build active sequence maintaining custom user order if configured
@@ -67,8 +62,9 @@ export function getNextRequiredStage(
 
   for (let i = currentIndex + 1; i < activeSequence.length; i++) {
     const nextSt = activeSequence[i];
-    if (nextSt === 'edging' && !hasEdge) {
-      // Skip edging stage because order has 0 edge meters!
+    if (nextSt === 'shipping' || nextSt === 'ready') return nextSt;
+    if (!isStageRequiredForOrder(order, nextSt, settings)) {
+      // Skip stage because it is not required for this order!
       continue;
     }
     return nextSt;

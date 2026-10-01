@@ -43,7 +43,7 @@ import { ProductionOrder, ProductionStageId, ERPEmployee, ERPCompanySettings, Ad
 import { formatDeadlineDate, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, isStageTaskStarted, getSmartOrderDisplay } from '../utils';
 import { parseBirkaFile, consolidateDetails } from '../utils/birkaParser';
 import { parseHardwareFile } from '../utils/hardwareParser';
-import { getScannedPartIdsForStage, getScannedCountForDetail, detailRequiresPrisadka } from '../utils/stageReadiness';
+import { getScannedPartIdsForStage, getScannedCountForDetail, detailRequiresPrisadka, isStageRequiredForOrder, analyzeOrderRequirements, applyOrderRequirementsAnalysis } from '../utils/stageReadiness';
 import { HardwareSpecificationModal } from '../components/HardwareSpecificationModal';
 import { AssemblyFileModal } from '../components/AssemblyFileModal';
 import { AdditionalWorksModal } from '../components/AdditionalWorksModal';
@@ -81,6 +81,15 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
   const [launchedModalOrder, setLaunchedModalOrder] = useState<{ order: ProductionOrder; plannedDate: string } | null>(null);
   const [birkaSearchQuery, setBirkaSearchQuery] = useState('');
   const [hardwareSearchQuery, setHardwareSearchQuery] = useState('');
+
+  // Notification modal for auto-excluded stages after file analysis
+  const [requirementsNoticeModal, setRequirementsNoticeModal] = useState<{
+    orderNumber: string;
+    clientName: string;
+    projectName: string;
+    text: string;
+    excludedNames: string[];
+  } | null>(null);
 
   // Planning view mode tab
   const [planningViewTab, setPlanningViewTab] = useState<'calendar' | 'list'>('calendar');
@@ -230,6 +239,10 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
   // If no manual date was assigned by foreman, but order is currently active at this stage in shop
   // or worker started packing/kitting/scanning, it automatically belongs to TODAY's date in planning!
   const getStageAssignedDate = (order: ProductionOrder, stageId: ProductionStageId): string | null => {
+    if (!isStageRequiredForOrder(order, stageId, settings)) {
+      return null; // Task is excluded from this order's route
+    }
+
     const dates = order.stagePlannedDates || {};
     if (dates[stageId]) return dates[stageId];
     if (stageId === 'cutting' && order.plannedCuttingDate) return order.plannedCuttingDate;
@@ -789,7 +802,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
         throw new Error('Файл не содержит деталей');
       }
 
-      const updatedOrder: ProductionOrder = {
+      const rawUpdated: ProductionOrder = {
         ...order,
         totalAreaM2: parseRes.totalAreaM2,
         totalEdgeM: parseRes.totalEdgeMeters,
@@ -804,7 +817,19 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
         }
       };
 
+      const { updatedOrder, analysis } = applyOrderRequirementsAnalysis(rawUpdated, settings);
+
       onUpdateOrder(updatedOrder);
+
+      if (analysis.hasExcludedStages) {
+        setRequirementsNoticeModal({
+          orderNumber: updatedOrder.orderNumber || updatedOrder.id,
+          clientName: updatedOrder.clientName || 'Заказчик',
+          projectName: updatedOrder.projectName || 'Проект',
+          text: analysis.notificationText || '',
+          excludedNames: analysis.excludedStageNames
+        });
+      }
     } catch (err: any) {
       alert(err.message || 'Ошибка загрузки файла бирок');
     } finally {
@@ -826,7 +851,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
         throw new Error('В файле не найдено строк с фурнитурой или наименованиями');
       }
 
-      const updatedOrder: ProductionOrder = {
+      const rawUpdated: ProductionOrder = {
         ...order,
         hardwareData: {
           fileName: parseRes.fileName,
@@ -839,7 +864,19 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
         }
       };
 
+      const { updatedOrder, analysis } = applyOrderRequirementsAnalysis(rawUpdated, settings);
+
       onUpdateOrder(updatedOrder);
+
+      if (analysis.hasExcludedStages) {
+        setRequirementsNoticeModal({
+          orderNumber: updatedOrder.orderNumber || updatedOrder.id,
+          clientName: updatedOrder.clientName || 'Заказчик',
+          projectName: updatedOrder.projectName || 'Проект',
+          text: analysis.notificationText || '',
+          excludedNames: analysis.excludedStageNames
+        });
+      }
     } catch (err: any) {
       alert(err.message || 'Ошибка загрузки ведомости фурнитуры');
     } finally {
@@ -2855,6 +2892,50 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
             setViewingAdditionalWorksModalOrder(updated);
           }}
         />
+      )}
+
+      {/* Dynamic Requirements & Route Change Notification Modal */}
+      {requirementsNoticeModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-100 space-y-5 animate-scaleUp">
+            <div className="flex items-start gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+                <Sparkles className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <span className="bg-amber-100 text-amber-800 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-md">
+                  Изменение маршрута заказа
+                </span>
+                <h3 className="text-base font-extrabold text-slate-900 leading-snug">
+                  Заказ №{requirementsNoticeModal.orderNumber}: {requirementsNoticeModal.clientName}
+                </h3>
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 text-xs text-slate-700 leading-relaxed space-y-2">
+              <p className="font-semibold text-slate-900">
+                {requirementsNoticeModal.text}
+              </p>
+              <div className="pt-2 border-t border-slate-200/60 flex flex-wrap items-center gap-1.5">
+                <span className="text-slate-500 font-medium">Исключенные задачи:</span>
+                {requirementsNoticeModal.excludedNames.map((name, i) => (
+                  <span key={i} className="bg-rose-100 text-rose-700 font-bold px-2 py-0.5 rounded-lg">
+                    ✕ {name}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setRequirementsNoticeModal(null)}
+                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition-all cursor-pointer"
+              >
+                Понятно, обновить маршрут
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

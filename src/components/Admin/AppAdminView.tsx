@@ -204,6 +204,7 @@ export const AppAdminView = () => {
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'blocked'>('all');
   const [expandedCompanyIds, setExpandedCompanyIds] = useState<Record<string, boolean>>({});
   const [activeSettingsTab, setActiveSettingsTab] = useState<Record<string, 'info' | 'limits' | 'modules'>>({});
+  const [companyEmployeesMap, setCompanyEmployeesMap] = useState<Record<string, any[]>>({});
 
   // Coefficients Modal State
   const [selectedCoefficients, setSelectedCoefficients] = useState<any>(null);
@@ -247,9 +248,13 @@ export const AppAdminView = () => {
   useEffect(() => {
     const unsubCompanies = onSnapshot(collection(db, 'companies'), async (snapshot) => {
       const companyList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Company));
+      const empMapRecord: Record<string, any[]> = {};
       
       const updatedCompanies = await Promise.all(companyList.map(async (company) => {
         const employeesSnapshot = await getDocs(collection(db, 'companies', company.id, 'employees'));
+        const empList = employeesSnapshot.docs.map(d => ({ uid: d.id, ...(d.data() as any) }));
+        empMapRecord[company.id] = empList;
+
         const qProjects = collection(db, 'companies', company.id, 'projects');
         const projectsSnapshot = await getDocs(qProjects);
 
@@ -268,13 +273,14 @@ export const AppAdminView = () => {
 
         return { 
           ...company, 
-          employeeCount: employeesSnapshot.size,
+          employeeCount: empList.length,
           projectCount: projectsSnapshot.size,
           address,
           photos
         };
       }));
       
+      setCompanyEmployeesMap(empMapRecord);
       setCompanies(updatedCompanies);
       setLoading(false);
     });
@@ -609,7 +615,22 @@ export const AppAdminView = () => {
             {/* Companies Cards Grid */}
             <div className="space-y-4">
               {filteredCompanies.map(company => {
-                const companyEmployees = users.filter(u => u.companyId === company.id);
+                const subEmps = companyEmployeesMap[company.id] || [];
+                const directUsers = users.filter(u => u.companyId === company.id);
+                const seenEmpIds = new Set<string>();
+                const companyEmployees: any[] = [];
+                for (const emp of [...subEmps, ...directUsers]) {
+                  const uid = emp.uid || emp.id;
+                  if (!uid || seenEmpIds.has(uid)) continue;
+                  seenEmpIds.add(uid);
+                  companyEmployees.push({
+                    ...emp,
+                    uid,
+                    displayName: emp.displayName || emp.name || (emp.email ? emp.email.split('@')[0] : 'Сотрудник'),
+                    email: emp.email || '',
+                    phone: emp.phone || ''
+                  });
+                }
                 const isExpanded = !!expandedCompanyIds[company.id];
                 const activeTabForCompany = activeSettingsTab[company.id] || 'limits';
                 const companyOwner = users.find(u => u.uid === company.ownerUid) || companyEmployees.find(u => u.uid === company.ownerUid);

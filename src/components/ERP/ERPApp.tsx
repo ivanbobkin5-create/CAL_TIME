@@ -171,6 +171,14 @@ function isOrderEqual(o1: any, o2: any): boolean {
   // Additional works
   if (JSON.stringify(o1.additionalWorks) !== JSON.stringify(o2.additionalWorks)) return false;
 
+  // Planning Schedule fields
+  if (o1.plannedCuttingDate !== o2.plannedCuttingDate) return false;
+  if (o1.isReadyForProduction !== o2.isReadyForProduction) return false;
+  if (o1.plannedByEmployeeId !== o2.plannedByEmployeeId) return false;
+  if (o1.plannedByEmployeeName !== o2.plannedByEmployeeName) return false;
+  if (o1.plannedAt !== o2.plannedAt) return false;
+  if (JSON.stringify(o1.stagePlannedDates || {}) !== JSON.stringify(o2.stagePlannedDates || {})) return false;
+
   return true;
 }
 

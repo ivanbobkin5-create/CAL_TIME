@@ -33,7 +33,7 @@ import { ProductionOrder, ProductionStageId, ERPCompanySettings, ERPNoteRule, ER
 import { parseBirkaFile, BirkaParseResult, BirkaDetail, consolidateDetails } from '../utils/birkaParser';
 import { parseHardwareFile } from '../utils/hardwareParser';
 import { formatDeadlineDate, speakText, matchDetailToScannedCode, normalizeBarcodeScan, cleanRawScannedString, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl } from '../utils';
-import { detailRequiresPrisadka } from '../utils/stageReadiness';
+import { detailRequiresPrisadka, analyzeOrderRequirements, applyOrderRequirementsAnalysis } from '../utils/stageReadiness';
 import { FinishedPartNoticeModal } from '../components/FinishedPartNoticeModal';
 import { OrderClientPrivacyModal } from '../components/OrderClientPrivacyModal';
 import { HardwareSpecificationModal } from '../components/HardwareSpecificationModal';
@@ -213,7 +213,7 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
         throw new Error('Файл не содержит распознанных деталей или пуст');
       }
 
-      const updatedOrder: ProductionOrder = {
+      const rawUpdated: ProductionOrder = {
         ...order,
         totalAreaM2: parseRes.totalAreaM2,
         totalEdgeM: parseRes.totalEdgeMeters,
@@ -228,8 +228,13 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
         }
       };
 
+      const { updatedOrder, analysis } = applyOrderRequirementsAnalysis(rawUpdated, settings);
+
       onUpdateOrder(updatedOrder);
       playSoundEffect('success');
+      if (analysis.hasExcludedStages && analysis.notificationText) {
+        alert(analysis.notificationText);
+      }
       if (parseRes.materialGroups.length > 0) {
         setSelectedMaterial(parseRes.materialGroups[0].materialName);
       }
@@ -256,7 +261,7 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
         throw new Error('Файл не содержит строк с фурнитурой');
       }
 
-      const updatedOrder: ProductionOrder = {
+      const rawUpdated: ProductionOrder = {
         ...order,
         hardwareData: {
           fileName: parseRes.fileName,
@@ -269,8 +274,13 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
         }
       };
 
+      const { updatedOrder, analysis } = applyOrderRequirementsAnalysis(rawUpdated, settings);
+
       onUpdateOrder(updatedOrder);
       playSoundEffect('success');
+      if (analysis.hasExcludedStages && analysis.notificationText) {
+        alert(analysis.notificationText);
+      }
     } catch (err: any) {
       setUploadError(err.message || 'Ошибка чтения файла фурнитуры');
       playSoundEffect('error');

@@ -26,21 +26,46 @@ let lastResizedHeight = 0;
  * Auto-resize the Bitrix24 iframe window to fit its inner content completely,
  * eliminating internal vertical scrollbars so only the CRM page has a scrollbar.
  */
-export const resizeBitrix24WindowToContent = (extraPadding = 45): number => {
+export const resizeBitrix24WindowToContent = (extraPadding = 35): number => {
   if (typeof window === "undefined") return 0;
   try {
-    const body = document.body;
-    const html = document.documentElement;
     const root = document.getElementById("root");
     const main = document.querySelector("main");
+    const body = document.body;
+    const firstChild = root?.firstElementChild as HTMLElement | null;
 
-    const mainContent = main?.firstElementChild as HTMLElement;
-    const contentHeight = mainContent ? mainContent.offsetHeight || mainContent.scrollHeight : (main ? main.scrollHeight : (body ? body.scrollHeight : 600));
-    const fullHeight = Math.max(400, contentHeight);
+    let trueContentHeight = 0;
+
+    if (firstChild) {
+      const fcScroll = firstChild.scrollHeight;
+      const fcOffset = firstChild.offsetHeight;
+      const fcBounding = firstChild.getBoundingClientRect().height;
+      trueContentHeight = Math.max(fcScroll, fcOffset, fcBounding);
+    }
+
+    if (root) {
+      trueContentHeight = Math.max(trueContentHeight, root.scrollHeight);
+    }
+    if (main) {
+      trueContentHeight = Math.max(trueContentHeight, main.scrollHeight);
+    }
+
+    // Check maximum bottom coordinate of top-level rendered elements in root
+    if (root && root.children.length > 0) {
+      const children = Array.from(root.children);
+      for (const child of children) {
+        if (child instanceof HTMLElement) {
+          trueContentHeight = Math.max(trueContentHeight, child.offsetTop + child.offsetHeight);
+        }
+      }
+    }
+
+    const minHeight = 350;
+    const fullHeight = Math.max(trueContentHeight, minHeight);
 
     if (fullHeight > 80) {
-      const targetHeight = fullHeight + extraPadding;
-      if (Math.abs(targetHeight - lastResizedHeight) < 15) {
+      const targetHeight = Math.ceil(fullHeight) + extraPadding;
+      if (Math.abs(targetHeight - lastResizedHeight) < 3) {
         return targetHeight;
       }
       lastResizedHeight = targetHeight;
@@ -54,7 +79,7 @@ export const resizeBitrix24WindowToContent = (extraPadding = 45): number => {
       if ((window as any).BX24?.fitWindow) {
         (window as any).BX24.fitWindow();
       }
-      // Method 3: PostMessage to parent frame (if loaded through custom iframe wrapper)
+      // Method 3: PostMessage to parent frame
       try {
         window.parent?.postMessage({ type: "B24_RESIZE", height: targetHeight, width: targetWidth }, "*");
       } catch (_) {}

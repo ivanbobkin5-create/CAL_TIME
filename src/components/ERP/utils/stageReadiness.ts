@@ -1,4 +1,4 @@
-import { ProductionOrder, ERPCompanySettings } from '../types';
+import { ProductionOrder, ProductionStageId, ERPCompanySettings } from '../types';
 import { consolidateDetails, BirkaDetail } from './birkaParser';
 
 export interface BirkaDetailItem {
@@ -754,3 +754,186 @@ export function getStageTaskReadinessInfo(
     blockingReason
   };
 }
+
+/**
+ * Check if order requires Edging (Кромка)
+ * - If no birka file is attached yet: returns true (waiting for specification, standard route)
+ * - If birka file is attached: checks if total edge meters > 0 OR any detail has edges
+ */
+export function orderRequiresEdging(order: ProductionOrder): boolean {
+  if (!order) return true;
+  if (!order.birkaData || !order.birkaData.details || order.birkaData.details.length === 0) {
+    return true; // No birka file attached yet -> show default task
+  }
+
+  if (order.totalEdgeM && order.totalEdgeM > 0) return true;
+  if (order.birkaData?.allEdges && order.birkaData.allEdges.some(e => e.totalMeters > 0)) return true;
+  
+  const hasDetailEdges = order.birkaData.details.some(d => {
+    const hasEdgeText = (val?: string) => !!(val && String(val).trim() !== '' && String(val).trim() !== '-' && String(val).trim() !== '—' && String(val).trim() !== '0');
+    const da = d as any;
+    return hasEdgeText(d.edgeL1) || hasEdgeText(d.edgeL2) || hasEdgeText(d.edgeW1) || hasEdgeText(d.edgeW2) ||
+           hasEdgeText(da.edge1) || hasEdgeText(da.edge2) || hasEdgeText(da.edge3) || hasEdgeText(da.edge4) ||
+           hasEdgeText(da.edgeL) || hasEdgeText(da.edgeW);
+  });
+  if (hasDetailEdges) return true;
+
+  if (order.additionalWorks?.countertopEdging || order.additionalWorks?.wallPanelEdging) return true;
+
+  return false;
+}
+
+/**
+ * Check if order requires Drilling / Prisadka / CNC (Присадка)
+ * - If no birka file is attached yet: returns true (standard route)
+ * - If birka file is attached: checks if ANY detail requires prisadka
+ */
+export function orderRequiresPrisadka(order: ProductionOrder, settings?: ERPCompanySettings): boolean {
+  if (!order) return true;
+  if (!order.birkaData || !order.birkaData.details || order.birkaData.details.length === 0) {
+    return true; // No birka file attached yet -> show default task
+  }
+
+  return order.birkaData.details.some(d => detailRequiresPrisadka(d, settings));
+}
+
+/**
+ * Check if order requires Kitting (Комплектовка)
+ * - If hardware file attached: if 0 items or totalQuantity === 0 -> returns false
+ * - If no hardware file attached: if kitting spec has items -> true, else true (default before upload)
+ */
+export function orderRequiresKitting(order: ProductionOrder): boolean {
+  if (!order) return true;
+  if (order.hardwareData) {
+    const items = order.hardwareData.items || [];
+    return items.length > 0 && (order.hardwareData.totalQuantity === undefined || order.hardwareData.totalQuantity > 0);
+  }
+  const spec = (order as any).kittingSpecification;
+  if (spec) {
+    const items = spec.items || [];
+    return items.length > 0;
+  }
+  return true; // Default before file is attached
+}
+
+/**
+ * Check if a specific stage is required for an order
+ */
+export function isStageRequiredForOrder(
+  order: ProductionOrder,
+  stageId: string,
+  settings?: ERPCompanySettings
+): boolean {
+  const st = (stageId || '').toLowerCase();
+  if (st === 'edging' || st === 'kromka') {
+    return orderRequiresEdging(order);
+  }
+  if (st === 'cnc' || st === 'prisadka' || st === 'drilling') {
+    return orderRequiresPrisadka(order, settings);
+  }
+  if (st === 'kitting' || st === 'completing') {
+    return orderRequiresKitting(order);
+  }
+  return true; // Cutting, Packing, Shipping, Ready are always required
+}
+
+/**
+ * Analyze order files and return list of excluded stages and notification message
+ */
+export function analyzeOrderRequirements(
+  order: ProductionOrder,
+  settings?: ERPCompanySettings
+): {
+  hasExcludedStages: boolean;
+  excludedStageIds: string[];
+  excludedStageNames: string[];
+  notificationText?: string;
+} {
+  const excludedIds: string[] = [];
+  const excludedNames: string[] = [];
+
+  const hasBirka = !!(order.birkaData && order.birkaData.details && order.birkaData.details.length > 0);
+  const hasHardware = !!(order.hardwareData);
+
+  if (hasBirka) {
+    if (!orderRequiresEdging(order)) {
+      excludedIds.push('edging');
+      excludedNames.push('Кромление');
+    }
+    if (!orderRequiresPrisadka(order, settings)) {
+      excludedIds.push('cnc');
+      excludedNames.push('Присадка (ЧПУ)');
+    }
+  }
+
+  if (hasHardware) {
+    if (!orderRequiresKitting(order)) {
+      excludedIds.push('kitting');
+      excludedNames.push('Комплектовка');
+    }
+  }
+
+  const hasExcludedStages = excludedIds.length > 0;
+  let notificationText: string | undefined = undefined;
+
+  if (hasExcludedStages) {
+    const namesStr = excludedNames.join(' и ');
+    notificationText = `Анализ файлов завершен: по заказу №${order.orderNumber || order.id} задачи «${namesStr}» не требуются. Они автоматически исключены из планирования и маршрута производства.`;
+  }
+
+  return {
+    hasExcludedStages,
+    excludedStageIds: excludedIds,
+    excludedStageNames: excludedNames,
+    notificationText
+  };
+}
+
+/**
+ * Helper to apply requirements analysis to an order, stripping excluded stage planned dates
+ * and adjusting currentStage if currentStage is an excluded stage.
+ */
+export function applyOrderRequirementsAnalysis(
+  order: ProductionOrder,
+  settings?: ERPCompanySettings
+): {
+  updatedOrder: ProductionOrder;
+  analysis: ReturnType<typeof analyzeOrderRequirements>;
+} {
+  const analysis = analyzeOrderRequirements(order, settings);
+  const updatedStagePlannedDates = { ...(order.stagePlannedDates || {}) };
+
+  if (analysis.hasExcludedStages) {
+    analysis.excludedStageIds.forEach(stId => {
+      delete updatedStagePlannedDates[stId];
+      if (stId === 'edging') delete updatedStagePlannedDates['kromka'];
+      if (stId === 'cnc') delete updatedStagePlannedDates['prisadka'];
+      if (stId === 'kitting') delete updatedStagePlannedDates['completing'];
+    });
+  }
+
+  let nextCurrentStage = order.currentStage;
+  if (analysis.hasExcludedStages && !isStageRequiredForOrder(order, order.currentStage, settings)) {
+    const defaultSeq: ProductionStageId[] = ['queue', 'cutting', 'edging', 'cnc', 'facades', 'assembly', 'kitting', 'qc', 'packing', 'shipping'];
+    const curIdx = defaultSeq.indexOf(order.currentStage);
+    let foundNext = false;
+    for (let i = curIdx + 1; i < defaultSeq.length; i++) {
+      const st = defaultSeq[i];
+      if (isStageRequiredForOrder(order, st, settings)) {
+        nextCurrentStage = st;
+        foundNext = true;
+        break;
+      }
+    }
+    if (!foundNext) nextCurrentStage = 'packing';
+  }
+
+  const updatedOrder: ProductionOrder = {
+    ...order,
+    currentStage: nextCurrentStage,
+    stagePlannedDates: updatedStagePlannedDates
+  };
+
+  return { updatedOrder, analysis };
+}
+

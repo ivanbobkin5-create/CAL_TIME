@@ -30,7 +30,7 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, ProductionStageId, ERPEmployee, ERPCompanySettings } from '../types';
 import { formatDeadlineDate, getNextRequiredStage, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, getSmartOrderDisplay } from '../utils';
-import { getStageTaskReadinessInfo, getStageScannedPiecesCount } from '../utils/stageReadiness';
+import { getStageTaskReadinessInfo, getStageScannedPiecesCount, isStageRequiredForOrder } from '../utils/stageReadiness';
 import { ERPOrderDetailsModal } from './ERPOrderDetailsModal';
 import { ERPDispatchView } from './ERPDispatchView';
 import { MobileCameraScannerModal } from '../components/MobileCameraScannerModal';
@@ -191,6 +191,10 @@ export const ERPProductionView: React.FC<ERPProductionViewProps> = ({
   const isOrderOnStage = (order: ProductionOrder, stageId: ProductionStageId): boolean => {
     // Completed or shipped orders are no longer active on production stations
     if (order.status === 'shipped' || order.status === 'completed' || order.isDeleted) {
+      return false;
+    }
+    // If this stage is excluded from this order's route (e.g. no edge, no holes, no hardware)
+    if (!isStageRequiredForOrder(order, stageId, settings)) {
       return false;
     }
     // If this specific stage is already marked as done on the order, it should not be listed on this stage

@@ -2711,30 +2711,36 @@ function transliterate(str: string): string {
           return s1Clean === s2Clean;
         };
 
+        const cacheKey = `${companyId}_${webhookUrl}_${categoryId}`;
+        const cachedB24 = (global as any).__b24DealsCache?.[cacheKey];
+        const isFreshCache = cachedB24 && (Date.now() - cachedB24.timestamp < 5000);
+
         // 1. Fetch pipeline stages to know sequence and human-readable names
-        let stagesList: any[] = [];
-        try {
-          if (categoryId === "0" || !categoryId) {
-            const stRes = await fetch(`${webhookUrl}/crm.status.list`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ filter: { ENTITY_ID: "DEAL_STAGE" }, order: { SORT: "ASC" } }),
-              signal: AbortSignal.timeout(8000)
-            });
-            const stData = await stRes.json();
-            stagesList = stData.result || [];
-          } else {
-            const stRes = await fetch(`${webhookUrl}/crm.dealcategory.stage.list`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id: categoryId }),
-              signal: AbortSignal.timeout(8000)
-            });
-            const stData = await stRes.json();
-            stagesList = stData.result || [];
+        let stagesList: any[] = isFreshCache ? cachedB24.stagesList : [];
+        if (!isFreshCache) {
+          try {
+            if (categoryId === "0" || !categoryId) {
+              const stRes = await fetch(`${webhookUrl}/crm.status.list`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filter: { ENTITY_ID: "DEAL_STAGE" }, order: { SORT: "ASC" } }),
+                signal: AbortSignal.timeout(6000)
+              });
+              const stData = await stRes.json();
+              stagesList = stData.result || [];
+            } else {
+              const stRes = await fetch(`${webhookUrl}/crm.dealcategory.stage.list`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ id: categoryId }),
+                signal: AbortSignal.timeout(6000)
+              });
+              const stData = await stRes.json();
+              stagesList = stData.result || [];
+            }
+          } catch (stErr) {
+            console.warn("Could not fetch Bitrix24 stages list:", stErr);
           }
-        } catch (stErr) {
-          console.warn("Could not fetch Bitrix24 stages list:", stErr);
         }
 
         // Determine allowed stage IDs range
@@ -2778,24 +2784,32 @@ function transliterate(str: string): string {
           dealsFilter.CATEGORY_ID = categoryId;
         }
 
-        let rawDeals: any[] = [];
-        try {
-          const dealsRes = await fetch(`${webhookUrl}/crm.deal.list`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              order: { DATE_CREATE: "DESC" },
-              filter: dealsFilter,
-              select: [
-                "*", "UF_*", "CONTACT_FORMATTED_NAME", "COMPANY_TITLE", "CONTACT_PHONE", "CONTACT_EMAIL"
-              ]
-            }),
-            signal: AbortSignal.timeout(9000)
-          });
-          const dealsData = await dealsRes.json();
-          rawDeals = dealsData.result || [];
-        } catch (dealErr) {
-          console.warn("Could not fetch Bitrix24 deals list:", dealErr);
+        let rawDeals: any[] = isFreshCache ? cachedB24.rawDeals : [];
+        if (!isFreshCache) {
+          try {
+            const dealsRes = await fetch(`${webhookUrl}/crm.deal.list`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                order: { DATE_CREATE: "DESC" },
+                filter: dealsFilter,
+                select: [
+                  "*", "UF_*", "CONTACT_FORMATTED_NAME", "COMPANY_TITLE", "CONTACT_PHONE", "CONTACT_EMAIL"
+                ]
+              }),
+              signal: AbortSignal.timeout(7000)
+            });
+            const dealsData = await dealsRes.json();
+            rawDeals = dealsData.result || [];
+            if (!(global as any).__b24DealsCache) (global as any).__b24DealsCache = {};
+            (global as any).__b24DealsCache[cacheKey] = {
+              timestamp: Date.now(),
+              stagesList,
+              rawDeals
+            };
+          } catch (dealErr) {
+            console.warn("Could not fetch Bitrix24 deals list:", dealErr);
+          }
         }
 
         let portalBase = "";
@@ -3079,6 +3093,10 @@ function transliterate(str: string): string {
             plannedEndDate: local.plannedEndDate,
             driverInfo: local.driverInfo,
             stageScanningProgress: local.stageScanningProgress || {},
+            stagePlannedDates: local.stagePlannedDates || {},
+            plannedByEmployeeId: local.plannedByEmployeeId,
+            plannedByEmployeeName: local.plannedByEmployeeName,
+            plannedAt: local.plannedAt,
             stageProgress: local.stageProgress || {
               queue: { status: 'in_progress' }
             }
@@ -3168,6 +3186,10 @@ function transliterate(str: string): string {
               plannedEndDate: local.plannedEndDate,
               driverInfo: local.driverInfo,
               stageScanningProgress: local.stageScanningProgress || {},
+              stagePlannedDates: local.stagePlannedDates || {},
+              plannedByEmployeeId: local.plannedByEmployeeId,
+              plannedByEmployeeName: local.plannedByEmployeeName,
+              plannedAt: local.plannedAt,
               stageProgress: local.stageProgress || {
                 queue: { status: 'in_progress' }
               }
@@ -3222,18 +3244,37 @@ function transliterate(str: string): string {
 
   app.post("/api/erp/:companyId/orders/:orderId/stage", async (req, res) => {
     try {
-      const { companyId, orderId } = req.params;
+      const companyId = normalizeCompanyPath(req.params.companyId || "");
+      const { orderId } = req.params;
       const { currentStage, stageProgress, status, responsibleEmployeeId, responsibleEmployeeName, comments, priority, totalAreaM2, totalEdgeM, partsCount, facadesCount, birkaData, stageScanningProgress } = req.body;
 
-      const companyDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } }));
+      let companyDoc: any = null;
+      if (isPostgresAvailable) {
+        try {
+          companyDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } }));
+        } catch (_) {}
+      }
+      if (!companyDoc) {
+        const localDoc = localStore.getDoc(`companies/${companyId}`);
+        if (localDoc) companyDoc = { data: localDoc.data };
+      }
       if (!companyDoc) return res.status(404).json({ error: "Компания не найдена" });
-      const companyData = JSON.parse(companyDoc.data);
+      const companyData = typeof companyDoc.data === "string" ? JSON.parse(companyDoc.data) : companyDoc.data;
       const erpConfig = companyData.erpConfig || companyData.erpSettings || {};
       const webhookUrl = erpConfig.bitrix24WebhookUrl || companyData.bitrix24?.webhookUrl;
 
       const orderDocPath = `companies/${companyId}/erp_orders/${orderId}`;
-      const existingDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: orderDocPath } }));
-      const existingData = existingDoc ? JSON.parse(existingDoc.data) : {};
+      let existingData: any = {};
+      if (isPostgresAvailable) {
+        try {
+          const existingDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: orderDocPath } }));
+          if (existingDoc) existingData = JSON.parse(existingDoc.data);
+        } catch (_) {}
+      }
+      if (Object.keys(existingData).length === 0) {
+        const localDoc = localStore.getDoc(orderDocPath);
+        if (localDoc) existingData = typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data;
+      }
 
       const updatedData = {
         ...existingData,
@@ -3272,18 +3313,25 @@ function transliterate(str: string): string {
         updatedAt: new Date().toISOString()
       };
 
-      await dbQueryWithRetry(() => prisma.dbDocument.upsert({
-        where: { path: orderDocPath },
-        create: {
-          path: orderDocPath,
-          collection: `companies/${companyId}/erp_orders`,
-          docId: orderId,
-          data: JSON.stringify(updatedData)
-        },
-        update: {
-          data: JSON.stringify(updatedData)
-        }
-      }));
+      // Always save to localStore first
+      localStore.setDoc(orderDocPath, `companies/${companyId}/erp_orders`, orderId, JSON.stringify(updatedData), false, true);
+
+      if (isPostgresAvailable) {
+        try {
+          await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+            where: { path: orderDocPath },
+            create: {
+              path: orderDocPath,
+              collection: `companies/${companyId}/erp_orders`,
+              docId: orderId,
+              data: JSON.stringify(updatedData)
+            },
+            update: {
+              data: JSON.stringify(updatedData)
+            }
+          }));
+        } catch (_) {}
+      }
 
       // Bitrix24 Synchronization with stage mapping and archive return options
       if (orderId.startsWith('b24_') && webhookUrl) {
@@ -3640,29 +3688,100 @@ function transliterate(str: string): string {
         return 'cutting';
       };
 
+      // Clean deduplication map (keyed by normalized identifier)
+      const emailToKeyMap = new Map<string, string>();
+      const nameToKeyMap = new Map<string, string>();
+
+      emailToKeyMap.set("lk.ivanbobkin@gmail.com", "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013");
+      emailToKeyMap.set("lk.ivanbobkin@yandex.ru", "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013");
+      nameToKeyMap.set("иван бобкин", "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013");
+      nameToKeyMap.set("иван бобкин (суперадмин)", "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013");
+      nameToKeyMap.set("иван бобкин (владелец)", "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013");
+
+      const addOrUpdateEmployee = (emp: any) => {
+        if (!emp || !emp.id) return;
+        const rawId = String(emp.id || emp.uid || '');
+        const isIvan = rawId === "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013" ||
+          rawId === "admin-ivan-bobkin" ||
+          rawId.startsWith("admin_") ||
+          (emp.email && (emp.email.includes("ivanbobkin") || emp.email.includes("yandex"))) || 
+          (emp.name && emp.name.includes("Бобкин"));
+        
+        let targetId = emp.id;
+        if (isIvan) {
+          targetId = "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013";
+          emp.id = targetId;
+          emp.userId = targetId;
+          emp.name = "Иван Бобкин";
+          emp.email = "lk.ivanbobkin@yandex.ru";
+          emp.role = "Руководитель производства";
+          emp.productionRole = "Руководитель производства";
+          emp.department = "management";
+          emp.isOwner = true;
+          emp.isProductionEmployee = true;
+          emp.photoURL = IVAN_PHOTO;
+          emp.avatarUrl = IVAN_PHOTO;
+          emp.photo = IVAN_PHOTO;
+          emp.bitrix24UserId = "1";
+        }
+
+        const cleanEmail = (emp.email || "").toLowerCase().trim();
+        const cleanName = (emp.name || "").toLowerCase().trim();
+
+        // Check if already present by email, name or id
+        let existingKey: string | undefined = undefined;
+        if (targetId === "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013" || employeesMap.has(targetId)) {
+          existingKey = targetId;
+        } else if (cleanEmail && emailToKeyMap.has(cleanEmail)) {
+          existingKey = emailToKeyMap.get(cleanEmail);
+        } else if (cleanName && nameToKeyMap.has(cleanName)) {
+          existingKey = nameToKeyMap.get(cleanName);
+        }
+
+        if (existingKey) {
+          const prev = employeesMap.get(existingKey) || {};
+          const merged = { ...prev, ...emp, id: existingKey };
+          if (existingKey === "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013") {
+            merged.name = "Иван Бобкин";
+            merged.email = "lk.ivanbobkin@yandex.ru";
+            merged.photoURL = IVAN_PHOTO;
+            merged.avatarUrl = IVAN_PHOTO;
+            merged.photo = IVAN_PHOTO;
+            merged.role = "Руководитель производства";
+            merged.productionRole = "Руководитель производства";
+            merged.isOwner = true;
+            merged.department = "management";
+            merged.bitrix24UserId = "1";
+          }
+          employeesMap.set(existingKey, merged);
+          return;
+        }
+
+        employeesMap.set(targetId, emp);
+        if (cleanEmail) emailToKeyMap.set(cleanEmail, targetId);
+        if (cleanName) nameToKeyMap.set(cleanName, targetId);
+      };
+
       // Add Company Owner / Ivan Bobkin
-      const ownerEmail = companyData.ownerEmail || "lk.ivanbobkin@yandex.ru";
-      const isIvan = ownerEmail.includes("ivanbobkin") || ownerEmail.includes("yandex") || ownerEmail.includes("gmail");
-      const ownerId = companyData.ownerUid || companyData.ownerId || (isIvan ? "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013" : `owner_${companyId}`);
-      const ownerOverride = erpEmpMap[ownerId] || erpEmpMap["5adbd3b0-f5b4-41d3-8abb-d106e2a3d013"] || erpEmpMap["admin-ivan-bobkin"] || {};
-      
-      employeesMap.set(ownerId, {
+      const ownerId = "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013";
+      const ownerOverride = erpEmpMap[ownerId] || erpEmpMap["admin-ivan-bobkin"] || {};
+      addOrUpdateEmployee({
         id: ownerId,
         userId: ownerId,
-        name: ownerOverride.name || (isIvan ? "Иван Бобкин (Руководитель)" : (companyData.ownerName || companyData.contactPerson || "Руководитель компании")),
-        email: ownerEmail,
+        name: "Иван Бобкин",
+        email: "lk.ivanbobkin@yandex.ru",
         phone: ownerOverride.phone || companyData.phone || "",
-        role: ownerOverride.role || "Руководитель производства",
-        productionRole: ownerOverride.productionRole || "Руководитель производства",
-        isProductionEmployee: ownerOverride.isProductionEmployee !== undefined ? ownerOverride.isProductionEmployee : true,
-        department: ownerOverride.department || "management",
-        rateType: ownerOverride.rateType || "salary",
-        baseRate: ownerOverride.baseRate !== undefined ? ownerOverride.baseRate : 120000,
-        shiftType: ownerOverride.shiftType || "5/2",
-        status: ownerOverride.status || "active",
+        role: "Руководитель производства",
+        productionRole: "Руководитель производства",
+        isProductionEmployee: true,
+        department: "management",
+        rateType: "salary",
+        baseRate: 150000,
+        shiftType: "5/2",
+        status: "active",
         isOwner: true,
-        photoURL: isIvan ? IVAN_PHOTO : (ownerOverride.photoURL || ""),
-        avatarUrl: isIvan ? IVAN_PHOTO : (ownerOverride.avatarUrl || ""),
+        photoURL: IVAN_PHOTO,
+        avatarUrl: IVAN_PHOTO,
         ...ownerOverride
       });
 
@@ -3673,10 +3792,9 @@ function transliterate(str: string): string {
           if (uData.companyId === companyId || uData.companySlug === companyId || uData.companyAlias === companyId || (companyId === "e5om9lzxh" && uData.email?.includes("ivanbobkin"))) {
             const uid = uDoc.docId || uData.uid || uData.id;
             const override = erpEmpMap[uid] || {};
-            const isUserIvan = uData.email?.includes("ivanbobkin");
             const prodRole = override.productionRole || uData.productionRole || (uData.role === 'admin' ? 'Руководитель производства' : (uData.position || uData.role || 'Оператор станка'));
             
-            employeesMap.set(uid, {
+            addOrUpdateEmployee({
               id: uid,
               userId: uid,
               name: override.name || uData.name || uData.displayName || (uData.email ? uData.email.split('@')[0] : 'Сотрудник'),
@@ -3687,13 +3805,13 @@ function transliterate(str: string): string {
               isProductionEmployee: override.isProductionEmployee !== undefined ? override.isProductionEmployee : (uData.isProductionEmployee !== undefined ? uData.isProductionEmployee : true),
               department: override.department || getDepartmentForRole(prodRole),
               rateType: override.rateType || uData.rateType || (prodRole.includes('Руковод') ? 'salary' : 'piecework'),
-              baseRate: override.baseRate !== undefined ? override.baseRate : (uData.baseRate || (prodRole.includes('Руковод') ? 120000 : 55000)),
+              baseRate: override.baseRate !== undefined ? override.baseRate : (uData.baseRate || (prodRole.includes('Руковод') ? 150000 : 55000)),
               shiftType: override.shiftType || uData.shiftType || '2/2',
               status: override.status || uData.status || 'active',
-              isOwner: uData.role === 'admin' || uData.isOwner || isUserIvan,
+              isOwner: uData.role === 'admin' || uData.isOwner,
               isOutsource: uData.isOutsource || override.isOutsource || false,
-              photoURL: isUserIvan ? IVAN_PHOTO : (override.photoURL || uData.photoURL || uData.avatarUrl || ''),
-              avatarUrl: isUserIvan ? IVAN_PHOTO : (override.avatarUrl || uData.avatarUrl || uData.photoURL || ''),
+              photoURL: override.photoURL || uData.photoURL || uData.avatarUrl || '',
+              avatarUrl: override.avatarUrl || uData.avatarUrl || uData.photoURL || '',
               ...override
             });
           }
@@ -3706,62 +3824,56 @@ function transliterate(str: string): string {
           const cuData = typeof cuDoc.data === "string" ? JSON.parse(cuDoc.data) : cuDoc.data;
           const uid = cuDoc.docId || cuData.uid || cuData.id || `emp_${Date.now()}`;
           const override = erpEmpMap[uid] || {};
-          const isUserIvan = cuData.email?.includes("ivanbobkin");
           const prodRole = override.productionRole || cuData.productionRole || cuData.role || cuData.position || 'Сотрудник производства';
 
-          if (!employeesMap.has(uid) || isUserIvan) {
-            employeesMap.set(uid, {
-              id: uid,
-              userId: uid,
-              name: override.name || cuData.name || cuData.displayName || cuData.email?.split('@')[0] || 'Сотрудник',
-              email: cuData.email || override.email || '',
-              phone: override.phone || cuData.phone || '',
-              role: prodRole,
-              productionRole: prodRole,
-              isProductionEmployee: override.isProductionEmployee !== undefined ? override.isProductionEmployee : (cuData.isProductionEmployee !== undefined ? cuData.isProductionEmployee : true),
-              department: override.department || getDepartmentForRole(prodRole),
-              rateType: override.rateType || cuData.rateType || (prodRole.includes('Руковод') || prodRole.includes('Менеджер') ? 'salary' : 'piecework'),
-              baseRate: override.baseRate !== undefined ? override.baseRate : (cuData.baseRate || 55000),
-              shiftType: override.shiftType || cuData.shiftType || '2/2',
-              status: override.status || cuData.status || 'active',
-              isOwner: cuData.role === 'admin' || cuData.isOwner || isUserIvan,
-              isOutsource: cuData.isOutsource || override.isOutsource || false,
-              bitrix24UserId: cuData.bitrix24UserId || override.bitrix24UserId,
-              isProcurementManager: cuData.isProcurementManager,
-              photoURL: isUserIvan ? IVAN_PHOTO : (override.photoURL || cuData.photoURL || cuData.avatarUrl || ''),
-              avatarUrl: isUserIvan ? IVAN_PHOTO : (override.avatarUrl || cuData.avatarUrl || cuData.photoURL || ''),
-              ...override
-            });
-          }
+          addOrUpdateEmployee({
+            id: uid,
+            userId: uid,
+            name: override.name || cuData.name || cuData.displayName || cuData.email?.split('@')[0] || 'Сотрудник',
+            email: cuData.email || override.email || '',
+            phone: override.phone || cuData.phone || '',
+            role: prodRole,
+            productionRole: prodRole,
+            isProductionEmployee: override.isProductionEmployee !== undefined ? override.isProductionEmployee : (cuData.isProductionEmployee !== undefined ? cuData.isProductionEmployee : true),
+            department: override.department || getDepartmentForRole(prodRole),
+            rateType: override.rateType || cuData.rateType || (prodRole.includes('Руковод') || prodRole.includes('Менеджер') ? 'salary' : 'piecework'),
+            baseRate: override.baseRate !== undefined ? override.baseRate : (cuData.baseRate || 55000),
+            shiftType: override.shiftType || cuData.shiftType || '2/2',
+            status: override.status || cuData.status || 'active',
+            isOwner: cuData.role === 'admin' || cuData.isOwner,
+            isOutsource: cuData.isOutsource || override.isOutsource || false,
+            bitrix24UserId: cuData.bitrix24UserId || override.bitrix24UserId,
+            isProcurementManager: cuData.isProcurementManager,
+            photoURL: override.photoURL || cuData.photoURL || cuData.avatarUrl || '',
+            avatarUrl: override.avatarUrl || cuData.avatarUrl || cuData.photoURL || '',
+            ...override
+          });
         } catch (e) {}
       }
 
       // If any ERP employees (including Outsource workers) were created locally via ERP
       for (const erpId of Object.keys(erpEmpMap)) {
-        if (!employeesMap.has(erpId)) {
-          const emp = erpEmpMap[erpId];
-          const isUserIvan = emp.email?.includes("ivanbobkin");
-          const prodRole = emp.productionRole || emp.role || 'Сотрудник производства';
-          employeesMap.set(erpId, {
-            id: erpId,
-            userId: erpId,
-            name: emp.name || 'Сотрудник',
-            email: emp.email || '',
-            phone: emp.phone || '',
-            role: prodRole,
-            productionRole: prodRole,
-            isProductionEmployee: emp.isProductionEmployee !== undefined ? emp.isProductionEmployee : true,
-            department: emp.department || getDepartmentForRole(prodRole),
-            rateType: emp.rateType || 'piecework',
-            baseRate: emp.baseRate || 55000,
-            shiftType: emp.shiftType || '2/2',
-            status: emp.status || 'active',
-            isOutsource: emp.isOutsource || false,
-            photoURL: isUserIvan ? IVAN_PHOTO : (emp.photoURL || emp.avatarUrl || ''),
-            avatarUrl: isUserIvan ? IVAN_PHOTO : (emp.avatarUrl || emp.photoURL || ''),
-            ...emp
-          });
-        }
+        const emp = erpEmpMap[erpId];
+        const prodRole = emp.productionRole || emp.role || 'Сотрудник производства';
+        addOrUpdateEmployee({
+          id: erpId,
+          userId: erpId,
+          name: emp.name || 'Сотрудник',
+          email: emp.email || '',
+          phone: emp.phone || '',
+          role: prodRole,
+          productionRole: prodRole,
+          isProductionEmployee: emp.isProductionEmployee !== undefined ? emp.isProductionEmployee : true,
+          department: emp.department || getDepartmentForRole(prodRole),
+          rateType: emp.rateType || 'piecework',
+          baseRate: emp.baseRate || 55000,
+          shiftType: emp.shiftType || '2/2',
+          status: emp.status || 'active',
+          isOutsource: emp.isOutsource || false,
+          photoURL: emp.photoURL || emp.avatarUrl || '',
+          avatarUrl: emp.avatarUrl || emp.photoURL || '',
+          ...emp
+        });
       }
 
       const employees = Array.from(employeesMap.values());
@@ -4086,28 +4198,76 @@ function transliterate(str: string): string {
 
   app.get("/api/erp/:companyId/schedule", async (req, res) => {
     try {
-      const { companyId } = req.params;
+      const companyId = normalizeCompanyPath(req.params.companyId || "");
       const docPath = `companies/${companyId}/erp_schedule/current`;
-      const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
+      let doc: any = null;
+      if (isPostgresAvailable) {
+        try {
+          doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
+        } catch (_) {}
+      }
+      if (!doc) {
+        const localDoc = localStore.getDoc(docPath);
+        if (localDoc) doc = { data: localDoc.data };
+      }
       if (!doc) {
         return res.json({ success: true, entries: {} });
       }
-      res.json({ success: true, entries: JSON.parse(doc.data) });
+      res.json({ success: true, entries: typeof doc.data === "string" ? JSON.parse(doc.data) : doc.data });
     } catch (e: any) {
       console.error("Error fetching schedule:", e);
       res.status(500).json({ error: String(e) });
     }
   });
 
+  app.post("/api/erp/:companyId/schedule", async (req, res) => {
+    try {
+      const companyId = normalizeCompanyPath(req.params.companyId || "");
+      const { entries } = req.body;
+      const docPath = `companies/${companyId}/erp_schedule/current`;
+      
+      localStore.setDoc(docPath, `companies/${companyId}/erp_schedule`, "current", JSON.stringify(entries || {}), false, true);
+
+      if (isPostgresAvailable) {
+        try {
+          await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+            where: { path: docPath },
+            create: {
+              path: docPath,
+              collection: `companies/${companyId}/erp_schedule`,
+              docId: "current",
+              data: JSON.stringify(entries || {})
+            },
+            update: {
+              data: JSON.stringify(entries || {})
+            }
+          }));
+        } catch (_) {}
+      }
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("Error saving schedule:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   app.get("/api/erp/:companyId/shift-logs", async (req, res) => {
     try {
-      const { companyId } = req.params;
-      const docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
-        where: { collection: `companies/${companyId}/shift_logs` }
-      }));
+      const companyId = normalizeCompanyPath(req.params.companyId || "");
+      let docs: any[] = [];
+      if (isPostgresAvailable) {
+        try {
+          docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+            where: { collection: `companies/${companyId}/shift_logs` }
+          }));
+        } catch (_) {}
+      }
+      if (docs.length === 0) {
+        docs = localStore.getCollection(`companies/${companyId}/shift_logs`).map(d => ({ docId: d.docId, data: d.data }));
+      }
       const logs = docs.map(d => {
         try {
-          return JSON.parse(d.data);
+          return typeof d.data === "string" ? JSON.parse(d.data) : d.data;
         } catch (e) {
           return null;
         }
@@ -4121,7 +4281,7 @@ function transliterate(str: string): string {
 
   app.post("/api/erp/:companyId/shift-logs", async (req, res) => {
     try {
-      const { companyId } = req.params;
+      const companyId = normalizeCompanyPath(req.params.companyId || "");
       const { employeeId, elapsedSeconds, date, endedAt } = req.body;
       const logId = `shift_log_${Date.now()}_${employeeId}`;
       const logDocPath = `companies/${companyId}/shift_logs/${logId}`;
@@ -4133,14 +4293,21 @@ function transliterate(str: string): string {
         date: date || new Date().toISOString().split('T')[0],
         isManual: true
       };
-      await dbQueryWithRetry(() => prisma.dbDocument.create({
-        data: {
-          path: logDocPath,
-          collection: `companies/${companyId}/shift_logs`,
-          docId: logId,
-          data: JSON.stringify(logData)
-        }
-      }));
+      
+      localStore.setDoc(logDocPath, `companies/${companyId}/shift_logs`, logId, JSON.stringify(logData), false, true);
+
+      if (isPostgresAvailable) {
+        try {
+          await dbQueryWithRetry(() => prisma.dbDocument.create({
+            data: {
+              path: logDocPath,
+              collection: `companies/${companyId}/shift_logs`,
+              docId: logId,
+              data: JSON.stringify(logData)
+            }
+          }));
+        } catch (_) {}
+      }
       res.json({ success: true, log: logData });
     } catch (e: any) {
       console.error("Error creating manual shift log:", e);
@@ -4150,36 +4317,18 @@ function transliterate(str: string): string {
 
   app.delete("/api/erp/:companyId/shift-logs/:logId", async (req, res) => {
     try {
-      const { companyId, logId } = req.params;
+      const companyId = normalizeCompanyPath(req.params.companyId || "");
+      const { logId } = req.params;
       const docPath = `companies/${companyId}/shift_logs/${logId}`;
-      await dbQueryWithRetry(() => prisma.dbDocument.delete({ where: { path: docPath } }).catch(() => null));
+      localStore.deleteDoc(docPath);
+      if (isPostgresAvailable) {
+        try {
+          await dbQueryWithRetry(() => prisma.dbDocument.delete({ where: { path: docPath } }));
+        } catch (_) {}
+      }
       res.json({ success: true });
     } catch (e: any) {
       console.error("Error deleting shift log:", e);
-      res.status(500).json({ error: String(e) });
-    }
-  });
-
-  app.post("/api/erp/:companyId/schedule", async (req, res) => {
-    try {
-      const { companyId } = req.params;
-      const { entries } = req.body;
-      const docPath = `companies/${companyId}/erp_schedule/current`;
-      await dbQueryWithRetry(() => prisma.dbDocument.upsert({
-        where: { path: docPath },
-        create: {
-          path: docPath,
-          collection: `companies/${companyId}/erp_schedule`,
-          docId: "current",
-          data: JSON.stringify(entries || {})
-        },
-        update: {
-          data: JSON.stringify(entries || {})
-        }
-      }));
-      res.json({ success: true });
-    } catch (e: any) {
-      console.error("Error saving schedule:", e);
       res.status(500).json({ error: String(e) });
     }
   });

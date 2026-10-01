@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { ProductionOrder, OrderHardwareItem, ERPCompanySettings } from '../types';
 import { parseHardwareFile } from '../utils/kittingParser';
+import { applyOrderRequirementsAnalysis } from '../utils/stageReadiness';
 
 interface HardwareSpecificationModalProps {
   order: ProductionOrder;
@@ -101,7 +102,7 @@ export const HardwareSpecificationModal: React.FC<HardwareSpecificationModalProp
       totalQuantity: stats.totalQuantity
     }));
 
-    onUpdateOrder({
+    const rawUpdated: ProductionOrder = {
       ...order,
       hardwareData: {
         fileName,
@@ -111,7 +112,14 @@ export const HardwareSpecificationModal: React.FC<HardwareSpecificationModalProp
         totalQuantity: totalQty,
         categoriesSummary
       }
-    });
+    };
+
+    const { updatedOrder, analysis } = applyOrderRequirementsAnalysis(rawUpdated, settings);
+    onUpdateOrder(updatedOrder);
+
+    if (analysis.hasExcludedStages && analysis.notificationText) {
+      alert(analysis.notificationText);
+    }
 
     setPendingParsedData(null);
   };
