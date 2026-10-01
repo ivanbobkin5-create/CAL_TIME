@@ -2533,7 +2533,7 @@ function transliterate(str: string): string {
       }
 
       // Explicit owner email fallback to e5om9lzxh ("Мебель Фактура")
-      if (!matchedCompany && (cleanEmail.includes("ivanbobkin") || cleanEmail.includes("yandex") || cleanDomain.includes("mebelfaktura"))) {
+      if (!matchedCompany && (cleanEmail === "lk.ivanbobkin@yandex.ru" || cleanEmail === "lk.ivanbobkin@gmail.com" || cleanDomain.includes("mebelfaktura"))) {
         matchedDocId = "e5om9lzxh";
         const eDoc = allCompanyDocs.find(d => d.docId === "e5om9lzxh");
         if (eDoc) {
