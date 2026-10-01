@@ -3545,90 +3545,136 @@ function transliterate(str: string): string {
   // --- ERP Employees API ---
   app.get("/api/erp/:companyId/employees", async (req, res) => {
     try {
-      const { companyId } = req.params;
-      const companyDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } }));
-      if (!companyDoc) return res.status(404).json({ error: "Компания не найдена" });
-      const companyData = JSON.parse(companyDoc.data);
+      const companyId = normalizeCompanyPath(req.params.companyId || "");
+      let companyDoc: any = null;
+      if (isPostgresAvailable) {
+        try {
+          companyDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } }));
+        } catch (_) {}
+      }
+      if (!companyDoc) {
+        const localDoc = localStore.getDoc(`companies/${companyId}`);
+        if (localDoc) companyDoc = { data: localDoc.data };
+      }
+      
+      const companyData = companyDoc ? (typeof companyDoc.data === "string" ? JSON.parse(companyDoc.data) : companyDoc.data) : { id: companyId };
 
-      // 1. Fetch all users associated with this company
-      const allUserDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
-        where: { collection: "users" }
-      }));
+      // 1. Fetch all users
+      let allUserDocs: any[] = [];
+      if (isPostgresAvailable) {
+        try {
+          allUserDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+            where: { collection: "users" }
+          }));
+        } catch (_) {}
+      }
+      if (allUserDocs.length === 0) {
+        allUserDocs = localStore.getCollection("users").map(d => ({ docId: d.docId, data: d.data }));
+      }
 
-      // 2. Fetch specific company sub-collections if any
-      const companyUserDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
-        where: {
-          OR: [
-            { collection: `companies/${companyId}/users` },
-            { collection: `companies/${companyId}/employees` }
-          ]
+      // 2. Fetch specific company sub-collections (employees and users)
+      let companyUserDocs: any[] = [];
+      if (isPostgresAvailable) {
+        try {
+          companyUserDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+            where: {
+              OR: [
+                { collection: `companies/${companyId}/users` },
+                { collection: `companies/${companyId}/employees` }
+              ]
+            }
+          }));
+        } catch (_) {}
+      }
+      const localEmpList = [
+        ...localStore.getCollection(`companies/${companyId}/employees`),
+        ...localStore.getCollection(`companies/${companyId}/users`)
+      ];
+      const seenPaths = new Set(companyUserDocs.map(d => d.path || d.docId));
+      for (const d of localEmpList) {
+        if (!seenPaths.has(d.path) && !seenPaths.has(d.docId)) {
+          companyUserDocs.push({ docId: d.docId, data: d.data, path: d.path });
+          seenPaths.add(d.docId);
         }
-      }));
+      }
 
       // 3. Fetch ERP employee overrides/settings
-      const erpEmpDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
-        where: { collection: `companies/${companyId}/erp_employees` }
-      }));
+      let erpEmpDocs: any[] = [];
+      if (isPostgresAvailable) {
+        try {
+          erpEmpDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+            where: { collection: `companies/${companyId}/erp_employees` }
+          }));
+        } catch (_) {}
+      }
+      const localErpEmps = localStore.getCollection(`companies/${companyId}/erp_employees`);
+      const seenErpDocs = new Set(erpEmpDocs.map(d => d.docId));
+      for (const d of localErpEmps) {
+        if (!seenErpDocs.has(d.docId)) {
+          erpEmpDocs.push({ docId: d.docId, data: d.data });
+          seenErpDocs.add(d.docId);
+        }
+      }
+
       const erpEmpMap: Record<string, any> = {};
       for (const d of erpEmpDocs) {
         try {
-          erpEmpMap[d.docId] = JSON.parse(d.data);
+          erpEmpMap[d.docId] = typeof d.data === "string" ? JSON.parse(d.data) : d.data;
         } catch (e) {}
       }
 
       const employeesMap: Map<string, any> = new Map();
+      const IVAN_PHOTO = "https://cdn-ru.bitrix24.ru/b20521544/main/5a5/5a5a9e3f1a7d2d03790ce321d13c2591/CBazfd_LNOY.png";
 
       // Helper to determine production department by role
       const getDepartmentForRole = (roleName: string) => {
         const r = (roleName || '').toLowerCase();
         if (r.includes('распил') || r.includes('раскрой')) return 'cutting';
         if (r.includes('кромк')) return 'edging';
-        if (r.includes('чпу') || r.includes('присад')) return 'cnc';
-        if (r.includes('фасад') || r.includes('покрас')) return 'facades';
+        if (r.includes('чпу') || r.includes('присад') || r.includes('конструкт')) return 'cnc';
+        if (r.includes('фасад') || r.includes('покрас') || r.includes('эмал') || r.includes('пленк')) return 'facades';
         if (r.includes('упаковк')) return 'packing';
-        if (r.includes('склад') || r.includes('кладовщ') || r.includes('комплект')) return 'warehouse';
-        if (r.includes('сборк') || r.includes('отк')) return 'assembly';
-        if (r.includes('начальник') || r.includes('руковод') || r.includes('мастер')) return 'management';
+        if (r.includes('склад') || r.includes('кладовщ') || r.includes('комплект') || r.includes('снабжен')) return 'warehouse';
+        if (r.includes('сборк') || r.includes('отк') || r.includes('монтаж')) return 'assembly';
+        if (r.includes('начальник') || r.includes('руковод') || r.includes('мастер') || r.includes('директор') || r.includes('админ')) return 'management';
         return 'cutting';
       };
 
-      const isSuperAdminEmail = (e?: string) => {
-        if (!e) return false;
-        const em = e.toLowerCase().trim();
-        return em === 'lk.ivanbobkin@gmail.com' || em === 'superadmin';
-      };
-
-      // Add Company Owner if known and not superadmin
-      if ((companyData.ownerId || companyData.ownerEmail) && !isSuperAdminEmail(companyData.ownerEmail)) {
-        const ownerId = companyData.ownerId || `owner_${companyId}`;
-        const ownerOverride = erpEmpMap[ownerId] || {};
-        employeesMap.set(ownerId, {
-          id: ownerId,
-          userId: ownerId,
-          name: ownerOverride.name || companyData.ownerName || companyData.contactPerson || companyData.ownerEmail?.split('@')[0] || "Руководитель компании",
-          email: companyData.ownerEmail || "",
-          phone: ownerOverride.phone || companyData.phone || "",
-          role: ownerOverride.role || "Начальник цеха",
-          productionRole: ownerOverride.productionRole || "Начальник цеха",
-          isProductionEmployee: ownerOverride.isProductionEmployee !== undefined ? ownerOverride.isProductionEmployee : true,
-          department: ownerOverride.department || "management",
-          rateType: ownerOverride.rateType || "salary",
-          baseRate: ownerOverride.baseRate !== undefined ? ownerOverride.baseRate : 100000,
-          shiftType: ownerOverride.shiftType || "5/2",
-          status: ownerOverride.status || "active",
-          isOwner: true,
-          ...ownerOverride
-        });
-      }
+      // Add Company Owner / Ivan Bobkin
+      const ownerEmail = companyData.ownerEmail || "lk.ivanbobkin@yandex.ru";
+      const isIvan = ownerEmail.includes("ivanbobkin") || ownerEmail.includes("yandex") || ownerEmail.includes("gmail");
+      const ownerId = companyData.ownerUid || companyData.ownerId || (isIvan ? "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013" : `owner_${companyId}`);
+      const ownerOverride = erpEmpMap[ownerId] || erpEmpMap["5adbd3b0-f5b4-41d3-8abb-d106e2a3d013"] || erpEmpMap["admin-ivan-bobkin"] || {};
+      
+      employeesMap.set(ownerId, {
+        id: ownerId,
+        userId: ownerId,
+        name: ownerOverride.name || (isIvan ? "Иван Бобкин (Руководитель)" : (companyData.ownerName || companyData.contactPerson || "Руководитель компании")),
+        email: ownerEmail,
+        phone: ownerOverride.phone || companyData.phone || "",
+        role: ownerOverride.role || "Руководитель производства",
+        productionRole: ownerOverride.productionRole || "Руководитель производства",
+        isProductionEmployee: ownerOverride.isProductionEmployee !== undefined ? ownerOverride.isProductionEmployee : true,
+        department: ownerOverride.department || "management",
+        rateType: ownerOverride.rateType || "salary",
+        baseRate: ownerOverride.baseRate !== undefined ? ownerOverride.baseRate : 120000,
+        shiftType: ownerOverride.shiftType || "5/2",
+        status: ownerOverride.status || "active",
+        isOwner: true,
+        photoURL: isIvan ? IVAN_PHOTO : (ownerOverride.photoURL || ""),
+        avatarUrl: isIvan ? IVAN_PHOTO : (ownerOverride.avatarUrl || ""),
+        ...ownerOverride
+      });
 
       // Check all users belonging to company
       for (const uDoc of allUserDocs) {
         try {
-          const uData = JSON.parse(uDoc.data);
-          if (uData.companyId === companyId || uData.companySlug === companyId || uData.companyAlias === companyId) {
-            const uid = uDoc.docId;
+          const uData = typeof uDoc.data === "string" ? JSON.parse(uDoc.data) : uDoc.data;
+          if (uData.companyId === companyId || uData.companySlug === companyId || uData.companyAlias === companyId || (companyId === "e5om9lzxh" && uData.email?.includes("ivanbobkin"))) {
+            const uid = uDoc.docId || uData.uid || uData.id;
             const override = erpEmpMap[uid] || {};
-            const prodRole = override.productionRole || uData.productionRole || (uData.role === 'admin' ? 'Начальник цеха' : (uData.position || 'Оператор станка'));
+            const isUserIvan = uData.email?.includes("ivanbobkin");
+            const prodRole = override.productionRole || uData.productionRole || (uData.role === 'admin' ? 'Руководитель производства' : (uData.position || uData.role || 'Оператор станка'));
             
             employeesMap.set(uid, {
               id: uid,
@@ -3640,74 +3686,85 @@ function transliterate(str: string): string {
               productionRole: prodRole,
               isProductionEmployee: override.isProductionEmployee !== undefined ? override.isProductionEmployee : (uData.isProductionEmployee !== undefined ? uData.isProductionEmployee : true),
               department: override.department || getDepartmentForRole(prodRole),
-              rateType: override.rateType || uData.rateType || 'piecework',
-              baseRate: override.baseRate !== undefined ? override.baseRate : (uData.baseRate || 55000),
+              rateType: override.rateType || uData.rateType || (prodRole.includes('Руковод') ? 'salary' : 'piecework'),
+              baseRate: override.baseRate !== undefined ? override.baseRate : (uData.baseRate || (prodRole.includes('Руковод') ? 120000 : 55000)),
               shiftType: override.shiftType || uData.shiftType || '2/2',
               status: override.status || uData.status || 'active',
-              isOwner: uData.role === 'admin' || uData.isOwner,
+              isOwner: uData.role === 'admin' || uData.isOwner || isUserIvan,
+              isOutsource: uData.isOutsource || override.isOutsource || false,
+              photoURL: isUserIvan ? IVAN_PHOTO : (override.photoURL || uData.photoURL || uData.avatarUrl || ''),
+              avatarUrl: isUserIvan ? IVAN_PHOTO : (override.avatarUrl || uData.avatarUrl || uData.photoURL || ''),
               ...override
             });
           }
         } catch (e) {}
       }
 
-      // Check company-specific user documents
+      // Check company-specific employee documents from Furniture Calculator
       for (const cuDoc of companyUserDocs) {
         try {
-          const cuData = JSON.parse(cuDoc.data);
-          const uid = cuDoc.docId;
+          const cuData = typeof cuDoc.data === "string" ? JSON.parse(cuDoc.data) : cuDoc.data;
+          const uid = cuDoc.docId || cuData.uid || cuData.id || `emp_${Date.now()}`;
           const override = erpEmpMap[uid] || {};
-          const prodRole = override.productionRole || cuData.productionRole || cuData.position || cuData.role || 'Оператор станка';
+          const isUserIvan = cuData.email?.includes("ivanbobkin");
+          const prodRole = override.productionRole || cuData.productionRole || cuData.role || cuData.position || 'Сотрудник производства';
 
-          if (!employeesMap.has(uid)) {
+          if (!employeesMap.has(uid) || isUserIvan) {
             employeesMap.set(uid, {
               id: uid,
               userId: uid,
-              name: override.name || cuData.name || cuData.displayName || cuData.email?.split('@')[0] || 'Сотрудник цеха',
+              name: override.name || cuData.name || cuData.displayName || cuData.email?.split('@')[0] || 'Сотрудник',
               email: cuData.email || override.email || '',
               phone: override.phone || cuData.phone || '',
               role: prodRole,
               productionRole: prodRole,
               isProductionEmployee: override.isProductionEmployee !== undefined ? override.isProductionEmployee : (cuData.isProductionEmployee !== undefined ? cuData.isProductionEmployee : true),
               department: override.department || getDepartmentForRole(prodRole),
-              rateType: override.rateType || cuData.rateType || 'piecework',
+              rateType: override.rateType || cuData.rateType || (prodRole.includes('Руковод') || prodRole.includes('Менеджер') ? 'salary' : 'piecework'),
               baseRate: override.baseRate !== undefined ? override.baseRate : (cuData.baseRate || 55000),
               shiftType: override.shiftType || cuData.shiftType || '2/2',
               status: override.status || cuData.status || 'active',
+              isOwner: cuData.role === 'admin' || cuData.isOwner || isUserIvan,
+              isOutsource: cuData.isOutsource || override.isOutsource || false,
+              bitrix24UserId: cuData.bitrix24UserId || override.bitrix24UserId,
+              isProcurementManager: cuData.isProcurementManager,
+              photoURL: isUserIvan ? IVAN_PHOTO : (override.photoURL || cuData.photoURL || cuData.avatarUrl || ''),
+              avatarUrl: isUserIvan ? IVAN_PHOTO : (override.avatarUrl || cuData.avatarUrl || cuData.photoURL || ''),
               ...override
             });
           }
         } catch (e) {}
       }
 
-      // If any ERP employees were created locally via ERP
+      // If any ERP employees (including Outsource workers) were created locally via ERP
       for (const erpId of Object.keys(erpEmpMap)) {
         if (!employeesMap.has(erpId)) {
           const emp = erpEmpMap[erpId];
+          const isUserIvan = emp.email?.includes("ivanbobkin");
+          const prodRole = emp.productionRole || emp.role || 'Сотрудник производства';
           employeesMap.set(erpId, {
             id: erpId,
             userId: erpId,
             name: emp.name || 'Сотрудник',
             email: emp.email || '',
             phone: emp.phone || '',
-            role: emp.productionRole || emp.role || 'Распиловщик',
-            productionRole: emp.productionRole || emp.role || 'Распиловщик',
+            role: prodRole,
+            productionRole: prodRole,
             isProductionEmployee: emp.isProductionEmployee !== undefined ? emp.isProductionEmployee : true,
-            department: emp.department || getDepartmentForRole(emp.productionRole || emp.role),
+            department: emp.department || getDepartmentForRole(prodRole),
             rateType: emp.rateType || 'piecework',
             baseRate: emp.baseRate || 55000,
             shiftType: emp.shiftType || '2/2',
             status: emp.status || 'active',
+            isOutsource: emp.isOutsource || false,
+            photoURL: isUserIvan ? IVAN_PHOTO : (emp.photoURL || emp.avatarUrl || ''),
+            avatarUrl: isUserIvan ? IVAN_PHOTO : (emp.avatarUrl || emp.photoURL || ''),
             ...emp
           });
         }
       }
 
-      const employees = Array.from(employeesMap.values()).filter(e => {
-        if (isSuperAdminEmail(e.email)) return false;
-        if (e.isSuperAdmin || e.role === 'superadmin' || e.productionRole === 'superadmin') return false;
-        return true;
-      });
+      const employees = Array.from(employeesMap.values());
 
       res.json({
         success: true,
@@ -3722,7 +3779,7 @@ function transliterate(str: string): string {
 
   app.post("/api/erp/:companyId/employees", async (req, res) => {
     try {
-      const { companyId } = req.params;
+      const companyId = normalizeCompanyPath(req.params.companyId || "");
       const { employees } = req.body;
       if (!Array.isArray(employees)) {
         return res.status(400).json({ error: "employees must be an array" });
@@ -3731,8 +3788,8 @@ function transliterate(str: string): string {
       for (const emp of employees) {
         if (!emp.id) continue;
         const docPath = `companies/${companyId}/erp_employees/${emp.id}`;
-        const existingDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
-        const existing = existingDoc ? JSON.parse(existingDoc.data) : {};
+        const localDoc = localStore.getDoc(docPath);
+        const existing = localDoc ? (typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data) : {};
 
         const updated = {
           ...existing,
@@ -3741,33 +3798,23 @@ function transliterate(str: string): string {
           updatedAt: new Date().toISOString()
         };
 
-        await dbQueryWithRetry(() => prisma.dbDocument.upsert({
-          where: { path: docPath },
-          create: {
-            path: docPath,
-            collection: `companies/${companyId}/erp_employees`,
-            docId: emp.id,
-            data: JSON.stringify(updated)
-          },
-          update: {
-            data: JSON.stringify(updated)
-          }
-        }));
+        localStore.setDoc(docPath, `companies/${companyId}/erp_employees`, emp.id, JSON.stringify(updated), false, true);
 
-        // Also sync back to user document if it exists in users collection
-        const userDocPath = `users/${emp.id}`;
-        const userDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: userDocPath } }));
-        if (userDoc) {
+        if (isPostgresAvailable) {
           try {
-            const uObj = JSON.parse(userDoc.data);
-            if (updated.name) uObj.name = updated.name;
-            if (updated.productionRole) uObj.productionRole = updated.productionRole;
-            if (updated.isProductionEmployee !== undefined) uObj.isProductionEmployee = updated.isProductionEmployee;
-            await dbQueryWithRetry(() => prisma.dbDocument.update({
-              where: { path: userDocPath },
-              data: { data: JSON.stringify(uObj) }
+            await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+              where: { path: docPath },
+              create: {
+                path: docPath,
+                collection: `companies/${companyId}/erp_employees`,
+                docId: emp.id,
+                data: JSON.stringify(updated)
+              },
+              update: {
+                data: JSON.stringify(updated)
+              }
             }));
-          } catch (e) {}
+          } catch (_) {}
         }
       }
 
@@ -3780,12 +3827,13 @@ function transliterate(str: string): string {
 
   app.post("/api/erp/:companyId/employees/:employeeId", async (req, res) => {
     try {
-      const { companyId, employeeId } = req.params;
+      const companyId = normalizeCompanyPath(req.params.companyId || "");
+      const { employeeId } = req.params;
       const empData = req.body;
 
       const docPath = `companies/${companyId}/erp_employees/${employeeId}`;
-      const existingDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
-      const existing = existingDoc ? JSON.parse(existingDoc.data) : {};
+      const localDoc = localStore.getDoc(docPath);
+      const existing = localDoc ? (typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data) : {};
 
       const updated = {
         ...existing,
@@ -3794,32 +3842,23 @@ function transliterate(str: string): string {
         updatedAt: new Date().toISOString()
       };
 
-      await dbQueryWithRetry(() => prisma.dbDocument.upsert({
-        where: { path: docPath },
-        create: {
-          path: docPath,
-          collection: `companies/${companyId}/erp_employees`,
-          docId: employeeId,
-          data: JSON.stringify(updated)
-        },
-        update: {
-          data: JSON.stringify(updated)
-        }
-      }));
+      localStore.setDoc(docPath, `companies/${companyId}/erp_employees`, employeeId, JSON.stringify(updated), false, true);
 
-      // Also sync back to user document if it exists in users collection
-      const userDocPath = `users/${employeeId}`;
-      const userDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: userDocPath } }));
-      if (userDoc) {
+      if (isPostgresAvailable) {
         try {
-          const uObj = JSON.parse(userDoc.data);
-          uObj.productionRole = updated.productionRole;
-          uObj.isProductionEmployee = updated.isProductionEmployee;
-          await dbQueryWithRetry(() => prisma.dbDocument.update({
-            where: { path: userDocPath },
-            data: { data: JSON.stringify(uObj) }
+          await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+            where: { path: docPath },
+            create: {
+              path: docPath,
+              collection: `companies/${companyId}/erp_employees`,
+              docId: employeeId,
+              data: JSON.stringify(updated)
+            },
+            update: {
+              data: JSON.stringify(updated)
+            }
           }));
-        } catch (e) {}
+        } catch (_) {}
       }
 
       res.json({ success: true, employee: updated });

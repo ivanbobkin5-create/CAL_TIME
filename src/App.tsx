@@ -590,13 +590,19 @@ const pruneCollectionForCache = (key: string, valueStr: string): string => {
 const serializeEssentialUser = (u: any) => {
   if (!u) return "";
   try {
+    const isIvan = u.email?.includes("ivanbobkin") || u.email?.includes("yandex") || u.email?.includes("gmail");
+    const defaultIvanPhoto = "https://cdn-ru.bitrix24.ru/b20521544/main/5a5/5a5a9e3f1a7d2d03790ce321d13c2591/CBazfd_LNOY.png";
+    const resolvedPhoto = u.photoURL || u.avatarUrl || u.photo || (isIvan ? defaultIvanPhoto : "");
     const essential = {
       uid: String(u.uid || ""),
       email: String(u.email || ""),
-      displayName: String(u.displayName || ""),
+      displayName: String(u.displayName || u.name || ""),
       role: u.role || "manager",
       accessLevel: u.accessLevel || u.role || "manager",
       companyId: String(u.companyId || ""),
+      photoURL: resolvedPhoto,
+      avatarUrl: resolvedPhoto,
+      photo: resolvedPhoto,
       isRoot: !!u.isRoot,
       isProcurementManager: !!u.isProcurementManager,
     };
@@ -43037,6 +43043,9 @@ export default function App() {
               userId={userData?.uid}
               currentUser={userData || auth.currentUser}
               userRole={userRole}
+              projects={projects}
+              sets={projectSets}
+              currentCoefficients={coefficients}
               isProjectsLoading={isProjectsLoading}
               isSetsLoading={isSetsLoading}
               onLoadProject={(project) => {
@@ -43163,8 +43172,6 @@ export default function App() {
               manufacturerId={companyData?.manufacturerId}
               showConfirm={showConfirm}
               showAlert={showAlert}
-              projects={projects}
-              sets={projectSets}
             />
           ) : activeTab === "partner_orders" && companyData?.id ? (
             <PartnerOrdersView

@@ -78,9 +78,6 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
   const [customRoleText, setCustomRoleText] = useState('');
 
   const filtered = employees.filter(e => {
-    if (e.email?.toLowerCase() === 'lk.ivanbobkin@gmail.com' || (e as any).isSuperAdmin || e.role === 'superadmin' || e.productionRole === 'superadmin') {
-      return false;
-    }
     return (
       e.name.toLowerCase().includes(search.toLowerCase()) ||
       (e.role && e.role.toLowerCase().includes(search.toLowerCase())) ||

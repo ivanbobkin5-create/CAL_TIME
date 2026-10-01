@@ -871,50 +871,27 @@ export const ERPApp: React.FC<ERPAppProps> = ({
           }
         }
 
-        loadedEmployees = loadedEmployees.filter(e => 
-          e.email?.toLowerCase() !== 'lk.ivanbobkin@gmail.com' && 
-          !(e as any).isSuperAdmin && 
-          e.role !== 'superadmin' && 
-          e.productionRole !== 'superadmin'
-        );
-
         if (loadedEmployees.length === 0) {
-          const isCurrentSuperAdmin = parsedUser?.email?.toLowerCase() === 'lk.ivanbobkin@gmail.com' || parsedUser?.isSuperAdmin;
-          if (isCurrentSuperAdmin) {
-            loadedEmployees = [
-              {
-                id: 'emp-master-1',
-                name: 'Иванов Сергей (Начальник цеха)',
-                role: 'Начальник цеха',
-                productionRole: 'Начальник цеха',
-                isProductionEmployee: true,
-                department: 'management',
-                rateType: 'salary',
-                baseRate: 95000,
-                shiftType: '5/2',
-                status: 'active'
-              }
-            ];
-          } else {
-            const currentUserName = parsedUser?.displayName || parsedUser?.name || parsedUser?.email?.split('@')[0] || 'Руководитель цеха';
-            loadedEmployees = [
-              {
-                id: parsedUser?.id || 'emp-user-1',
-                userId: parsedUser?.id,
-                name: currentUserName,
-                role: 'Начальник цеха',
-                productionRole: 'Начальник цеха',
-                isProductionEmployee: true,
-                department: 'management',
-                rateType: 'salary',
-                baseRate: 100000,
-                shiftType: '5/2',
-                status: 'active',
-                email: parsedUser?.email || '',
-                isOwner: true
-              }
-            ];
-          }
+          const currentUserName = parsedUser?.displayName || parsedUser?.name || parsedUser?.email?.split('@')[0] || 'Иван Бобкин (Руководитель)';
+          loadedEmployees = [
+            {
+              id: parsedUser?.id || parsedUser?.uid || '5adbd3b0-f5b4-41d3-8abb-d106e2a3d013',
+              userId: parsedUser?.id || parsedUser?.uid || '5adbd3b0-f5b4-41d3-8abb-d106e2a3d013',
+              name: currentUserName,
+              role: 'Руководитель производства',
+              productionRole: 'Руководитель производства',
+              isProductionEmployee: true,
+              department: 'management',
+              rateType: 'salary',
+              baseRate: 120000,
+              shiftType: '5/2',
+              status: 'active',
+              email: parsedUser?.email || '',
+              photoURL: 'https://cdn-ru.bitrix24.ru/b20521544/main/5a5/5a5a9e3f1a7d2d03790ce321d13c2591/CBazfd_LNOY.png',
+              avatarUrl: 'https://cdn-ru.bitrix24.ru/b20521544/main/5a5/5a5a9e3f1a7d2d03790ce321d13c2591/CBazfd_LNOY.png',
+              isOwner: true
+            }
+          ];
         }
 
         setEmployees(loadedEmployees);

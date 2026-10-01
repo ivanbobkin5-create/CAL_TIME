@@ -368,6 +368,7 @@ export interface ERPEmployee {
   productionRole?: string;
   isProductionEmployee?: boolean;
   employmentType?: 'staff' | 'outsource'; // 'Работник компании' или 'Аутсорс'
+  isOutsource?: boolean;
   department: 'cutting' | 'edging' | 'cnc' | 'facades' | 'assembly' | 'qc' | 'management' | 'packing' | 'warehouse' | string;
   phone?: string;
   email?: string;
@@ -386,6 +387,8 @@ export interface ERPEmployee {
   shiftType: '2/2' | '5/2' | 'flexible' | 'night' | string;
   status: 'active' | 'vacation' | 'sick' | 'inactive';
   avatarUrl?: string;
+  photoURL?: string;
+  photo?: string;
   assignedMachines?: string[];
   hireDate?: string;
   isOwner?: boolean;
