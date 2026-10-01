@@ -2608,12 +2608,27 @@ function transliterate(str: string): string {
       const rawCid = req.params.companyId || "";
       const companyId = normalizeCompanyPath(`companies/${rawCid}`).replace(/^companies\//, '');
       
+      let realCompanyId = companyId;
       let companyData: any = null;
+
       if (isPostgresAvailable) {
         try {
           const companyDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } }));
           if (companyDoc) {
             companyData = JSON.parse(companyDoc.data);
+            realCompanyId = companyDoc.docId || companyId;
+          } else {
+            const allDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({ where: { collection: "companies" } }));
+            for (const d of allDocs) {
+              try {
+                const parsed = JSON.parse(d.data);
+                if (d.docId === companyId || parsed.landingPage?.alias === companyId || transliterate(parsed.name || '') === companyId) {
+                  realCompanyId = d.docId;
+                  companyData = parsed;
+                  break;
+                }
+              } catch (e) {}
+            }
           }
         } catch (_) {}
       }
@@ -2623,11 +2638,13 @@ function transliterate(str: string): string {
         if (localDoc) {
           try {
             companyData = typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data;
+            realCompanyId = companyData.id || "e5om9lzxh";
           } catch (_) {}
         }
       }
 
-      if (!companyData && companyId === "e5om9lzxh") {
+      if (!companyData && (companyId === "e5om9lzxh" || companyId === "mebel-soft")) {
+        realCompanyId = "e5om9lzxh";
         companyData = {
           id: "e5om9lzxh",
           name: "Мебель Фактура",
@@ -2649,9 +2666,27 @@ function transliterate(str: string): string {
       }
 
       if (!companyData) return res.status(404).json({ error: "Компания не найдена" });
+
+      // Fetch dedicated erp_settings/current for latest configuration
+      let dedicatedSettings: any = null;
+      if (isPostgresAvailable) {
+        try {
+          const settingsDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: `companies/${realCompanyId}/erp_settings/current` } }));
+          if (settingsDoc && settingsDoc.data) {
+            dedicatedSettings = typeof settingsDoc.data === "string" ? JSON.parse(settingsDoc.data) : settingsDoc.data;
+          }
+        } catch (_) {}
+      }
       
-      const erpConfig = companyData.erpConfig || companyData.erpSettings || {};
-      const rawWebhook = erpConfig.bitrix24WebhookUrl || companyData.bitrix24?.webhookUrl;
+      const erpConfig = {
+        ...(companyData.erpConfig || companyData.erpSettings || {}),
+        ...(dedicatedSettings || {})
+      };
+
+      const rawWebhook = erpConfig.bitrix24WebhookUrl 
+        || companyData.bitrix24?.webhookUrl 
+        || (realCompanyId === 'e5om9lzxh' ? 'https://mebelfaktura.bitrix24.ru/rest/1/f0xsa9zrg7zaxhrk/' : '');
+
       const webhookUrl = normalizeBitrixWebhookUrl(rawWebhook);
       const orderSource = erpConfig.orderSource || (webhookUrl ? 'bitrix24' : 'projects');
       
@@ -2660,13 +2695,18 @@ function transliterate(str: string): string {
       if (isPostgresAvailable) {
         try {
           erpOrderDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
-            where: { collection: `companies/${companyId}/erp_orders` }
+            where: {
+              OR: [
+                { collection: `companies/${companyId}/erp_orders` },
+                { collection: `companies/${realCompanyId}/erp_orders` }
+              ]
+            }
           }));
         } catch (_) {}
       }
 
       if (erpOrderDocs.length === 0) {
-        const localErpList = localStore.getCollection(`companies/${companyId}/erp_orders`);
+        const localErpList = localStore.getCollection(`companies/${realCompanyId}/erp_orders`).concat(localStore.getCollection(`companies/${companyId}/erp_orders`));
         erpOrderDocs = localErpList.map(d => ({ docId: d.docId, data: d.data }));
       }
 
@@ -2711,7 +2751,7 @@ function transliterate(str: string): string {
           return s1Clean === s2Clean;
         };
 
-        const cacheKey = `${companyId}_${webhookUrl}_${categoryId}`;
+        const cacheKey = `${realCompanyId}_${webhookUrl}_${categoryId}`;
         const cachedB24 = (global as any).__b24DealsCache?.[cacheKey];
         const isFreshCache = cachedB24 && (Date.now() - cachedB24.timestamp < 5000);
 
@@ -2726,8 +2766,13 @@ function transliterate(str: string): string {
                 body: JSON.stringify({ filter: { ENTITY_ID: "DEAL_STAGE" }, order: { SORT: "ASC" } }),
                 signal: AbortSignal.timeout(6000)
               });
-              const stData = await stRes.json();
-              stagesList = stData.result || [];
+              if (stRes.ok) {
+                const stText = await stRes.text();
+                try {
+                  const stData = JSON.parse(stText);
+                  stagesList = stData.result || [];
+                } catch (_) {}
+              }
             } else {
               const stRes = await fetch(`${webhookUrl}/crm.dealcategory.stage.list`, {
                 method: 'POST',
@@ -2735,8 +2780,13 @@ function transliterate(str: string): string {
                 body: JSON.stringify({ id: categoryId }),
                 signal: AbortSignal.timeout(6000)
               });
-              const stData = await stRes.json();
-              stagesList = stData.result || [];
+              if (stRes.ok) {
+                const stText = await stRes.text();
+                try {
+                  const stData = JSON.parse(stText);
+                  stagesList = stData.result || [];
+                } catch (_) {}
+              }
             }
           } catch (stErr) {
             console.warn("Could not fetch Bitrix24 stages list:", stErr);
@@ -2799,14 +2849,19 @@ function transliterate(str: string): string {
               }),
               signal: AbortSignal.timeout(7000)
             });
-            const dealsData = await dealsRes.json();
-            rawDeals = dealsData.result || [];
-            if (!(global as any).__b24DealsCache) (global as any).__b24DealsCache = {};
-            (global as any).__b24DealsCache[cacheKey] = {
-              timestamp: Date.now(),
-              stagesList,
-              rawDeals
-            };
+            if (dealsRes.ok) {
+              const dealsText = await dealsRes.text();
+              try {
+                const dealsData = JSON.parse(dealsText);
+                rawDeals = dealsData.result || [];
+                if (!(global as any).__b24DealsCache) (global as any).__b24DealsCache = {};
+                (global as any).__b24DealsCache[cacheKey] = {
+                  timestamp: Date.now(),
+                  stagesList,
+                  rawDeals
+                };
+              } catch (_) {}
+            }
           } catch (dealErr) {
             console.warn("Could not fetch Bitrix24 deals list:", dealErr);
           }
@@ -2872,13 +2927,10 @@ function transliterate(str: string): string {
           const orderId = `b24_${deal.ID}`;
           const local = localErpOrdersMap[orderId] || {};
 
-          // Auto-cleanup: If deleted more than 30 days ago, skip and delete document
+          // Auto-cleanup: If deleted more than 30 days ago, skip
           if (local.isDeleted && local.deletedAt) {
             const deletedTime = new Date(local.deletedAt).getTime();
             if (!isNaN(deletedTime) && (Date.now() - deletedTime) > 30 * 24 * 60 * 60 * 1000) {
-              try {
-                await dbQueryWithRetry(() => prisma.dbDocument.delete({ where: { path: `companies/${companyId}/erp_orders/${orderId}` } }));
-              } catch (_) {}
               continue;
             }
           }

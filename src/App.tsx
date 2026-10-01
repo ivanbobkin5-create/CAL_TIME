@@ -40445,7 +40445,7 @@ export default function App() {
       )) || '';
 
       const activeWebhook = companyData.bitrix24?.webhookUrl || currentErpConfig.bitrix24WebhookUrl || fallbackLocalWebhook || (companyData.id === 'e5om9lzxh' ? 'https://mebelfaktura.bitrix24.ru/rest/1/f0xsa9zrg7zaxhrk/' : '');
-      const orderSrc = currentErpConfig.orderSource || (activeWebhook ? 'bitrix24' : 'projects');
+      const orderSrc = overrides?.erpConfig?.orderSource || currentErpConfig.orderSource || companyData?.erpConfig?.orderSource || companyData?.erpSettings?.orderSource || (activeWebhook ? 'bitrix24' : 'projects');
       currentErpConfig.orderSource = orderSrc;
       if (activeWebhook) {
         currentErpConfig.bitrix24WebhookUrl = activeWebhook;

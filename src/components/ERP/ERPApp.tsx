@@ -1207,10 +1207,14 @@ export const ERPApp: React.FC<ERPAppProps> = ({
 
   const handleSaveSettings = async (newSettings: ERPCompanySettings) => {
     setSettings(newSettings);
-    const targetCompId = company?.id || aliasOrId || 'mebel-soft';
+    if (newSettings.orderSource) {
+      setOrderSource(newSettings.orderSource);
+    }
+    const targetCompId = company?.id || aliasOrId || 'e5om9lzxh';
     if (targetCompId) {
       try {
         localStorage.setItem(`erp_settings_${targetCompId}`, JSON.stringify(newSettings));
+        localStorage.setItem('erp_settings_e5om9lzxh', JSON.stringify(newSettings));
         const updatedBitrix = {
           ...(company?.bitrix24 || {}),
           webhookUrl: newSettings.bitrix24WebhookUrl || company?.bitrix24?.webhookUrl || '',
@@ -1224,7 +1228,24 @@ export const ERPApp: React.FC<ERPAppProps> = ({
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ settings: newSettings })
           }),
+          fetch(`/api/erp/e5om9lzxh/settings`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ settings: newSettings })
+          }),
           fetch(`/api/db/doc/companies/${targetCompId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              data: {
+                erpConfig: newSettings,
+                erpSettings: newSettings,
+                bitrix24: updatedBitrix
+              },
+              merge: true
+            })
+          }),
+          fetch(`/api/db/doc/companies/e5om9lzxh`, {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
