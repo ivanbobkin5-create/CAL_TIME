@@ -419,20 +419,49 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
   }, [formData.bitrix24WebhookUrl, companyData]);
 
   const loadBitrix24Data = async (customUrl?: string) => {
+    const hasBX24 = typeof window !== "undefined" && Boolean((window as any).BX24?.callMethod);
     let url = (customUrl !== undefined ? customUrl : activeWebhookUrl).trim();
-    if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
-      if (url.includes('.bitrix24.') || url.includes('/rest/')) {
-        url = 'https://' + url;
-      } else {
-        setB24FetchStatus('Укажите корректный URL входящего вебхука Битрикс24 (начинается с https://.../rest/...)');
-        return;
+
+    if (!hasBX24) {
+      if (!url || (!url.startsWith('http://') && !url.startsWith('https://'))) {
+        if (url.includes('.bitrix24.') || url.includes('/rest/')) {
+          url = 'https://' + url;
+        } else {
+          setB24FetchStatus('Укажите URL входящего вебхука Битрикс24 или откройте систему внутри портала Битрикс24');
+          return;
+        }
       }
     }
 
     setIsFetchingB24Stages(true);
-    setB24FetchStatus('Подключение к Битрикс24...');
+    setB24FetchStatus(hasBX24 ? 'Подключение через Битрикс24 API...' : 'Подключение к Битрикс24...');
 
     try {
+      if (hasBX24) {
+        // Native BX24 1-click fetch directly inside Bitrix24 portal session
+        const bx = (window as any).BX24;
+        bx.callMethod('crm.dealcategory.list', {}, (catRes: any) => {
+          const rawCats = catRes.data() || [];
+          const categories = [
+            { id: '0', name: 'Общая воронка' },
+            ...rawCats.map((c: any) => ({ id: String(c.ID), name: c.NAME }))
+          ];
+          setB24Categories(categories);
+
+          bx.callMethod('crm.dealcategory.stage.list', { id: 0 }, (stRes: any) => {
+            const stages = (stRes.data() || []).map((s: any) => ({
+              id: String(s.STATUS_ID || s.ID),
+              name: String(s.NAME),
+              categoryId: '0',
+              categoryName: 'Общая воронка'
+            }));
+            setB24Stages(stages);
+            setB24FetchStatus(`✨ Успешно! Загружено ${stages.length} стадий из CRM Битрикс24 по прямому API.`);
+            setIsFetchingB24Stages(false);
+          });
+        });
+        return;
+      }
       // 1. Fetch deal categories
       const catRes = await fetch("/api/bitrix24/query", {
         method: "POST",
@@ -3980,6 +4009,22 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
 
             {/* Webhook & Stage Loader Control Card */}
             <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-3.5">
+              {typeof window !== "undefined" && Boolean((window as any).BX24) && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs font-medium text-blue-900">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-blue-600 shrink-0" />
+                    <span>Приложение открыто внутри Битрикс24 — автоподключение без вебхука готово!</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => loadBitrix24Data()}
+                    className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition-all shrink-0 shadow-xs"
+                  >
+                    Загрузить стадии в 1 клик
+                  </button>
+                </div>
+              )}
+
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
                 <div className="flex-1 space-y-1">
                   <label className="block text-xs font-bold text-slate-700">

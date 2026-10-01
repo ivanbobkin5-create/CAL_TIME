@@ -27,10 +27,19 @@ export default defineConfig(({mode}) => {
       emptyOutDir: true,
       sourcemap: false,
       reportCompressedSize: false,
-      target: 'esnext',
+      target: 'es2022',
       minify: false,
-      cssMinify: 'esbuild',
-      chunkSizeWarningLimit: 5000,
+      cssMinify: false,
+      chunkSizeWarningLimit: 10000,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'vendor-core': ['react', 'react-dom'],
+            'vendor-icons': ['lucide-react'],
+            'vendor-ui': ['clsx', 'tailwind-merge'],
+          }
+        }
+      }
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
