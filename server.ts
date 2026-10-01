@@ -1761,10 +1761,7 @@ function transliterate(str: string): string {
 
   const normalizeCompanyPath = (inputPath: string): string => {
     if (!inputPath) return inputPath;
-    return inputPath
-      .replace(/^companies\/(?:b24_)?mebelfaktura(?:_bitrix24_ru)?(\/|$)/i, 'companies/e5om9lzxh$1')
-      .replace(/^companies\/b24_b24-y0towk_bitrix24_ru(\/|$)/i, 'companies/e5om9lzxh$1')
-      .replace(/^companies\/b24_default_company(\/|$)/i, 'companies/e5om9lzxh$1');
+    return inputPath.replace(/^companies\/[^/]+(\/|$)/i, 'companies/e5om9lzxh$1');
   };
 
   // TimeWeb Database Document API
@@ -1872,33 +1869,36 @@ function transliterate(str: string): string {
         };
       });
       
-      if (colPath === "companies" && !mapped.some(m => m.id === "e5om9lzxh")) {
-        const defaultComp = {
-          id: "e5om9lzxh",
-          data: {
+      if (colPath === "companies") {
+        mapped = mapped.filter(m => m.id === "e5om9lzxh");
+        if (!mapped.some(m => m.id === "e5om9lzxh")) {
+          const defaultComp = {
             id: "e5om9lzxh",
-            name: "Мебель Фактура",
-            type: "Мебельное производство",
-            ownerEmail: "lk.ivanbobkin@gmail.com",
-            bitrix24: {
-              domain: "mebelfaktura.bitrix24.ru",
-              webhookUrl: "https://mebelfaktura.bitrix24.ru/rest/1/f0xsa9zrg7zaxhrk/",
-              categoryId: "1",
-              stageId: "C1:UC_NI96U0",
-              doneStageId: "C1:UC_RBMIRC"
+            data: {
+              id: "e5om9lzxh",
+              name: "Мебель Фактура",
+              type: "Мебельное производство",
+              ownerEmail: "lk.ivanbobkin@yandex.ru",
+              bitrix24: {
+                domain: "mebelfaktura.bitrix24.ru",
+                webhookUrl: "https://mebelfaktura.bitrix24.ru/rest/1/f0xsa9zrg7zaxhrk/",
+                categoryId: "1",
+                stageId: "C1:UC_NI96U0",
+                doneStageId: "C1:UC_RBMIRC"
+              },
+              erpConfig: {
+                orderSource: "bitrix24",
+                bitrix24CategoryId: "1",
+                bitrix24StageId: "C1:UC_NI96U0",
+                bitrix24DoneStageId: "C1:UC_RBMIRC",
+                bitrix24WebhookUrl: "https://mebelfaktura.bitrix24.ru/rest/1/f0xsa9zrg7zaxhrk/"
+              }
             },
-            erpConfig: {
-              orderSource: "bitrix24",
-              bitrix24CategoryId: "1",
-              bitrix24StageId: "C1:UC_NI96U0",
-              bitrix24DoneStageId: "C1:UC_RBMIRC",
-              bitrix24WebhookUrl: "https://mebelfaktura.bitrix24.ru/rest/1/f0xsa9zrg7zaxhrk/"
-            }
-          },
-          path: "companies/e5om9lzxh"
-        };
-        mapped.unshift(defaultComp);
-        localStore.setDoc("companies/e5om9lzxh", "companies", "e5om9lzxh", JSON.stringify(defaultComp.data), false, false);
+            path: "companies/e5om9lzxh"
+          };
+          mapped.unshift(defaultComp);
+          localStore.setDoc("companies/e5om9lzxh", "companies", "e5om9lzxh", JSON.stringify(defaultComp.data), false, false);
+        }
       }
 
       // If fetching a products collection, strip heavy images for high-speed, lightweight delivery
@@ -2396,9 +2396,9 @@ function transliterate(str: string): string {
         });
       }
 
-      // Determine company ID: Ivan's portal / account belongs to e5om9lzxh, other portals get their own isolated company
-      const isMebelFaktura = cleanDomain.includes("mebelfaktura") || cleanEmail.includes("ivanbobkin") || cleanEmail.includes("yandex");
-      const b24CompanyId = isMebelFaktura ? "e5om9lzxh" : `b24_${cleanDomain.replace(/[^a-z0-9_-]/gi, '_')}`;
+      // All accounts / Bitrix24 portals belong to the single company e5om9lzxh (Мебель Фактура)
+      const isMebelFaktura = true;
+      const b24CompanyId = "e5om9lzxh";
 
       const eDoc = allCompanyDocs.find(d => d.docId === b24CompanyId);
       let newCompanyData: any = null;

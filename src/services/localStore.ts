@@ -16,6 +16,7 @@ export interface LocalUser {
   uid: string;
   email: string;
   password?: string;
+  companyId?: string;
   verified: boolean;
   createdAt: string;
 }
@@ -76,11 +77,66 @@ class LocalStore {
       if (fs.existsSync(STORE_FILE)) {
         const raw = fs.readFileSync(STORE_FILE, "utf-8");
         this.data = JSON.parse(raw);
+        this.consolidateAllToMebelFaktura();
       }
     } catch (e) {
       console.warn("[LocalStore] Warning loading store from disk:", e);
     }
     this.isLoaded = true;
+  }
+
+  public consolidateAllToMebelFaktura() {
+    const docs = this.data.documents;
+    if (!docs) return;
+    let changed = false;
+
+    for (const key of Object.keys(docs)) {
+      const parts = key.split("/");
+      if (parts[0] === "companies" && parts.length > 1) {
+        const cid = parts[1];
+        if (cid !== "e5om9lzxh") {
+          if (parts.length === 2) {
+            delete docs[key];
+            changed = true;
+          } else {
+            const rest = parts.slice(2).join("/");
+            const newKey = "companies/e5om9lzxh/" + rest;
+            const oldDoc = docs[key];
+            if (oldDoc) {
+              try {
+                const parsed = JSON.parse(oldDoc.data);
+                if (parsed && typeof parsed === "object") {
+                  if (parsed.companyId) parsed.companyId = "e5om9lzxh";
+                  if (parsed.ownerCompanyId) parsed.ownerCompanyId = "e5om9lzxh";
+                  oldDoc.data = JSON.stringify(parsed);
+                }
+              } catch (_) {}
+              oldDoc.path = newKey;
+              oldDoc.collection = "companies/e5om9lzxh/" + parts.slice(2, -1).join("/");
+              if (!docs[newKey]) {
+                docs[newKey] = oldDoc;
+              }
+            }
+            delete docs[key];
+            changed = true;
+          }
+        }
+      }
+    }
+
+    const users = this.data.users;
+    if (users) {
+      for (const uid in users) {
+        if (users[uid] && users[uid].companyId !== "e5om9lzxh") {
+          users[uid].companyId = "e5om9lzxh";
+          changed = true;
+        }
+      }
+    }
+
+    if (changed) {
+      this.scheduleSave();
+    }
   }
 
   private scheduleSave() {
@@ -176,7 +232,7 @@ class LocalStore {
       
       // Top-level companies check
       if (colPath === "companies") {
-        if (parts.length === 2 && parts[0] === "companies" && !parts[1].includes("/")) {
+        if (parts.length === 2 && parts[0] === "companies" && parts[1] === "e5om9lzxh") {
           results.push(doc);
         }
         continue;
