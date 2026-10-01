@@ -81,6 +81,7 @@ export const EdgingRemainsModal: React.FC<EdgingRemainsModalProps> = ({
       id: `edge-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       orderId: order.id,
       orderNumber: order.orderNumber,
+      clientName: order.clientName || order.deliveryData?.clientName || '',
       type: 'edge',
       category: 'Кромка',
       materialName: fullMaterialName,

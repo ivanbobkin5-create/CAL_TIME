@@ -86,6 +86,7 @@ export const CuttingOffcutsModal: React.FC<CuttingOffcutsModalProps> = ({
       id: `offcut-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       orderId: order.id,
       orderNumber: order.orderNumber,
+      clientName: order.clientName || order.deliveryData?.clientName || '',
       type: 'offcut',
       category: category,
       materialName: mat,

@@ -41,6 +41,7 @@ import { parseBirkaFile, BirkaParseResult, BirkaDetail, consolidateDetails } fro
 import { formatDeadlineDate, orderRequiresEdging, getNextRequiredStage, getStageNameRussian, convertRuCharToEn, convertRuToEnLayout, normalizeBarcodeScan, speakText, matchDetailToScannedCode, cleanRawScannedString, processQRCommand, cleanOrderNumber, extractBitrixDealId, getBitrixDealUrl, getSmartOrderDisplay } from '../utils';
 import { CuttingOffcutsModal } from '../components/CuttingOffcutsModal';
 import { EdgingRemainsModal } from '../components/EdgingRemainsModal';
+import { RemainsLabelPrintModal } from '../components/RemainsLabelPrintModal';
 import { detailRequiresPrisadka, getDetailAvailabilityForStage, getScannedCountForDetail, isDetailFullyScanned } from '../utils/stageReadiness';
 import { FinishedPartNoticeModal } from '../components/FinishedPartNoticeModal';
 import { MobileCameraScannerModal } from '../components/MobileCameraScannerModal';
@@ -181,6 +182,9 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   // Modals for material residuals on stage completion
   const [showOffcutsModal, setShowOffcutsModal] = useState<boolean>(false);
   const [showEdgingRemainsModal, setShowEdgingRemainsModal] = useState<boolean>(false);
+  const [printResiduals, setPrintResiduals] = useState<MaterialResidual[]>([]);
+  const [showPrintResidualsModal, setShowPrintResidualsModal] = useState<boolean>(false);
+  const [onPrintModalCloseAction, setOnPrintModalCloseAction] = useState<(() => void) | null>(null);
   const [showForceCompleteModal, setShowForceCompleteModal] = useState<boolean>(false);
   const [forceCompleteReason, setForceCompleteReason] = useState<string>('');
 
@@ -981,17 +985,31 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   const handleOffcutsSubmitted = (offcuts: MaterialResidual[]) => {
     if (offcuts.length > 0 && onAddMaterialResiduals) {
       onAddMaterialResiduals(offcuts);
+      setShowOffcutsModal(false);
+      setPrintResiduals(offcuts);
+      setShowPrintResidualsModal(true);
+      setOnPrintModalCloseAction(() => () => {
+        finalizeStageCompletion(!isStageFullyScanned, forceCompleteReason);
+      });
+    } else {
+      setShowOffcutsModal(false);
+      finalizeStageCompletion(!isStageFullyScanned, forceCompleteReason);
     }
-    setShowOffcutsModal(false);
-    finalizeStageCompletion(!isStageFullyScanned, forceCompleteReason);
   };
 
   const handleEdgingRemainsSubmitted = (edges: MaterialResidual[]) => {
     if (edges.length > 0 && onAddMaterialResiduals) {
       onAddMaterialResiduals(edges);
+      setShowEdgingRemainsModal(false);
+      setPrintResiduals(edges);
+      setShowPrintResidualsModal(true);
+      setOnPrintModalCloseAction(() => () => {
+        finalizeStageCompletion(!isStageFullyScanned, forceCompleteReason);
+      });
+    } else {
+      setShowEdgingRemainsModal(false);
+      finalizeStageCompletion(!isStageFullyScanned, forceCompleteReason);
     }
-    setShowEdgingRemainsModal(false);
-    finalizeStageCompletion(!isStageFullyScanned, forceCompleteReason);
   };
 
   // Total stage completion status
@@ -1774,6 +1792,21 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
         catalogProducts={catalogProducts}
         onClose={() => setShowEdgingRemainsModal(false)}
         onSubmit={handleEdgingRemainsSubmitted}
+      />
+
+      {/* Label Printing Prompt Modal for Remains / Offcuts */}
+      <RemainsLabelPrintModal
+        isOpen={showPrintResidualsModal}
+        residuals={printResiduals}
+        widthMm={settings?.packageLabelSettings?.widthMm || 58}
+        heightMm={settings?.packageLabelSettings?.heightMm || 40}
+        onClose={() => {
+          setShowPrintResidualsModal(false);
+          if (onPrintModalCloseAction) {
+            onPrintModalCloseAction();
+            setOnPrintModalCloseAction(null);
+          }
+        }}
       />
 
       {/* Force Complete Stage Confirmation Modal */}

@@ -15,6 +15,7 @@ export interface MaterialResidual {
   id: string;
   orderId?: string;
   orderNumber?: string;
+  clientName?: string; // Имя/Фамилия заказчика
   type: 'offcut' | 'edge' | 'countertop' | 'wall_panel' | 'plinth' | 'light_profile' | 'gola_profile'; 
   // 'offcut' = Обрезок плиты, 'edge' = Кромка, 'countertop' = Столешница, 'wall_panel' = Стеновая панель, 'plinth' = Цоколь, 'light_profile' = Профиль подсветки, 'gola_profile' = Профиль GOLA
   category: 'ЛДСП' | 'МДФ' | 'ХДФ' | 'Кромка' | 'Столешница' | 'Стеновая панель' | 'Цоколь' | 'Профиль подсветки' | 'Профиль GOLA' | 'Пластик' | 'Постформинг' | 'Другое' | string;
@@ -449,6 +450,7 @@ export interface SalaryRecord {
 export interface ERPCompanySettings {
   companyTitle?: string;
   erpEnabled: boolean;
+  orderSource?: 'projects' | 'bitrix24'; // Источник заказов: 'projects' (Проекты калькулятора) или 'bitrix24' (Битрикс24 Сделки)
   executionMode?: 'classic' | 'live_item_planning'; // Режим работы: 'classic' (конвейер) или 'live_item_planning' (интерактивный календарь с поштучным live-сканированием)
   workDayStart: string;
   workDayEnd: string;

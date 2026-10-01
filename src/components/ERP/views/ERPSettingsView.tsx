@@ -279,6 +279,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
 
   const [formData, setFormData] = useState<ERPCompanySettings>(() => ({
     ...settings,
+    orderSource: settings.orderSource || companyData?.erpConfig?.orderSource || 'projects',
     drillingHolesCalculationMode: settings.drillingHolesCalculationMode || (settings.useNestingPrisadkaOnCutting !== false ? 'edge_only' : 'all'),
     filterPrisadkaParts: settings.filterPrisadkaParts !== false,
     bitrix24WebhookUrl: settings.bitrix24WebhookUrl || companyData?.bitrix24?.webhookUrl || companyData?.erpConfig?.bitrix24WebhookUrl || '',
@@ -3887,6 +3888,65 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
       {/* TAB: BITRIX24 & DELIVERY ACT SETTINGS */}
       {activeTab === 'bitrix_delivery' && (
         <div className="space-y-6">
+          {/* Источник заказов для ERP системы */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-4">
+            <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
+              <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-2xl">
+                <Folder className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-900 text-base">Источник заказов для ERP системы</h3>
+                <p className="text-xs text-slate-500">
+                  Укажите, откуда в производственную систему цеха должны поступать новые заказы на изготовление
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div 
+                onClick={() => setFormData(prev => ({ ...prev, orderSource: 'projects' }))}
+                className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between gap-2 ${
+                  formData.orderSource === 'projects'
+                    ? 'bg-indigo-50/40 border-indigo-600 shadow-xs'
+                    : 'bg-white border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900 text-sm">Проекты калькулятора</span>
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                    formData.orderSource === 'projects' ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300'
+                  }`}>
+                    {formData.orderSource === 'projects' && <Check className="w-3 h-3 stroke-[3]" />}
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Заказами являются проекты, созданные и рассчитанные внутри приложения «Мебельный калькулятор».
+                </p>
+              </div>
+
+              <div 
+                onClick={() => setFormData(prev => ({ ...prev, orderSource: 'bitrix24' }))}
+                className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between gap-2 ${
+                  formData.orderSource === 'bitrix24'
+                    ? 'bg-blue-50/40 border-blue-600 shadow-xs'
+                    : 'bg-white border-slate-200 hover:border-slate-300'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900 text-sm">Интеграция с Bitrix24 CRM</span>
+                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
+                    formData.orderSource === 'bitrix24' ? 'border-blue-600 bg-blue-600 text-white' : 'border-slate-300'
+                  }`}>
+                    {formData.orderSource === 'bitrix24' && <Check className="w-3 h-3 stroke-[3]" />}
+                  </div>
+                </div>
+                <p className="text-xs text-slate-500">
+                  Сделки Битрикс24 из выбранной воронки и стадии автоматически попадают в ERP на изготовление.
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* Bitrix24 Stage Mapping Configuration */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200/80 shadow-sm space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
