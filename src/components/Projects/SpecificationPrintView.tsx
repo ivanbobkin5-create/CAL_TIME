@@ -1,5 +1,4 @@
 import React, { useRef, useState } from "react";
-import html2pdf from "html2pdf.js";
 import { Download, Loader2 } from "lucide-react";
 
 export const SpecificationPrintView = ({
@@ -66,6 +65,7 @@ export const SpecificationPrintView = ({
             orientation: "portrait" as const,
           },
         };
+        const html2pdf = (await import("html2pdf.js")).default;
         const pdf = html2pdf().from(contentRef.current).set(opt);
         await Promise.race([
           pdf.save(),

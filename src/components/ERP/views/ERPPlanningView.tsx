@@ -1369,7 +1369,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                         {/* Row-by-Row Stage Tasks (Exact shortened names) */}
                         {isExpanded && (
                           <div className="flex flex-col gap-1 pt-1.5 border-t border-slate-200/70">
-                            {STAGE_CONFIGS.map(st => {
+                            {STAGE_CONFIGS.filter(st => isStageRequiredForOrder(order, st.id, settings)).map(st => {
                               const StIcon = st.icon;
                               const assignedDate = getStageAssignedDate(order, st.id);
                               const { isDone: isStageDone, isWorkingNow, scannedCount, totalCount } = getStageCompletionStatus(order, st.id);
@@ -1850,10 +1850,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                                  {/* Stage summary on order row */}
                                 <div className={`flex-1 grid ${periodRange === '1week' ? 'grid-cols-7' : 'grid-cols-14'}`}>
                                   {timelineDays.map(day => {
-                                    const assignedStages = STAGE_CONFIGS.filter(st => {
-                                      const assigned = getStageAssignedDate(order, st.id);
-                                      return assigned === day.dateStr;
-                                    });
+                                    const assignedStages = STAGE_CONFIGS.filter(st => isStageRequiredForOrder(order, st.id, settings) && getStageAssignedDate(order, st.id) === day.dateStr);
 
                                     return (
                                       <div key={day.dateStr} className="p-0.5 border-r border-slate-200 last:border-r-0 flex flex-wrap gap-0.5 items-center justify-center min-w-0">
@@ -1883,7 +1880,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                               </div>
 
                               {/* Sub-rows for each stage of order */}
-                              {isExpanded && STAGE_CONFIGS.map(st => {
+                              {isExpanded && STAGE_CONFIGS.filter(st => isStageRequiredForOrder(order, st.id, settings)).map(st => {
                                 const StIcon = st.icon;
                                 const assignedDate = getStageAssignedDate(order, st.id);
                                 const { isDone: isStageDone, isWorkingNow, scannedCount, totalCount } = getStageCompletionStatus(order, st.id);

@@ -28,18 +28,9 @@ export default defineConfig(({mode}) => {
       sourcemap: false,
       reportCompressedSize: false,
       target: 'esnext',
-      minify: 'esbuild',
+      minify: false,
       cssMinify: 'esbuild',
-      rollupOptions: {
-        maxParallelFileOps: 2,
-        output: {
-          manualChunks: {
-            vendor: ['react', 'react-dom'],
-            lucide: ['lucide-react'],
-            konva: ['konva', 'react-konva'],
-          }
-        }
-      },
+      chunkSizeWarningLimit: 5000,
     },
     server: {
       // HMR is disabled in AI Studio via DISABLE_HMR env var.

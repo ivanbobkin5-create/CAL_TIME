@@ -132,7 +132,10 @@ export function parseBirFileText(text: string, customMapping?: Record<string, st
     const widIdx = findIndex(mapping.width || ['шир', 'ширина', 'width', 'w', 'размер y', 'габарит y', 'y']);
     const thkIdx = findIndex(mapping.thickness || ['толщ', 'толщина', 'thick', 't', 'z', 'глубин']);
     const matIdx = findIndex(mapping.material || ['матер', 'материал', 'mat'], ['кромк']);
-    const qtyIdx = findIndex(mapping.quantity || ['кол', 'количество', 'qty', 'count', 'шт']);
+    const qtyIdx = findIndex(
+      mapping.quantity || ['кол', 'количество', 'qty', 'count', 'шт'],
+      ['зак', 'order', 'проект', 'издел', 'всего', 'комплект', 'сделк', 'договор', '№', 'номер', 'pos']
+    );
     
     // Edges
     const edgeL1Idx = findIndex(mapping.edgeL1 || ['кромка л1', 'кромка1', 'длина 1', 'l1', 'кромка д1', 'край 1']);
@@ -322,6 +325,19 @@ export function parseBirFileText(text: string, customMapping?: Record<string, st
     });
   }
 
+  // Check for export anomaly where total parts count (e.g. 30) was assigned as quantity to every detail line
+  if (details.length > 1) {
+    const totalLines = details.length;
+    const itemsWithQtyEqualToTotal = details.filter(d => d.quantity === totalLines);
+    if (itemsWithQtyEqualToTotal.length >= Math.max(2, Math.floor(totalLines * 0.7))) {
+      for (const d of details) {
+        if (d.quantity === totalLines) {
+          d.quantity = 1;
+        }
+      }
+    }
+  }
+
   return consolidateDetails(details);
 }
 
@@ -336,11 +352,8 @@ export function consolidateDetails(details: BirkaDetail[]): BirkaDetail[] {
     const normMat = (d.material || '').toLowerCase().trim();
     const normName = (d.name || '').toLowerCase().trim();
     
-    // Grouping key: if labelNumber is provided, group by position number + material + dimensions
-    // If position number is missing, include name in key
-    const key = normLabel 
-      ? `${normLabel}|${normMat}|${d.length}|${d.width}|${d.thickness}`
-      : `empty_${normMat}|${normName}|${d.length}|${d.width}|${d.thickness}`;
+    // Grouping key: always include label number, name, material, and dimensions to prevent collapsing different details
+    const key = `${normLabel}|${normName}|${normMat}|${d.length}|${d.width}|${d.thickness}`;
 
     if (!map.has(key)) {
       map.set(key, []);

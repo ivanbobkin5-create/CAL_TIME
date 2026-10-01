@@ -2891,36 +2891,30 @@ function transliterate(str: string): string {
             (reclStageConfig && isSameStage(dealStageId, reclStageConfig, categoryId))
           );
 
-          // Check keywords in deal TITLE or STAGE_ID
-          const dealTitleLower = (deal.TITLE || '').toLowerCase();
-          const dealStageLower = dealStageId.toLowerCase();
-          const isInstOrReclKeyword = ['монтаж', 'сборка', 'установка', 'рекламация', 'брак', 'доделка', 'переделка'].some(kw => 
-            dealTitleLower.includes(kw) || dealStageLower.includes(kw)
-          );
+          // Installation and Reclamation stages belong exclusively to installation tasks, NOT manufacturing shop floor orders planning
+          if (isTargetInstOrReclStage) {
+            continue;
+          }
 
-          const isInstallationOrReclamationDeal = isTargetInstOrReclStage || isInstOrReclKeyword;
-
-          if (!isInstallationOrReclamationDeal) {
-            if (allowedStageIds && allowedStageIds.size > 0) {
-              const isInAllowed = Array.from(allowedStageIds).some(allowed => isSameStage(allowed, dealStageId, categoryId));
-              if (!isInAllowed) {
-                continue;
-              }
-            } else if (startStageId) {
-              if (!isSameStage(dealStageId, startStageId, categoryId)) {
-                continue;
-              }
+          if (allowedStageIds && allowedStageIds.size > 0) {
+            const isInAllowed = Array.from(allowedStageIds).some(allowed => isSameStage(allowed, dealStageId, categoryId));
+            if (!isInAllowed) {
+              continue;
             }
+          } else if (startStageId) {
+            if (!isSameStage(dealStageId, startStageId, categoryId)) {
+              continue;
+            }
+          }
 
-            // If deal is closed in CRM
-            if (isClosedInB24) {
-              if (excludeClosedDeals) {
-                if (!doneStageId || !isSameStage(dealStageId, doneStageId, categoryId)) {
-                  continue;
-                }
-              } else if (!allowedStageIds && !doneStageId) {
+          // If deal is closed in CRM
+          if (isClosedInB24) {
+            if (excludeClosedDeals) {
+              if (!doneStageId || !isSameStage(dealStageId, doneStageId, categoryId)) {
                 continue;
               }
+            } else if (!allowedStageIds && !doneStageId) {
+              continue;
             }
           }
 
