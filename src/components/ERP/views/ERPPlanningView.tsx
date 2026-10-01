@@ -2320,7 +2320,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                       <span>{order.birkaData ? 'Заменить бирки' : '+ Файл бирок'}</span>
                       <input
                         type="file"
-                        accept=".bir,.csv,.tsv,.dbf,.zip,.txt"
+                        accept=".bir,.csv,.tsv,.dbf,.zip,.txt,.xlsx,.xls"
                         className="hidden"
                         onChange={(e) => {
                           const file = e.target.files?.[0];

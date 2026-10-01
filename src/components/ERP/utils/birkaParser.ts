@@ -1,5 +1,6 @@
 import JSZip from 'jszip';
 import * as pako from 'pako';
+import * as XLSX from 'xlsx';
 import { smartDecodeFile } from '../../../utils/fileEncodingDetector';
 
 // Interface for a single Birka / Label item
@@ -643,6 +644,21 @@ export async function parseBirkaFile(
   let rawText = '';
   let encodingUsed = 'UTF-8';
   let formatDetected = 'Спецификация деталей';
+
+  const isExcel = file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls');
+  if (isExcel) {
+    try {
+      const workbook = XLSX.read(uint8, { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      const csv = XLSX.utils.sheet_to_csv(worksheet, { forceQuotes: true });
+      rawText = csv;
+      encodingUsed = 'Excel (XLSX/XLS)';
+      formatDetected = 'Таблица Excel (.xlsx / .xls)';
+    } catch (e: any) {
+      console.error('XLSX read error for birka:', e);
+    }
+  }
 
   // Check if explicit encoding preference provided
   if (encodingPreference && encodingPreference !== 'auto') {

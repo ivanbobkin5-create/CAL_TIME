@@ -37914,6 +37914,17 @@ export default function App() {
     setExpandedResults((prev) => new Set([...prev, ...initialExpanded]));
     setResults(grouped);
 
+    setUnmatchedBazisItems([]);
+    setBazisFasteners([]);
+    setDetailedFastenersMode(false);
+    setManualFittings({});
+    setCustomFittingQuantities({});
+    setRemovedFittings({});
+    setAddedProducts([]);
+    setAddedServices([]);
+    setCurrentProjectTotal(0);
+    setCurrentSummaryRows([]);
+
     const fileNameWithoutExt = fileName.replace(/\.[^/.]+$/, "");
     const newProjectId = Date.now().toString();
     setCurrentProjectId(newProjectId);
@@ -38428,25 +38439,13 @@ export default function App() {
       }
     });
 
-    if (matchedProductsList.length > 0) {
-      setAddedProducts((prev) => {
-        const updated = [...prev];
-        matchedProductsList.forEach((mp) => {
-          const existingIdx = updated.findIndex((p) => String(p.id) === String(mp.id) || (mp.article && p.article && String(p.article) === String(mp.article)));
-          if (existingIdx !== -1) {
-            const currentQty = updated[existingIdx].quantity || updated[existingIdx].qty || 0;
-            updated[existingIdx] = {
-              ...updated[existingIdx],
-              quantity: currentQty + mp.quantity,
-              qty: currentQty + mp.quantity,
-            };
-          } else {
-            updated.push(mp);
-          }
-        });
-        return updated;
-      });
-    }
+    setAddedProducts(matchedProductsList);
+    setAddedServices([]);
+    setManualFittings({});
+    setCustomFittingQuantities({});
+    setRemovedFittings({});
+    setCurrentProjectTotal(0);
+    setCurrentSummaryRows([]);
 
     setUnmatchedBazisItems(unmatchedBazisItemsList);
     setBazisFasteners(bazisFastenersList);

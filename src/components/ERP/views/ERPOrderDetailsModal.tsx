@@ -838,7 +838,7 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
                         <span>{order.birkaData ? 'Заменить' : '+ Загрузить'}</span>
                         <input
                           type="file"
-                          accept=".bir,.brx,.csv,.tsv,.txt,.dbf,.zip"
+                          accept=".bir,.brx,.csv,.tsv,.txt,.dbf,.zip,.xlsx,.xls"
                           onChange={handleFileUpload}
                           className="hidden"
                           disabled={isUploading}

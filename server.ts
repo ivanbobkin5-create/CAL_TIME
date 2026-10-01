@@ -1377,7 +1377,7 @@ function transliterate(str: string): string {
         verified: true,
         companyId: domain ? `b24_${domain.replace(/[^a-zA-Z0-9_-]/g, "_")}` : "b24_default_company"
       };
-      localStore.setDoc(`users/${userUid}`, "users", userUid, JSON.stringify(userProfileData), false, false);
+      localStore.setDoc(`users/${userUid}`, "users", userUid, JSON.stringify(userProfileData), false, !isPostgresAvailable);
 
       if (isPostgresAvailable) {
         dbQueryWithRetry(() => prisma.dbDocument.upsert({
@@ -2579,7 +2579,7 @@ function transliterate(str: string): string {
       }
 
       // Determine company ID: Ivan's portal / account belongs to e5om9lzxh, other portals get their own isolated company
-      const isMebelFaktura = cleanDomain.includes("mebelfaktura") || cleanEmail.includes("ivanbobkin") || cleanEmail.includes("yandex");
+      const isMebelFaktura = cleanDomain.includes("mebelfaktura") || cleanEmail === "lk.ivanbobkin@yandex.ru" || cleanEmail === "lk.ivanbobkin@gmail.com";
       const b24CompanyId = isMebelFaktura ? "e5om9lzxh" : `b24_${cleanDomain.replace(/[^a-z0-9_-]/gi, '_')}`;
 
       const eDoc = allCompanyDocs.find(d => d.docId === b24CompanyId);
@@ -2623,7 +2623,7 @@ function transliterate(str: string): string {
         }
       }));
 
-      localStore.setDoc(`companies/${b24CompanyId}`, "companies", b24CompanyId, JSON.stringify(mergedCompanyData), false, false);
+      localStore.setDoc(`companies/${b24CompanyId}`, "companies", b24CompanyId, JSON.stringify(mergedCompanyData), false, !isPostgresAvailable);
 
       return res.json({
         success: true,
