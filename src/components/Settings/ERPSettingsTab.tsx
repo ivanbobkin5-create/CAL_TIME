@@ -244,36 +244,77 @@ export const ERPSettingsTab: React.FC<ERPSettingsTabProps> = ({
           </p>
         </div>
 
-        <div className="p-8 bg-blue-50/50 rounded-3xl border border-blue-200/80 space-y-6">
+        <div className="p-8 bg-white rounded-3xl border border-slate-200/80 space-y-6">
           <div className="flex items-start gap-4">
-            <div className="w-12 h-12 rounded-2xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-blue-500/20">
-              <Link className="w-6 h-6" />
+            <div className="w-12 h-12 rounded-2xl bg-indigo-600 text-white flex items-center justify-center shrink-0 shadow-md shadow-indigo-500/20">
+              <Link2 className="w-6 h-6" />
             </div>
             <div className="space-y-2">
               <h3 className="text-xl font-bold text-slate-900 tracking-tight">
-                Настройки Bitrix24 выполняются в ERP-системе
+                Настройки подключения Bitrix24
               </h3>
               <p className="text-sm text-slate-600 leading-relaxed max-w-3xl">
-                Все параметры синхронизации с Битрикс24 (входящий вебхук, воронка сделок, выбор источника заказов, стадии «Начало производства» и «Готово к отгрузке», раздел «Монтаж и сборка», сопоставление участков и пользовательские поля) настраиваются <strong>уникально и единолично в ERP-системе цеха</strong> в разделе <strong>«Настройки ERP»</strong>.
+                Настройте подключение вашей компании к CRM Битрикс24.
               </p>
             </div>
           </div>
 
-          <div className="pt-4 border-t border-blue-200/60 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-            <div className="text-xs text-slate-500 flex items-center gap-2">
-              <Info className="w-4 h-4 text-blue-600 shrink-0" />
-              <span>Единственный конфигурационный центр интеграции цеха с CRM.</span>
-            </div>
+          <div className="pt-4 border-t border-slate-200/60 space-y-4">
+            {/* OAuth Integration - New Button */}
+            <button
+              type="button"
+              onClick={async () => {
+                try {
+                  const response = await fetch('/api/auth/bitrix24/url');
+                  const { url } = await response.json();
+                  
+                  const authWindow = window.open(
+                    url,
+                    'oauth_popup',
+                    'width=600,height=700'
+                  );
 
-            <a
-              href={`/${companySlug}/erp`}
-              target="_blank"
-              rel="noreferrer"
-              className="px-6 py-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-bold text-xs shadow-md shadow-blue-600/30 transition-all flex items-center justify-center gap-2 shrink-0 active:scale-95 border border-blue-500/30"
+                  const handleMessage = (event: MessageEvent) => {
+                    if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+                      window.removeEventListener('message', handleMessage);
+                      alert("Аккаунт Битрикс24 успешно связан!");
+                      // Optionally reload settings
+                    }
+                  };
+                  window.addEventListener('message', handleMessage);
+                } catch (error) {
+                  console.error('OAuth error:', error);
+                  alert('Ошибка при попытке подключения');
+                }
+              }}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-all shadow-sm flex items-center gap-2 mb-2 w-full justify-center"
             >
-              <span>Перейти к настройкам Bitrix24 в ERP</span>
-              <ExternalLink className="w-4 h-4" />
-            </a>
+              <Link2 className="w-3.5 h-3.5" />
+              Связать аккаунт Битрикс24 (OAuth)
+            </button>
+
+            <label className="block text-xs font-bold text-slate-700">
+              Входящий вебхук Битрикс24 (для совместимости):
+            </label>
+            <div className="relative flex items-center">
+              <Link2 className="w-4 h-4 text-slate-400 absolute left-3 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="https://your-domain.bitrix24.ru/rest/1/webhook-key/"
+                value={companyData?.bitrix24?.webhookUrl || ''}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setCompanyData((prev: any) => ({
+                    ...prev,
+                    bitrix24: {
+                      ...(prev?.bitrix24 || {}),
+                      webhookUrl: val
+                    }
+                  }));
+                }}
+                className="w-full pl-9 pr-3 py-2 rounded-xl bg-white border border-slate-200 text-xs font-mono font-medium text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
           </div>
         </div>
       </section>
