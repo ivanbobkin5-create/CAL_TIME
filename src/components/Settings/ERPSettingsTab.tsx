@@ -26,7 +26,8 @@ import {
   Box,
   Package,
   CheckSquare,
-  Info
+  Info,
+  Link2
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 

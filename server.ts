@@ -5926,8 +5926,10 @@ function transliterate(str: string): string {
       console.log(`--- [BOOTSTRAP ADMIN] Admin & Owner users ready in resilient local store ---`);
 
       // 2. Safely sync to PostgreSQL if available & preload documents into localStore
-      if (isPostgresAvailable) {
+      const checkPostgres = async () => {
         try {
+          if (!await checkPostgresStatus()) return;
+          
           await prisma.authUser.upsert({
             where: { email },
             update: { password: hashedPassword, verified: true },
@@ -5960,8 +5962,11 @@ function transliterate(str: string): string {
           console.log(`--- [BOOTSTRAP PRELOAD] Cached ${docs.length} critical documents from PostgreSQL into localStore ---`);
         } catch (dbErr: any) {
           console.warn("--- [BOOTSTRAP ADMIN] Notice during PostgreSQL bootstrap/preload:", dbErr);
+          isPostgresAvailable = false;
         }
-      }
+      };
+      
+      checkPostgres();
     } catch (bootstrapErr) {
       console.warn("--- [BOOTSTRAP ADMIN] Notice during admin bootstrap:", bootstrapErr);
     }
