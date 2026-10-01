@@ -325,19 +325,6 @@ export function parseBirFileText(text: string, customMapping?: Record<string, st
     });
   }
 
-  // Check for export anomaly where total parts count (e.g. 30) was assigned as quantity to every detail line
-  if (details.length > 1) {
-    const totalLines = details.length;
-    const itemsWithQtyEqualToTotal = details.filter(d => d.quantity === totalLines);
-    if (itemsWithQtyEqualToTotal.length >= Math.max(2, Math.floor(totalLines * 0.7))) {
-      for (const d of details) {
-        if (d.quantity === totalLines) {
-          d.quantity = 1;
-        }
-      }
-    }
-  }
-
   return consolidateDetails(details);
 }
 
@@ -348,12 +335,27 @@ export function consolidateDetails(details: BirkaDetail[]): BirkaDetail[] {
   const map = new Map<string, BirkaDetail[]>();
 
   for (const d of details) {
-    const normLabel = (d.labelNumber || '').toLowerCase().trim();
+    // Strip copy/sticker suffixes like #1, -1, /1, (1) from label number (e.g. "01.01 #1" -> "01.01")
+    const rawLabel = (d.labelNumber || '').trim();
+    const cleanLabel = rawLabel
+      .replace(/[\s\-_#/(\[\{]\s*\d+\s*[)\]\}]?$/, '')
+      .replace(/^[#№\s]+/, '')
+      .trim();
+
+    const normLabel = (cleanLabel || rawLabel).toLowerCase();
     const normMat = (d.material || '').toLowerCase().trim();
-    const normName = (d.name || '').toLowerCase().trim();
     
-    // Grouping key: always include label number, name, material, and dimensions to prevent collapsing different details
-    const key = `${normLabel}|${normName}|${normMat}|${d.length}|${d.width}|${d.thickness}`;
+    // Clean name from suffix e.g. "Боковина (1)" -> "Боковина"
+    const normName = (d.name || '')
+      .replace(/[\s\-_#/(\[\{]\s*\d+\s*[)\]\}]?$/, '')
+      .toLowerCase()
+      .trim();
+    
+    // Grouping key: if position / label number is present (e.g. "01.01"), group by position + material + dimensions
+    // Otherwise group by name + material + dimensions
+    const key = normLabel 
+      ? `pos_${normLabel}|${normMat}|${d.length}|${d.width}|${d.thickness}`
+      : `name_${normName}|${normMat}|${d.length}|${d.width}|${d.thickness}`;
 
     if (!map.has(key)) {
       map.set(key, []);
@@ -364,10 +366,24 @@ export function consolidateDetails(details: BirkaDetail[]): BirkaDetail[] {
   const consolidated: BirkaDetail[] = [];
 
   for (const items of map.values()) {
+    const first = items[0];
+    const rawLabel = (first.labelNumber || '').trim();
+    const cleanLabel = rawLabel
+      .replace(/[\s\-_#/(\[\{]\s*\d+\s*[)\]\}]?$/, '')
+      .replace(/^[#№\s]+/, '')
+      .trim() || rawLabel;
+
+    const cleanName = (first.name || '')
+      .replace(/[\s\-_#/(\[\{]\s*\d+\s*[)\]\}]?$/, '')
+      .trim() || first.name;
+
     if (items.length === 1) {
-      consolidated.push(items[0]);
+      consolidated.push({
+        ...first,
+        labelNumber: cleanLabel,
+        name: cleanName,
+      });
     } else {
-      const first = items[0];
       const qtys = items.map(it => it.quantity || 1);
       
       let finalQuantity: number;
@@ -375,10 +391,10 @@ export function consolidateDetails(details: BirkaDetail[]): BirkaDetail[] {
 
       if (allEqual) {
         if (qtys[0] === 1) {
-          // E.g. 2 physical detail lines with qty 1 each -> combined total qty = 2
+          // E.g. 30 physical detail lines with qty 1 each -> combined total qty = 30
           finalQuantity = items.length;
         } else {
-          // E.g. 2 lines for detail 01.01, both claiming total project qty = 2 (Bazis sticker repetition)
+          // E.g. 30 lines for detail 01.01, both claiming total project qty = 30 (Bazis sticker repetition)
           finalQuantity = Math.max(qtys[0], items.length);
         }
       } else {
@@ -391,6 +407,8 @@ export function consolidateDetails(details: BirkaDetail[]): BirkaDetail[] {
 
       consolidated.push({
         ...first,
+        labelNumber: cleanLabel,
+        name: cleanName,
         quantity: finalQuantity,
         edgeL1: first.edgeL1 || items.find(i => i.edgeL1)?.edgeL1,
         edgeL2: first.edgeL2 || items.find(i => i.edgeL2)?.edgeL2,
