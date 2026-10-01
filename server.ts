@@ -1872,6 +1872,35 @@ function transliterate(str: string): string {
         };
       });
       
+      if (colPath === "companies" && !mapped.some(m => m.id === "e5om9lzxh")) {
+        const defaultComp = {
+          id: "e5om9lzxh",
+          data: {
+            id: "e5om9lzxh",
+            name: "Мебель Фактура",
+            type: "Мебельное производство",
+            ownerEmail: "lk.ivanbobkin@gmail.com",
+            bitrix24: {
+              domain: "mebelfaktura.bitrix24.ru",
+              webhookUrl: "https://mebelfaktura.bitrix24.ru/rest/1/f0xsa9zrg7zaxhrk/",
+              categoryId: "1",
+              stageId: "C1:UC_NI96U0",
+              doneStageId: "C1:UC_RBMIRC"
+            },
+            erpConfig: {
+              orderSource: "bitrix24",
+              bitrix24CategoryId: "1",
+              bitrix24StageId: "C1:UC_NI96U0",
+              bitrix24DoneStageId: "C1:UC_RBMIRC",
+              bitrix24WebhookUrl: "https://mebelfaktura.bitrix24.ru/rest/1/f0xsa9zrg7zaxhrk/"
+            }
+          },
+          path: "companies/e5om9lzxh"
+        };
+        mapped.unshift(defaultComp);
+        localStore.setDoc("companies/e5om9lzxh", "companies", "e5om9lzxh", JSON.stringify(defaultComp.data), false, false);
+      }
+
       // If fetching a products collection, strip heavy images for high-speed, lightweight delivery
       if (colPath.endsWith("/products")) {
         mapped = mapped.map(item => {
@@ -2043,6 +2072,11 @@ function transliterate(str: string): string {
     try {
       const rawPath = req.params[0] || "";
       const docPath = normalizeCompanyPath(rawPath);
+
+      // Prevent accidental deletion of main company e5om9lzxh
+      if (docPath === "companies/e5om9lzxh" || rawPath === "companies/e5om9lzxh") {
+        return res.json({ status: "ok", message: "Protected company cannot be deleted" });
+      }
       localStore.deleteDoc(docPath);
       localStore.deleteCollection(docPath);
       if (rawPath !== docPath) {
