@@ -347,19 +347,14 @@ export const BazisHardwareImportModal: React.FC<BazisHardwareImportModalProps> =
             </button>
             <button
               id="bazis-hardware-modal-confirm-btn"
-              disabled={selectedCount === 0}
               onClick={() => {
                 const selected = items.filter((it) => it.selected);
                 onConfirm(selected);
               }}
-              className={`px-6 py-2.5 text-xs font-bold text-white rounded-xl shadow-lg transition-all cursor-pointer flex items-center gap-2 ${
-                selectedCount === 0
-                  ? "bg-gray-300 shadow-none cursor-not-allowed"
-                  : "bg-amber-600 hover:bg-amber-700 shadow-amber-200"
-              }`}
+              className="px-6 py-2.5 text-xs font-bold text-white rounded-xl shadow-lg transition-all cursor-pointer flex items-center gap-2 bg-amber-600 hover:bg-amber-700 shadow-amber-200"
             >
               <Check className="w-4 h-4" />
-              Добавить в проект ({selectedCount})
+              {selectedCount === 0 ? "Импортировать без фурнитуры" : `Добавить в проект (${selectedCount})`}
             </button>
           </div>
         </div>
