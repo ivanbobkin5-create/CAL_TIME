@@ -35095,6 +35095,11 @@ export default function App() {
         return;
       }
       
+      if (text.trim().startsWith("<!doctype") || text.trim().startsWith("<html") || text.includes("<title>")) {
+        console.warn("Bitrix24: received HTML response instead of JSON (server may be restarting).");
+        return;
+      }
+      
       let data;
       try {
         data = JSON.parse(text);
@@ -35142,6 +35147,11 @@ export default function App() {
         return;
       }
 
+      if (text.trim().startsWith("<!doctype") || text.trim().startsWith("<html") || text.includes("<title>")) {
+        console.warn("Bitrix24: received HTML response instead of JSON (server may be restarting).");
+        return;
+      }
+
       let data;
       try {
         data = JSON.parse(text);
@@ -35186,6 +35196,11 @@ export default function App() {
       const text = await res.text();
       if (!res.ok || text.includes("Rate exceeded")) {
         console.warn("Bitrix24: Rate limit exceeded or server error loading procurement stages");
+        return;
+      }
+
+      if (text.trim().startsWith("<!doctype") || text.trim().startsWith("<html") || text.includes("<title>")) {
+        console.warn("Bitrix24: received HTML response instead of JSON (server may be restarting).");
         return;
       }
 

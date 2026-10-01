@@ -325,6 +325,87 @@ export function parseBirFileText(text: string, customMapping?: Record<string, st
     });
   }
 
+  // Strategy 4: Table without headers (guess columns dynamically based on cell types)
+  if (details.length === 0) {
+    for (let i = 0; i < lines.length; i++) {
+      const cols = lines[i].split(delimiter).map(c => c.trim().replace(/^["']|["']$/g, ''));
+      if (cols.length < 3) continue; // Needs at least 3 columns
+
+      const numbers: { val: number; idx: number }[] = [];
+      const strings: { val: string; idx: number }[] = [];
+
+      cols.forEach((col, idx) => {
+        const cleaned = col.replace(',', '.');
+        const num = parseFloat(cleaned);
+        if (!isNaN(num) && num > 0) {
+          numbers.push({ val: num, idx });
+        } else if (col.length > 0) {
+          strings.push({ val: col, idx });
+        }
+      });
+
+      if (numbers.length >= 2) {
+        const sortedNums = [...numbers].sort((a, b) => b.val - a.val);
+        
+        let length = sortedNums[0].val;
+        let width = sortedNums[1].val;
+        let thickness = 16;
+        let quantity = 1;
+        let name = '';
+        let material = 'ЛДСП 16 мм';
+        let pos = String(i + 1);
+
+        const thicknessCandidate = numbers.find(n => n.val >= 3 && n.val <= 50 && n.val !== length && n.val !== width);
+        if (thicknessCandidate) {
+          thickness = thicknessCandidate.val;
+        }
+
+        const qtyCandidate = numbers.find(n => n.val >= 1 && n.val <= 200 && n.val !== length && n.val !== width && n.val !== thickness && n.idx !== 0);
+        if (qtyCandidate) {
+          quantity = Math.round(qtyCandidate.val);
+        }
+
+        const nameCandidate = strings.find(s => {
+          const l = s.val.toLowerCase();
+          return !l.includes('лдсп') && !l.includes('мдф') && !l.includes('хдф') && !l.includes('двп') && !l.includes('egger') && !l.includes('заказ');
+        });
+        if (nameCandidate) {
+          name = nameCandidate.val;
+        } else if (strings.length > 0) {
+          name = strings[0].val;
+        } else {
+          name = `Деталь ${i + 1}`;
+        }
+
+        const matCandidate = strings.find(s => {
+          const l = s.val.toLowerCase();
+          return l.includes('лдсп') || l.includes('мдф') || l.includes('хдф') || l.includes('двп') || l.includes('egger') || l.includes('кроно') || l.includes('плита');
+        });
+        if (matCandidate) {
+          material = matCandidate.val;
+        }
+
+        const firstColNum = parseFloat(cols[0].replace(',', '.'));
+        if (!isNaN(firstColNum) && firstColNum < 1000) {
+          pos = String(Math.round(firstColNum));
+        }
+
+        if (length > 10 && width > 10) {
+          details.push({
+            id: `det_guess_${i}_${Math.random().toString(36).substring(2, 7)}`,
+            labelNumber: pos,
+            name,
+            length,
+            width,
+            thickness,
+            material,
+            quantity
+          });
+        }
+      }
+    }
+  }
+
   return consolidateDetails(details);
 }
 

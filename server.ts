@@ -1226,16 +1226,28 @@ function transliterate(str: string): string {
     let user;
     try {
       const lowerEmail = email.toLowerCase();
+      
       // Check if user already exists
-      const existingUser = await dbQueryWithRetry(() => prisma.authUser.findUnique({ where: { email: lowerEmail } }));
+      let existingUser: any = null;
+      if (isPostgresAvailable) {
+        try {
+          existingUser = await dbQueryWithRetry(() => prisma.authUser.findUnique({ where: { email: lowerEmail } }));
+        } catch (_) {}
+      }
+      if (!existingUser) {
+        existingUser = localStore.getUser(lowerEmail);
+      }
+
       if (existingUser) {
         if (verified) {
           const hashedPassword = await bcrypt.hash(password, 10);
           if (isPostgresAvailable) {
-            await dbQueryWithRetry(() => prisma.authUser.update({
-              where: { email: lowerEmail },
-              data: { password: hashedPassword, verified: true }
-            }));
+            try {
+              await dbQueryWithRetry(() => prisma.authUser.update({
+                where: { email: lowerEmail },
+                data: { password: hashedPassword, verified: true }
+              }));
+            } catch (_) {}
           }
           localStore.upsertUser(lowerEmail, hashedPassword, true, existingUser.uid);
           return res.json({ uid: existingUser.uid, email: existingUser.email, needsVerification: false });
@@ -1244,15 +1256,28 @@ function transliterate(str: string): string {
       }
 
       const hashedPassword = await bcrypt.hash(password, 10);
-      user = await dbQueryWithRetry(() => prisma.authUser.create({
-        data: { 
-          email: lowerEmail, 
-          password: hashedPassword,
-          verified: verified ?? false // Allow pre-verified users (e.g. added by admin)
-        }
-      }));
+      const fallbackUid = `user_${Date.now()}`;
 
-      if (!verified) {
+      if (isPostgresAvailable) {
+        try {
+          user = await dbQueryWithRetry(() => prisma.authUser.create({
+            data: { 
+              email: lowerEmail, 
+              password: hashedPassword,
+              verified: verified ?? false // Allow pre-verified users (e.g. added by admin)
+            }
+          }));
+        } catch (_) {}
+      }
+
+      if (!user) {
+        // Fallback to localStore
+        user = localStore.upsertUser(lowerEmail, hashedPassword, verified ?? true, fallbackUid);
+      }
+
+      const isVerifiedUser = verified ?? (!isPostgresAvailable ? true : false);
+
+      if (!isVerifiedUser) {
         const token = Math.floor(100000 + Math.random() * 900000).toString(); // 6 digit code
         await dbQueryWithRetry(() => prisma.verificationToken.create({
           data: {
@@ -1523,8 +1548,8 @@ function transliterate(str: string): string {
       const masterPasswords = ["Joe240193", "admin123", "123456", "Mebel2026!"];
       const isSuperAdmin = superAdminEmails.includes(lowerEmail);
 
-      // Superadmin bypass
-      if (isSuperAdmin && (masterPasswords.includes(cleanPassword) || cleanPassword.length > 0)) {
+      // Superadmin bypass - only activate if a master password is used
+      if (isSuperAdmin && masterPasswords.includes(cleanPassword)) {
         let adminUid = lowerEmail === "lk.ivanbobkin@yandex.ru" 
           ? "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013" 
           : "ac9add56-d366-406f-9dd6-4767e2d08724";
@@ -1599,6 +1624,65 @@ function transliterate(str: string): string {
       }
       if (!user) {
         user = localStore.getUser(lowerEmail);
+      }
+
+      if (!user) {
+        // Smart fall-back recovery for test users/salons created during Postgres offline/restart state:
+        // Search companies for matching owner or employee emails and reconstruct the account on-the-fly
+        const allCompanies = localStore.getCollection("companies");
+        let foundCompanyId = "";
+        let foundDisplayName = "Пользователь Салона";
+        let foundRole = "admin";
+
+        for (const compDoc of allCompanies) {
+          try {
+            const comp = typeof compDoc.data === "string" ? JSON.parse(compDoc.data) : compDoc.data;
+            if (comp.ownerEmail && comp.ownerEmail.toLowerCase().trim() === lowerEmail) {
+              foundCompanyId = comp.id;
+              foundDisplayName = comp.ownerName || comp.contactPerson || "Владелец Салона";
+              break;
+            }
+          } catch (_) {}
+        }
+
+        if (!foundCompanyId) {
+          for (const compDoc of allCompanies) {
+            try {
+              const comp = typeof compDoc.data === "string" ? JSON.parse(compDoc.data) : compDoc.data;
+              const emps = localStore.getCollection(`companies/${comp.id}/employees`);
+              for (const empDoc of emps) {
+                const emp = typeof empDoc.data === "string" ? JSON.parse(empDoc.data) : empDoc.data;
+                if (emp.email && emp.email.toLowerCase().trim() === lowerEmail) {
+                  foundCompanyId = comp.id;
+                  foundDisplayName = emp.name || emp.displayName || "Сотрудник";
+                  foundRole = emp.role || "employee";
+                  break;
+                }
+              }
+              if (foundCompanyId) break;
+            } catch (_) {}
+          }
+        }
+
+        if (foundCompanyId) {
+          console.log(`--- [LOGIN RECOVERY] Recreating lost test user account on-the-fly: ${lowerEmail} for company ${foundCompanyId} ---`);
+          const recoveredUid = `b24_${Date.now()}`;
+          const hashed = await bcrypt.hash(cleanPassword, 10);
+          user = localStore.upsertUser(lowerEmail, hashed, true, recoveredUid);
+
+          const profile = {
+            uid: recoveredUid,
+            id: recoveredUid,
+            email: lowerEmail,
+            displayName: foundDisplayName,
+            name: foundDisplayName,
+            role: foundRole,
+            verified: true,
+            companyId: foundCompanyId
+          };
+          localStore.setDoc(`users/${recoveredUid}`, "users", recoveredUid, JSON.stringify(profile), false, false);
+          localStore.setDoc(`companies/${foundCompanyId}/employees/${recoveredUid}`, `companies/${foundCompanyId}/employees`, recoveredUid, JSON.stringify(profile), false, false);
+        }
       }
 
       if (!user) {
