@@ -4009,6 +4009,38 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
 
             {/* Webhook & Stage Loader Control Card */}
             <div className="p-4 bg-slate-50 border border-slate-200/80 rounded-2xl space-y-3.5">
+              {/* OAuth Integration - New Button */}
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const response = await fetch('/api/auth/bitrix24/url');
+                    const { url } = await response.json();
+                    
+                    const authWindow = window.open(
+                      url,
+                      'oauth_popup',
+                      'width=600,height=700'
+                    );
+
+                    const handleMessage = (event: MessageEvent) => {
+                      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+                        window.removeEventListener('message', handleMessage);
+                        alert("Аккаунт Битрикс24 успешно связан!");
+                      }
+                    };
+                    window.addEventListener('message', handleMessage);
+                  } catch (error) {
+                    console.error('OAuth error:', error);
+                    alert('Ошибка при попытке подключения');
+                  }
+                }}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition-all shadow-sm flex items-center gap-2 mb-2 w-full justify-center"
+              >
+                <Link2 className="w-3.5 h-3.5" />
+                Связать аккаунт Битрикс24 (OAuth)
+              </button>
+
               {typeof window !== "undefined" && Boolean((window as any).BX24) && (
                 <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs font-medium text-blue-900">
                   <div className="flex items-center gap-2">

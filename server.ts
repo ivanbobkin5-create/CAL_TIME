@@ -1761,7 +1761,8 @@ function transliterate(str: string): string {
 
   const normalizeCompanyPath = (inputPath: string): string => {
     if (!inputPath) return inputPath;
-    return inputPath.replace(/^companies\/[^/]+(\/|$)/i, 'companies/e5om9lzxh$1');
+    // Allow dynamic company paths
+    return inputPath;
   };
 
   // TimeWeb Database Document API
@@ -1870,7 +1871,6 @@ function transliterate(str: string): string {
       });
       
       if (colPath === "companies") {
-        mapped = mapped.filter(m => m.id === "e5om9lzxh");
         if (!mapped.some(m => m.id === "e5om9lzxh")) {
           const defaultComp = {
             id: "e5om9lzxh",
@@ -2306,6 +2306,104 @@ function transliterate(str: string): string {
     }
   });
 
+  // --- OAuth 2.0 Integration ---
+  app.get("/api/auth/bitrix24/url", (req, res) => {
+    const redirectUri = `${process.env.APP_URL}/auth/callback`;
+    const params = new URLSearchParams({
+      client_id: process.env.B24_CLIENT_ID!,
+      redirect_uri: redirectUri,
+      response_type: "code",
+      scope: "crm,tasks,user",
+    });
+    const authUrl = `https://oauth.bitrix.info/oauth/authorize/?${params}`;
+    res.json({ url: authUrl });
+  });
+
+  app.get(["/auth/callback", "/auth/callback/"], async (req, res) => {
+    const { code, member_id, domain } = req.query;
+    if (!code) return res.status(400).send("No code");
+
+    try {
+      const tokenRes = await fetch(`https://oauth.bitrix.info/oauth/token/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          grant_type: "authorization_code",
+          client_id: process.env.B24_CLIENT_ID,
+          client_secret: process.env.B24_CLIENT_SECRET,
+          code,
+        }),
+      });
+
+      const tokens = await tokenRes.json();
+      
+      // Автоматическое создание/связывание компании через /api/bitrix24/install
+      await fetch(`${process.env.APP_URL}/api/bitrix24/install`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ auth: tokens, member_id, domain })
+      });
+
+      res.send(`
+        <html>
+          <body>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS' }, '*');
+                window.close();
+              } else {
+                window.location.href = '/';
+              }
+            </script>
+            <p>Подключение успешно. Окно закроется автоматически.</p>
+          </body>
+        </html>
+      `);
+    } catch (e) {
+      res.status(500).send("Auth error");
+    }
+  });
+
+  // --- Marketplace App Installation Hook ---
+  app.post("/api/bitrix24/install", async (req, res) => {
+    try {
+      const { auth, member_id, domain } = req.body;
+      if (!auth || !member_id) {
+        return res.status(400).json({ success: false, error: "Missing auth or member_id" });
+      }
+
+      // Store tokens and link to our e5om9lzxh company
+      const companyPath = `companies/e5om9lzxh`;
+      const companyDoc = localStore.getDoc(companyPath);
+      let companyData = companyDoc ? JSON.parse(companyDoc.data) : { id: "e5om9lzxh" };
+
+      companyData.bitrix24 = {
+        ...companyData.bitrix24,
+        memberId: member_id,
+        domain: domain,
+        accessToken: auth.access_token,
+        refreshToken: auth.refresh_token,
+        expires: Date.now() + (auth.expires_in * 1000)
+      };
+
+      localStore.setDoc(companyPath, "companies", "e5om9lzxh", JSON.stringify(companyData), true, true);
+      
+      if (isPostgresAvailable) {
+        await prisma.dbDocument.upsert({
+          where: { path: companyPath },
+          create: { path: companyPath, collection: "companies", docId: "e5om9lzxh", data: JSON.stringify(companyData) },
+          update: { data: JSON.stringify(companyData) }
+        }).catch(() => {});
+      }
+
+      console.log(`--- [B24 INSTALL] App installed/updated for portal: ${member_id} ---`);
+      res.json({ success: true });
+    } catch (e: any) {
+      console.error("Error in /api/bitrix24/install:", e);
+      res.status(500).json({ success: false, error: e.message });
+    }
+  });
+
   // --- Автоматический поиск и связывание веб-аккаунта компании с инсталляцией Битрикс24 ---
   app.post("/api/bitrix24/resolve-company", async (req, res) => {
     try {
@@ -2396,9 +2494,9 @@ function transliterate(str: string): string {
         });
       }
 
-      // All accounts / Bitrix24 portals belong to the single company e5om9lzxh (Мебель Фактура)
-      const isMebelFaktura = true;
-      const b24CompanyId = "e5om9lzxh";
+      // Determine company ID: Ivan's portal / account belongs to e5om9lzxh, other portals get their own isolated company
+      const isMebelFaktura = cleanDomain.includes("mebelfaktura") || cleanEmail.includes("ivanbobkin") || cleanEmail.includes("yandex");
+      const b24CompanyId = isMebelFaktura ? "e5om9lzxh" : `b24_${cleanDomain.replace(/[^a-z0-9_-]/gi, '_')}`;
 
       const eDoc = allCompanyDocs.find(d => d.docId === b24CompanyId);
       let newCompanyData: any = null;
