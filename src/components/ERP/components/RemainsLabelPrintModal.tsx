@@ -20,16 +20,24 @@ export const RemainsLabelPrintModal: React.FC<RemainsLabelPrintModalProps> = ({
 }) => {
   if (!isOpen || residuals.length === 0) return null;
 
+  const extractClientSurname = (name?: string) => {
+    if (!name) return "Заказчик";
+    const parts = name.trim().split(/\s+/);
+    return parts.length > 0 ? parts[0] : name;
+  };
+
   const handlePrintSingle = async (res: MaterialResidual) => {
     const dimensions = res.type === 'edge' 
       ? `${res.lengthMeters} м` 
       : `${res.lengthMm}x${res.widthMm}`;
     
+    const clientSurname = extractClientSurname(res.clientName);
+
     await printRemainsLabelDirect(
       res.materialName,
       dimensions,
       res.orderNumber ? `Заказ #${res.orderNumber}` : "Остаток склада",
-      res.clientName || "Заказчик",
+      clientSurname,
       { widthMm, heightMm }
     );
   };
@@ -130,7 +138,7 @@ export const RemainsLabelPrintModal: React.FC<RemainsLabelPrintModalProps> = ({
                           )}
                         </div>
 
-                        {/* Right Column (Dimensions, Order, Employee) */}
+                        {/* Right Column (Dimensions, Order, Client Surname) */}
                         <div className="flex flex-col items-end justify-center text-right shrink-0">
                           <div className="font-extrabold text-slate-950 font-mono leading-none" style={{ fontSize: '12px' }}>
                             {dimensions}
@@ -138,7 +146,7 @@ export const RemainsLabelPrintModal: React.FC<RemainsLabelPrintModalProps> = ({
                           <div className="text-[7.5px] font-bold text-slate-800 mt-1 font-mono">
                             {res.orderNumber ? `Заказ #${res.orderNumber}` : "Остаток"}
                           </div>
-                          <div className="text-[7px] font-bold text-slate-500 mt-0.5">
+                          <div className="text-[7px] font-bold text-slate-600 mt-0.5" title={`Фамилия заказчика: ${surname}`}>
                             {surname}
                           </div>
                         </div>

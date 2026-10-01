@@ -1182,6 +1182,8 @@ export function getSmartOrderDisplay(order: {
   };
 }
 
+export const getOrderDisplayParts = getSmartOrderDisplay;
+
 /**
  * Подсчитывает количество отверстий в заказе для участка ЧПУ / присадки 
  * в строгом соответствии с настройками drillingHolesCalculationMode ('all' | 'face_only' | 'edge_only')

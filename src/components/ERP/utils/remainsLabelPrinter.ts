@@ -4,22 +4,22 @@ import { ProductionOrder } from '../types';
  * Direct thermal label printing utility for material offcuts and edge remains.
  * Renders an isolated iframe and sends the exact mm-dimension label to the printer.
  * Features a precise 16 mm horizontal strip centered on the label bounded by dotted lines,
- * with material name on the left and remain sizes, order # and operator name on the right.
+ * with material name on the left and remain sizes, order # and customer surname on the right.
  */
 export async function printRemainsLabelDirect(
   materialName: string,
   dimensions: string, // e.g. "2040x1453" or "25 м"
   orderNumber: string,
-  employeeName: string,
+  clientSurname: string,
   settings?: { widthMm?: number; heightMm?: number }
 ): Promise<boolean> {
   try {
     const widthMm = settings?.widthMm || 58;
     const heightMm = settings?.heightMm || 40;
 
-    // Extract surname if possible, otherwise use full name
-    const parts = employeeName.trim().split(/\s+/);
-    const surname = parts.length > 0 ? parts[0] : employeeName;
+    // Extract customer surname if possible, otherwise use full name
+    const parts = (clientSurname || "Заказчик").trim().split(/\s+/);
+    const surname = parts.length > 0 ? parts[0] : (clientSurname || "Заказчик");
 
     // Split material name into two lines if it's too long
     let line1 = materialName;
@@ -167,13 +167,13 @@ export async function printRemainsLabelDirect(
               color: #000000 !important;
               margin-top: 2px;
             }
-            .employee-text {
+            .client-text, .employee-text {
               font-size: ${widthMm > 60 ? '9pt' : '6.5pt'};
               font-weight: 700;
               line-height: 1.1;
               color: #000000 !important;
               margin-top: 1px;
-              opacity: 0.8;
+              opacity: 0.85;
             }
           </style>
         </head>
@@ -187,7 +187,7 @@ export async function printRemainsLabelDirect(
               <div class="right-col">
                 <div class="dimension-text">${dimensions}</div>
                 <div class="order-text">${orderNumber}</div>
-                <div class="employee-text">${surname}</div>
+                <div class="client-text">${surname}</div>
               </div>
             </div>
           </div>

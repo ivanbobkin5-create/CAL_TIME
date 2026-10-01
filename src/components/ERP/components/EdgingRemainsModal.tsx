@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Layers, Plus, Trash2, CheckCircle2, AlertTriangle, X, User } from 'lucide-react';
 import { ProductionOrder, ERPEmployee, MaterialResidual } from '../types';
+import { getOrderDisplayParts } from '../utils';
 import { EdgeDecorSelector } from './EdgeDecorSelector';
 
 interface EdgingRemainsModalProps {
@@ -77,11 +78,15 @@ export const EdgingRemainsModal: React.FC<EdgingRemainsModalProps> = ({
       ? mat
       : `Кромка ${selectedBrand !== 'Все бренды' ? selectedBrand + ' ' : ''}${mat}`;
 
+    const { orderNumber: resolvedOrderNum, clientName: resolvedClient } = getOrderDisplayParts(order);
+    const effectiveOrderNum = resolvedOrderNum || order.orderNumber || '';
+    const effectiveClientName = resolvedClient || order.clientName || order.deliveryData?.clientName || 'Заказчик';
+
     const newEdge: MaterialResidual = {
       id: `edge-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       orderId: order.id,
-      orderNumber: order.orderNumber,
-      clientName: order.clientName || order.deliveryData?.clientName || '',
+      orderNumber: effectiveOrderNum,
+      clientName: effectiveClientName,
       type: 'edge',
       category: 'Кромка',
       materialName: fullMaterialName,

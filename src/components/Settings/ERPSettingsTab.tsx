@@ -126,6 +126,7 @@ export const ERPSettingsTab: React.FC<ERPSettingsTabProps> = ({
       erpSettings: updated,
       bitrix24: {
         ...(prev?.bitrix24 || {}),
+        ...(field === 'bitrix24WebhookUrl' ? { webhookUrl: value } : {}),
         ...(field === 'bitrix24CategoryId' ? { categoryId: value } : {}),
         ...(field === 'bitrix24StageId' ? { stageId: value } : {}),
         ...(field === 'bitrix24DoneStageId' ? { doneStageId: value } : {}),
@@ -364,30 +365,51 @@ export const ERPSettingsTab: React.FC<ERPSettingsTabProps> = ({
               </button>
             </div>
 
-            {/* Webhook Input if empty */}
-            {!companyData?.bitrix24?.webhookUrl && (
-              <div className="p-4 bg-white rounded-2xl border border-amber-200 bg-amber-50/50">
-                <label className="block text-xs font-bold text-gray-700 mb-1">
-                  Ссылка входящего вебхука Bitrix24:
+            {/* Webhook Input - Always visible with live status */}
+            <div className="p-5 bg-white rounded-2xl border border-blue-200/80 shadow-xs space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="block text-xs font-bold text-gray-800">
+                  Входящий вебхук Bitrix24 REST API:
                 </label>
-                <input
-                  type="text"
-                  placeholder="https://yourdomain.bitrix24.ru/rest/1/webhook_token/..."
-                  className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-blue-500 outline-none"
-                  value={companyData?.bitrix24?.webhookUrl || ""}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setCompanyData((prev: any) => ({
-                      ...prev,
-                      bitrix24: {
-                        ...(prev?.bitrix24 || {}),
-                        webhookUrl: val
-                      }
-                    }));
-                  }}
-                />
+                {companyData?.bitrix24?.webhookUrl ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    <Check className="w-3 h-3 text-emerald-600 stroke-[3]" />
+                    Вебхук подключен
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                    Требуется указать вебхук
+                  </span>
+                )}
               </div>
-            )}
+              <input
+                type="text"
+                placeholder="https://yourdomain.bitrix24.ru/rest/1/webhook_token/..."
+                className="w-full px-4 py-2.5 bg-slate-50 border border-gray-200 rounded-xl text-xs font-mono text-gray-800 focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                value={companyData?.bitrix24?.webhookUrl || erpConfig.bitrix24WebhookUrl || ""}
+                onChange={(e) => {
+                  const val = e.target.value.trim();
+                  setCompanyData((prev: any) => ({
+                    ...prev,
+                    bitrix24: {
+                      ...(prev?.bitrix24 || {}),
+                      webhookUrl: val
+                    },
+                    erpConfig: {
+                      ...(prev?.erpConfig || {}),
+                      bitrix24WebhookUrl: val
+                    },
+                    erpSettings: {
+                      ...(prev?.erpSettings || {}),
+                      bitrix24WebhookUrl: val
+                    }
+                  }));
+                }}
+              />
+              <p className="text-[11px] text-gray-500">
+                Создается в Битрикс24: Разработчикам → Другое → Входящий вебхук (с правами CRM, Задачи, Уведомления).
+              </p>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {/* Category / Pipeline */}

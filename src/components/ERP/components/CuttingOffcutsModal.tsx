@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Scissors, Plus, Trash2, CheckCircle2, AlertTriangle, X, Ruler, User } from 'lucide-react';
 import { ProductionOrder, ERPEmployee, MaterialResidual } from '../types';
+import { getOrderDisplayParts } from '../utils';
 
 interface CuttingOffcutsModalProps {
   isOpen: boolean;
@@ -81,12 +82,15 @@ export const CuttingOffcutsModal: React.FC<CuttingOffcutsModalProps> = ({
     else if (lowerMat.includes('постформинг')) category = 'Постформинг';
 
     const areaM2 = Number(((len * wid * qty) / 1000000).toFixed(3));
+    const { orderNumber: resolvedOrderNum, clientName: resolvedClient } = getOrderDisplayParts(order);
+    const effectiveOrderNum = resolvedOrderNum || order.orderNumber || '';
+    const effectiveClientName = resolvedClient || order.clientName || order.deliveryData?.clientName || 'Заказчик';
 
     const newOffcut: MaterialResidual = {
       id: `offcut-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
       orderId: order.id,
-      orderNumber: order.orderNumber,
-      clientName: order.clientName || order.deliveryData?.clientName || '',
+      orderNumber: effectiveOrderNum,
+      clientName: effectiveClientName,
       type: 'offcut',
       category: category,
       materialName: mat,

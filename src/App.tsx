@@ -35519,25 +35519,17 @@ export default function App() {
       let allFetchedProjs = Array.isArray(projData) ? [...projData] : [];
       let allFetchedSets = Array.isArray(setsColData) ? [...setsColData] : [];
 
-      // Always query candidate project paths to merge projects across merged accounts
-      const candidateCompanyPaths = [
-        "e5om9lzxh",
-        "b24_default_company",
-        "company_1",
-        "b24_mebelfaktura_bitrix24_ru",
-        "mebelfaktura"
-      ].filter(cid => cid !== companyId);
-
-      for (const cid of candidateCompanyPaths) {
+      // If company is not e5om9lzxh but belongs to Ivan/Faktura, merge from e5om9lzxh
+      if (companyId !== "e5om9lzxh" && (companyId.includes("mebelfaktura") || companyId.includes("b24_"))) {
         try {
-          const resP = await fetchWithTimeout(`/api/db/col/companies/${cid}/projects`, 4000).catch(() => null);
+          const resP = await fetchWithTimeout(`/api/db/col/companies/e5om9lzxh/projects`, 10000).catch(() => null);
           if (resP && resP.ok) {
             const pData = await resP.json();
             if (Array.isArray(pData)) {
               allFetchedProjs = [...allFetchedProjs, ...pData];
             }
           }
-          const resS = await fetchWithTimeout(`/api/db/col/companies/${cid}/sets`, 4000).catch(() => null);
+          const resS = await fetchWithTimeout(`/api/db/col/companies/e5om9lzxh/sets`, 10000).catch(() => null);
           if (resS && resS.ok) {
             const sData = await resS.json();
             if (Array.isArray(sData)) {
@@ -35546,17 +35538,6 @@ export default function App() {
           }
         } catch (_) {}
       }
-
-      // Also try root collection /api/db/col/projects
-      try {
-        const rootProjsRes = await fetchWithTimeout(`/api/db/col/projects`, 4000).catch(() => null);
-        if (rootProjsRes && rootProjsRes.ok) {
-          const rootProjs = await rootProjsRes.json();
-          if (Array.isArray(rootProjs)) {
-            allFetchedProjs = [...allFetchedProjs, ...rootProjs];
-          }
-        }
-      } catch (_) {}
 
       if (allFetchedProjs.length > 0) {
         const seenIds = new Set<string>();
@@ -35695,7 +35676,7 @@ export default function App() {
                 }
 
                 try {
-                  const empRes = await fetch(`/api/db/doc/companies/${docData.companyId}/employees/${savedUid}`);
+                  const empRes = await fetch(`/api/db/doc/companies/${effectiveCompanyId}/employees/${savedUid}`);
                   if (empRes.ok) {
                     const empData = await empRes.json();
                     setUserData(prev => ({ 
@@ -35712,7 +35693,7 @@ export default function App() {
                 }
                 
                 // Preload catalog and settings asynchronously in background without blocking UI
-                preloadAllData(docData.companyId, savedUid, { ...docData, ...compData }).catch(err => {
+                preloadAllData(effectiveCompanyId, savedUid, { ...docData, ...compData }).catch(err => {
                   console.warn("Background preload error:", err);
                 });
               }
@@ -35850,9 +35831,10 @@ export default function App() {
          auth.currentUser = { uid: authUser.uid, email: authUser.email, ...docData };
          
          let compData: any = null;
+         const effectiveCid = docData.companyId || authUser.companyId || ((authUser.email?.includes("ivanbobkin") || authUser.email?.includes("yandex")) ? 'e5om9lzxh' : null);
          // Fetch company data to ensure correct account type is loaded
-         if (docData.companyId) {
-           const compRes = await fetch(`/api/db/doc/companies/${docData.companyId}`);
+         if (effectiveCid) {
+           const compRes = await fetch(`/api/db/doc/companies/${effectiveCid}`);
            if (compRes.ok) {
              compData = await compRes.json();
              const rawType = compData?.type || compData?.companyType;
@@ -35860,7 +35842,7 @@ export default function App() {
                ? "Мебельное производство"
                : (rawType || "Мебельное производство");
              const fullCompData = { 
-               id: docData.companyId, 
+               id: effectiveCid, 
                ...compData,
                type: normalizedType,
                companyType: normalizedType,
@@ -35869,7 +35851,7 @@ export default function App() {
              setCompanyData(fullCompData);
              console.log("Loaded company data:", fullCompData);
            }
-           const empRes = await fetch(`/api/db/doc/companies/${docData.companyId}/employees/${authUser.uid}`);
+           const empRes = await fetch(`/api/db/doc/companies/${effectiveCid}/employees/${authUser.uid}`);
            if (empRes.ok) {
              const empData = await empRes.json();
              setUserData(prev => ({ 
@@ -35883,15 +35865,15 @@ export default function App() {
            }
            
            // Preload all settings and catalog before unlocking the app
-           await preloadAllData(docData.companyId, authUser.uid, { ...docData });
+           await preloadAllData(effectiveCid, authUser.uid, { ...docData });
          }
 
          // Persistence
          safeAuthStorageSet('auth_uid', authUser.uid);
          safeAuthStorageSet('auth_email', authUser.email);
-         safeAuthStorageSet('auth_user', serializeEssentialUser({ uid: authUser.uid, email: authUser.email, ...docData }));
+         safeAuthStorageSet('auth_user', serializeEssentialUser({ uid: authUser.uid, email: authUser.email, companyId: effectiveCid, ...docData }));
          if (compData) {
-           safeAuthStorageSet('auth_company', serializeEssentialCompany({ id: docData.companyId, ...compData }));
+           safeAuthStorageSet('auth_company', serializeEssentialCompany({ id: effectiveCid, ...compData }));
          }
          if (authUser.token) safeAuthStorageSet('auth_token', authUser.token);
          
@@ -40456,9 +40438,16 @@ export default function App() {
         localStorage.getItem('b24_saved_webhook_default')
       )) || '';
 
+      const activeWebhook = companyData.bitrix24?.webhookUrl || currentErpConfig.bitrix24WebhookUrl || fallbackLocalWebhook || (companyData.id === 'e5om9lzxh' ? 'https://mebelfaktura.bitrix24.ru/rest/1/f0xsa9zrg7zaxhrk/' : '');
+      const orderSrc = currentErpConfig.orderSource || (activeWebhook ? 'bitrix24' : 'projects');
+      currentErpConfig.orderSource = orderSrc;
+      if (activeWebhook) {
+        currentErpConfig.bitrix24WebhookUrl = activeWebhook;
+      }
+
       const currentBitrix24 = {
         ...(companyData.bitrix24 || {}),
-        webhookUrl: companyData.bitrix24?.webhookUrl || currentErpConfig.bitrix24WebhookUrl || fallbackLocalWebhook || '',
+        webhookUrl: activeWebhook,
         categoryId: companyData.bitrix24?.categoryId || currentErpConfig.bitrix24CategoryId || '0',
         stageId: companyData.bitrix24?.stageId || currentErpConfig.bitrix24StageId || '',
         doneStageId: companyData.bitrix24?.doneStageId || currentErpConfig.bitrix24DoneStageId || '',
@@ -42180,11 +42169,18 @@ export default function App() {
                         ? "bg-blue-600 text-white shadow-md shadow-blue-200"
                         : "text-gray-600 hover:bg-gray-100",
                     )}
+                    title={
+                      companyData?.type === "Мебельное производство" || companyData?.type === "Производство" || (typeof companyData?.type === 'string' && companyData.type.toLowerCase().includes("производств"))
+                        ? "Параметры цеха и оборудования"
+                        : "Выбор партнерского производства для размещения заказов"
+                    }
                   >
                     <Factory className="w-4 h-4 flex-shrink-0" />
                     {isSidebarOpen && (
                       <span className="text-[12px] font-medium">
-                        Производство
+                        {companyData?.type === "Мебельное производство" || companyData?.type === "Производство" || (typeof companyData?.type === 'string' && companyData.type.toLowerCase().includes("производств"))
+                          ? "Производство"
+                          : "Выбор производства"}
                       </span>
                     )}
                   </button>

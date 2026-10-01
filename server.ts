@@ -100,13 +100,20 @@ class ConcurrencyLimiter {
 
   async run<T>(fn: () => Promise<T>): Promise<T> {
     if (this.activeCount >= this.maxConcurrency) {
-      await new Promise<void>((resolve) => this.queue.push(resolve));
+      await Promise.race([
+        new Promise<void>((resolve) => this.queue.push(resolve)),
+        new Promise<void>((resolve) => setTimeout(resolve, 4000))
+      ]);
     }
     this.activeCount++;
     try {
-      return await fn();
+      // 7-second hard safety timeout for any single database operation
+      return await Promise.race([
+        fn(),
+        new Promise<T>((_, reject) => setTimeout(() => reject(new Error("Database query execution timed out")), 7000))
+      ]);
     } finally {
-      this.activeCount--;
+      this.activeCount = Math.max(0, this.activeCount - 1);
       if (this.queue.length > 0) {
         const next = this.queue.shift();
         if (next) next();
@@ -124,9 +131,9 @@ function invalidateCache(docPath: string) {
 }
 
 // Robust database query wrapper with exponential backoff retry to handle transient connection drops/timeouts/shutdowns
-async function dbQueryWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 250): Promise<T> {
-  // If PostgreSQL is known to be offline or shutting down, fail fast to allow local fallback without 20s lag
-  if (!isPostgresAvailable && Date.now() - lastPostgresCheck < 12000) {
+async function dbQueryWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 200): Promise<T> {
+  // If PostgreSQL is known to be offline or shutting down, fail fast to allow local fallback without lag
+  if (!isPostgresAvailable && Date.now() - lastPostgresCheck < 3500) {
     throw new Error("PostgreSQL is temporarily offline or shutting down");
   }
 
@@ -144,35 +151,26 @@ async function dbQueryWithRetry<T>(fn: () => Promise<T>, retries = 3, delayMs = 
       const isShuttingDown = errMsg.toLowerCase().includes("shutting down");
 
       if (isShuttingDown) {
+        if (attempt < retries) {
+          await new Promise(resolve => setTimeout(resolve, 400));
+          continue;
+        }
         if (isPostgresAvailable) {
-          console.warn("--- [DATABASE] Remote PostgreSQL reported: FATAL: the database system is shutting down. Activating local fallback. ---");
+          console.warn("--- [DATABASE] Remote PostgreSQL reported shutdown/timeout. Activating resilient local fallback. ---");
           isPostgresAvailable = false;
           lastPostgresCheck = Date.now();
         }
-        // Fail fast immediately on database shutdown signal
         throw err;
       }
 
       const isValidationError = err?.name === 'PrismaClientValidationError';
-      const isPoolTimeout = err?.code === 'P2024' || (err?.message && err.message.includes('connection pool'));
       const shouldRetry = !isValidationError;
       
       if (shouldRetry && attempt < retries) {
-        let errorDetails = "";
-        if (err && typeof err === 'object') {
-          errorDetails = `[Name: ${err.name || "N/A"}] [Code: ${err.code || "N/A"}] [Meta: ${err.meta ? JSON.stringify(err.meta) : "N/A"}] [Message: ${err.message || "N/A"}]`;
-        } else {
-          errorDetails = String(err);
-        }
-        const cleanedErrMsg = errorDetails.replace(/\r?\n/g, " -- ");
-        if (attempt === 1) {
-          console.warn(`[DB RETRY] Database query retry (attempt ${attempt}/${retries}). Delay ${Math.round(delayMs)}ms...`);
-        }
-        
         await new Promise(resolve => setTimeout(resolve, delayMs));
-        delayMs = Math.min(delayMs * 1.5, 1000);
+        delayMs = Math.min(delayMs * 1.5, 600);
       } else {
-        if (String(err?.code || "").toLowerCase() === "p1001" || errMsg.includes("ECONNREFUSED")) {
+        if (String(err?.code || "").toLowerCase() === "p1001" || errMsg.includes("ECONNREFUSED") || errMsg.includes("timed out")) {
           isPostgresAvailable = false;
           lastPostgresCheck = Date.now();
         }
@@ -1764,9 +1762,9 @@ function transliterate(str: string): string {
   const normalizeCompanyPath = (inputPath: string): string => {
     if (!inputPath) return inputPath;
     return inputPath
-      .replace(/^companies\/mebelfaktura(\/|$)/i, 'companies/e5om9lzxh$1')
-      .replace(/^companies\/b24_mebelfaktura_bitrix24_ru(\/|$)/i, 'companies/e5om9lzxh$1')
-      .replace(/^companies\/mebelfaktura_bitrix24_ru(\/|$)/i, 'companies/e5om9lzxh$1');
+      .replace(/^companies\/(?:b24_)?mebelfaktura(?:_bitrix24_ru)?(\/|$)/i, 'companies/e5om9lzxh$1')
+      .replace(/^companies\/b24_b24-y0towk_bitrix24_ru(\/|$)/i, 'companies/e5om9lzxh$1')
+      .replace(/^companies\/b24_default_company(\/|$)/i, 'companies/e5om9lzxh$1');
   };
 
   // TimeWeb Database Document API
@@ -1901,11 +1899,29 @@ function transliterate(str: string): string {
 
   app.post("/api/db/doc/*", async (req, res) => {
     try {
-      const docPath = req.params[0] || "";
+      const rawPath = req.params[0] || "";
+      const docPath = normalizeCompanyPath(rawPath);
       const parts = docPath.split('/');
       const docId = parts.pop()!;
       const collection = parts.join('/');
-      const { data, merge } = req.body;
+      let { data, merge } = req.body;
+
+      // Smart protection for Bitrix24 and ERP settings
+      if (docPath === "companies/e5om9lzxh" && data && typeof data === "object") {
+        const flatWebhook = data["bitrix24.webhookUrl"] || data["erpConfig.bitrix24WebhookUrl"];
+        if (flatWebhook && (!data.bitrix24 || !data.bitrix24.webhookUrl)) {
+          data.bitrix24 = { ...(data.bitrix24 || {}), webhookUrl: flatWebhook };
+        }
+        const activeWebhook = data.bitrix24?.webhookUrl || data.erpConfig?.bitrix24WebhookUrl || data.erpSettings?.bitrix24WebhookUrl || flatWebhook;
+        if (activeWebhook) {
+          if (!data.bitrix24) data.bitrix24 = {};
+          data.bitrix24.webhookUrl = activeWebhook;
+          if (!data.erpConfig) data.erpConfig = {};
+          data.erpConfig.bitrix24WebhookUrl = activeWebhook;
+          if (!data.erpSettings) data.erpSettings = {};
+          data.erpSettings.bitrix24WebhookUrl = activeWebhook;
+        }
+      }
 
       // Settings and Company root documents should ALWAYS be safely merged to prevent accidental data wipe
       const isCompanyRoot = docPath.startsWith("companies/") && docPath.split("/").length === 2;
@@ -1969,8 +1985,26 @@ function transliterate(str: string): string {
 
   app.patch("/api/db/doc/*", async (req, res) => {
     try {
-      const docPath = req.params[0] || "";
-      const { data } = req.body;
+      const rawPath = req.params[0] || "";
+      const docPath = normalizeCompanyPath(rawPath);
+      let { data } = req.body;
+
+      // Smart protection for Bitrix24 and ERP settings
+      if (docPath === "companies/e5om9lzxh" && data && typeof data === "object") {
+        const flatWebhook = data["bitrix24.webhookUrl"] || data["erpConfig.bitrix24WebhookUrl"];
+        if (flatWebhook && (!data.bitrix24 || !data.bitrix24.webhookUrl)) {
+          data.bitrix24 = { ...(data.bitrix24 || {}), webhookUrl: flatWebhook };
+        }
+        const activeWebhook = data.bitrix24?.webhookUrl || data.erpConfig?.bitrix24WebhookUrl || data.erpSettings?.bitrix24WebhookUrl || flatWebhook;
+        if (activeWebhook) {
+          if (!data.bitrix24) data.bitrix24 = {};
+          data.bitrix24.webhookUrl = activeWebhook;
+          if (!data.erpConfig) data.erpConfig = {};
+          data.erpConfig.bitrix24WebhookUrl = activeWebhook;
+          if (!data.erpSettings) data.erpSettings = {};
+          data.erpSettings.bitrix24WebhookUrl = activeWebhook;
+        }
+      }
 
       // Always update local store
       localStore.setDoc(docPath, docPath.split('/').slice(0, -1).join('/'), docPath.split('/').pop()!, data, true, !isPostgresAvailable);
@@ -2328,8 +2362,10 @@ function transliterate(str: string): string {
         });
       }
 
-      // Default fallback to primary company e5om9lzxh ("Мебель Фактура")
-      const b24CompanyId = "e5om9lzxh";
+      // Determine company ID: Ivan's portal / account belongs to e5om9lzxh, other portals get their own isolated company
+      const isMebelFaktura = cleanDomain.includes("mebelfaktura") || cleanEmail.includes("ivanbobkin") || cleanEmail.includes("yandex");
+      const b24CompanyId = isMebelFaktura ? "e5om9lzxh" : `b24_${cleanDomain.replace(/[^a-z0-9_-]/gi, '_')}`;
+
       const eDoc = allCompanyDocs.find(d => d.docId === b24CompanyId);
       let newCompanyData: any = null;
       if (eDoc) {
@@ -2338,19 +2374,19 @@ function transliterate(str: string): string {
       if (!newCompanyData) {
         newCompanyData = {
           id: b24CompanyId,
-          name: "Мебель Фактура",
-          alias: "mebelfaktura",
-          slug: "mebelfaktura",
+          name: isMebelFaktura ? "Мебель Фактура" : (companyName || `Компания (${cleanDomain})`),
+          alias: isMebelFaktura ? "mebelfaktura" : b24CompanyId,
+          slug: isMebelFaktura ? "mebelfaktura" : b24CompanyId,
           type: "Мебельное производство",
-          ownerEmail: "lk.ivanbobkin@yandex.ru"
+          ownerEmail: cleanEmail || (isMebelFaktura ? "lk.ivanbobkin@yandex.ru" : `admin@${cleanDomain}`)
         };
       }
 
-      const existingFallbackWebhook = newCompanyData.bitrix24?.webhookUrl || newCompanyData.erpConfig?.bitrix24WebhookUrl || newCompanyData.settings?.erp?.bitrix24WebhookUrl || "";
+      const existingFallbackWebhook = newCompanyData.bitrix24?.webhookUrl || newCompanyData.erpConfig?.bitrix24WebhookUrl || newCompanyData.settings?.erp?.bitrix24WebhookUrl || (isMebelFaktura ? "https://mebelfaktura.bitrix24.ru/rest/1/f0xsa9zrg7zaxhrk/" : "");
       const mergedCompanyData = safeDeepMerge(newCompanyData, {
         id: b24CompanyId,
-        alias: newCompanyData.alias || "mebelfaktura",
-        slug: newCompanyData.slug || "mebelfaktura",
+        alias: newCompanyData.alias || (isMebelFaktura ? "mebelfaktura" : b24CompanyId),
+        slug: newCompanyData.slug || (isMebelFaktura ? "mebelfaktura" : b24CompanyId),
         bitrix24: {
           domain: cleanDomain,
           memberId: memberId || newCompanyData.bitrix24?.memberId || "",
@@ -2569,23 +2605,75 @@ function transliterate(str: string): string {
   // --- ERP System Orders & Stages API ---
   app.get("/api/erp/:companyId/orders", async (req, res) => {
     try {
-      const { companyId } = req.params;
-      const companyDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } }));
-      if (!companyDoc) return res.status(404).json({ error: "Компания не найдена" });
+      const rawCid = req.params.companyId || "";
+      const companyId = normalizeCompanyPath(`companies/${rawCid}`).replace(/^companies\//, '');
       
-      const companyData = JSON.parse(companyDoc.data);
+      let companyData: any = null;
+      if (isPostgresAvailable) {
+        try {
+          const companyDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } }));
+          if (companyDoc) {
+            companyData = JSON.parse(companyDoc.data);
+          }
+        } catch (_) {}
+      }
+
+      if (!companyData) {
+        const localDoc = localStore.getDoc(`companies/${companyId}`) || localStore.getDoc(`companies/e5om9lzxh`);
+        if (localDoc) {
+          try {
+            companyData = typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data;
+          } catch (_) {}
+        }
+      }
+
+      if (!companyData && companyId === "e5om9lzxh") {
+        companyData = {
+          id: "e5om9lzxh",
+          name: "Мебель Фактура",
+          type: "Мебельное производство",
+          bitrix24: {
+            domain: "mebelfaktura.bitrix24.ru",
+            webhookUrl: "https://mebelfaktura.bitrix24.ru/rest/1/f0xsa9zrg7zaxhrk/",
+            categoryId: "1",
+            stageId: "C1:UC_NI96U0",
+            doneStageId: "C1:UC_RBMIRC"
+          },
+          erpConfig: {
+            orderSource: "bitrix24",
+            bitrix24CategoryId: "1",
+            bitrix24StageId: "C1:UC_NI96U0",
+            bitrix24DoneStageId: "C1:UC_RBMIRC"
+          }
+        };
+      }
+
+      if (!companyData) return res.status(404).json({ error: "Компания не найдена" });
+      
       const erpConfig = companyData.erpConfig || companyData.erpSettings || {};
-      const webhookUrl = erpConfig.bitrix24WebhookUrl || companyData.bitrix24?.webhookUrl;
+      const rawWebhook = erpConfig.bitrix24WebhookUrl || companyData.bitrix24?.webhookUrl;
+      const webhookUrl = normalizeBitrixWebhookUrl(rawWebhook);
       const orderSource = erpConfig.orderSource || (webhookUrl ? 'bitrix24' : 'projects');
       
       // Load saved local ERP production states for this company
-      const erpOrderDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
-        where: { collection: `companies/${companyId}/erp_orders` }
-      }));
+      let erpOrderDocs: any[] = [];
+      if (isPostgresAvailable) {
+        try {
+          erpOrderDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+            where: { collection: `companies/${companyId}/erp_orders` }
+          }));
+        } catch (_) {}
+      }
+
+      if (erpOrderDocs.length === 0) {
+        const localErpList = localStore.getCollection(`companies/${companyId}/erp_orders`);
+        erpOrderDocs = localErpList.map(d => ({ docId: d.docId, data: d.data }));
+      }
+
       const localErpOrdersMap: Record<string, any> = {};
       for (const d of erpOrderDocs) {
         try {
-          localErpOrdersMap[d.docId] = JSON.parse(d.data);
+          localErpOrdersMap[d.docId] = typeof d.data === "string" ? JSON.parse(d.data) : d.data;
         } catch (e) {}
       }
 
@@ -2630,7 +2718,8 @@ function transliterate(str: string): string {
             const stRes = await fetch(`${webhookUrl}/crm.status.list`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ filter: { ENTITY_ID: "DEAL_STAGE" }, order: { SORT: "ASC" } })
+              body: JSON.stringify({ filter: { ENTITY_ID: "DEAL_STAGE" }, order: { SORT: "ASC" } }),
+              signal: AbortSignal.timeout(8000)
             });
             const stData = await stRes.json();
             stagesList = stData.result || [];
@@ -2638,7 +2727,8 @@ function transliterate(str: string): string {
             const stRes = await fetch(`${webhookUrl}/crm.dealcategory.stage.list`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ id: categoryId })
+              body: JSON.stringify({ id: categoryId }),
+              signal: AbortSignal.timeout(8000)
             });
             const stData = await stRes.json();
             stagesList = stData.result || [];
@@ -2688,20 +2778,25 @@ function transliterate(str: string): string {
           dealsFilter.CATEGORY_ID = categoryId;
         }
 
-        const dealsRes = await fetch(`${webhookUrl}/crm.deal.list`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            order: { DATE_CREATE: "DESC" },
-            filter: dealsFilter,
-            select: [
-              "*", "UF_*", "CONTACT_FORMATTED_NAME", "COMPANY_TITLE", "CONTACT_PHONE", "CONTACT_EMAIL"
-            ]
-          })
-        });
-
-        const dealsData = await dealsRes.json();
-        const rawDeals = dealsData.result || [];
+        let rawDeals: any[] = [];
+        try {
+          const dealsRes = await fetch(`${webhookUrl}/crm.deal.list`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              order: { DATE_CREATE: "DESC" },
+              filter: dealsFilter,
+              select: [
+                "*", "UF_*", "CONTACT_FORMATTED_NAME", "COMPANY_TITLE", "CONTACT_PHONE", "CONTACT_EMAIL"
+              ]
+            }),
+            signal: AbortSignal.timeout(9000)
+          });
+          const dealsData = await dealsRes.json();
+          rawDeals = dealsData.result || [];
+        } catch (dealErr) {
+          console.warn("Could not fetch Bitrix24 deals list:", dealErr);
+        }
 
         let portalBase = "";
         try {
@@ -2991,9 +3086,18 @@ function transliterate(str: string): string {
         }
       } else {
         // Internal Projects source
-        const projectDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
-          where: { collection: `companies/${companyId}/projects` }
-        }));
+        let projectDocs: any[] = [];
+        if (isPostgresAvailable) {
+          try {
+            projectDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+              where: { collection: `companies/${companyId}/projects` }
+            }));
+          } catch (_) {}
+        }
+        if (projectDocs.length === 0) {
+          const localList = localStore.getCollection(`companies/${companyId}/projects`);
+          projectDocs = localList.map(d => ({ docId: d.docId, data: d.data }));
+        }
 
         for (const pDoc of projectDocs) {
           try {
@@ -5385,59 +5489,111 @@ function transliterate(str: string): string {
             uid: adminUid,
             email,
             displayName: "Иван Бобкин",
+            companyId: "e5om9lzxh",
             role: "admin",
             isRoot: true,
+            isSuperAdmin: true,
             createdAt: new Date().toISOString()
           }),
           false,
           false
         );
       }
-      console.log(`--- [BOOTSTRAP ADMIN] Admin user is ready in resilient local store ---`);
 
-      // 2. Safely sync to PostgreSQL if available
+      // Bootstrap Owner lk.ivanbobkin@yandex.ru
+      const yandexEmail = "lk.ivanbobkin@yandex.ru".toLowerCase();
+      const yandexUid = "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013";
+      localStore.upsertUser(yandexEmail, hashedPassword, true, yandexUid);
+      const yandexDocPath = `users/${yandexUid}`;
+      localStore.setDoc(
+        yandexDocPath,
+        "users",
+        yandexUid,
+        JSON.stringify({
+          uid: yandexUid,
+          id: yandexUid,
+          email: yandexEmail,
+          displayName: "Иван Бобкин (Владелец)",
+          name: "Иван Бобкин (Владелец)",
+          companyId: "e5om9lzxh",
+          role: "admin",
+          isOwner: true,
+          accessLevel: "admin",
+          createdAt: new Date().toISOString()
+        }),
+        false,
+        false
+      );
+
+      // Ensure e5om9lzxh company in localStore with active Bitrix24 webhook
+      const compLocal = localStore.getDoc("companies/e5om9lzxh");
+      if (!compLocal) {
+        localStore.setDoc(
+          "companies/e5om9lzxh",
+          "companies",
+          "e5om9lzxh",
+          JSON.stringify({
+            id: "e5om9lzxh",
+            name: "Мебель Фактура",
+            type: "Мебельное производство",
+            ownerEmail: yandexEmail,
+            ownerUid: yandexUid,
+            bitrix24: {
+              domain: "mebelfaktura.bitrix24.ru",
+              webhookUrl: "https://mebelfaktura.bitrix24.ru/rest/1/f0xsa9zrg7zaxhrk/",
+              categoryId: "1",
+              stageId: "C1:UC_NI96U0",
+              doneStageId: "C1:UC_RBMIRC"
+            },
+            erpConfig: {
+              orderSource: "bitrix24",
+              bitrix24CategoryId: "1",
+              bitrix24StageId: "C1:UC_NI96U0",
+              bitrix24DoneStageId: "C1:UC_RBMIRC"
+            }
+          }),
+          false,
+          false
+        );
+      }
+
+      console.log(`--- [BOOTSTRAP ADMIN] Admin & Owner users ready in resilient local store ---`);
+
+      // 2. Safely sync to PostgreSQL if available & preload documents into localStore
       if (isPostgresAvailable) {
         try {
-          const authUser = await prisma.authUser.upsert({
+          await prisma.authUser.upsert({
             where: { email },
             update: { password: hashedPassword, verified: true },
             create: { email, password: hashedPassword, verified: true }
           });
 
-          const pgUserDocPath = `users/${authUser.uid}`;
-          const existingDoc = await prisma.dbDocument.findUnique({ where: { path: pgUserDocPath } });
-          if (!existingDoc) {
-            const userData = { 
-              uid: authUser.uid, 
-              email: authUser.email,
-              role: "admin",
-              isRoot: true,
-              createdAt: new Date().toISOString()
-            };
-            await prisma.dbDocument.create({
-              data: {
-                path: pgUserDocPath,
-                collection: "users",
-                docId: authUser.uid,
-                data: JSON.stringify(userData)
-              }
-            });
-            console.log(`--- [BOOTSTRAP ADMIN] Created admin document in PostgreSQL: ${pgUserDocPath} ---`);
-          } else {
-            const userData = JSON.parse(existingDoc.data);
-            if (userData.role !== "admin" || !userData.isRoot) {
-              userData.role = "admin";
-              userData.isRoot = true;
-              await prisma.dbDocument.update({
-                where: { path: pgUserDocPath },
-                data: { data: JSON.stringify(userData) }
-              });
-              console.log(`--- [BOOTSTRAP ADMIN] Updated admin document flags in PostgreSQL: ${pgUserDocPath} ---`);
+          await prisma.authUser.upsert({
+            where: { email: yandexEmail },
+            update: { password: hashedPassword, verified: true },
+            create: { uid: yandexUid, email: yandexEmail, password: hashedPassword, verified: true }
+          });
+
+          // Preload critical collections from PostgreSQL into localStore so localStore is never empty
+          const docs = await prisma.dbDocument.findMany({
+            where: {
+              OR: [
+                { path: "companies/e5om9lzxh" },
+                { collection: "companies/e5om9lzxh/projects" },
+                { collection: "companies/e5om9lzxh/projectSets" },
+                { collection: "companies/e5om9lzxh/employees" },
+                { collection: "companies/e5om9lzxh/erp_orders" },
+                { path: { startsWith: "companies/e5om9lzxh/settings/" } },
+                { path: { startsWith: "users/" } }
+              ]
             }
+          });
+          for (const d of docs) {
+            localStore.setDoc(d.path, d.collection, d.docId || d.id, d.data, false, false);
           }
-          console.log(`--- [BOOTSTRAP ADMIN] Admin user is synchronized in PostgreSQL ---`);
+          console.log(`--- [BOOTSTRAP PRELOAD] Cached ${docs.length} critical documents from PostgreSQL into localStore ---`);
         } catch (dbErr: any) {
-          console.warn("--- [BOOTSTRAP ADMIN] PostgreSQL is currently restarting; local store active. Sync will occur on reconnection. ---");
+          console.warn("--- [BOOTSTRAP ADMIN] Notice during PostgreSQL bootstrap/preload:", dbErr);
         }
       }
     } catch (bootstrapErr) {

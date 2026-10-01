@@ -1226,6 +1226,13 @@ export const ERPApp: React.FC<ERPAppProps> = ({
     if (targetCompId) {
       try {
         localStorage.setItem(`erp_settings_${targetCompId}`, JSON.stringify(newSettings));
+        const updatedBitrix = {
+          ...(company?.bitrix24 || {}),
+          webhookUrl: newSettings.bitrix24WebhookUrl || company?.bitrix24?.webhookUrl || '',
+          categoryId: newSettings.bitrix24CategoryId || company?.bitrix24?.categoryId || '0',
+          stageId: newSettings.bitrix24StartStageId || (newSettings as any).bitrix24StageId || company?.bitrix24?.stageId || '',
+          doneStageId: newSettings.bitrix24DoneStageId || company?.bitrix24?.doneStageId || '',
+        };
         await Promise.allSettled([
           fetch(`/api/erp/${targetCompId}/settings`, {
             method: 'POST',
@@ -1238,13 +1245,14 @@ export const ERPApp: React.FC<ERPAppProps> = ({
             body: JSON.stringify({
               data: {
                 erpConfig: newSettings,
-                erpSettings: newSettings
+                erpSettings: newSettings,
+                bitrix24: updatedBitrix
               },
               merge: true
             })
           })
         ]);
-        setCompany(prev => prev ? { ...prev, erpConfig: newSettings, erpSettings: newSettings } : prev);
+        setCompany(prev => prev ? { ...prev, erpConfig: newSettings, erpSettings: newSettings, bitrix24: updatedBitrix } : prev);
         // Reload orders after settings change (e.g. stage or source changed)
         handleSyncOrders();
       } catch (e) {
