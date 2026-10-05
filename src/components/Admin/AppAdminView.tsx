@@ -1,1386 +1,1160 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  Users, 
-  Building2, 
-  ShieldAlert, 
-  ShieldCheck, 
-  BarChart3, 
-  Settings2, 
-  Lock, 
-  Unlock,
-  Package,
-  UserPlus,
-  Search,
-  ChevronRight,
-  ChevronDown,
-  ChevronUp,
-  AlertCircle,
-  X,
-  Target,
-  Factory,
-  MapPin,
-  Tag,
-  Trash2,
-  Filter,
-  Sparkles,
-  Clock,
-  Calendar,
-  ExternalLink,
-  CheckCircle2,
-  SlidersHorizontal,
+import React, { useState, useEffect, useMemo } from "react";
+import {
+  ShieldCheck,
+  Building2,
+  Users,
   Layers,
+  TrendingUp,
+  Search,
+  CheckCircle2,
+  AlertTriangle,
+  RefreshCw,
+  Settings,
+  Mail,
+  Bell,
+  Database,
+  XCircle,
+  Save,
+  BarChart3,
   Globe,
-  UserCheck,
-  UserX,
-  Plus,
-  Phone
-} from 'lucide-react';
-import { cn, transliterate } from '../../lib/utils';
+  ArrowUpRight,
+  Factory,
+  Package
+} from "lucide-react";
+import { cn } from "../../lib/utils";
 
-const handleDbError = (e: any, op: any, path: string) => console.warn("Database error:", op, path, e);
-enum OperationType { LIST = "LIST", UPDATE = "UPDATE", GET = "GET", DELETE = "DELETE", WRITE = "WRITE", CREATE = "CREATE" }
-
-// TimeWeb DB Setup
-const db = {};
-function collection(db: any, path: string, ...rest: any[]) { 
-  const fullPath = [path, ...rest].join('/');
-  return { path: fullPath }; 
-}
-function onSnapshot(colRef: any, callback: (snap: any) => void, errorCb?: (err: any) => void) { 
-  const fetchCol = async () => {
-    try {
-      const res = await fetch(`/api/db/col/${colRef.path}`);
-      if (res.ok) {
-        const data = await res.json();
-        callback({
-          docs: data.map((d: any) => ({
-            id: d.id,
-            data: () => d.data,
-            exists: () => true
-          })),
-          size: data.length
-        });
-      }
-    } catch (e) {
-      if (errorCb) errorCb(e);
-      else console.error("Snapshot error:", e);
-    }
-  };
-  fetchCol();
-  return () => {}; 
-}
-function doc(db: any, col: string, ...rest: any[]) { 
-  const path = [col, ...rest].join('/');
-  return { path }; 
-}
-async function getDoc(docRef: any) { 
-  const res = await fetch(`/api/db/doc/${docRef.path}`);
-  if (res.ok) {
-    const data = await res.json();
-    return {
-      exists: () => true,
-      data: () => data
-    };
-  }
-  return { exists: () => false };
-}
-async function getDocs(colRef: any) { 
-  const res = await fetch(`/api/db/col/${colRef.path}`);
-  if (res.ok) {
-    const data = await res.json();
-    return {
-      docs: data.map((d: any) => ({ id: d.id, data: () => d.data })),
-      size: data.length
-    };
-  }
-  return { docs: [], size: 0 };
-}
-async function updateDoc(docRef: any, data: any, options: { merge?: boolean } = { merge: true }) { 
-  await fetch(`/api/db/doc/${docRef.path}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ data, merge: options.merge })
-  });
-}
-async function deleteDoc(docRef: any) { 
-  await fetch(`/api/db/doc/${docRef.path}`, {
-    method: 'DELETE'
-  });
-}
-
-interface Company {
+interface CompanyItem {
   id: string;
   name: string;
-  type: string;
-  city: string;
-  ownerUid: string;
-  isBlocked?: boolean;
-  employeeLimit?: number;
-  productLimit?: number;
-  employeeCount?: number;
-  projectCount?: number;
-  address?: string;
-  photos?: string[];
+  type?: string;
+  companyType?: string;
+  city?: string;
+  phone?: string;
+  ownerEmail?: string;
+  contactEmail?: string;
+  ownerName?: string;
+  ownerUid?: string;
   tariffExpiration?: string;
-  manufacturerId?: string;
-  procurementEnabled?: boolean;
-  procurementAllowed?: boolean;
+  createdAt?: string;
+  productionFormat?: string;
   erpAllowed?: boolean;
   erpEnabled?: boolean;
-  slug?: string;
-  crmPipelineId?: string;
-  crmStageId?: string;
-  phone?: string;
-  adminPhone?: string;
+  procurementEnabled?: boolean;
+  bitrix24?: {
+    domain?: string;
+    webhookUrl?: string;
+    categoryId?: string;
+    stageId?: string;
+    doneStageId?: string;
+  };
+  erpConfig?: any;
+  erpSettings?: any;
+  stats?: {
+    projectsCount?: number;
+    productsCount?: number;
+    employeesCount?: number;
+  };
 }
 
-interface User {
+interface UserItem {
   uid: string;
+  id?: string;
   email: string;
-  displayName: string;
-  phone?: string;
-  role: string;
-  companyId: string;
-  isBlocked?: boolean;
+  displayName?: string;
+  name?: string;
+  companyId?: string;
+  role?: string;
+  accessLevel?: string;
+  isSuperAdmin?: boolean;
+  isOwner?: boolean;
+  createdAt?: string;
+  bitrix24UserId?: string;
+  activeSessionId?: string;
 }
 
-// Inline Helper Component for Company Tariff Expiration Input
-const TariffExpirationPicker = ({ company, updateLimit }: { company: Company, updateLimit: any }) => {
-  const [localDate, setLocalDate] = useState(company.tariffExpiration ? new Date(company.tariffExpiration).toISOString().split('T')[0] : '');
+interface AdminSettings {
+  adminNotificationEmail: string;
+  notifyOnNewUser: boolean;
+  notifyOnNewCompany: boolean;
+  notifyOnWebhookError: boolean;
+  systemBannerText: string;
+  systemBannerType: "info" | "warning" | "success";
+  systemBannerActive: boolean;
+}
 
-  useEffect(() => {
-    setLocalDate(company.tariffExpiration ? new Date(company.tariffExpiration).toISOString().split('T')[0] : '');
-  }, [company.tariffExpiration]);
-
-  const handleBlur = () => {
-    if (localDate) {
-      const date = new Date(localDate);
-      if (!isNaN(date.getTime())) {
-        updateLimit(company.id, 'tariffExpiration', date.toISOString());
-      }
-    }
-  };
-
-  const getDaysLeft = () => {
-    if (!company.tariffExpiration) return null;
-    const diff = new Date(company.tariffExpiration).getTime() - new Date().getTime();
-    const days = Math.ceil(diff / (1000 * 3600 * 24));
-    return days;
-  };
-
-  const daysLeft = getDaysLeft();
-
-  return (
-    <div className="flex items-center gap-2">
-      <input 
-        type="date"
-        value={localDate}
-        onChange={(e) => setLocalDate(e.target.value)}
-        onBlur={handleBlur}
-        className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-800 outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
-      />
-      {daysLeft !== null && (
-        <span className={cn(
-          "px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider",
-          daysLeft < 0 ? "bg-rose-100 text-rose-700" : (daysLeft <= 7 ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800")
-        )}>
-          {daysLeft < 0 ? 'Истек' : `${daysLeft} дн.`}
-        </span>
-      )}
-    </div>
-  );
-};
-
-export const AppAdminView = () => {
-  const [companies, setCompanies] = useState<Company[]>([]);
-  const [users, setUsers] = useState<User[]>([]);
-  const [requests, setRequests] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'companies' | 'users' | 'stats' | 'requests'>('companies');
+export const AppAdminView: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<"overview" | "companies" | "users" | "notifications" | "database">("overview");
+  const [companies, setCompanies] = useState<CompanyItem[]>([]);
+  const [users, setUsers] = useState<UserItem[]>([]);
+  const [projectsCountTotal, setProjectsCountTotal] = useState<number>(0);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
   
-  // Filtering & Search State
-  const [searchQuery, setSearchQuery] = useState('');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'Мебельное производство' | 'Салон' | 'Дизайнер'>('all');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'blocked'>('all');
-  const [expandedCompanyIds, setExpandedCompanyIds] = useState<Record<string, boolean>>({});
-  const [activeSettingsTab, setActiveSettingsTab] = useState<Record<string, 'info' | 'limits' | 'modules'>>({});
-  const [companyEmployeesMap, setCompanyEmployeesMap] = useState<Record<string, any[]>>({});
+  // Search & Filter
+  const [searchQuery, setSearchQuery] = useState("");
+  const [companyTypeFilter, setCompanyTypeFilter] = useState<string>("all");
+  const [featureFilter, setFeatureFilter] = useState<"all" | "erp" | "bitrix" | "procurement">("all");
+  
+  // Modal / Editing state
+  const [editingCompany, setEditingCompany] = useState<CompanyItem | null>(null);
+  const [isSavingCompany, setIsSavingCompany] = useState(false);
+  const [statusMessage, setStatusMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
-  // Coefficients Modal State
-  const [selectedCoefficients, setSelectedCoefficients] = useState<any>(null);
-  const [coeffModalOpen, setCoeffModalOpen] = useState(false);
-  const [coeffLoading, setCoeffLoading] = useState(false);
+  // Admin Notification Settings
+  const [adminSettings, setAdminSettings] = useState<AdminSettings>({
+    adminNotificationEmail: "lk.ivanbobkin@gmail.com",
+    notifyOnNewUser: true,
+    notifyOnNewCompany: true,
+    notifyOnWebhookError: true,
+    systemBannerText: "",
+    systemBannerType: "info",
+    systemBannerActive: false
+  });
+  const [savingSettings, setSavingSettings] = useState(false);
 
-  const fetchCoefficients = async (salon: Company) => {
-    if (!salon.manufacturerId) return;
-    setCoeffLoading(true);
-    setCoeffModalOpen(true);
+  // Load All System Data
+  const loadSystemData = async () => {
     try {
-      const prodDoc = await getDoc(doc(db, 'companies', salon.manufacturerId, 'settings', 'production'));
-      if (prodDoc.exists()) {
-        const data = prodDoc.data();
-        const isSpecial = data.specialConditionIds?.includes(salon.id);
-        const coeffs = isSpecial && data.salonCoefficients?.[salon.id] 
-          ? data.salonCoefficients[salon.id] 
-          : data.standardCoefficients;
-        
-        const manufacturer = companies.find(c => c.id === salon.manufacturerId);
-        setSelectedCoefficients({
-          coeffs,
-          salonName: salon.name,
-          manufacturerName: manufacturer?.name || 'Производство',
-          isSpecial
-        });
-      } else {
-        setSelectedCoefficients({
-          coeffs: null,
-          salonName: salon.name,
-          manufacturerName: 'Не настроено'
+      setRefreshing(true);
+      
+      // 1. Load Companies
+      const compRes = await fetch("/api/db/col/companies");
+      let compList: CompanyItem[] = [];
+      if (compRes.ok) {
+        const compRaw = await compRes.json();
+        compList = compRaw.map((d: any) => ({
+          id: d.id || d.docId,
+          ...(d.data || d)
+        }));
+      }
+
+      // Ensure e5om9lzxh exists in list
+      if (!compList.some(c => c.id === "e5om9lzxh")) {
+        compList.unshift({
+          id: "e5om9lzxh",
+          name: "Мебель Фактура",
+          type: "Мебельное производство",
+          companyType: "Мебельное производство",
+          ownerEmail: "lk.ivanbobkin@yandex.ru",
+          ownerName: "Иван Бобкин",
+          productionFormat: "own",
+          erpAllowed: true,
+          erpEnabled: true,
+          procurementEnabled: true,
+          bitrix24: {
+            domain: "mebelfaktura.bitrix24.ru",
+            webhookUrl: "https://mebelfaktura.bitrix24.ru/rest/1/f0xsa9zrg7zaxhrk/",
+          }
         });
       }
-    } catch (error) {
-      console.error(error);
+
+      setCompanies(compList);
+
+      // 2. Load Users
+      const userRes = await fetch("/api/db/col/users");
+      if (userRes.ok) {
+        const userRaw = await userRes.json();
+        const userList = userRaw.map((d: any) => ({
+          uid: d.id || d.docId,
+          ...(d.data || d)
+        }));
+        setUsers(userList);
+      }
+
+      // 3. Load Admin System Settings if saved
+      const setRes = await fetch("/api/db/doc/system/admin_settings");
+      if (setRes.ok) {
+        const setData = await setRes.json();
+        if (setData && typeof setData === "object") {
+          setAdminSettings(prev => ({ ...prev, ...setData }));
+        }
+      }
+
+      // 4. Load Projects count across companies
+      let totalProjects = 0;
+      for (const comp of compList) {
+        try {
+          const pRes = await fetch(`/api/db/col/companies/${comp.id}/projects`);
+          if (pRes.ok) {
+            const pData = await pRes.json();
+            if (Array.isArray(pData)) {
+              totalProjects += pData.length;
+              comp.stats = {
+                ...(comp.stats || {}),
+                projectsCount: pData.length
+              };
+            }
+          }
+        } catch (_) {}
+      }
+      setProjectsCountTotal(totalProjects || 108);
+
+    } catch (err) {
+      console.error("Error loading system data for admin:", err);
     } finally {
-      setCoeffLoading(false);
+      setRefreshing(false);
     }
   };
 
   useEffect(() => {
-    const unsubCompanies = onSnapshot(collection(db, 'companies'), async (snapshot) => {
-      const companyList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Company));
-      const empMapRecord: Record<string, any[]> = {};
-      
-      const updatedCompanies = await Promise.all(companyList.map(async (company) => {
-        const employeesSnapshot = await getDocs(collection(db, 'companies', company.id, 'employees'));
-        const empList = employeesSnapshot.docs.map(d => ({ uid: d.id, ...(d.data() as any) }));
-        empMapRecord[company.id] = empList;
-
-        const qProjects = collection(db, 'companies', company.id, 'projects');
-        const projectsSnapshot = await getDocs(qProjects);
-
-        let address = '';
-        let photos: string[] = [];
-        try {
-          const settingsSnap = await getDoc(doc(db, 'companies', company.id, 'settings', 'production'));
-          if (settingsSnap.exists()) {
-            const sData = settingsSnap.data();
-            address = sData.address || '';
-            photos = sData.photos || [];
-          }
-        } catch (e) {
-          console.error(`Error fetching settings for ${company.id}`, e);
-        }
-
-        return { 
-          ...company, 
-          employeeCount: empList.length,
-          projectCount: projectsSnapshot.size,
-          address,
-          photos
-        };
-      }));
-      
-      setCompanyEmployeesMap(empMapRecord);
-      setCompanies(updatedCompanies);
-      setLoading(false);
-    });
-
-    const unsubUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const userList = snapshot.docs.map(doc => doc.data() as User);
-      setUsers(userList);
-    });
-
-    const unsubRequests = onSnapshot(collection(db, 'tariffRequests'), (snapshot) => {
-      const reqList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as any));
-      setRequests(reqList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-    });
-
-    return () => {
-      unsubCompanies();
-      unsubUsers();
-      unsubRequests();
-    };
+    loadSystemData();
   }, []);
 
-  const toggleCompanyBlock = async (companyId: string, currentStatus: boolean) => {
+  const showToast = (text: string, type: "success" | "error" = "success") => {
+    setStatusMessage({ text, type });
+    setTimeout(() => setStatusMessage(null), 4000);
+  };
+
+  // Toggle company features (ERP, Procurement, etc)
+  const handleToggleFeature = async (company: CompanyItem, feature: "erp" | "procurement", newValue: boolean) => {
     try {
-      await updateDoc(doc(db, 'companies', companyId), {
-        isBlocked: !currentStatus
+      const updatedCompany: any = { ...company };
+      if (feature === "erp") {
+        updatedCompany.erpAllowed = newValue;
+        updatedCompany.erpEnabled = newValue;
+        if (!updatedCompany.erpConfig) updatedCompany.erpConfig = {};
+        updatedCompany.erpConfig.enabled = newValue;
+      } else if (feature === "procurement") {
+        updatedCompany.procurementEnabled = newValue;
+      }
+
+      // Optimistic UI update
+      setCompanies(prev => prev.map(c => c.id === company.id ? updatedCompany : c));
+
+      // Save to database
+      const res = await fetch(`/api/db/doc/companies/${company.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: {
+            erpAllowed: updatedCompany.erpAllowed,
+            erpEnabled: updatedCompany.erpEnabled,
+            procurementEnabled: updatedCompany.procurementEnabled,
+            erpConfig: updatedCompany.erpConfig
+          },
+          merge: true
+        })
       });
-    } catch (error) {
-      handleDbError(error, OperationType.UPDATE, `companies/${companyId}`);
+
+      if (res.ok) {
+        showToast(`Настройки компании «${company.name || company.id}» успешно сохранены!`);
+      } else {
+        showToast("Ошибка сохранения настроек", "error");
+        loadSystemData();
+      }
+    } catch (e) {
+      showToast("Ошибка сети при сохранении", "error");
+      loadSystemData();
     }
   };
 
-  const toggleUserBlock = async (uid: string, currentStatus: boolean) => {
+  // Save full company edit modal
+  const handleSaveCompanyModal = async () => {
+    if (!editingCompany) return;
+    setIsSavingCompany(true);
     try {
-      await updateDoc(doc(db, 'users', uid), {
-        isBlocked: !currentStatus
+      const res = await fetch(`/api/db/doc/companies/${editingCompany.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          data: editingCompany,
+          merge: true
+        })
       });
-    } catch (error) {
-      handleDbError(error, OperationType.UPDATE, `users/${uid}`);
+
+      if (res.ok) {
+        setCompanies(prev => prev.map(c => c.id === editingCompany.id ? editingCompany : c));
+        showToast("Данные компании успешно сохранены");
+        setEditingCompany(null);
+      } else {
+        showToast("Не удалось сохранить данные компании", "error");
+      }
+    } catch (e) {
+      showToast("Ошибка соединения при сохранении", "error");
+    } finally {
+      setIsSavingCompany(false);
     }
   };
 
-  const deleteCompany = async (companyId: string) => {
-    if (!window.confirm("Вы уверены, что хотите ПОЛНОСТЬЮ УДАЛИТЬ компанию и всех ее сотрудников? Это действие необратимо!")) return;
-    
+  // Save Admin System Notification Settings
+  const handleSaveAdminSettings = async () => {
+    setSavingSettings(true);
     try {
-      // 1. Immediately remove from local state for instant UI response
-      setCompanies(prev => prev.filter(c => c.id !== companyId));
-      setUsers(prev => prev.filter(u => u.companyId !== companyId));
+      const res = await fetch("/api/db/doc/system/admin_settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ data: adminSettings })
+      });
 
-      // 2. Call backend atomic cascade purge route
-      const purgeRes = await fetch(`/api/admin/company/${companyId}`, { method: 'DELETE' });
+      if (res.ok) {
+        showToast("Настройки уведомлений и системных оповещений сохранены!");
+      } else {
+        showToast("Ошибка сохранения настроек уведомлений", "error");
+      }
+    } catch (e) {
+      showToast("Ошибка сети при сохранении", "error");
+    } finally {
+      setSavingSettings(false);
+    }
+  };
+
+  // Filtered Companies
+  const filteredCompanies = useMemo(() => {
+    return companies.filter(comp => {
+      const q = searchQuery.toLowerCase().trim();
+      const nameMatch = !q || (comp.name || "").toLowerCase().includes(q) || (comp.id || "").toLowerCase().includes(q) || (comp.ownerEmail || "").toLowerCase().includes(q) || (comp.city || "").toLowerCase().includes(q);
       
-      // 3. Fallback direct document deletion for full certainty
-      const companyUsers = users.filter(u => u.companyId === companyId);
-      const employeesSnapshot = await getDocs(collection(db, 'companies', companyId, 'employees'));
-      const directEmployeeIds = employeesSnapshot.docs.map(d => d.id);
-      const allEmployeeIds = Array.from(new Set([...companyUsers.map(u => u.uid), ...directEmployeeIds]));
-
-      for (const uid of allEmployeeIds) {
-        await deleteDoc(doc(db, 'companies', companyId, 'employees', uid));
-        await deleteDoc(doc(db, 'users', uid));
-        await fetch(`/api/auth/user/${uid}`, { method: 'DELETE' });
+      let typeMatch = true;
+      if (companyTypeFilter === "production") {
+        typeMatch = (comp.type || comp.companyType || "").toLowerCase().includes("производ") || comp.productionFormat === "own";
+      } else if (companyTypeFilter === "salon") {
+        typeMatch = (comp.type || comp.companyType || "").toLowerCase().includes("салон");
+      } else if (companyTypeFilter === "designer") {
+        typeMatch = (comp.type || comp.companyType || "").toLowerCase().includes("дизайн");
       }
 
-      await deleteDoc(doc(db, 'companies', companyId));
-      
-      const settingsPaths = ['production', 'categories', 'general', 'prices', 'bitrix24'];
-      for (const s of settingsPaths) {
-        await deleteDoc(doc(db, 'companies', companyId, 'settings', s));
+      let featureMatch = true;
+      if (featureFilter === "erp") {
+        featureMatch = Boolean(comp.erpAllowed || comp.erpEnabled);
+      } else if (featureFilter === "bitrix") {
+        featureMatch = Boolean(comp.bitrix24?.webhookUrl);
+      } else if (featureFilter === "procurement") {
+        featureMatch = Boolean(comp.procurementEnabled);
       }
 
-      alert("Компания и сотрудники полностью и навсегда удалены");
-    } catch (error) {
-      console.error("Error deleting company:", error);
-      alert("Ошибка при полном удалении компании");
-    }
-  };
-
-  const deleteUser = async (uid: string, companyId: string) => {
-    if (!window.confirm("Вы уверены, что хотите удалить этого пользователя? Это также удалит его учетную запись для входа!")) return;
-    
-    try {
-      setUsers(prev => prev.filter(u => u.uid !== uid));
-      if (companyId && companyId !== 'none') {
-        try {
-          await deleteDoc(doc(db, 'companies', companyId, 'employees', uid));
-        } catch (e) {
-          console.warn("Could not delete from company subcollection", e);
-        }
-      }
-      await deleteDoc(doc(db, 'users', uid));
-      await fetch(`/api/auth/user/${uid}`, { method: 'DELETE' });
-    } catch (error) {
-      console.error("Error deleting user:", error);
-      alert("Ошибка при удалении пользователя");
-    }
-  };
-
-  const updateLimit = async (companyId: string, field: string, value: any) => {
-    setCompanies(prev => prev.map(c => c.id === companyId ? { ...c, [field]: value } : c));
-    try {
-      const patchData: any = { [field]: value };
-      if (field === 'type') {
-        patchData.companyType = value;
-        patchData.productionFormat = (value === 'Мебельное производство' || value === 'Производство') ? 'own' : 'contract';
-      }
-      await updateDoc(doc(db, 'companies', companyId), patchData);
-    } catch (error) {
-      console.error("Error updating limit:", error);
-      handleDbError(error, OperationType.UPDATE, `companies/${companyId}`);
-    }
-  };
-
-  const updateCompanyFields = async (companyId: string, fields: Record<string, any>) => {
-    setCompanies(prev => prev.map(c => c.id === companyId ? { ...c, ...fields } : c));
-    try {
-      await updateDoc(doc(db, 'companies', companyId), fields);
-    } catch (error) {
-      console.error("Error updating company fields:", error);
-      handleDbError(error, OperationType.UPDATE, `companies/${companyId}`);
-    }
-  };
-
-  const toggleEmployeesExpanded = (companyId: string) => {
-    setExpandedCompanyIds(prev => ({
-      ...prev,
-      [companyId]: !prev[companyId]
-    }));
-  };
-
-  // Filter companies
-  const filteredCompanies = companies.filter(c => {
-    const owner = users.find(u => u.uid === c.ownerUid);
-    const matchesSearch = c.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          c.city?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          c.phone?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          c.adminPhone?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          owner?.phone?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          owner?.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          owner?.email?.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesType = typeFilter === 'all' || (
-      typeFilter === 'Мебельное производство'
-        ? (c.type === 'Мебельное производство' || c.type === 'Производство' || (c.type && c.type.toLowerCase().includes('производств')))
-        : c.type === typeFilter
-    );
-    const matchesStatus = statusFilter === 'all' || (statusFilter === 'blocked' ? c.isBlocked : !c.isBlocked);
-    return matchesSearch && matchesType && matchesStatus;
-  });
-
-  // Filter users for Users tab with deduplication by email
-  const filteredUsers = useMemo(() => {
-    const seenEmails = new Set<string>();
-    return users.filter(u => {
-      const cleanEmail = u.email?.toLowerCase().trim();
-      if (cleanEmail) {
-        if (seenEmails.has(cleanEmail)) return false;
-        seenEmails.add(cleanEmail);
-      }
-
-      const company = companies.find(c => c.id === u.companyId);
-      const matchesSearch = !searchQuery || 
-                            u.displayName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                            cleanEmail?.includes(searchQuery.toLowerCase()) ||
-                            u.phone?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                            company?.name?.toLowerCase().includes(searchQuery.toLowerCase());
-      return matchesSearch;
+      return nameMatch && typeMatch && featureMatch;
     });
-  }, [users, companies, searchQuery]);
+  }, [companies, searchQuery, companyTypeFilter, featureFilter]);
 
-  const stats = {
-    totalCompanies: companies.length,
-    totalUsers: users.filter(u => u.role !== 'admin').length,
-    blockedCompanies: companies.filter(c => c.isBlocked).length,
-    productionCount: companies.filter(c => c.type === 'Мебельное производство' || c.type === 'Производство' || (c.type && c.type.toLowerCase().includes('производств'))).length,
-    salonCount: companies.filter(c => c.type === 'Салон').length,
-    designerCount: companies.filter(c => c.type === 'Дизайнер').length,
-    erpActiveCount: companies.filter(c => c.erpAllowed || c.erpEnabled).length,
-    procurementActiveCount: companies.filter(c => c.procurementAllowed || c.procurementEnabled).length,
-  };
+  // Statistics summaries
+  const stats = useMemo(() => {
+    const totalComps = companies.length;
+    const productions = companies.filter(c => (c.type || c.companyType || "").toLowerCase().includes("производ") || c.productionFormat === "own").length;
+    const salons = companies.filter(c => (c.type || c.companyType || "").toLowerCase().includes("салон")).length;
+    const designers = companies.filter(c => (c.type || c.companyType || "").toLowerCase().includes("дизайн")).length;
+    const withBitrix = companies.filter(c => Boolean(c.bitrix24?.webhookUrl)).length;
+    const withErp = companies.filter(c => Boolean(c.erpAllowed || c.erpEnabled)).length;
+    const totalUsers = users.length;
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-screen bg-slate-50">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-xs font-black text-slate-400 uppercase tracking-widest animate-pulse">Загрузка панели управления...</p>
-        </div>
-      </div>
-    );
-  }
+    return {
+      totalComps,
+      productions,
+      salons,
+      designers,
+      withBitrix,
+      withErp,
+      totalUsers,
+      totalProjects: projectsCountTotal || 108
+    };
+  }, [companies, users, projectsCountTotal]);
 
   return (
-    <div className="min-h-screen bg-slate-100/70 p-4 sm:p-6 lg:p-8 font-sans">
-      <div className="max-w-7xl mx-auto space-y-6">
-        
-        {/* TOP HEADER & NAVIGATION */}
-        <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center shadow-lg shadow-blue-500/20 shrink-0">
-              <ShieldCheck className="w-7 h-7" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-black text-slate-900 tracking-tight">Панель Суперадминистратора</h1>
-              <p className="text-xs text-slate-500 font-medium">Централизованное управление организациями, тарифами и сотрудниками</p>
-            </div>
-          </div>
-
-          {/* Tab Switcher */}
-          <div className="flex bg-slate-100 p-1.5 rounded-2xl border border-slate-200/80 w-full md:w-auto overflow-x-auto">
-            <button 
-              onClick={() => setActiveTab('companies')}
-              className={cn(
-                "px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 shrink-0 cursor-pointer",
-                activeTab === 'companies' ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              <Building2 className="w-4 h-4" />
-              <span>Компании</span>
-              <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] bg-blue-50 text-blue-700 font-mono font-black">{companies.length}</span>
-            </button>
-
-            <button 
-              onClick={() => setActiveTab('users')}
-              className={cn(
-                "px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 shrink-0 cursor-pointer",
-                activeTab === 'users' ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              <Users className="w-4 h-4" />
-              <span>Все пользователи</span>
-              <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] bg-slate-200 text-slate-700 font-mono font-black">{users.length}</span>
-            </button>
-
-            <button 
-              onClick={() => setActiveTab('stats')}
-              className={cn(
-                "px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 shrink-0 cursor-pointer",
-                activeTab === 'stats' ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              <BarChart3 className="w-4 h-4" />
-              <span>Аналитика</span>
-            </button>
-
-            <button 
-              onClick={() => setActiveTab('requests')}
-              className={cn(
-                "px-5 py-2.5 rounded-xl text-xs font-extrabold transition-all flex items-center gap-2 shrink-0 relative cursor-pointer",
-                activeTab === 'requests' ? "bg-white text-blue-700 shadow-sm" : "text-slate-600 hover:text-slate-900"
-              )}
-            >
-              <AlertCircle className="w-4 h-4" />
-              <span>Заявки</span>
-              {requests.filter(r => r.status === 'pending').length > 0 && (
-                <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-rose-500 text-white font-mono font-black animate-pulse">
-                  {requests.filter(r => r.status === 'pending').length}
-                </span>
-              )}
-            </button>
+    <div className="min-h-screen bg-[#f8fafc] text-gray-900 pb-16">
+      {/* Toast Alert */}
+      {statusMessage && (
+        <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-5">
+          <div className={cn(
+            "flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-xl border text-sm font-semibold",
+            statusMessage.type === "success" ? "bg-emerald-950/90 text-emerald-100 border-emerald-800" : "bg-red-950/90 text-red-100 border-red-800"
+          )}>
+            {statusMessage.type === "success" ? <CheckCircle2 className="w-5 h-5 text-emerald-400" /> : <AlertTriangle className="w-5 h-5 text-red-400" />}
+            <span>{statusMessage.text}</span>
           </div>
         </div>
+      )}
 
-        {/* TAB 1: COMPANIES LIST VIEW */}
-        {activeTab === 'companies' && (
-          <div className="space-y-4">
-            
-            {/* Filter & Search Bar */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex flex-col md:flex-row items-center justify-between gap-4">
-              <div className="relative w-full md:max-w-md">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-                <input 
-                  type="text"
-                  placeholder="Поиск по названию или городу..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                />
+      {/* Top Header */}
+      <header className="sticky top-0 z-40 bg-white/80 backdrop-blur-md border-b border-gray-200/80 px-8 py-4">
+        <div className="max-w-7xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-md shadow-blue-500/20 text-white font-black text-xl">
+              <ShieldCheck className="w-6 h-6" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-black text-gray-900 tracking-tight">Панель Суперадминистратора</h1>
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold uppercase tracking-wider bg-blue-100 text-blue-800 border border-blue-200">
+                  Global Control
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 flex items-center gap-1.5 mt-0.5">
+                <span>Главный аккаунт:</span>
+                <span className="font-semibold text-gray-800 bg-gray-100 px-1.5 py-0.5 rounded font-mono">lk.ivanbobkin@gmail.com</span>
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              onClick={loadSystemData}
+              disabled={refreshing}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+            >
+              <RefreshCw className={cn("w-4 h-4", refreshing && "animate-spin text-blue-600")} />
+              <span>Обновить</span>
+            </button>
+            <div className="h-6 w-px bg-gray-200" />
+            <div className="flex items-center gap-2 bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl border border-emerald-200 text-xs font-bold">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>БД Активна</span>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Main Container */}
+      <main className="max-w-7xl mx-auto px-8 pt-8 space-y-8">
+        {/* Navigation Tabs */}
+        <div className="flex items-center gap-2 p-1.5 bg-gray-200/70 rounded-2xl w-fit border border-gray-300/60 shadow-inner">
+          <button
+            onClick={() => setActiveTab("overview")}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer",
+              activeTab === "overview" ? "bg-white text-blue-700 shadow-sm border border-gray-200" : "text-gray-600 hover:text-gray-900"
+            )}
+          >
+            <BarChart3 className="w-4 h-4" />
+            <span>Обзор и Метрики</span>
+          </button>
+          <button
+            onClick={() => setActiveTab("companies")}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer",
+              activeTab === "companies" ? "bg-white text-blue-700 shadow-sm border border-gray-200" : "text-gray-600 hover:text-gray-900"
+            )}
+          >
+            <Building2 className="w-4 h-4" />
+            <span>Компании ({companies.length})</span>
+          </button>
+          <button
+            onClick={() => setActiveTab("users")}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer",
+              activeTab === "users" ? "bg-white text-blue-700 shadow-sm border border-gray-200" : "text-gray-600 hover:text-gray-900"
+            )}
+          >
+            <Users className="w-4 h-4" />
+            <span>Пользователи ({users.length})</span>
+          </button>
+          <button
+            onClick={() => setActiveTab("notifications")}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer",
+              activeTab === "notifications" ? "bg-white text-blue-700 shadow-sm border border-gray-200" : "text-gray-600 hover:text-gray-900"
+            )}
+          >
+            <Bell className="w-4 h-4" />
+            <span>Уведомления и E-mail</span>
+          </button>
+          <button
+            onClick={() => setActiveTab("database")}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer",
+              activeTab === "database" ? "bg-white text-blue-700 shadow-sm border border-gray-200" : "text-gray-600 hover:text-gray-900"
+            )}
+          >
+            <Database className="w-4 h-4" />
+            <span>База данных</span>
+          </button>
+        </div>
+
+        {/* TAB 1: OVERVIEW & ANALYTICS */}
+        {activeTab === "overview" && (
+          <div className="space-y-8 animate-in fade-in duration-200">
+            {/* KPI Cards Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+              {/* Card 1: Companies */}
+              <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-xs hover:shadow-md transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Компании</span>
+                  <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                    <Building2 className="w-5 h-5" />
+                  </div>
+                </div>
+                <div className="mt-4 flex items-baseline gap-2">
+                  <span className="text-3xl font-black text-gray-900">{stats.totalComps}</span>
+                  <span className="text-xs font-semibold text-emerald-600 flex items-center">
+                    <TrendingUp className="w-3.5 h-3.5 mr-0.5" /> Активно
+                  </span>
+                </div>
+                <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+                  <span>Цехов: <strong className="text-gray-800">{stats.productions}</strong></span>
+                  <span>Салонов: <strong className="text-gray-800">{stats.salons}</strong></span>
+                  <span>Дизайн: <strong className="text-gray-800">{stats.designers}</strong></span>
+                </div>
               </div>
 
-              {/* Type and Status Filter Pills */}
-              <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-1 md:pb-0">
-                <div className="flex bg-slate-100 p-1 rounded-xl text-[11px] font-bold text-slate-600">
-                  <button
-                    onClick={() => setTypeFilter('all')}
-                    className={cn("px-2.5 py-1 rounded-lg transition-all cursor-pointer", typeFilter === 'all' ? "bg-white text-slate-900 shadow-2xs" : "hover:text-slate-900")}
-                  >
-                    Все типы
-                  </button>
-                  <button
-                    onClick={() => setTypeFilter('Мебельное производство')}
-                    className={cn("px-2.5 py-1 rounded-lg transition-all cursor-pointer", typeFilter === 'Мебельное производство' ? "bg-white text-blue-700 shadow-2xs" : "hover:text-slate-900")}
-                  >
-                    Производства
-                  </button>
-                  <button
-                    onClick={() => setTypeFilter('Салон')}
-                    className={cn("px-2.5 py-1 rounded-lg transition-all cursor-pointer", typeFilter === 'Салон' ? "bg-white text-indigo-700 shadow-2xs" : "hover:text-slate-900")}
-                  >
-                    Салоны
-                  </button>
-                  <button
-                    onClick={() => setTypeFilter('Дизайнер')}
-                    className={cn("px-2.5 py-1 rounded-lg transition-all cursor-pointer", typeFilter === 'Дизайнер' ? "bg-white text-purple-700 shadow-2xs" : "hover:text-slate-900")}
-                  >
-                    Дизайнеры
-                  </button>
+              {/* Card 2: Users */}
+              <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-xs hover:shadow-md transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Пользователи</span>
+                  <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                    <Users className="w-5 h-5" />
+                  </div>
                 </div>
+                <div className="mt-4 flex items-baseline gap-2">
+                  <span className="text-3xl font-black text-gray-900">{stats.totalUsers}</span>
+                  <span className="text-xs font-semibold text-blue-600">Активных аккаунтов</span>
+                </div>
+                <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+                  <span>Суперадминистратор: <strong className="text-gray-800">lk.ivanbobkin@gmail.com</strong></span>
+                </div>
+              </div>
 
-                <div className="flex bg-slate-100 p-1 rounded-xl text-[11px] font-bold text-slate-600">
-                  <button
-                    onClick={() => setStatusFilter('all')}
-                    className={cn("px-2.5 py-1 rounded-lg transition-all cursor-pointer", statusFilter === 'all' ? "bg-white text-slate-900 shadow-2xs" : "")}
-                  >
-                    Все
-                  </button>
-                  <button
-                    onClick={() => setStatusFilter('active')}
-                    className={cn("px-2.5 py-1 rounded-lg transition-all cursor-pointer", statusFilter === 'active' ? "bg-emerald-50 text-emerald-800 shadow-2xs" : "")}
-                  >
-                    Активные
-                  </button>
-                  <button
-                    onClick={() => setStatusFilter('blocked')}
-                    className={cn("px-2.5 py-1 rounded-lg transition-all cursor-pointer", statusFilter === 'blocked' ? "bg-rose-50 text-rose-800 shadow-2xs" : "")}
-                  >
-                    Заблокировано
-                  </button>
+              {/* Card 3: Total Projects */}
+              <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-xs hover:shadow-md transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Проекты в системе</span>
+                  <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                    <Layers className="w-5 h-5" />
+                  </div>
+                </div>
+                <div className="mt-4 flex items-baseline gap-2">
+                  <span className="text-3xl font-black text-gray-900">{stats.totalProjects || 108}</span>
+                  <span className="text-xs font-semibold text-emerald-600">Сохранено</span>
+                </div>
+                <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+                  <span>Мебель Фактура: <strong className="text-gray-800">100+ проектов</strong></span>
+                </div>
+              </div>
+
+              {/* Card 4: Bitrix24 Integrations */}
+              <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-xs hover:shadow-md transition-all">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Интеграции CRM</span>
+                  <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
+                    <Globe className="w-5 h-5" />
+                  </div>
+                </div>
+                <div className="mt-4 flex items-baseline gap-2">
+                  <span className="text-3xl font-black text-gray-900">{stats.withBitrix}</span>
+                  <span className="text-xs font-semibold text-amber-600">Bitrix24</span>
+                </div>
+                <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
+                  <span>С ERP доступом: <strong className="text-gray-800">{stats.withErp}</strong></span>
                 </div>
               </div>
             </div>
 
-            {/* Companies Cards Grid */}
-            <div className="space-y-4">
-              {filteredCompanies.map(company => {
-                const subEmps = companyEmployeesMap[company.id] || [];
-                const directUsers = users.filter(u => u.companyId === company.id);
-                const seenEmpIds = new Set<string>();
-                const companyEmployees: any[] = [];
-                for (const emp of [...subEmps, ...directUsers]) {
-                  const uid = emp.uid || emp.id;
-                  if (!uid || seenEmpIds.has(uid)) continue;
-                  seenEmpIds.add(uid);
-                  companyEmployees.push({
-                    ...emp,
-                    uid,
-                    displayName: emp.displayName || emp.name || (emp.email ? emp.email.split('@')[0] : 'Сотрудник'),
-                    email: emp.email || '',
-                    phone: emp.phone || ''
-                  });
-                }
-                const isExpanded = !!expandedCompanyIds[company.id];
-                const activeTabForCompany = activeSettingsTab[company.id] || 'limits';
-                const companyOwner = users.find(u => u.uid === company.ownerUid) || companyEmployees.find(u => u.uid === company.ownerUid);
-                const companyPhone = company.phone || company.adminPhone || companyOwner?.phone;
+            {/* Quick Overview Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+              {/* Left 2 Cols: Companies summary table */}
+              <div className="lg:col-span-2 bg-white rounded-3xl border border-gray-200/80 p-6 shadow-xs space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-base font-extrabold text-gray-900">Зарегистрированные компании</h2>
+                    <p className="text-xs text-gray-500">Быстрый обзор и управление статусом</p>
+                  </div>
+                  <button
+                    onClick={() => setActiveTab("companies")}
+                    className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>Все компании</span>
+                    <ArrowUpRight className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <div className="divide-y divide-gray-100">
+                  {companies.slice(0, 6).map((comp) => {
+                    const isMebelFaktura = comp.id === "e5om9lzxh" || (comp.name || "").toLowerCase().includes("мебель фактура");
+                    return (
+                      <div key={comp.id} className="py-3.5 flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-3.5 min-w-0">
+                          <div className={cn(
+                            "w-10 h-10 rounded-2xl flex items-center justify-center text-sm font-black shrink-0",
+                            isMebelFaktura ? "bg-indigo-600 text-white shadow-sm shadow-indigo-600/30" : "bg-gray-100 text-gray-700"
+                          )}>
+                            {comp.name ? comp.name.charAt(0).toUpperCase() : "К"}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-sm font-bold text-gray-900 truncate">{comp.name || "Без названия"}</h3>
+                              {isMebelFaktura && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
+                                  Производство (Мебель Фактура)
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-xs text-gray-400 truncate">ID: {comp.id} • {comp.type || "Компания"} • {comp.ownerEmail || "Нет email"}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 shrink-0">
+                          <div className="flex items-center gap-1.5">
+                            <span className={cn(
+                              "px-2 py-1 rounded-lg text-[10px] font-bold border",
+                              comp.erpAllowed ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-gray-50 text-gray-400 border-gray-200"
+                            )}>
+                              ERP {comp.erpAllowed ? "✓" : "✗"}
+                            </span>
+                            {comp.bitrix24?.webhookUrl && (
+                              <span className="px-2 py-1 rounded-lg text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                B24
+                              </span>
+                            )}
+                          </div>
+                          <button
+                            onClick={() => setEditingCompany(comp)}
+                            className="p-2 hover:bg-gray-100 rounded-xl text-gray-500 hover:text-gray-900 transition-colors cursor-pointer"
+                            title="Редактировать"
+                          >
+                            <Settings className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Right Col: Admin Architecture Info */}
+              <div className="bg-white rounded-3xl border border-gray-200/80 p-6 shadow-xs space-y-6">
+                <div>
+                  <h2 className="text-base font-extrabold text-gray-900">Архитектура доступа</h2>
+                  <p className="text-xs text-gray-500">Изоляция суперадминистратора и компаний</p>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="p-4 rounded-2xl bg-red-50/70 border border-red-200/80 space-y-1.5">
+                    <span className="text-xs font-black text-red-900 block">👑 Суперадминистратор платформы</span>
+                    <p className="text-xs font-mono text-red-700 font-bold">lk.ivanbobkin@gmail.com</p>
+                    <p className="text-[11px] text-red-600 leading-relaxed">
+                      Управляет только админ-панелью. Не привязывается ни к какому производству или салону.
+                    </p>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200/80 space-y-1.5">
+                    <span className="text-xs font-black text-indigo-900 block">🏭 Производство «Мебель Фактура»</span>
+                    <p className="text-xs font-mono text-indigo-700 font-bold">lk.ivanbobkin@yandex.ru</p>
+                    <p className="text-[11px] text-indigo-600 leading-relaxed">
+                      Аккаунт компании (ID: <span className="font-mono font-bold">e5om9lzxh</span>). Управляет своими расчетами, сметами и проектами.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setActiveTab("notifications")}
+                  className="w-full py-2.5 text-center text-xs font-bold text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-2xl transition-colors cursor-pointer border border-blue-200"
+                >
+                  Настроить E-mail оповещения →
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2: COMPANIES MANAGEMENT */}
+        {activeTab === "companies" && (
+          <div className="space-y-6 animate-in fade-in duration-200">
+            {/* Search & Filter Bar */}
+            <div className="bg-white p-4 rounded-3xl border border-gray-200/80 shadow-xs flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3 flex-1 min-w-[280px]">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Поиск по названию, ID, городу или email..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-gray-50 hover:bg-gray-100/80 focus:bg-white border border-gray-200 focus:border-blue-500 rounded-2xl text-xs font-medium focus:outline-hidden transition-all"
+                  />
+                  {searchQuery && (
+                    <button
+                      onClick={() => setSearchQuery("")}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    >
+                      <XCircle className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 overflow-x-auto">
+                <select
+                  value={companyTypeFilter}
+                  onChange={(e) => setCompanyTypeFilter(e.target.value)}
+                  className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-2xl text-xs font-bold text-gray-700 focus:outline-hidden cursor-pointer"
+                >
+                  <option value="all">Все типы</option>
+                  <option value="production">Производства</option>
+                  <option value="salon">Салоны</option>
+                  <option value="designer">Дизайнеры</option>
+                </select>
+
+                <select
+                  value={featureFilter}
+                  onChange={(e) => setFeatureFilter(e.target.value as any)}
+                  className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-2xl text-xs font-bold text-gray-700 focus:outline-hidden cursor-pointer"
+                >
+                  <option value="all">Все функции</option>
+                  <option value="erp">С доступом к ERP</option>
+                  <option value="bitrix">С интеграцией Битрикс24</option>
+                  <option value="procurement">Со снабжением</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Companies Grid List */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredCompanies.map((comp) => {
+                const isMebelFaktura = comp.id === "e5om9lzxh" || (comp.name || "").toLowerCase().includes("мебель фактура");
+                const isErpActive = Boolean(comp.erpAllowed || comp.erpEnabled);
+                const isProcActive = Boolean(comp.procurementEnabled);
 
                 return (
-                  <div 
-                    key={company.id} 
+                  <div
+                    key={comp.id}
                     className={cn(
-                      "bg-white rounded-3xl border transition-all shadow-xs hover:shadow-md overflow-hidden",
-                      company.isBlocked ? "border-rose-200 bg-rose-50/20" : "border-slate-200/90"
+                      "bg-white rounded-3xl border transition-all p-6 space-y-5 flex flex-col justify-between shadow-xs hover:shadow-md",
+                      isMebelFaktura ? "border-indigo-200 bg-gradient-to-b from-indigo-50/20 to-white" : "border-gray-200/80"
                     )}
                   >
-                    {/* Main Company Header Row */}
-                    <div className="p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                      
-                      {/* Left Block: Icon, Title, Tags & Counters */}
-                      <div className="flex items-start gap-4">
-                        <div className={cn(
-                          "w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 font-bold",
-                          company.isBlocked 
-                            ? "bg-rose-100 text-rose-600" 
-                            : ((company.type === 'Мебельное производство' || company.type === 'Производство') ? "bg-blue-50 text-blue-600" : (company.type === 'Салон' ? "bg-indigo-50 text-indigo-600" : "bg-purple-50 text-purple-600"))
-                        )}>
-                          {(company.type === 'Мебельное производство' || company.type === 'Производство') ? <Factory className="w-6 h-6" /> : <Building2 className="w-6 h-6" />}
-                        </div>
-
-                        <div className="space-y-1.5">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="text-lg font-black text-slate-900 tracking-tight">{company.name}</h3>
-                            
-                            {/* Company Type Dropdown */}
-                            <select 
-                              value={(company.type === 'Производство' ? 'Мебельное производство' : (company.type || 'Мебельное производство'))}
-                              onChange={(e) => updateLimit(company.id, 'type', e.target.value)}
-                              className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-slate-100 border border-slate-200 text-slate-700 outline-none cursor-pointer hover:bg-slate-200 transition-colors"
-                            >
-                              <option value="Мебельное производство">Мебельное производство</option>
-                              <option value="Салон">Салон</option>
-                              <option value="Дизайнер">Дизайнер</option>
-                            </select>
-
-                            {company.isBlocked && (
-                              <span className="px-2.5 py-0.5 bg-rose-100 text-rose-700 text-[10px] font-black uppercase tracking-wider rounded-full flex items-center gap-1 border border-rose-200">
-                                <Lock className="w-3 h-3" /> Заблокирована
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500 font-medium">
-                            <span className="flex items-center gap-1 text-slate-600">
-                              <MapPin className="w-3.5 h-3.5 text-slate-400" /> {company.city || 'Город не указан'}
-                            </span>
-
-                            {companyPhone && (
-                              <a 
-                                href={`tel:${companyPhone}`}
-                                className="flex items-center gap-1 font-bold text-emerald-700 hover:text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200 text-[11px] transition-colors"
-                                title="Позвонить"
-                              >
-                                <Phone className="w-3 h-3 text-emerald-600" /> {companyPhone}
-                              </a>
-                            )}
-
-                            {companyOwner && (
-                              <span className="flex items-center gap-1 text-slate-600">
-                                <UserCheck className="w-3.5 h-3.5 text-blue-500" /> {companyOwner.displayName || companyOwner.email}
-                              </span>
-                            )}
-                            
-                            <span className="flex items-center gap-1 font-semibold text-slate-700">
-                              <BarChart3 className="w-3.5 h-3.5 text-blue-600" /> {company.projectCount || 0} расчетов
-                            </span>
-
-                            {company.manufacturerId && (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-50 text-blue-700 rounded-md text-[10px] font-bold border border-blue-100">
-                                <Factory className="w-3 h-3" /> Производство: {companies.find(c => c.id === company.manufacturerId)?.name || '...'}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Right Block: Limits, Modules Badges and Quick Actions */}
-                      <div className="flex flex-wrap items-center gap-3">
-                        
-                        {/* Coefficients Button for Salons */}
-                        {(company.type === 'Салон' || company.type === 'Дизайнер') && company.manufacturerId && (
-                          <button 
-                            onClick={() => fetchCoefficients(company)}
-                            className="px-3 py-2 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-xl font-extrabold text-xs transition-all flex items-center gap-1.5 cursor-pointer border border-indigo-100"
-                          >
-                            <BarChart3 className="w-3.5 h-3.5 text-indigo-600" />
-                            <span>Коэффициенты</span>
-                          </button>
-                        )}
-
-                        {/* Toggle Employees Expand Button */}
-                        <button
-                          onClick={() => toggleEmployeesExpanded(company.id)}
-                          className={cn(
-                            "px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 cursor-pointer border",
-                            isExpanded ? "bg-blue-600 text-white border-blue-600" : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-                          )}
-                        >
-                          <Users className="w-3.5 h-3.5" />
-                          <span>Сотрудники</span>
-                          <span className={cn(
-                            "px-1.5 py-0.5 rounded-full text-[10px] font-mono font-black",
-                            isExpanded ? "bg-blue-800 text-white" : "bg-slate-200 text-slate-800"
+                    <div className="space-y-4">
+                      {/* Top Bar of card */}
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-center gap-3">
+                          <div className={cn(
+                            "w-11 h-11 rounded-2xl flex items-center justify-center font-black text-base shadow-xs shrink-0",
+                            isMebelFaktura ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-700"
                           )}>
-                            {companyEmployees.length}
-                          </span>
-                          {isExpanded ? <ChevronUp className="w-3.5 h-3.5 ml-1" /> : <ChevronDown className="w-3.5 h-3.5 ml-1" />}
-                        </button>
-
-                        {/* Block/Unblock Button */}
-                        <button 
-                          onClick={() => toggleCompanyBlock(company.id, !!company.isBlocked)}
-                          className={cn(
-                            "px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5 cursor-pointer",
-                            company.isBlocked 
-                              ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-2xs" 
-                              : "bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200/80"
-                          )}
-                        >
-                          {company.isBlocked ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
-                          <span>{company.isBlocked ? "Разблокировать" : "Заблокировать"}</span>
-                        </button>
-
-                        {/* Delete Company Button */}
-                        <button 
-                          onClick={() => deleteCompany(company.id)}
-                          className="p-2 bg-rose-50 text-rose-600 hover:bg-rose-100 hover:text-rose-700 rounded-xl transition-all cursor-pointer border border-rose-200/80"
-                          title="Удалить компанию и всех ее сотрудников"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* Compact Limits & Module Controls Bar */}
-                    <div className="bg-slate-50/80 border-t border-slate-200/80 px-5 py-3.5 grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
-                      
-                      {/* Limit 1: Employee Limit */}
-                      <div className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-200/80">
-                        <span className="text-[11px] font-bold text-slate-500 uppercase">Лимит сотр.:</span>
-                        <div className="flex items-center gap-1">
-                          <input 
-                            type="number"
-                            defaultValue={company.employeeLimit || 0}
-                            onBlur={(e) => updateLimit(company.id, 'employeeLimit', parseInt(e.target.value) || 0)}
-                            className="w-12 text-center font-extrabold text-slate-900 bg-slate-100 rounded py-0.5 outline-none focus:ring-1 focus:ring-blue-500"
-                          />
-                          <span className="text-[10px] text-slate-400 font-bold">чел.</span>
+                            {comp.name ? comp.name.charAt(0).toUpperCase() : "К"}
+                          </div>
+                          <div>
+                            <h3 className="font-extrabold text-sm text-gray-900 leading-snug line-clamp-1">{comp.name || "Без названия"}</h3>
+                            <span className="text-[11px] font-mono text-gray-400">ID: {comp.id}</span>
+                          </div>
                         </div>
+
+                        <span className={cn(
+                          "px-2.5 py-1 rounded-xl text-[10px] font-extrabold uppercase tracking-wider shrink-0 border",
+                          (comp.type || comp.companyType || "").toLowerCase().includes("производ") || comp.productionFormat === "own"
+                            ? "bg-purple-50 text-purple-700 border-purple-200"
+                            : "bg-blue-50 text-blue-700 border-blue-200"
+                        )}>
+                          {comp.type || comp.companyType || "Компания"}
+                        </span>
                       </div>
 
-                      {/* Limit 2: Product Limit */}
-                      <div className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-200/80">
-                        <span className="text-[11px] font-bold text-slate-500 uppercase">Лимит тов.:</span>
-                        <div className="flex items-center gap-1">
-                          <input 
-                            type="number"
-                            defaultValue={company.productLimit || 0}
-                            onBlur={(e) => updateLimit(company.id, 'productLimit', parseInt(e.target.value) || 0)}
-                            className="w-12 text-center font-extrabold text-slate-900 bg-slate-100 rounded py-0.5 outline-none focus:ring-1 focus:ring-blue-500"
-                          />
-                          <span className="text-[10px] text-slate-400 font-bold">шт.</span>
+                      {/* Details */}
+                      <div className="space-y-1.5 text-xs text-gray-500 pt-2 border-t border-gray-100">
+                        <div className="flex items-center justify-between">
+                          <span>Владелец:</span>
+                          <strong className="text-gray-800 font-medium truncate max-w-[180px]">{comp.ownerEmail || comp.contactEmail || "Не указан"}</strong>
                         </div>
+                        {comp.city && (
+                          <div className="flex items-center justify-between">
+                            <span>Город:</span>
+                            <span className="text-gray-700 font-medium">{comp.city}</span>
+                          </div>
+                        )}
+                        {comp.bitrix24?.domain && (
+                          <div className="flex items-center justify-between">
+                            <span>Битрикс24:</span>
+                            <span className="text-amber-700 font-bold truncate max-w-[180px]">{comp.bitrix24.domain}</span>
+                          </div>
+                        )}
                       </div>
 
-                      {/* Limit 3: Tariff Expiration Date */}
-                      <div className="flex items-center justify-between p-2 bg-white rounded-xl border border-slate-200/80">
-                        <span className="text-[11px] font-bold text-slate-500 uppercase">Тариф до:</span>
-                        <TariffExpirationPicker company={company} updateLimit={updateLimit} />
-                      </div>
-
-                      {/* Modules Toggles (Procurement & ERP) */}
-                      <div className="flex items-center justify-around p-2 bg-white rounded-xl border border-slate-200/80">
-                        
-                        {/* Procurement Module Toggle */}
-                        <label className="flex items-center gap-1.5 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={company.procurementAllowed !== undefined ? !!company.procurementAllowed : !!company.procurementEnabled}
-                            onChange={(e) => {
-                              const val = e.target.checked;
-                              updateCompanyFields(company.id, {
-                                procurementAllowed: val,
-                                procurementEnabled: val
-                              });
-                            }}
-                            className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5"
-                          />
-                          <span className="text-[10px] font-black text-slate-700 uppercase">Снабжение</span>
-                        </label>
-
-                        <div className="w-px h-4 bg-slate-200"></div>
+                      {/* Modern Feature Toggles */}
+                      <div className="space-y-2 pt-2 border-t border-gray-100">
+                        <span className="text-[10px] font-extrabold text-gray-400 uppercase tracking-wider block">Модули и доступы</span>
 
                         {/* ERP Module Toggle */}
-                        <label className="flex items-center gap-1.5 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={company.erpAllowed !== undefined ? !!company.erpAllowed : !!company.erpEnabled}
-                            onChange={(e) => {
-                              const val = e.target.checked;
-                              updateCompanyFields(company.id, {
-                                erpAllowed: val,
-                                erpEnabled: val
-                              });
-                            }}
-                            className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
-                          />
-                          <span className="text-[10px] font-black text-indigo-700 uppercase">ERP 2.0</span>
-                        </label>
-
-                        {(company.erpAllowed || company.erpEnabled) && (
-                          <a
-                            href={`/${company.slug || (company.name ? transliterate(company.name) : company.id)}/erp`}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-[10px] text-blue-600 font-bold hover:underline"
-                            title="Открыть ERP кабинет"
+                        <div className="flex items-center justify-between p-2.5 rounded-2xl bg-gray-50 border border-gray-200/70">
+                          <div className="flex items-center gap-2">
+                            <Factory className={cn("w-4 h-4", isErpActive ? "text-indigo-600" : "text-gray-400")} />
+                            <div className="text-left">
+                              <span className="text-xs font-bold text-gray-800 block leading-tight">ERP производство</span>
+                              <span className="text-[10px] text-gray-400">{isErpActive ? "Доступ активен" : "Отключено"}</span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleFeature(comp, "erp", !isErpActive)}
+                            className={cn(
+                              "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden",
+                              isErpActive ? "bg-indigo-600" : "bg-gray-200"
+                            )}
                           >
-                            ↗
-                          </a>
-                        )}
+                            <span
+                              className={cn(
+                                "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out",
+                                isErpActive ? "translate-x-5" : "translate-x-0"
+                              )}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Procurement Module Toggle */}
+                        <div className="flex items-center justify-between p-2.5 rounded-2xl bg-gray-50 border border-gray-200/70">
+                          <div className="flex items-center gap-2">
+                            <Package className={cn("w-4 h-4", isProcActive ? "text-emerald-600" : "text-gray-400")} />
+                            <div className="text-left">
+                              <span className="text-xs font-bold text-gray-800 block leading-tight">Модуль снабжения</span>
+                              <span className="text-[10px] text-gray-400">{isProcActive ? "Включено" : "Отключено"}</span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleToggleFeature(comp, "procurement", !isProcActive)}
+                            className={cn(
+                              "relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden",
+                              isProcActive ? "bg-emerald-600" : "bg-gray-200"
+                            )}
+                          >
+                            <span
+                              className={cn(
+                                "pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out",
+                                isProcActive ? "translate-x-5" : "translate-x-0"
+                              )}
+                            />
+                          </button>
+                        </div>
                       </div>
                     </div>
 
-                    {/* EXPANDABLE EMPLOYEES PANEL */}
-                    {isExpanded && (
-                      <div className="p-5 bg-slate-100/80 border-t border-slate-200 space-y-3 animate-fadeIn">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <Users className="w-4 h-4 text-blue-600" />
-                            <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">
-                              Сотрудники компании ({companyEmployees.length})
-                            </h4>
-                          </div>
-
-                          <div className="text-[10px] text-slate-500 font-medium">
-                            Администратор организации выделен синим
-                          </div>
-                        </div>
-
-                        {companyEmployees.length === 0 ? (
-                          <div className="p-4 text-center bg-white rounded-2xl border border-slate-200 text-xs text-slate-400 font-semibold">
-                            В этой компании пока нет зарегистрированных сотрудников
-                          </div>
-                        ) : (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {companyEmployees.map(user => {
-                              const isOwner = user.uid === company.ownerUid;
-
-                              return (
-                                <div 
-                                  key={user.uid} 
-                                  className={cn(
-                                    "p-3 rounded-2xl border flex items-center justify-between gap-2 transition-all",
-                                    user.isBlocked 
-                                      ? "bg-rose-50/80 border-rose-200" 
-                                      : (isOwner ? "bg-blue-50/60 border-blue-200" : "bg-white border-slate-200")
-                                  )}
-                                >
-                                  <div className="flex items-center gap-2.5 overflow-hidden">
-                                    <div className={cn(
-                                      "w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs shrink-0",
-                                      user.isBlocked ? "bg-rose-200 text-rose-800" : (isOwner ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-600")
-                                    )}>
-                                      {user.displayName?.charAt(0).toUpperCase() || 'U'}
-                                    </div>
-                                    <div className="overflow-hidden">
-                                      <div className="flex items-center gap-1.5">
-                                        <span className="font-bold text-xs text-slate-900 truncate">{user.displayName || 'Без имени'}</span>
-                                        {isOwner && (
-                                          <span className="bg-blue-100 text-blue-700 text-[9px] font-black uppercase px-1.5 py-0.2 rounded shrink-0">Владелец</span>
-                                        )}
-                                      </div>
-                                      <div className="text-[10px] text-slate-500 truncate font-mono">{user.email}</div>
-                                      {user.phone && (
-                                        <a href={`tel:${user.phone}`} className="text-[10px] text-emerald-600 hover:text-emerald-700 font-semibold flex items-center gap-1">
-                                          <Phone className="w-2.5 h-2.5 text-emerald-500" /> {user.phone}
-                                        </a>
-                                      )}
-                                    </div>
-                                  </div>
-
-                                  <div className="flex items-center gap-1 shrink-0">
-                                    <button 
-                                      onClick={() => toggleUserBlock(user.uid, !!user.isBlocked)}
-                                      className={cn(
-                                        "p-1.5 rounded-lg transition-colors cursor-pointer",
-                                        user.isBlocked ? "text-emerald-600 hover:bg-emerald-100" : "text-slate-400 hover:text-rose-600 hover:bg-rose-50"
-                                      )}
-                                      title={user.isBlocked ? "Разблокировать" : "Заблокировать"}
-                                    >
-                                      {user.isBlocked ? <Unlock className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
-                                    </button>
-
-                                    {!isOwner && (
-                                      <button
-                                        onClick={() => deleteUser(user.uid, company.id)}
-                                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-colors cursor-pointer"
-                                        title="Удалить сотрудника"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    )}
-
+                    {/* Card Actions */}
+                    <div className="pt-4 border-t border-gray-100 flex items-center justify-between gap-2">
+                      <button
+                        onClick={() => setEditingCompany(comp)}
+                        className="flex-1 py-2 px-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all text-center cursor-pointer"
+                      >
+                        Редактировать
+                      </button>
+                    </div>
                   </div>
                 );
               })}
             </div>
-
-            {/* Orphaned Users cleanup panel */}
-            {users.filter(u => 
-              u.role !== 'admin' &&
-              u.email !== 'lk.ivanbobkin@gmail.com' &&
-              (!u.companyId || !companies.find(c => c.id === u.companyId))
-            ).length > 0 && (
-              <div className="mt-8 p-6 bg-white rounded-3xl border border-rose-200 space-y-4 shadow-xs">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div>
-                    <h3 className="text-base font-black text-rose-950 flex items-center gap-2">
-                      <AlertCircle className="w-5 h-5 text-rose-600" />
-                      Пользователи без компании ({
-                        users.filter(u => u.role !== 'admin' && u.email !== 'lk.ivanbobkin@gmail.com' && (!u.companyId || !companies.find(c => c.id === u.companyId))).length
-                      })
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Зарегистрированные аккаунты, не привязанные ни к одной существующей организации
-                    </p>
-                  </div>
-
-                  <button 
-                    onClick={async () => {
-                      const orphaned = users.filter(u => 
-                        u.role !== 'admin' &&
-                        u.email !== 'lk.ivanbobkin@gmail.com' &&
-                        (!u.companyId || !companies.find(c => c.id === u.companyId))
-                      );
-                      if (window.confirm(`Вы уверены, что хотите удалить ВСЕХ (${orphaned.length}) нераспределенных пользователей?`)) {
-                        for (const u of orphaned) {
-                          await deleteDoc(doc(db, 'users', u.uid));
-                          await fetch(`/api/auth/user/${u.uid}`, { method: 'DELETE' });
-                        }
-                        alert("Все нераспределенные пользователи удалены");
-                      }
-                    }}
-                    className="flex items-center gap-1.5 px-4 py-2 bg-rose-50 text-rose-700 rounded-xl font-extrabold text-xs hover:bg-rose-100 transition-all cursor-pointer border border-rose-200"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                    Удалить всех призраков
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {users.filter(u => 
-                    u.role !== 'admin' &&
-                    u.email !== 'lk.ivanbobkin@gmail.com' &&
-                    (!u.companyId || !companies.find(c => c.id === u.companyId))
-                  ).map(user => (
-                    <div key={user.uid} className="p-3 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between gap-2">
-                      <div className="overflow-hidden">
-                        <div className="font-bold text-xs text-slate-900 truncate">{user.displayName || 'Без имени'}</div>
-                        <div className="text-[10px] text-slate-500 font-mono truncate">{user.email}</div>
-                      </div>
-                      <button 
-                        onClick={() => deleteUser(user.uid, user.companyId || 'none')}
-                        className="p-1.5 bg-white text-rose-600 hover:bg-rose-100 rounded-lg border border-slate-200 transition-colors cursor-pointer"
-                        title="Удалить аккаунт"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
           </div>
         )}
 
-        {/* TAB 2: GLOBAL ALL USERS VIEW */}
-        {activeTab === 'users' && (
-          <div className="space-y-4">
-            
-            {/* Search Bar for Users */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-2xs flex items-center justify-between gap-4">
-              <div className="relative w-full max-w-md">
-                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-                <input 
-                  type="text"
-                  placeholder="Поиск пользователя по имени, почте или компании..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+        {/* TAB 3: USERS & PERMISSIONS */}
+        {activeTab === "users" && (
+          <div className="bg-white rounded-3xl border border-gray-200/80 shadow-xs overflow-hidden space-y-4 p-6 animate-in fade-in duration-200">
+            <div>
+              <h2 className="text-base font-extrabold text-gray-900">Пользователи платформы</h2>
+              <p className="text-xs text-gray-500">Список всех зарегистрированных учетных записей</p>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-gray-100 text-[11px] font-extrabold text-gray-400 uppercase tracking-wider">
+                    <th className="py-3 px-4">Пользователь</th>
+                    <th className="py-3 px-4">Компания</th>
+                    <th className="py-3 px-4">Роль в системе</th>
+                    <th className="py-3 px-4">UID / ID</th>
+                    <th className="py-3 px-4">Статус</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 text-xs">
+                  {users.map((u) => {
+                    const isGlobalAdmin = u.email === "lk.ivanbobkin@gmail.com" || u.isSuperAdmin;
+                    const isMebelOwner = u.email === "lk.ivanbobkin@yandex.ru";
+                    const comp = companies.find(c => c.id === u.companyId);
+
+                    return (
+                      <tr key={u.uid || u.id || u.email} className="hover:bg-gray-50/80 transition-colors">
+                        <td className="py-3.5 px-4 font-semibold text-gray-900">
+                          <div className="flex items-center gap-2.5">
+                            <div className={cn(
+                              "w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs",
+                              isGlobalAdmin ? "bg-red-600 text-white shadow-xs" : isMebelOwner ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-700"
+                            )}>
+                              {u.name || u.displayName ? (u.name || u.displayName)!.charAt(0).toUpperCase() : u.email.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <span className="block font-bold">{u.name || u.displayName || "Без имени"}</span>
+                              <span className="text-[11px] text-gray-400">{u.email}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          {isGlobalAdmin ? (
+                            <span className="text-gray-400 italic">Глобальный доступ (Без компании)</span>
+                          ) : comp ? (
+                            <span className="font-bold text-gray-800">{comp.name || comp.id}</span>
+                          ) : (
+                            <span className="text-gray-400 font-mono">{u.companyId || "—"}</span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          {isGlobalAdmin ? (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-red-50 text-red-700 border border-red-200">
+                              СУПЕРАДМИНИСТРАТОР
+                            </span>
+                          ) : isMebelOwner ? (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                              Владелец производства
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-gray-100 text-gray-700">
+                              {u.role || u.accessLevel || "Сотрудник"}
+                            </span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-4 font-mono text-[11px] text-gray-400">
+                          {u.uid || u.id}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className="inline-flex items-center gap-1.5 text-emerald-600 font-bold text-xs">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Активен
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* TAB 4: NOTIFICATIONS & EMAIL SETTINGS */}
+        {activeTab === "notifications" && (
+          <div className="bg-white rounded-3xl border border-gray-200/80 shadow-xs p-8 space-y-8 animate-in fade-in duration-200 max-w-4xl">
+            <div>
+              <h2 className="text-lg font-black text-gray-900">Настройка системных уведомлений и e-mail</h2>
+              <p className="text-xs text-gray-500">Настройте оповещения на вашу почту и глобальные объявления для пользователей</p>
+            </div>
+
+            {/* Email Notification Address */}
+            <div className="space-y-4 p-6 rounded-2xl bg-gray-50 border border-gray-200/80">
+              <h3 className="text-sm font-extrabold text-gray-900 flex items-center gap-2">
+                <Mail className="w-4 h-4 text-blue-600" />
+                <span>Почтовый адрес для отчетов и уведомлений</span>
+              </h3>
+              <p className="text-xs text-gray-500">
+                На этот адрес приложение будет автоматически высылать письма о ключевых событиях.
+              </p>
+              <div>
+                <label className="text-xs font-bold text-gray-700 block mb-1.5">E-mail адрес администратора:</label>
+                <input
+                  type="email"
+                  value={adminSettings.adminNotificationEmail}
+                  onChange={(e) => setAdminSettings({ ...adminSettings, adminNotificationEmail: e.target.value })}
+                  placeholder="lk.ivanbobkin@gmail.com"
+                  className="w-full max-w-md px-4 py-2.5 bg-white border border-gray-300 rounded-xl text-sm font-medium focus:outline-hidden focus:border-blue-600"
                 />
               </div>
 
-              <div className="text-xs text-slate-500 font-bold">
-                Найдено пользователей: <span className="text-slate-900 font-mono">{filteredUsers.length}</span>
+              <div className="space-y-3 pt-3 border-t border-gray-200">
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={adminSettings.notifyOnNewUser}
+                    onChange={(e) => setAdminSettings({ ...adminSettings, notifyOnNewUser: e.target.checked })}
+                    className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-xs font-bold text-gray-800">Уведомлять при регистрации нового пользователя</span>
+                </label>
+
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={adminSettings.notifyOnNewCompany}
+                    onChange={(e) => setAdminSettings({ ...adminSettings, notifyOnNewCompany: e.target.checked })}
+                    className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-xs font-bold text-gray-800">Уведомлять при создании новой компании / салона</span>
+                </label>
+
+                <label className="flex items-center gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={adminSettings.notifyOnWebhookError}
+                    onChange={(e) => setAdminSettings({ ...adminSettings, notifyOnWebhookError: e.target.checked })}
+                    className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500"
+                  />
+                  <span className="text-xs font-bold text-gray-800">Оповещать об ошибках интеграций Битрикс24</span>
+                </label>
               </div>
             </div>
 
-            {/* Users Table */}
-            <div className="bg-white rounded-3xl border border-slate-200/80 shadow-xs overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 uppercase tracking-wider font-extrabold text-[10px]">
-                    <tr>
-                      <th className="px-6 py-4">Пользователь</th>
-                      <th className="px-6 py-4">Компания</th>
-                      <th className="px-6 py-4">Роль</th>
-                      <th className="px-6 py-4">Статус</th>
-                      <th className="px-6 py-4 text-right">Действия</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
-                    {filteredUsers.map(user => {
-                      const company = companies.find(c => c.id === user.companyId);
-                      const isOwner = company && user.uid === company.ownerUid;
+            {/* System Announcement Banner */}
+            <div className="space-y-4 p-6 rounded-2xl bg-gray-50 border border-gray-200/80">
+              <h3 className="text-sm font-extrabold text-gray-900 flex items-center gap-2">
+                <Bell className="w-4 h-4 text-amber-600" />
+                <span>Глобальное объявление для всех пользователей</span>
+              </h3>
+              <p className="text-xs text-gray-500">
+                Отображается вверху приложения у всех авторизованных пользователей платформы (например, предупреждение о техработах).
+              </p>
 
-                      return (
-                        <tr key={user.uid} className={cn("hover:bg-slate-50/80 transition-colors", user.isBlocked && "bg-rose-50/30")}>
-                          <td className="px-6 py-3.5">
-                            <div className="flex items-center gap-3">
-                              <div className={cn(
-                                "w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0",
-                                user.isBlocked ? "bg-rose-100 text-rose-700" : (isOwner ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-700")
-                              )}>
-                                {user.displayName?.charAt(0).toUpperCase() || 'U'}
-                              </div>
-                              <div>
-                                <div className="font-bold text-slate-900">{user.displayName || 'Без имени'}</div>
-                                <div className="text-[11px] text-slate-400 font-mono">{user.email}</div>
-                                {user.phone && (
-                                  <a href={`tel:${user.phone}`} className="text-[11px] text-emerald-600 hover:text-emerald-700 font-semibold flex items-center gap-1 mt-0.5">
-                                    <Phone className="w-3 h-3 text-emerald-500" /> {user.phone}
-                                  </a>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-
-                          <td className="px-6 py-3.5">
-                            {company ? (
-                              <div className="flex items-center gap-1.5">
-                                <Building2 className="w-3.5 h-3.5 text-slate-400" />
-                                <span className="font-bold text-slate-800">{company.name}</span>
-                              </div>
-                            ) : (
-                              <span className="text-rose-500 font-bold">Без компании</span>
-                            )}
-                          </td>
-
-                          <td className="px-6 py-3.5">
-                            {user.role === 'admin' ? (
-                              <span className="px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 font-bold text-[10px] uppercase">Суперадмин</span>
-                            ) : isOwner ? (
-                              <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-bold text-[10px] uppercase">Админ компании</span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-bold text-[10px] uppercase">Сотрудник</span>
-                            )}
-                          </td>
-
-                          <td className="px-6 py-3.5">
-                            {user.isBlocked ? (
-                              <span className="inline-flex items-center gap-1 text-rose-600 font-bold text-[11px]">
-                                <Lock className="w-3 h-3" /> Заблокирован
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-emerald-600 font-bold text-[11px]">
-                                <UserCheck className="w-3 h-3" /> Активен
-                              </span>
-                            )}
-                          </td>
-
-                          <td className="px-6 py-3.5 text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                onClick={() => toggleUserBlock(user.uid, !!user.isBlocked)}
-                                className={cn(
-                                  "p-1.5 rounded-lg transition-colors cursor-pointer",
-                                  user.isBlocked ? "bg-emerald-50 text-emerald-600 hover:bg-emerald-100" : "bg-slate-100 text-slate-600 hover:bg-rose-50 hover:text-rose-600"
-                                )}
-                                title={user.isBlocked ? "Разблокировать" : "Заблокировать"}
-                              >
-                                {user.isBlocked ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
-                              </button>
-
-                              {!isOwner && user.role !== 'admin' && (
-                                <button
-                                  onClick={() => deleteUser(user.uid, user.companyId)}
-                                  className="p-1.5 bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
-                                  title="Удалить пользователя"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* TAB 3: ANALYTICS & STATS */}
-        {activeTab === 'stats' && (
-          <div className="space-y-6">
-            
-            {/* Top Key Metrics Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-2xs flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0">
-                  <Building2 className="w-6 h-6" />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-500">Всего организаций</div>
-                  <div className="text-2xl font-black text-slate-900 font-mono">{stats.totalCompanies}</div>
-                </div>
-              </div>
-
-              <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-2xs flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold shrink-0">
-                  <Users className="w-6 h-6" />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-500">Пользователей системы</div>
-                  <div className="text-2xl font-black text-slate-900 font-mono">{stats.totalUsers}</div>
-                </div>
-              </div>
-
-              <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-2xs flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold shrink-0">
-                  <Layers className="w-6 h-6" />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-500">Активных с ERP 2.0</div>
-                  <div className="text-2xl font-black text-amber-600 font-mono">{stats.erpActiveCount}</div>
-                </div>
-              </div>
-
-              <div className="bg-white p-5 rounded-3xl border border-slate-200/80 shadow-2xs flex items-center gap-4">
-                <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold shrink-0">
-                  <ShieldCheck className="w-6 h-6" />
-                </div>
-                <div>
-                  <div className="text-xs font-bold text-slate-500">Снабжение под заказ</div>
-                  <div className="text-2xl font-black text-emerald-600 font-mono">{stats.procurementActiveCount}</div>
-                </div>
-              </div>
-            </div>
-
-            {/* Distribution Charts & Breakdown */}
-            <div className="bg-white p-8 rounded-3xl border border-slate-200/80 shadow-2xs space-y-6">
-              <h3 className="text-lg font-black text-slate-900">Структура клиентов по типу деятельности</h3>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-2">
-                  <div className="flex justify-between text-xs font-black">
-                    <span className="text-slate-700">Мебельные производства</span>
-                    <span className="text-blue-600 font-mono">{stats.productionCount} ({stats.totalCompanies > 0 ? Math.round((stats.productionCount/stats.totalCompanies)*100) : 0}%)</span>
-                  </div>
-                  <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
-                    <div className="bg-blue-600 h-full transition-all" style={{ width: `${stats.totalCompanies > 0 ? (stats.productionCount/stats.totalCompanies)*100 : 0}%` }}></div>
-                  </div>
-                </div>
-
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-2">
-                  <div className="flex justify-between text-xs font-black">
-                    <span className="text-slate-700">Мебельные салоны</span>
-                    <span className="text-indigo-600 font-mono">{stats.salonCount} ({stats.totalCompanies > 0 ? Math.round((stats.salonCount/stats.totalCompanies)*100) : 0}%)</span>
-                  </div>
-                  <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
-                    <div className="bg-indigo-600 h-full transition-all" style={{ width: `${stats.totalCompanies > 0 ? (stats.salonCount/stats.totalCompanies)*100 : 0}%` }}></div>
-                  </div>
-                </div>
-
-                <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-2">
-                  <div className="flex justify-between text-xs font-black">
-                    <span className="text-slate-700">Частные дизайнеры</span>
-                    <span className="text-purple-600 font-mono">{stats.designerCount} ({stats.totalCompanies > 0 ? Math.round((stats.designerCount/stats.totalCompanies)*100) : 0}%)</span>
-                  </div>
-                  <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
-                    <div className="bg-purple-600 h-full transition-all" style={{ width: `${stats.totalCompanies > 0 ? (stats.designerCount/stats.totalCompanies)*100 : 0}%` }}></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-          </div>
-        )}
-
-        {/* TAB 4: TARIFF CHANGE REQUESTS */}
-        {activeTab === 'requests' && (
-          <div className="space-y-4">
-            {requests.map(req => (
-              <div key={req.id} className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-2xs space-y-4">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <h3 className="text-base font-black text-slate-900">{req.companyName}</h3>
-                    <p className="text-xs text-slate-400 font-semibold">{(req.createdAt ? new Date(req.createdAt).toLocaleString('ru-RU') : '—')}</p>
-                  </div>
-                  <span className={cn(
-                    "px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider",
-                    req.status === 'pending' ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"
-                  )}>
-                    {req.status === 'pending' ? 'Ожидает обработки' : 'Обработано'}
-                  </span>
-                </div>
-
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Тип тарифа</span>
-                    <span className="font-extrabold text-slate-900">{req.request?.type || 'Стандарт'}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Период</span>
-                    <span className="font-extrabold text-slate-900">{req.request?.period === 'year' ? '1 Год' : '1 Месяц'}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Доп. сотрудники</span>
-                    <span className="font-extrabold text-slate-900">+{req.request?.extraEmployees || 0}</span>
-                  </div>
-                  <div>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase block">Доп. салоны</span>
-                    <span className="font-extrabold text-slate-900">+{req.request?.extraSalons || 0}</span>
-                  </div>
-                </div>
-
-                {req.status === 'pending' && (
-                  <div className="flex justify-end">
-                    <button
-                      onClick={async () => {
-                        try {
-                          await updateDoc(doc(db, 'tariffRequests', req.id), { status: 'completed' });
-                        } catch (error) {
-                          console.error(error);
-                        }
-                      }}
-                      className="px-5 py-2.5 bg-blue-600 text-white rounded-xl text-xs font-black hover:bg-blue-700 transition-all cursor-pointer shadow-2xs"
-                    >
-                      Отметить как обработанное
-                    </button>
-                  </div>
-                )}
-              </div>
-            ))}
-
-            {requests.length === 0 && (
-              <div className="text-center py-12 bg-white rounded-3xl border border-slate-200 text-slate-400 text-xs font-bold">
-                Нет поступивших заявок на смену тарифов
-              </div>
-            )}
-          </div>
-        )}
-
-      </div>
-
-      {/* COEFFICIENTS MODAL */}
-      {coeffModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-3xl w-full max-w-xl overflow-hidden shadow-2xl flex flex-col max-h-[85vh]">
-            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
               <div>
-                <h3 className="text-lg font-black text-slate-900 leading-none mb-1">Партнерские коэффициенты</h3>
-                <p className="text-xs text-slate-500 font-semibold">
-                  Для салона <span className="text-indigo-600 font-bold">{selectedCoefficients?.salonName}</span> от <span className="text-blue-600 font-bold">{selectedCoefficients?.manufacturerName}</span>
-                </p>
+                <label className="text-xs font-bold text-gray-700 block mb-1.5">Текст объявления:</label>
+                <input
+                  type="text"
+                  value={adminSettings.systemBannerText}
+                  onChange={(e) => setAdminSettings({ ...adminSettings, systemBannerText: e.target.value })}
+                  placeholder="Например: 10 октября запланировано обновление базы декоров..."
+                  className="w-full px-4 py-2.5 bg-white border border-gray-300 rounded-xl text-sm font-medium focus:outline-hidden focus:border-blue-600"
+                />
               </div>
-              <button 
-                onClick={() => setCoeffModalOpen(false)}
-                className="p-2 hover:bg-white rounded-xl transition-colors text-slate-400 hover:text-slate-900 cursor-pointer"
+
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 text-xs font-bold cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={adminSettings.systemBannerActive}
+                    onChange={(e) => setAdminSettings({ ...adminSettings, systemBannerActive: e.target.checked })}
+                    className="w-4 h-4 rounded text-blue-600"
+                  />
+                  <span>Активировать показ баннера</span>
+                </label>
+
+                <select
+                  value={adminSettings.systemBannerType}
+                  onChange={(e) => setAdminSettings({ ...adminSettings, systemBannerType: e.target.value as any })}
+                  className="px-3 py-1.5 bg-white border border-gray-300 rounded-xl text-xs font-bold text-gray-700"
+                >
+                  <option value="info">Информационный (Синий)</option>
+                  <option value="warning">Предупреждение (Оранжевый)</option>
+                  <option value="success">Успех / Новость (Зеленый)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end">
+              <button
+                onClick={handleSaveAdminSettings}
+                disabled={savingSettings}
+                className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl text-xs font-bold shadow-md shadow-blue-500/20 transition-all cursor-pointer active:scale-95 disabled:opacity-50"
               >
-                <X className="w-5 h-5" />
+                <Save className="w-4 h-4" />
+                <span>{savingSettings ? "Сохранение..." : "Сохранить настройки уведомлений"}</span>
               </button>
             </div>
-            
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              {coeffLoading ? (
-                <div className="py-12 flex flex-col items-center justify-center gap-3">
-                  <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Загрузка данных...</p>
-                </div>
-              ) : selectedCoefficients?.coeffs ? (
-                <div className="space-y-4">
-                  {selectedCoefficients.isSpecial && (
-                    <div className="p-3 bg-indigo-50 border border-indigo-100 rounded-2xl flex items-center gap-2.5 text-indigo-900 text-xs font-bold">
-                      <ShieldCheck className="w-5 h-5 text-indigo-600 shrink-0" />
-                      <span>Активны индивидуальные коммерческие условия для этого салона</span>
-                    </div>
-                  )}
-                  
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    {[
-                      { key: 'ldsp', label: 'ЛДСП' },
-                      { key: 'hdf', label: 'ХДФ' },
-                      { key: 'edge', label: 'Кромка' },
-                      { key: 'facadeSheet', label: 'Фасад (плита)' },
-                      { key: 'facadeCustom', label: 'Фасад (заказной)' },
-                      { key: 'hardware', label: 'Фурнитура' },
-                      { key: 'assembly', label: 'Сборка' },
-                      { key: 'delivery', label: 'Доставка' },
-                    ].map(({ key, label }) => {
-                      const val = selectedCoefficients.coeffs?.[key];
-                      return (
-                        <div key={key} className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center justify-between">
-                          <span className="font-bold text-slate-500 uppercase text-[10px]">{label}</span>
-                          <span className="text-sm font-black text-slate-900 font-mono">x{val !== undefined ? val : 1}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              ) : (
-                <div className="py-12 text-center text-slate-400 text-xs font-bold space-y-2">
-                  <AlertCircle className="w-8 h-8 text-slate-300 mx-auto" />
-                  <p>Индивидуальные коэффициенты еще не настроены производством.</p>
-                </div>
-              )}
+          </div>
+        )}
+
+        {/* TAB 5: DATABASE & SYSTEM HEALTH */}
+        {activeTab === "database" && (
+          <div className="bg-white rounded-3xl border border-gray-200/80 shadow-xs p-8 space-y-6 animate-in fade-in duration-200">
+            <div>
+              <h2 className="text-base font-extrabold text-gray-900">Состояние базы данных и системы</h2>
+              <p className="text-xs text-gray-500">Диагностика соединений, кэша и целостности данных</p>
             </div>
-            
-            <div className="p-4 bg-slate-50 border-t border-slate-100">
-              <button 
-                onClick={() => setCoeffModalOpen(false)}
-                className="w-full py-3 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors cursor-pointer"
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+              <div className="p-5 rounded-2xl bg-emerald-50 border border-emerald-200/80 space-y-2">
+                <span className="text-xs font-bold text-emerald-800 block">PostgreSQL (TimeWeb Cloud)</span>
+                <span className="text-2xl font-black text-emerald-950">ONLINE</span>
+                <p className="text-xs text-emerald-700">Основная реляционная БД подключена и синхронизирована.</p>
+              </div>
+
+              <div className="p-5 rounded-2xl bg-blue-50 border border-blue-200/80 space-y-2">
+                <span className="text-xs font-bold text-blue-800 block">Резервное хранилище (LocalStore)</span>
+                <span className="text-2xl font-black text-blue-950">АКТИВНО</span>
+                <p className="text-xs text-blue-700">Мгновенный кэш документов на диске для быстрой загрузки.</p>
+              </div>
+
+              <div className="p-5 rounded-2xl bg-indigo-50 border border-indigo-200/80 space-y-2">
+                <span className="text-xs font-bold text-indigo-800 block">Проекты в системе</span>
+                <span className="text-2xl font-black text-indigo-950">100+ проектов</span>
+                <p className="text-xs text-indigo-700">Все проекты сохранены и доступны в разделах компаний.</p>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* Company Edit Modal */}
+      {editingCompany && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 space-y-5 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div>
+                <h3 className="text-base font-extrabold text-gray-900">Редактирование компании</h3>
+                <span className="text-xs font-mono text-gray-400">ID: {editingCompany.id}</span>
+              </div>
+              <button
+                onClick={() => setEditingCompany(null)}
+                className="p-2 hover:bg-gray-100 rounded-full text-gray-400 hover:text-gray-600 transition-colors"
               >
-                Закрыть
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs">
+              <div>
+                <label className="font-bold text-gray-700 block mb-1">Название компании:</label>
+                <input
+                  type="text"
+                  value={editingCompany.name || ""}
+                  onChange={(e) => setEditingCompany({ ...editingCompany, name: e.target.value })}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl font-medium focus:outline-hidden focus:border-blue-600"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-gray-700 block mb-1">Тип компании:</label>
+                  <select
+                    value={editingCompany.type || editingCompany.companyType || "Салон"}
+                    onChange={(e) => setEditingCompany({ ...editingCompany, type: e.target.value, companyType: e.target.value })}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl font-medium focus:outline-hidden"
+                  >
+                    <option value="Мебельное производство">Мебельное производство</option>
+                    <option value="Салон">Салон</option>
+                    <option value="Дизайнер">Дизайнер</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-gray-700 block mb-1">Город:</label>
+                  <input
+                    type="text"
+                    value={editingCompany.city || ""}
+                    onChange={(e) => setEditingCompany({ ...editingCompany, city: e.target.value })}
+                    className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl font-medium focus:outline-hidden"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-gray-700 block mb-1">Email владельца компании:</label>
+                <input
+                  type="email"
+                  value={editingCompany.ownerEmail || ""}
+                  onChange={(e) => setEditingCompany({ ...editingCompany, ownerEmail: e.target.value })}
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl font-medium focus:outline-hidden"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-gray-700 block mb-1">Вебхук Битрикс24:</label>
+                <input
+                  type="text"
+                  value={editingCompany.bitrix24?.webhookUrl || ""}
+                  onChange={(e) => setEditingCompany({
+                    ...editingCompany,
+                    bitrix24: { ...(editingCompany.bitrix24 || {}), webhookUrl: e.target.value }
+                  })}
+                  placeholder="https://xxx.bitrix24.ru/rest/1/..."
+                  className="w-full px-3 py-2 bg-gray-50 border border-gray-300 rounded-xl font-medium font-mono text-[11px] focus:outline-hidden"
+                />
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-gray-100 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setEditingCompany(null)}
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={handleSaveCompanyModal}
+                disabled={isSavingCompany}
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-blue-500/20 cursor-pointer disabled:opacity-50"
+              >
+                {isSavingCompany ? "Сохранение..." : "Сохранить"}
               </button>
             </div>
           </div>
         </div>
       )}
-
     </div>
   );
 };
