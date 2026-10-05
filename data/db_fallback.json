@@ -14,9 +14,9 @@
       "path": "users/5adbd3b0-f5b4-41d3-8abb-d106e2a3d013",
       "collection": "users",
       "docId": "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013",
-      "data": "{\"uid\":\"5adbd3b0-f5b4-41d3-8abb-d106e2a3d013\",\"id\":\"5adbd3b0-f5b4-41d3-8abb-d106e2a3d013\",\"email\":\"lk.ivanbobkin@yandex.ru\",\"displayName\":\"Иван Бобкин (Владелец)\",\"name\":\"Иван Бобкин (Владелец)\",\"companyId\":\"e5om9lzxh\",\"role\":\"admin\",\"isOwner\":true,\"isSuperAdmin\":false,\"accessLevel\":\"admin\"}",
+      "data": "{\"uid\":\"5adbd3b0-f5b4-41d3-8abb-d106e2a3d013\",\"id\":\"5adbd3b0-f5b4-41d3-8abb-d106e2a3d013\",\"email\":\"lk.ivanbobkin@yandex.ru\",\"displayName\":\"Иван Бобкин (Владелец)\",\"name\":\"Иван Бобкин (Владелец)\",\"companyId\":\"e5om9lzxh\",\"role\":\"admin\",\"isOwner\":true,\"accessLevel\":\"admin\",\"createdAt\":\"2026-10-05T23:01:23.810Z\"}",
       "createdAt": "2026-10-01T21:01:14.531Z",
-      "updatedAt": "2026-10-05T19:36:13.507Z",
+      "updatedAt": "2026-10-05T23:01:23.810Z",
       "needsSync": false
     },
     "companies/0w81wcco2": {
@@ -6984,14 +6984,14 @@
     "admin-ivan-bobkin": {
       "uid": "admin-ivan-bobkin",
       "email": "lk.ivanbobkin@gmail.com",
-      "password": "$2b$10$0mpO0bbo/fM3wIXGPYNZDeFlfif7lSGIXvxHSPFeeuhc7ZwOHzNOm",
+      "password": "$2b$10$CBQTohegXe.k1slbcVBYJuX/yZiTVlrsscUt3RS5P.tNi29eyarIu",
       "verified": true,
       "createdAt": "2026-09-28T22:55:52.100Z"
     },
     "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013": {
       "uid": "5adbd3b0-f5b4-41d3-8abb-d106e2a3d013",
       "email": "lk.ivanbobkin@yandex.ru",
-      "password": "$2b$10$0mpO0bbo/fM3wIXGPYNZDeFlfif7lSGIXvxHSPFeeuhc7ZwOHzNOm",
+      "password": "$2b$10$CBQTohegXe.k1slbcVBYJuX/yZiTVlrsscUt3RS5P.tNi29eyarIu",
       "verified": true,
       "createdAt": "2026-10-01T21:01:14.531Z"
     }

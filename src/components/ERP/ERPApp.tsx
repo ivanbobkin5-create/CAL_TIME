@@ -1039,6 +1039,30 @@ export const ERPApp: React.FC<ERPAppProps> = ({
     };
   }, [authUser, company, employees]);
 
+  // Helper to safely merge stage scanning progress taking the union of scanned part IDs
+  const mergeScanningProgress = (existingProg: any, incomingProg: any) => {
+    if (!existingProg) return incomingProg || {};
+    if (!incomingProg) return existingProg || {};
+    const result = { ...incomingProg };
+    Object.keys(existingProg).forEach(stage => {
+      if (!result[stage]) {
+        result[stage] = existingProg[stage];
+      } else {
+        result[stage] = { ...result[stage] };
+        Object.keys(existingProg[stage] || {}).forEach(mat => {
+          const existIds = existingProg[stage][mat]?.scannedPartIds || [];
+          const incomingIds = result[stage]?.[mat]?.scannedPartIds || [];
+          const union = Array.from(new Set([...incomingIds, ...existIds]));
+          result[stage][mat] = {
+            scannedPartIds: union,
+            isCompleted: Boolean(result[stage]?.[mat]?.isCompleted || existingProg[stage][mat]?.isCompleted)
+          };
+        });
+      }
+    });
+    return result;
+  };
+
   // Real-time synchronization of orders (polls every 4 seconds when visible)
   useEffect(() => {
     if (!company?.id || !isDataReady) return;
@@ -1053,18 +1077,30 @@ export const ERPApp: React.FC<ERPAppProps> = ({
         const res = await fetch(`/api/erp/${company.id}/orders`);
         if (res.ok && isSubscribed) {
           const data = await res.json();
-          if (data.orders) {
+          if (data.orders && Array.isArray(data.orders)) {
             setOrders(prev => {
-              if (areOrdersEqual(prev, data.orders)) return prev;
-              return data.orders;
+              const merged = data.orders.map((freshOrder: any) => {
+                const prevOrder = prev.find(p => p.id === freshOrder.id);
+                if (!prevOrder) return freshOrder;
+                return {
+                  ...freshOrder,
+                  stageScanningProgress: mergeScanningProgress(prevOrder.stageScanningProgress, freshOrder.stageScanningProgress)
+                };
+              });
+              if (areOrdersEqual(prev, merged)) return prev;
+              return merged;
             });
 
             setSelectedOrderForWorkspace(prev => {
               if (!prev) return null;
               const fresh = data.orders.find((o: any) => o.id === prev.id);
               if (!fresh) return prev;
-              if (isOrderEqual(fresh, prev)) return prev;
-              return fresh;
+              const merged = {
+                ...fresh,
+                stageScanningProgress: mergeScanningProgress(prev.stageScanningProgress, fresh.stageScanningProgress)
+              };
+              if (isOrderEqual(merged, prev)) return prev;
+              return merged;
             });
           }
         }
@@ -1434,7 +1470,9 @@ export const ERPApp: React.FC<ERPAppProps> = ({
     }
   };
 
-  const handleUpdateOrder = async (updated: ProductionOrder) => {
+  const updateOrderDebounceMapRef = useRef<Record<string, { timer: any; latestOrder: ProductionOrder }>>({});
+
+  const handleUpdateOrder = async (updated: ProductionOrder, immediateSync = false) => {
     setOrders(prev => {
       const nextList = prev.map(o => o.id === updated.id ? updated : o);
       if (company?.id) {
@@ -1448,14 +1486,37 @@ export const ERPApp: React.FC<ERPAppProps> = ({
     }
 
     if (company?.id) {
-      try {
-        await fetch(`/api/erp/${company.id}/orders/${updated.id}/stage`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(updated)
-        });
-      } catch (e) {
-        console.warn('Failed to persist order update:', e);
+      const orderId = updated.id;
+      const syncNow = async (ordToSync: ProductionOrder) => {
+        try {
+          await fetch(`/api/erp/${company.id}/orders/${orderId}/stage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(ordToSync)
+          });
+        } catch (e) {
+          console.warn('Failed to persist order update:', e);
+        }
+      };
+
+      if (immediateSync) {
+        if (updateOrderDebounceMapRef.current[orderId]?.timer) {
+          clearTimeout(updateOrderDebounceMapRef.current[orderId].timer);
+          delete updateOrderDebounceMapRef.current[orderId];
+        }
+        syncNow(updated);
+      } else {
+        if (updateOrderDebounceMapRef.current[orderId]?.timer) {
+          clearTimeout(updateOrderDebounceMapRef.current[orderId].timer);
+        }
+        updateOrderDebounceMapRef.current[orderId] = {
+          latestOrder: updated,
+          timer: setTimeout(() => {
+            const finalOrder = updateOrderDebounceMapRef.current[orderId]?.latestOrder || updated;
+            delete updateOrderDebounceMapRef.current[orderId];
+            syncNow(finalOrder);
+          }, 350)
+        };
       }
     }
   };

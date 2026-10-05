@@ -2906,9 +2906,15 @@ function transliterate(str: string): string {
       const webhookUrl = normalizeBitrixWebhookUrl(rawWebhook);
       const orderSource = erpConfig.orderSource || (webhookUrl ? 'bitrix24' : 'projects');
       
-      // Load saved local ERP production states for this company
+      // Load saved local ERP production states for this company (prefer localStore in-memory for instant 0ms response)
+      const localErpList = localStore.getCollection(`companies/${realCompanyId}/erp_orders`).concat(
+        realCompanyId !== companyId ? localStore.getCollection(`companies/${companyId}/erp_orders`) : []
+      );
+
       let erpOrderDocs: any[] = [];
-      if (isPostgresAvailable) {
+      if (localErpList.length > 0) {
+        erpOrderDocs = localErpList.map(d => ({ docId: d.docId, data: d.data }));
+      } else if (isPostgresAvailable) {
         try {
           erpOrderDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
             where: {
@@ -2918,12 +2924,10 @@ function transliterate(str: string): string {
               ]
             }
           }));
+          for (const d of erpOrderDocs) {
+            localStore.setDoc(d.path, d.collection, d.docId || d.id, d.data, false, false);
+          }
         } catch (_) {}
-      }
-
-      if (erpOrderDocs.length === 0) {
-        const localErpList = localStore.getCollection(`companies/${realCompanyId}/erp_orders`).concat(localStore.getCollection(`companies/${companyId}/erp_orders`));
-        erpOrderDocs = localErpList.map(d => ({ docId: d.docId, data: d.data }));
       }
 
       const localErpOrdersMap: Record<string, any> = {};
@@ -3504,6 +3508,102 @@ function transliterate(str: string): string {
     }
   });
 
+  // Dedicated ultra-low-latency endpoint for instant barcode scanning
+  app.post("/api/erp/:companyId/orders/:orderId/scan", async (req, res) => {
+    try {
+      const companyId = normalizeCompanyPath(req.params.companyId || "");
+      const { orderId } = req.params;
+      const { 
+        stage, 
+        material, 
+        scannedPartIds, 
+        isCompleted, 
+        currentStage,
+        forcedStageCompletions, 
+        workLogs,
+        fullProgress
+      } = req.body;
+
+      const orderDocPath = `companies/${companyId}/erp_orders/${orderId}`;
+      let existingData: any = {};
+      const localDoc = localStore.getDoc(orderDocPath);
+      if (localDoc) {
+        existingData = typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data;
+      } else if (isPostgresAvailable) {
+        try {
+          const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: orderDocPath } }));
+          if (doc) existingData = JSON.parse(doc.data);
+        } catch (_) {}
+      }
+
+      const mergedProgress = { ...(existingData.stageScanningProgress || {}) };
+      
+      if (fullProgress) {
+        // Deep merge full stageScanningProgress taking union of scannedPartIds
+        Object.keys(fullProgress).forEach(stg => {
+          if (!mergedProgress[stg]) mergedProgress[stg] = {};
+          Object.keys(fullProgress[stg] || {}).forEach(mat => {
+            const existIds = mergedProgress[stg][mat]?.scannedPartIds || [];
+            const newIds = fullProgress[stg][mat]?.scannedPartIds || [];
+            const union = Array.from(new Set([...existIds, ...newIds]));
+            mergedProgress[stg][mat] = {
+              scannedPartIds: union,
+              isCompleted: fullProgress[stg][mat]?.isCompleted || mergedProgress[stg][mat]?.isCompleted || false
+            };
+          });
+        });
+      } else if (stage && material && Array.isArray(scannedPartIds)) {
+        if (!mergedProgress[stage]) mergedProgress[stage] = {};
+        const existIds = mergedProgress[stage][material]?.scannedPartIds || [];
+        const union = Array.from(new Set([...existIds, ...scannedPartIds]));
+        mergedProgress[stage][material] = {
+          scannedPartIds: union,
+          isCompleted: isCompleted !== undefined ? isCompleted : (mergedProgress[stage][material]?.isCompleted || false)
+        };
+      }
+
+      const updatedData = {
+        ...existingData,
+        currentStage: currentStage || stage || existingData.currentStage,
+        stageScanningProgress: mergedProgress,
+        forcedStageCompletions: forcedStageCompletions !== undefined ? forcedStageCompletions : existingData.forcedStageCompletions,
+        workLogs: workLogs !== undefined ? workLogs : existingData.workLogs,
+        updatedAt: new Date().toISOString()
+      };
+
+      // Save instantly to in-memory localStore (0ms latency for all clients and pollers)
+      localStore.setDoc(orderDocPath, `companies/${companyId}/erp_orders`, orderId, JSON.stringify(updatedData), false, true);
+
+      // Return immediately to client so scanning never hangs
+      res.json({
+        success: true,
+        stageScanningProgress: mergedProgress,
+        currentStage: updatedData.currentStage
+      });
+
+      // Async write-behind to PostgreSQL in background
+      if (isPostgresAvailable) {
+        prisma.dbDocument.upsert({
+          where: { path: orderDocPath },
+          create: {
+            path: orderDocPath,
+            collection: `companies/${companyId}/erp_orders`,
+            docId: orderId,
+            data: JSON.stringify(updatedData)
+          },
+          update: {
+            data: JSON.stringify(updatedData)
+          }
+        }).catch((err) => {
+          console.warn(`[SCAN BG SYNC] Error persisting scan to Postgres for order ${orderId}:`, err?.message || err);
+        });
+      }
+    } catch (e: any) {
+      console.error("Error handling ERP scan:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   app.post("/api/erp/:companyId/orders/:orderId/stage", async (req, res) => {
     try {
       const companyId = normalizeCompanyPath(req.params.companyId || "");
@@ -3511,14 +3611,13 @@ function transliterate(str: string): string {
       const { currentStage, stageProgress, status, responsibleEmployeeId, responsibleEmployeeName, comments, priority, totalAreaM2, totalEdgeM, partsCount, facadesCount, birkaData, stageScanningProgress } = req.body;
 
       let companyDoc: any = null;
-      if (isPostgresAvailable) {
+      const localComp = localStore.getDoc(`companies/${companyId}`);
+      if (localComp) {
+        companyDoc = { data: localComp.data };
+      } else if (isPostgresAvailable) {
         try {
           companyDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: `companies/${companyId}` } }));
         } catch (_) {}
-      }
-      if (!companyDoc) {
-        const localDoc = localStore.getDoc(`companies/${companyId}`);
-        if (localDoc) companyDoc = { data: localDoc.data };
       }
       if (!companyDoc) return res.status(404).json({ error: "Компания не найдена" });
       const companyData = typeof companyDoc.data === "string" ? JSON.parse(companyDoc.data) : companyDoc.data;
@@ -3527,15 +3626,34 @@ function transliterate(str: string): string {
 
       const orderDocPath = `companies/${companyId}/erp_orders/${orderId}`;
       let existingData: any = {};
-      if (isPostgresAvailable) {
+      const localOrderDoc = localStore.getDoc(orderDocPath);
+      if (localOrderDoc) {
+        existingData = typeof localOrderDoc.data === "string" ? JSON.parse(localOrderDoc.data) : localOrderDoc.data;
+      } else if (isPostgresAvailable) {
         try {
           const existingDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: orderDocPath } }));
           if (existingDoc) existingData = JSON.parse(existingDoc.data);
         } catch (_) {}
       }
-      if (Object.keys(existingData).length === 0) {
-        const localDoc = localStore.getDoc(orderDocPath);
-        if (localDoc) existingData = typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data;
+
+      // Merge stageScanningProgress as a union so previous scans are preserved
+      let mergedScanningProgress = existingData.stageScanningProgress || {};
+      if (stageScanningProgress) {
+        mergedScanningProgress = { ...mergedScanningProgress };
+        Object.keys(stageScanningProgress).forEach(stg => {
+          if (!mergedScanningProgress[stg]) mergedScanningProgress[stg] = {};
+          Object.keys(stageScanningProgress[stg] || {}).forEach(mat => {
+            const existIds = mergedScanningProgress[stg][mat]?.scannedPartIds || [];
+            const newIds = stageScanningProgress[stg][mat]?.scannedPartIds || [];
+            const union = Array.from(new Set([...existIds, ...newIds]));
+            mergedScanningProgress[stg][mat] = {
+              scannedPartIds: union,
+              isCompleted: stageScanningProgress[stg][mat]?.isCompleted !== undefined 
+                ? stageScanningProgress[stg][mat]?.isCompleted 
+                : (mergedScanningProgress[stg][mat]?.isCompleted || false)
+            };
+          });
+        });
       }
 
       const updatedData = {

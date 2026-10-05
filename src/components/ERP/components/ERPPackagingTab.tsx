@@ -439,9 +439,6 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
         lastKeyTimeRef.current = now;
         const enChar = convertRuCharToEn(e.key);
         barcodeBufferRef.current += enChar;
-
-        setScanInput(barcodeBufferRef.current);
-        scannerInputRef.current?.focus();
       }
     };
 
@@ -449,7 +446,7 @@ export const ERPPackagingTab: React.FC<ERPPackagingTabProps> = ({
     return () => {
       window.removeEventListener('keydown', handleGlobalKeyDown, true);
     };
-  }, [showPrintModal, scanInput, currentBufferParts, existingPackages]);
+  }, [showPrintModal, currentBufferParts, existingPackages]);
 
   // Window event listener for global QR close box command
   useEffect(() => {

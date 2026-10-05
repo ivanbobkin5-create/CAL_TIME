@@ -855,23 +855,26 @@ export const AppAdminView: React.FC = () => {
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-xs">
                   {users.map((u) => {
-                    const isGlobalAdmin = u.email === "lk.ivanbobkin@gmail.com" || u.isSuperAdmin;
-                    const isMebelOwner = u.email === "lk.ivanbobkin@yandex.ru";
+                    const userEmail = (u.email || "").toLowerCase();
+                    const isGlobalAdmin = userEmail === "lk.ivanbobkin@gmail.com" || u.isSuperAdmin;
+                    const isMebelOwner = userEmail === "lk.ivanbobkin@yandex.ru";
                     const comp = companies.find(c => c.id === u.companyId);
+                    const displayName = u.name || u.displayName || u.email || "Пользователь";
+                    const avatarLetter = (displayName && displayName.length > 0 ? displayName.charAt(0) : "U").toUpperCase();
 
                     return (
-                      <tr key={u.uid || u.id || u.email} className="hover:bg-gray-50/80 transition-colors">
+                      <tr key={u.uid || u.id || u.email || Math.random()} className="hover:bg-gray-50/80 transition-colors">
                         <td className="py-3.5 px-4 font-semibold text-gray-900">
                           <div className="flex items-center gap-2.5">
                             <div className={cn(
                               "w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs",
                               isGlobalAdmin ? "bg-red-600 text-white shadow-xs" : isMebelOwner ? "bg-indigo-600 text-white" : "bg-gray-100 text-gray-700"
                             )}>
-                              {u.name || u.displayName ? (u.name || u.displayName)!.charAt(0).toUpperCase() : u.email.charAt(0).toUpperCase()}
+                              {avatarLetter}
                             </div>
                             <div>
                               <span className="block font-bold">{u.name || u.displayName || "Без имени"}</span>
-                              <span className="text-[11px] text-gray-400">{u.email}</span>
+                              <span className="text-[11px] text-gray-400">{u.email || "—"}</span>
                             </div>
                           </div>
                         </td>

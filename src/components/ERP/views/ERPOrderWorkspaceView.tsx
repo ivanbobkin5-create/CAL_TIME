@@ -723,8 +723,6 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
         const enChar = convertRuCharToEn(e.key);
         barcodeBufferRef.current += enChar;
 
-        setScanInput(barcodeBufferRef.current);
-
         if (bufferTimeoutRef.current) {
           clearTimeout(bufferTimeoutRef.current);
         }
@@ -739,7 +737,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       window.removeEventListener('keydown', handleGlobalKeyDown, true);
       if (bufferTimeoutRef.current) clearTimeout(bufferTimeoutRef.current);
     };
-  }, [showCameraScannerModal, scanInput, selectedMaterial, currentMaterialDetails, currentStage]);
+  }, [showCameraScannerModal, selectedMaterial, currentMaterialDetails, currentStage]);
 
   // Toggle single detail scanned status manually
   const toggleDetailScanned = (detail: BirkaDetail) => {

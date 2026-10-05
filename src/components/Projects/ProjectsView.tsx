@@ -1074,9 +1074,11 @@ export const ProjectsView = ({
   }, [userProjects, userSets]);
 
   const formatMonth = (monthStr: string) => {
+    if (!monthStr || !monthStr.includes("-")) return monthStr || "";
     const [year, month] = monthStr.split("-");
     const date = new Date(Number(year), Number(month) - 1, 1);
     const formatted = date.toLocaleDateString("ru-RU", { month: "long", year: "numeric" });
+    if (!formatted) return "";
     return formatted.charAt(0).toUpperCase() + formatted.slice(1);
   };
 
