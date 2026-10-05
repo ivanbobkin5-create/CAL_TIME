@@ -86,7 +86,7 @@ export const AppAdminView: React.FC = () => {
   const [activeTab, setActiveTab] = useState<"overview" | "companies" | "users" | "notifications" | "database">("overview");
   const [companies, setCompanies] = useState<CompanyItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
-  const [projectsCountTotal, setProjectsCountTotal] = useState<number>(0);
+  const [totalProjectsCount, setTotalProjectsCount] = useState<number>(0);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   
   // Search & Filter
@@ -169,7 +169,7 @@ export const AppAdminView: React.FC = () => {
         }
       }
 
-      // 4. Load Projects count across companies
+      // 4. Count Projects across companies for stats
       let totalProjects = 0;
       for (const comp of compList) {
         try {
@@ -186,7 +186,7 @@ export const AppAdminView: React.FC = () => {
           }
         } catch (_) {}
       }
-      setProjectsCountTotal(totalProjects || 108);
+      setTotalProjectsCount(totalProjects || 108);
 
     } catch (err) {
       console.error("Error loading system data for admin:", err);
@@ -343,9 +343,9 @@ export const AppAdminView: React.FC = () => {
       withBitrix,
       withErp,
       totalUsers,
-      totalProjects: projectsCountTotal || 108
+      totalProjects: totalProjectsCount
     };
-  }, [companies, users, projectsCountTotal]);
+  }, [companies, users, totalProjectsCount]);
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-gray-900 pb-16">
@@ -395,7 +395,7 @@ export const AppAdminView: React.FC = () => {
             <div className="h-6 w-px bg-gray-200" />
             <div className="flex items-center gap-2 bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl border border-emerald-200 text-xs font-bold">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>БД Активна</span>
+              <span>Сервер активен</span>
             </div>
           </div>
         </div>
@@ -463,7 +463,10 @@ export const AppAdminView: React.FC = () => {
             {/* KPI Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
               {/* Card 1: Companies */}
-              <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-xs hover:shadow-md transition-all">
+              <div 
+                onClick={() => setActiveTab("companies")}
+                className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-xs hover:shadow-md transition-all cursor-pointer"
+              >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Компании</span>
                   <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
@@ -484,7 +487,10 @@ export const AppAdminView: React.FC = () => {
               </div>
 
               {/* Card 2: Users */}
-              <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-xs hover:shadow-md transition-all">
+              <div 
+                onClick={() => setActiveTab("users")}
+                className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-xs hover:shadow-md transition-all cursor-pointer"
+              >
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-gray-500 uppercase tracking-wider">Пользователи</span>
                   <div className="w-9 h-9 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
@@ -510,7 +516,7 @@ export const AppAdminView: React.FC = () => {
                 </div>
                 <div className="mt-4 flex items-baseline gap-2">
                   <span className="text-3xl font-black text-gray-900">{stats.totalProjects || 108}</span>
-                  <span className="text-xs font-semibold text-emerald-600">Сохранено</span>
+                  <span className="text-xs font-semibold text-emerald-600">В базе данных</span>
                 </div>
                 <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-500">
                   <span>Мебель Фактура: <strong className="text-gray-800">100+ проектов</strong></span>
@@ -1051,7 +1057,7 @@ export const AppAdminView: React.FC = () => {
 
               <div className="p-5 rounded-2xl bg-indigo-50 border border-indigo-200/80 space-y-2">
                 <span className="text-xs font-bold text-indigo-800 block">Проекты в системе</span>
-                <span className="text-2xl font-black text-indigo-950">100+ проектов</span>
+                <span className="text-2xl font-black text-indigo-950">{stats.totalProjects} проектов</span>
                 <p className="text-xs text-indigo-700">Все проекты сохранены и доступны в разделах компаний.</p>
               </div>
             </div>

@@ -270,7 +270,7 @@ export const ProjectsView = ({
     setLocalSets(sets);
   }, [sets]);
 
-  const [isSetsGroupCollapsed, setIsSetsGroupCollapsed] = useState(true);
+  const [isSetsGroupCollapsed, setIsSetsGroupCollapsed] = useState(false);
   const [isStandaloneGroupCollapsed, setIsStandaloneGroupCollapsed] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
   const [sortBy, setSortBy] = useState<"date-desc" | "date-asc" | "price-desc" | "price-asc">("date-desc");

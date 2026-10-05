@@ -16,11 +16,12 @@ let adjustedDbUrl: string | undefined = undefined;
 if (dbUrl) {
   try {
     const urlObj = new URL(dbUrl);
-    urlObj.searchParams.set("connection_limit", "30");
-    urlObj.searchParams.set("pool_timeout", "15");
+    urlObj.searchParams.set("connection_limit", "5");
+    urlObj.searchParams.set("pool_timeout", "10");
+    urlObj.searchParams.set("connect_timeout", "10");
     adjustedDbUrl = urlObj.toString();
   } catch (e) {
-    adjustedDbUrl = dbUrl + (dbUrl.includes("?") ? "&" : "?") + "connection_limit=30&pool_timeout=15";
+    adjustedDbUrl = dbUrl + (dbUrl.includes("?") ? "&" : "?") + "connection_limit=5&pool_timeout=10";
   }
 }
 
@@ -1907,7 +1908,17 @@ function transliterate(str: string): string {
       res.setHeader("Surrogate-Control", "no-store");
       
       let docs: any[] = [];
-      if (isPostgresAvailable) {
+      const localList = localStore.getCollection(colPath);
+      
+      if (localList.length > 0) {
+        docs = localList.map(d => ({
+          id: d.id,
+          docId: d.docId,
+          collection: d.collection,
+          path: d.path,
+          data: d.data
+        }));
+      } else if (isPostgresAvailable) {
         try {
           if (colPath === "companies") {
             docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({ 
@@ -1925,19 +1936,8 @@ function transliterate(str: string): string {
             localStore.setDoc(d.path, d.collection, d.docId || d.id, d.data, false, false);
           }
         } catch {
-          // Fall through to local fallback
+          // Fall through
         }
-      }
-
-      if (docs.length === 0) {
-        const localList = localStore.getCollection(colPath);
-        docs = localList.map(d => ({
-          id: d.id,
-          docId: d.docId,
-          collection: d.collection,
-          path: d.path,
-          data: d.data
-        }));
       }
 
       let mapped = docs.map(d => {
