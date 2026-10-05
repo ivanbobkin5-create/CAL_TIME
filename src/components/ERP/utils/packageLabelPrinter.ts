@@ -71,7 +71,7 @@ export async function printPackageLabelDirect(
       if (cleaned) {
         // If it contains prefix like "det-01.02", extract the meaningful part number
         const match = cleaned.match(/\d+(?:\.\d+)?/);
-        if (match && cleaned.startsWith('part_') || cleaned.startsWith('det_')) {
+        if (match && (cleaned.startsWith('part_') || cleaned.startsWith('det_'))) {
           return match[0];
         }
         return cleaned;

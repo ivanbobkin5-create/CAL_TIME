@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   Factory, 
   LayoutDashboard, 
+  Calculator,
   Calendar, 
   CalendarDays, 
   Layers, 
@@ -195,12 +196,16 @@ interface ERPAppProps {
   aliasOrId: string;
   catalogProducts?: any[];
   catalogMaterials?: Record<string, string[]>;
+  initialUser?: any;
+  initialCompany?: any;
 }
 
 export const ERPApp: React.FC<ERPAppProps> = ({
   aliasOrId,
   catalogProducts: propsCatalogProducts = [],
-  catalogMaterials: propsCatalogMaterials = {}
+  catalogMaterials: propsCatalogMaterials = {},
+  initialUser,
+  initialCompany
 }) => {
   const [catalogProducts, setCatalogProducts] = useState<any[]>(propsCatalogProducts);
   const [catalogMaterials, setCatalogMaterials] = useState<Record<string, string[]>>(propsCatalogMaterials);
@@ -220,16 +225,40 @@ export const ERPApp: React.FC<ERPAppProps> = ({
     }
   }, [propsCatalogProducts]);
   const [isLoading, setIsLoading] = useState(true);
-  const [company, setCompany] = useState<any>(null);
+  const [company, setCompany] = useState<any>(() => {
+    if (initialCompany && (initialCompany.id || initialCompany.name)) {
+      return initialCompany;
+    }
+    try {
+      const authCompStr = localStorage.getItem('auth_company');
+      if (authCompStr) {
+        return JSON.parse(authCompStr);
+      }
+    } catch (_) {}
+    return null;
+  });
   const [authUser, setAuthUser] = useState<any>(() => {
+    if (initialUser && (initialUser.uid || initialUser.id || initialUser.email)) {
+      return initialUser;
+    }
     try {
       const erpUserStr = localStorage.getItem(`erp_session_${aliasOrId}`);
       if (erpUserStr) {
         return JSON.parse(erpUserStr).user;
       }
-      const globalUserStr = localStorage.getItem('currentUser');
-      if (globalUserStr) {
-        return JSON.parse(globalUserStr);
+      const authUserStr = localStorage.getItem('auth_user') || localStorage.getItem('currentUser') || localStorage.getItem('userData');
+      if (authUserStr) {
+        return JSON.parse(authUserStr);
+      }
+      const savedEmail = localStorage.getItem('auth_email');
+      const savedUid = localStorage.getItem('auth_uid');
+      if (savedEmail || savedUid) {
+        return {
+          uid: savedUid || 'u_' + Date.now(),
+          email: savedEmail || '',
+          role: 'admin',
+          companyId: aliasOrId,
+        };
       }
     } catch (e) {
       // ignore
@@ -695,15 +724,18 @@ export const ERPApp: React.FC<ERPAppProps> = ({
       let parsedUser: any = userOverride || authUser;
       if (!parsedUser) {
         try {
-          const globalUserStr = localStorage.getItem('auth_user') || localStorage.getItem('currentUser') || localStorage.getItem('userData');
           const erpUserStr = localStorage.getItem(`erp_session_${comp.id || aliasOrId}`);
-
           if (erpUserStr) {
             const erpSession = JSON.parse(erpUserStr);
             parsedUser = erpSession.user;
-          } else if (globalUserStr) {
-            parsedUser = JSON.parse(globalUserStr);
-          } else {
+          }
+          if (!parsedUser) {
+            const globalUserStr = localStorage.getItem('auth_user') || localStorage.getItem('currentUser') || localStorage.getItem('userData');
+            if (globalUserStr) {
+              parsedUser = JSON.parse(globalUserStr);
+            }
+          }
+          if (!parsedUser) {
             const savedEmail = localStorage.getItem('auth_email');
             const savedUid = localStorage.getItem('auth_uid');
             if (savedEmail || savedUid) {
@@ -715,22 +747,64 @@ export const ERPApp: React.FC<ERPAppProps> = ({
               };
             }
           }
-
-          if (parsedUser) {
-            const emailClean = (parsedUser.email || '').toLowerCase().trim();
-            const isSuperAdmin = emailClean === 'lk.ivanbobkin@gmail.com' ||
-              emailClean === 'admin@mebel-plan.ru' ||
-              emailClean.includes('ivanbobkin') ||
-              parsedUser.role === 'superadmin' ||
-              parsedUser.isSuperAdmin;
-
-            const belongsToCompany = parsedUser.companyId === comp.id || isSuperAdmin || !comp.id || !parsedUser.companyId;
-            if (belongsToCompany) {
-              setAuthUser(parsedUser);
-            }
-          }
         } catch (authCheckErr) {
           console.warn('ERP auth check error:', authCheckErr);
+        }
+      }
+
+      if (parsedUser) {
+        const emailClean = (parsedUser.email || '').toLowerCase().trim();
+        const userCompId = (parsedUser.companyId || '').trim().toLowerCase();
+        const currentCompId = (comp.id || '').trim().toLowerCase();
+        const currentCompSlug = (comp.slug || comp.landingPage?.alias || '').trim().toLowerCase();
+        const currentAlias = (aliasOrId || '').trim().toLowerCase();
+
+        const isSuperAdmin = emailClean === 'lk.ivanbobkin@gmail.com' ||
+          emailClean === 'admin@mebel-plan.ru' ||
+          emailClean.includes('ivanbobkin') ||
+          parsedUser.role === 'superadmin' ||
+          parsedUser.isSuperAdmin;
+
+        const isMebelFakturaOwner = (emailClean === 'lk.ivanbobkin@yandex.ru' || emailClean.includes('ivanbobkin')) &&
+          (currentCompId === 'e5om9lzxh' || currentCompSlug.includes('faktura') || currentAlias.includes('faktura') || !currentCompId);
+
+        let cachedComp: any = null;
+        try {
+          const cRaw = localStorage.getItem('auth_company');
+          if (cRaw) cachedComp = JSON.parse(cRaw);
+        } catch (_) {}
+
+        const cachedCompId = (cachedComp?.id || '').trim().toLowerCase();
+        const cachedCompSlug = (cachedComp?.slug || cachedComp?.landingPage?.alias || '').trim().toLowerCase();
+
+        const belongsToCompany = 
+          !userCompId || 
+          !currentCompId || 
+          userCompId === currentCompId || 
+          userCompId === currentAlias || 
+          userCompId === currentCompSlug ||
+          (cachedCompId && (cachedCompId === currentCompId || cachedCompId === currentAlias)) ||
+          (cachedCompSlug && (cachedCompSlug === currentCompSlug || cachedCompSlug === currentAlias)) ||
+          ((userCompId === 'e5om9lzxh' || userCompId.includes('faktura')) && 
+           (currentCompId === 'e5om9lzxh' || currentCompSlug.includes('faktura') || currentAlias.includes('faktura') || currentAlias === 'e5om9lzxh')) ||
+          isSuperAdmin ||
+          isMebelFakturaOwner;
+
+        if (belongsToCompany) {
+          setAuthUser(parsedUser);
+          try {
+            localStorage.setItem(`erp_session_${comp.id || aliasOrId}`, JSON.stringify({
+              user: parsedUser,
+              loggedAt: new Date().toISOString()
+            }));
+            localStorage.setItem('currentUser', JSON.stringify(parsedUser));
+            if (!localStorage.getItem('auth_user')) {
+              localStorage.setItem('auth_user', JSON.stringify(parsedUser));
+            }
+          } catch (_) {}
+        } else {
+          parsedUser = null;
+          setAuthUser(null);
         }
       }
 
@@ -2141,6 +2215,16 @@ export const ERPApp: React.FC<ERPAppProps> = ({
             </a>
           )}
 
+          {isSidebarCollapsed && (
+            <a
+              href="/"
+              className="w-full py-2 px-1 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 flex items-center justify-center transition-colors cursor-pointer"
+              title="Перейти в Мебельный калькулятор"
+            >
+              <Calculator className="w-4 h-4 text-blue-400" />
+            </a>
+          )}
+
           {!isSidebarCollapsed && (
             <div className="grid grid-cols-2 gap-1.5">
               <a
@@ -2154,12 +2238,11 @@ export const ERPApp: React.FC<ERPAppProps> = ({
               </a>
               <a
                 href="/"
-                target="_blank"
-                rel="noreferrer"
                 className="py-2 px-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer text-center"
+                title="Перейти в Мебельный калькулятор в этом окне"
               >
+                <Calculator className="w-3.5 h-3.5 text-blue-400" />
                 <span>Калькулятор</span>
-                <ExternalLink className="w-3 h-3 text-slate-400" />
               </a>
             </div>
           )}
@@ -2269,6 +2352,16 @@ export const ERPApp: React.FC<ERPAppProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Quick button to return to Furniture Calculator in same window */}
+            <a
+              href="/"
+              className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs border border-blue-200 flex items-center gap-1.5 transition-all shadow-2xs"
+              title="Перейти в Мебельный калькулятор в этом же окне"
+            >
+              <Calculator className="w-3.5 h-3.5 text-blue-600" />
+              <span>Калькулятор</span>
+            </a>
 
             {/* Sound & Voice Toggle */}
             <VoiceAssistantToggle variant="icon" className="bg-slate-50 hover:bg-slate-100" />
@@ -2671,12 +2764,11 @@ export const ERPApp: React.FC<ERPAppProps> = ({
                   </a>
                   <a
                     href="/"
-                    target="_blank"
-                    rel="noreferrer"
                     className="p-3 rounded-2xl bg-slate-950 border border-slate-800 text-slate-300 text-xs font-bold flex items-center justify-center gap-2"
+                    title="Перейти в Мебельный калькулятор"
                   >
+                    <Calculator className="w-3.5 h-3.5 text-blue-400" />
                     <span>Калькулятор</span>
-                    <ExternalLink className="w-3.5 h-3.5 text-slate-500" />
                   </a>
                 </div>
 

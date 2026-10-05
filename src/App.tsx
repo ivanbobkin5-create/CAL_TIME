@@ -35659,7 +35659,9 @@ export default function App() {
             if (docData && (docData.uid || docData.email || docData.companyId)) {
               const fullUserData = { uid: savedUid, email: savedEmail || docData.email || "", ...docData };
               setUserData(fullUserData);
-              safeAuthStorageSet('auth_user', serializeEssentialUser(fullUserData));
+              const essentialUser = serializeEssentialUser(fullUserData);
+              safeAuthStorageSet('auth_user', essentialUser);
+              safeAuthStorageSet('currentUser', essentialUser);
               
               const rawRole = docData.accessLevel || docData.role || 'manager';
               const resolvedRole = ['admin', 'supervisor', 'manager', 'worker'].includes(rawRole) ? rawRole : (
@@ -35691,6 +35693,12 @@ export default function App() {
                     setCompanyData(fullCompData);
                     setUserData(prev => ({ ...prev, companyId: effectiveCompanyId, role: 'admin', isOwner: true }));
                     safeAuthStorageSet('auth_company', serializeEssentialCompany(fullCompData));
+                    try {
+                      localStorage.setItem(`erp_session_${effectiveCompanyId}`, JSON.stringify({
+                        user: essentialUser,
+                        loggedAt: new Date().toISOString()
+                      }));
+                    } catch (_) {}
                   }
                 } catch (cErr) {
                   console.warn("Could not refresh company data:", cErr);
@@ -35892,7 +35900,17 @@ export default function App() {
          // Persistence
          safeAuthStorageSet('auth_uid', authUser.uid);
          safeAuthStorageSet('auth_email', authUser.email);
-         safeAuthStorageSet('auth_user', serializeEssentialUser({ uid: authUser.uid, email: authUser.email, companyId: effectiveCid, ...docData }));
+         const essentialLoginUser = serializeEssentialUser({ uid: authUser.uid, email: authUser.email, companyId: effectiveCid, ...docData });
+         safeAuthStorageSet('auth_user', essentialLoginUser);
+         safeAuthStorageSet('currentUser', essentialLoginUser);
+         if (effectiveCid) {
+           try {
+             localStorage.setItem(`erp_session_${effectiveCid}`, JSON.stringify({
+               user: essentialLoginUser,
+               loggedAt: new Date().toISOString()
+             }));
+           } catch (_) {}
+         }
          if (compData) {
            safeAuthStorageSet('auth_company', serializeEssentialCompany({ id: effectiveCid, ...compData }));
          }
@@ -36065,9 +36083,10 @@ export default function App() {
       localStorage.removeItem('auth_token');
       localStorage.removeItem('auth_user');
       localStorage.removeItem('auth_company');
+      localStorage.removeItem('currentUser');
       localStorage.removeItem('meb_pending_writes');
       Object.keys(localStorage).forEach((key) => {
-        if (key.startsWith('meb_cache:')) {
+        if (key.startsWith('meb_cache:') || key.startsWith('erp_session_')) {
           localStorage.removeItem(key);
         }
       });
@@ -41212,7 +41231,7 @@ export default function App() {
   if (currentPath.includes("/installer/")) {
     const rawParts = currentPath.split("/").filter(Boolean);
     const aliasOrId = (rawParts.length > 0 && rawParts[0] !== "installer" && rawParts[0] !== "c") ? rawParts[0] : "company";
-    return <ERPApp aliasOrId={aliasOrId} catalogProducts={catalogProducts} />;
+    return <ERPApp aliasOrId={aliasOrId} catalogProducts={catalogProducts} initialUser={userData} initialCompany={companyData} />;
   }
 
   if (currentPath.startsWith("/c/")) {
@@ -41220,7 +41239,7 @@ export default function App() {
     const aliasOrId = rawParts[0];
     const subPath = rawParts.slice(1).join("/");
     if (subPath === "erp" || subPath.startsWith("erp/")) {
-      return <ERPApp aliasOrId={aliasOrId} catalogProducts={catalogProducts} />;
+      return <ERPApp aliasOrId={aliasOrId} catalogProducts={catalogProducts} initialUser={userData} initialCompany={companyData} />;
     }
     return <PublicLandingView aliasOrId={aliasOrId} initialSubPath={subPath} />;
   }
@@ -41229,7 +41248,7 @@ export default function App() {
   if (hostMappedAlias) {
     let subPath = currentPath === "/" ? "" : currentPath.substring(1);
     if (subPath === "erp" || subPath.startsWith("erp/")) {
-      return <ERPApp aliasOrId={hostMappedAlias.companySlug} catalogProducts={catalogProducts} />;
+      return <ERPApp aliasOrId={hostMappedAlias.companySlug} catalogProducts={catalogProducts} initialUser={userData} initialCompany={companyData} />;
     }
     if (!subPath) {
       subPath = hostMappedAlias.storefrontAlias;
@@ -41253,7 +41272,7 @@ export default function App() {
     const aliasOrId = pathSegments[0];
     const subPath = pathSegments.slice(1).join("/");
     if (subPath === "erp" || subPath.startsWith("erp/")) {
-      return <ERPApp aliasOrId={aliasOrId} catalogProducts={catalogProducts} />;
+      return <ERPApp aliasOrId={aliasOrId} catalogProducts={catalogProducts} initialUser={userData} initialCompany={companyData} />;
     }
     return <PublicLandingView aliasOrId={aliasOrId} initialSubPath={subPath} />;
   }
@@ -41572,20 +41591,6 @@ export default function App() {
                   </div>
                 )}
               </button>
-              {companyData?.id && (
-                <button
-                  onClick={() => {
-                    window.location.href = `/c/${companyData.id}/erp`;
-                  }}
-                  className="w-full flex items-center gap-3 p-3 rounded-xl text-emerald-600 hover:bg-emerald-50 transition-all font-bold cursor-pointer border border-emerald-100"
-                  title="Перейти в ERP модуль производства"
-                >
-                  <Factory className="w-5 h-5 flex-shrink-0" />
-                  {isSidebarOpen && (
-                    <span className="text-xs font-black truncate leading-tight">ERP Производство</span>
-                  )}
-                </button>
-              )}
               <button
                 onClick={handleLogout}
                 className="w-full flex items-center gap-3 p-3 rounded-xl text-red-600 hover:bg-red-50 transition-all font-bold cursor-pointer"

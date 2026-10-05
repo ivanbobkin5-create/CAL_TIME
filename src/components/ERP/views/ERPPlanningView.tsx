@@ -797,7 +797,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
 
     setUploadingOrderId(order.id);
     try {
-      const parseRes = await parseBirkaFile(file, settings?.birkaColumnMapping);
+      const parseRes = await parseBirkaFile(file, settings?.birkaColumnMapping, settings?.birkaEncodingPreference);
       if (parseRes.details.length === 0) {
         throw new Error('Файл не содержит деталей');
       }

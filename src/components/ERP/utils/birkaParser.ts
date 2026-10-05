@@ -70,7 +70,14 @@ export const computeSimpleHash = (uint8: Uint8Array): string => {
 
 // Default recognized aliases for each Birka parameter
 export const DEFAULT_BIRKA_COLUMN_MAPPING: Record<string, string[]> = {
-  pos: ['№ дет', 'номер дет', 'деталь №', 'деталь номер', 'поз', 'позиц', '№ бирк', 'бирк', '№ п/п', 'п/п', 'код дет', 'part_no', 'part no', 'item_no', 'label', 'позиция', 'индекс', 'обозначение', 'код детали', 'номер детали', 'номер', 'код', 'поз.', '№'],
+  pos: [
+    'позиция', 'поз.', 'поз', 'позиц',
+    'номер детали', '№ детали', 'код детали', 'деталь №', 'деталь номер',
+    'обозначение', 'номер дет', '№ дет', 'код дет',
+    '№ бирк', 'бирка', 'бирк',
+    'part_no', 'part no', 'partno', 'item_no', 'item no', 'label',
+    'индекс', 'код', 'номер', 'pos', 'id'
+  ],
   name: ['наименов', 'название', 'наим', 'деталь', 'part', 'name', 'элемент', 'изделие'],
   orderNumber: ['зак', 'order', 'проект', 'сделка', 'номер заказа', 'заказ №', 'заказ', 'договор', 'номер проекта', 'код заказа', 'order_no', 'order_id', '№ заказа', 'заказ:', 'номер_заказа', '№зак', 'код_заказа'],
   length: ['длин', 'длина', 'length', 'l', 'размер х', 'размер x', 'габарит х', 'габарит x', 'x', 'l, мм', 'длина, мм'],
@@ -86,328 +93,575 @@ export const DEFAULT_BIRKA_COLUMN_MAPPING: Record<string, string[]> = {
   barcode: ['штрих', 'barcode', 'qr', 'штрихкод', 'qr-код', 'qrcode', 'шк', 'qr_code', 'код qr', 'qr код', 'код детали qr', 'штрих-код']
 };
 
-// Parse text content from .bir / .brx / .txt / .csv / .tsv file
-export function parseBirFileText(text: string, customMapping?: Record<string, string[]>): BirkaDetail[] {
-  const mapping = { ...DEFAULT_BIRKA_COLUMN_MAPPING, ...(customMapping || {}) };
+/**
+ * Normalizes and cleans a part position/label number:
+ * - Strips leading words and hashes: "Поз.", "Деталь №", "#", "№"
+ * - Normalizes commas between digits to dots: "01,02" -> "01.02"
+ * - Normalizes Excel-truncated decimals like "1.02" or "9.03" to "01.02" or "09.03"
+ * - Strips sticker duplicate copy markers like " #1", " (1)", " [1]", " коп.1"
+ * - Preserves intact hyphenated / underscored codes like "01-02", "09_03"
+ */
+export function cleanPartLabelNumber(raw: string): string {
+  if (!raw) return '';
+  let str = String(raw).trim();
+  // Remove non-printable control chars & hidden UTF chars & scanner AIM code
+  str = str.replace(/[\u0000-\u001f\u007f-\u009f\u200b-\u200f\uFEFF]/g, '')
+           .replace(/^\][a-zA-Z0-9]{2,3}/, '')
+           .trim();
+  
+  // Strip leading words and hashes
+  str = str.replace(/^[#№\s]+/, '');
+  str = str.replace(/^(поз\.?|дет\.?|позиция|деталь|номер|item|pos|part)\s*[:#№\-_\s]*/i, '');
+  
+  // Normalize decimal comma to dot between digits: "01,02" -> "01.02"
+  str = str.replace(/(\d+)[,;](\d+)/g, '$1.$2');
+
+  // Strip sticker repetition/copy markers ONLY: e.g. " #1", " №1", " (1)", " [1]", " коп.1"
+  str = str.replace(/(\s+[#№]\s*\d+|\s*\(\d+\)|\s*\[\d+\]|\s+коп\.?\s*\d+)$/i, '');
+
+  // If Excel dropped leading zero from "01.02" or "09.03" making it "1.02" or "9.03":
+  if (/^\d\.\d{2}$/.test(str)) {
+    str = '0' + str;
+  }
+
+  return str.trim();
+}
+
+/**
+ * Intelligently finds the best column index for a given field based on:
+ * 1. User's custom mapping keywords (highest priority)
+ * 2. Default recognized aliases
+ * 3. Exact matching first, then word/prefix matching, then substring matching
+ * 4. Exclusions (e.g. sequence number columns "№ п/п" are strictly excluded from "pos")
+ */
+export function findFieldColumnIndex(
+  field: string,
+  headers: string[],
+  userKeywords?: string[],
+  defaultKeywords: string[] = [],
+  excludeKeywords: string[] = [],
+  rowsData?: string[][]
+): number {
+  const normHeaders = headers.map(h => (h || '').trim().toLowerCase().replace(/^["']|["']$/g, ''));
+  
+  // Combine user keywords (first priority) with default keywords (fallback)
+  const userList = (userKeywords || []).map(k => k.trim().toLowerCase()).filter(Boolean);
+  const defaultList = (defaultKeywords || []).map(k => k.trim().toLowerCase()).filter(Boolean);
+  const allKeywords = Array.from(new Set([...userList, ...defaultList]));
+  const excludes = excludeKeywords.map(k => k.trim().toLowerCase()).filter(Boolean);
+
+  const isExcluded = (header: string): boolean => {
+    return excludes.some(ek => header.includes(ek));
+  };
+
+  // Phase 1: Exact matches against user-specified keywords first, then defaults
+  for (const kw of allKeywords) {
+    for (let c = 0; c < normHeaders.length; c++) {
+      const h = normHeaders[c];
+      if (h === kw && !isExcluded(h)) {
+        return c;
+      }
+    }
+  }
+
+  // Phase 2: Whole word / prefix match (keyword at start or separated by spaces/punct)
+  for (const kw of allKeywords) {
+    for (let c = 0; c < normHeaders.length; c++) {
+      const h = normHeaders[c];
+      if (isExcluded(h)) continue;
+      const regex = new RegExp(`(^|[\\s_\\-.,/:])${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[\\s_\\-.,/:])`, 'i');
+      if (regex.test(h)) {
+        return c;
+      }
+    }
+  }
+
+  // Phase 3: Substring match (for longer/more specific keywords, min length 3)
+  for (const kw of allKeywords) {
+    if (kw.length < 3) continue;
+    for (let c = 0; c < normHeaders.length; c++) {
+      const h = normHeaders[c];
+      if (isExcluded(h)) continue;
+      if (h.includes(kw)) {
+        return c;
+      }
+    }
+  }
+
+  // Phase 4: Fallback to short keywords substring if nothing else matched
+  for (const kw of allKeywords) {
+    for (let c = 0; c < normHeaders.length; c++) {
+      const h = normHeaders[c];
+      if (isExcluded(h)) continue;
+      if (h.includes(kw)) {
+        return c;
+      }
+    }
+  }
+
+  return -1;
+}
+
+/**
+ * Verifies or detects the part number / position column from data rows.
+ * If candidate column contains row sequential numbers (1, 2, 3...) or is -1,
+ * inspects all columns in the data rows to find the one containing genuine
+ * part numbers formatted like "01.02", "09.03", "20.02", "01-02", etc.
+ */
+function detectPartNumberColumn(
+  headers: string[],
+  rowsData: string[][],
+  headerRowIndex: number,
+  candidatePosIdx: number,
+  orderIdx: number
+): number {
+  if (!rowsData || rowsData.length <= headerRowIndex + 1) {
+    return candidatePosIdx;
+  }
+
+  const sampleRows = rowsData.slice(headerRowIndex + 1, Math.min(rowsData.length, headerRowIndex + 25));
+  if (sampleRows.length === 0) return candidatePosIdx;
+
+  const numCols = Math.max(...sampleRows.map(r => r.length), headers.length);
+
+  // Helper to check if a string looks like a part number (e.g. "01.02", "09.03", "20.02", "01-02")
+  const isFormattedPartNumber = (val: string): boolean => {
+    const clean = cleanPartLabelNumber(val);
+    if (!clean) return false;
+    // Format 01.02, 09.03, 20.02, 01-02, 01.01.01
+    return /^\d{1,3}[\.\-_/]\d{1,3}(\.[\d]{1,3})?$/.test(clean) ||
+           /^[A-Za-zА-Яа-я0-9]+[\.\-_/][A-Za-zА-Яа-я0-9]+$/.test(clean);
+  };
+
+  // Helper to check if a column looks strictly like a 1, 2, 3... row sequence counter
+  const isSequenceCounterColumn = (colIdx: number): boolean => {
+    let matchCount = 0;
+    for (let i = 0; i < sampleRows.length; i++) {
+      const val = sampleRows[i][colIdx]?.trim();
+      if (!val) continue;
+      const num = parseInt(val, 10);
+      if (num === (i + 1) && !isFormattedPartNumber(val)) {
+        matchCount++;
+      }
+    }
+    return matchCount >= Math.min(3, sampleRows.length - 1);
+  };
+
+  // Check if current candidate column is actually a sequence counter (1, 2, 3...)
+  const candidateIsSeq = candidatePosIdx !== -1 && isSequenceCounterColumn(candidatePosIdx);
+
+  // Look for any column that contains formatted part numbers (e.g. "01.02", "09.03")
+  let bestPartNumCol = -1;
+  let maxPartNumCount = 0;
+
+  for (let c = 0; c < numCols; c++) {
+    if (c === orderIdx) continue;
+    const header = (headers[c] || '').toLowerCase();
+    if (header.includes('зак') || header.includes('order') || header.includes('проект')) continue;
+    if (header.includes('длин') || header.includes('шир') || header.includes('толщ') || header.includes('матер')) continue;
+
+    let partNumCount = 0;
+    for (const row of sampleRows) {
+      const val = row[c]?.trim();
+      if (val && isFormattedPartNumber(val)) {
+        partNumCount++;
+      }
+    }
+
+    if (partNumCount > maxPartNumCount) {
+      maxPartNumCount = partNumCount;
+      bestPartNumCol = c;
+    }
+  }
+
+  // If candidate was -1 or was a sequence counter, and we found a column with 01.02 / 09.03 part numbers:
+  if ((candidatePosIdx === -1 || candidateIsSeq) && bestPartNumCol !== -1 && maxPartNumCount >= 1) {
+    return bestPartNumCol;
+  }
+
+  // If candidate already has formatted part numbers or is valid, keep candidate
+  if (candidatePosIdx !== -1 && !candidateIsSeq) {
+    return candidatePosIdx;
+  }
+
+  return candidatePosIdx !== -1 ? candidatePosIdx : (bestPartNumCol !== -1 ? bestPartNumCol : -1);
+}
+
+/**
+ * Splits delimited text (CSV, TSV, semicolon-separated) into 2D string rows,
+ * with quote handling and smart delimiter auto-detection.
+ */
+export function parseDelimitedTextToRows(text: string): { rows: string[][]; delimiter: string } {
   const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  if (lines.length === 0) return [];
+  if (lines.length === 0) return { rows: [], delimiter: ',' };
+
+  // Detect delimiter by checking the first 20 lines
+  const sampleLines = lines.slice(0, 20);
+  let tabCount = 0;
+  let semiCount = 0;
+  let commaCount = 0;
+
+  for (const line of sampleLines) {
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"' || c === "'") inQuotes = !inQuotes;
+      else if (!inQuotes) {
+        if (c === '\t') tabCount++;
+        else if (c === ';') semiCount++;
+        else if (c === ',') commaCount++;
+      }
+    }
+  }
+
+  let delimiter = ',';
+  if (tabCount > 0 && tabCount >= semiCount && tabCount >= commaCount) {
+    delimiter = '\t';
+  } else if (semiCount > 0 && semiCount >= commaCount) {
+    delimiter = ';';
+  }
+
+  const rows: string[][] = [];
+
+  for (const line of lines) {
+    const cols: string[] = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"' || char === "'") {
+        if (inQuotes && line[i + 1] === char) {
+          current += char;
+          i++; // skip escaped quote
+        } else {
+          inQuotes = !inQuotes;
+        }
+      } else if (char === delimiter && !inQuotes) {
+        cols.push(current.trim().replace(/^["']|["']$/g, ''));
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    cols.push(current.trim().replace(/^["']|["']$/g, ''));
+    rows.push(cols);
+  }
+
+  return { rows, delimiter };
+}
+
+/**
+ * Direct 2D rows parser for Birka tables (from Excel sheets, CSV, TSV).
+ */
+export function parseBirkaRows(
+  rows: string[][], 
+  customMapping?: Record<string, string[]>
+): BirkaDetail[] {
+  if (!rows || rows.length === 0) return [];
+  const mapping = { ...DEFAULT_BIRKA_COLUMN_MAPPING, ...(customMapping || {}) };
+
+  // Find header line index (within first 15 rows)
+  let headerRowIndex = -1;
+  const commonHeaderKeywords = [
+    'наим', 'детал', 'длин', 'шир', 'толщ', 'матер', 'поз', 'позиц', 
+    'размер', 'габарит', 'кромк', 'кол-во', 'кол', 'qty', 'part', 'length', 'width'
+  ];
+
+  for (let r = 0; r < Math.min(rows.length, 15); r++) {
+    const row = rows[r];
+    if (!row || row.length < 2) continue;
+    
+    // Count how many cells in this row look like header titles
+    const matchCount = row.filter(cell => {
+      const lower = cell.toLowerCase().trim();
+      if (!lower) return false;
+      return commonHeaderKeywords.some(kw => lower.includes(kw)) ||
+        Object.values(mapping).some(aliases => aliases.some(a => lower === a.toLowerCase() || lower.includes(a.toLowerCase())));
+    }).length;
+
+    if (matchCount >= 2) {
+      headerRowIndex = r;
+      break;
+    }
+  }
+
+  // If no clear 2-match header row found, test row 0
+  if (headerRowIndex === -1 && rows.length > 1) {
+    const row0 = rows[0];
+    const match0 = row0.some(c => commonHeaderKeywords.some(kw => c.toLowerCase().includes(kw)));
+    if (match0) {
+      headerRowIndex = 0;
+    }
+  }
+
+  if (headerRowIndex === -1) {
+    return [];
+  }
+
+  const rawHeaders = rows[headerRowIndex];
+  const headers = rawHeaders.map(h => (h || '').trim());
+
+  // Exclusion lists - strictly exclude row counters from position
+  const EXCLUDE_FOR_POS = [
+    'п/п', 'пп', 'по порядку', 'порядк', 'строк', 'строка', 'row', 'line', 
+    'зак', 'order', 'проект', 'договор', 'сделк', 'издел', 'наим', 'назв', 
+    'имя', 'длин', 'шир', 'толщ', 'кол', 'кромк', 'матер', 'плит'
+  ];
+
+  // Column index finders
+  const orderIdx = findFieldColumnIndex(
+    'orderNumber', 
+    headers, 
+    mapping.orderNumber, 
+    DEFAULT_BIRKA_COLUMN_MAPPING.orderNumber,
+    ['дет', 'поз', 'наим', 'длин', 'шир', 'толщ']
+  );
+
+  let initialPosIdx = findFieldColumnIndex(
+    'pos', 
+    headers, 
+    mapping.pos, 
+    DEFAULT_BIRKA_COLUMN_MAPPING.pos, 
+    EXCLUDE_FOR_POS,
+    rows
+  );
+
+  // Prevent overlap with order column
+  if (initialPosIdx !== -1 && initialPosIdx === orderIdx) {
+    initialPosIdx = -1;
+  }
+
+  // Smart position column detection (verify row values for 01.02 / 09.03 vs sequence counter)
+  const posIdx = detectPartNumberColumn(headers, rows, headerRowIndex, initialPosIdx, orderIdx);
+
+  const nameIdx = findFieldColumnIndex(
+    'name', 
+    headers, 
+    mapping.name, 
+    DEFAULT_BIRKA_COLUMN_MAPPING.name,
+    ['№', 'номер', 'поз', 'код', 'id', 'матер', 'кромк']
+  );
+
+  const lenIdx = findFieldColumnIndex('length', headers, mapping.length, DEFAULT_BIRKA_COLUMN_MAPPING.length, ['шир', 'толщ']);
+  const widIdx = findFieldColumnIndex('width', headers, mapping.width, DEFAULT_BIRKA_COLUMN_MAPPING.width, ['длин', 'толщ']);
+  const thkIdx = findFieldColumnIndex('thickness', headers, mapping.thickness, DEFAULT_BIRKA_COLUMN_MAPPING.thickness, ['длин', 'шир']);
+  const matIdx = findFieldColumnIndex('material', headers, mapping.material, DEFAULT_BIRKA_COLUMN_MAPPING.material, ['кромк']);
+  const qtyIdx = findFieldColumnIndex('quantity', headers, mapping.quantity, DEFAULT_BIRKA_COLUMN_MAPPING.quantity, ['зак', 'order', 'проект', 'номер', 'поз']);
+
+  // Edges
+  const edgeL1Idx = findFieldColumnIndex('edgeL1', headers, mapping.edgeL1, DEFAULT_BIRKA_COLUMN_MAPPING.edgeL1);
+  const edgeL2Idx = findFieldColumnIndex('edgeL2', headers, mapping.edgeL2, DEFAULT_BIRKA_COLUMN_MAPPING.edgeL2);
+  const edgeW1Idx = findFieldColumnIndex('edgeW1', headers, mapping.edgeW1, DEFAULT_BIRKA_COLUMN_MAPPING.edgeW1);
+  const edgeW2Idx = findFieldColumnIndex('edgeW2', headers, mapping.edgeW2, DEFAULT_BIRKA_COLUMN_MAPPING.edgeW2);
+  const generalEdgeIdx = findFieldColumnIndex('generalEdge', headers, ['кромк', 'облиц', 'edge'], [], ['л1', 'л2', 'ш1', 'ш2', 'l1', 'l2', 'w1', 'w2']);
+
+  const noteIdx = findFieldColumnIndex('notes', headers, mapping.notes, DEFAULT_BIRKA_COLUMN_MAPPING.notes);
+  const barcodeIdx = findFieldColumnIndex('barcode', headers, mapping.barcode, DEFAULT_BIRKA_COLUMN_MAPPING.barcode);
+
+  // Holes indices
+  const holesEndIdx = findFieldColumnIndex('holesEnd', headers, ['отв_тор', 'отв. торец', 'отверстий в торец', 'торец отв', 'торец_отв', 'holes_end', 'end_holes', 'торец']);
+  const holesFaceIdx = findFieldColumnIndex('holesFace', headers, ['отв_пласт', 'отв. пласть', 'отверстий в пласть', 'пласть отв', 'пласть_отв', 'holes_face', 'face_holes', 'пласть']);
+  const holesCountIdx = findFieldColumnIndex('holesCount', headers, ['всего отв', 'кол-во отв', 'отверстий', 'сверлен', 'присадк', 'holes', 'drills', 'кол отв']);
 
   const details: BirkaDetail[] = [];
 
-  // Strategy 1: Tab-Separated (TSV) or Semicolon/Comma CSV
-  const delimiter = text.includes('\t') ? '\t' : text.includes(';') ? ';' : ',';
-  const headerLineIndex = lines.findIndex(l => {
-    const lower = l.toLowerCase();
-    return lower.includes('наим') || lower.includes('детал') || lower.includes('длин') || lower.includes('шир') || lower.includes('матер') || lower.includes('поз') || lower.includes('размер');
-  });
+  const parseDim = (val: string | undefined): number => {
+    if (!val) return 0;
+    const cleaned = String(val).replace(/\s+/g, '').replace(',', '.');
+    const num = parseFloat(cleaned);
+    return isNaN(num) ? 0 : num;
+  };
 
-  if (headerLineIndex !== -1) {
-    const headers = lines[headerLineIndex].split(delimiter).map(h => h.trim().toLowerCase().replace(/^["']|["']$/g, ''));
-    
-    // Column index finders with exclusion support
-    const findIndex = (keywords: string[], excludeKeywords: string[] = []) => 
-      headers.findIndex(h => 
-        keywords.some(k => h.includes(k.toLowerCase())) && !excludeKeywords.some(ek => h.includes(ek.toLowerCase()))
-      );
+  for (let i = headerRowIndex + 1; i < rows.length; i++) {
+    const cols = rows[i];
+    if (!cols || cols.length < 2) continue;
 
-    // Order index first (Заказ / Order / Проект)
-    const orderIdx = findIndex(mapping.orderNumber || ['зак', 'order', 'проект']);
+    // Check if entire row is empty
+    if (cols.every(c => !c || String(c).trim() === '')) continue;
 
-    // Part number index (№ детали / Позиция) - prioritized
-    let posIdx = findIndex(mapping.pos || ['№ дет', 'поз', 'позиц', '№ бирк', 'код дет', 'part_no', 'item_no', 'label']);
-    if (posIdx === -1) {
-      posIdx = findIndex(['№', 'номер', 'pos', 'id'], ['зак', 'order', 'проект', 'издел', 'наим', 'назв', 'имя', 'длин', 'шир', 'толщ', 'кол']);
-    }
-    // Prevent overlap if order column was matched
-    if (posIdx !== -1 && posIdx === orderIdx) {
-      posIdx = -1;
-    }
+    const rowNum = i - headerRowIndex;
+    const name = nameIdx !== -1 && cols[nameIdx] ? cols[nameIdx].trim() : `Деталь ${rowNum}`;
+    const length = lenIdx !== -1 ? parseDim(cols[lenIdx]) : 0;
+    const width = widIdx !== -1 ? parseDim(cols[widIdx]) : 0;
+    const thickness = thkIdx !== -1 ? parseDim(cols[thkIdx]) : 16;
+    const material = matIdx !== -1 && cols[matIdx] ? cols[matIdx].trim() : 'ЛДСП 16 мм';
+    const quantity = qtyIdx !== -1 && cols[qtyIdx] ? parseInt(String(cols[qtyIdx]).replace(/\D+/g, ''), 10) || 1 : 1;
 
-    // Name index
-    let nameIdx = findIndex(mapping.name || ['наименов', 'название', 'наим', 'деталь', 'part', 'name'], ['№', 'номер', 'поз', 'код', 'id']);
-    if (nameIdx === -1) {
-      nameIdx = findIndex(['деталь', 'part', 'name'], ['№', 'номер', 'поз', 'код', 'id', 'матер', 'кромк']);
-    }
+    const rawPos = (posIdx !== -1 && cols[posIdx] !== undefined && String(cols[posIdx]).trim() !== '')
+      ? String(cols[posIdx]).trim()
+      : String(rowNum);
 
-    const lenIdx = findIndex(mapping.length || ['длин', 'длина', 'length', 'l', 'размер х', 'размер x', 'габарит х', 'x']);
-    const widIdx = findIndex(mapping.width || ['шир', 'ширина', 'width', 'w', 'размер y', 'габарит y', 'y']);
-    const thkIdx = findIndex(mapping.thickness || ['толщ', 'толщина', 'thick', 't', 'z', 'глубин']);
-    const matIdx = findIndex(mapping.material || ['матер', 'материал', 'mat'], ['кромк']);
-    const qtyIdx = findIndex(
-      mapping.quantity || ['кол', 'количество', 'qty', 'count', 'шт'],
-      ['зак', 'order', 'проект', 'издел', 'всего', 'комплект', 'сделк', 'договор', '№', 'номер', 'pos']
-    );
-    
-    // Edges
-    const edgeL1Idx = findIndex(mapping.edgeL1 || ['кромка л1', 'кромка1', 'длина 1', 'l1', 'кромка д1', 'край 1']);
-    const edgeL2Idx = findIndex(mapping.edgeL2 || ['кромка л2', 'кромка2', 'длина 2', 'l2', 'кромка д2']);
-    const edgeW1Idx = findIndex(mapping.edgeW1 || ['кромка ш1', 'кромка3', 'ширина 1', 'w1', 'кромка ш1']);
-    const edgeW2Idx = findIndex(mapping.edgeW2 || ['кромка ш2', 'кромка4', 'ширина 2', 'w2', 'кромка ш2']);
-    const generalEdgeIdx = findIndex(['кромк', 'облиц', 'edge'], ['л1', 'л2', 'ш1', 'ш2', 'l1', 'l2', 'w1', 'w2']);
+    const labelNumber = cleanPartLabelNumber(rawPos) || String(rowNum);
 
-    const noteIdx = findIndex(mapping.notes || ['примеч', 'паз', 'присад', 'note', 'коммент', 'инфо']);
-    const barcodeIdx = findIndex(mapping.barcode || ['штрих', 'код', 'barcode', 'qr']);
+    const edgeL1 = edgeL1Idx !== -1 ? cols[edgeL1Idx] : (generalEdgeIdx !== -1 ? cols[generalEdgeIdx] : undefined);
+    const edgeL2 = edgeL2Idx !== -1 ? cols[edgeL2Idx] : undefined;
+    const edgeW1 = edgeW1Idx !== -1 ? cols[edgeW1Idx] : undefined;
+    const edgeW2 = edgeW2Idx !== -1 ? cols[edgeW2Idx] : undefined;
 
-    // Holes indices
-    const holesEndIdx = findIndex(['отв_тор', 'отв. торец', 'отверстий в торец', 'торец отв', 'торец_отв', 'holes_end', 'end_holes', 'торец']);
-    const holesFaceIdx = findIndex(['отв_пласт', 'отв. пласть', 'отверстий в пласть', 'пласть отв', 'пласть_отв', 'holes_face', 'face_holes', 'пласть']);
-    const holesCountIdx = findIndex(['всего отв', 'кол-во отв', 'отверстий', 'сверлен', 'присадк', 'holes', 'drills', 'кол отв']);
+    const notes = noteIdx !== -1 ? cols[noteIdx] : undefined;
+    const orderNumber = orderIdx !== -1 ? cols[orderIdx] : undefined;
+    const barcode = barcodeIdx !== -1 ? cols[barcodeIdx] : undefined;
 
-    for (let i = headerLineIndex + 1; i < lines.length; i++) {
-      const cols = lines[i].split(delimiter).map(c => c.trim().replace(/^["']|["']$/g, ''));
-      if (cols.length < 2) continue;
+    const holesEnd = holesEndIdx !== -1 && cols[holesEndIdx] ? parseInt(String(cols[holesEndIdx]), 10) : undefined;
+    const holesFace = holesFaceIdx !== -1 && cols[holesFaceIdx] ? parseInt(String(cols[holesFaceIdx]), 10) : undefined;
+    const holesCount = holesCountIdx !== -1 && cols[holesCountIdx] ? parseInt(String(cols[holesCountIdx]), 10) : undefined;
 
-      const name = nameIdx !== -1 && cols[nameIdx] ? cols[nameIdx] : `Деталь ${i - headerLineIndex}`;
-      const length = lenIdx !== -1 && cols[lenIdx] ? parseFloat(cols[lenIdx].replace(',', '.')) : 0;
-      const width = widIdx !== -1 && cols[widIdx] ? parseFloat(cols[widIdx].replace(',', '.')) : 0;
-      const thickness = thkIdx !== -1 && cols[thkIdx] ? parseFloat(cols[thkIdx].replace(',', '.')) : 16;
-      const material = matIdx !== -1 && cols[matIdx] ? cols[matIdx] : 'ЛДСП 16 мм';
-      const quantity = qtyIdx !== -1 && cols[qtyIdx] ? parseInt(cols[qtyIdx], 10) || 1 : 1;
-      const rawPos = posIdx !== -1 && cols[posIdx] ? cols[posIdx] : String(i - headerLineIndex);
-      // Clean label number (remove leading #, №, words like "Поз.", "Позиция", "Деталь" while preserving "00.00", "00.00.00", etc.)
-      const labelNumber = rawPos
-        .replace(/^[#№\s]+/, '')
-        .replace(/^(поз\.?|дет\.?|позиция|деталь|номер|item|pos)\s*/i, '')
-        .trim();
-
-      const edgeL1 = edgeL1Idx !== -1 ? cols[edgeL1Idx] : (generalEdgeIdx !== -1 ? cols[generalEdgeIdx] : undefined);
-      const edgeL2 = edgeL2Idx !== -1 ? cols[edgeL2Idx] : undefined;
-      const edgeW1 = edgeW1Idx !== -1 ? cols[edgeW1Idx] : undefined;
-      const edgeW2 = edgeW2Idx !== -1 ? cols[edgeW2Idx] : undefined;
-
-      const notes = noteIdx !== -1 ? cols[noteIdx] : undefined;
-      const orderNumber = orderIdx !== -1 ? cols[orderIdx] : undefined;
-      const barcode = barcodeIdx !== -1 ? cols[barcodeIdx] : undefined;
-
-      const holesEnd = holesEndIdx !== -1 && cols[holesEndIdx] ? parseInt(cols[holesEndIdx], 10) : undefined;
-      const holesFace = holesFaceIdx !== -1 && cols[holesFaceIdx] ? parseInt(cols[holesFaceIdx], 10) : undefined;
-      const holesCount = holesCountIdx !== -1 && cols[holesCountIdx] ? parseInt(cols[holesCountIdx], 10) : undefined;
-
-      if (name || length > 0 || width > 0) {
-        details.push({
-          id: `det_${i}_${Math.random().toString(36).substring(2, 7)}`,
-          labelNumber: labelNumber || String(i - headerLineIndex),
-          orderNumber,
-          name,
-          length: length || 700,
-          width: width || 500,
-          thickness: thickness || 16,
-          material: material || 'ЛДСП 16 мм',
-          quantity: quantity || 1,
-          edgeL1: edgeL1 && edgeL1 !== '-' && edgeL1 !== '—' && edgeL1 !== '0' ? edgeL1 : undefined,
-          edgeL2: edgeL2 && edgeL2 !== '-' && edgeL2 !== '—' && edgeL2 !== '0' ? edgeL2 : undefined,
-          edgeW1: edgeW1 && edgeW1 !== '-' && edgeW1 !== '—' && edgeW1 !== '0' ? edgeW1 : undefined,
-          edgeW2: edgeW2 && edgeW2 !== '-' && edgeW2 !== '—' && edgeW2 !== '0' ? edgeW2 : undefined,
-          notes,
-          barcode,
-          holesEnd: !isNaN(holesEnd as number) ? holesEnd : undefined,
-          holesFace: !isNaN(holesFace as number) ? holesFace : undefined,
-          holesCount: !isNaN(holesCount as number) ? holesCount : undefined,
-        });
-      }
-    }
-  }
-
-  // Strategy 2: INI-style or Key-Value records `[Birka]` or `[Item]`
-  if (details.length === 0) {
-    let currentItem: Partial<BirkaDetail> | null = null;
-    let itemIdx = 1;
-
-    for (const line of lines) {
-      if (line.startsWith('[') && line.endsWith(']')) {
-        if (currentItem && (currentItem.name || currentItem.length)) {
-          details.push({
-            id: `det_ini_${itemIdx}_${Math.random().toString(36).substring(2, 7)}`,
-            labelNumber: (currentItem.labelNumber || String(itemIdx))
-              .replace(/^[#№\s]+/, '')
-              .replace(/^(поз\.?|дет\.?|позиция|деталь|номер|item|pos)\s*/i, '')
-              .trim(),
-            name: currentItem.name || `Деталь ${itemIdx}`,
-            length: currentItem.length || 700,
-            width: currentItem.width || 500,
-            thickness: currentItem.thickness || 16,
-            material: currentItem.material || 'ЛДСП 16 мм',
-            quantity: currentItem.quantity || 1,
-            edgeL1: currentItem.edgeL1,
-            edgeL2: currentItem.edgeL2,
-            edgeW1: currentItem.edgeW1,
-            edgeW2: currentItem.edgeW2,
-            notes: currentItem.notes,
-            orderNumber: currentItem.orderNumber
-          });
-          itemIdx++;
-        }
-        currentItem = {};
-        continue;
-      }
-
-      if (line.includes('=')) {
-        if (!currentItem) currentItem = {};
-        const [kRaw, ...vParts] = line.split('=');
-        const k = kRaw.trim().toLowerCase();
-        const v = vParts.join('=').trim();
-
-        if (k.includes('наим') || k === 'name' || k === 'detal') currentItem.name = v;
-        if (k.includes('длин') || k === 'length' || k === 'l' || k === 'sizex') currentItem.length = parseFloat(v);
-        if (k.includes('шир') || k === 'width' || k === 'w' || k === 'sizey') currentItem.width = parseFloat(v);
-        if (k.includes('толщ') || k === 'thick' || k === 't' || k === 'sizez') currentItem.thickness = parseFloat(v);
-        if (k.includes('матер') || k === 'material' || k === 'mat') currentItem.material = v;
-        if (k.includes('кол') || k === 'qty' || k === 'count') currentItem.quantity = parseInt(v, 10);
-        if ((k.includes('поз') || k.includes('дет') || k === 'pos' || k === 'num' || k === 'id') && !k.includes('зак') && !k.includes('order')) {
-          currentItem.labelNumber = v
-            .replace(/^[#№\s]+/, '')
-            .replace(/^(поз\.?|дет\.?|позиция|деталь|номер|item|pos)\s*/i, '')
-            .trim();
-        }
-        if (k.includes('зак') || k === 'order') currentItem.orderNumber = v;
-        if (k.includes('кромка1') || k === 'edgel1' || k === 'l1') currentItem.edgeL1 = v;
-        if (k.includes('кромка2') || k === 'edgel2' || k === 'l2') currentItem.edgeL2 = v;
-        if (k.includes('кромка3') || k === 'edgew1' || k === 'w1') currentItem.edgeW1 = v;
-        if (k.includes('кромка4') || k === 'edgew2' || k === 'w2') currentItem.edgeW2 = v;
-        if (k.includes('примеч') || k === 'note' || k === 'remark') currentItem.notes = v;
-        if (k.includes('торец') || k === 'holes_end' || k === 'end_holes') currentItem.holesEnd = parseInt(v, 10);
-        if (k.includes('пласть') || k === 'holes_face' || k === 'face_holes') currentItem.holesFace = parseInt(v, 10);
-        if (k.includes('отверст') || k === 'holes' || k === 'drills') currentItem.holesCount = parseInt(v, 10);
-      }
-    }
-
-    if (currentItem && (currentItem.name || currentItem.length)) {
+    if (name || length > 0 || width > 0) {
       details.push({
-        id: `det_ini_${itemIdx}_${Math.random().toString(36).substring(2, 7)}`,
-        labelNumber: (currentItem.labelNumber || String(itemIdx))
-          .replace(/^[#№\s]+/, '')
-          .replace(/^(поз\.?|дет\.?|позиция|деталь|номер|item|pos)\s*/i, '')
-          .trim(),
-        name: currentItem.name || `Деталь ${itemIdx}`,
-        length: currentItem.length || 700,
-        width: currentItem.width || 500,
-        thickness: currentItem.thickness || 16,
-        material: currentItem.material || 'ЛДСП 16 мм',
-        quantity: currentItem.quantity || 1,
-        edgeL1: currentItem.edgeL1,
-        edgeL2: currentItem.edgeL2,
-        edgeW1: currentItem.edgeW1,
-        edgeW2: currentItem.edgeW2,
-        notes: currentItem.notes,
-        orderNumber: currentItem.orderNumber,
-        holesEnd: !isNaN(currentItem.holesEnd as number) ? currentItem.holesEnd : undefined,
-        holesFace: !isNaN(currentItem.holesFace as number) ? currentItem.holesFace : undefined,
-        holesCount: !isNaN(currentItem.holesCount as number) ? currentItem.holesCount : undefined,
+        id: `det_${i}_${Math.random().toString(36).substring(2, 7)}`,
+        labelNumber,
+        orderNumber,
+        name,
+        length: length || 700,
+        width: width || 500,
+        thickness: thickness || 16,
+        material: material || 'ЛДСП 16 мм',
+        quantity: quantity || 1,
+        edgeL1: edgeL1 && edgeL1 !== '-' && edgeL1 !== '—' && edgeL1 !== '0' ? edgeL1.trim() : undefined,
+        edgeL2: edgeL2 && edgeL2 !== '-' && edgeL2 !== '—' && edgeL2 !== '0' ? edgeL2.trim() : undefined,
+        edgeW1: edgeW1 && edgeW1 !== '-' && edgeW1 !== '—' && edgeW1 !== '0' ? edgeW1.trim() : undefined,
+        edgeW2: edgeW2 && edgeW2 !== '-' && edgeW2 !== '—' && edgeW2 !== '0' ? edgeW2.trim() : undefined,
+        notes: notes ? notes.trim() : undefined,
+        barcode: barcode ? barcode.trim() : undefined,
+        holesEnd: !isNaN(holesEnd as number) ? holesEnd : undefined,
+        holesFace: !isNaN(holesFace as number) ? holesFace : undefined,
+        holesCount: !isNaN(holesCount as number) ? holesCount : undefined,
       });
-    }
-  }
-
-  // Strategy 3: Heuristic Regex line parser
-  if (details.length === 0) {
-    const dimRegex = /(\d{2,4})\s*[\*xх×]\s*(\d{2,4})(?:\s*[\*xх×]\s*(\d{1,3}))?/i;
-    lines.forEach((line, idx) => {
-      const match = line.match(dimRegex);
-      if (match) {
-        const length = parseInt(match[1], 10);
-        const width = parseInt(match[2], 10);
-        const thickness = match[3] ? parseInt(match[3], 10) : 16;
-        
-        let mat = 'ЛДСП 16 мм';
-        if (line.toLowerCase().includes('мдф')) mat = 'МДФ 18 мм';
-        if (line.toLowerCase().includes('хдф') || line.toLowerCase().includes('двп')) mat = 'ХДФ 3 мм';
-
-        details.push({
-          id: `det_regex_${idx}_${Math.random().toString(36).substring(2, 7)}`,
-          labelNumber: String(idx + 1),
-          name: line.split(/[\t;,]/)[0] || `Деталь ${idx + 1}`,
-          length,
-          width,
-          thickness,
-          material: mat,
-          quantity: 1,
-          notes: line
-        });
-      }
-    });
-  }
-
-  // Strategy 4: Table without headers (guess columns dynamically based on cell types)
-  if (details.length === 0) {
-    for (let i = 0; i < lines.length; i++) {
-      const cols = lines[i].split(delimiter).map(c => c.trim().replace(/^["']|["']$/g, ''));
-      if (cols.length < 3) continue; // Needs at least 3 columns
-
-      const numbers: { val: number; idx: number }[] = [];
-      const strings: { val: string; idx: number }[] = [];
-
-      cols.forEach((col, idx) => {
-        const cleaned = col.replace(',', '.');
-        const num = parseFloat(cleaned);
-        if (!isNaN(num) && num > 0) {
-          numbers.push({ val: num, idx });
-        } else if (col.length > 0) {
-          strings.push({ val: col, idx });
-        }
-      });
-
-      if (numbers.length >= 2) {
-        const sortedNums = [...numbers].sort((a, b) => b.val - a.val);
-        
-        let length = sortedNums[0].val;
-        let width = sortedNums[1].val;
-        let thickness = 16;
-        let quantity = 1;
-        let name = '';
-        let material = 'ЛДСП 16 мм';
-        let pos = String(i + 1);
-
-        const thicknessCandidate = numbers.find(n => n.val >= 3 && n.val <= 50 && n.val !== length && n.val !== width);
-        if (thicknessCandidate) {
-          thickness = thicknessCandidate.val;
-        }
-
-        const qtyCandidate = numbers.find(n => n.val >= 1 && n.val <= 200 && n.val !== length && n.val !== width && n.val !== thickness && n.idx !== 0);
-        if (qtyCandidate) {
-          quantity = Math.round(qtyCandidate.val);
-        }
-
-        const nameCandidate = strings.find(s => {
-          const l = s.val.toLowerCase();
-          return !l.includes('лдсп') && !l.includes('мдф') && !l.includes('хдф') && !l.includes('двп') && !l.includes('egger') && !l.includes('заказ');
-        });
-        if (nameCandidate) {
-          name = nameCandidate.val;
-        } else if (strings.length > 0) {
-          name = strings[0].val;
-        } else {
-          name = `Деталь ${i + 1}`;
-        }
-
-        const matCandidate = strings.find(s => {
-          const l = s.val.toLowerCase();
-          return l.includes('лдсп') || l.includes('мдф') || l.includes('хдф') || l.includes('двп') || l.includes('egger') || l.includes('кроно') || l.includes('плита');
-        });
-        if (matCandidate) {
-          material = matCandidate.val;
-        }
-
-        const firstColNum = parseFloat(cols[0].replace(',', '.'));
-        if (!isNaN(firstColNum) && firstColNum < 1000) {
-          pos = String(Math.round(firstColNum));
-        }
-
-        if (length > 10 && width > 10) {
-          details.push({
-            id: `det_guess_${i}_${Math.random().toString(36).substring(2, 7)}`,
-            labelNumber: pos,
-            name,
-            length,
-            width,
-            thickness,
-            material,
-            quantity
-          });
-        }
-      }
     }
   }
 
   return consolidateDetails(details);
+}
+
+// Parse text content from .bir / .brx / .txt / .csv / .tsv file
+export function parseBirFileText(text: string, customMapping?: Record<string, string[]>): BirkaDetail[] {
+  if (!text || !text.trim()) return [];
+
+  // Strategy 1: Table parsing with auto-delimiter and column mapping
+  const { rows } = parseDelimitedTextToRows(text);
+  const tableDetails = parseBirkaRows(rows, customMapping);
+  if (tableDetails.length > 0) {
+    return tableDetails;
+  }
+
+  // Strategy 2: INI-style or Key-Value records `[Birka]` or `[Item]`
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  let currentItem: Partial<BirkaDetail> | null = null;
+  let itemIdx = 1;
+  const iniDetails: BirkaDetail[] = [];
+
+  for (const line of lines) {
+    if (line.startsWith('[') && line.endsWith(']')) {
+      if (currentItem && (currentItem.name || currentItem.length)) {
+        iniDetails.push({
+          id: `det_ini_${itemIdx}_${Math.random().toString(36).substring(2, 7)}`,
+          labelNumber: cleanPartLabelNumber(currentItem.labelNumber || String(itemIdx)) || String(itemIdx),
+          name: currentItem.name || `Деталь ${itemIdx}`,
+          length: currentItem.length || 700,
+          width: currentItem.width || 500,
+          thickness: currentItem.thickness || 16,
+          material: currentItem.material || 'ЛДСП 16 мм',
+          quantity: currentItem.quantity || 1,
+          edgeL1: currentItem.edgeL1,
+          edgeL2: currentItem.edgeL2,
+          edgeW1: currentItem.edgeW1,
+          edgeW2: currentItem.edgeW2,
+          notes: currentItem.notes,
+          orderNumber: currentItem.orderNumber
+        });
+        itemIdx++;
+      }
+      currentItem = {};
+      continue;
+    }
+
+    if (line.includes('=')) {
+      if (!currentItem) currentItem = {};
+      const [kRaw, ...vParts] = line.split('=');
+      const k = kRaw.trim().toLowerCase();
+      const v = vParts.join('=').trim();
+
+      if (k.includes('наим') || k === 'name' || k === 'detal') currentItem.name = v;
+      if (k.includes('длин') || k === 'length' || k === 'l' || k === 'sizex') currentItem.length = parseFloat(v.replace(',', '.'));
+      if (k.includes('шир') || k === 'width' || k === 'w' || k === 'sizey') currentItem.width = parseFloat(v.replace(',', '.'));
+      if (k.includes('толщ') || k === 'thick' || k === 't' || k === 'sizez') currentItem.thickness = parseFloat(v.replace(',', '.'));
+      if (k.includes('матер') || k === 'material' || k === 'mat') currentItem.material = v;
+      if (k.includes('кол') || k === 'qty' || k === 'count') currentItem.quantity = parseInt(v, 10);
+      if ((k.includes('поз') || k.includes('дет') || k === 'pos' || k === 'num' || k === 'id') && !k.includes('зак') && !k.includes('order')) {
+        currentItem.labelNumber = cleanPartLabelNumber(v);
+      }
+      if (k.includes('зак') || k === 'order') currentItem.orderNumber = v;
+      if (k.includes('кромка1') || k === 'edgel1' || k === 'l1') currentItem.edgeL1 = v;
+      if (k.includes('кромка2') || k === 'edgel2' || k === 'l2') currentItem.edgeL2 = v;
+      if (k.includes('кромка3') || k === 'edgew1' || k === 'w1') currentItem.edgeW1 = v;
+      if (k.includes('кромка4') || k === 'edgew2' || k === 'w2') currentItem.edgeW2 = v;
+      if (k.includes('примеч') || k === 'note' || k === 'remark') currentItem.notes = v;
+      if (k.includes('торец') || k === 'holes_end' || k === 'end_holes') currentItem.holesEnd = parseInt(v, 10);
+      if (k.includes('пласть') || k === 'holes_face' || k === 'face_holes') currentItem.holesFace = parseInt(v, 10);
+      if (k.includes('отверст') || k === 'holes' || k === 'drills') currentItem.holesCount = parseInt(v, 10);
+    }
+  }
+
+  if (currentItem && (currentItem.name || currentItem.length)) {
+    iniDetails.push({
+      id: `det_ini_${itemIdx}_${Math.random().toString(36).substring(2, 7)}`,
+      labelNumber: cleanPartLabelNumber(currentItem.labelNumber || String(itemIdx)) || String(itemIdx),
+      name: currentItem.name || `Деталь ${itemIdx}`,
+      length: currentItem.length || 700,
+      width: currentItem.width || 500,
+      thickness: currentItem.thickness || 16,
+      material: currentItem.material || 'ЛДСП 16 мм',
+      quantity: currentItem.quantity || 1,
+      edgeL1: currentItem.edgeL1,
+      edgeL2: currentItem.edgeL2,
+      edgeW1: currentItem.edgeW1,
+      edgeW2: currentItem.edgeW2,
+      notes: currentItem.notes,
+      orderNumber: currentItem.orderNumber,
+      holesEnd: !isNaN(currentItem.holesEnd as number) ? currentItem.holesEnd : undefined,
+      holesFace: !isNaN(currentItem.holesFace as number) ? currentItem.holesFace : undefined,
+      holesCount: !isNaN(currentItem.holesCount as number) ? currentItem.holesCount : undefined,
+    });
+  }
+
+  if (iniDetails.length > 0) {
+    return consolidateDetails(iniDetails);
+  }
+
+  // Strategy 3: Heuristic Regex line parser
+  const regexDetails: BirkaDetail[] = [];
+  const dimRegex = /(\d{2,4})\s*[\*xх×]\s*(\d{2,4})(?:\s*[\*xх×]\s*(\d{1,3}))?/i;
+  lines.forEach((line, idx) => {
+    const match = line.match(dimRegex);
+    if (match) {
+      const length = parseInt(match[1], 10);
+      const width = parseInt(match[2], 10);
+      const thickness = match[3] ? parseInt(match[3], 10) : 16;
+      
+      let mat = 'ЛДСП 16 мм';
+      if (line.toLowerCase().includes('мдф')) mat = 'МДФ 18 мм';
+      if (line.toLowerCase().includes('хдф') || line.toLowerCase().includes('двп')) mat = 'ХДФ 3 мм';
+
+      regexDetails.push({
+        id: `det_regex_${idx}_${Math.random().toString(36).substring(2, 7)}`,
+        labelNumber: String(idx + 1),
+        name: line.split(/[\t;,]/)[0] || `Деталь ${idx + 1}`,
+        length,
+        width,
+        thickness,
+        material: mat,
+        quantity: 1,
+        notes: line
+      });
+    }
+  });
+
+  if (regexDetails.length > 0) {
+    return consolidateDetails(regexDetails);
+  }
+
+  return [];
 }
 
 // Consolidate duplicate rows with identical labelNumber, material, name and dimensions
@@ -417,23 +671,19 @@ export function consolidateDetails(details: BirkaDetail[]): BirkaDetail[] {
   const map = new Map<string, BirkaDetail[]>();
 
   for (const d of details) {
-    // Strip copy/sticker suffixes like #1, -1, /1, (1) from label number (e.g. "01.01 #1" -> "01.01")
     const rawLabel = (d.labelNumber || '').trim();
-    const cleanLabel = rawLabel
-      .replace(/[\s\-_#/(\[\{]\s*\d+\s*[)\]\}]?$/, '')
-      .replace(/^[#№\s]+/, '')
-      .trim();
+    const cleanLabel = cleanPartLabelNumber(rawLabel) || rawLabel;
 
-    const normLabel = (cleanLabel || rawLabel).toLowerCase();
+    const normLabel = cleanLabel.toLowerCase();
     const normMat = (d.material || '').toLowerCase().trim();
     
     // Clean name from suffix e.g. "Боковина (1)" -> "Боковина"
     const normName = (d.name || '')
-      .replace(/[\s\-_#/(\[\{]\s*\d+\s*[)\]\}]?$/, '')
+      .replace(/\s*\(\d+\)$/, '')
       .toLowerCase()
       .trim();
     
-    // Grouping key: if position / label number is present (e.g. "01.01"), group by position + material + dimensions
+    // Grouping key: if position / label number is present (e.g. "01.02"), group by position + material + dimensions
     // Otherwise group by name + material + dimensions
     const key = normLabel 
       ? `pos_${normLabel}|${normMat}|${d.length}|${d.width}|${d.thickness}`
@@ -450,13 +700,10 @@ export function consolidateDetails(details: BirkaDetail[]): BirkaDetail[] {
   for (const items of map.values()) {
     const first = items[0];
     const rawLabel = (first.labelNumber || '').trim();
-    const cleanLabel = rawLabel
-      .replace(/[\s\-_#/(\[\{]\s*\d+\s*[)\]\}]?$/, '')
-      .replace(/^[#№\s]+/, '')
-      .trim() || rawLabel;
+    const cleanLabel = cleanPartLabelNumber(rawLabel) || rawLabel;
 
     const cleanName = (first.name || '')
-      .replace(/[\s\-_#/(\[\{]\s*\d+\s*[)\]\}]?$/, '')
+      .replace(/\s*\(\d+\)$/, '')
       .trim() || first.name;
 
     if (items.length === 1) {
@@ -473,10 +720,8 @@ export function consolidateDetails(details: BirkaDetail[]): BirkaDetail[] {
 
       if (allEqual) {
         if (qtys[0] === 1) {
-          // E.g. 30 physical detail lines with qty 1 each -> combined total qty = 30
           finalQuantity = items.length;
         } else {
-          // E.g. 30 lines for detail 01.01, both claiming total project qty = 30 (Bazis sticker repetition)
           finalQuantity = Math.max(qtys[0], items.length);
         }
       } else {
@@ -644,24 +889,49 @@ export async function parseBirkaFile(
   let rawText = '';
   let encodingUsed = 'UTF-8';
   let formatDetected = 'Спецификация деталей';
+  let parsedDetails: BirkaDetail[] | null = null;
 
   const isExcel = file.name.toLowerCase().endsWith('.xlsx') || file.name.toLowerCase().endsWith('.xls');
   if (isExcel) {
     try {
       const workbook = XLSX.read(uint8, { type: 'array' });
-      const firstSheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[firstSheetName];
-      const csv = XLSX.utils.sheet_to_csv(worksheet, { forceQuotes: true });
-      rawText = csv;
+      // Find best sheet: prefer sheets named with "детал", "спецификац", "бирк", "панел", "раскрой"
+      let targetSheetName = workbook.SheetNames[0];
+      const preferredSheet = workbook.SheetNames.find(sn => {
+        const lower = sn.toLowerCase();
+        return lower.includes('детал') || lower.includes('спецификац') || lower.includes('бирк') || lower.includes('панел') || lower.includes('раскрой') || lower.includes('список');
+      });
+      if (preferredSheet) {
+        targetSheetName = preferredSheet;
+      }
+      const worksheet = workbook.Sheets[targetSheetName];
+      // sheet_to_json with raw: false keeps the formatted cell strings (e.g. "01.02", "09.03")!
+      const sheetRows: (string | number)[][] = XLSX.utils.sheet_to_json(worksheet, { 
+        header: 1, 
+        raw: false, 
+        defval: '' 
+      });
+      
+      const stringRows: string[][] = sheetRows
+        .filter(r => Array.isArray(r) && r.some(c => c !== null && c !== undefined && String(c).trim() !== ''))
+        .map(row => (Array.isArray(row) ? row : []).map(cell => String(cell ?? '').trim()));
+
+      if (stringRows.length > 0) {
+        const detailsFromRows = parseBirkaRows(stringRows, customMapping);
+        if (detailsFromRows.length > 0) {
+          parsedDetails = detailsFromRows;
+        }
+        rawText = stringRows.slice(0, 50).map(r => r.join('\t')).join('\n');
+      }
       encodingUsed = 'Excel (XLSX/XLS)';
-      formatDetected = 'Таблица Excel (.xlsx / .xls)';
+      formatDetected = `Таблица Excel (.xlsx / .xls) [Лист: ${targetSheetName}]`;
     } catch (e: any) {
       console.error('XLSX read error for birka:', e);
     }
   }
 
   // Check if explicit encoding preference provided
-  if (encodingPreference && encodingPreference !== 'auto') {
+  if (!parsedDetails && encodingPreference && encodingPreference !== 'auto') {
     try {
       const decoder = new TextDecoder(encodingPreference);
       rawText = decoder.decode(uint8);
@@ -672,7 +942,7 @@ export async function parseBirkaFile(
   }
 
   // Check if ZIP archive
-  if (!rawText && (file.name.toLowerCase().endsWith('.zip') || (uint8[0] === 0x50 && uint8[1] === 0x4b))) {
+  if (!parsedDetails && !rawText && (file.name.toLowerCase().endsWith('.zip') || (uint8[0] === 0x50 && uint8[1] === 0x4b))) {
     try {
       const zip = await JSZip.loadAsync(file);
       formatDetected = 'Архив (.zip с бирками)';
@@ -696,14 +966,14 @@ export async function parseBirkaFile(
     }
   }
 
-  if (!rawText) {
+  if (!parsedDetails && !rawText) {
     const decoded = await smartDecodeFile(uint8);
     rawText = decoded.text;
     encodingUsed = decoded.encoding;
     if (file.name.toLowerCase().endsWith('.bir')) formatDetected = 'Базис-Бирка (.bir)';
   }
 
-  const details = parseBirFileText(rawText, customMapping);
+  const details = parsedDetails || parseBirFileText(rawText, customMapping);
   const { groups, allEdges, totalAreaM2, totalEdgeMeters } = buildMaterialGroups(details);
 
   return {

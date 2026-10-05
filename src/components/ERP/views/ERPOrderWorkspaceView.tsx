@@ -320,7 +320,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     setUploadError(null);
 
     try {
-      const parseRes = await parseBirkaFile(file);
+      const parseRes = await parseBirkaFile(file, settings?.birkaColumnMapping, settings?.birkaEncodingPreference);
       if (parseRes.details.length === 0) {
         throw new Error('Файл не содержит распознанных деталей или пуст');
       }
