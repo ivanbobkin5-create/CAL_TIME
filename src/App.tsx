@@ -2119,23 +2119,35 @@ const ProductionView = ({
   };
 
   const availableProductions = useMemo(() => {
-    return allCompanies.filter(
-      (c) =>
-        (c.type === "Мебельное производство" || c.type === "Производство" || (typeof c.type === "string" && c.type.toLowerCase().includes("производств"))) &&
-        c.id !== companyId &&
-        c.id !== "system" &&
-        !c.id?.startsWith("b24_") &&
-        c.name &&
-        c.name.trim().length > 1 &&
-        !c.isBlocked
-    );
+    return allCompanies.filter((c) => {
+      if (!c || c.id === companyId || c.id === "system" || c.isBlocked) return false;
+
+      const rawType = String(c.type || c.companyType || c.data?.type || c.data?.companyType || "").toLowerCase();
+      const isProduction =
+        rawType === "мебельное производство" ||
+        rawType === "производство" ||
+        rawType.includes("производст");
+
+      if (!isProduction) return false;
+
+      const name = c.name || c.companyName || c.title || c.data?.name || c.data?.companyName;
+      if (!name || String(name).trim().length < 2) return false;
+
+      return true;
+    });
   }, [allCompanies, companyId]);
 
   const availableCities = useMemo(() => {
     const citiesSet = new Set<string>();
     availableProductions.forEach((c) => {
-      if (c.city && c.city.trim()) {
-        citiesSet.add(c.city.trim());
+      const city =
+        c.city ||
+        c.data?.city ||
+        c.settings?.production?.city ||
+        c.ownProductionConfig?.city ||
+        c.address?.city;
+      if (city && typeof city === "string" && city.trim()) {
+        citiesSet.add(city.trim());
       }
     });
     return Array.from(citiesSet).sort();
@@ -2143,7 +2155,15 @@ const ProductionView = ({
 
   const productionsInCity = useMemo(() => {
     if (!contractConfig.city) return availableProductions;
-    return availableProductions.filter((c) => c.city === contractConfig.city);
+    return availableProductions.filter((c) => {
+      const city =
+        c.city ||
+        c.data?.city ||
+        c.settings?.production?.city ||
+        c.ownProductionConfig?.city ||
+        c.address?.city;
+      return city === contractConfig.city || !city;
+    });
   }, [availableProductions, contractConfig.city]);
 
   const [activePhoto, setActivePhoto] = useState<string | null>(null);
@@ -3043,11 +3063,15 @@ const ProductionView = ({
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none disabled:bg-gray-100 disabled:text-gray-400 bg-white"
                 >
                   <option value="">Выберите зарегистрированное производство ({productionsInCity.length})</option>
-                  {productionsInCity.map((prod) => (
-                    <option key={prod.id} value={prod.id}>
-                      {prod.name} {prod.city ? `(${prod.city})` : ""}
-                    </option>
-                  ))}
+                  {productionsInCity.map((prod) => {
+                    const prodName = prod.name || prod.companyName || prod.title || prod.data?.name || `Производство ${prod.id}`;
+                    const prodCity = prod.city || prod.data?.city || prod.settings?.production?.city || prod.address?.city || "";
+                    return (
+                      <option key={prod.id} value={prod.id}>
+                        {prodName} {prodCity ? `(${prodCity})` : ""}
+                      </option>
+                    );
+                  })}
                 </select>
               </div>
             </div>
@@ -35055,6 +35079,15 @@ export default function App() {
             setActiveTab("settings");
           }
         }
+
+        if (compId && userUid) {
+          setPreloadStatus("Загрузка данных из Битрикс24...");
+          setPreloadProgress(25);
+          await preloadAllData(compId, userUid, compDocData).catch((err) => {
+            console.warn("B24 preload error:", err);
+          });
+        }
+        setIsPreloaded(true);
       }
     });
   }, []);
@@ -35555,7 +35588,7 @@ export default function App() {
         ]);
       };
 
-      const [catRes, prodRes, genRes, priceRes, promoRes, empRes, prodColRes, projRes, setsColRes] = await Promise.allSettled([
+      const [catRes, prodRes, genRes, priceRes, promoRes, empRes, prodColRes, projRes, setsColRes, compsColRes] = await Promise.allSettled([
         fetchWithTimeout(`/api/db/doc/companies/${companyId}/settings/categories`),
         fetchWithTimeout(`/api/db/doc/companies/${companyId}/settings/production`),
         fetchWithTimeout(`/api/db/doc/companies/${companyId}/settings/general`),
@@ -35564,7 +35597,8 @@ export default function App() {
         fetchWithTimeout(`/api/db/col/companies/${companyId}/employees`),
         fetchWithTimeout(`/api/db/col/companies/${companyId}/products`),
         fetchWithTimeout(`/api/db/col/companies/${companyId}/projects`),
-        fetchWithTimeout(`/api/db/col/companies/${companyId}/sets`)
+        fetchWithTimeout(`/api/db/col/companies/${companyId}/sets`),
+        fetchWithTimeout(`/api/db/col/companies`)
       ]);
 
       // Process settled results
@@ -35577,10 +35611,27 @@ export default function App() {
         empRes.status === 'fulfilled' && empRes.value.ok ? empRes.value.json() : Promise.resolve(null),
         prodColRes.status === 'fulfilled' && prodColRes.value.ok ? prodColRes.value.json() : Promise.resolve(null),
         projRes.status === 'fulfilled' && projRes.value.ok ? projRes.value.json() : Promise.resolve(null),
-        setsColRes.status === 'fulfilled' && setsColRes.value.ok ? setsColRes.value.json() : Promise.resolve(null)
+        setsColRes.status === 'fulfilled' && setsColRes.value.ok ? setsColRes.value.json() : Promise.resolve(null),
+        compsColRes.status === 'fulfilled' && compsColRes.value.ok ? compsColRes.value.json() : Promise.resolve(null)
       ]);
 
-      const [catData, prodData, genData, priceData, promoData, empData, prodColData, projData, setsColData] = results;
+      const [catData, prodData, genData, priceData, promoData, empData, prodColData, projData, setsColData, compsColData] = results;
+
+      if (compsColData && Array.isArray(compsColData)) {
+        const compList = compsColData.map((d: any) => ({
+          id: d.id,
+          ...(d.data || d),
+          name: d.name || d.data?.name || d.companyName || d.data?.companyName,
+          type: d.type || d.data?.type || d.companyType || d.data?.companyType,
+          city: d.city || d.data?.city || d.settings?.production?.city,
+        }));
+        setAllCompanies((prev) => {
+          const map = new Map<string, any>();
+          prev.forEach(c => map.set(c.id, c));
+          compList.forEach(c => map.set(c.id, { ...(map.get(c.id) || {}), ...c }));
+          return Array.from(map.values());
+        });
+      }
 
       if (catData) {
         await safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyId}/settings/categories`, JSON.stringify(catData));
@@ -41995,7 +42046,7 @@ export default function App() {
                     )}
                   </button>
 
-                  {(b24Context?.isBitrix24 || userRole === "admin" || companyData?.type === "Мебельное производство" || companyData?.type === "Производство" || (typeof companyData?.type === 'string' && companyData.type.toLowerCase().includes('производств'))) && (
+                  {(userRole === "admin" || companyData?.type === "Мебельное производство" || companyData?.type === "Производство" || companyData?.companyType === "Мебельное производство" || companyData?.companyType === "Производство" || (typeof companyData?.type === 'string' && companyData.type.toLowerCase().includes('производст')) || (typeof companyData?.companyType === 'string' && companyData.companyType.toLowerCase().includes('производст'))) && (
                     <button
                       onClick={() => setActiveTab("partner_orders")}
                       className={cn(
@@ -42803,18 +42854,20 @@ export default function App() {
                     </span>
                   </button>
 
-                  <button
-                    onClick={() => setActiveTab("partner_orders")}
-                    className={cn(
-                      "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer relative",
-                      (activeTab as string) === "partner_orders"
-                        ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
-                        : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
-                    )}
-                  >
-                    <Handshake className="w-3.5 h-3.5 text-indigo-600" />
-                    <span>Заявки от партнеров</span>
-                  </button>
+                  {(userRole === "admin" || companyData?.type === "Мебельное производство" || companyData?.type === "Производство" || companyData?.companyType === "Мебельное производство" || companyData?.companyType === "Производство" || (typeof companyData?.type === 'string' && companyData.type.toLowerCase().includes('производст')) || (typeof companyData?.companyType === 'string' && companyData.companyType.toLowerCase().includes('производст'))) && (
+                    <button
+                      onClick={() => setActiveTab("partner_orders")}
+                      className={cn(
+                        "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer relative",
+                        (activeTab as string) === "partner_orders"
+                          ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
+                          : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
+                      )}
+                    >
+                      <Handshake className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Заявки от партнеров</span>
+                    </button>
+                  )}
 
                   <button
                     onClick={() => setActiveTab("settings")}
