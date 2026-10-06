@@ -285,6 +285,7 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
     drillingHolesCalculationMode: settings.drillingHolesCalculationMode || (settings.useNestingPrisadkaOnCutting !== false ? 'edge_only' : 'all'),
     filterPrisadkaParts: settings.filterPrisadkaParts !== false,
     enable3DDrillViewer: settings.enable3DDrillViewer !== false,
+    showOnlyEdgeHolesOnDrillViewer: !!settings.showOnlyEdgeHolesOnDrillViewer,
     bitrix24WebhookUrl: settings.bitrix24WebhookUrl || companyData?.bitrix24?.webhookUrl || companyData?.erpConfig?.bitrix24WebhookUrl || '',
     bitrix24CategoryId: settings.bitrix24CategoryId || companyData?.bitrix24?.categoryId || companyData?.erpConfig?.bitrix24CategoryId || '',
     bitrix24StartStageId: settings.bitrix24StartStageId || (settings as any).bitrix24StageId || companyData?.bitrix24?.startStageId || companyData?.bitrix24?.stageId || companyData?.erpConfig?.bitrix24StartStageId || companyData?.erpConfig?.bitrix24StageId || '',
@@ -1418,6 +1419,21 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                     <span className="text-xs font-bold text-slate-900 block">Интерактивная 3D/2D схема присадки при сканировании</span>
                     <span className="text-[11px] text-slate-500 block leading-tight">
                       При первом сканировании открывает 3D модель и 2D чертеж детали, при втором — заносит деталь в учет. Если выключено — учитывает сразу с одного скана.
+                    </span>
+                  </div>
+                </label>
+
+                <label className="p-4 bg-purple-50/50 rounded-2xl border border-purple-200 flex items-start gap-3 cursor-pointer hover:bg-purple-100/60 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={formData.showOnlyEdgeHolesOnDrillViewer ?? false}
+                    onChange={(e) => setFormData({ ...formData, showOnlyEdgeHolesOnDrillViewer: e.target.checked })}
+                    className="w-5 h-5 rounded-lg text-purple-600 focus:ring-purple-500 border-purple-300 mt-0.5"
+                  />
+                  <div className="space-y-0.5">
+                    <span className="text-xs font-bold text-purple-950 block">Показывать на схемах ТОЛЬКО торцевые отверстия</span>
+                    <span className="text-[11px] text-purple-700 block leading-tight">
+                      Если включено, на 3D модели и 2D чертежах отображаются исключительно сверления в торец. Исключает путаницу с лицевыми отверстиями, выполненными на раскрое.
                     </span>
                   </div>
                 </label>

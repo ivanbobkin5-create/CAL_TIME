@@ -540,6 +540,9 @@ export interface ERPCompanySettings {
   warnStageCapacityOverloadInPlanning?: boolean; // Глобальный флаг предупреждений о перегрузке в планировании
 
   equipmentList?: MachineEquipment[]; // Оборудование участков
+  enable3DDrillViewer?: boolean; // Флаг: Использовать интерактивный 3D/2D просмотрщик присадки
+  showOnlyEdgeHolesOnDrillViewer?: boolean; // Флаг: Отображать на схемах присадки только торцевые отверстия
+  cncToolMapping?: Record<string, number>; // Карты сопоставления фрез ЧПУ и диаметров
   useNestingPrisadkaOnCutting?: boolean; // Флаг: Использовать нестинг присадку в пласть на этапе распила (true = детали с 0 торцевых отв. не попадают на присадку)
   filterPrisadkaParts?: boolean; // Флаг: Фильтровать детали на участке присадки (true = отображать только детали с отверстиями, false = отображать все детали заказа)
   drillingHolesCalculationMode?: 'all' | 'edge_only' | 'face_only'; // Что считать за отверстия в присадке для отчетов и зарплаты ('all' - пласть и торец, 'edge_only' - только торец, 'face_only' - только пласть)
