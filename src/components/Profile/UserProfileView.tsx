@@ -52,10 +52,17 @@ const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'
 
 export const UserProfileView = ({ userData, onUpdateUser, onLogout }: UserProfileViewProps) => {
   const [activeTab, setActiveTab] = useState<'info' | 'stats'>('info');
-  const [newName, setNewName] = useState(userData?.name || '');
+  const [newName, setNewName] = useState(userData?.displayName || userData?.name || '');
   const [newPassword, setNewPassword] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [userProjects, setUserProjects] = useState<Project[]>([]);
+
+  useEffect(() => {
+    if (userData) {
+      setNewName(userData.displayName || userData.name || '');
+    }
+  }, [userData?.displayName, userData?.name]);
+
   const [stats, setStats] = useState({
     totalCount: 0,
     totalVolume: 0,
@@ -123,7 +130,11 @@ export const UserProfileView = ({ userData, onUpdateUser, onLogout }: UserProfil
   const handleSaveProfile = async () => {
     setIsSaving(true);
     try {
-      const updates: any = { name: newName };
+      const trimmed = newName.trim();
+      const updates: any = { 
+        name: trimmed,
+        displayName: trimmed
+      };
       if (newPassword) updates.password = newPassword;
       await onUpdateUser(updates);
       setNewPassword('');
@@ -137,11 +148,19 @@ export const UserProfileView = ({ userData, onUpdateUser, onLogout }: UserProfil
     if (file) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        onUpdateUser({ photoURL: reader.result as string });
+        const photoData = reader.result as string;
+        onUpdateUser({ 
+          photoURL: photoData,
+          avatarUrl: photoData,
+          photo: photoData
+        });
       };
       reader.readAsDataURL(file);
     }
   };
+
+  const currentPhoto = userData?.photoURL || userData?.avatarUrl || userData?.photo;
+  const currentDisplayName = userData?.displayName || userData?.name || 'Пользователь';
 
   return (
     <div className="max-w-6xl mx-auto p-4 md:p-8">
@@ -151,13 +170,14 @@ export const UserProfileView = ({ userData, onUpdateUser, onLogout }: UserProfil
         <div className="w-full md:w-80 space-y-4">
           <div className="bg-white rounded-[2.5rem] p-8 border border-gray-100 shadow-sm text-center relative overflow-hidden group">
             <div 
-              className="w-24 h-24 bg-blue-50 text-blue-600 rounded-[2rem] flex items-center justify-center mx-auto mb-4 text-3xl font-black relative overflow-hidden cursor-pointer"
+              className="w-24 h-24 bg-blue-50 text-blue-600 rounded-[2rem] flex items-center justify-center mx-auto mb-4 text-3xl font-black relative overflow-hidden cursor-pointer shadow-xs border border-blue-100"
               onClick={() => fileInputRef.current?.click()}
+              title="Нажмите, чтобы изменить фотографию"
             >
-              {userData?.photoURL ? (
-                <img src={userData.photoURL} alt="Avatar" className="w-full h-full object-cover" />
+              {currentPhoto ? (
+                <img src={currentPhoto} alt="Avatar" className="w-full h-full object-cover" />
               ) : (
-                userData?.name ? userData.name.substring(0, 2).toUpperCase() : '??'
+                currentDisplayName ? currentDisplayName.substring(0, 2).toUpperCase() : '??'
               )}
               <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                 <Camera className="w-8 h-8 text-white" />
@@ -171,7 +191,7 @@ export const UserProfileView = ({ userData, onUpdateUser, onLogout }: UserProfil
               onChange={handlePhotoUpload}
             />
             
-            <h2 className="text-xl font-black text-gray-900 tracking-tight">{userData?.name || 'Пользователь'}</h2>
+            <h2 className="text-xl font-black text-gray-900 tracking-tight">{currentDisplayName}</h2>
             <p className="text-sm text-gray-400 font-medium truncate px-4">{userData?.email}</p>
             <div className="mt-6 pt-6 border-t border-gray-50 flex justify-center gap-4">
               <div className="text-center">

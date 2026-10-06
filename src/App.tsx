@@ -127,6 +127,8 @@ import { AdminLoginForm } from "./components/Admin/AdminLoginForm";
 import { AdminProductsApprovalView } from "./components/Admin/AdminProductsApprovalView";
 import { AdminSettingsView } from "./components/Admin/AdminSettingsView";
 import { AppAdminView } from "./components/Admin/AppAdminView";
+import { NotificationCenterModal, SystemNewsItem } from "./components/Notifications/NotificationCenterModal";
+import { GlobalAnnouncementBanner } from "./components/Notifications/GlobalAnnouncementBanner";
 import { LandingPage } from "./components/Landing/LandingPage";
 import { LandingSettingsView } from "./components/Landing/LandingSettingsView";
 import { PublicLandingView } from "./components/Landing/PublicLandingView";
@@ -6664,8 +6666,12 @@ const CalculatorView = ({
   toggleSpareSheet,
   getAvailableThicknessesForBrand,
   customEdgeMapping,
+  onOpenNotifications,
+  unreadNotificationsCount = 0,
 }: {
   customEdgeMapping?: Record<string, { edgeBrand?: string; edgeDecor?: string }>;
+  onOpenNotifications?: () => void;
+  unreadNotificationsCount?: number;
   handleFileUpload: (event: React.ChangeEvent<HTMLInputElement>) => void;
   handlePro100FileUpload?: (event: React.ChangeEvent<HTMLInputElement>) => void;
   handleBazisFileUpload?: (event: React.ChangeEvent<HTMLInputElement>) => void;
@@ -6829,6 +6835,20 @@ const CalculatorView = ({
             </h1>
           </div>
           <div className="flex items-center gap-2">
+            {onOpenNotifications && (
+              <button
+                onClick={onOpenNotifications}
+                className="relative p-2.5 bg-gray-50 hover:bg-blue-50 text-gray-600 hover:text-blue-600 rounded-xl transition-all cursor-pointer border border-gray-200 hover:border-blue-200 flex items-center justify-center"
+                title="Новости и оповещения"
+              >
+                <Bell className="w-5 h-5" />
+                {unreadNotificationsCount > 0 && (
+                  <span className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-black animate-pulse shadow-xs">
+                    {unreadNotificationsCount}
+                  </span>
+                )}
+              </button>
+            )}
             <button
               onClick={onNewProject}
               className="flex items-center gap-2 px-4 py-2 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all font-medium"
@@ -19888,18 +19908,45 @@ const SettingsView = ({
                         method: 'PATCH',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ password: updates.password })
-                      });
+                      }).catch(() => {});
                     }
 
                     const docUpdates = { ...updates };
                     delete docUpdates.password;
 
-                    await updateDoc(doc(db, "users", userData.uid), docUpdates);
-                    setUserData((prev: any) => ({ ...prev, ...docUpdates }));
-                    showAlert("Успех", "Данные профиля обновлены");
+                    try {
+                      await updateDoc(doc(db, "users", userData.uid), docUpdates);
+                    } catch (_) {}
+
+                    try {
+                      await fetch(`/api/db/doc/users/${userData.uid}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ data: docUpdates })
+                      });
+                    } catch (_) {}
+
+                    const mergedUserData = {
+                      ...userData,
+                      ...docUpdates,
+                      displayName: docUpdates.displayName || docUpdates.name || userData?.displayName || userData?.name,
+                      name: docUpdates.name || docUpdates.displayName || userData?.name || userData?.displayName,
+                      photoURL: docUpdates.photoURL || docUpdates.avatarUrl || docUpdates.photo || userData?.photoURL || userData?.avatarUrl || userData?.photo,
+                      avatarUrl: docUpdates.avatarUrl || docUpdates.photoURL || docUpdates.photo || userData?.avatarUrl || userData?.photoURL || userData?.photo,
+                      photo: docUpdates.photo || docUpdates.photoURL || docUpdates.avatarUrl || userData?.photo || userData?.photoURL || userData?.avatarUrl,
+                    };
+
+                    setUserData(mergedUserData);
+
+                    safeAuthStorageSet('auth_user', serializeEssentialUser(mergedUserData));
+                    try {
+                      localStorage.setItem('currentUser', JSON.stringify(mergedUserData));
+                    } catch (_) {}
+
+                    showAlert("Успех", "Данные профиля успешно сохранены в настройках");
                   } catch (e) {
                     console.error("Profile update error:", e);
-                    showAlert("Ошибка", "Не удалось обновить данные");
+                    showAlert("Ошибка", "Не удалось обновить данные профиля");
                   }
                 }
               }}
@@ -34718,6 +34765,111 @@ export default function App() {
 
   const [isSavingConfig, setIsSavingConfig] = useState(false);
 
+  // System News & Notification Center
+  const [systemNewsList, setSystemNewsList] = useState<SystemNewsItem[]>([]);
+  const [readNewsIds, setReadNewsIds] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem("mebel_read_news_ids");
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [isNotificationModalOpen, setIsNotificationModalOpen] = useState(false);
+
+  useEffect(() => {
+    const loadNews = async () => {
+      try {
+        const res = await fetch("/api/system/news");
+        if (res.ok) {
+          const data = await res.json();
+          if (data.news && Array.isArray(data.news)) {
+            setSystemNewsList(data.news);
+          }
+        }
+      } catch (err) {}
+    };
+    loadNews();
+    const interval = setInterval(loadNews, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleMarkNewsAsRead = (id: string) => {
+    setReadNewsIds(prev => {
+      const updated = Array.from(new Set([...prev, id]));
+      try {
+        localStorage.setItem("mebel_read_news_ids", JSON.stringify(updated));
+      } catch {}
+      return updated;
+    });
+  };
+
+  const handleMarkAllNewsAsRead = () => {
+    const allIds = systemNewsList.map(n => n.id);
+    setReadNewsIds(allIds);
+    try {
+      localStorage.setItem("mebel_read_news_ids", JSON.stringify(allIds));
+    } catch {}
+  };
+
+  // Calculate active global banner news
+  const activeBannerNews = useMemo(() => {
+    const bannerItems = systemNewsList.filter(n => n.isActive && n.isBanner);
+    if (bannerItems.length === 0) return null;
+
+    for (const item of bannerItems) {
+      if (item.targetAudience === "all") return item;
+
+      const compType = (companyData?.type || "").toLowerCase();
+      const isProduction = compType.includes("производ") || companyData?.productionFormat === "own";
+      const isSalon = compType.includes("салон");
+      const isDesigner = compType.includes("дизайн");
+
+      if (item.targetAudience === "production" && isProduction) return item;
+      if (item.targetAudience === "salon" && isSalon) return item;
+      if (item.targetAudience === "designer" && isDesigner) return item;
+
+      if (item.targetAudience === "private") {
+        if (item.targetCompanyId && (item.targetCompanyId === companyData?.id || item.targetCompanyId === companyData?.alias)) {
+          return item;
+        }
+        if (item.targetUserEmail && userData?.email && item.targetUserEmail.toLowerCase() === userData.email.toLowerCase()) {
+          return item;
+        }
+      }
+    }
+    return null;
+  }, [systemNewsList, companyData, userData]);
+
+  const unreadNewsCount = useMemo(() => {
+    return systemNewsList.filter(item => {
+      if (!item.isActive) return false;
+      if (readNewsIds.includes(item.id)) return false;
+
+      if (item.targetAudience === "all") return true;
+      const compType = (companyData?.type || "").toLowerCase();
+      const isProduction = compType.includes("производ") || companyData?.productionFormat === "own";
+      const isSalon = compType.includes("салон");
+      const isDesigner = compType.includes("дизайн");
+
+      if (item.targetAudience === "production") return isProduction;
+      if (item.targetAudience === "salon") return isSalon;
+      if (item.targetAudience === "designer") return isDesigner;
+
+      if (item.targetAudience === "private") {
+        if (item.targetCompanyId && (item.targetCompanyId === companyData?.id || item.targetCompanyId === companyData?.alias)) {
+          return true;
+        }
+        if (item.targetUserEmail && userData?.email && item.targetUserEmail.toLowerCase() === userData.email.toLowerCase()) {
+          return true;
+        }
+        return false;
+      }
+
+      return true;
+    }).length;
+  }, [systemNewsList, readNewsIds, companyData, userData]);
+
   const [b24Context, setB24Context] = useState<Bitrix24Context>({ isBitrix24: false });
   const [b24ContactDetails, setB24ContactDetails] = useState<{ contactId: number | null; companyId: number | null }>({ contactId: null, companyId: null });
   const [showB24Modal, setShowB24Modal] = useState(false);
@@ -42114,8 +42266,8 @@ export default function App() {
                   "w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-all overflow-hidden",
                   activeTab === "profile" ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-500"
                 )}>
-                  {userData?.photoURL ? (
-                    <img src={userData.photoURL} alt="Avatar" className="w-full h-full object-cover" />
+                  {userData?.photoURL || userData?.avatarUrl || userData?.photo ? (
+                    <img src={userData.photoURL || userData.avatarUrl || userData.photo} alt="Avatar" className="w-full h-full object-cover" />
                   ) : (
                     <User className="w-4 h-4" />
                   )}
@@ -42228,6 +42380,33 @@ export default function App() {
                   )}
                 </button>
               )}
+              <button
+                onClick={() => setIsNotificationModalOpen(true)}
+                className={cn(
+                  "w-full flex items-center rounded-lg transition-all relative",
+                  isSidebarOpen ? "gap-2 px-2.5 py-1" : "justify-center py-1",
+                  unreadNewsCount > 0 ? "text-blue-600 bg-blue-50/70 hover:bg-blue-100/70" : "text-gray-600 hover:bg-gray-100"
+                )}
+                title="Новости и оповещения"
+              >
+                <div className="relative flex-shrink-0 flex items-center justify-center">
+                  <Bell className="w-4 h-4" />
+                  {unreadNewsCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full ring-2 ring-white" />
+                  )}
+                </div>
+                {isSidebarOpen && (
+                  <div className="flex items-center justify-between w-full">
+                    <span className="text-[12px] font-medium">Новости</span>
+                    {unreadNewsCount > 0 && (
+                      <span className="px-1.5 py-0.2 bg-red-500 text-white text-[10px] font-black rounded-full shadow-xs">
+                        {unreadNewsCount}
+                      </span>
+                    )}
+                  </div>
+                )}
+              </button>
+
               {effectiveIsAppAdmin && (
                 <button
                   onClick={() => {
@@ -42268,10 +42447,15 @@ export default function App() {
         {/* Main Content */}
         <main
           className={cn(
-            "flex-1 transition-all duration-300 min-w-0",
+            "flex-1 transition-all duration-300 min-w-0 flex flex-col",
             b24Context?.isBitrix24 ? "ml-0 min-h-full h-auto overflow-visible" : (isSidebarOpen ? "ml-14 lg:ml-64" : "ml-14 lg:ml-20"),
           )}
         >
+          {/* Global System Announcement Banner */}
+          <GlobalAnnouncementBanner
+            bannerNews={activeBannerNews}
+            onOpenNewsModal={() => setIsNotificationModalOpen(true)}
+          />
           {b24Context?.isBitrix24 && b24Context?.dealId && (
             <div className="bg-white text-[#333333] px-3.5 py-2.5 shadow-2xs border-b border-[#dfe5ec] flex items-center justify-between gap-3 sticky top-0 z-[100] select-none">
               {/* Left section: App branding + Deal ID + Name */}
@@ -42400,6 +42584,24 @@ export default function App() {
                   <span>Услуги</span>
                 </button>
 
+                <button
+                  onClick={() => setActiveTab("production")}
+                  className={cn(
+                    "px-2 py-0.5 rounded text-[11px] font-bold transition-all flex items-center gap-1 cursor-pointer h-6",
+                    activeTab === "production"
+                      ? "bg-white text-[#1058d0] shadow-2xs border border-[#c6cdd3] font-black"
+                      : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
+                  )}
+                  title={
+                    companyData?.type === "Мебельное производство" || companyData?.type === "Производство"
+                      ? "Параметры цеха и оборудования"
+                      : "Выбор партнерского производства для размещения заказов"
+                  }
+                >
+                  <Factory className="w-3 h-3 text-indigo-600" />
+                  <span>Производство</span>
+                </button>
+
                 {/* Additional CRM actions dropdown */}
                 <div className="relative">
                   <button
@@ -42480,6 +42682,18 @@ export default function App() {
                   </span>
                 </div>
 
+                {/* Bell notification button in Deal top bar */}
+                <button
+                  onClick={() => setIsNotificationModalOpen(true)}
+                  className="relative p-1.5 bg-[#eef2f4] hover:bg-[#dfe5ec] text-[#535c69] hover:text-[#1058d0] rounded-lg transition-all cursor-pointer border border-[#d5dbe0] flex items-center justify-center h-6 shrink-0"
+                  title="Новости и системные объявления"
+                >
+                  <Bell className="w-3.5 h-3.5" />
+                  {unreadNewsCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full ring-1 ring-white" />
+                  )}
+                </button>
+
                 {(() => {
                   const curProj = currentProjectId ? projects.find(p => p.id === currentProjectId) : null;
                   const autoDeal = b24Context?.dealId || 
@@ -42540,19 +42754,18 @@ export default function App() {
                 </div>
               </div>
 
-              {activeTab !== "partner_orders" && (
-                <div className="flex items-center gap-1 bg-[#eef2f4] p-1 rounded-xl border border-[#d5dbe0] shrink-0">
+                <div className="flex flex-wrap items-center gap-1 bg-[#eef2f4] p-1 rounded-xl border border-[#d5dbe0] shrink-0">
                   <button
-                    onClick={() => setActiveTab("settings")}
+                    onClick={() => setActiveTab("calculator")}
                     className={cn(
                       "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
-                      activeTab === "settings"
+                      activeTab === "calculator"
                         ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
                         : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
                     )}
                   >
-                    <Settings className="w-3.5 h-3.5" />
-                    <span>Настройки</span>
+                    <Calculator className="w-3.5 h-3.5" />
+                    <span>Калькулятор</span>
                   </button>
 
                   <button
@@ -42569,9 +42782,31 @@ export default function App() {
                   </button>
 
                   <button
-                    onClick={() => setActiveTab("partner_orders")}
+                    onClick={() => setActiveTab("production")}
                     className={cn(
                       "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                      activeTab === "production"
+                        ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
+                        : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
+                    )}
+                    title={
+                      companyData?.type === "Мебельное производство" || companyData?.type === "Производство"
+                        ? "Параметры цеха и оборудования"
+                        : "Выбор партнерского производства для размещения заказов"
+                    }
+                  >
+                    <Factory className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>
+                      {companyData?.type === "Мебельное производство" || companyData?.type === "Производство"
+                        ? "Производство"
+                        : "Выбор производства"}
+                    </span>
+                  </button>
+
+                  <button
+                    onClick={() => setActiveTab("partner_orders")}
+                    className={cn(
+                      "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer relative",
                       (activeTab as string) === "partner_orders"
                         ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
                         : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
@@ -42580,8 +42815,32 @@ export default function App() {
                     <Handshake className="w-3.5 h-3.5 text-indigo-600" />
                     <span>Заявки от партнеров</span>
                   </button>
+
+                  <button
+                    onClick={() => setActiveTab("settings")}
+                    className={cn(
+                      "px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer",
+                      activeTab === "settings"
+                        ? "bg-white text-[#1058d0] shadow-xs border border-[#c6cdd3] font-black"
+                        : "text-[#535c69] hover:text-[#333333] hover:bg-white/60"
+                    )}
+                  >
+                    <Settings className="w-3.5 h-3.5" />
+                    <span>Настройки</span>
+                  </button>
+
+                  {/* Bell button in non-deal bar */}
+                  <button
+                    onClick={() => setIsNotificationModalOpen(true)}
+                    className="relative p-1.5 bg-white hover:bg-gray-50 text-[#535c69] hover:text-[#1058d0] rounded-lg transition-all cursor-pointer border border-[#c6cdd3] flex items-center justify-center h-7 shrink-0 shadow-xs ml-1"
+                    title="Новости и системные объявления"
+                  >
+                    <Bell className="w-3.5 h-3.5" />
+                    {unreadNewsCount > 0 && (
+                      <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full ring-1 ring-white" />
+                    )}
+                  </button>
                 </div>
-              )}
             </div>
           )}
 
@@ -42751,6 +43010,8 @@ export default function App() {
               setSelectedForGlue={setSelectedForGlue}
               spareSheets={spareSheets}
               toggleSpareSheet={toggleSpareSheet}
+              onOpenNotifications={() => setIsNotificationModalOpen(true)}
+              unreadNotificationsCount={unreadNewsCount}
             />
           )}
 
@@ -43350,7 +43611,7 @@ export default function App() {
               onSaveProduct={saveProduct}
               onDeleteProduct={deleteProduct}
             />
-          ) : activeTab === "production" && userRole === "admin" ? (
+          ) : activeTab === "production" && (userRole === "admin" || userRole === "manager" || b24Context?.isBitrix24 || companyData?.ownerUid === userData?.uid || !userRole) ? (
             <ProductionView
               productionFormat={productionFormat}
               setProductionFormat={setProductionFormat}
@@ -43549,25 +43810,50 @@ export default function App() {
               onUpdateUser={async (updates: any) => {
                 if (userData?.uid) {
                   try {
-                    // 1. Sync password if changed
                     if (updates.password) {
                       await fetch(`/api/auth/user/${userData.uid}`, {
                         method: 'PATCH',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ password: updates.password })
-                      });
+                      }).catch(() => {});
                     }
 
-                    // 2. Update user doc (name, etc)
                     const docUpdates = { ...updates };
-                    delete docUpdates.password; // Don't store plain password in DB doc
+                    delete docUpdates.password;
 
-                    await updateDoc(doc(db, "users", userData.uid), docUpdates);
-                    setUserData((prev: any) => ({ ...prev, ...docUpdates }));
-                    showAlert("Успех", "Данные профиля обновлены");
+                    try {
+                      await updateDoc(doc(db, "users", userData.uid), docUpdates);
+                    } catch (_) {}
+
+                    try {
+                      await fetch(`/api/db/doc/users/${userData.uid}`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ data: docUpdates })
+                      });
+                    } catch (_) {}
+
+                    const mergedUserData = {
+                      ...userData,
+                      ...docUpdates,
+                      displayName: docUpdates.displayName || docUpdates.name || userData?.displayName || userData?.name,
+                      name: docUpdates.name || docUpdates.displayName || userData?.name || userData?.displayName,
+                      photoURL: docUpdates.photoURL || docUpdates.avatarUrl || docUpdates.photo || userData?.photoURL || userData?.avatarUrl || userData?.photo,
+                      avatarUrl: docUpdates.avatarUrl || docUpdates.photoURL || docUpdates.photo || userData?.avatarUrl || userData?.photoURL || userData?.photo,
+                      photo: docUpdates.photo || docUpdates.photoURL || docUpdates.avatarUrl || userData?.photo || userData?.photoURL || userData?.avatarUrl,
+                    };
+
+                    setUserData(mergedUserData);
+
+                    safeAuthStorageSet('auth_user', serializeEssentialUser(mergedUserData));
+                    try {
+                      localStorage.setItem('currentUser', JSON.stringify(mergedUserData));
+                    } catch (_) {}
+
+                    showAlert("Успех", "Данные профиля успешно сохранены");
                   } catch (e) {
                     console.error("Profile update error:", e);
-                    showAlert("Ошибка", "Не удалось обновить данные");
+                    showAlert("Ошибка", "Не удалось обновить данные профиля");
                   }
                 }
               }}
@@ -44955,6 +45241,18 @@ export default function App() {
             onClose={() => setHistoryMaterialId(null)}
           />
         )}
+
+        {/* Notification Center Modal */}
+        <NotificationCenterModal
+          isOpen={isNotificationModalOpen}
+          onClose={() => setIsNotificationModalOpen(false)}
+          newsList={systemNewsList}
+          readNewsIds={readNewsIds}
+          onMarkAsRead={handleMarkNewsAsRead}
+          onMarkAllAsRead={handleMarkAllNewsAsRead}
+          companyData={companyData}
+          userData={userData}
+        />
 
         {/* Offline Indicator */}
         {isOffline && (

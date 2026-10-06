@@ -721,52 +721,48 @@ export const registerBitrix24Placement = async (): Promise<{ success: boolean; m
               DESCRIPTION: "Интерактивный виджет производства и расчета мебели",
             },
             () => {
-              // 3. Register Left Menu Item (Main / Settings)
+              // 3. Register Single Left Menu Item ("Мебель План")
               window.BX24.callMethod(
                 "placement.bind",
                 {
                   PLACEMENT: "LEFT_MENU",
                   HANDLER: `${appUrl}?tab=settings`,
                   TITLE: "Мебель План",
-                  DESCRIPTION: "Калькулятор мебели и настройки компании"
+                  DESCRIPTION: "Калькулятор мебели, производство и настройки компании"
                 },
                 () => {
-                  // 3b. Register Dedicated Partner Orders Left Menu Item
+                  // Unbind any previous duplicate partner_orders menu if it was bound
+                  try {
+                    window.BX24.callMethod("placement.unbind", {
+                      PLACEMENT: "LEFT_MENU",
+                      HANDLER: `${appUrl}?tab=partner_orders`
+                    });
+                  } catch (_) {}
+
+                  // 4. Register Company Sidebar
                   window.BX24.callMethod(
                     "placement.bind",
                     {
-                      PLACEMENT: "LEFT_MENU",
-                      HANDLER: `${appUrl}?tab=partner_orders`,
-                      TITLE: "Заявки от партнеров",
-                      DESCRIPTION: "B2B Заказы и заявки от партнеров салонов"
+                      PLACEMENT: "CRM_COMPANY_DETAIL_SIDEBAR",
+                      HANDLER: appUrl,
+                      TITLE: "Мебель План (Партнер)",
+                      DESCRIPTION: "Показатели и B2B заказы партнера"
                     },
                     () => {
-                      // 4. Register Company Sidebar
+                      // 5. Register Contact Sidebar
                       window.BX24.callMethod(
                         "placement.bind",
                         {
-                          PLACEMENT: "CRM_COMPANY_DETAIL_SIDEBAR",
+                          PLACEMENT: "CRM_CONTACT_DETAIL_SIDEBAR",
                           HANDLER: appUrl,
-                          TITLE: "Мебель План (Партнер)",
-                          DESCRIPTION: "Показатели и B2B заказы партнера"
+                          TITLE: "Мебель План (Клиент)",
+                          DESCRIPTION: "История заказов и показатели клиента"
                         },
                         () => {
-                          // 5. Register Contact Sidebar
-                          window.BX24.callMethod(
-                            "placement.bind",
-                            {
-                              PLACEMENT: "CRM_CONTACT_DETAIL_SIDEBAR",
-                              HANDLER: appUrl,
-                              TITLE: "Мебель План (Клиент)",
-                              DESCRIPTION: "История заказов и показатели клиента"
-                            },
-                            () => {
-                              resolve({
-                                success: true,
-                                message: "Вкладка сделки, Настройки и пункт Заявки от партнеров в Левом меню успешно зарегистрированы в Битрикс24!",
-                              });
-                            }
-                          );
+                          resolve({
+                            success: true,
+                            message: "Вкладка сделки, Виджет и единый пункт «Мебель План» в Левом меню успешно зарегистрированы в Битрикс24!",
+                          });
                         }
                       );
                     }

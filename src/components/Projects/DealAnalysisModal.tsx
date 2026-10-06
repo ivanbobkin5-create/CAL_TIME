@@ -377,7 +377,7 @@ export const DealAnalysisModal = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/80">
       <div className="bg-slate-50 w-full max-w-5xl max-h-[92vh] rounded-[2rem] shadow-2xl flex flex-col overflow-hidden border border-slate-200">
         
         {/* Header */}

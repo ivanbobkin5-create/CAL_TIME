@@ -2278,6 +2278,234 @@ function transliterate(str: string): string {
     }
   });
 
+  // --- SYSTEM NEWS & NOTIFICATIONS API ---
+  app.get("/api/system/news", async (req, res) => {
+    try {
+      let newsDocs: any[] = [];
+      const localList = localStore.getCollection("system_news");
+      if (localList.length > 0) {
+        newsDocs = localList.map(d => ({
+          id: d.docId || d.id,
+          ...(typeof d.data === "string" ? JSON.parse(d.data) : d.data)
+        }));
+      } else if (isPostgresAvailable) {
+        try {
+          const docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+            where: { collection: "system_news" }
+          }));
+          newsDocs = docs.map(d => {
+            const parsed = typeof d.data === "string" ? JSON.parse(d.data) : d.data;
+            localStore.setDoc(d.path, d.collection, d.docId, d.data, false, false);
+            return { id: d.docId, ...parsed };
+          });
+        } catch (_) {}
+      }
+
+      // Sort by creation date descending
+      newsDocs.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      res.json({ success: true, news: newsDocs });
+    } catch (e: any) {
+      console.error("Error in GET /api/system/news:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/system/news", async (req, res) => {
+    try {
+      const newsItem = req.body;
+      const newsId = newsItem.id || `news_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const docPath = `system_news/${newsId}`;
+      const payload = {
+        ...newsItem,
+        id: newsId,
+        createdAt: newsItem.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        isActive: newsItem.isActive !== undefined ? newsItem.isActive : true
+      };
+
+      localStore.setDoc(docPath, "system_news", newsId, JSON.stringify(payload), false, true);
+
+      if (isPostgresAvailable) {
+        prisma.dbDocument.upsert({
+          where: { path: docPath },
+          create: {
+            path: docPath,
+            collection: "system_news",
+            docId: newsId,
+            data: JSON.stringify(payload)
+          },
+          update: {
+            data: JSON.stringify(payload)
+          }
+        }).catch(() => {});
+      }
+
+      res.json({ success: true, newsItem: payload });
+    } catch (e: any) {
+      console.error("Error in POST /api/system/news:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.delete("/api/system/news/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const docPath = `system_news/${id}`;
+      localStore.deleteDoc(docPath);
+      if (isPostgresAvailable) {
+        prisma.dbDocument.deleteMany({ where: { path: docPath } }).catch(() => {});
+      }
+      res.json({ success: true, message: "Новость удалена" });
+    } catch (e: any) {
+      console.error("Error in DELETE /api/system/news/:id:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  // --- COMPANY APPLICATIONS API ---
+  app.get("/api/system/applications", async (req, res) => {
+    try {
+      let apps: any[] = [];
+      const localList = localStore.getCollection("company_applications");
+      if (localList.length > 0) {
+        apps = localList.map(d => ({
+          id: d.docId || d.id,
+          ...(typeof d.data === "string" ? JSON.parse(d.data) : d.data)
+        }));
+      } else if (isPostgresAvailable) {
+        try {
+          const docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+            where: { collection: "company_applications" }
+          }));
+          apps = docs.map(d => {
+            const parsed = typeof d.data === "string" ? JSON.parse(d.data) : d.data;
+            localStore.setDoc(d.path, d.collection, d.docId, d.data, false, false);
+            return { id: d.docId, ...parsed };
+          });
+        } catch (_) {}
+      }
+
+      apps.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      res.json({ success: true, applications: apps });
+    } catch (e: any) {
+      console.error("Error in GET /api/system/applications:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/system/applications", async (req, res) => {
+    try {
+      const appData = req.body;
+      const appId = appData.id || `app_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const docPath = `company_applications/${appId}`;
+      const payload = {
+        ...appData,
+        id: appId,
+        status: appData.status || "pending",
+        createdAt: appData.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      localStore.setDoc(docPath, "company_applications", appId, JSON.stringify(payload), false, true);
+
+      if (isPostgresAvailable) {
+        prisma.dbDocument.upsert({
+          where: { path: docPath },
+          create: {
+            path: docPath,
+            collection: "company_applications",
+            docId: appId,
+            data: JSON.stringify(payload)
+          },
+          update: {
+            data: JSON.stringify(payload)
+          }
+        }).catch(() => {});
+      }
+
+      // Check admin email notification
+      try {
+        const adminSetDoc = localStore.getDoc("system/admin_settings");
+        let adminEmail = "lk.ivanbobkin@gmail.com";
+        let notify = true;
+        if (adminSetDoc) {
+          const adminSet = typeof adminSetDoc.data === "string" ? JSON.parse(adminSetDoc.data) : adminSetDoc.data;
+          if (adminSet.adminNotificationEmail) adminEmail = adminSet.adminNotificationEmail;
+          if (adminSet.notifyOnNewCompany !== undefined) notify = adminSet.notifyOnNewCompany;
+        }
+
+        if (notify && adminEmail) {
+          sendEmail(
+            adminEmail,
+            `📥 Новая заявка от компании "${payload.companyName || payload.companyId}"`,
+            `Поступила новая заявка: ${payload.title || payload.type}\nКомпания: ${payload.companyName} (${payload.companyId})\nКонтакты: ${payload.contactName || '—'} / ${payload.contactPhone || '—'} / ${payload.contactEmail || '—'}\nСообщение: ${payload.message || '—'}`
+          ).catch(() => {});
+        }
+      } catch (_) {}
+
+      res.json({ success: true, application: payload });
+    } catch (e: any) {
+      console.error("Error in POST /api/system/applications:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.patch("/api/system/applications/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const docPath = `company_applications/${id}`;
+      let existing: any = {};
+      const localDoc = localStore.getDoc(docPath);
+      if (localDoc) {
+        existing = typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data;
+      }
+
+      const updated = {
+        ...existing,
+        ...req.body,
+        id,
+        updatedAt: new Date().toISOString()
+      };
+
+      localStore.setDoc(docPath, "company_applications", id, JSON.stringify(updated), false, true);
+
+      if (isPostgresAvailable) {
+        prisma.dbDocument.upsert({
+          where: { path: docPath },
+          create: {
+            path: docPath,
+            collection: "company_applications",
+            docId: id,
+            data: JSON.stringify(updated)
+          },
+          update: {
+            data: JSON.stringify(updated)
+          }
+        }).catch(() => {});
+      }
+
+      res.json({ success: true, application: updated });
+    } catch (e: any) {
+      console.error("Error in PATCH /api/system/applications/:id:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.delete("/api/system/applications/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const docPath = `company_applications/${id}`;
+      localStore.deleteDoc(docPath);
+      if (isPostgresAvailable) {
+        prisma.dbDocument.deleteMany({ where: { path: docPath } }).catch(() => {});
+      }
+      res.json({ success: true, message: "Заявка удалена" });
+    } catch (e: any) {
+      console.error("Error in DELETE /api/system/applications/:id:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   // --- Продукты (DbProduct) ---
   app.get("/api/products", async (req, res) => {
     try {

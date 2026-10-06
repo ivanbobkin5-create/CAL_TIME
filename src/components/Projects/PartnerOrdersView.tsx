@@ -354,7 +354,7 @@ export const PartnerOrdersView = ({
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in duration-300">
+    <div className="space-y-8">
       
       {/* Intro section */}
       <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-2xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">

@@ -171,6 +171,7 @@ interface Project {
   revisionComment?: string;
   totalPrice?: number;
   isDeleted?: boolean;
+  deletedAt?: string;
   createdByPhoto?: string;
 }
 
@@ -233,7 +234,7 @@ export const ProjectsView = ({
     return url.split('/rest/')[0];
   }, [companySettings]);
   const [activeFilter, setActiveFilter] = useState<
-    "all" | "draft" | "sent" | "transferred" | "sets"
+    "all" | "draft" | "sent" | "transferred" | "sets" | "trash"
   >("all");
   const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(
     new Set(),
@@ -607,7 +608,80 @@ export const ProjectsView = ({
     setIsSelectionMode(false);
   };
 
+  const getProjectTimestamp = (item: any): number => {
+    if (!item) return 0;
+    const candidates = [
+      item.updatedAt,
+      item.createdAt,
+      item.data?.updatedAt,
+      item.data?.createdAt,
+      item.data?.savedAt,
+      item.savedAt,
+      item.transferredAt,
+      item.data?.transferredAt
+    ];
+    for (const c of candidates) {
+      if (c) {
+        if (typeof c === "number" && !isNaN(c) && c > 0) return c;
+        if (typeof c === "string") {
+          const parsed = new Date(c).getTime();
+          if (!isNaN(parsed) && parsed > 0) return parsed;
+          const match = c.match(/^(\d{2})\.(\d{2})\.(\d{4})/);
+          if (match) {
+            const d = new Date(Number(match[3]), Number(match[2]) - 1, Number(match[1])).getTime();
+            if (!isNaN(d) && d > 0) return d;
+          }
+        }
+        if (typeof c === "object") {
+          if (typeof c.toMillis === "function") return c.toMillis();
+          if (typeof c.toDate === "function") return c.toDate().getTime();
+          if (typeof c.seconds === "number") return c.seconds * 1000;
+          if (typeof c._seconds === "number") return c._seconds * 1000;
+          if (c instanceof Date) return c.getTime();
+        }
+      }
+    }
+    if (typeof item.id === "string") {
+      const num = Number(item.id.replace(/\D/g, ""));
+      if (num > 1500000000000 && num < 2500000000000) return num;
+    }
+    return 0;
+  };
+
   const handleSingleProjectDelete = async (projectId: string) => {
+    if (!companyId) return;
+    const now = new Date().toISOString();
+    
+    // Optimistic update - move to trash
+    setLocalProjects(prev => prev.map(p => {
+      if (p.id === projectId) {
+        return { ...p, isDeleted: true, status: "deleted", deletedAt: now };
+      }
+      return p;
+    }));
+
+    try {
+      await updateDoc(
+        doc(db, "companies", companyId, "projects", projectId),
+        {
+          isDeleted: true,
+          status: "deleted",
+          deletedAt: now
+        }
+      );
+      if (showAlert) {
+        showAlert("Корзина", "Проект перемещен в корзину. Он будет окончательно удален через 30 дней.");
+      }
+    } catch (error) {
+      handleDbError(
+        error,
+        OperationType.UPDATE,
+        `companies/${companyId}/projects/${projectId}`,
+      );
+    }
+  };
+
+  const handlePermanentProjectDelete = async (projectId: string) => {
     if (!companyId) return;
     setDeletedProjects(prev => new Set(prev).add(projectId));
     setLocalProjects(prev => prev.filter(p => p.id !== projectId));
@@ -616,6 +690,7 @@ export const ProjectsView = ({
         doc(db, "companies", companyId, "projects", projectId),
       );
       onDeleteProject?.(projectId);
+      if (showAlert) showAlert("Успешно", "Проект навсегда удален из базы данных");
     } catch (error) {
       setDeletedProjects(prev => {
         const next = new Set(prev);
@@ -630,13 +705,74 @@ export const ProjectsView = ({
     }
   };
 
+  const handleRestoreProject = async (projectId: string) => {
+    if (!companyId) return;
+    setLocalProjects(prev => prev.map(p => {
+      if (p.id === projectId) {
+        const copy = { ...p, isDeleted: false, status: "draft" };
+        delete (copy as any).deletedAt;
+        return copy;
+      }
+      return p;
+    }));
+    try {
+      await updateDoc(
+        doc(db, "companies", companyId, "projects", projectId),
+        {
+          isDeleted: false,
+          status: "draft",
+          deletedAt: null
+        }
+      );
+      if (showAlert) showAlert("Успешно", "Проект успешно восстановлен из корзины");
+    } catch (error) {
+      handleDbError(
+        error,
+        OperationType.UPDATE,
+        `companies/${companyId}/projects/${projectId}`,
+      );
+    }
+  };
+
+  const handleEmptyTrash = async () => {
+    if (!companyId) return;
+    const trashItems = localProjects.filter(p => p.isDeleted || p.status === "deleted");
+    if (trashItems.length === 0) return;
+
+    showConfirm(
+      "Очистка корзины",
+      `Вы действительно хотите безвозвратно удалить все (${trashItems.length}) проекты из корзины? Данные будут стерты навсегда из всех хранилищ.`,
+      async () => {
+        const idsToDelete = trashItems.map(p => p.id);
+        setDeletedProjects(prev => {
+          const next = new Set(prev);
+          idsToDelete.forEach(id => next.add(id));
+          return next;
+        });
+        setLocalProjects(prev => prev.filter(p => !p.isDeleted && p.status !== "deleted"));
+
+        const batch = writeBatch(db);
+        for (const p of trashItems) {
+          batch.delete(doc(db, "companies", companyId, "projects", p.id));
+          if (onDeleteProject) onDeleteProject(p.id);
+        }
+        try {
+          await batch.commit();
+          if (showAlert) showAlert("Успешно", "Корзина полностью очищена");
+        } catch (err) {
+          console.error("Error emptying trash:", err);
+        }
+      }
+    );
+  };
+
   const handleDelete = async (e: React.MouseEvent, projectId: string) => {
     e.stopPropagation();
     if (!companyId) return;
 
     showConfirm(
-      "Удаление проекта",
-      "Вы уверены, что хотите удалить этот проект?",
+      "Удаление проекта в корзину",
+      "Переместить проект в корзину? Вы сможете восстановить его в течение 30 дней.",
       () => handleSingleProjectDelete(projectId)
     );
   };
@@ -1129,11 +1265,47 @@ export const ProjectsView = ({
     });
   }, [standaloneProjects, searchQuery, selectedManagerId, activeFilter, selectedMonth, companyEmployees]);
 
+  // Auto-purge projects in trash older than 30 days
+  useEffect(() => {
+    if (!companyId || localProjects.length === 0) return;
+    const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
+    const now = Date.now();
+    const expired = localProjects.filter(p => {
+      if (!p.isDeleted && p.status !== "deleted") return false;
+      const delTime = p.deletedAt ? new Date(p.deletedAt).getTime() : 0;
+      return delTime > 0 && (now - delTime) > THIRTY_DAYS_MS;
+    });
+
+    if (expired.length > 0) {
+      const batch = writeBatch(db);
+      expired.forEach(p => {
+        batch.delete(doc(db, "companies", companyId, "projects", p.id));
+        if (onDeleteProject) onDeleteProject(p.id);
+      });
+      batch.commit().catch(() => {});
+      setLocalProjects(prev => prev.filter(p => !expired.some(e => e.id === p.id)));
+    }
+  }, [companyId, localProjects]);
+
+  const trashProjects = useMemo(() => {
+    return localProjects.filter(p => (p.isDeleted || p.status === "deleted") && !deletedProjects.has(p.id));
+  }, [localProjects, deletedProjects]);
+
+  const sortedTrashProjects = useMemo(() => {
+    const result = [...trashProjects];
+    result.sort((a, b) => {
+      const timeA = getProjectTimestamp(a);
+      const timeB = getProjectTimestamp(b);
+      return timeB - timeA;
+    });
+    return result;
+  }, [trashProjects]);
+
   const sortedDisplaySets = useMemo(() => {
     const result = [...filteredDisplaySets];
     result.sort((a, b) => {
-      const timeA = new Date(a.createdAt).getTime();
-      const timeB = new Date(b.createdAt).getTime();
+      const timeA = getProjectTimestamp(a);
+      const timeB = getProjectTimestamp(b);
 
       const subA = setSubProjectsMap[a.id] || [];
       const totalA = subA.length > 0 
@@ -1162,8 +1334,8 @@ export const ProjectsView = ({
   const sortedStandaloneProjects = useMemo(() => {
     const result = [...filteredStandaloneProjects];
     result.sort((a, b) => {
-      const timeA = new Date(a.createdAt).getTime();
-      const timeB = new Date(b.createdAt).getTime();
+      const timeA = getProjectTimestamp(a);
+      const timeB = getProjectTimestamp(b);
 
       const priceA = Number(a.totalPrice || (a.data?.results ? Object.values(a.data.results).reduce((acc: number, r: any) => acc + Number(r.totalPrice || 0), 0) : 0));
       const priceB = Number(b.totalPrice || (b.data?.results ? Object.values(b.data.results).reduce((acc: number, r: any) => acc + Number(r.totalPrice || 0), 0) : 0));
@@ -1269,8 +1441,8 @@ export const ProjectsView = ({
               </select>
             </div>
 
-            <div className="flex bg-gray-100 p-1 rounded-xl">
-              {(["all", "draft", "sent", "transferred", "sets"] as const).map(
+            <div className="flex bg-gray-100 p-1 rounded-xl overflow-x-auto">
+              {(["all", "draft", "sent", "transferred", "sets", "trash"] as const).map(
                 (filter) => (
                   <button
                     key={filter}
@@ -1280,21 +1452,27 @@ export const ProjectsView = ({
                       setSelectedProjectIds(new Set());
                     }}
                     className={cn(
-                      "px-4 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap",
+                      "px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5",
                       activeFilter === filter
-                        ? "bg-white text-blue-600 shadow-sm"
-                        : "text-gray-500 hover:text-gray-700",
+                        ? filter === "trash"
+                          ? "bg-red-600 text-white shadow-xs"
+                          : "bg-white text-blue-600 shadow-xs"
+                        : filter === "trash"
+                          ? "text-red-500 hover:text-red-700 hover:bg-red-50"
+                          : "text-gray-500 hover:text-gray-700",
                     )}
                   >
-                    {filter === "all"
-                      ? "Все"
-                      : filter === "draft"
-                        ? "Черновики"
-                        : filter === "sent"
-                          ? "Оформленные"
-                          : filter === "sets"
-                            ? "Комплекты"
-                            : "Переданные"}
+                    {filter === "all" && "Все"}
+                    {filter === "draft" && "Черновики"}
+                    {filter === "sent" && "Оформленные"}
+                    {filter === "sets" && "Комплекты"}
+                    {filter === "transferred" && "Переданные"}
+                    {filter === "trash" && (
+                      <>
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Корзина ({trashProjects.length})</span>
+                      </>
+                    )}
                   </button>
                 ),
               )}
@@ -1302,7 +1480,94 @@ export const ProjectsView = ({
           </div>
         </div>
 
-        {loading || loadingSets ? (
+        {activeFilter === "trash" ? (
+          <div className="space-y-6">
+            <div className="bg-red-50/70 border border-red-200 rounded-3xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-red-100 text-red-600 flex items-center justify-center shrink-0">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-black text-red-950">Корзина удаленных проектов</h2>
+                  <p className="text-xs text-red-700 mt-0.5">
+                    Удаленные проекты хранятся 30 дней, после чего автоматически и безвозвратно стираются из всех баз данных.
+                  </p>
+                </div>
+              </div>
+
+              {sortedTrashProjects.length > 0 && (
+                <button
+                  onClick={handleEmptyTrash}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-black shadow-md shadow-red-500/20 transition-all cursor-pointer flex items-center gap-2 shrink-0"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Очистить корзину ({sortedTrashProjects.length})</span>
+                </button>
+              )}
+            </div>
+
+            {sortedTrashProjects.length === 0 ? (
+              <div className="bg-white p-12 rounded-3xl border border-gray-100 text-center shadow-sm">
+                <CheckCircle2 className="w-12 h-12 text-emerald-400 mx-auto mb-3" />
+                <h3 className="text-base font-bold text-gray-800">Корзина пуста</h3>
+                <p className="text-xs text-gray-400 mt-1">Здесь нет удаленных проектов</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-in fade-in duration-200">
+                {sortedTrashProjects.map((p) => {
+                  const now = Date.now();
+                  const delTime = p.deletedAt ? new Date(p.deletedAt).getTime() : now;
+                  const daysLeft = Math.max(0, 30 - Math.floor((now - delTime) / (1000 * 60 * 60 * 24)));
+                  const price = Number(p.totalPrice || (p.data?.results ? Object.values(p.data.results).reduce((acc: number, r: any) => acc + Number(r.totalPrice || 0), 0) : 0));
+
+                  return (
+                    <div key={p.id} className="bg-white p-5 rounded-3xl border border-red-200 shadow-xs flex flex-col justify-between space-y-4 relative">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="px-2.5 py-1 bg-red-50 text-red-700 rounded-xl text-[10px] font-black uppercase tracking-wider border border-red-100">
+                            В корзине • Очистится через {daysLeft} дн.
+                          </span>
+                          <span className="text-[11px] text-gray-400">
+                            {p.deletedAt ? new Date(p.deletedAt).toLocaleDateString("ru-RU") : "Недавно"}
+                          </span>
+                        </div>
+
+                        <h3 className="text-base font-black text-gray-900 line-clamp-2">{p.name || "Без названия"}</h3>
+                        
+                        <div className="flex items-center justify-between text-xs text-gray-500 pt-1">
+                          <span>Сумма проекта:</span>
+                          <strong className="text-sm font-black text-gray-900">{price.toLocaleString("ru-RU")} ₽</strong>
+                        </div>
+                      </div>
+
+                      <div className="pt-3 border-t border-gray-100 flex items-center justify-between gap-2">
+                        <button
+                          onClick={() => handleRestoreProject(p.id)}
+                          className="flex-1 px-3 py-2 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-extrabold transition-all cursor-pointer text-center"
+                        >
+                          Восстановить
+                        </button>
+                        <button
+                          onClick={() => {
+                            showConfirm(
+                              "Безвозвратное удаление",
+                              `Вы уверены, что хотите навсегда стереть проект "${p.name}"? Это действие невозможно отменить.`,
+                              () => handlePermanentProjectDelete(p.id)
+                            );
+                          }}
+                          className="px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-bold transition-all cursor-pointer text-center"
+                          title="Удалить навсегда"
+                        >
+                          Удалить навсегда
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : loading || loadingSets ? (
           <div className="flex items-center justify-center h-64">
             <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
           </div>
