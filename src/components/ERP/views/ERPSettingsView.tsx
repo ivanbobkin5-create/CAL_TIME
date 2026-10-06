@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { CNCToolSettingsModal } from '../components/CNCToolSettingsModal';
 import { 
   Settings, 
   Factory, 
@@ -276,12 +277,14 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
 
   const [stagesOrder, setStagesOrder] = useState<ProductionStageId[]>(initialStagesOrder);
   const [isPrintQrModalOpen, setIsPrintQrModalOpen] = useState<boolean>(false);
+  const [showCNCToolModal, setShowCNCToolModal] = useState<boolean>(false);
 
   const [formData, setFormData] = useState<ERPCompanySettings>(() => ({
     ...settings,
     orderSource: settings.orderSource || companyData?.erpConfig?.orderSource || 'projects',
     drillingHolesCalculationMode: settings.drillingHolesCalculationMode || (settings.useNestingPrisadkaOnCutting !== false ? 'edge_only' : 'all'),
     filterPrisadkaParts: settings.filterPrisadkaParts !== false,
+    enable3DDrillViewer: settings.enable3DDrillViewer !== false,
     bitrix24WebhookUrl: settings.bitrix24WebhookUrl || companyData?.bitrix24?.webhookUrl || companyData?.erpConfig?.bitrix24WebhookUrl || '',
     bitrix24CategoryId: settings.bitrix24CategoryId || companyData?.bitrix24?.categoryId || companyData?.erpConfig?.bitrix24CategoryId || '',
     bitrix24StartStageId: settings.bitrix24StartStageId || (settings as any).bitrix24StageId || companyData?.bitrix24?.startStageId || companyData?.bitrix24?.stageId || companyData?.erpConfig?.bitrix24StartStageId || companyData?.erpConfig?.bitrix24StageId || '',
@@ -1402,8 +1405,23 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                 </div>
               </div>
 
-              {/* Toggles for Nesting & Filtering */}
+              {/* Toggles for Nesting, Filtering & 3D Viewer */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <label className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-start gap-3 cursor-pointer hover:bg-slate-100/70 transition-colors">
+                  <input
+                    type="checkbox"
+                    checked={formData.enable3DDrillViewer ?? true}
+                    onChange={(e) => setFormData({ ...formData, enable3DDrillViewer: e.target.checked })}
+                    className="w-5 h-5 rounded-lg text-purple-600 focus:ring-purple-500 border-slate-300 mt-0.5"
+                  />
+                  <div className="space-y-0.5">
+                    <span className="text-xs font-bold text-slate-900 block">Интерактивная 3D/2D схема присадки при сканировании</span>
+                    <span className="text-[11px] text-slate-500 block leading-tight">
+                      При первом сканировании открывает 3D модель и 2D чертеж детали, при втором — заносит деталь в учет. Если выключено — учитывает сразу с одного скана.
+                    </span>
+                  </div>
+                </label>
+
                 <label className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-start gap-3 cursor-pointer hover:bg-slate-100/70 transition-colors">
                   <input
                     type="checkbox"
@@ -1433,6 +1451,24 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
                     </span>
                   </div>
                 </label>
+
+                {/* Button to Open CNC Tool Settings Modal */}
+                <div className="p-4 bg-purple-50/60 rounded-2xl border border-purple-200 flex items-center justify-between gap-3">
+                  <div className="space-y-0.5">
+                    <span className="text-xs font-bold text-purple-950 block">Карта инструмента ЧПУ и диаметров</span>
+                    <span className="text-[11px] text-purple-700 block leading-tight">
+                      Настройка сопоставления фрез и сверл T1, T2... с диаметрами
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowCNCToolModal(true)}
+                    className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs shadow-sm transition-all cursor-pointer shrink-0 flex items-center gap-1.5"
+                  >
+                    <Sliders className="w-4 h-4" />
+                    <span>Настроить карту</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -5319,6 +5355,16 @@ export const ERPSettingsView: React.FC<ERPSettingsViewProps> = ({
         ]}
         companyTitle={companyName || 'Мебельное производство'}
         onClose={() => setIsPrintQrModalOpen(false)}
+      />
+
+      <CNCToolSettingsModal
+        isOpen={showCNCToolModal}
+        onClose={() => setShowCNCToolModal(false)}
+        toolMapping={formData.cncToolMapping || {}}
+        onSaveToolMapping={(newMapping) => {
+          setFormData({ ...formData, cncToolMapping: newMapping });
+          setShowCNCToolModal(false);
+        }}
       />
     </div>
   );

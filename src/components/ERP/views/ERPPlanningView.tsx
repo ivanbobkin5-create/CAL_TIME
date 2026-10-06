@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import JSZip from 'jszip';
 import { 
   Calendar as CalendarIcon, 
   Search, 
@@ -9,6 +10,7 @@ import {
   Layers,
   Scissors,
   Wrench,
+  Cpu,
   Check,
   Upload,
   FileText,
@@ -922,6 +924,67 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
       alert(`Файл Сборка "${file.name}" успешно прикреплен к заказу ${order.orderNumber}`);
     } catch (err: any) {
       alert(err.message || 'Ошибка прикрепления файла Сборка');
+    } finally {
+      setUploadingOrderId(null);
+    }
+  };
+
+  const handleCNCUploadForOrder = async (order: ProductionOrder, inputFiles: FileList | File[]) => {
+    // Mandatory Birka File Check
+    if (!order.birkaData || !order.birkaData.details || order.birkaData.details.length === 0) {
+      alert(`⚠️ Сначала необходимо загрузить файл бирок!\n\nФайлы ЧПУ (G-код, .nc, .mpr, .cix) привязываются к номерам и названиям деталей из файла бирок. Пожалуйста, сначала загрузите файл бирок заказа №${order.orderNumber}.`);
+      return;
+    }
+
+    const filesArray = Array.from(inputFiles);
+    if (filesArray.length === 0) return;
+
+    if (order.cncFilesData && order.cncFilesData.totalFilesCount > 0) {
+      if (!window.confirm(`К заказу №${order.orderNumber} уже прикреплено ${order.cncFilesData.totalFilesCount} файлов ЧПУ. Перезаписать программы ЧПУ?`)) {
+        return;
+      }
+    }
+
+    setUploadingOrderId(order.id);
+    try {
+      const extractedFiles: Array<{ fileName: string; fileText: string }> = [];
+
+      for (const file of filesArray) {
+        if (file.name.toLowerCase().endsWith('.zip')) {
+          // Unpack ZIP archive of CNC files using JSZip
+          const zip = new JSZip();
+          const zipContent = await zip.loadAsync(file);
+
+          for (const [relativePath, zipEntry] of Object.entries(zipContent.files)) {
+            if (!zipEntry.dir && !relativePath.startsWith('__MACOSX/')) {
+              const text = await zipEntry.async('string');
+              const entryFileName = relativePath.split('/').pop() || relativePath;
+              extractedFiles.push({ fileName: entryFileName, fileText: text });
+            }
+          }
+        } else {
+          const text = await file.text();
+          extractedFiles.push({ fileName: file.name, fileText: text });
+        }
+      }
+
+      if (extractedFiles.length === 0) {
+        throw new Error('Не удалось извлечь файлы программ ЧПУ');
+      }
+
+      const updatedOrder: ProductionOrder = {
+        ...order,
+        cncFilesData: {
+          uploadedAt: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('ru-RU'),
+          totalFilesCount: extractedFiles.length,
+          files: extractedFiles
+        }
+      };
+
+      onUpdateOrder(updatedOrder);
+      alert(`✅ Успешно прикреплено ${extractedFiles.length} программ ЧПУ (G-код) к заказу №${order.orderNumber}!`);
+    } catch (err: any) {
+      alert(err.message || 'Ошибка загрузки программ ЧПУ');
     } finally {
       setUploadingOrderId(null);
     }
@@ -2363,6 +2426,30 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           if (file) handleAssemblyUploadForOrder(order, file);
+                          e.target.value = '';
+                        }}
+                      />
+                    </label>
+
+                    {/* Upload CNC / G-Code Programs Button */}
+                    <label 
+                      className="px-3.5 py-2.5 rounded-2xl bg-indigo-50 hover:bg-indigo-600 hover:text-white border border-indigo-200 text-xs font-bold text-indigo-700 shadow-2xs transition-all cursor-pointer flex items-center gap-1.5 shrink-0"
+                      title="Загрузить управляющие программы ЧПУ (.nc, .mpr, .cix, .gcode, .txt, .zip)"
+                    >
+                      <Cpu className="w-3.5 h-3.5" />
+                      <span>
+                        {order.cncFilesData && order.cncFilesData.totalFilesCount > 0 
+                          ? `ЧПУ (${order.cncFilesData.totalFilesCount} ф.)` 
+                          : '+ Программы ЧПУ'}
+                      </span>
+                      <input
+                        type="file"
+                        multiple
+                        accept=".nc,.mpr,.cix,.gcode,.txt,.zip"
+                        className="hidden"
+                        onChange={(e) => {
+                          const files = e.target.files;
+                          if (files && files.length > 0) handleCNCUploadForOrder(order, files);
                           e.target.value = '';
                         }}
                       />

@@ -571,12 +571,14 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       return;
     }
 
-    // 3D Drill Scheme Workflow (1st scan opens 3D scheme, 2nd scan completes item)
+    // 3D Drill Scheme Workflow (if enabled in settings: 1st scan opens scheme, 2nd scan completes item. If disabled: 1-scan instant completion)
+    const is3DEnabled = settings?.enable3DDrillViewer !== false;
     const is3DOpenForThisPart = active3DDrillModalDetail && active3DDrillModalDetail.id === foundPart.id;
-    if (!is3DOpenForThisPart) {
+
+    if (is3DEnabled && !is3DOpenForThisPart) {
       setActive3DDrillModalDetail(foundPart);
       playSoundEffect('alert');
-      setScanSuccessMsg(`🔍 1-й Скан: Открыта 3D-схема детали №${foundPart.labelNumber} «${foundPart.name}». Вторичный скан зафиксирует её в списке!`);
+      setScanSuccessMsg(`🔍 1-й Скан: Открыта схема детали №${foundPart.labelNumber} «${foundPart.name}». Вторичный скан зафиксирует её в списке!`);
       return;
     }
 

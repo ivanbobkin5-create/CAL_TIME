@@ -20,6 +20,217 @@ interface CNC3DDrillViewerModalProps {
   onUploadCNCFile?: (file: File) => void;
 }
 
+interface Bazis2DBlueprintSvgProps {
+  pattern: CNCDrillPattern;
+  selectedHole: CNCDrillHole | null;
+  onSelectHole: (hole: CNCDrillHole | null) => void;
+}
+
+export const Bazis2DBlueprintSvg: React.FC<Bazis2DBlueprintSvgProps> = ({
+  pattern,
+  selectedHole,
+  onSelectHole
+}) => {
+  const pLength = pattern.length || 800;
+  const pWidth = pattern.width || 400;
+
+  // SVG Padding for Dimension Chains (L, W) and Edge Badges
+  const padX = 110;
+  const padY = 90;
+  const svgW = pLength + padX * 2;
+  const svgH = pWidth + padY * 2;
+
+  return (
+    <div className="w-full h-full flex flex-col bg-slate-950 p-2 sm:p-4 relative overflow-hidden select-none">
+      <div className="flex-1 w-full h-full flex items-center justify-center min-h-[360px]">
+        <svg
+          viewBox={`0 0 ${svgW} ${svgH}`}
+          className="w-full h-full max-h-[560px] object-contain drop-shadow-2xl"
+        >
+          {/* Background CAD Grid & Arrow Markers */}
+          <defs>
+            <pattern id="cadGrid" width="40" height="40" patternUnits="userSpaceOnUse">
+              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" strokeWidth="0.8" />
+            </pattern>
+            <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#38bdf8" />
+            </marker>
+          </defs>
+
+          <rect width={svgW} height={svgH} fill="#0b1120" rx="16" />
+          <rect width={svgW} height={svgH} fill="url(#cadGrid)" rx="16" />
+
+          {/* Main Board Panel Rectangle (White CAD Board) */}
+          <rect
+            x={padX}
+            y={padY}
+            width={pLength}
+            height={pWidth}
+            fill="#f8fafc"
+            stroke="#0f172a"
+            strokeWidth="3.5"
+            rx="2"
+          />
+
+          {/* Edging Lines (L1, L2, W1, W2) */}
+          {/* L1 - Bottom Length (Front) */}
+          <line
+            x1={padX} y1={padY + pWidth}
+            x2={padX + pLength} y2={padY + pWidth}
+            stroke={pattern.edges.L1?.hasEdge ? '#10b981' : '#64748b'}
+            strokeWidth={pattern.edges.L1?.hasEdge ? 7 : 1.5}
+            strokeDasharray={pattern.edges.L1?.hasEdge ? 'none' : '6,4'}
+          />
+          {/* L2 - Top Length (Back) */}
+          <line
+            x1={padX} y1={padY}
+            x2={padX + pLength} y2={padY}
+            stroke={pattern.edges.L2?.hasEdge ? '#059669' : '#64748b'}
+            strokeWidth={pattern.edges.L2?.hasEdge ? 7 : 1.5}
+            strokeDasharray={pattern.edges.L2?.hasEdge ? 'none' : '6,4'}
+          />
+          {/* W1 - Left Width */}
+          <line
+            x1={padX} y1={padY}
+            x2={padX} y2={padY + pWidth}
+            stroke={pattern.edges.W1?.hasEdge ? '#3b82f6' : '#64748b'}
+            strokeWidth={pattern.edges.W1?.hasEdge ? 7 : 1.5}
+            strokeDasharray={pattern.edges.W1?.hasEdge ? 'none' : '6,4'}
+          />
+          {/* W2 - Right Width */}
+          <line
+            x1={padX + pLength} y1={padY}
+            x2={padX + pLength} y2={padY + pWidth}
+            stroke={pattern.edges.W2?.hasEdge ? '#2563eb' : '#64748b'}
+            strokeWidth={pattern.edges.W2?.hasEdge ? 7 : 1.5}
+            strokeDasharray={pattern.edges.W2?.hasEdge ? 'none' : '6,4'}
+          />
+
+          {/* Dimension Lines L (Length Top) */}
+          <line x1={padX} y1={padY} x2={padX} y2={padY - 50} stroke="#38bdf8" strokeWidth="1" strokeDasharray="3,3" />
+          <line x1={padX + pLength} y1={padY} x2={padX + pLength} y2={padY - 50} stroke="#38bdf8" strokeWidth="1" strokeDasharray="3,3" />
+          <line x1={padX} y1={padY - 40} x2={padX + pLength} y2={padY - 40} stroke="#38bdf8" strokeWidth="1.5" markerStart="url(#arrow)" markerEnd="url(#arrow)" />
+          <text x={padX + pLength / 2} y={padY - 48} fill="#38bdf8" fontSize="13" fontWeight="bold" textAnchor="middle" fontFamily="monospace">
+            L = {pLength} мм
+          </text>
+
+          {/* Dimension Lines W (Width Left) */}
+          <line x1={padX} y1={padY} x2={padX - 50} y2={padY} stroke="#38bdf8" strokeWidth="1" strokeDasharray="3,3" />
+          <line x1={padX} y1={padY + pWidth} x2={padX - 50} y2={padY + pWidth} stroke="#38bdf8" strokeWidth="1" strokeDasharray="3,3" />
+          <line x1={padX - 40} y1={padY} x2={padX - 40} y2={padY + pWidth} stroke="#38bdf8" strokeWidth="1.5" markerStart="url(#arrow)" markerEnd="url(#arrow)" />
+          <text x={padX - 48} y={padY + pWidth / 2} fill="#38bdf8" fontSize="13" fontWeight="bold" textAnchor="middle" fontFamily="monospace" transform={`rotate(-90, ${padX - 48}, ${padY + pWidth / 2})`}>
+            W = {pWidth} мм
+          </text>
+
+          {/* Reference Axis (0,0) Marker at Bottom-Left */}
+          <g transform={`translate(${padX}, ${padY + pWidth})`}>
+            <circle r="4" fill="#ef4444" />
+            <text x="-14" y="20" fill="#ef4444" fontSize="12" fontWeight="extrabold" fontFamily="monospace">(0,0)</text>
+          </g>
+
+          {/* Render Holes (Plast A, Plast B, Edges) */}
+          {pattern.holes.map((hole) => {
+            const isSel = selectedHole?.id === hole.id;
+            const cx = padX + hole.x;
+            const cy = padY + (pWidth - hole.y); // Invert Y for SVG
+            const r = Math.max(4, Math.min(18, hole.diameter / 2 * 1.2));
+            const isFaceB = hole.face === 'B';
+            const isEdge = ['top', 'bottom', 'left', 'right'].includes(hole.face);
+
+            if (isEdge) {
+              let ex = cx, ey = cy;
+              if (hole.face === 'bottom') ey = padY + pWidth;
+              if (hole.face === 'top') ey = padY;
+              if (hole.face === 'left') ex = padX;
+              if (hole.face === 'right') ex = padX + pLength;
+
+              return (
+                <g key={hole.id} onClick={() => onSelectHole(isSel ? null : hole)} className="cursor-pointer">
+                  <polygon
+                    points={`${ex-6},${ey-6} ${ex+6},${ey-6} ${ex},${ey+6}`}
+                    fill={isSel ? '#ffea00' : '#ef4444'}
+                    stroke="#ffffff"
+                    strokeWidth="1.5"
+                  />
+                  {isSel && (
+                    <circle cx={ex} cy={ey} r={12} fill="none" stroke="#ffea00" strokeWidth="2" strokeDasharray="3,3" />
+                  )}
+                </g>
+              );
+            }
+
+            return (
+              <g key={hole.id} onClick={() => onSelectHole(isSel ? null : hole)} className="cursor-pointer">
+                {/* Selection Highlight Ring */}
+                {isSel && (
+                  <circle cx={cx} cy={cy} r={r + 8} fill="none" stroke="#ffea00" strokeWidth="2.5" className="animate-pulse" />
+                )}
+
+                {/* Projection Lines to Reference Axes when selected */}
+                {isSel && (
+                  <>
+                    <line x1={cx} y1={cy} x2={padX} y2={cy} stroke="#ffea00" strokeWidth="1" strokeDasharray="3,3" />
+                    <line x1={cx} y1={cy} x2={cx} y2={padY + pWidth} stroke="#ffea00" strokeWidth="1" strokeDasharray="3,3" />
+                    <text x={(padX + cx) / 2} y={cy - 5} fill="#ffea00" fontSize="11" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
+                      X={hole.x}
+                    </text>
+                    <text x={cx + 8} y={(cy + padY + pWidth) / 2} fill="#ffea00" fontSize="11" fontWeight="bold" fontFamily="monospace">
+                      Y={hole.y}
+                    </text>
+                  </>
+                )}
+
+                {/* Hole Circle Body */}
+                <circle
+                  cx={cx}
+                  cy={cy}
+                  r={r}
+                  fill={isFaceB ? 'none' : (isSel ? '#ffea00' : '#0284c7')}
+                  stroke={isFaceB ? '#f59e0b' : '#0f172a'}
+                  strokeWidth={isFaceB ? 2 : 1.5}
+                  strokeDasharray={isFaceB ? '3,2' : 'none'}
+                  opacity={isFaceB ? 0.9 : 0.95}
+                />
+
+                {/* Center Crosshair + or x */}
+                <line x1={cx - r / 1.8} y1={cy} x2={cx + r / 1.8} y2={cy} stroke={isFaceB ? '#f59e0b' : '#ffffff'} strokeWidth="1" />
+                <line x1={cx} y1={cy - r / 1.8} x2={cx} y2={cy + r / 1.8} stroke={isFaceB ? '#f59e0b' : '#ffffff'} strokeWidth="1" />
+
+                {/* Hole Diameter Label */}
+                <text x={cx + r + 4} y={cy + 3} fill={isSel ? '#ffea00' : '#0f172a'} fontSize="10" fontWeight="extrabold" fontFamily="monospace">
+                  ⌀{hole.diameter}
+                </text>
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+
+      {/* Blueprint Legend Bar */}
+      <div className="p-2.5 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-4 flex-wrap text-xs text-slate-300 font-mono shrink-0">
+        <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-full bg-sky-600 border border-slate-900" />
+            <span>Пласть А (Лицевая)</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-full border-2 border-dashed border-amber-500 bg-transparent" />
+            <span>Пласть B (Обратная)</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 bg-rose-500 rotate-45" />
+            <span>Торцевое сверление</span>
+          </div>
+        </div>
+
+        <div className="text-[11px] text-slate-400">
+          💡 Нажмите на любое отверстие, чтобы просмотреть точные координаты X, Y
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export const CNC3DDrillViewerModal: React.FC<CNC3DDrillViewerModalProps> = ({
   isOpen,
   onClose,
@@ -39,6 +250,7 @@ export const CNC3DDrillViewerModal: React.FC<CNC3DDrillViewerModalProps> = ({
   const controlsRef = useRef<OrbitControls | null>(null);
 
   const [activeView, setActive3DView] = useState<'3d' | 'top' | 'bottom' | 'front' | 'side'>('3d');
+  const [mainDisplayMode, setMainDisplayMode] = useState<'3d' | '2d_cad'>('3d');
   const [selectedHole, setSelectedHole] = useState<CNCDrillHole | null>(null);
   const [showRawCodeTab, setShowRawCodeTab] = useState(false);
   const [activeFaceFilter, setActiveFaceFilter] = useState<'all' | 'A' | 'B' | 'edges'>('all');
@@ -92,36 +304,41 @@ export const CNC3DDrillViewerModal: React.FC<CNC3DDrillViewerModalProps> = ({
     controlsRef.current = controls;
 
     // 5. Lighting
-    const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
+    const ambientLight = new THREE.AmbientLight(0xffffff, 1.1);
     scene.add(ambientLight);
 
-    const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.2);
+    const dirLight1 = new THREE.DirectionalLight(0xffffff, 1.4);
     dirLight1.position.set(pattern.length * 1.5, pattern.width * 2, pattern.thickness * 10);
     dirLight1.castShadow = true;
     scene.add(dirLight1);
 
-    const dirLight2 = new THREE.DirectionalLight(0x38bdf8, 0.6);
+    const dirLight2 = new THREE.DirectionalLight(0x38bdf8, 0.5);
     dirLight2.position.set(-pattern.length, -pattern.width, -pattern.thickness * 5);
     scene.add(dirLight2);
 
-    // 6. Grid Ground Helper
-    const gridHelper = new THREE.GridHelper(Math.max(pattern.length, pattern.width) * 2.5, 40, 0x334155, 0x1e293b);
-    gridHelper.position.set(pattern.length / 2, -5, pattern.width / 2);
-    gridHelper.rotation.x = Math.PI / 2;
+    // 6. Grid Ground Helper (Flat on Floor X-Z plane under panel)
+    const gridHelper = new THREE.GridHelper(Math.max(pattern.length, pattern.width) * 2.5, 40, 0x475569, 0x1e293b);
+    gridHelper.position.set(pattern.length / 2, -1, pattern.width / 2);
     scene.add(gridHelper);
 
-    // 7. Render LDSP / MDF Panel (Main Board)
+    // 7. Render LDSP / MDF Panel (Main Board - Clean Crisp White)
     const panelGeo = new THREE.BoxGeometry(pattern.length, pattern.thickness, pattern.width);
     const panelMat = new THREE.MeshStandardMaterial({
-      color: 0xded5c6, // Realistic Birch / Light Wood
-      roughness: 0.6,
-      metalness: 0.1
+      color: 0xf8fafc, // Pure Crisp White Laminated Board
+      roughness: 0.2,
+      metalness: 0.05
     });
     const panelMesh = new THREE.Mesh(panelGeo, panelMat);
     panelMesh.position.set(pattern.length / 2, pattern.thickness / 2, pattern.width / 2);
     panelMesh.receiveShadow = true;
     panelMesh.castShadow = true;
     scene.add(panelMesh);
+
+    // Add subtle dark CAD contour edges around white detail for sharp contrast
+    const edgesGeo = new THREE.EdgesGeometry(panelGeo);
+    const edgesMat = new THREE.LineBasicMaterial({ color: 0x94a3b8 });
+    const edgesLine = new THREE.LineSegments(edgesGeo, edgesMat);
+    panelMesh.add(edgesLine);
 
     // 8. Render Edging Side Strips (L1, L2, W1, W2) with distinct colors
     const edgeThickness = 2.0; // Visual thickness for 3D clarity
@@ -165,7 +382,7 @@ export const CNC3DDrillViewerModal: React.FC<CNC3DDrillViewerModalProps> = ({
       scene.add(eMesh);
     }
 
-    // 9. Render Holes in 3D
+    // 9. Render Holes in 3D (Through-holes vs Blind holes)
     const getHoleColor = (d: number, face: string) => {
       if (face === 'top' || face === 'bottom' || face === 'left' || face === 'right') return 0xef4444; // Red for Edge holes
       if (d <= 5) return 0x10b981;  // 5mm Green
@@ -177,55 +394,86 @@ export const CNC3DDrillViewerModal: React.FC<CNC3DDrillViewerModalProps> = ({
     pattern.holes.forEach(hole => {
       const isSelected = selectedHole?.id === hole.id;
       const radius = Math.max(1.5, hole.diameter / 2);
-      const depth = Math.min(pattern.thickness + 2, hole.z || 12);
+
+      // Check if hole is through (сквозное)
+      const isThrough = hole.z >= pattern.thickness || (hole.face === 'A' && hole.z >= pattern.thickness - 0.5);
+      const depth = isThrough ? pattern.thickness + 0.6 : Math.min(pattern.thickness - 0.5, hole.z || 12);
 
       const holeGeo = new THREE.CylinderGeometry(radius, radius, depth, 24);
-      const holeColor = isSelected ? 0xffea00 : getHoleColor(hole.diameter, hole.face);
-      const holeMat = new THREE.MeshStandardMaterial({
-        color: holeColor,
-        roughness: 0.2,
-        metalness: 0.3,
-        emissive: isSelected ? 0x665200 : 0x000000
-      });
 
-      const holeMesh = new THREE.Mesh(holeGeo, holeMat);
-
-      // Positioning according to face
-      if (hole.face === 'B') {
-        // Plast B (Bottom face)
-        holeMesh.position.set(hole.x, -depth / 2 + 1, hole.y);
-      } else if (hole.face === 'top') {
-        // Top Edge (y = width)
-        holeMesh.position.set(hole.x, pattern.thickness / 2, pattern.width - depth / 2);
-        holeMesh.rotation.x = Math.PI / 2;
-      } else if (hole.face === 'bottom') {
-        // Bottom Edge (y = 0)
-        holeMesh.position.set(hole.x, pattern.thickness / 2, depth / 2);
-        holeMesh.rotation.x = Math.PI / 2;
-      } else if (hole.face === 'left') {
-        // Left Edge (x = 0)
-        holeMesh.position.set(depth / 2, pattern.thickness / 2, hole.y);
-        holeMesh.rotation.z = Math.PI / 2;
-      } else if (hole.face === 'right') {
-        // Right Edge (x = length)
-        holeMesh.position.set(pattern.length - depth / 2, pattern.thickness / 2, hole.y);
-        holeMesh.rotation.z = Math.PI / 2;
+      if (isThrough) {
+        // Physical Through-Hole: Dark graphite interior cavity
+        const holeMat = new THREE.MeshStandardMaterial({
+          color: isSelected ? 0xffea00 : 0x090d16,
+          roughness: 0.1,
+          metalness: 0.5,
+          emissive: isSelected ? 0x665200 : 0x000000
+        });
+        const holeMesh = new THREE.Mesh(holeGeo, holeMat);
+        holeMesh.position.set(hole.x, pattern.thickness / 2, hole.y);
+        scene.add(holeMesh);
       } else {
-        // Plast A (Top face - default)
-        holeMesh.position.set(hole.x, pattern.thickness + depth / 2 - 1, hole.y);
-      }
+        // Blind Hole (Глухое): Colored tool cylinder
+        const holeColor = isSelected ? 0xffea00 : getHoleColor(hole.diameter, hole.face);
+        const holeMat = new THREE.MeshStandardMaterial({
+          color: holeColor,
+          roughness: 0.2,
+          metalness: 0.3,
+          emissive: isSelected ? 0x665200 : 0x000000
+        });
 
-      scene.add(holeMesh);
+        const holeMesh = new THREE.Mesh(holeGeo, holeMat);
+
+        if (hole.face === 'B') {
+          holeMesh.position.set(hole.x, depth / 2, hole.y);
+        } else if (hole.face === 'top') {
+          holeMesh.position.set(hole.x, pattern.thickness / 2, pattern.width - depth / 2);
+          holeMesh.rotation.x = Math.PI / 2;
+        } else if (hole.face === 'bottom') {
+          holeMesh.position.set(hole.x, pattern.thickness / 2, depth / 2);
+          holeMesh.rotation.x = Math.PI / 2;
+        } else if (hole.face === 'left') {
+          holeMesh.position.set(depth / 2, pattern.thickness / 2, hole.y);
+          holeMesh.rotation.z = Math.PI / 2;
+        } else if (hole.face === 'right') {
+          holeMesh.position.set(pattern.length - depth / 2, pattern.thickness / 2, hole.y);
+          holeMesh.rotation.z = Math.PI / 2;
+        } else {
+          // Plast A (Top face)
+          holeMesh.position.set(hole.x, pattern.thickness - depth / 2, hole.y);
+        }
+
+        scene.add(holeMesh);
+      }
     });
 
-    // 10. Animation Loop
-    let animationFrameId: number;
-    const animate = () => {
-      animationFrameId = requestAnimationFrame(animate);
-      controls.update();
+    // 10. Efficient Event-Driven Render Loop (0% CPU when static)
+    let animationFrameId: number | null = null;
+    let isUserInteracting = false;
+
+    const renderScene = () => {
+      const needsDampingUpdate = controls.update();
       renderer.render(scene, camera);
+
+      if (needsDampingUpdate || isUserInteracting) {
+        animationFrameId = requestAnimationFrame(renderScene);
+      } else {
+        animationFrameId = null;
+      }
     };
-    animate();
+
+    const triggerRender = () => {
+      if (!animationFrameId) {
+        animationFrameId = requestAnimationFrame(renderScene);
+      }
+    };
+
+    controls.addEventListener('change', triggerRender);
+    controls.addEventListener('start', () => { isUserInteracting = true; triggerRender(); });
+    controls.addEventListener('end', () => { isUserInteracting = false; });
+
+    // Initial render
+    renderScene();
 
     // Handle Window Resize
     const handleResize = () => {
@@ -235,12 +483,14 @@ export const CNC3DDrillViewerModal: React.FC<CNC3DDrillViewerModalProps> = ({
       cameraRef.current.aspect = w / h;
       cameraRef.current.updateProjectionMatrix();
       rendererRef.current.setSize(w, h);
+      triggerRender();
     };
     window.addEventListener('resize', handleResize);
 
     return () => {
       window.removeEventListener('resize', handleResize);
-      cancelAnimationFrame(animationFrameId);
+      controls.removeEventListener('change', triggerRender);
+      if (animationFrameId) cancelAnimationFrame(animationFrameId);
       if (rendererRef.current) rendererRef.current.dispose();
     };
   }, [isOpen, pattern, selectedHole]);
@@ -328,6 +578,26 @@ export const CNC3DDrillViewerModal: React.FC<CNC3DDrillViewerModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {/* Mode Switcher: 3D Model vs 2D Bazis Drawing Scheme */}
+            <div className="flex items-center p-1 rounded-2xl bg-slate-800 border border-slate-700 font-mono text-xs">
+              <button
+                onClick={() => setMainDisplayMode('3d')}
+                className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  mainDisplayMode === '3d' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <span>🧊 3D Модель</span>
+              </button>
+              <button
+                onClick={() => setMainDisplayMode('2d_cad')}
+                className={`px-3 py-1.5 rounded-xl font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                  mainDisplayMode === '2d_cad' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                <span>📐 2D Чертеж (Базис)</span>
+              </button>
+            </div>
+
             <button
               onClick={onClose}
               className="w-9 h-9 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition-all cursor-pointer border border-slate-700"
@@ -341,47 +611,60 @@ export const CNC3DDrillViewerModal: React.FC<CNC3DDrillViewerModalProps> = ({
         {/* Modal Main Body */}
         <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
 
-          {/* Left 3D Canvas Area */}
+          {/* Left Canvas / Drawing Area */}
           <div className="lg:col-span-7 xl:col-span-7 flex flex-col bg-slate-950 relative min-h-[420px] lg:min-h-0">
 
-            {/* 3D WebGL Canvas Mounting Container */}
-            <div ref={mountRef} className="w-full flex-1 relative cursor-grab active:cursor-grabbing" />
+            {mainDisplayMode === '2d_cad' ? (
+              /* 2D Bazis CAD Blueprint View */
+              <div className="w-full flex-1 relative flex flex-col p-4 overflow-hidden">
+                <Bazis2DBlueprintSvg
+                  pattern={pattern}
+                  selectedHole={selectedHole}
+                  onSelectHole={setSelectedHole}
+                />
+              </div>
+            ) : (
+              /* 3D WebGL Canvas Mounting Container */
+              <>
+                <div ref={mountRef} className="w-full flex-1 relative cursor-grab active:cursor-grabbing" />
 
-            {/* Top Overlay Projection Switcher */}
-            <div className="absolute top-4 left-4 z-10 flex items-center gap-1.5 p-1.5 rounded-2xl bg-slate-900/80 backdrop-blur-md border border-slate-800 shadow-lg">
-              <button
-                onClick={() => handleSetView('3d')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  activeView === '3d' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'
-                }`}
-              >
-                3D Обзор
-              </button>
-              <button
-                onClick={() => handleSetView('top')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  activeView === 'top' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'
-                }`}
-              >
-                Пласть A (Верх)
-              </button>
-              <button
-                onClick={() => handleSetView('bottom')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  activeView === 'bottom' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'
-                }`}
-              >
-                Пласть B (Низ)
-              </button>
-              <button
-                onClick={() => handleSetView('front')}
-                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                  activeView === 'front' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'
-                }`}
-              >
-                Торцы L
-              </button>
-            </div>
+                {/* Top Overlay Projection Switcher */}
+                <div className="absolute top-4 left-4 z-10 flex items-center gap-1.5 p-1.5 rounded-2xl bg-slate-900/80 backdrop-blur-md border border-slate-800 shadow-lg">
+                  <button
+                    onClick={() => handleSetView('3d')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      activeView === '3d' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    3D Обзор
+                  </button>
+                  <button
+                    onClick={() => handleSetView('top')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      activeView === 'top' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    Пласть A (Верх)
+                  </button>
+                  <button
+                    onClick={() => handleSetView('bottom')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      activeView === 'bottom' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    Пласть B (Низ)
+                  </button>
+                  <button
+                    onClick={() => handleSetView('front')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      activeView === 'front' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-300 hover:bg-slate-800'
+                    }`}
+                  >
+                    Торцы L
+                  </button>
+                </div>
+              </>
+            )}
 
             {/* Bottom Overlay Edging Indicator Bar */}
             <div className="p-3 bg-slate-900/90 border-t border-slate-800 flex items-center justify-between gap-4 flex-wrap text-xs">

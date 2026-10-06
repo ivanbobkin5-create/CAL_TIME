@@ -233,6 +233,13 @@ export interface ProductionOrder {
     notes?: string;
   };
 
+  // CNC / G-Code Program Files attached to order (Программы ЧПУ / Управляющие программы)
+  cncFilesData?: {
+    uploadedAt?: string;
+    totalFilesCount: number;
+    files: Array<{ fileName: string; fileText: string }>;
+  };
+
   // Scanning progress per stage and material:
   // { [stageId]: { [materialName]: { scannedPartIds: string[], isCompleted?: boolean } } }
   stageScanningProgress?: Record<string, Record<string, { scannedPartIds: string[]; isCompleted?: boolean }>>;

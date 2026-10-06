@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import JSZip from 'jszip';
 import { 
   FileText, 
   Upload, 
@@ -23,6 +24,7 @@ import {
   RotateCcw,
   Box,
   Eye,
+  Cpu,
   Lock,
   Package,
   PackageCheck,
@@ -328,6 +330,67 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
       playSoundEffect('success');
     } catch (err: any) {
       setUploadError(err.message || 'Ошибка прикрепления файла Сборки');
+      playSoundEffect('error');
+    } finally {
+      setIsUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleCNCUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const inputFiles = e.target.files;
+    if (!inputFiles || inputFiles.length === 0) return;
+
+    // Mandatory Birka File Check
+    if (!order.birkaData || !order.birkaData.details || order.birkaData.details.length === 0) {
+      setUploadError(`⚠️ Сначала загрузите файл бирок! Файлы ЧПУ (G-код) привязываются к деталям из файла бирок заказа №${order.orderNumber}.`);
+      playSoundEffect('error');
+      e.target.value = '';
+      return;
+    }
+
+    const filesArray = Array.from(inputFiles);
+    setIsUploading(true);
+    setUploadError(null);
+
+    try {
+      const extractedFiles: Array<{ fileName: string; fileText: string }> = [];
+
+      for (const file of filesArray) {
+        if (file.name.toLowerCase().endsWith('.zip')) {
+          const zip = new JSZip();
+          const zipContent = await zip.loadAsync(file);
+
+          for (const [relativePath, zipEntry] of Object.entries(zipContent.files)) {
+            if (!zipEntry.dir && !relativePath.startsWith('__MACOSX/')) {
+              const text = await zipEntry.async('string');
+              const entryFileName = relativePath.split('/').pop() || relativePath;
+              extractedFiles.push({ fileName: entryFileName, fileText: text });
+            }
+          }
+        } else {
+          const text = await file.text();
+          extractedFiles.push({ fileName: file.name, fileText: text });
+        }
+      }
+
+      if (extractedFiles.length === 0) {
+        throw new Error('Не удалось извлечь файлы программ ЧПУ');
+      }
+
+      const updatedOrder: ProductionOrder = {
+        ...order,
+        cncFilesData: {
+          uploadedAt: new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) + ' ' + new Date().toLocaleDateString('ru-RU'),
+          totalFilesCount: extractedFiles.length,
+          files: extractedFiles
+        }
+      };
+
+      onUpdateOrder(updatedOrder);
+      playSoundEffect('success');
+    } catch (err: any) {
+      setUploadError(err.message || 'Ошибка загрузки файлов ЧПУ');
       playSoundEffect('error');
     } finally {
       setIsUploading(false);
@@ -922,6 +985,41 @@ export const ERPOrderDetailsModal: React.FC<ERPOrderDetailsModalProps> = ({
                           type="file"
                           accept=".sb,.csv,.tsv,.txt,.pdf,.json,.xml,.xlsx,.xls"
                           onChange={handleAssemblyUpload}
+                          className="hidden"
+                          disabled={isUploading}
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* 4. CNC / G-Code Programs Card */}
+                  <div className="bg-slate-50 rounded-2xl p-3.5 border border-slate-200/80 flex flex-col justify-between gap-3">
+                    <div className="flex items-start gap-2.5">
+                      <div className="w-8 h-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0 mt-0.5">
+                        <Cpu className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider">Программы ЧПУ (G-код)</div>
+                        <h5 className="font-bold text-slate-900 text-xs truncate">
+                          {order.cncFilesData && order.cncFilesData.totalFilesCount > 0 
+                            ? `Загружено ${order.cncFilesData.totalFilesCount} файлов` 
+                            : 'ЧПУ не загружен'}
+                        </h5>
+                        <p className="text-[10px] text-slate-500 mt-0.5">
+                          {order.cncFilesData ? order.cncFilesData.uploadedAt || 'Загружены' : '.nc, .mpr, .cix, .gcode, .zip'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 pt-1 border-t border-slate-200/60">
+                      <label className="flex-1 px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-[11px] transition-all flex items-center justify-center gap-1.5 cursor-pointer text-center">
+                        <Cpu className="w-3 h-3" />
+                        <span>{order.cncFilesData && order.cncFilesData.totalFilesCount > 0 ? 'Заменить ЧПУ' : '+ Загрузить ЧПУ'}</span>
+                        <input
+                          type="file"
+                          multiple
+                          accept=".nc,.mpr,.cix,.gcode,.txt,.zip"
+                          onChange={handleCNCUpload}
                           className="hidden"
                           disabled={isUploading}
                         />
