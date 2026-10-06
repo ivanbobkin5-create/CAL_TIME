@@ -66,244 +66,373 @@ export const Bazis2DBlueprintSvg: React.FC<Bazis2DBlueprintSvgProps> = ({
   const pWidth = pattern.width || 400;
   const pThick = pattern.thickness || 16;
 
-  // SVG Padding for Dimension Chains (L, W) and Edge Badges
-  const padX = 120;
-  const padY = 100;
-  const svgW = pLength + padX * 2;
-  const svgH = pWidth + padY * 2;
+  // SVG Padding for Dimension Chains, Leader Callouts and Edging Flags
+  const padLeft = 140;
+  const padRight = 140;
+  const padTop = 110;
+  const padBottom = 110;
+
+  const svgW = pLength + padLeft + padRight;
+  const svgH = pWidth + padTop + padBottom;
+
+  // Panel corner SVG coordinates
+  const panelX = padLeft;
+  const panelY = padTop;
+
+  // Extract and sort unique X and Y coordinates for Bazis cumulative dimension chains
+  const holes = pattern.holes || [];
+
+  // Group unique X coordinates (rounded to 0.5mm to eliminate floating noise)
+  const xCoords = Array.from(new Set([0, ...holes.map(h => Math.round(h.x * 10) / 10), pLength]))
+    .sort((a, b) => a - b);
+
+  // Group unique Y coordinates
+  const yCoords = Array.from(new Set([0, ...holes.map(h => Math.round(h.y * 10) / 10), pWidth]))
+    .sort((a, b) => a - b);
+
+  // Group holes by tool / type for leader callouts
+  const holeGroups: Record<string, { label: string; count: number; hole: CNCDrillHole }> = {};
+  holes.forEach(h => {
+    const face = classifyHoleFace(h, pWidth, pLength);
+    const key = `${h.diameter}_${h.z}_${face}`;
+    let desc = `⌀${h.diameter}x${h.z}`;
+    if (h.diameter === 8) desc += ' Евр';
+    else if (h.diameter === 5) desc += ' Нап лиц';
+    else if (h.diameter === 15) desc += ' Мин';
+    else if (h.diameter === 35) desc += ' Пет';
+
+    if (!holeGroups[key]) {
+      holeGroups[key] = { label: desc, count: 0, hole: h };
+    }
+    holeGroups[key].count++;
+  });
 
   return (
     <div className="w-full h-full flex flex-col bg-slate-950 p-2 sm:p-4 relative overflow-hidden select-none">
-      <div className="flex-1 w-full h-full flex items-center justify-center min-h-[360px]">
+      {/* CAD Drawing Sheet Frame */}
+      <div className="flex-1 w-full h-full flex items-center justify-center min-h-[420px] bg-white rounded-2xl shadow-2xl p-2 border border-slate-300">
         <svg
           viewBox={`0 0 ${svgW} ${svgH}`}
-          className="w-full h-full max-h-[580px] object-contain drop-shadow-2xl"
+          className="w-full h-full max-h-[640px] object-contain"
+          style={{ fontFamily: "'Courier New', Courier, monospace, sans-serif" }}
         >
-          {/* Background CAD Grid & Arrow Markers */}
           <defs>
-            <pattern id="cadGrid" width="40" height="40" patternUnits="userSpaceOnUse">
-              <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" strokeWidth="0.8" />
-            </pattern>
-            <marker id="arrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="#38bdf8" />
+            {/* Arrowhead marker for dimension lines */}
+            <marker id="cadArrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 2 L 10 5 L 0 8 z" fill="#0f172a" />
+            </marker>
+            <marker id="greenArrow" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+              <path d="M 0 1 L 10 5 L 0 9 z" fill="#16a34a" />
             </marker>
           </defs>
 
-          <rect width={svgW} height={svgH} fill="#0b1120" rx="16" />
-          <rect width={svgW} height={svgH} fill="url(#cadGrid)" rx="16" />
+          {/* Paper Background */}
+          <rect width={svgW} height={svgH} fill="#ffffff" rx="8" />
 
-          {/* Main Board Panel Rectangle (White CAD Board) */}
+          {/* Outer ESKD Drawing Border */}
+          <rect x="12" y="12" width={svgW - 24} height={svgH - 24} fill="none" stroke="#0f172a" strokeWidth="1.2" />
+
+          {/* Main Board Panel Rectangle (Black Solid Outline) */}
           <rect
-            x={padX}
-            y={padY}
+            x={panelX}
+            y={panelY}
             width={pLength}
             height={pWidth}
-            fill="#f8fafc"
+            fill="#ffffff"
             stroke="#0f172a"
-            strokeWidth="3.5"
-            rx="2"
+            strokeWidth="2.5"
           />
 
-          {/* Edging Lines (L1, L2, W1, W2) */}
-          {/* L1 - Bottom Length (Front y=0) */}
-          <line
-            x1={padX} y1={padY + pWidth}
-            x2={padX + pLength} y2={padY + pWidth}
-            stroke={pattern.edges.L1?.hasEdge ? '#10b981' : '#64748b'}
-            strokeWidth={pattern.edges.L1?.hasEdge ? 8 : 1.5}
-            strokeDasharray={pattern.edges.L1?.hasEdge ? 'none' : '6,4'}
-          />
-          {/* L2 - Top Length (Back y=width) */}
-          <line
-            x1={padX} y1={padY}
-            x2={padX + pLength} y2={padY}
-            stroke={pattern.edges.L2?.hasEdge ? '#059669' : '#64748b'}
-            strokeWidth={pattern.edges.L2?.hasEdge ? 8 : 1.5}
-            strokeDasharray={pattern.edges.L2?.hasEdge ? 'none' : '6,4'}
-          />
-          {/* W1 - Left Width (x=0) */}
-          <line
-            x1={padX} y1={padY}
-            x2={padX} y2={padY + pWidth}
-            stroke={pattern.edges.W1?.hasEdge ? '#3b82f6' : '#64748b'}
-            strokeWidth={pattern.edges.W1?.hasEdge ? 8 : 1.5}
-            strokeDasharray={pattern.edges.W1?.hasEdge ? 'none' : '6,4'}
-          />
-          {/* W2 - Right Width (x=length) */}
-          <line
-            x1={padX + pLength} y1={padY}
-            x2={padX + pLength} y2={padY + pWidth}
-            stroke={pattern.edges.W2?.hasEdge ? '#2563eb' : '#64748b'}
-            strokeWidth={pattern.edges.W2?.hasEdge ? 8 : 1.5}
-            strokeDasharray={pattern.edges.W2?.hasEdge ? 'none' : '6,4'}
-          />
+          {/* Edging Callout Flags (ГОСТ пвх 0,4 мм) */}
+          {/* Top Edge (L2) */}
+          {pattern.edges.L2?.hasEdge && (
+            <g transform={`translate(${panelX + pLength * 0.65}, ${panelY})`}>
+              <line x1="0" y1="0" x2="0" y2="-25" stroke="#0f172a" strokeWidth="1" />
+              <line x1="0" y1="-25" x2="20" y2="-25" stroke="#0f172a" strokeWidth="1" />
+              <rect x="20" y="-36" width="95" height="22" fill="#ffffff" stroke="#0f172a" strokeWidth="1" />
+              <text x="26" y="-21" fill="#0f172a" fontSize="11" fontWeight="bold" fontStyle="italic">
+                ⌢ пвх {pattern.edges.L2.thickness} мм
+              </text>
+            </g>
+          )}
 
-          {/* Dimension Lines L (Length Top) */}
-          <line x1={padX} y1={padY} x2={padX} y2={padY - 55} stroke="#38bdf8" strokeWidth="1" strokeDasharray="3,3" />
-          <line x1={padX + pLength} y1={padY} x2={padX + pLength} y2={padY - 55} stroke="#38bdf8" strokeWidth="1" strokeDasharray="3,3" />
-          <line x1={padX} y1={padY - 42} x2={padX + pLength} y2={padY - 42} stroke="#38bdf8" strokeWidth="1.5" markerStart="url(#arrow)" markerEnd="url(#arrow)" />
-          <text x={padX + pLength / 2} y={padY - 50} fill="#38bdf8" fontSize="13" fontWeight="bold" textAnchor="middle" fontFamily="monospace">
-            L = {pLength} мм
-          </text>
+          {/* Bottom Edge (L1) */}
+          {pattern.edges.L1?.hasEdge && (
+            <g transform={`translate(${panelX + pLength * 0.45}, ${panelY + pWidth})`}>
+              <line x1="0" y1="0" x2="0" y2="25" stroke="#0f172a" strokeWidth="1" />
+              <line x1="0" y1="25" x2="20" y2="25" stroke="#0f172a" strokeWidth="1" />
+              <rect x="20" y="14" width="95" height="22" fill="#ffffff" stroke="#0f172a" strokeWidth="1" />
+              <text x="26" y="29" fill="#0f172a" fontSize="11" fontWeight="bold" fontStyle="italic">
+                ⌢ пвх {pattern.edges.L1.thickness} мм
+              </text>
+            </g>
+          )}
 
-          {/* Dimension Lines W (Width Left) */}
-          <line x1={padX} y1={padY} x2={padX - 55} y2={padY} stroke="#38bdf8" strokeWidth="1" strokeDasharray="3,3" />
-          <line x1={padX} y1={padY + pWidth} x2={padX - 55} y2={padY + pWidth} stroke="#38bdf8" strokeWidth="1" strokeDasharray="3,3" />
-          <line x1={padX - 42} y1={padY} x2={padX - 42} y2={padY + pWidth} stroke="#38bdf8" strokeWidth="1.5" markerStart="url(#arrow)" markerEnd="url(#arrow)" />
-          <text x={padX - 52} y={padY + pWidth / 2} fill="#38bdf8" fontSize="13" fontWeight="bold" textAnchor="middle" fontFamily="monospace" transform={`rotate(-90, ${padX - 52}, ${padY + pWidth / 2})`}>
-            W = {pWidth} мм
-          </text>
+          {/* Left Edge (W1) */}
+          {pattern.edges.W1?.hasEdge && (
+            <g transform={`translate(${panelX}, ${panelY + pWidth * 0.5})`}>
+              <line x1="0" y1="0" x2="-25" y2="0" stroke="#0f172a" strokeWidth="1" />
+              <line x1="-25" y1="0" x2="-25" y2="-18" stroke="#0f172a" strokeWidth="1" />
+              <rect x="-122" y="-29" width="95" height="22" fill="#ffffff" stroke="#0f172a" strokeWidth="1" />
+              <text x="-116" y="-14" fill="#0f172a" fontSize="11" fontWeight="bold" fontStyle="italic">
+                ⌢ пвх {pattern.edges.W1.thickness} мм
+              </text>
+            </g>
+          )}
 
-          {/* Reference Axis (0,0) Marker at Bottom-Left */}
-          <g transform={`translate(${padX}, ${padY + pWidth})`}>
-            <circle r="5" fill="#ef4444" />
-            <text x="-16" y="22" fill="#ef4444" fontSize="12" fontWeight="extrabold" fontFamily="monospace">(0,0)</text>
+          {/* Right Edge (W2) */}
+          {pattern.edges.W2?.hasEdge && (
+            <g transform={`translate(${panelX + pLength}, ${panelY + pWidth * 0.5})`}>
+              <line x1="0" y1="0" x2="25" y2="0" stroke="#0f172a" strokeWidth="1" />
+              <line x1="25" y1="0" x2="25" y2="-18" stroke="#0f172a" strokeWidth="1" />
+              <rect x="28" y="-29" width="95" height="22" fill="#ffffff" stroke="#0f172a" strokeWidth="1" />
+              <text x="34" y="-14" fill="#0f172a" fontSize="11" fontWeight="bold" fontStyle="italic">
+                ⌢ пвх {pattern.edges.W2.thickness} мм
+              </text>
+            </g>
+          )}
+
+          {/* Green ESKD Reference Coordinate System (0,0) at Bottom-Left */}
+          <g transform={`translate(${panelX - 28}, ${panelY + pWidth + 28})`}>
+            {/* X Axis Arrow */}
+            <line x1="0" y1="0" x2="25" y2="0" stroke="#16a34a" strokeWidth="2" markerEnd="url(#greenArrow)" />
+            <text x="29" y="4" fill="#16a34a" fontSize="12" fontWeight="bold">X</text>
+            {/* Y Axis Arrow */}
+            <line x1="0" y1="0" x2="0" y2="-25" stroke="#16a34a" strokeWidth="2" markerEnd="url(#greenArrow)" />
+            <text x="-4" y="-28" fill="#16a34a" fontSize="12" fontWeight="bold">Y</text>
+            {/* Origin Dot */}
+            <circle cx="0" cy="0" r="3" fill="#16a34a" />
           </g>
 
-          {/* Render Holes (Plast A, Plast B, Edge Holes) */}
-          {pattern.holes.map((hole) => {
+          {/* Horizontal Dimension Chains (Top and Bottom) */}
+          {/* Top Horizontal Chain */}
+          {xCoords.map((xVal, idx) => {
+            const svgX = panelX + xVal;
+            const lineY = panelY - 32;
+            const extY1 = panelY - 4;
+            const extY2 = lineY - 10;
+
+            return (
+              <g key={`x-top-${idx}`}>
+                {/* Vertical Extension Line */}
+                <line x1={svgX} y1={extY1} x2={svgX} y2={extY2} stroke="#475569" strokeWidth="0.8" />
+
+                {/* Dimension Text if non-zero */}
+                {xVal > 0 && (
+                  <text
+                    x={svgX}
+                    y={lineY - 5}
+                    fill="#0f172a"
+                    fontSize="11"
+                    fontWeight="bold"
+                    fontStyle="italic"
+                    textAnchor="middle"
+                  >
+                    {xVal}{idx < xCoords.length - 1 ? '*' : ''}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+          {/* Top Horizontal Dimension Main Line */}
+          <line
+            x1={panelX}
+            y1={panelY - 32}
+            x2={panelX + pLength}
+            y2={panelY - 32}
+            stroke="#0f172a"
+            strokeWidth="1"
+            markerStart="url(#cadArrow)"
+            markerEnd="url(#cadArrow)"
+          />
+
+          {/* Bottom Horizontal Dimension Chain (Panel Length Total) */}
+          <line
+            x1={panelX}
+            y1={panelY + pWidth + 32}
+            x2={panelX + pLength}
+            y2={panelY + pWidth + 32}
+            stroke="#0f172a"
+            strokeWidth="1"
+            markerStart="url(#cadArrow)"
+            markerEnd="url(#cadArrow)"
+          />
+          <line x1={panelX} y1={panelY + pWidth + 4} x2={panelX} y2={panelY + pWidth + 42} stroke="#475569" strokeWidth="0.8" />
+          <line x1={panelX + pLength} y1={panelY + pWidth + 4} x2={panelX + pLength} y2={panelY + pWidth + 42} stroke="#475569" strokeWidth="0.8" />
+          <text
+            x={panelX + pLength / 2}
+            y={panelY + pWidth + 46}
+            fill="#0f172a"
+            fontSize="12"
+            fontWeight="bold"
+            fontStyle="italic"
+            textAnchor="middle"
+          >
+            {pLength}
+          </text>
+
+          {/* Vertical Dimension Chain (Left) */}
+          {yCoords.map((yVal, idx) => {
+            const svgY = panelY + (pWidth - yVal);
+            const lineX = panelX - 42;
+            const extX1 = panelX - 4;
+            const extX2 = lineX - 10;
+
+            return (
+              <g key={`y-left-${idx}`}>
+                {/* Horizontal Extension Line */}
+                <line x1={extX1} y1={svgY} x2={extX2} y2={svgY} stroke="#475569" strokeWidth="0.8" />
+
+                {/* Dimension Text */}
+                {yVal > 0 && (
+                  <text
+                    x={lineX - 5}
+                    y={svgY + 4}
+                    fill="#0f172a"
+                    fontSize="11"
+                    fontWeight="bold"
+                    fontStyle="italic"
+                    textAnchor="end"
+                  >
+                    {yVal}{idx < yCoords.length - 1 ? '*' : ''}
+                  </text>
+                )}
+              </g>
+            );
+          })}
+          {/* Left Vertical Dimension Main Line */}
+          <line
+            x1={panelX - 42}
+            y1={panelY}
+            x2={panelX - 42}
+            y2={panelY + pWidth}
+            stroke="#0f172a"
+            strokeWidth="1"
+            markerStart="url(#cadArrow)"
+            markerEnd="url(#cadArrow)"
+          />
+
+          {/* Right Vertical Total Height Dimension */}
+          <line
+            x1={panelX + pLength + 42}
+            y1={panelY}
+            x2={panelX + pLength + 42}
+            y2={panelY + pWidth}
+            stroke="#0f172a"
+            strokeWidth="1"
+            markerStart="url(#cadArrow)"
+            markerEnd="url(#cadArrow)"
+          />
+          <line x1={panelX + pLength + 4} y1={panelY} x2={panelX + pLength + 52} y2={panelY} stroke="#475569" strokeWidth="0.8" />
+          <line x1={panelX + pLength + 4} y1={panelY + pWidth} x2={panelX + pLength + 52} y2={panelY + pWidth} stroke="#475569" strokeWidth="0.8" />
+          <text
+            x={panelX + pLength + 58}
+            y={panelY + pWidth / 2 + 4}
+            fill="#0f172a"
+            fontSize="12"
+            fontWeight="bold"
+            fontStyle="italic"
+          >
+            {pWidth}
+          </text>
+
+          {/* Render Holes with Numbers and Crosshairs */}
+          {holes.map((hole, idx) => {
+            const holeNum = idx + 1;
             const isSel = selectedHole?.id === hole.id;
-            const cx = padX + hole.x;
-            const cy = padY + (pWidth - hole.y); // Invert Y for SVG
-            const r = Math.max(4, Math.min(18, hole.diameter / 2 * 1.2));
+            const cx = panelX + hole.x;
+            const cy = panelY + (pWidth - hole.y);
+            const r = Math.max(5, Math.min(16, (hole.diameter / 2) * 1.2));
 
             const actualFace = classifyHoleFace(hole, pWidth, pLength);
             const isEdge = ['top', 'bottom', 'left', 'right'].includes(actualFace);
             const isThrough = hole.z >= pThick || (hole.face === 'A' && hole.z >= pThick - 0.5);
 
-            if (isEdge) {
-              // Edge Hole (Сверление в торец): Entry point on edge border + Dashed drill line into edge face
-              let ex = cx, ey = cy;
-              let targetDx = 0, targetDy = 0;
-              let edgeLabel = 'ТО Р Е Ц';
-              const depthPx = Math.min(60, Math.max(25, (hole.z || 30) * 1.2));
-
-              if (actualFace === 'bottom') { ey = padY + pWidth; targetDy = -depthPx; edgeLabel = 'ТО Р Е Ц L1'; }
-              else if (actualFace === 'top') { ey = padY; targetDy = depthPx; edgeLabel = 'ТО Р Е Ц L2'; }
-              else if (actualFace === 'left') { ex = padX; targetDx = depthPx; edgeLabel = 'ТО Р Е Ц W1'; }
-              else if (actualFace === 'right') { ex = padX + pLength; targetDx = -depthPx; edgeLabel = 'ТО Р Е Ц W2'; }
-
-              return (
-                <g key={hole.id} onClick={() => onSelectHole(isSel ? null : hole)} className="cursor-pointer">
-                  {/* Dashed drill depth line extending into the edge face */}
-                  <line
-                    x1={ex}
-                    y1={ey}
-                    x2={ex + targetDx}
-                    y2={ey + targetDy}
-                    stroke={isSel ? '#ffea00' : '#ef4444'}
-                    strokeWidth="3"
-                    strokeDasharray="5,3"
-                  />
-
-                  {/* Outer Entry Ring Dot on Edge Border Line */}
-                  <circle
-                    cx={ex}
-                    cy={ey}
-                    r="6"
-                    fill={isSel ? '#ffea00' : '#f43f5e'}
-                    stroke="#ffffff"
-                    strokeWidth="2"
-                  />
-
-                  {/* Selection Ring */}
-                  {isSel && (
-                    <circle cx={ex} cy={ey} r={14} fill="none" stroke="#ffea00" strokeWidth="2.5" strokeDasharray="3,3" className="animate-pulse" />
-                  )}
-
-                  {/* Unambiguous Badge for Edge Hole */}
-                  <g transform={`translate(${ex + targetDx / 2}, ${ey + targetDy / 2})`}>
-                    <rect
-                      x="-38"
-                      y="-11"
-                      width="76"
-                      height="22"
-                      rx="6"
-                      fill={isSel ? '#f59e0b' : '#be123c'}
-                      stroke="#ffffff"
-                      strokeWidth="1"
-                    />
-                    <text
-                      x="0"
-                      y="4"
-                      fill="#ffffff"
-                      fontSize="9"
-                      fontWeight="900"
-                      textAnchor="middle"
-                      fontFamily="monospace"
-                    >
-                      {edgeLabel} ⌀{hole.diameter}x{hole.z}
-                    </text>
-                  </g>
-                </g>
-              );
-            }
-
-            const isFaceB = actualFace === 'B';
-
             return (
-              <g key={hole.id} onClick={() => onSelectHole(isSel ? null : hole)} className="cursor-pointer">
-                {/* Selection Highlight Ring */}
+              <g
+                key={hole.id}
+                onClick={() => onSelectHole(isSel ? null : hole)}
+                className="cursor-pointer"
+              >
+                {/* Selection Highlight */}
                 {isSel && (
-                  <circle cx={cx} cy={cy} r={r + 10} fill="none" stroke="#ffea00" strokeWidth="3" className="animate-pulse" />
+                  <circle cx={cx} cy={cy} r={r + 8} fill="#fef08a" opacity="0.6" stroke="#eab308" strokeWidth="2" />
                 )}
 
-                {/* Projection Lines to Reference Axes when selected */}
-                {isSel && (
+                {/* Hole Circle */}
+                {isEdge ? (
+                  // Edge Hole: Marker on edge with dash line
+                  <g>
+                    <circle cx={cx} cy={cy} r="5" fill={isSel ? '#eab308' : '#ef4444'} stroke="#0f172a" strokeWidth="1.5" />
+                  </g>
+                ) : isThrough ? (
+                  // Through Hole: Concentric circle
                   <>
-                    <line x1={cx} y1={cy} x2={padX} y2={cy} stroke="#ffea00" strokeWidth="1.5" strokeDasharray="3,3" />
-                    <line x1={cx} y1={cy} x2={cx} y2={padY + pWidth} stroke="#ffea00" strokeWidth="1.5" strokeDasharray="3,3" />
-                    <text x={(padX + cx) / 2} y={cy - 6} fill="#ffea00" fontSize="11" fontWeight="bold" fontFamily="monospace" textAnchor="middle">
-                      X={hole.x}
-                    </text>
-                    <text x={cx + 10} y={(cy + padY + pWidth) / 2} fill="#ffea00" fontSize="11" fontWeight="bold" fontFamily="monospace">
-                      Y={hole.y}
-                    </text>
-                  </>
-                )}
-
-                {/* Hole Circle Body */}
-                {isThrough ? (
-                  // Through Hole (Сквозное): Double concentric dark ring
-                  <>
-                    <circle
-                      cx={cx}
-                      cy={cy}
-                      r={r + 2}
-                      fill={isSel ? '#ffea00' : '#1e293b'}
-                      stroke="#0f172a"
-                      strokeWidth="2"
-                    />
-                    <circle
-                      cx={cx}
-                      cy={cy}
-                      r={r - 2}
-                      fill="#090d16"
-                      stroke="#38bdf8"
-                      strokeWidth="1.5"
-                    />
+                    <circle cx={cx} cy={cy} r={r + 1.5} fill="#ffffff" stroke="#0f172a" strokeWidth="1.8" />
+                    <circle cx={cx} cy={cy} r={r - 1.5} fill="#e2e8f0" stroke="#0f172a" strokeWidth="1" />
                   </>
                 ) : (
-                  // Blind Hole (Глухое)
+                  // Blind Hole: Single circle
                   <circle
                     cx={cx}
                     cy={cy}
                     r={r}
-                    fill={isFaceB ? 'none' : (isSel ? '#ffea00' : '#0284c7')}
-                    stroke={isFaceB ? '#f59e0b' : '#0f172a'}
-                    strokeWidth={isFaceB ? 2.5 : 1.5}
-                    strokeDasharray={isFaceB ? '4,2' : 'none'}
-                    opacity={isFaceB ? 0.9 : 0.95}
+                    fill={actualFace === 'B' ? '#ffffff' : (isSel ? '#fef08a' : '#ffffff')}
+                    stroke="#0f172a"
+                    strokeWidth="1.8"
+                    strokeDasharray={actualFace === 'B' ? '3,2' : 'none'}
                   />
                 )}
 
-                {/* Center Crosshair + or x */}
-                <line x1={cx - r / 1.6} y1={cy} x2={cx + r / 1.6} y2={cy} stroke={isThrough ? '#38bdf8' : (isFaceB ? '#f59e0b' : '#ffffff')} strokeWidth="1.2" />
-                <line x1={cx} y1={cy - r / 1.6} x2={cx} y2={cy + r / 1.6} stroke={isThrough ? '#38bdf8' : (isFaceB ? '#f59e0b' : '#ffffff')} strokeWidth="1.2" />
+                {/* Center Crosshair */}
+                <line x1={cx - r - 3} y1={cy} x2={cx + r + 3} y2={cy} stroke="#0f172a" strokeWidth="0.8" />
+                <line x1={cx} y1={cy - r - 3} x2={cx} y2={cy + r + 3} stroke="#0f172a" strokeWidth="0.8" />
 
-                {/* Hole Diameter Label */}
-                <text x={cx + r + 4} y={cy + 4} fill={isSel ? '#ffea00' : (isThrough ? '#0284c7' : '#0f172a')} fontSize="10" fontWeight="extrabold" fontFamily="monospace">
-                  ⌀{hole.diameter}{isThrough ? ' (Сквозное)' : ''}
+                {/* Hole Number Badge (#1, #2, #3...) next to hole */}
+                <text
+                  x={cx + r + 3}
+                  y={cy + r + 8}
+                  fill="#0f172a"
+                  fontSize="11"
+                  fontWeight="bold"
+                  fontStyle="italic"
+                >
+                  {holeNum}
+                </text>
+              </g>
+            );
+          })}
+
+          {/* Leader Callouts for Hole Groups e.g. "6отв ⌀8 Евр", "⌀5x12 Нап лиц" */}
+          {Object.values(holeGroups).slice(0, 4).map((grp, gIdx) => {
+            const h = grp.hole;
+            const hx = panelX + h.x;
+            const hy = panelY + (pWidth - h.y);
+            const targetX = hx > panelX + pLength / 2 ? panelX + pLength + 60 : panelX - 60;
+            const targetY = panelY - 55 - gIdx * 24;
+
+            return (
+              <g key={`leader-${gIdx}`}>
+                {/* Leader Line from hole to text */}
+                <polyline
+                  points={`${hx},${hy} ${hx + (hx > panelX + pLength / 2 ? 18 : -18)},${targetY + 6} ${targetX},${targetY + 6}`}
+                  fill="none"
+                  stroke="#0f172a"
+                  strokeWidth="1"
+                />
+                <circle cx={hx} cy={hy} r="2" fill="#0f172a" />
+
+                {/* Leader Text */}
+                <text
+                  x={targetX + (hx > panelX + pLength / 2 ? -4 : 4)}
+                  y={targetY + 4}
+                  fill="#0f172a"
+                  fontSize="11"
+                  fontWeight="bold"
+                  fontStyle="italic"
+                  textAnchor={hx > panelX + pLength / 2 ? 'end' : 'start'}
+                >
+                  {grp.count > 1 ? `${grp.count}отв ` : ''}{grp.label}
                 </text>
               </g>
             );
@@ -311,29 +440,33 @@ export const Bazis2DBlueprintSvg: React.FC<Bazis2DBlueprintSvgProps> = ({
         </svg>
       </div>
 
-      {/* Blueprint Legend Bar */}
-      <div className="p-2.5 rounded-2xl bg-slate-900 border border-slate-800 flex items-center justify-between gap-4 flex-wrap text-xs text-slate-300 font-mono shrink-0">
+      {/* Blueprint Legend Bar (ESKD / ГОСТ) */}
+      <div className="mt-3 p-3 rounded-2xl bg-slate-800 border border-slate-700 flex items-center justify-between gap-4 flex-wrap text-xs text-slate-200 font-mono shrink-0">
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full bg-sky-600 border border-slate-900" />
-            <span>Пласть А (Лицевая)</span>
+            <span className="w-3.5 h-3.5 rounded-full bg-white border border-slate-900 flex items-center justify-center font-bold text-[9px] text-slate-900">1</span>
+            <span>Нумерация отверстий</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full border-2 border-dashed border-amber-500 bg-transparent" />
-            <span>Пласть B (Обратная)</span>
+            <span className="w-3.5 h-3.5 rounded-full bg-white border-2 border-slate-900" />
+            <span>Пласть А (Сплошная)</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-3 h-3 rounded-full bg-slate-900 border-2 border-sky-400" />
-            <span className="text-sky-300 font-bold">Сквозное</span>
+            <span className="w-3.5 h-3.5 rounded-full bg-white border-2 border-dashed border-slate-900" />
+            <span>Пласть B (Пунктир)</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="px-1.5 py-0.5 rounded bg-rose-600 text-white font-bold text-[10px]">ТО Р Е Ц</span>
-            <span className="text-rose-400 font-bold">В торец (L1, L2, W1, W2)</span>
+            <span className="w-3.5 h-3.5 rounded-full bg-slate-200 border-2 border-slate-900" />
+            <span>Сквозное</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="w-3 h-3 rounded-full bg-red-500" />
+            <span>В торец</span>
           </div>
         </div>
 
         <div className="text-[11px] text-slate-400">
-          💡 Нажмите на любое отверстие, чтобы подсветить координаты X, Y
+          📐 Спецификация чертежа ГОСТ / ЕСКД (Базис-Мебельщик)
         </div>
       </div>
     </div>
