@@ -669,7 +669,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
     const hasNoteText = !!foundPart.notes && foundPart.notes.trim().length > 0;
     const matchedRule = getMatchedNoteRule(foundPart.notes, foundPart.name);
 
-    if (hasNoteText || matchedRule) {
+    if ((hasNoteText || matchedRule) && currentStage !== 'drilling' && currentStage !== 'cnc') {
       const instructionText = hasNoteText 
         ? `ПРИМЕЧАНИЕ К ДЕТАЛИ: "${foundPart.notes}". Обратите внимание на обработку!`
         : matchedRule?.instruction || 'Обратите внимание на инструкцию к этой детали';

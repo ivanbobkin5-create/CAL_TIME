@@ -268,6 +268,17 @@ async function startServer() {
     res.send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"><url><loc>https://mebel-plan.ru/</loc><lastmod>2026-08-01</lastmod><changefreq>daily</changefreq><priority>1.0</priority></url></urlset>`);
   });
 
+  // Yandex Webmaster Verification Endpoint
+  app.get(["/yandex_f33c9f77b2e7c57c.html", "/yandex_f33c9f77b2e7c57c"], (req, res) => {
+    const yandexPath = path.join(process.cwd(), "public", "yandex_f33c9f77b2e7c57c.html");
+    if (fs.existsSync(yandexPath)) {
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.sendFile(yandexPath);
+    }
+    res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.send("<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"></head><body>Verification: f33c9f77b2e7c57c</body></html>");
+  });
+
   // EULA & License Agreement endpoint
   app.get(["/eula", "/eula.html", "/license", "/license.html"], (req, res) => {
     const eulaPath = path.join(process.cwd(), "public", "eula.html");

@@ -273,12 +273,36 @@ export const CNC3DDrillViewerModal: React.FC<CNC3DDrillViewerModalProps> = ({
 
   if (!isOpen) return null;
 
+  // Filter Legend items to only show hole diameters that exist in this detail
+  const presentLegendItems = useMemo(() => {
+    const holes = pattern.holes || [];
+    const items = [];
+
+    if (holes.some(h => h.diameter <= 5 && h.face !== 'top' && h.face !== 'bottom' && h.face !== 'left' && h.face !== 'right')) {
+      items.push({ id: 'd5', label: '⌀5 мм (Конфирмат/Полкодержатель)', color: 'bg-emerald-500' });
+    }
+    if (holes.some(h => h.diameter > 5 && h.diameter <= 8 && h.face !== 'top' && h.face !== 'bottom' && h.face !== 'left' && h.face !== 'right')) {
+      items.push({ id: 'd8', label: '⌀8 мм (Шкант/Дюбель)', color: 'bg-blue-500' });
+    }
+    if (holes.some(h => h.diameter > 8 && h.diameter <= 15 && h.face !== 'top' && h.face !== 'bottom' && h.face !== 'left' && h.face !== 'right')) {
+      items.push({ id: 'd15', label: '⌀15 мм (Эксцентрик)', color: 'bg-amber-500' });
+    }
+    if (holes.some(h => h.diameter > 15 && h.face !== 'top' && h.face !== 'bottom' && h.face !== 'left' && h.face !== 'right')) {
+      items.push({ id: 'd35', label: '⌀35 мм (Петля)', color: 'bg-purple-500' });
+    }
+    if (holes.some(h => h.face === 'top' || h.face === 'bottom' || h.face === 'left' || h.face === 'right')) {
+      items.push({ id: 'dedge', label: 'Торцевое сверление', color: 'bg-rose-500' });
+    }
+
+    return items;
+  }, [pattern.holes]);
+
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-2 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl w-full max-w-6xl max-h-[95vh] flex flex-col overflow-hidden text-white">
+      <div className="bg-slate-900 border border-slate-800 rounded-3xl shadow-2xl w-full max-w-[98vw] xl:max-w-[1450px] 2xl:max-w-[1650px] max-h-[96vh] flex flex-col overflow-hidden text-white">
 
         {/* Modal Header */}
-        <div className="p-4 sm:p-6 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between gap-4 shrink-0">
+        <div className="p-4 sm:p-5 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between gap-4 shrink-0">
           <div className="flex items-center gap-3.5 min-w-0">
             <div className="w-10 h-10 rounded-2xl bg-indigo-600/20 border border-indigo-500/40 flex items-center justify-center text-indigo-400 shrink-0">
               <Cpu className="w-5 h-5" />
@@ -315,10 +339,10 @@ export const CNC3DDrillViewerModal: React.FC<CNC3DDrillViewerModalProps> = ({
         </div>
 
         {/* Modal Main Body */}
-        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-4 overflow-hidden">
+        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
 
-          {/* Left / Top 3D Canvas Area */}
-          <div className="lg:col-span-3 flex flex-col bg-slate-950 relative min-h-[380px] lg:min-h-0">
+          {/* Left 3D Canvas Area */}
+          <div className="lg:col-span-7 xl:col-span-7 flex flex-col bg-slate-950 relative min-h-[420px] lg:min-h-0">
 
             {/* 3D WebGL Canvas Mounting Container */}
             <div ref={mountRef} className="w-full flex-1 relative cursor-grab active:cursor-grabbing" />
@@ -388,90 +412,80 @@ export const CNC3DDrillViewerModal: React.FC<CNC3DDrillViewerModalProps> = ({
             </div>
           </div>
 
-          {/* Right Sidebar: Pattern Details, Tools & Scan Guidance */}
-          <div className="p-4 sm:p-6 bg-slate-900 border-l border-slate-800 flex flex-col gap-4 overflow-y-auto max-h-[500px] lg:max-h-none">
+          {/* Right Sidebar: Pattern Details & Hole List */}
+          <div className="lg:col-span-5 xl:col-span-5 p-5 bg-slate-900 border-l border-slate-800 flex flex-col gap-4 overflow-hidden min-w-[340px] xl:min-w-[420px]">
 
-            {/* Instruction Notice for Operator */}
-            <div className="p-4 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-200 space-y-2">
-              <div className="flex items-center gap-2 text-xs font-black uppercase tracking-wider text-amber-400">
-                <Compass className="w-4 h-4" />
-                <span>Инструкция сверловщика:</span>
-              </div>
-              <p className="text-xs leading-relaxed text-amber-100/90">
-                1. Ориентируйтесь по подсвеченным сторонам <strong>кромления (L1, L2, W1, W2)</strong> при укладке на стол станка.
-                <br />
-                2. Для зачета детали в списке отсканируйте бирку <strong>второй раз</strong> или нажмите зеленую кнопку внизу.
-              </p>
-            </div>
-
-            {/* Drilling Diameter Legend */}
-            <div className="space-y-2">
-              <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
-                Легенда сверлений (Диаметры):
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-                <div className="p-2 rounded-xl bg-slate-800/80 border border-slate-700/80 flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-emerald-500 shrink-0" />
-                  <span>⌀5 мм (Конфирмат)</span>
+            {/* Drilling Diameter Legend (Dynamic - ONLY shows diameters present in pattern) */}
+            {presentLegendItems.length > 0 && (
+              <div className="space-y-2 shrink-0">
+                <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+                  Легенда отверстий:
                 </div>
-                <div className="p-2 rounded-xl bg-slate-800/80 border border-slate-700/80 flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-blue-500 shrink-0" />
-                  <span>⌀8 мм (Шкант)</span>
-                </div>
-                <div className="p-2 rounded-xl bg-slate-800/80 border border-slate-700/80 flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-amber-500 shrink-0" />
-                  <span>⌀15 мм (Эксцентрик)</span>
-                </div>
-                <div className="p-2 rounded-xl bg-slate-800/80 border border-slate-700/80 flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-purple-500 shrink-0" />
-                  <span>⌀35 мм (Петля)</span>
+                <div className="flex flex-wrap gap-2 text-xs font-mono">
+                  {presentLegendItems.map(item => (
+                    <div key={item.id} className="p-2 rounded-xl bg-slate-800/80 border border-slate-700/80 flex items-center gap-2">
+                      <span className={`w-3 h-3 rounded-full ${item.color} shrink-0`} />
+                      <span>{item.label}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
-            </div>
+            )}
 
-            {/* Holes List / Selected Hole Card */}
-            <div className="flex-1 space-y-2 min-h-0">
-              <div className="flex items-center justify-between text-xs font-bold text-slate-400 uppercase tracking-wider">
+            {/* Holes List / Selected Hole Inspector */}
+            <div className="flex-1 flex flex-col space-y-2 min-h-0 overflow-hidden">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-400 uppercase tracking-wider shrink-0">
                 <span>Список отверстий ({pattern.holes.length}):</span>
               </div>
 
-              <div className="space-y-1.5 max-h-[180px] overflow-y-auto pr-1">
-                {pattern.holes.map((hole, idx) => {
-                  const isSel = selectedHole?.id === hole.id;
-                  return (
-                    <button
-                      key={hole.id}
-                      onClick={() => setSelectedHole(isSel ? null : hole)}
-                      className={`w-full text-left p-2.5 rounded-xl border text-xs font-mono transition-all cursor-pointer flex items-center justify-between gap-2 ${
-                        isSel
-                          ? 'bg-amber-500/20 border-amber-500 text-amber-200'
-                          : 'bg-slate-800/60 border-slate-700/60 hover:bg-slate-800 text-slate-300'
-                      }`}
-                    >
-                      <div>
-                        <span className="font-bold text-white">#{idx + 1} ⌀{hole.diameter}мм</span>
-                        <span className="text-slate-400 text-[11px] block">X:{hole.x} Y:{hole.y} Z:{hole.z}мм</span>
-                      </div>
-                      <span className="px-2 py-0.5 rounded bg-slate-900 text-[10px] text-indigo-300 border border-slate-700">
-                        Пласть {hole.face}
-                      </span>
-                    </button>
-                  );
-                })}
+              <div className="flex-1 overflow-y-auto pr-1.5 space-y-2.5">
+                {pattern.holes.length === 0 ? (
+                  <div className="p-4 text-center rounded-2xl bg-slate-800/40 border border-slate-800 text-slate-400 text-xs italic">
+                    Отверстия для данной детали не заданы
+                  </div>
+                ) : (
+                  pattern.holes.map((hole, idx) => {
+                    const isSel = selectedHole?.id === hole.id;
+                    return (
+                      <button
+                        key={hole.id}
+                        onClick={() => setSelectedHole(isSel ? null : hole)}
+                        className={`w-full text-left p-3.5 rounded-2xl border text-xs font-mono transition-all cursor-pointer flex items-center justify-between gap-3 ${
+                          isSel
+                            ? 'bg-amber-500/20 border-amber-500 text-amber-200 shadow-md ring-1 ring-amber-500/40'
+                            : 'bg-slate-800/70 border-slate-700/70 hover:bg-slate-800 text-slate-200'
+                        }`}
+                      >
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-black text-white text-xs whitespace-nowrap">#{idx + 1} ⌀{hole.diameter} мм</span>
+                            <span className="text-[11px] text-slate-400 font-bold whitespace-nowrap">глубина {hole.z} мм</span>
+                          </div>
+                          <span className="text-slate-300 text-[11px] block font-mono whitespace-nowrap">
+                            Координаты: X = {hole.x} мм, Y = {hole.y} мм
+                          </span>
+                        </div>
+                        <span className="px-2.5 py-1 rounded-xl bg-slate-900 text-[11px] font-bold text-indigo-300 border border-slate-700 shrink-0 whitespace-nowrap">
+                          Пласть {hole.face}
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
               </div>
             </div>
 
             {/* CNC File Upload / Status */}
-            <div className="pt-2 border-t border-slate-800 space-y-2">
+            <div className="pt-2 border-t border-slate-800 space-y-2 shrink-0">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-slate-400 font-bold">Файл УП ЧПУ:</span>
-                <span className="text-indigo-400 font-mono text-[11px] truncate max-w-[140px]">
+                <span className="text-indigo-400 font-mono text-[11px] truncate max-w-[180px]">
                   {cncFileName || `${detail?.name || 'деталь'}.nc`}
                 </span>
               </div>
 
               {onUploadCNCFile && (
-                <label className="w-full py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-200 flex items-center justify-center gap-2 transition-all cursor-pointer">
+                <label className="w-full py-2.5 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold text-slate-200 flex items-center justify-center gap-2 transition-all cursor-pointer">
                   <Upload className="w-4 h-4 text-indigo-400" />
                   <span>Загрузить G-Код / .nc / .mpr</span>
                   <input
@@ -488,7 +502,7 @@ export const CNC3DDrillViewerModal: React.FC<CNC3DDrillViewerModalProps> = ({
             </div>
 
             {/* 2nd Scan / Confirm Completion Button */}
-            <div className="pt-3 border-t border-slate-800">
+            <div className="pt-2 border-t border-slate-800 shrink-0">
               <button
                 onClick={() => {
                   if (onConfirmComplete) onConfirmComplete();
