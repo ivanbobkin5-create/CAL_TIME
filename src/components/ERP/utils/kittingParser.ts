@@ -340,7 +340,6 @@ export async function parseHardwareFile(
 
 /**
  * Parses rows (from Excel or CSV) matching column headers using aliases
- * Prioritizes locating column A with 'Артикул' as the table start and ignoring any noise above it.
  */
 function parseTableRows(
   rows: any[][],
@@ -348,161 +347,172 @@ function parseTableRows(
 ): Array<{ article?: string; name: string; quantity: number; unit?: string; category?: string; notes?: string }> {
   if (!rows || rows.length === 0) return [];
 
-  let headerRowIndex = -1;
-  let colIndices: Record<string, number> = {};
+  let bestHeaderIndex = -1;
+  let bestScore = -1;
+  let bestCols: Record<string, number> = { name: -1, article: -1, quantity: -1, unit: -1, category: -1, notes: -1 };
 
-  // 1. PRIMARY STRATEGY:
-  // Ищем строку, где в столбце A (индекс 0 или 1 при наличии пустого отступа слева)
-  // расположен заголовок "Артикул". Все строки ВЫШЕ этой строки безоговорочно отметаются.
-  for (let i = 0; i < rows.length; i++) {
-    const row = rows[i];
-    if (!row || !Array.isArray(row)) continue;
+  for (let r = 0; r < Math.min(rows.length, 60); r++) {
+    const row = rows[r];
+    if (!row || !Array.isArray(row) || row.length === 0) continue;
 
-    const col0 = String(row[0] ?? '').toLowerCase().trim();
-    const col1 = String(row[1] ?? '').toLowerCase().trim();
+    const stringRow = row.map(c => (c !== null && c !== undefined ? String(c).trim().toLowerCase() : ''));
+    const fullRowText = stringRow.join(' ');
 
-    const isCol0Article = /^(?:№\s*)?артикул\b/i.test(col0) || col0 === 'артикул' || col0 === 'арт.' || col0 === 'арт' || col0 === 'код' || col0 === 'article';
-    const isCol1Article = !isCol0Article && (/^(?:№\s*)?артикул\b/i.test(col1) || col1 === 'артикул' || col1 === 'арт.' || col1 === 'арт' || col1 === 'код' || col1 === 'article');
+    if (/^(ведомость|спецификация|заказ|проект|отчет|приложение|утверждаю)\b/i.test(fullRowText) &&
+        !fullRowText.includes('наименование') && !fullRowText.includes('кол-во') && !fullRowText.includes('количество')) {
+      continue;
+    }
 
-    if (isCol0Article || isCol1Article) {
-      headerRowIndex = i;
-      const stringRow = row.map(c => String(c ?? '').toLowerCase().trim());
+    const tempCols: Record<string, number> = { name: -1, article: -1, quantity: -1, unit: -1, category: -1, notes: -1 };
 
-      for (const [paramKey, aliases] of Object.entries(mapping)) {
-        const foundIdx = stringRow.findIndex(cell => 
-          aliases.some(alias => cell === alias || cell.includes(alias))
-        );
-        if (foundIdx !== -1) {
-          colIndices[paramKey] = foundIdx;
+    stringRow.forEach((cell, idx) => {
+      if (!cell) return;
+
+      if (tempCols.name === -1) {
+        if (/^(?:наименование|название|номенклатура|товар|позиция|элемент|комплектующие|деталь|покупные)\b/i.test(cell) ||
+            (mapping.name || []).some(alias => cell === alias || (alias.length > 5 && cell.includes(alias) && !cell.includes('ведомость')))) {
+          tempCols.name = idx;
         }
       }
 
-      if (colIndices.article === undefined) {
-        colIndices.article = isCol0Article ? 0 : 1;
-      }
-
-      // Если наименование не найдено алиасами, берем соседнюю колонку после артикула
-      if (colIndices.name === undefined) {
-        const nextCol = (colIndices.article ?? 0) + 1;
-        if (nextCol < row.length) {
-          colIndices.name = nextCol;
+      if (tempCols.article === -1) {
+        if (/^(?:№\s*)?артикул\b/i.test(cell) || cell === 'артикул' || cell === 'код' || cell === 'обозначение' || cell === 'арт' ||
+            (mapping.article || []).some(alias => cell === alias || (alias.length > 3 && cell.includes(alias)))) {
+          tempCols.article = idx;
         }
       }
 
-      // Если количество не найдено алиасами, ищем колонку с 'кол'/'qty'/'потребность'/'расход'
-      if (colIndices.quantity === undefined) {
-        const qtyIdx = stringRow.findIndex((c, idx) => 
-          idx !== colIndices.article && 
-          idx !== colIndices.name && 
-          (/кол/i.test(c) || /qty/i.test(c) || /потреб/i.test(c) || /расход/i.test(c) || /к-во/i.test(c))
-        );
-        if (qtyIdx !== -1) colIndices.quantity = qtyIdx;
+      if (tempCols.quantity === -1) {
+        if (/^(?:кол-во|количество|кол|к-во|потребность|расход|всего|требуется|заказ|qty|count)\b/i.test(cell) ||
+            (mapping.quantity || []).some(alias => cell === alias || (alias.length > 3 && cell.includes(alias)))) {
+          tempCols.quantity = idx;
+        }
       }
 
-      break;
+      if (tempCols.unit === -1) {
+        if (/^(?:ед\.?\s*изм\.?|ед|единица|unit)\b/i.test(cell) ||
+            (mapping.unit || []).some(alias => cell === alias)) {
+          tempCols.unit = idx;
+        }
+      }
+
+      if (tempCols.category === -1) {
+        if (/^(?:категория|группа|тип|раздел|папка|вид)\b/i.test(cell) ||
+            (mapping.category || []).some(alias => cell === alias)) {
+          tempCols.category = idx;
+        }
+      }
+
+      if (tempCols.notes === -1) {
+        if (/^(?:примечание|комментарий|модуль|производитель|бренд)\b/i.test(cell) ||
+            (mapping.notes || []).some(alias => cell === alias)) {
+          tempCols.notes = idx;
+        }
+      }
+    });
+
+    let score = 0;
+    if (tempCols.name !== -1) score += 10;
+    if (tempCols.quantity !== -1) score += 10;
+    if (tempCols.article !== -1) score += 8;
+    if (tempCols.unit !== -1) score += 4;
+    if (tempCols.category !== -1) score += 4;
+
+    if (score >= 16 && (tempCols.name !== -1 || tempCols.article !== -1) && (tempCols.quantity !== -1 || tempCols.article !== -1)) {
+      if (score > bestScore) {
+        bestScore = score;
+        bestHeaderIndex = r;
+        bestCols = tempCols;
+      }
     }
   }
 
-  // 2. SECONDARY STRATEGY (Fallback, если в файле нет колонки "Артикул" в столбце A)
-  if (headerRowIndex === -1) {
-    for (let i = 0; i < rows.length; i++) {
-      const row = rows[i];
-      if (!row || !Array.isArray(row)) continue;
+  if (bestHeaderIndex === -1) {
+    for (let r = 0; r < Math.min(rows.length, 30); r++) {
+      const stringRow = rows[r].map(c => String(c ?? '').trim().toLowerCase());
+      const nIdx = stringRow.findIndex(c => c.includes('наименов') || c.includes('номенклатур'));
+      const aIdx = stringRow.findIndex(c => c.includes('артикул') || c.includes('обозначение') || c === 'код' || c === 'арт');
+      const qIdx = stringRow.findIndex(c => c.includes('кол') || c.includes('qty') || c.includes('потреб') || c === 'шт');
 
-      const stringRow = row.map(c => String(c ?? '').toLowerCase().trim());
-      const tempIndices: Record<string, number> = {};
-
-      for (const [paramKey, aliases] of Object.entries(mapping)) {
-        const foundIdx = stringRow.findIndex(cell => 
-          aliases.some(alias => cell === alias || cell.includes(alias))
-        );
-        if (foundIdx !== -1) {
-          tempIndices[paramKey] = foundIdx;
-        }
-      }
-
-      if ((tempIndices.name !== undefined || tempIndices.article !== undefined) && 
-          (tempIndices.quantity !== undefined || tempIndices.name !== undefined)) {
-        headerRowIndex = i;
-        colIndices = tempIndices;
+      if (nIdx !== -1 || aIdx !== -1) {
+        bestHeaderIndex = r;
+        bestCols = {
+          name: nIdx !== -1 ? nIdx : (aIdx !== -1 ? aIdx + 1 : 1),
+          article: aIdx,
+          quantity: qIdx !== -1 ? qIdx : (nIdx !== -1 ? nIdx + 1 : 2),
+          unit: stringRow.findIndex(c => c.includes('ед')),
+          category: stringRow.findIndex(c => c.includes('категор') || c.includes('групп')),
+          notes: stringRow.findIndex(c => c.includes('примеч'))
+        };
         break;
       }
     }
   }
 
+  if (bestHeaderIndex === -1) {
+    bestHeaderIndex = 0;
+    bestCols = { name: 1, article: 0, quantity: 2, unit: 3, category: -1, notes: -1 };
+  }
+
   const results: Array<{ article?: string; name: string; quantity: number; unit?: string; category?: string; notes?: string }> = [];
 
-  // If header found, extract tabular rows strictly below it
-  if (headerRowIndex !== -1) {
-    for (let i = headerRowIndex + 1; i < rows.length; i++) {
-      const row = rows[i];
-      if (!row || row.length === 0) continue;
+  for (let i = bestHeaderIndex + 1; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || !Array.isArray(row) || row.length === 0) continue;
 
-      const rawName = colIndices.name !== undefined ? String(row[colIndices.name] ?? '').trim() : '';
-      const rawArticle = colIndices.article !== undefined ? String(row[colIndices.article] ?? '').trim() : '';
+    const rawName = bestCols.name !== -1 && row[bestCols.name] !== undefined && row[bestCols.name] !== null ? String(row[bestCols.name]).trim() : '';
+    const rawArticle = bestCols.article !== -1 && row[bestCols.article] !== undefined && row[bestCols.article] !== null ? String(row[bestCols.article]).trim() : '';
 
-      if (!rawName && !rawArticle) continue;
+    if (!rawName && !rawArticle) continue;
 
-      // Filter out footer rows, repeated headers, or signoff lines
-      if (/^(?:итого|всего|total|подпись|сдал|принял|руководитель)\b/i.test(rawName) || 
-          /^(?:итого|всего|total)\b/i.test(rawArticle)) {
-        continue;
-      }
-      if (/^артикул\b/i.test(rawArticle) && (/^наименование\b/i.test(rawName) || colIndices.name === undefined)) {
-        continue;
-      }
-
-      let name = rawName || rawArticle;
-      let article = rawArticle;
-
-      // Extract Quantity
-      let quantity = 1;
-      if (colIndices.quantity !== undefined && row[colIndices.quantity] !== undefined) {
-        const qStr = String(row[colIndices.quantity]).replace(',', '.').replace(/[^\d.]/g, '');
-        const qNum = parseFloat(qStr);
-        if (!isNaN(qNum) && qNum > 0) {
-          quantity = Math.round(qNum * 100) / 100;
-        }
-      }
-
-      // Unit
-      let unit = 'шт';
-      if (colIndices.unit !== undefined && row[colIndices.unit]) {
-        unit = String(row[colIndices.unit]).trim() || 'шт';
-      }
-
-      // Category
-      let category = '';
-      if (colIndices.category !== undefined && row[colIndices.category]) {
-        category = String(row[colIndices.category]).trim();
-      }
-
-      // Notes
-      let notes = '';
-      if (colIndices.notes !== undefined && row[colIndices.notes]) {
-        notes = String(row[colIndices.notes]).trim();
-      }
-
-      // If quantity is embedded in name like "Петля Blum (12 шт)"
-      if (quantity === 1) {
-        const qtyMatch = name.match(/[\(\[\{]\s*(\d+(?:[.,]\d+)?)\s*(?:шт|компл|уп|п\.м\.?)\s*[\)\]\}]/i);
-        if (qtyMatch) {
-          const parsed = parseFloat(qtyMatch[1].replace(',', '.'));
-          if (!isNaN(parsed) && parsed > 0) {
-            quantity = parsed;
-          }
-        }
-      }
-
-      results.push({
-        article: article || undefined,
-        name,
-        quantity,
-        unit,
-        category: category || undefined,
-        notes: notes || undefined
-      });
+    if (/^(итого|всего|total|подпись|сдал|принял|руководитель|заказчик)\b/i.test(rawName || rawArticle) ||
+        (/^(наименование|артикул|номенклатура)\b/i.test(rawName) && /^(артикул|код|количество)\b/i.test(rawArticle))) {
+      continue;
     }
+
+    const name = rawName || rawArticle;
+    if (name.length < 2) continue;
+
+    let quantity = 1;
+    if (bestCols.quantity !== -1 && row[bestCols.quantity] !== undefined && row[bestCols.quantity] !== null) {
+      const qStr = String(row[bestCols.quantity]).replace(',', '.').replace(/[^\d.]/g, '');
+      const parsedQ = parseFloat(qStr);
+      if (!isNaN(parsedQ) && parsedQ > 0) {
+        quantity = Math.round(parsedQ * 100) / 100;
+      }
+    } else {
+      const qtyMatch = name.match(/[\(\[\{]\s*(\d+(?:[.,]\d+)?)\s*(?:шт|компл|уп|п\.м\.?)\s*[\)\]\}]/i);
+      if (qtyMatch) {
+        const parsed = parseFloat(qtyMatch[1].replace(',', '.'));
+        if (!isNaN(parsed) && parsed > 0) {
+          quantity = parsed;
+        }
+      }
+    }
+
+    let unit = 'шт';
+    if (bestCols.unit !== -1 && row[bestCols.unit]) {
+      unit = String(row[bestCols.unit]).trim() || 'шт';
+    }
+
+    let category = '';
+    if (bestCols.category !== -1 && row[bestCols.category]) {
+      category = String(row[bestCols.category]).trim();
+    }
+
+    let notes = '';
+    if (bestCols.notes !== -1 && row[bestCols.notes]) {
+      notes = String(row[bestCols.notes]).trim();
+    }
+
+    results.push({
+      article: rawArticle || undefined,
+      name,
+      quantity,
+      unit,
+      category: category || undefined,
+      notes: notes || undefined
+    });
   }
 
   return results;

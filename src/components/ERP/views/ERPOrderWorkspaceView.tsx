@@ -50,6 +50,7 @@ import { PartEdgeDiagram } from '../components/PartEdgeDiagram';
 import { ERPPackagingTab } from '../components/ERPPackagingTab';
 import { ERPKittingTab } from '../components/ERPKittingTab';
 import { ERPShippingTab } from '../components/ERPShippingTab';
+import { CNC3DDrillViewerModal } from '../components/CNC3DDrillViewerModal';
 
 interface ERPOrderWorkspaceViewProps {
   order: ProductionOrder;
@@ -211,6 +212,7 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
   const [showCameraScannerModal, setShowCameraScannerModal] = useState<boolean>(false);
   const [showShiftRequiredModal, setShowShiftRequiredModal] = useState<boolean>(false);
   const [defectTargetDetail, setDefectTargetDetail] = useState<any | null>(null);
+  const [active3DDrillModalDetail, setActive3DDrillModalDetail] = useState<any | null>(null);
   const [isIdentityConfirmed, setIsIdentityConfirmed] = useState<boolean>(false);
 
   const scannerInputRef = useRef<HTMLInputElement | null>(null);
@@ -568,6 +570,18 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
       playSoundEffect('alert');
       return;
     }
+
+    // 3D Drill Scheme Workflow (1st scan opens 3D scheme, 2nd scan completes item)
+    const is3DOpenForThisPart = active3DDrillModalDetail && active3DDrillModalDetail.id === foundPart.id;
+    if (!is3DOpenForThisPart) {
+      setActive3DDrillModalDetail(foundPart);
+      playSoundEffect('alert');
+      setScanSuccessMsg(`🔍 1-й Скан: Открыта 3D-схема детали №${foundPart.labelNumber} «${foundPart.name}». Вторичный скан зафиксирует её в списке!`);
+      return;
+    }
+
+    // 2nd Scan: Close 3D Modal and record detail completion
+    setActive3DDrillModalDetail(null);
 
     // Mark +1 piece instance as scanned
     const nextInstanceNumber = currentPartScannedCount + 1;
@@ -1685,28 +1699,37 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
                                 <PartEdgeDiagram detail={detail} compact={false} />
                               </td>
 
-                              {/* Hole Info */}
+                              {/* Hole Info / 3D Scheme */}
                               <td className="py-2.5 px-3 whitespace-nowrap">
-                                {detail.holesEnd !== undefined || detail.holesFace !== undefined || detail.holesCount !== undefined ? (
-                                  <div className="flex items-center gap-1">
-                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                      (detail.holesEnd || 0) > 0 ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-slate-100 text-slate-500'
-                                    }`}>
-                                      Торец: {detail.holesEnd ?? 0}
-                                    </span>
-                                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
-                                      (detail.holesFace || 0) > 0 ? 'bg-blue-100 text-blue-900 border border-blue-300' : 'bg-slate-100 text-slate-500'
-                                    }`}>
-                                      Пласть: {detail.holesFace ?? 0}
-                                    </span>
-                                  </div>
-                                ) : detailRequiresPrisadka(detail, settings) ? (
-                                  <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 font-mono text-[10px] font-bold border border-purple-200">
-                                    Присадка
-                                  </span>
-                                ) : (
-                                  <span className="text-slate-400 text-[10px]">0 отв.</span>
-                                )}
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setActive3DDrillModalDetail(detail);
+                                    }}
+                                    className="px-2 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[10px] font-black transition-colors cursor-pointer flex items-center gap-1 shrink-0 shadow-xs"
+                                    title="Открыть 3D схему присадки и кромления"
+                                  >
+                                    <Factory className="w-3 h-3 text-indigo-600" />
+                                    <span>3D Схема</span>
+                                  </button>
+
+                                  {detail.holesEnd !== undefined || detail.holesFace !== undefined || detail.holesCount !== undefined ? (
+                                    <div className="flex items-center gap-1">
+                                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                        (detail.holesEnd || 0) > 0 ? 'bg-amber-100 text-amber-900 border border-amber-300' : 'bg-slate-100 text-slate-500'
+                                      }`}>
+                                        Т:{detail.holesEnd ?? 0}
+                                      </span>
+                                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                        (detail.holesFace || 0) > 0 ? 'bg-blue-100 text-blue-900 border border-blue-300' : 'bg-slate-100 text-slate-500'
+                                      }`}>
+                                        П:{detail.holesFace ?? 0}
+                                      </span>
+                                    </div>
+                                  ) : null}
+                                </div>
                               </td>
 
                               {/* Notes */}
@@ -1894,6 +1917,23 @@ export const ERPOrderWorkspaceView: React.FC<ERPOrderWorkspaceViewProps> = ({
             setScanSuccessMsg(`Зафиксирован брак детали ${defectTargetDetail.labelNumber}. Передано на переделку.`);
             playSoundEffect('alert');
           }}
+        />
+      )}
+
+      {/* 3D CNC Drill Pattern Viewer Modal */}
+      {active3DDrillModalDetail && (
+        <CNC3DDrillViewerModal
+          isOpen={!!active3DDrillModalDetail}
+          onClose={() => setActive3DDrillModalDetail(null)}
+          onConfirmComplete={() => {
+            const part = active3DDrillModalDetail;
+            setActive3DDrillModalDetail(null);
+            toggleDetailScanned(part);
+          }}
+          detail={active3DDrillModalDetail}
+          orderNumber={order.orderNumber}
+          orderTitle={getSmartOrderDisplay(order).displayTitle}
+          stageName={stageMeta.name}
         />
       )}
     </div>

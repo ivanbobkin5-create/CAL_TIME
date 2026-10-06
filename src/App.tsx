@@ -2126,7 +2126,13 @@ const ProductionView = ({
       const isProduction =
         rawType === "мебельное производство" ||
         rawType === "производство" ||
-        rawType.includes("производст");
+        rawType === "production" ||
+        rawType.includes("производст") ||
+        rawType.includes("product") ||
+        rawType.includes("factory") ||
+        rawType.includes("manufacturer") ||
+        c.isProduction === true ||
+        c.data?.isProduction === true;
 
       if (!isProduction) return false;
 
@@ -2145,12 +2151,17 @@ const ProductionView = ({
         c.data?.city ||
         c.settings?.production?.city ||
         c.ownProductionConfig?.city ||
-        c.address?.city;
+        c.address?.city ||
+        c.data?.address?.city;
       if (city && typeof city === "string" && city.trim()) {
         citiesSet.add(city.trim());
       }
     });
-    return Array.from(citiesSet).sort();
+    const result = Array.from(citiesSet).sort();
+    if (result.length === 0 && availableProductions.length > 0) {
+      return ["Москва", "Санкт-Петербург", "Екатеринбург", "Новосибирск", "Казань"];
+    }
+    return result;
   }, [availableProductions]);
 
   const productionsInCity = useMemo(() => {
@@ -2161,8 +2172,9 @@ const ProductionView = ({
         c.data?.city ||
         c.settings?.production?.city ||
         c.ownProductionConfig?.city ||
-        c.address?.city;
-      return city === contractConfig.city || !city;
+        c.address?.city ||
+        c.data?.address?.city;
+      return !city || city === contractConfig.city;
     });
   }, [availableProductions, contractConfig.city]);
 
@@ -35811,6 +35823,8 @@ export default function App() {
     } catch (err) {
       console.error("Preloading error:", err);
     } finally {
+      setIsProjectsLoading(false);
+      setIsSetsLoading(false);
       setIsPreloaded(true);
     }
   };
