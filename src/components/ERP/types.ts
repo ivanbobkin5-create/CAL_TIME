@@ -402,6 +402,8 @@ export interface ERPEmployee {
   badgeCode?: string; // Персональный токен QR-бейджа для быстрого входа
   badgeIssuedAt?: string;
   bitrixUserId?: string; // ID пользователя в Битрикс24
+  isSalesManager?: boolean; // Отображать в разделе «Зарплаты менеджеров»
+  canViewAllManagerSalaries?: boolean; // Доступ ко всем зарплатам менеджеров
 }
 
 export type ShiftCellType = 'work_12' | 'work_8' | 'night_12' | 'day_off' | 'vacation' | 'sick';

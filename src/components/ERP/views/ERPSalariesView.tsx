@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   DollarSign, 
   TrendingUp, 
@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { ERPEmployee, SalaryAdjustment, InstallationTask } from '../types';
 import { getOrderCalculatedHoles } from '../utils';
+import { calculateManagerMonthlySalary } from '../../ManagerSalaries/calcEngine';
 
 interface ERPSalariesViewProps {
   employees: ERPEmployee[];
@@ -39,9 +40,10 @@ interface ERPSalariesViewProps {
   scheduleEntries?: Record<string, any>;
   settings?: any;
   installationTasks?: InstallationTask[];
+  companyId?: string;
 }
 
-type EmployeeCategory = 'production' | 'non_production' | 'all';
+type EmployeeCategory = 'production' | 'non_production' | 'managers' | 'all';
 
 export const ERPSalariesView: React.FC<ERPSalariesViewProps> = ({
   employees,
@@ -54,11 +56,37 @@ export const ERPSalariesView: React.FC<ERPSalariesViewProps> = ({
   shiftLogs = [],
   scheduleEntries = {},
   settings,
-  installationTasks = []
+  installationTasks = [],
+  companyId
 }) => {
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().substring(0, 7));
   const [search, setSearch] = useState('');
   const [employeeCategory, setEmployeeCategory] = useState<EmployeeCategory>('production');
+
+  // Manager salaries data from Furniture Calculator module
+  const [managerData, setManagerData] = useState<{
+    deals: any[];
+    policies: any[];
+    salesPlans: any[];
+    payoutSettings: any;
+  }>({ deals: [], policies: [], salesPlans: [], payoutSettings: null });
+
+  useEffect(() => {
+    if (!companyId) return;
+    fetch(`/api/manager-salaries/${companyId}/data`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data) {
+          setManagerData({
+            deals: Array.isArray(data.deals) ? data.deals : [],
+            policies: Array.isArray(data.policies) ? data.policies : [],
+            salesPlans: Array.isArray(data.salesPlans) ? data.salesPlans : [],
+            payoutSettings: data.payoutSettings || null
+          });
+        }
+      })
+      .catch(() => {});
+  }, [companyId]);
 
   // Analytics filter states
   const [analyticsEmployeeFilter, setAnalyticsEmployeeFilter] = useState<string>('all');
@@ -103,6 +131,8 @@ export const ERPSalariesView: React.FC<ERPSalariesViewProps> = ({
       list = list.filter(emp => emp.isProductionEmployee !== false);
     } else if (employeeCategory === 'non_production') {
       list = list.filter(emp => emp.isProductionEmployee === false);
+    } else if (employeeCategory === 'managers') {
+      list = list.filter(emp => emp.isSalesManager === true || (emp.productionRole || emp.role || '').toLowerCase().includes('менеджер'));
     }
 
     // If regular employee (not foreman), show ONLY their own salary
@@ -139,6 +169,56 @@ export const ERPSalariesView: React.FC<ERPSalariesViewProps> = ({
   // Calculate salaries for displayed employees
   const calculatedSalaries = useMemo(() => {
     return displayedEmployees.map(emp => {
+      // 0. Check if employee is a Sales Manager from the Furniture Calculator
+      const isSalesMgr = emp.isSalesManager || ((emp.productionRole || emp.role || '').toLowerCase().includes('менеджер') && managerData.deals.some((d: any) => d.managerId === emp.id));
+      if (isSalesMgr) {
+        const mgrCalc = calculateManagerMonthlySalary(
+          emp.id,
+          emp.name,
+          selectedMonth,
+          managerData.deals,
+          managerData.policies,
+          managerData.payoutSettings || undefined,
+          managerData.salesPlans.find((p: any) => p.month === selectedMonth),
+          emp.email
+        );
+
+        const empAdjustments = salaryAdjustments.filter(a => {
+          const isSame = a.employeeId === emp.id || a.employeeName === emp.name;
+          const isPeriod = !a.date || a.date.startsWith(selectedMonth);
+          return isSame && isPeriod;
+        });
+        const bonusSum = empAdjustments.filter(a => a.type === 'bonus').reduce((sum, a) => sum + a.amount, 0);
+        const penaltySum = empAdjustments.filter(a => a.type === 'penalty').reduce((sum, a) => sum + a.amount, 0);
+        const netBonus = bonusSum - penaltySum;
+
+        return {
+          employee: emp,
+          base: mgrCalc.baseSalary,
+          baseRate: mgrCalc.baseSalary,
+          baseExplanation: `Оклад менеджера: ${mgrCalc.baseSalary.toLocaleString('ru-RU')} ₽ / мес`,
+          piecework: mgrCalc.payableFromPaymentsCommission || mgrCalc.totalEarnedCommission,
+          pieceworkLogs: mgrCalc.dealsBreakdown.map((item: any) => ({
+            stageId: 'sales',
+            metricLabel: `Договор ${item.deal.contractNumber || 'Б/Н'} (${item.deal.clientName || 'Заказчик'})`,
+            amountEarned: item.payableCommissionThisMonth,
+            rate: item.dealCommissionWithConversion,
+            metricValue: item.paidInThisMonth || item.deal.contractAmount || 0
+          })),
+          actualShiftsCount: mgrCalc.totalMeetings,
+          hoursWorked: mgrCalc.formalizedCount,
+          plannedHours: mgrCalc.totalMeetings,
+          bonus: (mgrCalc.conversionFixedBonus + mgrCalc.planBonusEarned) - mgrCalc.dealPenalties + netBonus,
+          bonusSum: mgrCalc.conversionFixedBonus + mgrCalc.planBonusEarned + bonusSum,
+          penaltySum: mgrCalc.dealPenalties + penaltySum,
+          total: mgrCalc.totalPayout + netBonus,
+          adjustments: empAdjustments,
+          status: 'approved',
+          isManagerSalary: true,
+          managerDetails: mgrCalc
+        };
+      }
+
       // 1. Calculate shift statistics for the selected month
       const matchingShiftLogs = shiftLogs.filter(log => {
         const isSameEmp = log.employeeId === emp.id || (log.email && log.email.trim().toLowerCase() === emp.email?.trim().toLowerCase());
@@ -334,7 +414,7 @@ export const ERPSalariesView: React.FC<ERPSalariesViewProps> = ({
         status: 'approved'
       };
     });
-  }, [displayedEmployees, shiftLogs, selectedMonth, scheduleEntries, orders, settings, salaryAdjustments]);
+  }, [displayedEmployees, shiftLogs, selectedMonth, scheduleEntries, orders, settings, salaryAdjustments, managerData]);
 
   // Aggregate stats
   const totalPayroll = useMemo(() => calculatedSalaries.reduce((sum, s) => sum + s.total, 0), [calculatedSalaries]);
@@ -521,6 +601,7 @@ export const ERPSalariesView: React.FC<ERPSalariesViewProps> = ({
   };
 
   const prodCount = useMemo(() => allEligibleEmployees.filter(e => e.isProductionEmployee !== false).length, [allEligibleEmployees]);
+  const managersCount = useMemo(() => allEligibleEmployees.filter(e => e.isSalesManager || (e.productionRole || e.role || '').toLowerCase().includes('менеджер')).length, [allEligibleEmployees]);
   const nonProdCount = useMemo(() => allEligibleEmployees.filter(e => e.isProductionEmployee === false).length, [allEligibleEmployees]);
 
   return (
@@ -575,7 +656,7 @@ export const ERPSalariesView: React.FC<ERPSalariesViewProps> = ({
             <span className="text-xs font-bold text-slate-500 px-2 flex items-center gap-1.5">
               <Filter className="w-3.5 h-3.5" /> Категория:
             </span>
-            <div className="inline-flex p-1 bg-slate-100 rounded-xl">
+            <div className="inline-flex p-1 bg-slate-100 rounded-xl flex-wrap">
               <button
                 type="button"
                 onClick={() => setEmployeeCategory('production')}
@@ -590,6 +671,23 @@ export const ERPSalariesView: React.FC<ERPSalariesViewProps> = ({
                   employeeCategory === 'production' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600'
                 }`}>
                   {prodCount}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setEmployeeCategory('managers')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                  employeeCategory === 'managers'
+                    ? 'bg-white text-indigo-700 shadow-sm'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>💼 Менеджеры по продажам</span>
+                <span className={`px-1.5 py-0.5 rounded-md text-[10px] ${
+                  employeeCategory === 'managers' ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-200 text-slate-600'
+                }`}>
+                  {managersCount}
                 </span>
               </button>
 

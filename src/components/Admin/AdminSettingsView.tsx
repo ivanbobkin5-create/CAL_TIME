@@ -87,6 +87,8 @@ interface Employee {
   createdAt?: string;
   bitrix24UserId?: string;
   isProcurementManager?: boolean;
+  isSalesManager?: boolean; // Отображать в разделе зарплат менеджеров
+  canViewAllManagerSalaries?: boolean; // Доступны ли ему ВСЕ зарплаты менеджеров или только своя
 }
 
 export const AdminSettingsView = ({ 
@@ -284,7 +286,9 @@ export const AdminSettingsView = ({
           companyId: companyId,
           createdAt: newEmployee.createdAt || new Date().toISOString(),
           bitrix24UserId: newEmployee.bitrix24UserId || null,
-          isProcurementManager: !!newEmployee.isProcurementManager
+          isProcurementManager: !!newEmployee.isProcurementManager,
+          isSalesManager: !!newEmployee.isSalesManager,
+          canViewAllManagerSalaries: !!newEmployee.canViewAllManagerSalaries
         };
         console.log("Saving employee:", employeeData);
 
@@ -298,7 +302,9 @@ export const AdminSettingsView = ({
           role: newEmployee.role, // This is the job title (e.g. "Менеджер проектов")
           accessLevel: newEmployee.accessLevel || 'worker',
           bitrix24UserId: newEmployee.bitrix24UserId || null,
-          isProcurementManager: !!newEmployee.isProcurementManager
+          isProcurementManager: !!newEmployee.isProcurementManager,
+          isSalesManager: !!newEmployee.isSalesManager,
+          canViewAllManagerSalaries: !!newEmployee.canViewAllManagerSalaries
         };
         console.log("Saving employee for company:", employeeDataForCompany);
         await setDoc(doc(db, 'companies', companyId, 'employees', uid), employeeDataForCompany, { merge: true });
@@ -636,6 +642,34 @@ export const AdminSettingsView = ({
                 </div>
               </div>
 
+              <div className="md:col-span-2 space-y-2.5 p-3.5 bg-blue-50/60 rounded-xl border border-blue-100">
+                <label className="flex items-start gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={!!newEmployee.isSalesManager}
+                    onChange={(e) => setNewEmployee({ ...newEmployee, isSalesManager: e.target.checked })}
+                    className="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                  />
+                  <div>
+                    <span className="text-xs font-bold text-gray-900">Менеджер по продажам (отображать в разделе «Зарплаты менеджеров»)</span>
+                    <p className="text-[11px] text-gray-500 mt-0.5">Включает сотрудника в учет встреч, сделок, расчет конверсии, план продаж и мотивацию</p>
+                  </div>
+                </label>
+
+                <label className="flex items-start gap-2.5 cursor-pointer pt-2 border-t border-blue-200/50">
+                  <input
+                    type="checkbox"
+                    checked={!!newEmployee.canViewAllManagerSalaries}
+                    onChange={(e) => setNewEmployee({ ...newEmployee, canViewAllManagerSalaries: e.target.checked })}
+                    className="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
+                  />
+                  <div>
+                    <span className="text-xs font-bold text-gray-900">Доступ ко всем зарплатам менеджеров</span>
+                    <p className="text-[11px] text-gray-500 mt-0.5">Если выключено: сотрудник видит только свои сделки и свою зарплату. Если включено: доступны зарплаты и аналитика всех менеджеров</p>
+                  </div>
+                </label>
+              </div>
+
               <div className="md:col-span-2">
                 <label className="flex items-center gap-2">
                   <input
@@ -735,17 +769,29 @@ export const AdminSettingsView = ({
                     <div className="text-sm text-gray-900">{employee.role}</div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    <span className={cn(
-                      "px-2 inline-flex text-xs leading-5 font-semibold rounded-full",
-                      employee.accessLevel === 'admin' ? "bg-purple-100 text-purple-800" :
-                      employee.accessLevel === 'supervisor' ? "bg-orange-100 text-orange-800" :
-                      employee.accessLevel === 'manager' ? "bg-blue-100 text-blue-800" :
-                      "bg-green-100 text-green-800"
-                    )}>
-                      {employee.accessLevel === 'admin' ? 'Администратор' :
-                       employee.accessLevel === 'supervisor' ? 'Руководитель' :
-                       employee.accessLevel === 'manager' ? 'Менеджер' : 'Сотрудник'}
-                    </span>
+                    <div className="flex flex-col gap-1 items-start">
+                      <span className={cn(
+                        "px-2 inline-flex text-xs leading-5 font-semibold rounded-full",
+                        employee.accessLevel === 'admin' ? "bg-purple-100 text-purple-800" :
+                        employee.accessLevel === 'supervisor' ? "bg-orange-100 text-orange-800" :
+                        employee.accessLevel === 'manager' ? "bg-blue-100 text-blue-800" :
+                        "bg-green-100 text-green-800"
+                      )}>
+                        {employee.accessLevel === 'admin' ? 'Администратор' :
+                         employee.accessLevel === 'supervisor' ? 'Руководитель' :
+                         employee.accessLevel === 'manager' ? 'Менеджер' : 'Сотрудник'}
+                      </span>
+                      {employee.isSalesManager && (
+                        <span className="px-2 py-0.5 inline-flex text-[10px] leading-4 font-bold rounded-md bg-blue-50 text-blue-700 border border-blue-200">
+                          💼 Менеджер (ЗП)
+                        </span>
+                      )}
+                      {employee.canViewAllManagerSalaries && (
+                        <span className="px-2 py-0.5 inline-flex text-[10px] leading-4 font-bold rounded-md bg-purple-50 text-purple-700 border border-purple-200">
+                          👁️ Все ЗП менеджеров
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                     <button 

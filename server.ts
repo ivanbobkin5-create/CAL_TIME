@@ -213,7 +213,7 @@ async function startServer() {
   const PORT = 3000;
 
   app.use(cors());
-  app.use(compression());
+  app.use(compression() as any);
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -5213,6 +5213,287 @@ function transliterate(str: string): string {
       res.json({ success: true, adjustments });
     } catch (e: any) {
       console.error("Error saving salary adjustments:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  // --- Manager Salaries & Sales Plan Endpoints ---
+  app.get("/api/manager-salaries/:companyId/data", async (req, res) => {
+    try {
+      const companyId = normalizeCompanyPath(req.params.companyId || "");
+      
+      // 1. Deals
+      const dealsPath = `companies/${companyId}/manager_deals/all`;
+      let deals: any[] = [];
+      try {
+        const dealsDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: dealsPath } }));
+        if (dealsDoc?.data) {
+          deals = JSON.parse(dealsDoc.data);
+        } else {
+          const localDoc = localStore.getDoc(dealsPath);
+          if (localDoc?.data) {
+            deals = typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data;
+          }
+        }
+      } catch (_) {}
+
+      // 2. Policies
+      const policiesPath = `companies/${companyId}/manager_bonus_policies/all`;
+      let policies: any[] = [];
+      try {
+        const polDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: policiesPath } }));
+        if (polDoc?.data) {
+          policies = JSON.parse(polDoc.data);
+        } else {
+          const localDoc = localStore.getDoc(policiesPath);
+          if (localDoc?.data) {
+            policies = typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data;
+          }
+        }
+      } catch (_) {}
+
+      // 3. Sales plans
+      const plansPath = `companies/${companyId}/manager_sales_plans/all`;
+      let salesPlans: any[] = [];
+      try {
+        const planDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: plansPath } }));
+        if (planDoc?.data) {
+          salesPlans = JSON.parse(planDoc.data);
+        } else {
+          const localDoc = localStore.getDoc(plansPath);
+          if (localDoc?.data) {
+            salesPlans = typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data;
+          }
+        }
+      } catch (_) {}
+
+      // 4. Payout settings
+      const payoutPath = `companies/${companyId}/manager_payout_settings/current`;
+      let payoutSettings: any = null;
+      try {
+        const pDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: payoutPath } }));
+        if (pDoc?.data) {
+          payoutSettings = JSON.parse(pDoc.data);
+        } else {
+          const localDoc = localStore.getDoc(payoutPath);
+          if (localDoc?.data) {
+            payoutSettings = typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data;
+          }
+        }
+      } catch (_) {}
+
+      res.json({
+        success: true,
+        deals: Array.isArray(deals) ? deals : [],
+        policies: Array.isArray(policies) ? policies : [],
+        salesPlans: Array.isArray(salesPlans) ? salesPlans : [],
+        payoutSettings: payoutSettings || null
+      });
+    } catch (e: any) {
+      console.error("Error fetching manager salaries data:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/manager-salaries/:companyId/deals", async (req, res) => {
+    try {
+      const companyId = normalizeCompanyPath(req.params.companyId || "");
+      const { deal } = req.body;
+      if (!deal || !deal.id) {
+        return res.status(400).json({ error: "Invalid deal data" });
+      }
+
+      const dealsPath = `companies/${companyId}/manager_deals/all`;
+      let existingDeals: any[] = [];
+      try {
+        const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: dealsPath } }));
+        if (doc?.data) existingDeals = JSON.parse(doc.data);
+        else {
+          const localDoc = localStore.getDoc(dealsPath);
+          if (localDoc?.data) existingDeals = typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data;
+        }
+      } catch (_) {}
+
+      if (!Array.isArray(existingDeals)) existingDeals = [];
+
+      // Check if updating or adding
+      const idx = existingDeals.findIndex((d: any) => d.id === deal.id);
+      if (idx >= 0) {
+        existingDeals[idx] = { ...existingDeals[idx], ...deal, updatedAt: new Date().toISOString() };
+      } else {
+        existingDeals.unshift({ ...deal, createdAt: deal.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() });
+      }
+
+      const dataStr = JSON.stringify(existingDeals);
+      localStore.setDoc(dealsPath, `companies/${companyId}/manager_deals`, "all", dataStr, false, false);
+      try {
+        await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+          where: { path: dealsPath },
+          create: {
+            path: dealsPath,
+            collection: `companies/${companyId}/manager_deals`,
+            docId: "all",
+            data: dataStr
+          },
+          update: { data: dataStr }
+        }));
+      } catch (_) {}
+      invalidateCache(dealsPath);
+
+      res.json({ success: true, deal, dealsCount: existingDeals.length });
+    } catch (e: any) {
+      console.error("Error saving manager deal:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.delete("/api/manager-salaries/:companyId/deals/:dealId", async (req, res) => {
+    try {
+      const companyId = normalizeCompanyPath(req.params.companyId || "");
+      const { dealId } = req.params;
+
+      const dealsPath = `companies/${companyId}/manager_deals/all`;
+      let existingDeals: any[] = [];
+      try {
+        const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: dealsPath } }));
+        if (doc?.data) existingDeals = JSON.parse(doc.data);
+        else {
+          const localDoc = localStore.getDoc(dealsPath);
+          if (localDoc?.data) existingDeals = typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data;
+        }
+      } catch (_) {}
+
+      if (Array.isArray(existingDeals)) {
+        existingDeals = existingDeals.filter((d: any) => d.id !== dealId);
+        const dataStr = JSON.stringify(existingDeals);
+        localStore.setDoc(dealsPath, `companies/${companyId}/manager_deals`, "all", dataStr, false, false);
+        try {
+          await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+            where: { path: dealsPath },
+            create: { path: dealsPath, collection: `companies/${companyId}/manager_deals`, docId: "all", data: dataStr },
+            update: { data: dataStr }
+          }));
+        } catch (_) {}
+        invalidateCache(dealsPath);
+      }
+
+      res.json({ success: true, deletedId: dealId });
+    } catch (e: any) {
+      console.error("Error deleting manager deal:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/manager-salaries/:companyId/policies", async (req, res) => {
+    try {
+      const companyId = normalizeCompanyPath(req.params.companyId || "");
+      const { policy } = req.body;
+      if (!policy || !policy.id) {
+        return res.status(400).json({ error: "Invalid policy data" });
+      }
+
+      const policiesPath = `companies/${companyId}/manager_bonus_policies/all`;
+      let existing: any[] = [];
+      try {
+        const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: policiesPath } }));
+        if (doc?.data) existing = JSON.parse(doc.data);
+        else {
+          const localDoc = localStore.getDoc(policiesPath);
+          if (localDoc?.data) existing = typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data;
+        }
+      } catch (_) {}
+
+      if (!Array.isArray(existing)) existing = [];
+      const idx = existing.findIndex((p: any) => p.id === policy.id);
+      if (idx >= 0) {
+        existing[idx] = { ...existing[idx], ...policy, updatedAt: new Date().toISOString() };
+      } else {
+        existing.push({ ...policy, updatedAt: new Date().toISOString() });
+      }
+
+      const dataStr = JSON.stringify(existing);
+      localStore.setDoc(policiesPath, `companies/${companyId}/manager_bonus_policies`, "all", dataStr, false, false);
+      try {
+        await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+          where: { path: policiesPath },
+          create: { path: policiesPath, collection: `companies/${companyId}/manager_bonus_policies`, docId: "all", data: dataStr },
+          update: { data: dataStr }
+        }));
+      } catch (_) {}
+      invalidateCache(policiesPath);
+
+      res.json({ success: true, policy });
+    } catch (e: any) {
+      console.error("Error saving bonus policy:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/manager-salaries/:companyId/sales-plans", async (req, res) => {
+    try {
+      const companyId = normalizeCompanyPath(req.params.companyId || "");
+      const { salesPlan } = req.body;
+      if (!salesPlan || !salesPlan.month) {
+        return res.status(400).json({ error: "Invalid sales plan data" });
+      }
+
+      const plansPath = `companies/${companyId}/manager_sales_plans/all`;
+      let existing: any[] = [];
+      try {
+        const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: plansPath } }));
+        if (doc?.data) existing = JSON.parse(doc.data);
+        else {
+          const localDoc = localStore.getDoc(plansPath);
+          if (localDoc?.data) existing = typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data;
+        }
+      } catch (_) {}
+
+      if (!Array.isArray(existing)) existing = [];
+      const idx = existing.findIndex((p: any) => p.month === salesPlan.month);
+      if (idx >= 0) {
+        existing[idx] = { ...existing[idx], ...salesPlan, updatedAt: new Date().toISOString() };
+      } else {
+        existing.push({ ...salesPlan, id: salesPlan.id || `plan_${salesPlan.month}`, updatedAt: new Date().toISOString() });
+      }
+
+      const dataStr = JSON.stringify(existing);
+      localStore.setDoc(plansPath, `companies/${companyId}/manager_sales_plans`, "all", dataStr, false, false);
+      try {
+        await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+          where: { path: plansPath },
+          create: { path: plansPath, collection: `companies/${companyId}/manager_sales_plans`, docId: "all", data: dataStr },
+          update: { data: dataStr }
+        }));
+      } catch (_) {}
+      invalidateCache(plansPath);
+
+      res.json({ success: true, salesPlan });
+    } catch (e: any) {
+      console.error("Error saving sales plan:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/manager-salaries/:companyId/payout-settings", async (req, res) => {
+    try {
+      const companyId = normalizeCompanyPath(req.params.companyId || "");
+      const { payoutSettings } = req.body;
+      const payoutPath = `companies/${companyId}/manager_payout_settings/current`;
+      const dataStr = JSON.stringify(payoutSettings || {});
+
+      localStore.setDoc(payoutPath, `companies/${companyId}/manager_payout_settings`, "current", dataStr, false, false);
+      try {
+        await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+          where: { path: payoutPath },
+          create: { path: payoutPath, collection: `companies/${companyId}/manager_payout_settings`, docId: "current", data: dataStr },
+          update: { data: dataStr }
+        }));
+      } catch (_) {}
+      invalidateCache(payoutPath);
+
+      res.json({ success: true, payoutSettings });
+    } catch (e: any) {
+      console.error("Error saving payout settings:", e);
       res.status(500).json({ error: String(e) });
     }
   });

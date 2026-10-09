@@ -2613,6 +2613,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
                   scheduleEntries={scheduleEntries}
                   settings={settings}
                   installationTasks={installationTasks}
+                  companyId={company?.id || aliasOrId}
                 />
               )}
 

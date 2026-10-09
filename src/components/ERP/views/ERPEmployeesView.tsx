@@ -244,6 +244,18 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
                         {isProd ? 'Цех' : 'Офис'}
                       </span>
                     )}
+
+                    {emp.isSalesManager && (
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase bg-indigo-50 text-indigo-700 border border-indigo-200">
+                        💼 Менеджер (ЗП)
+                      </span>
+                    )}
+
+                    {emp.canViewAllManagerSalaries && (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-purple-50 text-purple-700 border border-purple-200">
+                        👁️ Все ЗП
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -459,6 +471,35 @@ export const ERPEmployeesView: React.FC<ERPEmployeesViewProps> = ({
                   />
                 </div>
               )}
+
+              {/* Sales Manager and Salary Access Checkboxes */}
+              <div className="p-3 bg-indigo-50/60 rounded-2xl border border-indigo-100 space-y-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-bold text-slate-900">Менеджер по продажам (Зарплаты)</div>
+                    <div className="text-[11px] text-slate-500">Отображать сотрудника в разделе «Зарплаты менеджеров» калькулятора</div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={!!formEmployee.isSalesManager}
+                    onChange={(e) => setFormEmployee({ ...formEmployee, isSalesManager: e.target.checked })}
+                    className="w-5 h-5 rounded-lg text-indigo-600 focus:ring-indigo-500 border-slate-300 cursor-pointer mt-0.5"
+                  />
+                </div>
+
+                <div className="flex items-start justify-between gap-2 pt-2 border-t border-indigo-200/50">
+                  <div>
+                    <div className="text-xs font-bold text-slate-900">Доступ ко всем зарплатам менеджеров</div>
+                    <div className="text-[11px] text-slate-500">Если выключено — видит только свою ЗП; если включено — видит всех</div>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={!!formEmployee.canViewAllManagerSalaries}
+                    onChange={(e) => setFormEmployee({ ...formEmployee, canViewAllManagerSalaries: e.target.checked })}
+                    className="w-5 h-5 rounded-lg text-indigo-600 focus:ring-indigo-500 border-slate-300 cursor-pointer mt-0.5"
+                  />
+                </div>
+              </div>
 
               {/* Position Selection */}
               <div>

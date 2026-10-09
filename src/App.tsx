@@ -126,6 +126,7 @@ import { LoginForm } from "./components/Auth/LoginForm";
 import { AdminLoginForm } from "./components/Admin/AdminLoginForm";
 import { AdminProductsApprovalView } from "./components/Admin/AdminProductsApprovalView";
 import { AdminSettingsView } from "./components/Admin/AdminSettingsView";
+import { ManagerSalariesView } from "./components/ManagerSalaries/ManagerSalariesView";
 import { AppAdminView } from "./components/Admin/AppAdminView";
 import { NotificationCenterModal, SystemNewsItem } from "./components/Notifications/NotificationCenterModal";
 import { GlobalAnnouncementBanner } from "./components/Notifications/GlobalAnnouncementBanner";
@@ -256,6 +257,7 @@ import {
   Bell,
   AlertOctagon,
   Printer,
+  RussianRuble,
 } from "lucide-react";
 
 // --- START OF OFFLINE CACHE AND SYNC ENGINE ---
@@ -36359,6 +36361,7 @@ export default function App() {
     | "service-section"
     | "production"
     | "employees"
+    | "salaries"
     | "projects"
     | "specification"
     | "checkout_current"
@@ -36387,6 +36390,19 @@ export default function App() {
       loadProcurementB24Stages(url, procCatId);
     }
   }, [activeTab, companyData?.bitrix24?.webhookUrl, companyData?.bitrix24?.procurementCategoryId]);
+
+  const [companyEmployees, setCompanyEmployees] = useState<any[]>([]);
+  useEffect(() => {
+    if (!companyData?.id) return;
+    fetch(`/api/erp/${companyData.id}/employees`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.employees && Array.isArray(data.employees)) {
+          setCompanyEmployees(data.employees);
+        }
+      })
+      .catch(() => {});
+  }, [companyData?.id]);
 
   const [selectedProductCategory, setSelectedProductCategory] = useState<
     string | null
@@ -42445,6 +42461,24 @@ export default function App() {
                   )}
                 </button>
               )}
+              {(userRole === "admin" || userRole === "supervisor" || effectiveIsAppAdmin || userData?.isSalesManager || userData?.canViewAllManagerSalaries || (userData?.role && userData.role.toLowerCase().includes("менеджер"))) && (
+                <button
+                  onClick={() => setActiveTab("salaries")}
+                  className={cn(
+                    "w-full flex items-center rounded-lg transition-all",
+                    isSidebarOpen ? "gap-2 px-2.5 py-1" : "justify-center py-1",
+                    activeTab === "salaries"
+                      ? "bg-blue-600 text-white shadow-md shadow-blue-200"
+                      : "text-gray-600 hover:bg-gray-100",
+                  )}
+                  title="Зарплаты и сделки менеджеров"
+                >
+                  <RussianRuble className="w-4 h-4 flex-shrink-0" />
+                  {isSidebarOpen && (
+                    <span className="text-[12px] font-medium">Зарплаты</span>
+                  )}
+                </button>
+              )}
               <button
                 onClick={() => setIsNotificationModalOpen(true)}
                 className={cn(
@@ -43708,6 +43742,13 @@ export default function App() {
               showAlert={showAlert}
               showConfirm={showConfirm}
               showPrompt={showPrompt}
+            />
+          ) : activeTab === "salaries" ? (
+            <ManagerSalariesView
+              companyId={companyData?.id || ""}
+              companyName={companyData?.name || "Мебельная компания"}
+              currentUser={userData}
+              companyEmployees={companyEmployees}
             />
           ) : activeTab === "settings" && (userRole === "admin" || b24Context?.isBitrix24) ? (
             <SettingsView
