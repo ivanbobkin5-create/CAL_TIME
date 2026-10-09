@@ -159,7 +159,8 @@ import {
   BitrixNotificationModal,
   B2BOrderChatModal,
   B24SidebarWidget,
-  B24PartnerCompanyWidget
+  B24PartnerCompanyWidget,
+  B24DealProcurementView
 } from "./components/Bitrix24";
 import { B3DTestView } from "./components/B3DTest/B3DTestView";
 import {
@@ -9899,6 +9900,12 @@ const Bitrix24DashboardView = ({
   onOpenB2BChat,
   setActiveTab,
   companyData,
+  suppliers = [],
+  db,
+  doc,
+  setDoc,
+  updateDoc,
+  onSnapshot,
 }: {
   b24Context: Bitrix24Context;
   b24ContactDetails: { contactId: number | null; companyId: number | null };
@@ -9918,7 +9925,14 @@ const Bitrix24DashboardView = ({
   onOpenB2BChat?: () => void;
   setActiveTab: (tab: any) => void;
   companyData?: any;
+  suppliers?: Supplier[];
+  db?: any;
+  doc?: any;
+  setDoc?: any;
+  updateDoc?: any;
+  onSnapshot?: any;
 }) => {
+  const [dealActiveSubTab, setDealActiveSubTab] = useState<'variants' | 'procurement' | 'timeline'>('variants');
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
   const [stageInfo, setStageInfo] = useState<B24DealStageInfo | null>(null);
   const [loadingStages, setLoadingStages] = useState(false);
@@ -10007,279 +10021,343 @@ const Bitrix24DashboardView = ({
 
   return (
     <div className="p-4 md:p-8 space-y-7 max-w-7xl mx-auto animate-in fade-in duration-300">
-      {/* 1. Formalized / Contract Lock Banner */}
-      {isAnyFormalized && (
-        <div className="p-5 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-teal-500/10 border-2 border-emerald-500/30 rounded-3xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm animate-in fade-in duration-200">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-md shadow-emerald-200 shrink-0">
-              <Lock className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="font-extrabold text-gray-900 text-base">Договор по Сделке оформлен</h3>
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-600 text-white uppercase tracking-wider">
-                  Зафиксирован
-                </span>
+      {/* Top Deal Navigation Tabs */}
+      <div className="flex items-center flex-wrap gap-2 bg-white/90 backdrop-blur-md p-1.5 rounded-2xl border border-gray-200 shadow-xs max-w-fit">
+        <button
+          onClick={() => setDealActiveSubTab('variants')}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs transition-all cursor-pointer",
+            dealActiveSubTab === 'variants'
+              ? "bg-blue-600 text-white shadow-sm"
+              : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+          )}
+        >
+          <FolderOpen className="w-4 h-4" />
+          <span>Варианты расчётов ({dealProjects.length})</span>
+        </button>
+
+        <button
+          onClick={() => setDealActiveSubTab('procurement')}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs transition-all cursor-pointer",
+            dealActiveSubTab === 'procurement'
+              ? "bg-blue-600 text-white shadow-sm"
+              : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+          )}
+        >
+          <Truck className="w-4 h-4" />
+          <span>Снабжение и закупки</span>
+        </button>
+
+        <button
+          onClick={() => setDealActiveSubTab('timeline')}
+          className={cn(
+            "flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs transition-all cursor-pointer",
+            dealActiveSubTab === 'timeline'
+              ? "bg-blue-600 text-white shadow-sm"
+              : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+          )}
+        >
+          <Clock className="w-4 h-4" />
+          <span>История этапов (CRM)</span>
+        </button>
+      </div>
+
+      {/* Procurement Tab */}
+      {dealActiveSubTab === 'procurement' && (
+        <B24DealProcurementView
+          dealId={b24Context.dealId || 0}
+          dealTitle={currentProjectName}
+          companyData={companyData}
+          suppliers={suppliers}
+          db={db}
+          doc={doc}
+          setDoc={setDoc}
+          updateDoc={updateDoc}
+          onSnapshot={onSnapshot}
+        />
+      )}
+
+      {/* Variants Tab */}
+      {dealActiveSubTab === 'variants' && (
+        <>
+          {/* 1. Formalized / Contract Lock Banner */}
+          {isAnyFormalized && (
+            <div className="p-5 bg-gradient-to-r from-emerald-500/10 via-emerald-500/5 to-teal-500/10 border-2 border-emerald-500/30 rounded-3xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm animate-in fade-in duration-200">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-600 text-white flex items-center justify-center shadow-md shadow-emerald-200 shrink-0">
+                  <Lock className="w-6 h-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-extrabold text-gray-900 text-base">Договор по Сделке оформлен</h3>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-600 text-white uppercase tracking-wider">
+                      Зафиксирован
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-600 mt-0.5">
+                    Договор считаются официально оформленным. Изменения и создание новых расчетов недоступны, а варианты доступны для просмотра в режиме чтения.
+                  </p>
+                </div>
               </div>
-              <p className="text-xs text-gray-600 mt-0.5">
-                Договор считаются официально оформленным. Изменения и создание новых расчетов недоступны, а варианты доступны для просмотра в режиме чтения.
-              </p>
+            </div>
+          )}
+
+          {/* 2. Projects / Variants List Section */}
+          <div className="bg-white rounded-3xl p-6 md:p-8 border border-gray-200 shadow-sm space-y-6">
+            <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-100 pb-5">
+              <div>
+                <h2 className="text-xl font-extrabold text-gray-900 flex items-center gap-2">
+                  <FolderOpen className="w-6 h-6 text-blue-600" />
+                  <span>Варианты расчётов по Сделке</span>
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Выделите один или несколько расчётов для оформления заказа или сбора комплекта.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2.5">
+                {!isAnyFormalized && (
+                  <button
+                    onClick={onNewVariant}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-bold text-xs transition-all cursor-pointer border border-gray-200"
+                    title="Создать новый расчет для этой сделки"
+                  >
+                    <Plus className="w-4 h-4 text-blue-600" />
+                    <span>Новый вариант</span>
+                  </button>
+                )}
+
+                {/* Dynamic Button: "Оформить" vs "Собрать комплект (Оформить)" */}
+                {!isAnyFormalized && (
+                  <button
+                    onClick={handleCheckoutSelected}
+                    className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl font-black text-xs shadow-md transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
+                  >
+                    {selectedProjects.length >= 2 ? (
+                      <>
+                        <Combine className="w-4 h-4" />
+                        <span>Собрать комплект (Оформить) ({selectedProjects.length})</span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>
+                          {selectedProjects.length === 1
+                            ? `Оформить «${selectedProjects[0].name}»`
+                            : "Оформить"}
+                        </span>
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {dealProjects.length === 0 ? (
+              <div className="text-center py-12 bg-gray-50 rounded-2xl border border-dashed border-gray-200 space-y-3">
+                <FolderOpen className="w-12 h-12 text-gray-300 mx-auto" />
+                <h3 className="font-bold text-gray-700 text-base">Варианты расчётов пока не созданы</h3>
+                <p className="text-xs text-gray-400 max-w-sm mx-auto">
+                  Загрузите отчёт в калькулятор или нажмите «Новый вариант», чтобы добавить альтернативный расчёт для клиента.
+                </p>
+                {!isAnyFormalized && (
+                  <button
+                    onClick={() => setActiveTab("calculator")}
+                    className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-xs shadow-sm hover:bg-blue-700 transition-all cursor-pointer mt-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Перейти в Калькулятор</span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {dealProjects.map((proj: any) => {
+                  const isCurrent = proj.id === currentProjectId;
+                  const isSelected = selectedProjectIds.includes(proj.id);
+                  const projTotal = proj.totalPrice || proj.data?.totalPrice || 0;
+                  const dateStr = proj.updatedAt
+                    ? new Date(proj.updatedAt).toLocaleDateString("ru-RU")
+                    : "";
+                  const projFormalized =
+                    proj.isFormalized ||
+                    proj.status === "formalized" ||
+                    proj.isContractSigned ||
+                    proj.data?.isFormalized;
+
+                  return (
+                    <div
+                      key={proj.id}
+                      className={cn(
+                        "rounded-2xl border p-5 space-y-4 transition-all relative flex flex-col justify-between",
+                        projFormalized
+                          ? "border-emerald-300 bg-emerald-50/30 shadow-xs"
+                          : isCurrent
+                          ? "border-blue-500 bg-blue-50/30 shadow-md ring-2 ring-blue-500/20"
+                          : "border-gray-200 hover:border-gray-300 bg-white hover:shadow-md"
+                      )}
+                    >
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {!isAnyFormalized && (
+                              <input
+                                type="checkbox"
+                                checked={isSelected}
+                                onChange={() => toggleSelectProject(proj.id)}
+                                className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer shrink-0"
+                                title="Выделить вариант для оформления или комплекта"
+                              />
+                            )}
+                            <h3 className="font-extrabold text-gray-900 text-sm truncate" title={proj.name}>
+                              {proj.name}
+                            </h3>
+                          </div>
+
+                          {projFormalized ? (
+                            <span className="px-2 py-0.5 bg-emerald-600 text-white text-[10px] font-black rounded-md uppercase tracking-wider shrink-0 flex items-center gap-1">
+                              <CheckCircle2 className="w-3 h-3" /> Оформили
+                            </span>
+                          ) : isCurrent ? (
+                            <span className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-black rounded-md uppercase tracking-wider shrink-0">
+                              Активный
+                            </span>
+                          ) : null}
+                        </div>
+
+                        <div className="flex items-baseline justify-between pt-1">
+                          <span className="text-xs text-gray-500 font-medium">Стоимость:</span>
+                          <span className="text-lg font-black text-blue-700">
+                            {projTotal.toLocaleString("ru-RU")} ₽
+                          </span>
+                        </div>
+
+                        {dateStr && (
+                          <div className="text-[11px] text-gray-400 font-medium">
+                            Обновлено: {dateStr}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="pt-3 border-t border-gray-100 grid grid-cols-2 gap-2">
+                        {/* Open / View button */}
+                        <button
+                          onClick={() => onLoadProject(proj)}
+                          className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                          title={isAnyFormalized ? "Просмотреть вариант (режим чтения)" : "Загрузить вариант в калькулятор"}
+                        >
+                          <Edit2 className="w-3.5 h-3.5 text-gray-600" />
+                          <span>{isAnyFormalized ? "Просмотреть" : "Открыть"}</span>
+                        </button>
+
+                        {/* Commercial Proposal (КП) button */}
+                        <button
+                          onClick={() => onOpenCommercialProposal(proj)}
+                          className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer border border-indigo-100"
+                          title="Открыть и напечатать Коммерческое предложение"
+                        >
+                          <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>КП</span>
+                        </button>
+
+                        {/* Send to Bitrix24 Deal button */}
+                        {!isAnyFormalized && (
+                          <button
+                            onClick={() => onSendProjectToB24(proj)}
+                            className="col-span-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+                            title="Выгрузить товары и спецификацию этого варианта в CRM Сделку"
+                          >
+                            <Send className="w-3.5 h-3.5" />
+                            <span>Выгрузить в сделку</span>
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Timeline Tab */}
+      {dealActiveSubTab === 'timeline' && (
+        <div className="bg-white rounded-3xl p-6 md:p-8 border border-gray-200 shadow-sm space-y-6">
+          <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-100 pb-5">
+            <div className="flex items-center gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shadow-xs shrink-0">
+                <Clock className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
+                    Текущий этап сделки в Битрикс24
+                  </span>
+                  <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-blue-100 text-blue-800 uppercase">
+                    CRM Статус
+                  </span>
+                </div>
+                <h2 className="text-xl font-extrabold text-gray-900 flex items-center gap-2 mt-0.5">
+                  <span>{stageInfo?.stageName || "Расчет и Договор"}</span>
+                </h2>
+              </div>
+            </div>
+
+            <div className="bg-blue-50/80 px-4 py-2.5 rounded-2xl border border-blue-200/60 text-right shrink-0">
+              <span className="text-[10px] text-blue-600 font-bold block uppercase tracking-wider">
+                Время в текущем этапе
+              </span>
+              <span className="text-sm font-black text-blue-900 font-mono">
+                ⏱ {stageInfo?.currentStageDuration || "2 дн. 8 ч."}
+              </span>
+            </div>
+          </div>
+
+          {/* Timeline list */}
+          <div>
+            <h3 className="text-xs font-extrabold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+              <History className="w-4 h-4 text-blue-600" />
+              <span>Хронологическая история нахождения сделки на этапах</span>
+            </h3>
+
+            <div className="relative pl-6 space-y-3.5 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-blue-100">
+              {(stageInfo?.history && stageInfo.history.length > 0 ? stageInfo.history : defaultHistory).map(
+                (item, idx) => (
+                  <div
+                    key={idx}
+                    className="relative flex flex-wrap items-center justify-between gap-3 bg-gray-50/80 p-3.5 rounded-2xl border border-gray-100 hover:border-blue-200 transition-all"
+                  >
+                    <div
+                      className={`absolute -left-6 top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full border-2 ${
+                        item.isCurrent
+                          ? "bg-blue-600 border-blue-200 ring-4 ring-blue-100"
+                          : "bg-gray-300 border-white"
+                      }`}
+                    />
+                    <div>
+                      <div className="font-bold text-sm text-gray-900 flex items-center gap-2">
+                        <span>{item.stageName}</span>
+                        {item.isCurrent && (
+                          <span className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-black rounded uppercase">
+                            Текущий
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-gray-400 mt-0.5">Вход на этап: {item.enteredAt}</div>
+                    </div>
+                    <div className="text-xs font-bold text-gray-700 bg-white px-3 py-1.5 rounded-xl border border-gray-200 shadow-2xs">
+                      Время на этапе:{" "}
+                      <span className="font-mono text-blue-700 font-black">{item.durationFormatted}</span>
+                    </div>
+                  </div>
+                )
+              )}
             </div>
           </div>
         </div>
       )}
-
-      {/* 2. Projects / Variants List Section */}
-      <div className="bg-white rounded-3xl p-6 md:p-8 border border-gray-200 shadow-sm space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-100 pb-5">
-          <div>
-            <h2 className="text-xl font-extrabold text-gray-900 flex items-center gap-2">
-              <FolderOpen className="w-6 h-6 text-blue-600" />
-              <span>Варианты расчётов по Сделке</span>
-            </h2>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Выделите один или несколько расчётов для оформления заказа или сбора комплекта.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2.5">
-            {!isAnyFormalized && (
-              <button
-                onClick={onNewVariant}
-                className="flex items-center gap-1.5 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-bold text-xs transition-all cursor-pointer border border-gray-200"
-                title="Создать новый расчет для этой сделки"
-              >
-                <Plus className="w-4 h-4 text-blue-600" />
-                <span>Новый вариант</span>
-              </button>
-            )}
-
-            {/* Dynamic Button: "Оформить" vs "Собрать комплект (Оформить)" */}
-            {!isAnyFormalized && (
-              <button
-                onClick={handleCheckoutSelected}
-                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl font-black text-xs shadow-md transition-all cursor-pointer hover:scale-[1.02] active:scale-[0.98]"
-              >
-                {selectedProjects.length >= 2 ? (
-                  <>
-                    <Combine className="w-4 h-4" />
-                    <span>Собрать комплект (Оформить) ({selectedProjects.length})</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>
-                      {selectedProjects.length === 1
-                        ? `Оформить «${selectedProjects[0].name}»`
-                        : "Оформить"}
-                    </span>
-                  </>
-                )}
-              </button>
-            )}
-          </div>
-        </div>
-
-        {dealProjects.length === 0 ? (
-          <div className="text-center py-12 bg-gray-50 rounded-2xl border border-dashed border-gray-200 space-y-3">
-            <FolderOpen className="w-12 h-12 text-gray-300 mx-auto" />
-            <h3 className="font-bold text-gray-700 text-base">Варианты расчётов пока не созданы</h3>
-            <p className="text-xs text-gray-400 max-w-sm mx-auto">
-              Загрузите отчёт в калькулятор или нажмите «Новый вариант», чтобы добавить альтернативный расчёт для клиента.
-            </p>
-            {!isAnyFormalized && (
-              <button
-                onClick={() => setActiveTab("calculator")}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl font-bold text-xs shadow-sm hover:bg-blue-700 transition-all cursor-pointer mt-2"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Перейти в Калькулятор</span>
-              </button>
-            )}
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {dealProjects.map((proj: any) => {
-              const isCurrent = proj.id === currentProjectId;
-              const isSelected = selectedProjectIds.includes(proj.id);
-              const projTotal = proj.totalPrice || proj.data?.totalPrice || 0;
-              const dateStr = proj.updatedAt
-                ? new Date(proj.updatedAt).toLocaleDateString("ru-RU")
-                : "";
-              const projFormalized =
-                proj.isFormalized ||
-                proj.status === "formalized" ||
-                proj.isContractSigned ||
-                proj.data?.isFormalized;
-
-              return (
-                <div
-                  key={proj.id}
-                  className={cn(
-                    "rounded-2xl border p-5 space-y-4 transition-all relative flex flex-col justify-between",
-                    projFormalized
-                      ? "border-emerald-300 bg-emerald-50/30 shadow-xs"
-                      : isCurrent
-                      ? "border-blue-500 bg-blue-50/30 shadow-md ring-2 ring-blue-500/20"
-                      : "border-gray-200 hover:border-gray-300 bg-white hover:shadow-md"
-                  )}
-                >
-                  <div className="space-y-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        {!isAnyFormalized && (
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleSelectProject(proj.id)}
-                            className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer shrink-0"
-                            title="Выделить вариант для оформления или комплекта"
-                          />
-                        )}
-                        <h3 className="font-extrabold text-gray-900 text-sm truncate" title={proj.name}>
-                          {proj.name}
-                        </h3>
-                      </div>
-
-                      {projFormalized ? (
-                        <span className="px-2 py-0.5 bg-emerald-600 text-white text-[10px] font-black rounded-md uppercase tracking-wider shrink-0 flex items-center gap-1">
-                          <CheckCircle2 className="w-3 h-3" /> Оформили
-                        </span>
-                      ) : isCurrent ? (
-                        <span className="px-2 py-0.5 bg-blue-600 text-white text-[10px] font-black rounded-md uppercase tracking-wider shrink-0">
-                          Активный
-                        </span>
-                      ) : null}
-                    </div>
-
-                    <div className="flex items-baseline justify-between pt-1">
-                      <span className="text-xs text-gray-500 font-medium">Стоимость:</span>
-                      <span className="text-lg font-black text-blue-700">
-                        {projTotal.toLocaleString("ru-RU")} ₽
-                      </span>
-                    </div>
-
-                    {dateStr && (
-                      <div className="text-[11px] text-gray-400 font-medium">
-                        Обновлено: {dateStr}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="pt-3 border-t border-gray-100 grid grid-cols-2 gap-2">
-                    {/* Open / View button */}
-                    <button
-                      onClick={() => onLoadProject(proj)}
-                      className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-800 rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer"
-                      title={isAnyFormalized ? "Просмотреть вариант (режим чтения)" : "Загрузить вариант в калькулятор"}
-                    >
-                      <Edit2 className="w-3.5 h-3.5 text-gray-600" />
-                      <span>{isAnyFormalized ? "Просмотреть" : "Открыть"}</span>
-                    </button>
-
-                    {/* Commercial Proposal (КП) button */}
-                    <button
-                      onClick={() => onOpenCommercialProposal(proj)}
-                      className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-1 cursor-pointer border border-indigo-100"
-                      title="Открыть и напечатать Коммерческое предложение"
-                    >
-                      <FileText className="w-3.5 h-3.5 text-indigo-600" />
-                      <span>КП</span>
-                    </button>
-
-                    {/* Send to Bitrix24 Deal button */}
-                    {!isAnyFormalized && (
-                      <button
-                        onClick={() => onSendProjectToB24(proj)}
-                        className="col-span-2 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
-                        title="Выгрузить товары и спецификацию этого варианта в CRM Сделку"
-                      >
-                        <Send className="w-3.5 h-3.5" />
-                        <span>Выгрузить в сделку</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-
-      {/* 3. Chronological Stage History Timeline (Битрикс24) - ПОД Варианты расчётов */}
-      <div className="bg-white rounded-3xl p-6 md:p-8 border border-gray-200 shadow-sm space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-gray-100 pb-5">
-          <div className="flex items-center gap-3.5">
-            <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100 shadow-xs shrink-0">
-              <Clock className="w-6 h-6" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
-                  Текущий этап сделки в Битрикс24
-                </span>
-                <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-blue-100 text-blue-800 uppercase">
-                  CRM Статус
-                </span>
-              </div>
-              <h2 className="text-xl font-extrabold text-gray-900 flex items-center gap-2 mt-0.5">
-                <span>{stageInfo?.stageName || "Расчет и Договор"}</span>
-              </h2>
-            </div>
-          </div>
-
-          <div className="bg-blue-50/80 px-4 py-2.5 rounded-2xl border border-blue-200/60 text-right shrink-0">
-            <span className="text-[10px] text-blue-600 font-bold block uppercase tracking-wider">
-              Время в текущем этапе
-            </span>
-            <span className="text-sm font-black text-blue-900 font-mono">
-              ⏱ {stageInfo?.currentStageDuration || "2 дн. 8 ч."}
-            </span>
-          </div>
-        </div>
-
-        {/* Timeline list */}
-        <div>
-          <h3 className="text-xs font-extrabold text-gray-500 uppercase tracking-wider mb-4 flex items-center gap-1.5">
-            <History className="w-4 h-4 text-blue-600" />
-            <span>Хронологическая история нахождения сделки на этапах</span>
-          </h3>
-
-          <div className="relative pl-6 space-y-3.5 before:absolute before:left-2.5 before:top-2 before:bottom-2 before:w-0.5 before:bg-blue-100">
-            {(stageInfo?.history && stageInfo.history.length > 0 ? stageInfo.history : defaultHistory).map(
-              (item, idx) => (
-                <div
-                  key={idx}
-                  className="relative flex flex-wrap items-center justify-between gap-3 bg-gray-50/80 p-3.5 rounded-2xl border border-gray-100 hover:border-blue-200 transition-all"
-                >
-                  <div
-                    className={`absolute -left-6 top-1/2 -translate-y-1/2 w-3.5 h-3.5 rounded-full border-2 ${
-                      item.isCurrent
-                        ? "bg-blue-600 border-blue-200 ring-4 ring-blue-100"
-                        : "bg-gray-300 border-white"
-                    }`}
-                  />
-                  <div>
-                    <div className="font-bold text-sm text-gray-900 flex items-center gap-2">
-                      <span>{item.stageName}</span>
-                      {item.isCurrent && (
-                        <span className="px-2 py-0.5 bg-blue-600 text-white text-[9px] font-black rounded uppercase">
-                          Текущий
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs text-gray-400 mt-0.5">Вход на этап: {item.enteredAt}</div>
-                  </div>
-                  <div className="text-xs font-bold text-gray-700 bg-white px-3 py-1.5 rounded-xl border border-gray-200 shadow-2xs">
-                    Время на этапе:{" "}
-                    <span className="font-mono text-blue-700 font-black">{item.durationFormatted}</span>
-                  </div>
-                </div>
-              )
-            )}
-          </div>
-        </div>
-      </div>
     </div>
   );
 };
@@ -35387,7 +35465,8 @@ export default function App() {
           webhookUrl: cleanUrl,
           method: "crm.status.list",
           params: {
-            filter: { ENTITY_ID: entityId }
+            filter: { ENTITY_ID: entityId },
+            order: { SORT: "ASC" }
           }
         })
       });
@@ -35413,7 +35492,8 @@ export default function App() {
 
       const stages: { id: string; name: string }[] = [];
       if (data.result && Array.isArray(data.result)) {
-        data.result.forEach((st: any) => {
+        const sorted = [...data.result].sort((a: any, b: any) => (Number(a.SORT) || 0) - (Number(b.SORT) || 0));
+        sorted.forEach((st: any) => {
           stages.push({ id: String(st.STATUS_ID), name: `${st.NAME} (${st.STATUS_ID})` });
         });
       }
@@ -36413,6 +36493,22 @@ export default function App() {
   const [projectSets, setProjectSets] = useState<any[]>([]);
   const [isSetsLoading, setIsSetsLoading] = useState(true);
   const [procurementOrders, setProcurementOrders] = useState<any[]>([]);
+
+  useEffect(() => {
+    if (!companyData?.id) return;
+    const unsubSuppliers = onSnapshot(collection(db, "companies", companyData.id, "suppliers"), (snap: any) => {
+      const sups = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+      setSuppliers(sups);
+    });
+    const unsubOrders = onSnapshot(collection(db, "companies", companyData.id, "projectSets"), (snap: any) => {
+      const orders = snap.docs.map((d: any) => ({ id: d.id, ...d.data() }));
+      setProcurementOrders(orders);
+    });
+    return () => {
+      unsubSuppliers();
+      unsubOrders();
+    };
+  }, [companyData?.id, db, collection, onSnapshot]);
   const [selectedProjectForSpec, setSelectedProjectForSpec] = useState<
     any | null
   >(null);
@@ -43042,6 +43138,12 @@ export default function App() {
               onOpenNotification={() => setShowB24NotificationModal(true)}
               setActiveTab={setActiveTab}
               companyData={companyData}
+              suppliers={suppliers}
+              db={db}
+              doc={doc}
+              setDoc={setDoc}
+              updateDoc={updateDoc}
+              onSnapshot={onSnapshot}
             />
           )}
           {activeTab === "calculator" && (

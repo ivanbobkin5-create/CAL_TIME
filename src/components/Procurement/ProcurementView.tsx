@@ -73,11 +73,41 @@ export const ProcurementView = ({
     const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null); // null means adding a new one or viewing list
     const [showProblemsModal, setShowProblemsModal] = useState(false);
     
+    const [statusFilter, setStatusFilter] = useState<'active' | 'all' | 'completed'>('active');
     const [isSyncing, setIsSyncing] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [sortField, setSortField] = useState<'readyDate' | 'name'>('readyDate');
     const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
     const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+
+    const isStageClosed = (stageId?: string) => {
+        if (!stageId) return false;
+        const sid = String(stageId).toUpperCase();
+        return sid === 'WON' || sid === 'LOSE' || sid === 'APOLOGY' || sid.endsWith(':WON') || sid.endsWith(':LOSE') || sid.endsWith(':APOLOGY');
+    };
+
+    const isOrderProcurementCompleted = (order: any) => {
+        const status = order.procurementStatus || {};
+        let categoriesInProject = 0;
+        let categoriesReceived = 0;
+        
+        CATEGORIES.forEach(cat => {
+            const catData = status[cat];
+            if (!catData) return;
+            const budget = catData.amount || 0;
+            const items = catData.items || [];
+            if (budget > 0 || items.length > 0) {
+                categoriesInProject++;
+                const isReceived = items.length > 0 && items.every((i: any) => i.status === 'Поступило' || i.status === 'Нет в проекте');
+                const hasNotInProject = items.some((i: any) => i.status === 'Нет в проекте');
+                if (isReceived || catData.status === 'Поступило' || (hasNotInProject && items.length === 1)) {
+                    categoriesReceived++;
+                }
+            }
+        });
+        
+        return categoriesInProject > 0 && categoriesReceived === categoriesInProject;
+    };
 
     // Temp state for editing
     const [editStatus, setEditStatus] = useState('');
@@ -184,28 +214,48 @@ export const ProcurementView = ({
             const procurementStageId = companyData.bitrix24?.procurementStageId;
             const finalStageId = companyData.bitrix24?.procurementFinalStageId;
 
-            if (!procurementStageId || stages.length === 0) {
+            if (!procurementStageId) {
                 setOrders(allOrders);
-            } else {
+                return;
+            }
+
+            // Determine valid stages strictly based on configuration
+            let validStageIds: string[] = [procurementStageId];
+            if (stages && stages.length > 0) {
                 const stageIndex = stages.findIndex(s => s.id === procurementStageId);
                 const finalStageIndex = finalStageId ? stages.findIndex(s => s.id === finalStageId) : -1;
                 
-                if (stageIndex === -1) {
-                    setOrders(allOrders); 
-                } else {
-                    let validStageIds: string[];
-                    if (finalStageIndex !== -1 && finalStageIndex > stageIndex) {
-                        validStageIds = stages.slice(stageIndex, finalStageIndex).map(s => s.id);
-                    } else {
-                        validStageIds = stages.slice(stageIndex).map(s => s.id);
-                    }
-                    setOrders(allOrders.filter((o: any) => validStageIds.includes(o.b24DealStageId)));
+                if (stageIndex !== -1 && finalStageIndex !== -1 && finalStageIndex > stageIndex) {
+                    // Strict slice between start and strictly before final stage, excluding closed stages
+                    validStageIds = stages.slice(stageIndex, finalStageIndex)
+                        .map(s => s.id)
+                        .filter(id => !isStageClosed(id));
+                    if (validStageIds.length === 0) validStageIds = [procurementStageId];
+                } else if (stageIndex !== -1) {
+                    // When only procurementStageId is set, take ONLY this single stage!
+                    validStageIds = [procurementStageId];
                 }
             }
+
+            const filtered = allOrders.filter((o: any) => {
+                // If it's a Bitrix24 deal
+                if (o.b24DealId) {
+                    if (o.b24Closed || o.isProcurementInactive) return false;
+                    const stage = o.b24DealStageId || o.b24StageId;
+                    if (isStageClosed(stage)) return false;
+                    if (finalStageId && stage === finalStageId) return false;
+                    if (!validStageIds.includes(stage)) return false;
+                    return true;
+                }
+                // Custom sets in calculator
+                return true;
+            });
+
+            setOrders(filtered);
         });
         
         return unsub;
-    }, [companyData?.id, db, collection, onSnapshot, stages, companyData.bitrix24?.procurementStageId]);
+    }, [companyData?.id, db, collection, onSnapshot, stages, companyData.bitrix24?.procurementStageId, companyData.bitrix24?.procurementFinalStageId]);
 
     const syncDeals = async () => {
         if (!companyData.bitrix24?.webhookUrl || !companyData.bitrix24?.procurementStageId) {
@@ -226,7 +276,10 @@ export const ProcurementView = ({
                 body: JSON.stringify({
                     webhookUrl: companyData.bitrix24.webhookUrl,
                     method: "crm.status.list",
-                    params: { filter: { ENTITY_ID: entityId } }
+                    params: { 
+                        filter: { ENTITY_ID: entityId },
+                        order: { SORT: "ASC" }
+                    }
                 })
             });
             const stagesText = await stagesRes.text();
@@ -240,7 +293,8 @@ export const ProcurementView = ({
                 throw new Error("Bitrix24: Неверный ответ сервера при загрузке стадий.");
             }
 
-            const allStages = stagesData.result || [];
+            // Sort stages by SORT strictly
+            const allStages = (stagesData.result || []).sort((a: any, b: any) => (Number(a.SORT) || 0) - (Number(b.SORT) || 0));
             const startIdx = allStages.findIndex((s: any) => s.STATUS_ID === startStageId);
             const finalIdx = finalStageId ? allStages.findIndex((s: any) => s.STATUS_ID === finalStageId) : -1;
             
@@ -250,9 +304,13 @@ export const ProcurementView = ({
             
             let validStageIds: string[];
             if (finalIdx !== -1 && finalIdx > startIdx) {
-                validStageIds = allStages.slice(startIdx, finalIdx).map((s: any) => s.STATUS_ID);
+                validStageIds = allStages.slice(startIdx, finalIdx)
+                    .filter((s: any) => !isStageClosed(s.STATUS_ID) && s.SEMANTICS !== 'S' && s.SEMANTICS !== 'F')
+                    .map((s: any) => s.STATUS_ID);
+                if (validStageIds.length === 0) validStageIds = [startStageId];
             } else {
-                validStageIds = allStages.slice(startIdx).map((s: any) => s.STATUS_ID);
+                // Take strictly the single configured start stage!
+                validStageIds = [startStageId];
             }
             
             const dealsRes = await fetch("/api/bitrix24/query", {
@@ -264,10 +322,12 @@ export const ProcurementView = ({
                     params: {
                         filter: { 
                             CATEGORY_ID: Number(catId),
-                            STAGE_ID: validStageIds
+                            STAGE_ID: validStageIds,
+                            CLOSED: "N" // Exclude completed / closed deals
                         },
+                        order: { "DATE_CREATE": "DESC" },
                         select: [
-                            "ID", "TITLE", "STAGE_ID", "CLOSEDATE", "BEGINDATE",
+                            "ID", "TITLE", "STAGE_ID", "CLOSEDATE", "BEGINDATE", "CLOSED",
                             ...(Object.values(companyData.bitrix24.fieldMappings || {}))
                         ]
                     }
@@ -284,9 +344,11 @@ export const ProcurementView = ({
                 throw new Error("Bitrix24: Неверный ответ сервера при загрузке сделок.");
             }
             const deals = dealsData.result || [];
+            const activeB24Ids = new Set(deals.map((d: any) => String(d.ID)));
             
             const mappings = companyData.bitrix24.fieldMappings || {};
             for (const deal of deals) {
+                if (deal.CLOSED === 'Y') continue;
                 const orderId = `b24_${deal.ID}`;
                 
                 // Get ready date using mapping or standard CLOSEDATE
@@ -338,7 +400,7 @@ export const ProcurementView = ({
                     let derivedStatus = existingData.status || 'Не заказано';
                     if (items.length > 0) {
                         const hasOrdered = items.some((i: any) => i.status === 'Заказано');
-                        const hasReceived = items.every((i: any) => i.status === 'Поступило');
+                        const hasReceived = items.every((i: any) => i.status === 'Поступило' || i.status === 'Нет в проекте');
                         if (hasReceived) derivedStatus = 'Поступило';
                         else if (hasOrdered) derivedStatus = 'Заказано';
                     }
@@ -357,9 +419,45 @@ export const ProcurementView = ({
                     readyDate: readyDateValue,
                     b24DealId: deal.ID,
                     b24DealStageId: deal.STAGE_ID,
+                    b24Closed: false,
+                    isProcurementInactive: false,
                     procurementStatus,
                     updatedAt: new Date().toISOString()
                 }, { merge: true });
+            }
+
+            // Cleanup/update previously synced deals that are no longer active in procurement
+            const staleOrders = orders.filter((o: any) => o.b24DealId && !activeB24Ids.has(String(o.b24DealId)));
+            if (staleOrders.length > 0) {
+                const staleIds = staleOrders.map((o: any) => String(o.b24DealId));
+                try {
+                    const checkRes = await fetch("/api/bitrix24/query", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({
+                            webhookUrl: companyData.bitrix24.webhookUrl,
+                            method: "crm.deal.list",
+                            params: {
+                                filter: { ID: staleIds },
+                                select: ["ID", "STAGE_ID", "CLOSED"]
+                            }
+                        })
+                    });
+                    const checkData = await checkRes.json();
+                    const checkList = checkData.result || [];
+                    for (const cd of checkList) {
+                        const isInactive = cd.CLOSED === 'Y' || !validStageIds.includes(cd.STAGE_ID) || isStageClosed(cd.STAGE_ID);
+                        if (isInactive) {
+                            await updateDoc(doc(db, 'companies', companyData.id, 'projectSets', `b24_${cd.ID}`), {
+                                b24DealStageId: cd.STAGE_ID,
+                                b24Closed: cd.CLOSED === 'Y',
+                                isProcurementInactive: true
+                            });
+                        }
+                    }
+                } catch (err) {
+                    console.warn("Could not check stale deals:", err);
+                }
             }
         } catch (e: any) {
             console.error("Sync error:", e);
@@ -527,18 +625,33 @@ export const ProcurementView = ({
 
     const arrivalProblems = unreadArrivalProblems;
 
+    const counts = useMemo(() => {
+        let active = 0;
+        let completed = 0;
+        orders.forEach(o => {
+            if (isOrderProcurementCompleted(o)) completed++;
+            else active++;
+        });
+        return { active, completed, total: orders.length };
+    }, [orders]);
+
     const filteredOrders = useMemo(() => {
         const finalStageId = companyData?.bitrix24?.procurementFinalStageId;
         
         let result = orders.filter(o => {
             const matchesSearch = o.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                                 o.b24DealId?.toString().includes(searchQuery);
+            if (!matchesSearch) return false;
             
-            // Exclude deals that are at or after the final stage
-            // Note: If finalStageId is set, we check if the deal's current stage matches it
-            const isFinalStage = finalStageId && o.b24StageId === finalStageId;
-            
-            return matchesSearch && !isFinalStage;
+            const dealStage = o.b24DealStageId || o.b24StageId;
+            if (finalStageId && dealStage === finalStageId) return false;
+            if (o.b24Closed || o.isProcurementInactive) return false;
+            if (isStageClosed(dealStage)) return false;
+
+            const isDone = isOrderProcurementCompleted(o);
+            if (statusFilter === 'active') return !isDone;
+            if (statusFilter === 'completed') return isDone;
+            return true;
         });
 
         result.sort((a, b) => {
@@ -556,7 +669,7 @@ export const ProcurementView = ({
         });
 
         return result;
-    }, [orders, searchQuery, sortField, sortDirection]);
+    }, [orders, searchQuery, sortField, sortDirection, statusFilter, companyData?.bitrix24?.procurementFinalStageId]);
 
     return (
         <div className="flex flex-col h-screen bg-[#FAFBFC] font-sans">
@@ -564,7 +677,7 @@ export const ProcurementView = ({
             <div className="bg-white border-b border-gray-100 px-8 py-4 shrink-0 z-40">
                 <div className="w-full flex flex-col md:flex-row md:items-center justify-between gap-6">
                     <div className="flex items-center gap-4">
-                        <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-200">
+                        <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center shadow-lg shadow-blue-200 shrink-0">
                             <LayoutDashboard className="w-6 h-6 text-white" />
                         </div>
                         <div>
@@ -572,13 +685,58 @@ export const ProcurementView = ({
                             <div className="flex items-center gap-2 mt-1.5">
                                 <span className="flex items-center gap-1 text-[10px] font-black uppercase text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">
                                     <Clock className="w-2.5 h-2.5" />
-                                    Активных заказов: {orders.length}
+                                    {statusFilter === 'active' ? `В работе: ${counts.active}` : statusFilter === 'completed' ? `Завершено: ${counts.completed}` : `Всего: ${counts.total}`}
                                 </span>
                             </div>
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center flex-wrap gap-3">
+                        {/* Status Filter Tabs */}
+                        <div className="flex items-center bg-gray-100 p-1 rounded-2xl border border-gray-200 shrink-0">
+                            <button
+                                onClick={() => setStatusFilter('active')}
+                                className={cn(
+                                    "px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer",
+                                    statusFilter === 'active' 
+                                        ? "bg-white text-blue-600 shadow-xs" 
+                                        : "text-gray-500 hover:text-gray-900"
+                                )}
+                            >
+                                <span>В работе</span>
+                                <span className={cn("px-1.5 py-0.5 rounded-md text-[10px] font-bold", statusFilter === 'active' ? "bg-blue-50 text-blue-700" : "bg-gray-200 text-gray-600")}>
+                                    {counts.active}
+                                </span>
+                            </button>
+                            <button
+                                onClick={() => setStatusFilter('all')}
+                                className={cn(
+                                    "px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer",
+                                    statusFilter === 'all' 
+                                        ? "bg-white text-blue-600 shadow-xs" 
+                                        : "text-gray-500 hover:text-gray-900"
+                                )}
+                            >
+                                <span>Все</span>
+                                <span className={cn("px-1.5 py-0.5 rounded-md text-[10px] font-bold", statusFilter === 'all' ? "bg-blue-50 text-blue-700" : "bg-gray-200 text-gray-600")}>
+                                    {counts.total}
+                                </span>
+                            </button>
+                            <button
+                                onClick={() => setStatusFilter('completed')}
+                                className={cn(
+                                    "px-3.5 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer",
+                                    statusFilter === 'completed' 
+                                        ? "bg-white text-emerald-600 shadow-xs" 
+                                        : "text-gray-500 hover:text-gray-900"
+                                )}
+                            >
+                                <span>Завершённые</span>
+                                <span className={cn("px-1.5 py-0.5 rounded-md text-[10px] font-bold", statusFilter === 'completed' ? "bg-emerald-50 text-emerald-700" : "bg-gray-200 text-gray-600")}>
+                                    {counts.completed}
+                                </span>
+                            </button>
+                        </div>
                         <div className="relative group">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
                             <input 
