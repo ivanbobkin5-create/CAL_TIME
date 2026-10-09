@@ -469,10 +469,10 @@ export const ProjectsView = ({
             }
           });
         }
-        // Ensure currentUser is present with their latest photo
+        // Update currentUser photo only if currentUser is already an employee of THIS company
         if (currentUser && (currentUser.uid || currentUser.id)) {
           const cUid = currentUser.uid || currentUser.id;
-          const existingIdx = employees.findIndex(e => e.uid === cUid);
+          const existingIdx = employees.findIndex(e => e.uid === cUid || (currentUser.email && e.email === currentUser.email));
           const cAvatar = currentUser.photoURL || currentUser.avatarUrl || currentUser.photoUrl || currentUser.photo || currentUser.avatar || "";
           const cName = currentUser.displayName || currentUser.name || currentUser.email || "Пользователь";
           if (existingIdx >= 0) {
@@ -482,14 +482,6 @@ export const ProjectsView = ({
               avatarUrl: employees[existingIdx].avatarUrl || cAvatar,
               name: employees[existingIdx].name || cName,
             };
-          } else {
-            employees.push({
-              uid: cUid,
-              name: cName,
-              avatarUrl: cAvatar,
-              photoURL: cAvatar,
-              email: currentUser.email,
-            });
           }
         }
         setCompanyEmployees(employees);
@@ -863,7 +855,7 @@ export const ProjectsView = ({
   // Dissolve set (keeps projects as standalone)
   const handleDissolveSet = async (set: any) => {
     if (!companyId) return;
-    const isIssued = set.status === "sent" || set.status === "ordered" || set.status === "submitted" || set.status === "transferred";
+    const isIssued = set.status === "sent" || set.status === "formalized" || set.status === "ordered" || set.status === "submitted" || set.status === "transferred";
     const confirmMessage = isIssued
       ? `Внимание! Комплект "${set.name || 'без названия'}" находится в статусе «Оформлен / Передан». При расформировании комплект перейдет из статуса «Оформлен» в обычные проекты, где необходимо будет заново собрать комплект или оформить проекты по отдельности. Продолжить?`
       : `Вы хотите расформировать комплект "${set.name || 'без названия'}"? Все входящие в него проекты сохранятся как отдельные проекты.`;
@@ -1608,9 +1600,8 @@ export const ProjectsView = ({
 
                     const employee = companyEmployees.find(emp => emp.uid === set.createdBy);
                     const displayManagerName = employee ? (employee.name || employee.displayName || employee.email) : (set.createdByName || "Пользователь");
-                    const setStatus = set.status || (subProjects.length > 0 && subProjects.every((p: any) => p.status === "sent") ? "sent" : "draft");
-                    const isSetSent = setStatus === "sent";
-
+                    const setStatus = set.status || (subProjects.length > 0 && subProjects.every((p: any) => p.status === "sent" || p.status === "formalized") ? "formalized" : "draft");
+                    const isSetSent = setStatus === "sent" || setStatus === "formalized";
                     return (
                       <div 
                         key={set.id}
@@ -1640,8 +1631,8 @@ export const ProjectsView = ({
                                         № {set.contractNumber}
                                       </span>
                                     )}
-                                    {setStatus === "sent" && (
-                                      <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-orange-100 text-orange-700 flex-shrink-0">
+                                    {(setStatus === "sent" || setStatus === "formalized") && (
+                                      <span className="px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 flex-shrink-0">
                                         Оформлен
                                       </span>
                                     )}
@@ -2100,10 +2091,10 @@ export const ProjectsView = ({
                             </button>
                             {(userRole === "manager" || userRole === "admin") && (
                               <button onClick={(e) => { onOpenSpecification(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-xs font-medium text-blue-600 flex items-center gap-2">
-                                <ClipboardList className="w-4 h-4" /> {project.status === "sent" || project.status === "transferred" ? "Спецификация" : "Оформить"}
+                                <ClipboardList className="w-4 h-4" /> {project.status === "sent" || project.status === "transferred" || project.status === "formalized" ? "Спецификация" : "Оформить"}
                               </button>
                             )}
-                            {project.status !== "sent" && project.status !== "transferred" && (userRole === "manager" || userRole === "admin") && onOpenProposal && (
+                            {project.status !== "sent" && project.status !== "transferred" && project.status !== "formalized" && (userRole === "manager" || userRole === "admin") && onOpenProposal && (
                               <button onClick={(e) => { e.stopPropagation(); onOpenProposal(project); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-gray-50 text-xs font-medium text-indigo-600 flex items-center gap-2">
                                 <FileText className="w-4 h-4" /> Комм. предложение (КП)
                               </button>
@@ -2113,7 +2104,7 @@ export const ProjectsView = ({
                                 <TrendingUp className="w-4 h-4 text-indigo-500" /> Анализ сделки
                               </button>
                             )}
-                            {project.status === "sent" && (
+                            {(project.status === "sent" || project.status === "formalized") && (
                               <button onClick={(e) => { e.stopPropagation(); handleConfirmTransferToProduction(project, [project]); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-emerald-50 text-xs font-semibold text-emerald-600 flex items-center gap-2">
                                 <Send className="w-4 h-4 text-emerald-500" /> Передать в работу
                               </button>
@@ -2196,20 +2187,31 @@ export const ProjectsView = ({
                         
                         <div className="flex flex-col items-end gap-1 shrink-0">
                           <div className="flex items-center gap-1">
-                            {project.status && project.status !== "draft" && (
+                            {project.status && (
                               <span className={cn(
                                 "px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider",
-                                project.status === "sent" ? "bg-orange-100 text-orange-700" :
+                                (project.status === "sent" || project.status === "formalized") ? "bg-emerald-100 text-emerald-800 border border-emerald-200" :
                                 project.status === "transferred" ? "bg-blue-100 text-blue-700" :
-                                project.status === "production_transferred" ? "bg-green-100 text-green-700" :
+                                project.status === "production_transferred" ? "bg-indigo-100 text-indigo-700" :
+                                project.status === "in_production" ? "bg-purple-100 text-purple-700" :
+                                project.status === "shipped" ? "bg-cyan-100 text-cyan-700" :
+                                project.status === "installed" ? "bg-teal-100 text-teal-700" :
                                 project.status === "returned" ? "bg-red-100 text-red-700" :
-                                (project.status === "accepted" || project.status === "accepted_with_revisions") ? "bg-emerald-100 text-emerald-700" : "bg-gray-100 text-gray-700"
+                                (project.status === "accepted" || project.status === "accepted_with_revisions") ? "bg-emerald-100 text-emerald-700" :
+                                project.status === "cancelled" ? "bg-rose-100 text-rose-700" :
+                                project.status === "completed" ? "bg-slate-100 text-slate-700" : "bg-gray-100 text-gray-700"
                               )}>
-                                {project.status === "sent" ? "Оформлен" :
+                                {(project.status === "sent" || project.status === "formalized") ? "Оформлен" :
                                  project.status === "transferred" ? "Передан руководителю" :
                                  project.status === "production_transferred" ? "Передан в работу" :
+                                 project.status === "in_production" ? "В производстве" :
+                                 project.status === "shipped" ? "Отгружен" :
+                                 project.status === "installed" ? "Смонтирован" :
                                  project.status === "returned" ? "Возвращен на доработку" :
-                                 (project.status === "accepted" || project.status === "accepted_with_revisions") ? "Принят производством" : project.status}
+                                 (project.status === "accepted" || project.status === "accepted_with_revisions") ? "Принят производством" :
+                                 project.status === "cancelled" ? "Отменен" :
+                                 project.status === "completed" ? "Завершен" :
+                                 project.status === "draft" ? "Черновик" : project.status}
                               </span>
                             )}
                             {project.bitrix24DealId && (
@@ -2247,7 +2249,7 @@ export const ProjectsView = ({
                       )}
 
                       {/* Action Buttons Row for Standalone Project Card */}
-                      {(project.status === "draft" || project.status === "returned" || project.status === "sent") && (userRole === "manager" || userRole === "admin") && (
+                      {(project.status === "draft" || project.status === "returned" || project.status === "sent" || project.status === "formalized") && (userRole === "manager" || userRole === "admin") && (
                         <div className="mt-5 pt-4 border-t border-gray-100 flex items-center justify-end gap-3" onClick={(e) => e.stopPropagation()}>
                           <button
                             onClick={(e) => {
@@ -2257,7 +2259,7 @@ export const ProjectsView = ({
                             className="h-10 px-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-md shadow-indigo-100 shrink-0"
                           >
                             <ClipboardList className="w-3.5 h-3.5 shrink-0" />
-                            <span>{project.status === "sent" ? "Внести изменения" : "Оформить"}</span>
+                            <span>{(project.status === "sent" || project.status === "formalized") ? "Внести изменения" : "Оформить"}</span>
                           </button>
                         </div>
                       )}

@@ -79,7 +79,9 @@ export const B2BOrderChatModal: React.FC<B2BOrderChatModalProps> = ({
   // Load chat messages
   const loadMessages = async () => {
     try {
-      const res = await fetch(`/api/bitrix24/b2b-chat/messages?orderId=${encodeURIComponent(orderId)}`);
+      const linkedDeal = currentDealId || partnerDealId || b24Context?.dealId;
+      const url = `/api/bitrix24/b2b-chat/messages?orderId=${encodeURIComponent(orderId)}${linkedDeal ? `&dealId=${encodeURIComponent(String(linkedDeal))}` : ''}`;
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setMessages(data.messages || []);
@@ -137,7 +139,8 @@ export const B2BOrderChatModal: React.FC<B2BOrderChatModalProps> = ({
         attachments,
         targetCompanyId: partnerCompanyId,
         targetDealId: partnerDealId,
-        currentDealId: currentDealId || b24Context?.dealId
+        currentDealId: currentDealId || b24Context?.dealId,
+        dealId: currentDealId || partnerDealId || b24Context?.dealId
       };
 
       const res = await fetch("/api/bitrix24/b2b-chat/send", {

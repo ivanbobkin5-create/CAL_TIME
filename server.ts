@@ -5498,7 +5498,229 @@ function transliterate(str: string): string {
     }
   });
 
+  // --- Payment Requisites (ИП Бобкин) & Module Subscriptions ---
+  app.get("/api/system/payment-requisites", async (req, res) => {
+    try {
+      const docPath = "system/payment_requisites";
+      let requisites = {
+        payeeName: "ИП Бобкин Иван Александрович",
+        inn: "770000000000",
+        account: "40802810000000000000",
+        bankName: "ПАО СБЕРБАНК",
+        bic: "044525225",
+        corrAccount: "30101810400000000225"
+      };
+      try {
+        const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
+        if (doc?.data) {
+          requisites = JSON.parse(doc.data);
+        }
+      } catch (_) {}
+      res.json({ success: true, requisites });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
 
+  app.post("/api/system/payment-requisites", async (req, res) => {
+    try {
+      const { requisites } = req.body;
+      const docPath = "system/payment_requisites";
+      const dataStr = JSON.stringify(requisites || {});
+      localStore.setDoc(docPath, "system", "payment_requisites", dataStr, false, false);
+      try {
+        await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+          where: { path: docPath },
+          create: { path: docPath, collection: "system", docId: "payment_requisites", data: dataStr },
+          update: { data: dataStr }
+        }));
+      } catch (_) {}
+      invalidateCache(docPath);
+      res.json({ success: true, requisites });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.get("/api/module-payment-requests", async (req, res) => {
+    try {
+      const { companyId } = req.query;
+      let docs: any[] = [];
+      try {
+        docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+          where: { collection: "module_payment_requests" }
+        }));
+      } catch (_) {}
+
+      let requests = docs.map(d => {
+        try { return JSON.parse(d.data); } catch (_) { return null; }
+      }).filter(Boolean);
+
+      if (companyId) {
+        requests = requests.filter(r => r.companyId === companyId);
+      }
+      requests.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      res.json({ success: true, requests });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/module-payment-requests", async (req, res) => {
+    try {
+      const { request } = req.body;
+      if (!request || !request.companyId) {
+        return res.status(400).json({ error: "Invalid payment request" });
+      }
+      const reqId = request.id || `mod_req_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const docPath = `module_payment_requests/${reqId}`;
+      const fullReq = {
+        id: reqId,
+        ...request,
+        status: request.status || 'pending',
+        createdAt: request.createdAt || new Date().toISOString()
+      };
+      const dataStr = JSON.stringify(fullReq);
+      localStore.setDoc(docPath, "module_payment_requests", reqId, dataStr, false, false);
+      try {
+        await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+          where: { path: docPath },
+          create: { path: docPath, collection: "module_payment_requests", docId: reqId, data: dataStr },
+          update: { data: dataStr }
+        }));
+      } catch (_) {}
+      invalidateCache(docPath);
+      res.json({ success: true, request: fullReq });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.patch("/api/module-payment-requests/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { status, expirationDate } = req.body;
+      const docPath = `module_payment_requests/${id}`;
+      let existing: any = null;
+      try {
+        const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
+        if (doc?.data) existing = JSON.parse(doc.data);
+      } catch (_) {}
+
+      if (!existing) {
+        const localDoc = localStore.getDoc(docPath);
+        if (localDoc?.data) existing = typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data;
+      }
+
+      if (!existing) return res.status(404).json({ error: "Request not found" });
+
+      existing.status = status || existing.status;
+      existing.updatedAt = new Date().toISOString();
+      if (status === 'approved') {
+        existing.approvedAt = new Date().toISOString();
+        const compPath = `companies/${existing.companyId}`;
+        try {
+          const cDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: compPath } }));
+          if (cDoc?.data) {
+            const compData = JSON.parse(cDoc.data);
+            const activeMods = compData.activeModules || {};
+            const modExpires = compData.moduleExpiration || {};
+            
+            const monthsToAdd = existing.period === 'year' || existing.months === 12 ? 12 : (existing.period === 'half_year' || existing.months === 6 ? 6 : 1);
+            const targetDate = expirationDate || new Date(Date.now() + monthsToAdd * 30 * 24 * 60 * 60 * 1000).toISOString();
+
+            if (Array.isArray(existing.modules)) {
+              existing.modules.forEach((mod: string) => {
+                activeMods[mod] = true;
+                modExpires[mod] = targetDate;
+                if (mod === 'erp') compData.erpEnabled = true;
+                if (mod === 'procurement') compData.procurementEnabled = true;
+                if (mod === 'warehouse') compData.warehouseEnabled = true;
+                if (mod === 'manager_salaries') compData.managerSalariesEnabled = true;
+              });
+            }
+            compData.activeModules = activeMods;
+            compData.moduleExpiration = modExpires;
+            compData.tariffExpiration = targetDate;
+
+            const cStr = JSON.stringify(compData);
+            localStore.setDoc(compPath, "companies", existing.companyId, cStr, false, false);
+            await dbQueryWithRetry(() => prisma.dbDocument.update({
+              where: { path: compPath },
+              data: { data: cStr }
+            }));
+            invalidateCache(compPath);
+          }
+        } catch (cErr) {
+          console.error("Error activating company modules:", cErr);
+        }
+      }
+
+      const dataStr = JSON.stringify(existing);
+      localStore.setDoc(docPath, "module_payment_requests", id, dataStr, false, false);
+      try {
+        await dbQueryWithRetry(() => prisma.dbDocument.update({
+          where: { path: docPath },
+          data: { data: dataStr }
+        }));
+      } catch (_) {}
+      invalidateCache(docPath);
+      res.json({ success: true, request: existing });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.patch("/api/companies/:companyId/modules", async (req, res) => {
+    try {
+      const companyId = normalizeCompanyPath(req.params.companyId || "");
+      const { activeModules, moduleExpiration, tariffExpiration, resetTrial } = req.body;
+      const compPath = `companies/${companyId}`;
+      let compData: any = null;
+      try {
+        const cDoc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: compPath } }));
+        if (cDoc?.data) compData = JSON.parse(cDoc.data);
+      } catch (_) {}
+
+      if (!compData) {
+        const localDoc = localStore.getDoc(compPath);
+        if (localDoc?.data) compData = typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data;
+      }
+
+      if (!compData) return res.status(404).json({ error: "Company not found" });
+
+      if (activeModules) {
+        compData.activeModules = { ...(compData.activeModules || {}), ...activeModules };
+        if (activeModules.erp !== undefined) compData.erpEnabled = activeModules.erp;
+        if (activeModules.procurement !== undefined) compData.procurementEnabled = activeModules.procurement;
+        if (activeModules.warehouse !== undefined) compData.warehouseEnabled = activeModules.warehouse;
+        if (activeModules.manager_salaries !== undefined) compData.managerSalariesEnabled = activeModules.manager_salaries;
+      }
+      if (moduleExpiration) {
+        compData.moduleExpiration = { ...(compData.moduleExpiration || {}), ...moduleExpiration };
+      }
+      if (tariffExpiration) {
+        compData.tariffExpiration = tariffExpiration;
+      }
+      if (resetTrial) {
+        compData.trialStartedAt = new Date().toISOString();
+        compData.trialExpiresAt = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+      }
+
+      const cStr = JSON.stringify(compData);
+      localStore.setDoc(compPath, "companies", companyId, cStr, false, false);
+      try {
+        await dbQueryWithRetry(() => prisma.dbDocument.update({
+          where: { path: compPath },
+          data: { data: cStr }
+        }));
+      } catch (_) {}
+      invalidateCache(compPath);
+      res.json({ success: true, company: compData });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
 
   // --- Яндекс.Диск Облачное хранилище (Фотоотчеты монтажей и рекламаций) ---
   app.post("/api/yandex-disk/test-token", async (req, res) => {
@@ -6375,15 +6597,64 @@ function transliterate(str: string): string {
   // --- Межпортальный B2B Чат между Салоном и Производством (Cross-Portal Order Chat) ---
   app.get("/api/bitrix24/b2b-chat/messages", async (req, res) => {
     try {
-      const { orderId } = req.query;
-      if (!orderId) return res.status(400).json({ error: "orderId is required" });
+      const { orderId, dealId } = req.query;
+      if (!orderId && !dealId) return res.status(400).json({ error: "orderId or dealId is required" });
 
+      const idVariants = new Set<string>();
+      if (orderId) {
+        const s = String(orderId).trim();
+        idVariants.add(s);
+        if (s.startsWith("b24_deal_")) {
+          idVariants.add(s.replace(/^b24_deal_/, ""));
+        } else if (/^\d+$/.test(s)) {
+          idVariants.add(`b24_deal_${s}`);
+        }
+      }
+      if (dealId) {
+        const d = String(dealId).trim();
+        idVariants.add(d);
+        idVariants.add(`b24_deal_${d}`);
+        idVariants.add(d.replace(/^b24_deal_/, ""));
+      }
+
+      // Check if any variant corresponds to a project document that contains bitrix24DealId
+      for (const v of Array.from(idVariants)) {
+        try {
+          const projs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+            where: { docId: v }
+          }));
+          for (const p of projs) {
+            try {
+              const pData = JSON.parse(p.data);
+              if (pData.bitrix24DealId) {
+                idVariants.add(String(pData.bitrix24DealId));
+                idVariants.add(`b24_deal_${pData.bitrix24DealId}`);
+              }
+              if (pData.b24DealId) {
+                idVariants.add(String(pData.b24DealId));
+                idVariants.add(`b24_deal_${pData.b24DealId}`);
+              }
+            } catch (_) {}
+          }
+        } catch (_) {}
+      }
+
+      const collections = Array.from(idVariants).map(v => `b2b_order_chats/${v}/messages`);
       const messagesDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
-        where: { collection: `b2b_order_chats/${orderId}/messages` }
+        where: { collection: { in: collections } }
       }));
 
-      const messages = messagesDocs
-        .map(d => JSON.parse(d.data))
+      const messageMap = new Map<string, any>();
+      for (const d of messagesDocs) {
+        try {
+          const msg = JSON.parse(d.data);
+          if (msg && msg.id && !messageMap.has(msg.id)) {
+            messageMap.set(msg.id, msg);
+          }
+        } catch (_) {}
+      }
+
+      const messages = Array.from(messageMap.values())
         .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
       res.json({ success: true, messages });
@@ -6407,7 +6678,8 @@ function transliterate(str: string): string {
         attachments = [],
         targetCompanyId,
         targetDealId,
-        currentDealId
+        currentDealId,
+        dealId
       } = req.body;
 
       if (!orderId || !text) {
@@ -6428,15 +6700,38 @@ function transliterate(str: string): string {
         createdAt: new Date().toISOString()
       };
 
-      // 1. Save to database
-      await dbQueryWithRetry(() => prisma.dbDocument.create({
-        data: {
-          path: `b2b_order_chats/${orderId}/messages/${messageId}`,
-          collection: `b2b_order_chats/${orderId}/messages`,
-          docId: messageId,
-          data: JSON.stringify(messageDoc)
-        }
-      }));
+      // Collect all alias identifiers so both portals and website see the exact same history
+      const idVariants = new Set<string>();
+      const s = String(orderId).trim();
+      idVariants.add(s);
+      if (s.startsWith("b24_deal_")) {
+        idVariants.add(s.replace(/^b24_deal_/, ""));
+      } else if (/^\d+$/.test(s)) {
+        idVariants.add(`b24_deal_${s}`);
+      }
+      const linkedDeal = dealId || currentDealId || targetDealId;
+      if (linkedDeal) {
+        const d = String(linkedDeal).trim();
+        idVariants.add(d);
+        idVariants.add(`b24_deal_${d}`);
+        idVariants.add(d.replace(/^b24_deal_/, ""));
+      }
+
+      // Save to all alias collections in DB
+      for (const v of idVariants) {
+        await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+          where: { path: `b2b_order_chats/${v}/messages/${messageId}` },
+          create: {
+            path: `b2b_order_chats/${v}/messages/${messageId}`,
+            collection: `b2b_order_chats/${v}/messages`,
+            docId: messageId,
+            data: JSON.stringify(messageDoc)
+          },
+          update: {
+            data: JSON.stringify(messageDoc)
+          }
+        })).catch(() => {});
+      }
 
       // 2. Dispatch cross-portal notification to the other party's Bitrix24 portal
       let notificationSent = false;
@@ -6519,6 +6814,7 @@ function transliterate(str: string): string {
       res.status(500).json({ success: false, error: e.message || String(e) });
     }
   });
+
   const isDev = process.env.NODE_ENV !== "production";
   const distPath = path.join(process.cwd(), 'dist');
 

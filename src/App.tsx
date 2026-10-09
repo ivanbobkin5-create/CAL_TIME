@@ -10036,18 +10036,20 @@ const Bitrix24DashboardView = ({
           <span>Варианты расчётов ({dealProjects.length})</span>
         </button>
 
-        <button
-          onClick={() => setDealActiveSubTab('procurement')}
-          className={cn(
-            "flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs transition-all cursor-pointer",
-            dealActiveSubTab === 'procurement'
-              ? "bg-blue-600 text-white shadow-sm"
-              : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
-          )}
-        >
-          <Truck className="w-4 h-4" />
-          <span>Снабжение и закупки</span>
-        </button>
+        {Boolean(companyData?.procurementEnabled || companyData?.activeModules?.procurement || companyData?.modules?.procurement) && (
+          <button
+            onClick={() => setDealActiveSubTab('procurement')}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs transition-all cursor-pointer",
+              dealActiveSubTab === 'procurement'
+                ? "bg-blue-600 text-white shadow-sm"
+                : "text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+            )}
+          >
+            <Truck className="w-4 h-4" />
+            <span>Снабжение и закупки</span>
+          </button>
+        )}
 
         <button
           onClick={() => setDealActiveSubTab('timeline')}
@@ -10065,17 +10067,29 @@ const Bitrix24DashboardView = ({
 
       {/* Procurement Tab */}
       {dealActiveSubTab === 'procurement' && (
-        <B24DealProcurementView
-          dealId={b24Context.dealId || 0}
-          dealTitle={currentProjectName}
-          companyData={companyData}
-          suppliers={suppliers}
-          db={db}
-          doc={doc}
-          setDoc={setDoc}
-          updateDoc={updateDoc}
-          onSnapshot={onSnapshot}
-        />
+        Boolean(companyData?.procurementEnabled || companyData?.activeModules?.procurement || companyData?.modules?.procurement) ? (
+          <B24DealProcurementView
+            dealId={b24Context.dealId || 0}
+            dealTitle={currentProjectName}
+            companyData={companyData}
+            suppliers={suppliers}
+            db={db}
+            doc={doc}
+            setDoc={setDoc}
+            updateDoc={updateDoc}
+            onSnapshot={onSnapshot}
+          />
+        ) : (
+          <div className="bg-white p-8 rounded-3xl border border-gray-200 text-center space-y-4 shadow-sm max-w-xl mx-auto my-8">
+            <div className="w-16 h-16 bg-amber-50 text-amber-600 rounded-2xl flex items-center justify-center mx-auto shadow-inner">
+              <Truck className="w-8 h-8" />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900">Модуль «Снабжение» не активирован</h3>
+            <p className="text-sm text-gray-600 leading-relaxed">
+              Раздел снабжения и закупок доступен только для компаний с активным модулем «Снабжение». Подключите модуль в настройках компании («Добавить модули») или обратитесь к администратору.
+            </p>
+          </div>
+        )
       )}
 
       {/* Variants Tab */}
@@ -35627,41 +35641,6 @@ export default function App() {
         }
       }
 
-      // Legacy project/set cache migration across all browser localStorage keys
-      try {
-        const allLocalKeys = Object.keys(localStorage);
-        const legacyProjKeys = allLocalKeys.filter(k => 
-          (k.includes('/projects') || k.includes('/sets') || k.includes('erp_orders_') || k.includes('saved_projects')) &&
-          !k.includes(`companies/${companyId}/`)
-        );
-
-        for (const legKey of legacyProjKeys) {
-          const rawLeg = localStorage.getItem(legKey);
-          if (rawLeg) {
-            const parsedLeg = JSON.parse(rawLeg);
-            const items = Array.isArray(parsedLeg) ? parsedLeg : (parsedLeg.projects || parsedLeg.orders || []);
-            if (Array.isArray(items) && items.length > 0) {
-              console.log(`Migrating ${items.length} legacy cached projects/sets from key ${legKey} to current company ${companyId}...`);
-              if (legKey.includes('project') || legKey.includes('order')) {
-                setProjects(prev => {
-                  const existingIds = new Set(prev.map(p => p.id));
-                  const newProjs = items.map((d: any) => ({ id: d.id || `proj_${Date.now()}`, ...(d.data || d), companyId })).filter((p: any) => !existingIds.has(p.id));
-                  return [...prev, ...newProjs];
-                });
-              } else if (legKey.includes('set')) {
-                setProjectSets(prev => {
-                  const existingIds = new Set(prev.map(s => s.id));
-                  const newSets = items.map((d: any) => ({ id: d.id || `set_${Date.now()}`, ...(d.data || d), companyId })).filter((s: any) => !existingIds.has(s.id));
-                  return [...prev, ...newSets];
-                });
-              }
-            }
-          }
-        }
-      } catch (legErr) {
-        console.warn("Legacy project cache migration error:", legErr);
-      }
-
       // If we have some basic cached data, let's open the app immediately
       const hasBasicCache = (await idbCache.get(`meb_cache:/api/db/col/companies/${companyId}/products`)) || localStorage.getItem(`meb_cache:/api/db/col/companies/${companyId}/products`);
       if (hasBasicCache) {
@@ -35837,26 +35816,6 @@ export default function App() {
       let allFetchedProjs = Array.isArray(projData) ? [...projData] : [];
       let allFetchedSets = Array.isArray(setsColData) ? [...setsColData] : [];
 
-      // If company is not e5om9lzxh but belongs to Ivan/Faktura, merge from e5om9lzxh
-      if (companyId !== "e5om9lzxh" && (companyId.includes("mebelfaktura") || companyId.includes("b24_"))) {
-        try {
-          const resP = await fetchWithTimeout(`/api/db/col/companies/e5om9lzxh/projects`, 10000).catch(() => null);
-          if (resP && resP.ok) {
-            const pData = await resP.json();
-            if (Array.isArray(pData)) {
-              allFetchedProjs = [...allFetchedProjs, ...pData];
-            }
-          }
-          const resS = await fetchWithTimeout(`/api/db/col/companies/e5om9lzxh/sets`, 10000).catch(() => null);
-          if (resS && resS.ok) {
-            const sData = await resS.json();
-            if (Array.isArray(sData)) {
-              allFetchedSets = [...allFetchedSets, ...sData];
-            }
-          }
-        } catch (_) {}
-      }
-
       if (allFetchedProjs.length > 0) {
         const seenIds = new Set<string>();
         const uniqueProjs = allFetchedProjs.filter((d: any) => {
@@ -35971,7 +35930,7 @@ export default function App() {
               setUserRole(resolvedRole);
               auth.currentUser = fullUserData;
               
-              const effectiveCompanyId = docData.companyId || ((savedEmail?.includes("ivanbobkin") || savedEmail?.includes("yandex") || docData.email?.includes("yandex")) ? 'e5om9lzxh' : null);
+              const effectiveCompanyId = docData.companyId || ((savedEmail === "lk.ivanbobkin@yandex.ru" || docData.email === "lk.ivanbobkin@yandex.ru") ? 'e5om9lzxh' : null);
               if (effectiveCompanyId) {
                 let compData: any = null;
                 try {
@@ -36159,7 +36118,7 @@ export default function App() {
          auth.currentUser = { uid: authUser.uid, email: authUser.email, ...docData };
          
          let compData: any = null;
-         const effectiveCid = docData.companyId || authUser.companyId || ((authUser.email?.includes("ivanbobkin") || authUser.email?.includes("yandex")) ? 'e5om9lzxh' : null);
+         const effectiveCid = docData.companyId || authUser.companyId || ((authUser.email === "lk.ivanbobkin@yandex.ru" || docData.email === "lk.ivanbobkin@yandex.ru") ? 'e5om9lzxh' : null);
          // Fetch company data to ensure correct account type is loaded
          if (effectiveCid) {
            const compRes = await fetch(`/api/db/doc/companies/${effectiveCid}`);

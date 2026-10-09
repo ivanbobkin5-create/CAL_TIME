@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Users, Plus, Shield, Mail, User, Briefcase, Settings, Trash2, Edit2, X, Check, Loader2, Lock, Crown } from 'lucide-react';
+import { Users, Plus, Shield, Mail, User, Briefcase, Settings, Trash2, Edit2, X, Check, Loader2, Lock, Crown, Sparkles } from 'lucide-react';
+import { ModuleSubscriptionModal } from './ModuleSubscriptionModal';
 // TimeWeb DB Setup
 const db = {};
 function collection(db: any, ...pathParts: string[]) {
@@ -503,12 +504,23 @@ export const AdminSettingsView = ({
                 </span>
               </div>
             </div>
-            <button
-              onClick={() => setShowTariffModal(true)}
-              className="px-6 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors"
-            >
-              Продлить тариф
-            </button>
+            {(() => {
+              const isB24Connected = Boolean(
+                companyData?.bitrix24?.connected ||
+                companyData?.bitrix24?.webhookUrl ||
+                companyData?.id?.startsWith('b24_') ||
+                (typeof companyData?.id === 'string' && companyData?.id?.includes('bitrix24'))
+              );
+              return (
+                <button
+                  onClick={() => setShowTariffModal(true)}
+                  className="px-6 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-md shadow-blue-100 flex items-center gap-2 cursor-pointer"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  <span>{isB24Connected ? "Добавить модули" : "Продлить тариф"}</span>
+                </button>
+              );
+            })()}
           </div>
 
           {tariffRequests.filter(r => r.status === 'pending').length > 0 && (
@@ -844,155 +856,14 @@ export const AdminSettingsView = ({
         </div>
       </div>
 
-      {/* Tariff Modal */}
+      {/* Module / Tariff Subscription Modal */}
       {showTariffModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-6 md:p-8 max-w-lg w-full shadow-xl">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-bold text-gray-900">Продление тарифа</h2>
-              <button onClick={() => setShowTariffModal(false)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-            
-            <div className="space-y-6">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Выберите тариф</label>
-                <select 
-                  value={tariffRequest.type === 'Производство' ? 'Мебельное производство' : tariffRequest.type}
-                  onChange={(e) => setTariffRequest(prev => ({ ...prev, type: e.target.value }))}
-                  className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none"
-                >
-                  <option value="Мебельное производство">Производство (4990 ₽/мес)</option>
-                  <option value="Салон">Салон (7990 ₽/мес)</option>
-                  <option value="Дизайнер">Дизайнер (1990 ₽/мес)</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Период оплаты</label>
-                <div className="grid grid-cols-2 gap-3">
-                  <button
-                    onClick={() => setTariffRequest(prev => ({ ...prev, period: 'month' }))}
-                    className={cn(
-                      "py-3 px-4 rounded-xl border text-center transition-colors",
-                      tariffRequest.period === 'month' 
-                        ? "border-blue-600 bg-blue-50 text-blue-700 font-medium" 
-                        : "border-gray-200 text-gray-600 hover:border-gray-300"
-                    )}
-                  >
-                    1 месяц
-                  </button>
-                  <button
-                    onClick={() => setTariffRequest(prev => ({ ...prev, period: 'year' }))}
-                    className={cn(
-                      "py-3 px-4 rounded-xl border text-center transition-colors relative",
-                      tariffRequest.period === 'year' 
-                        ? "border-blue-600 bg-blue-50 text-blue-700 font-medium" 
-                        : "border-gray-200 text-gray-600 hover:border-gray-300"
-                    )}
-                  >
-                    1 год
-                    <span className="absolute -top-2 -right-2 bg-green-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
-                      -30%
-                    </span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <h3 className="font-medium text-gray-900">Дополнительные опции</h3>
-                
-                {(tariffRequest.type === 'Мебельное производство' || tariffRequest.type === 'Производство') && (
-                  <>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Доп. сотрудники (+1000 ₽)</span>
-                      <input 
-                        type="number" 
-                        min="0"
-                        value={tariffRequest.extraEmployees ?? 0}
-                        onChange={(e) => setTariffRequest(prev => ({ ...prev, extraEmployees: parseInt(e.target.value) || 0 }))}
-                        className="w-20 px-3 py-1.5 border border-gray-200 rounded-lg text-center"
-                      />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Доп. салоны (+2000 ₽)</span>
-                      <input 
-                        type="number" 
-                        min="0"
-                        value={tariffRequest.extraSalons ?? 0}
-                        onChange={(e) => setTariffRequest(prev => ({ ...prev, extraSalons: parseInt(e.target.value) || 0 }))}
-                        className="w-20 px-3 py-1.5 border border-gray-200 rounded-lg text-center"
-                      />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Доп. дизайнеры (+1000 ₽)</span>
-                      <input 
-                        type="number" 
-                        min="0"
-                        value={tariffRequest.extraDesigners ?? 0}
-                        onChange={(e) => setTariffRequest(prev => ({ ...prev, extraDesigners: parseInt(e.target.value) || 0 }))}
-                        className="w-20 px-3 py-1.5 border border-gray-200 rounded-lg text-center"
-                      />
-                    </div>
-                  </>
-                )}
-
-                {tariffRequest.type === 'Салон' && (
-                  <>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Доп. сотрудники (+1000 ₽)</span>
-                      <input 
-                        type="number" 
-                        min="0"
-                        value={tariffRequest.extraEmployees ?? 0}
-                        onChange={(e) => setTariffRequest(prev => ({ ...prev, extraEmployees: parseInt(e.target.value) || 0 }))}
-                        className="w-20 px-3 py-1.5 border border-gray-200 rounded-lg text-center"
-                      />
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600">Доп. города (+3000 ₽)</span>
-                      <input 
-                        type="number" 
-                        min="0"
-                        value={tariffRequest.extraCities ?? 0}
-                        onChange={(e) => setTariffRequest(prev => ({ ...prev, extraCities: parseInt(e.target.value) || 0 }))}
-                        className="w-20 px-3 py-1.5 border border-gray-200 rounded-lg text-center"
-                      />
-                    </div>
-                  </>
-                )}
-
-                {tariffRequest.type === 'Дизайнер' && (
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600">Доп. города (+1000 ₽)</span>
-                    <input 
-                      type="number" 
-                      min="0"
-                      value={tariffRequest.extraCities ?? 0}
-                      onChange={(e) => setTariffRequest(prev => ({ ...prev, extraCities: parseInt(e.target.value) || 0 }))}
-                      className="w-20 px-3 py-1.5 border border-gray-200 rounded-lg text-center"
-                    />
-                  </div>
-                )}
-              </div>
-
-              <div className="pt-6 border-t border-gray-100">
-                <button
-                  onClick={handleTariffRequest}
-                  className="w-full py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-colors"
-                >
-                  Отправить заявку
-                </button>
-                <p className="text-xs text-center text-gray-500 mt-3">
-                  Менеджер свяжется с вами для подтверждения и оплаты
-                </p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
+        <ModuleSubscriptionModal
+          companyData={companyData}
+          onClose={() => setShowTariffModal(false)}
+          showAlert={showAlert}
+        />
+      )}   </div>
     </div>
   );
 };
