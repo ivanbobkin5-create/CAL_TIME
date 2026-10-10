@@ -5052,6 +5052,191 @@ function transliterate(str: string): string {
     }
   });
 
+  // --- Procurement & Warehouse Settings and Supply Requests Endpoints ---
+  app.get("/api/companies/:companyId/procurement-settings", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const docPath = `companies/${companyId}/procurement_settings/current`;
+      const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
+      let settings = {
+        fetchCostsFromB24: true,
+        customCategories: [
+          { id: "cat_1", name: "Фасады заказные", keywords: ["фасад заказной", "эмаль", "шпон", "массив"] },
+          { id: "cat_2", name: "Фасады пильные", keywords: ["фасад пильный", "акрил", "пластик"] },
+          { id: "cat_3", name: "ЛДСП/Кромка/ХДФ", keywords: ["лдсп", "кромка", "хдф", "двпо", "оргалит"] },
+          { id: "cat_4", name: "Фурнитура", keywords: ["петля", "направляющая", "выдвижной", "подъемник", "ручка", "стяжка", "конфирмат"] },
+          { id: "cat_5", name: "Зеркала/Двери/Стекла", keywords: ["зеркало", "стекло", "купе", "профиль"] },
+          { id: "cat_6", name: "Столешницы и стеновые", keywords: ["столешница", "стеновая", "плинтус", "еврозапил"] },
+          { id: "cat_7", name: "Столешницы и стеновые камень/компактплиты", keywords: ["камень", "компакт", "hpl"] }
+        ]
+      };
+      if (doc && doc.data) {
+        try { settings = { ...settings, ...JSON.parse(doc.data) }; } catch (e) {}
+      }
+      res.json({ success: true, settings });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/companies/:companyId/procurement-settings", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const { settings } = req.body;
+      const docPath = `companies/${companyId}/procurement_settings/current`;
+      const dataStr = JSON.stringify(settings || {});
+      localStore.setDoc(docPath, `companies/${companyId}/procurement_settings`, "current", dataStr, false, false);
+      await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+        where: { path: docPath },
+        create: {
+          path: docPath,
+          collection: `companies/${companyId}/procurement_settings`,
+          docId: "current",
+          data: dataStr
+        },
+        update: { data: dataStr }
+      }));
+      res.json({ success: true, settings });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.get("/api/companies/:companyId/warehouse-settings", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const docPath = `companies/${companyId}/warehouse_settings/current`;
+      const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
+      let settings = {
+        autoDeductOnDispatch: true,
+        allowBackorder: true,
+        inventoryAllowedEmployeeIds: []
+      };
+      if (doc && doc.data) {
+        try { settings = { ...settings, ...JSON.parse(doc.data) }; } catch (e) {}
+      }
+      res.json({ success: true, settings });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/companies/:companyId/warehouse-settings", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const { settings } = req.body;
+      const docPath = `companies/${companyId}/warehouse_settings/current`;
+      const dataStr = JSON.stringify(settings || {});
+      localStore.setDoc(docPath, `companies/${companyId}/warehouse_settings`, "current", dataStr, false, false);
+      await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+        where: { path: docPath },
+        create: {
+          path: docPath,
+          collection: `companies/${companyId}/warehouse_settings`,
+          docId: "current",
+          data: dataStr
+        },
+        update: { data: dataStr }
+      }));
+      res.json({ success: true, settings });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.get("/api/companies/:companyId/supply-requests", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+        where: { collection: `companies/${companyId}/supply_requests` }
+      }));
+      const requests = docs.map(d => {
+        try { return JSON.parse(d.data); } catch (e) { return null; }
+      }).filter(Boolean);
+      res.json({ success: true, requests });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/companies/:companyId/supply-requests", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const supplyRequest = req.body;
+      if (!supplyRequest || !supplyRequest.id) {
+        return res.status(400).json({ error: "Missing request id" });
+      }
+      const docPath = `companies/${companyId}/supply_requests/${supplyRequest.id}`;
+      const dataStr = JSON.stringify(supplyRequest);
+      localStore.setDoc(docPath, `companies/${companyId}/supply_requests`, supplyRequest.id, dataStr, false, false);
+      await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+        where: { path: docPath },
+        create: {
+          path: docPath,
+          collection: `companies/${companyId}/supply_requests`,
+          docId: supplyRequest.id,
+          data: dataStr
+        },
+        update: { data: dataStr }
+      }));
+      res.json({ success: true, supplyRequest });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.delete("/api/companies/:companyId/supply-requests/:requestId", async (req, res) => {
+    try {
+      const { companyId, requestId } = req.params;
+      const docPath = `companies/${companyId}/supply_requests/${requestId}`;
+      await dbQueryWithRetry(() => prisma.dbDocument.delete({ where: { path: docPath } }).catch(() => null));
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.get("/api/companies/:companyId/inventory-logs", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+        where: { collection: `companies/${companyId}/inventory_logs` }
+      }));
+      const logs = docs.map(d => {
+        try { return JSON.parse(d.data); } catch (e) { return null; }
+      }).filter(Boolean);
+      res.json({ success: true, logs });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/companies/:companyId/inventory-logs", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const logItem = req.body;
+      if (!logItem || !logItem.id) {
+        return res.status(400).json({ error: "Missing log id" });
+      }
+      const docPath = `companies/${companyId}/inventory_logs/${logItem.id}`;
+      const dataStr = JSON.stringify(logItem);
+      localStore.setDoc(docPath, `companies/${companyId}/inventory_logs`, logItem.id, dataStr, false, false);
+      await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+        where: { path: docPath },
+        create: {
+          path: docPath,
+          collection: `companies/${companyId}/inventory_logs`,
+          docId: logItem.id,
+          data: dataStr
+        },
+        update: { data: dataStr }
+      }));
+      res.json({ success: true, logItem });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   // --- Dedicated ERP Settings Persistence Endpoints ---
   app.get("/api/erp/:companyId/settings", async (req, res) => {
     try {

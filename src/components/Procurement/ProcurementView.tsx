@@ -1,3 +1,8 @@
+import { BazisImportModal } from "./BazisImportModal";
+import { ProcurementSettingsModal, ProcurementSettingsData } from "./ProcurementSettingsModal";
+import { CreateSupplyRequestModal, SupplyRequestData } from "./CreateSupplyRequestModal";
+import { SupplyRequestsView } from "./SupplyRequestsView";
+import { FileSpreadsheet, Settings } from "lucide-react";
 import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -736,7 +741,51 @@ export const ProcurementView = ({
                                     {counts.completed}
                                 </span>
                             </button>
+                        
+                        {/* Procurement Main Mode Sub-Tabs */}
+                        <div className="flex items-center bg-indigo-50/80 p-1 rounded-2xl border border-indigo-200/80 shrink-0">
+                            <button
+                                onClick={() => setProcurementSubTab("table")}
+                                className={cn(
+                                    "px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
+                                    procurementSubTab === "table" ? "bg-indigo-600 text-white shadow-sm" : "text-indigo-900 hover:bg-indigo-100/50"
+                                )}
+                            >
+                                <LayoutDashboard className="w-3.5 h-3.5" />
+                                <span>Сделки и Закупки</span>
+                            </button>
+                            <button
+                                onClick={() => setProcurementSubTab("requests")}
+                                className={cn(
+                                    "px-4 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5",
+                                    procurementSubTab === "requests" ? "bg-indigo-600 text-white shadow-sm" : "text-indigo-900 hover:bg-indigo-100/50"
+                                )}
+                            >
+                                <Truck className="w-3.5 h-3.5" />
+                                <span>Заявки на поставку ({supplyRequests.length})</span>
+                            </button>
                         </div>
+
+                        {/* Bazis Import & Procurement Settings Buttons */}
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setShowBazisModal(true)}
+                                className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-2xl text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
+                                title="Загрузить спецификацию XLSM из Базис Мебельщик"
+                            >
+                                <FileSpreadsheet className="w-4 h-4" />
+                                <span>Базис (XLSM)</span>
+                            </button>
+
+                            <button
+                                onClick={() => setShowProcurementSettingsModal(true)}
+                                className="p-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-2xl transition-all cursor-pointer border border-gray-200"
+                                title="Настройки категорий и расходов Снабжения"
+                            >
+                                <Settings className="w-4 h-4" />
+                            </button>
+                        </div>
+</div>
                         <div className="relative group">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 group-focus-within:text-blue-500 transition-colors" />
                             <input 

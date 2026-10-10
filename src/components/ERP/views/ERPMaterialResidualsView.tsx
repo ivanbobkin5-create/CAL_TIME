@@ -1,3 +1,5 @@
+import { InventoryModal } from "../../Procurement/InventoryModal";
+import { Settings, ClipboardList } from "lucide-react";
 import React, { useState, useMemo } from 'react';
 import { 
   Layers, 
@@ -136,6 +138,39 @@ export const ERPMaterialResidualsView: React.FC<ERPMaterialResidualsViewProps> =
   const [formStorageCell, setFormStorageCell] = useState('Стеллаж остатков');
   const [formNotes, setFormNotes] = useState('');
   const [formError, setFormError] = useState<string | null>(null);
+
+  const [showInventoryModal, setShowInventoryModal] = useState(false);
+  const [showWarehouseSettingsModal, setShowWarehouseSettingsModal] = useState(false);
+  const [warehouseSettings, setWarehouseSettings] = useState({
+    autoDeductOnDispatch: true,
+    allowBackorder: true,
+    inventoryAllowedEmployeeIds: [] as string[]
+  });
+
+  React.useEffect(() => {
+    fetch("/api/companies/default/warehouse-settings")
+      .then(res => res.json())
+      .then(data => {
+        if (data?.settings) setWarehouseSettings(data.settings);
+      }).catch(() => {});
+  }, []);
+
+  const handleSaveWarehouseSettings = (newSet: typeof warehouseSettings) => {
+    setWarehouseSettings(newSet);
+    fetch("/api/companies/default/warehouse-settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ settings: newSet })
+    }).catch(() => {});
+  };
+
+  const isUserAllowedInventory = useMemo(() => {
+    const role = currentUser?.role || "";
+    if (role === "admin" || role === "supervisor" || role === "foreman" || role === "production_head") return true;
+    if (currentUser?.id && warehouseSettings.inventoryAllowedEmployeeIds.includes(currentUser.id)) return true;
+    return false;
+  }, [currentUser, warehouseSettings]);
+
 
   // Dispose confirmation modal state
   const [disposingItem, setDisposingItem] = useState<MaterialResidual | null>(null);
@@ -509,6 +544,25 @@ export const ERPMaterialResidualsView: React.FC<ERPMaterialResidualsViewProps> =
             <Plus className="w-4 h-4" />
             <span>Внести остаток</span>
           </button>
+          {isUserAllowedInventory && (
+            <button
+              onClick={() => setShowInventoryModal(true)}
+              className="px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs shadow-md shadow-indigo-200 transition-all flex items-center gap-2 cursor-pointer"
+              title="Провести инвентаризацию остатков склада"
+            >
+              <ClipboardList className="w-4 h-4" />
+              <span>Инвентаризация</span>
+            </button>
+          )}
+
+          <button
+            onClick={() => setShowWarehouseSettingsModal(true)}
+            className="p-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-all cursor-pointer border border-slate-200"
+            title="Настройки списания и прав Склада"
+          >
+            <Settings className="w-4 h-4" />
+          </button>
+
         </div>
       </div>
 
@@ -1474,6 +1528,98 @@ export const ERPMaterialResidualsView: React.FC<ERPMaterialResidualsViewProps> =
           </div>
         </div>
       )}
+
+      {/* INVENTORY MODAL */}
+      {showInventoryModal && (
+        <InventoryModal
+          residuals={residuals}
+          currentUser={currentUser}
+          onClose={() => setShowInventoryModal(false)}
+          onApplyInventory={(adjusted, auditLog) => {
+            adjusted.forEach(r => onUpdateResidual(r));
+          }}
+        />
+      )}
+
+      {/* WAREHOUSE SETTINGS MODAL */}
+      {showWarehouseSettingsModal && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl shadow-2xl border border-slate-200 w-full max-w-xl p-6 space-y-6 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h3 className="font-extrabold text-base text-slate-900 flex items-center gap-2">
+                <Settings className="w-5 h-5 text-indigo-600" />
+                <span>Настройки Склада</span>
+              </h3>
+              <button onClick={() => setShowWarehouseSettingsModal(false)} className="p-2 text-slate-400 hover:text-slate-700">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs font-bold text-slate-800">
+              <label className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-2xl cursor-pointer">
+                <span>Автоматически списывать материалы при отгрузке/упаковке</span>
+                <input
+                  type="checkbox"
+                  checked={warehouseSettings.autoDeductOnDispatch}
+                  onChange={(e) => setWarehouseSettings({ ...warehouseSettings, autoDeductOnDispatch: e.target.checked })}
+                  className="w-4 h-4 text-indigo-600 rounded border-slate-300"
+                />
+              </label>
+
+              <label className="flex items-center justify-between p-3.5 bg-slate-50 border border-slate-200 rounded-2xl cursor-pointer">
+                <span>Разрешить менеджерам продавать под заказ (с 0 на складе)</span>
+                <input
+                  type="checkbox"
+                  checked={warehouseSettings.allowBackorder}
+                  onChange={(e) => setWarehouseSettings({ ...warehouseSettings, allowBackorder: e.target.checked })}
+                  className="w-4 h-4 text-indigo-600 rounded border-slate-300"
+                />
+              </label>
+
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+                <span className="block font-black text-slate-900">Доступ к проведению инвентаризации</span>
+                <p className="text-[11px] font-medium text-slate-500">
+                  Руководитель и начальник производства имеют доступ по умолчанию. Вы можете поручить инвентаризацию сотруднику из списка:
+                </p>
+                <div className="space-y-1.5 pt-1 max-h-40 overflow-y-auto">
+                  {employees.map(emp => {
+                    const isChecked = warehouseSettings.inventoryAllowedEmployeeIds.includes(emp.id);
+                    return (
+                      <label key={emp.id} className="flex items-center justify-between p-2 hover:bg-white rounded-xl text-xs font-semibold cursor-pointer">
+                        <span>{emp.name} ({emp.roleName || emp.role || "Сотрудник"})</span>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          onChange={(e) => {
+                            const nextIds = e.target.checked
+                              ? [...warehouseSettings.inventoryAllowedEmployeeIds, emp.id]
+                              : warehouseSettings.inventoryAllowedEmployeeIds.filter(id => id !== emp.id);
+                            setWarehouseSettings({ ...warehouseSettings, inventoryAllowedEmployeeIds: nextIds });
+                          }}
+                          className="w-4 h-4 text-indigo-600 rounded border-slate-300"
+                        />
+                      </label>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                onClick={() => {
+                  handleSaveWarehouseSettings(warehouseSettings);
+                  setShowWarehouseSettingsModal(false);
+                }}
+                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-md cursor-pointer"
+              >
+                Сохранить настройки
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 };
