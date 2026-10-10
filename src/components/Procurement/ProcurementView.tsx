@@ -79,6 +79,21 @@ export const ProcurementView = ({
     const [showProblemsModal, setShowProblemsModal] = useState(false);
     
     const [statusFilter, setStatusFilter] = useState<'active' | 'all' | 'completed'>('active');
+    const [procurementSubTab, setProcurementSubTab] = useState<'table' | 'requests'>('table');
+    const [supplyRequests, setSupplyRequests] = useState<SupplyRequestData[]>([]);
+    const [showBazisModal, setShowBazisModal] = useState(false);
+    const [showProcurementSettingsModal, setShowProcurementSettingsModal] = useState(false);
+    const [showCreateSupplyRequestModal, setShowCreateSupplyRequestModal] = useState(false);
+    const [procurementSettingsData, setProcurementSettingsData] = useState<ProcurementSettingsData>({
+        fetchCostsFromB24: true,
+        customCategories: [
+            { id: '1', name: 'Фасады заказные', keywords: ['фасад', 'мдф', 'эмаль', 'шпон'] },
+            { id: '2', name: 'Фасады пильные', keywords: ['пильный', 'лдсп фасад'] },
+            { id: '3', name: 'ЛДСП/Кромка/ХДФ', keywords: ['лдсп', 'кромка', 'хдф', 'плита'] },
+            { id: '4', name: 'Столешницы/Стеновки', keywords: ['столешница', 'стеновая', 'фартук', 'кедр', 'слотекс'] },
+            { id: '5', name: 'Фурнитура', keywords: ['петля', 'направляющие', 'боярд', 'blum', 'подъемник', 'ручка'] },
+        ]
+    });
     const [isSyncing, setIsSyncing] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [sortField, setSortField] = useState<'readyDate' | 'name'>('readyDate');
@@ -844,6 +859,19 @@ export const ProcurementView = ({
                             <h2 className="text-2xl font-black text-gray-900">Модуль "Снабжение" выключен</h2>
                             <p className="text-gray-500 mt-2 max-w-sm font-medium">Перейдите в настройки компании, чтобы активировать этот раздел и настроить интеграцию с Bitrix24.</p>
                         </div>
+                    ) : procurementSubTab === 'requests' ? (
+                        <SupplyRequestsView
+                            companyId={companyData?.id || 'company_1'}
+                            supplyRequests={supplyRequests}
+                            suppliers={suppliers}
+                            onSaveRequest={(req) => {
+                                setSupplyRequests(prev => prev.map(r => r.id === req.id ? req : r));
+                            }}
+                            onDeleteRequest={(reqId) => {
+                                setSupplyRequests(prev => prev.filter(r => r.id !== reqId));
+                            }}
+                            onOpenCreateModal={() => setShowCreateSupplyRequestModal(true)}
+                        />
                     ) : (
                         <div className="bg-white rounded-[2.5rem] border border-gray-200 shadow-sm overflow-hidden flex flex-col flex-1 min-h-0">
                                 <div ref={scrollContainerRef} className="w-full flex-1 overflow-auto scrollbar-hide select-none transition-all relative">
@@ -1652,6 +1680,46 @@ export const ProcurementView = ({
                     </div>
                 )}
             </AnimatePresence>
+
+            {/* Bazis Import Modal */}
+            {showBazisModal && (
+                <BazisImportModal
+                    categories={procurementSettingsData.customCategories}
+                    warehouseItems={[]}
+                    onClose={() => setShowBazisModal(false)}
+                    onImportComplete={(items) => {
+                        console.log('Imported items from Bazis:', items);
+                        setShowBazisModal(false);
+                    }}
+                />
+            )}
+
+            {/* Procurement Settings Modal */}
+            {showProcurementSettingsModal && (
+                <ProcurementSettingsModal
+                    settings={procurementSettingsData}
+                    onClose={() => setShowProcurementSettingsModal(false)}
+                    onSave={(newSettings) => {
+                        setProcurementSettingsData(newSettings);
+                        setShowProcurementSettingsModal(false);
+                    }}
+                />
+            )}
+
+            {/* Create Supply Request Modal */}
+            {showCreateSupplyRequestModal && (
+                <CreateSupplyRequestModal
+                    orders={orders}
+                    categories={procurementSettingsData.customCategories}
+                    suppliers={suppliers}
+                    warehouseItems={[]}
+                    onClose={() => setShowCreateSupplyRequestModal(false)}
+                    onSaveRequest={(req) => {
+                        setSupplyRequests(prev => [req, ...prev]);
+                        setShowCreateSupplyRequestModal(false);
+                    }}
+                />
+            )}
         </div>
     );
 };

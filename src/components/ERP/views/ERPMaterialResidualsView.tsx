@@ -1586,7 +1586,7 @@ export const ERPMaterialResidualsView: React.FC<ERPMaterialResidualsViewProps> =
                     const isChecked = warehouseSettings.inventoryAllowedEmployeeIds.includes(emp.id);
                     return (
                       <label key={emp.id} className="flex items-center justify-between p-2 hover:bg-white rounded-xl text-xs font-semibold cursor-pointer">
-                        <span>{emp.name} ({emp.roleName || emp.role || "Сотрудник"})</span>
+                        <span>{emp.name} ({(emp as any).roleName || emp.role || "Сотрудник"})</span>
                         <input
                           type="checkbox"
                           checked={isChecked}
