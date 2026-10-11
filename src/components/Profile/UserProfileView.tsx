@@ -56,6 +56,16 @@ export const UserProfileView = ({ userData, onUpdateUser, onLogout }: UserProfil
   const [newPassword, setNewPassword] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [userProjects, setUserProjects] = useState<Project[]>([]);
+  const [companyData, setCompanyData] = useState<any>(null);
+
+  useEffect(() => {
+    if (userData?.companyId) {
+      fetch(`/api/db/doc/companies/${userData.companyId}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) setCompanyData(d); })
+        .catch(() => {});
+    }
+  }, [userData?.companyId]);
 
   useEffect(() => {
     if (userData) {
@@ -302,6 +312,66 @@ export const UserProfileView = ({ userData, onUpdateUser, onLogout }: UserProfil
                     {isSaving ? <Loader2 className="w-5 h-5 animate-spin" /> : <Save className="w-5 h-5" />}
                     Сохранить изменения
                   </button>
+                </div>
+                <div className="pt-8 border-t border-gray-100 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-black text-gray-900 text-base">Подключенные модули компании</h4>
+                      <p className="text-xs text-gray-400 font-medium mt-0.5">Базовый тариф компании: <span className="font-bold text-emerald-600">Бесплатно</span></p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                    {[
+                      { 
+                        id: 'erp', 
+                        name: 'Производственный цех (ERP)', 
+                        enabled: !!(companyData?.erpAllowed || companyData?.erpEnabled || companyData?.activeModules?.erp) 
+                      },
+                      { 
+                        id: 'procurement', 
+                        name: 'Снабжение и закупки', 
+                        enabled: !!(companyData?.procurementEnabled || companyData?.activeModules?.procurement) 
+                      },
+                      { 
+                        id: 'warehouse', 
+                        name: 'Складской учет', 
+                        enabled: !!(companyData?.warehouseEnabled || companyData?.activeModules?.warehouse) 
+                      },
+                      { 
+                        id: 'manager_salaries', 
+                        name: 'Зарплаты и премирование', 
+                        enabled: !!(companyData?.managerSalariesEnabled || companyData?.activeModules?.manager_salaries) 
+                      },
+                    ].map((mod) => {
+                      const expDate = companyData?.moduleExpiration?.[mod.id] || companyData?.tariffExpiration;
+                      const formattedExp = expDate ? new Date(expDate).toLocaleDateString('ru-RU') : null;
+
+                      return (
+                        <div key={mod.id} className="p-4 bg-gray-50 rounded-2xl border border-gray-100 flex items-center justify-between">
+                          <div className="min-w-0 pr-2">
+                            <div className="font-extrabold text-xs text-gray-900 truncate">{mod.name}</div>
+                            <div className="text-[11px] text-gray-500 mt-0.5">
+                              {mod.enabled ? (
+                                <span className="text-emerald-700 font-semibold">
+                                  {formattedExp ? `Оплачено до ${formattedExp}` : 'Промо период / Включено'}
+                                </span>
+                              ) : (
+                                <span className="text-gray-400">Модуль не подключен</span>
+                              )}
+                            </div>
+                          </div>
+
+                          <span className={cn(
+                            "px-2.5 py-1 rounded-xl text-[10px] font-black shrink-0",
+                            mod.enabled ? "bg-emerald-100 text-emerald-800 border border-emerald-200" : "bg-gray-200 text-gray-600"
+                          )}>
+                            {mod.enabled ? "Активен" : "Отключен"}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             </motion.div>

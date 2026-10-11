@@ -25,10 +25,10 @@ export const ManagerSalarySlipPrintModal: React.FC<ManagerSalarySlipPrintModalPr
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl max-w-4xl w-full p-8 shadow-2xl relative my-8 print:m-0 print:p-0 print:shadow-none print:max-w-none">
+    <div className="fixed inset-0 bg-black/60 z-50 overflow-y-auto p-3 sm:p-6 flex justify-center items-start">
+      <div className="bg-white rounded-2xl max-w-4xl w-full p-6 sm:p-8 shadow-2xl relative my-4 sm:my-8 print:m-0 print:p-0 print:shadow-none print:max-w-none">
         {/* Action Bar */}
-        <div className="flex items-center justify-between pb-6 mb-6 border-b border-gray-200 print:hidden">
+        <div className="sticky top-0 bg-white/95 backdrop-blur-sm z-20 flex items-center justify-between pb-4 mb-6 border-b border-gray-200 print:hidden -mt-2 pt-2">
           <div className="flex items-center gap-3">
             <span className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
               <RussianRuble className="w-5 h-5" />

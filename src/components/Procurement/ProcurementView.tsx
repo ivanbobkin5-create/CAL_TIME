@@ -78,6 +78,8 @@ export const ProcurementView = ({
     const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null); // null means adding a new one or viewing list
     const [showProblemsModal, setShowProblemsModal] = useState(false);
     
+    const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
+    const [selectedOrderForBazis, setSelectedOrderForBazis] = useState<any | null>(null);
     const [statusFilter, setStatusFilter] = useState<'active' | 'all' | 'completed'>('active');
     const [procurementSubTab, setProcurementSubTab] = useState<'table' | 'requests'>('table');
     const [supplyRequests, setSupplyRequests] = useState<SupplyRequestData[]>([]);
@@ -873,7 +875,39 @@ export const ProcurementView = ({
                             onOpenCreateModal={() => setShowCreateSupplyRequestModal(true)}
                         />
                     ) : (
-                        <div className="bg-white rounded-[2.5rem] border border-gray-200 shadow-sm overflow-hidden flex flex-col flex-1 min-h-0">
+                        <div className="flex-1 flex flex-col min-h-0">
+                            {selectedOrderIds.length > 0 && (
+                                <div className="mb-4 p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-3xl shadow-xl flex items-center justify-between animate-in fade-in zoom-in-95 shrink-0">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-9 h-9 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-400/30 flex items-center justify-center font-black text-sm">
+                                            {selectedOrderIds.length}
+                                        </div>
+                                        <div>
+                                            <h4 className="font-extrabold text-xs">Отмечено сделок для общей закупки</h4>
+                                            <p className="text-[11px] text-slate-300">Сформировать единую заявку по всем выбранным заказам</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                        <button
+                                            onClick={() => setSelectedOrderIds([])}
+                                            className="px-3.5 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-xs font-bold transition-colors cursor-pointer"
+                                        >
+                                            Сбросить
+                                        </button>
+
+                                        <button
+                                            onClick={() => setShowCreateSupplyRequestModal(true)}
+                                            className="px-5 py-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-black rounded-xl text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer"
+                                        >
+                                            <Truck className="w-4 h-4" />
+                                            <span>Создать общую закупку (Заявку)</span>
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="bg-white rounded-[2.5rem] border border-gray-200 shadow-sm overflow-hidden flex flex-col flex-1 min-h-0">
                                 <div ref={scrollContainerRef} className="w-full flex-1 overflow-auto scrollbar-hide select-none transition-all relative">
                                     <table className="w-full text-left border-collapse table-fixed">
                                         <thead className="sticky top-0 z-[100] bg-white shadow-sm overflow-visible">
@@ -1210,6 +1244,7 @@ export const ProcurementView = ({
                                 </table>
                             </div>
                         </div>
+                    </div>
                     )}
                 </div>
             </div>
@@ -1686,10 +1721,59 @@ export const ProcurementView = ({
                 <BazisImportModal
                     categories={procurementSettingsData.customCategories}
                     warehouseItems={[]}
-                    onClose={() => setShowBazisModal(false)}
-                    onImportComplete={(items) => {
-                        console.log('Imported items from Bazis:', items);
+                    onClose={() => {
                         setShowBazisModal(false);
+                        setSelectedOrderForBazis(null);
+                    }}
+                    onImportComplete={async (items) => {
+                        if (selectedOrderForBazis) {
+                            const targetOrder = selectedOrderForBazis;
+                            const currentProc = targetOrder.procurementStatus || {};
+                            const updatedProc = { ...currentProc };
+
+                            items.forEach(item => {
+                                const catName = item.matchedCategoryName || 'ЛДСП/Кромка/ХДФ';
+                                const catData = updatedProc[catName] || { amount: 0, items: [] };
+                                const catItems = [...(catData.items || [])];
+
+                                catItems.push({
+                                    id: `bzs_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+                                    status: 'Заказано',
+                                    quantity: item.quantity || 1,
+                                    qty: item.quantity || 1,
+                                    productName: item.name,
+                                    name: item.name,
+                                    article: item.article || '',
+                                    actualAmount: Math.round((item.quantity || 1) * 1200),
+                                    updatedAt: new Date().toISOString()
+                                });
+
+                                const catActualTotal = catItems.reduce((sum, i) => sum + (Number(i.actualAmount) || 0), 0);
+
+                                updatedProc[catName] = {
+                                    ...catData,
+                                    amount: Math.max(catData.amount || 0, catActualTotal),
+                                    items: catItems,
+                                    actualAmount: catActualTotal,
+                                    status: 'Заказано',
+                                    updatedAt: new Date().toISOString()
+                                };
+                            });
+
+                            // Optimistic UI update
+                            setOrders(prev => prev.map(o => o.id === targetOrder.id ? { ...o, procurementStatus: updatedProc } : o));
+
+                            try {
+                                await updateDoc(doc(db, 'companies', companyData.id, 'projectSets', targetOrder.id), {
+                                    procurementStatus: updatedProc,
+                                    updatedAt: new Date().toISOString()
+                                });
+                            } catch (err) {
+                                console.error("Error updating Bazis items for deal:", err);
+                            }
+                        }
+                        setShowBazisModal(false);
+                        setSelectedOrderForBazis(null);
                     }}
                 />
             )}

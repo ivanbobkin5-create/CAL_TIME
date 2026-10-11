@@ -156,6 +156,16 @@ export const AppAdminView: React.FC = () => {
   const [isSavingCompany, setIsSavingCompany] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: "success" | "error" } | null>(null);
 
+  // Superadmin Proposal Creation Modal State
+  const [showProposalModal, setShowProposalModal] = useState(false);
+  const [proposalCompanyId, setProposalCompanyId] = useState("");
+  const [proposalModules, setProposalModules] = useState<string[]>(["erp"]);
+  const [proposalPeriod, setProposalPeriod] = useState<string>("month");
+  const [proposalPrice, setProposalPrice] = useState<number>(5000);
+  const [proposalComment, setProposalComment] = useState("");
+  const [proposalAutoActivate, setProposalAutoActivate] = useState(false);
+  const [isSubmittingProposal, setIsSubmittingProposal] = useState(false);
+
   // News creation modal
   const [isCreatingNews, setIsCreatingNews] = useState(false);
   const [editingNews, setEditingNews] = useState<SystemNewsItem | null>(null);
@@ -557,6 +567,66 @@ export const AppAdminView: React.FC = () => {
       }
     } catch {
       showToast("Ошибка сети при обновлении заявки", "error");
+    }
+  };
+
+  // Create Superadmin Proposal for Company
+  const handleCreateProposal = async () => {
+    if (!proposalCompanyId) {
+      showToast("Выберите компанию для предложения", "error");
+      return;
+    }
+    if (proposalModules.length === 0) {
+      showToast("Выберите хотя бы один модуль", "error");
+      return;
+    }
+
+    try {
+      setIsSubmittingProposal(true);
+      const targetCompany = companies.find(c => c.id === proposalCompanyId);
+      const companyName = targetCompany?.name || proposalCompanyId;
+      const initialStatus = proposalAutoActivate ? "approved" : "offered";
+
+      const requestPayload = {
+        companyId: proposalCompanyId,
+        companyName,
+        contactPhone: targetCompany?.phone || targetCompany?.contactPhone || "",
+        modules: proposalModules,
+        period: proposalPeriod,
+        totalAmount: proposalPrice,
+        status: initialStatus,
+        type: "admin_proposal",
+        comment: proposalComment,
+        createdAt: new Date().toISOString()
+      };
+
+      const res = await fetch("/api/module-payment-requests", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ request: requestPayload })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (proposalAutoActivate && data.request?.id) {
+          await fetch(`/api/module-payment-requests/${data.request.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: "approved" })
+          });
+        }
+
+        showToast(proposalAutoActivate ? "Предложение создано, модули сразу активированы!" : "Предложение успешно отправлено компании!");
+        setShowProposalModal(false);
+        setProposalComment("");
+        loadSystemData();
+      } else {
+        showToast("Ошибка при создании предложения", "error");
+      }
+    } catch {
+      showToast("Ошибка сети при отправке предложения", "error");
+    } finally {
+      setIsSubmittingProposal(false);
     }
   };
 
@@ -1183,41 +1253,54 @@ export const AppAdminView: React.FC = () => {
             <div className="bg-white p-5 rounded-3xl border border-gray-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
                 <h2 className="text-base font-extrabold text-gray-900">Заявки и запросы</h2>
-                <p className="text-xs text-gray-500">Запросы компаний на подключение модулей, оплату и расширение прав доступа</p>
+                <p className="text-xs text-gray-500">Запросы компаний на подключение модулей, оплату и предложения администратора</p>
               </div>
 
-              {/* Module Requests vs Company Access Apps toggle */}
-              <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-2xl border border-gray-200">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
-                  onClick={() => setAppTypeTab("module_requests")}
-                  className={cn(
-                    "px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
-                    appTypeTab === "module_requests" ? "bg-white text-indigo-700 shadow-sm font-extrabold" : "text-gray-600 hover:text-gray-900"
-                  )}
+                  onClick={() => {
+                    if (companies.length > 0 && !proposalCompanyId) setProposalCompanyId(companies[0].id);
+                    setShowProposalModal(true);
+                  }}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition-all shadow-sm shadow-indigo-200 cursor-pointer active:scale-95"
                 >
-                  <CreditCard className="w-4 h-4" />
-                  <span>Подключение модулей</span>
-                  {moduleRequests.filter(m => m.status === 'pending').length > 0 && (
-                    <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black">
-                      {moduleRequests.filter(m => m.status === 'pending').length}
-                    </span>
-                  )}
+                  <Plus className="w-4 h-4 text-amber-300" />
+                  <span>Сформировать предложение компании</span>
                 </button>
-                <button
-                  onClick={() => setAppTypeTab("company_apps")}
-                  className={cn(
-                    "px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
-                    appTypeTab === "company_apps" ? "bg-white text-indigo-700 shadow-sm font-extrabold" : "text-gray-600 hover:text-gray-900"
-                  )}
-                >
-                  <Building2 className="w-4 h-4" />
-                  <span>Доступ компаний</span>
-                  {applications.filter(a => a.status === 'pending').length > 0 && (
-                    <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black">
-                      {applications.filter(a => a.status === 'pending').length}
-                    </span>
-                  )}
-                </button>
+
+                {/* Module Requests vs Company Access Apps toggle */}
+                <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-2xl border border-gray-200">
+                  <button
+                    onClick={() => setAppTypeTab("module_requests")}
+                    className={cn(
+                      "px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
+                      appTypeTab === "module_requests" ? "bg-white text-indigo-700 shadow-sm font-extrabold" : "text-gray-600 hover:text-gray-900"
+                    )}
+                  >
+                    <CreditCard className="w-4 h-4" />
+                    <span>Подключение модулей</span>
+                    {moduleRequests.filter(m => m.status === 'pending').length > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black">
+                        {moduleRequests.filter(m => m.status === 'pending').length}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setAppTypeTab("company_apps")}
+                    className={cn(
+                      "px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
+                      appTypeTab === "company_apps" ? "bg-white text-indigo-700 shadow-sm font-extrabold" : "text-gray-600 hover:text-gray-900"
+                    )}
+                  >
+                    <Building2 className="w-4 h-4" />
+                    <span>Доступ компаний</span>
+                    {applications.filter(a => a.status === 'pending').length > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black">
+                        {applications.filter(a => a.status === 'pending').length}
+                      </span>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -1254,6 +1337,12 @@ export const AppAdminView: React.FC = () => {
                               Компания: <span className="text-indigo-600">{modReq.companyName || 'Без названия'}</span>
                               <span className="text-xs text-gray-400 font-mono ml-2">({modReq.companyId})</span>
                             </h3>
+                            <div className="text-xs font-bold text-slate-700 mt-1 flex items-center gap-2">
+                              <span className="text-slate-400 font-semibold">Контактный телефон компании:</span>
+                              <a href={`tel:${modReq.contactPhone || companies.find(c => c.id === modReq.companyId)?.phone || ''}`} className="text-indigo-700 font-mono bg-indigo-50 px-2.5 py-0.5 rounded-md border border-indigo-100 font-black hover:underline">
+                                📞 {modReq.contactPhone || companies.find(c => c.id === modReq.companyId)?.phone || 'Не указан'}
+                              </a>
+                            </div>
                           </div>
 
                           <div className="flex items-center gap-3">
@@ -2092,6 +2181,147 @@ export const AppAdminView: React.FC = () => {
                 className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-black shadow-lg shadow-red-500/20 transition-all cursor-pointer"
               >
                 {isDeletingCompany ? "Удаление..." : "Да, удалить навсегда"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SUPERADMIN PROPOSAL CREATION MODAL */}
+      {showProposalModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="w-full max-w-lg bg-white rounded-3xl p-7 shadow-2xl border border-gray-100 space-y-5 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                  <Sparkles className="w-5 h-5 text-amber-500" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-gray-900">Сформировать предложение для компании</h3>
+                  <p className="text-xs text-gray-500">Назначьте индивидуальный набор модулей и стоимость</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowProposalModal(false)}
+                className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-xl transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-gray-700 block mb-1">Выберите компанию:</label>
+                <select
+                  value={proposalCompanyId}
+                  onChange={(e) => setProposalCompanyId(e.target.value)}
+                  className="w-full px-3.5 py-2 bg-gray-50 border border-gray-300 rounded-xl text-xs font-bold text-gray-900"
+                >
+                  <option value="" disabled>-- Выберите компанию из списка --</option>
+                  {companies.map(c => (
+                    <option key={c.id} value={c.id}>
+                      {c.name || 'Компания без названия'} (ID: {c.id}) {c.phone ? `• 📞 ${c.phone}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-700 block mb-2">Подключаемые модули:</label>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'erp', name: 'Производство (ERP)' },
+                    { id: 'procurement', name: 'Снабжение' },
+                    { id: 'warehouse', name: 'Склад' },
+                    { id: 'manager_salaries', name: 'Зарплаты менеджеров' },
+                  ].map(m => (
+                    <label 
+                      key={m.id}
+                      className={cn(
+                        "p-3 rounded-xl border text-xs font-bold flex items-center gap-2 cursor-pointer transition-all",
+                        proposalModules.includes(m.id) ? "bg-indigo-50 border-indigo-300 text-indigo-900" : "bg-gray-50 border-gray-200 text-gray-600"
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={proposalModules.includes(m.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setProposalModules([...proposalModules, m.id]);
+                          } else {
+                            setProposalModules(proposalModules.filter(x => x !== m.id));
+                          }
+                        }}
+                        className="w-4 h-4 text-indigo-600 rounded"
+                      />
+                      <span>{m.name}</span>
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">Период подписки:</label>
+                  <select
+                    value={proposalPeriod}
+                    onChange={(e) => setProposalPeriod(e.target.value)}
+                    className="w-full px-3.5 py-2 bg-gray-50 border border-gray-300 rounded-xl text-xs font-bold"
+                  >
+                    <option value="month">1 месяц</option>
+                    <option value="half_year">6 месяцев (-15%)</option>
+                    <option value="year">12 месяцев (Год -20%)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="text-xs font-bold text-gray-700 block mb-1">Индивидуальная цена (₽):</label>
+                  <input
+                    type="number"
+                    value={proposalPrice}
+                    onChange={(e) => setProposalPrice(Number(e.target.value))}
+                    className="w-full px-3.5 py-2 bg-gray-50 border border-gray-300 rounded-xl text-xs font-mono font-bold"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-700 block mb-1">Комментарий / Условия предложения:</label>
+                <textarea
+                  value={proposalComment}
+                  onChange={(e) => setProposalComment(e.target.value)}
+                  placeholder="Например: Скидка 25% при оплате до конца недели. Индивидуальный тариф."
+                  className="w-full p-3 bg-gray-50 border border-gray-300 rounded-xl text-xs"
+                  rows={2}
+                />
+              </div>
+
+              <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-200">
+                <label className="flex items-center gap-2 text-xs font-extrabold text-emerald-950 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={proposalAutoActivate}
+                    onChange={(e) => setProposalAutoActivate(e.target.checked)}
+                    className="w-4 h-4 rounded text-emerald-600"
+                  />
+                  <span>Сразу активировать модули (без ожидания оплаты)</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-gray-100 flex items-center justify-end gap-3">
+              <button
+                onClick={() => setShowProposalModal(false)}
+                className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Отмена
+              </button>
+              <button
+                onClick={handleCreateProposal}
+                disabled={isSubmittingProposal || !proposalCompanyId || proposalModules.length === 0}
+                className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold shadow-md shadow-indigo-200 transition-all cursor-pointer disabled:opacity-50"
+              >
+                {isSubmittingProposal ? "Отправка..." : "Отправить предложение"}
               </button>
             </div>
           </div>

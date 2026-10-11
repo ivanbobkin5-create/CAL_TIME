@@ -77,6 +77,7 @@ export const ModuleSubscriptionModal: React.FC<ModuleSubscriptionModalProps> = (
     return preselected.length > 0 ? preselected : availableModules.map(m => m.id);
   });
 
+  const [phone, setPhone] = useState(companyData?.phone || companyData?.contactPhone || '');
   const [period, setPeriod] = useState<'month' | 'half_year' | 'year'>('month');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successSubmitted, setSuccessSubmitted] = useState(false);
@@ -161,8 +162,21 @@ export const ModuleSubscriptionModal: React.FC<ModuleSubscriptionModalProps> = (
       showAlert('Выберите модули', 'Пожалуйста, выберите хотя бы один модуль для подключения.');
       return;
     }
+    if (!phone.trim()) {
+      showAlert('Укажите телефон', 'Пожалуйста, укажите контактный телефон компании, чтобы администратор мог связаться с вами.');
+      return;
+    }
     setIsSubmitting(true);
     try {
+      // Save phone to company record if present
+      if (companyData?.id) {
+        fetch(`/api/db/doc/companies/${companyData.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ data: { phone: phone.trim(), contactPhone: phone.trim() }, merge: true })
+        }).catch(() => {});
+      }
+
       const res = await fetch('/api/module-payment-requests', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -171,6 +185,7 @@ export const ModuleSubscriptionModal: React.FC<ModuleSubscriptionModalProps> = (
             companyId: companyData?.id,
             companyName: companyData?.name || 'Без названия',
             companyType: normalizedType,
+            contactPhone: phone.trim(),
             modules: selectedModuleIds,
             period,
             months: monthsCount,
@@ -482,7 +497,21 @@ export const ModuleSubscriptionModal: React.FC<ModuleSubscriptionModalProps> = (
                     </div>
                   </div>
 
-                  <div className="space-y-2">
+                  <div className="space-y-3">
+                    <div className="space-y-1">
+                      <label className="block text-[11px] font-black uppercase tracking-wider text-slate-700">
+                        Контактный телефон компании <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="tel"
+                        required
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        placeholder="+7 (999) 000-00-00"
+                        className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl font-bold text-slate-900 text-xs focus:border-indigo-600 focus:outline-hidden"
+                      />
+                    </div>
+
                     <button
                       type="button"
                       disabled={isSubmitting || selectedModuleIds.length === 0}

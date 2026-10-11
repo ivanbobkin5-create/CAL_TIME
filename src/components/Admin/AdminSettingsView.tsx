@@ -481,67 +481,142 @@ export const AdminSettingsView = ({
   return (
     <div className="p-4 md:p-8">
       <div className="max-w-5xl mx-auto space-y-8">
-        {/* Tariff Info Section */}
-        <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        {/* Tariff Info & Module Management Section */}
+        <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-gray-200 space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-100 pb-5">
             <div>
-              <h2 className="text-xl font-bold text-gray-900 mb-2">Ваш тариф</h2>
-              <div className="flex items-center gap-2 text-gray-600">
-                <span className="font-medium text-gray-900">{companyData?.type === 'Производство' ? 'Мебельное производство' : (companyData?.type || 'Мебельное производство')}</span>
+              <h2 className="text-xl font-bold text-gray-900 mb-1">Управление модулями и тариф</h2>
+              <div className="flex items-center gap-2 text-sm text-gray-600">
+                <span className="font-bold text-gray-900">{companyData?.type === 'Производство' ? 'Мебельное производство' : (companyData?.type || 'Мебельное производство')}</span>
                 <span>•</span>
-                <span>
-                  Действует до:{' '}
-                  {companyData?.tariffExpiration ? (
-                    <span className={cn(
-                      "font-bold",
-                      new Date(companyData.tariffExpiration) < new Date() ? "text-red-600" : "text-green-600"
-                    )}>
-                      {new Date(companyData.tariffExpiration).toLocaleDateString()}
-                    </span>
-                  ) : (
-                    <span className="text-gray-400">Не указано</span>
-                  )}
+                <span className="text-emerald-700 font-extrabold bg-emerald-50 px-2.5 py-0.5 rounded-md border border-emerald-200 text-xs">
+                  Базовый тариф компании: Бесплатно
                 </span>
               </div>
             </div>
-            {(() => {
-              const isB24Connected = Boolean(
-                companyData?.bitrix24?.connected ||
-                companyData?.bitrix24?.webhookUrl ||
-                companyData?.id?.startsWith('b24_') ||
-                (typeof companyData?.id === 'string' && companyData?.id?.includes('bitrix24'))
-              );
-              return (
-                <button
-                  onClick={() => setShowTariffModal(true)}
-                  className="px-6 py-2.5 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-700 transition-all shadow-md shadow-blue-100 flex items-center gap-2 cursor-pointer"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  <span>{isB24Connected ? "Добавить модули" : "Продлить тариф"}</span>
-                </button>
-              );
-            })()}
+
+            <button
+              onClick={() => setShowTariffModal(true)}
+              className="px-6 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl transition-all shadow-md shadow-indigo-100 flex items-center gap-2 cursor-pointer"
+            >
+              <Sparkles className="w-4 h-4 text-amber-300" />
+              <span>Управление модулями и Оплата</span>
+            </button>
           </div>
 
-          {tariffRequests.filter(r => r.status === 'pending').length > 0 && (
-            <div className="mt-6 pt-6 border-t border-gray-100">
-              <h3 className="text-sm font-bold text-gray-700 mb-4 uppercase tracking-wider">Активные заявки</h3>
-              <div className="space-y-3">
-                {tariffRequests.filter(r => r.status === 'pending').map(req => (
-                  <div key={req.id} className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-                    <div className="flex justify-between items-start mb-2">
-                      <div className="font-medium text-blue-900">Заявка от {new Date(req.createdAt).toLocaleDateString()}</div>
-                      <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs font-bold rounded-md">В обработке</span>
+          {/* Individual Modules Status Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {[
+              { id: 'erp', name: 'Производство (ERP)', enabled: !!(companyData?.erpAllowed || companyData?.erpEnabled || companyData?.activeModules?.erp) },
+              { id: 'procurement', name: 'Снабжение', enabled: !!(companyData?.procurementEnabled || companyData?.activeModules?.procurement) },
+              { id: 'warehouse', name: 'Склад', enabled: !!(companyData?.warehouseEnabled || companyData?.activeModules?.warehouse) },
+              { id: 'manager_salaries', name: 'Зарплаты менеджеров', enabled: !!(companyData?.managerSalariesEnabled || companyData?.activeModules?.manager_salaries) },
+            ].map((mod) => {
+              const expDate = companyData?.moduleExpirations?.[mod.id] || companyData?.tariffExpiration;
+              const formattedExp = expDate ? new Date(expDate).toLocaleDateString('ru-RU') : null;
+
+              return (
+                <div key={mod.id} className="p-4 bg-slate-50/80 rounded-2xl border border-slate-200 flex flex-col justify-between space-y-3">
+                  <div>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <span className="font-black text-xs text-slate-900">{mod.name}</span>
+                      <span className={cn(
+                        "px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider",
+                        mod.enabled ? "bg-emerald-100 text-emerald-800 border border-emerald-200" : "bg-slate-200 text-slate-600"
+                      )}>
+                        {mod.enabled ? "Активен" : "Выключен"}
+                      </span>
                     </div>
-                    <div className="text-sm text-blue-800 space-y-1">
-                      <p>Тариф: {req.request.type} ({req.request.period === 'year' ? '1 год' : '1 месяц'})</p>
-                      {req.request.extraEmployees > 0 && <p>Доп. сотрудники: {req.request.extraEmployees}</p>}
-                      {req.request.extraSalons > 0 && <p>Доп. салоны: {req.request.extraSalons}</p>}
-                      {req.request.extraDesigners > 0 && <p>Доп. дизайнеры: {req.request.extraDesigners}</p>}
-                      {req.request.extraCities > 0 && <p>Доп. города: {req.request.extraCities}</p>}
+
+                    <div className="text-[11px] text-slate-500 mt-2">
+                      <span className="block text-[10px] font-bold uppercase text-slate-400">Статус подписки:</span>
+                      <strong className={cn("font-mono font-bold text-xs", mod.enabled ? "text-emerald-700" : "text-slate-400")}>
+                        {formattedExp ? `Оплачено до ${formattedExp}` : (mod.enabled ? "Промо период" : "Отключен")}
+                      </strong>
                     </div>
                   </div>
-                ))}
+
+                  <button
+                    onClick={() => setShowTariffModal(true)}
+                    className="w-full py-1.5 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 transition-colors cursor-pointer"
+                  >
+                    {mod.enabled ? "Продлить" : "Подключить"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Module requests and proposals list */}
+          {tariffRequests.length > 0 && (
+            <div className="pt-4 border-t border-gray-100 space-y-3">
+              <h3 className="text-xs font-black text-gray-500 uppercase tracking-wider">История заявок и предложения от суперадмина</h3>
+              <div className="space-y-2">
+                {tariffRequests.map(req => {
+                  const reqMods = Array.isArray(req.modules) ? req.modules : (req.request?.modules || [req.modules]).filter(Boolean);
+                  const isOffered = req.status === 'offered';
+                  const isPending = req.status === 'pending';
+                  const isApproved = req.status === 'approved';
+
+                  return (
+                    <div 
+                      key={req.id} 
+                      className={cn(
+                        "p-4 rounded-2xl border flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs transition-all",
+                        isOffered ? "bg-gradient-to-r from-purple-50 via-indigo-50 to-amber-50 border-indigo-200 shadow-xs" :
+                        isPending ? "bg-amber-50/70 border-amber-200" :
+                        isApproved ? "bg-emerald-50/70 border-emerald-200" : "bg-gray-50 border-gray-200"
+                      )}
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className={cn(
+                            "px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider",
+                            isOffered ? "bg-purple-600 text-white" :
+                            isPending ? "bg-amber-100 text-amber-800 border border-amber-200" :
+                            isApproved ? "bg-emerald-100 text-emerald-800 border border-emerald-200" : "bg-gray-200 text-gray-700"
+                          )}>
+                            {isOffered ? "🎁 Предложение от администратора" :
+                             isPending ? "⏳ Заявка отправлена (На рассмотрении)" :
+                             isApproved ? "✅ Оплачено и подключено" : "Отклонено"}
+                          </span>
+                          <span className="text-gray-400 text-[11px]">
+                            от {req.createdAt ? new Date(req.createdAt).toLocaleDateString('ru-RU') : '—'}
+                          </span>
+                        </div>
+
+                        <div className="font-extrabold text-gray-900 text-sm">
+                          Модули: {reqMods.map((m: string) => m === 'erp' ? 'Производство (ERP)' : m === 'procurement' ? 'Снабжение' : m === 'warehouse' ? 'Склад' : m === 'manager_salaries' ? 'Зарплаты менеджеров' : m).join(', ') || 'Запрос подписки'}
+                        </div>
+
+                        {req.comment && (
+                          <div className="text-indigo-800 text-xs italic bg-white/70 px-3 py-1.5 rounded-xl border border-indigo-100/60 inline-block">
+                            «{req.comment}»
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-3 shrink-0">
+                        {req.totalAmount && (
+                          <div className="text-right">
+                            <span className="text-[10px] text-gray-400 font-bold block uppercase">Сумма:</span>
+                            <span className="text-base font-black text-indigo-900">{Number(req.totalAmount).toLocaleString('ru-RU')} ₽</span>
+                          </div>
+                        )}
+
+                        <button
+                          onClick={() => setShowTariffModal(true)}
+                          className={cn(
+                            "px-4 py-2 rounded-xl text-xs font-black transition-all shadow-xs cursor-pointer",
+                            isOffered ? "bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200" : "bg-white hover:bg-gray-100 text-gray-800 border border-gray-300"
+                          )}
+                        >
+                          {isOffered ? "Оплачить и активировать" : "Детали оплаты"}
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
