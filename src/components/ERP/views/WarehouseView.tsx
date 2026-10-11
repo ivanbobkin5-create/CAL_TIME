@@ -30,6 +30,7 @@ import {
 import { MaterialResidual, ERPEmployee, ProductionOrder } from '../types';
 import { ERPMaterialResidualsView } from './ERPMaterialResidualsView';
 import { InventoryModal } from '../../Procurement/InventoryModal';
+import { ImportCalculatorCatalogModal } from '../components/ImportCalculatorCatalogModal';
 
 export interface WarehouseItem {
   id: string;
@@ -128,6 +129,31 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
   const [showArrivalModal, setShowArrivalModal] = useState(false);
   const [showInventoryModal, setShowInventoryModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showCalculatorImportModal, setShowCalculatorImportModal] = useState(false);
+
+  // Count items from calculator not yet on warehouse
+  const missingCalcCount = useMemo(() => {
+    const existingNames = new Set(warehouseItems.map(w => w.name.toLowerCase().trim()));
+    let count = 0;
+
+    (catalogProducts || []).forEach(p => {
+      const name = (p.name || p.title || '').trim().toLowerCase();
+      if (name && !existingNames.has(name)) count++;
+    });
+
+    Object.entries(catalogMaterials || {}).forEach(([brand, decors]) => {
+      if (Array.isArray(decors)) {
+        decors.forEach(decor => {
+          if (typeof decor === 'string') {
+            const fullName = `${brand} ${decor.trim()}`.toLowerCase();
+            if (!existingNames.has(fullName)) count++;
+          }
+        });
+      }
+    });
+
+    return count;
+  }, [catalogProducts, catalogMaterials, warehouseItems]);
 
   // New item form state
   const [formSku, setFormSku] = useState('');
@@ -527,6 +553,20 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
         {/* Action Buttons */}
         <div className="flex flex-wrap items-center gap-2">
           <button
+            onClick={() => setShowCalculatorImportModal(true)}
+            className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 font-extrabold rounded-xl text-xs sm:text-sm shadow-xs transition-all flex items-center gap-1.5 cursor-pointer relative"
+            title="Синхронизировать номенклатуру материалов и фурнитуры, созданную в Мебельном калькуляторе"
+          >
+            <Boxes className="w-4 h-4 text-slate-900" />
+            <span>Импорт из Калькулятора</span>
+            {missingCalcCount > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-slate-950 text-amber-300 ml-0.5">
+                +{missingCalcCount}
+              </span>
+            )}
+          </button>
+
+          <button
             onClick={() => {
               resetForm();
               setEditingItem(null);
@@ -550,6 +590,33 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Calculator Sync Notification Banner */}
+      {missingCalcCount > 0 && (
+        <div className="bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border border-amber-200/90 rounded-2xl p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-800 border border-amber-400/40 flex items-center justify-center font-bold text-sm shrink-0">
+              <Sparkles className="w-5 h-5 text-amber-600" />
+            </div>
+            <div>
+              <div className="font-extrabold text-xs sm:text-sm text-amber-950">
+                Найдено {missingCalcCount} позиций номенклатуры из Мебельного калькулятора
+              </div>
+              <p className="text-[11px] sm:text-xs text-amber-850/80 mt-0.5 font-medium">
+                Материалы, фурнитура, пильные фасады и декоры компании, отсутствующие в складских остатках ТМЦ
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={() => setShowCalculatorImportModal(true)}
+            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-black rounded-xl text-xs shadow-sm transition-all shrink-0 flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+          >
+            <span>Импортировать номенклатуру (+{missingCalcCount})</span>
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
 
       {/* Compact Mini Stats Strip */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -1477,6 +1544,21 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* CALCULATOR CATALOG IMPORT MODAL */}
+      {showCalculatorImportModal && (
+        <ImportCalculatorCatalogModal
+          companyId={companyId}
+          catalogProducts={catalogProducts}
+          catalogMaterials={catalogMaterials}
+          existingWarehouseItems={warehouseItems}
+          currentUser={currentUser}
+          onClose={() => setShowCalculatorImportModal(false)}
+          onImportComplete={(imported) => {
+            setWarehouseItems(prev => [...imported, ...prev]);
+          }}
+        />
       )}
     </div>
   );

@@ -5186,6 +5186,35 @@ function transliterate(str: string): string {
     }
   });
 
+  app.post("/api/companies/:companyId/warehouse-items/bulk", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const { items } = req.body;
+      if (!Array.isArray(items)) {
+        return res.status(400).json({ error: "items must be an array" });
+      }
+      for (const item of items) {
+        if (!item || !item.id) continue;
+        const docPath = `companies/${companyId}/warehouse_items/${item.id}`;
+        const dataStr = JSON.stringify(item);
+        localStore.setDoc(docPath, `companies/${companyId}/warehouse_items`, item.id, dataStr, false, false);
+        await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+          where: { path: docPath },
+          create: {
+            path: docPath,
+            collection: `companies/${companyId}/warehouse_items`,
+            docId: item.id,
+            data: dataStr
+          },
+          update: { data: dataStr }
+        })).catch(() => null);
+      }
+      res.json({ success: true, count: items.length });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   app.delete("/api/companies/:companyId/warehouse-items/:itemId", async (req, res) => {
     try {
       const { companyId, itemId } = req.params;
