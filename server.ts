@@ -5730,21 +5730,32 @@ function transliterate(str: string): string {
   app.get("/api/module-payment-requests", async (req, res) => {
     try {
       const { companyId } = req.query;
-      let docs: any[] = [];
+      const localList = localStore.getCollection("module_payment_requests");
+      const localRequests = localList.map(d => {
+        try { return typeof d.data === "string" ? JSON.parse(d.data) : d.data; } catch (_) { return null; }
+      }).filter(Boolean);
+
+      let dbRequests: any[] = [];
       try {
-        docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+        const docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
           where: { collection: "module_payment_requests" }
         }));
+        dbRequests = docs.map(d => {
+          try { return typeof d.data === "string" ? JSON.parse(d.data) : d.data; } catch (_) { return null; }
+        }).filter(Boolean);
       } catch (_) {}
 
-      let requests = docs.map(d => {
-        try { return JSON.parse(d.data); } catch (_) { return null; }
-      }).filter(Boolean);
+      const reqMap = new Map<string, any>();
+      [...dbRequests, ...localRequests].forEach(r => {
+        if (r && r.id) reqMap.set(r.id, r);
+      });
+
+      let requests = Array.from(reqMap.values());
 
       if (companyId) {
         requests = requests.filter(r => r.companyId === companyId);
       }
-      requests.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      requests.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
       res.json({ success: true, requests });
     } catch (e: any) {
       res.status(500).json({ error: String(e) });
@@ -5774,6 +5785,18 @@ function transliterate(str: string): string {
           update: { data: dataStr }
         }));
       } catch (_) {}
+      
+      // Also send notification email to superadmin
+      try {
+        const adminEmail = "lk.ivanbobkin@gmail.com";
+        const moduleNames = Array.isArray(fullReq.modules) ? fullReq.modules.join(", ") : fullReq.modules;
+        sendEmail(
+          adminEmail,
+          `💳 Новая заявка на оплату модулей (${fullReq.companyName || fullReq.companyId})`,
+          `Компания ${fullReq.companyName} (${fullReq.companyId}) отправила заявку на подключение модулей:\nМодули: ${moduleNames}\nПериод: ${fullReq.period} (${fullReq.months || 1} мес.)\nСумма: ${fullReq.totalAmount} ₽\n\nЗаявка доступна для подтверждения в админ-панели.`
+        ).catch(() => {});
+      } catch (_) {}
+
       invalidateCache(docPath);
       res.json({ success: true, request: fullReq });
     } catch (e: any) {

@@ -34,7 +34,13 @@ import {
   ChevronRight,
   HelpCircle,
   Eye,
-  MessageSquare
+  MessageSquare,
+  CreditCard,
+  FileText,
+  QrCode,
+  Warehouse,
+  Truck,
+  DollarSign
 } from "lucide-react";
 import { cn } from "../../lib/utils";
 import { SystemNewsItem } from "../Notifications/NotificationCenterModal";
@@ -116,13 +122,26 @@ interface AdminSettings {
 }
 
 export const AppAdminView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<"overview" | "companies" | "applications" | "news" | "users" | "notifications" | "database">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "companies" | "applications" | "news" | "users" | "notifications" | "requisites" | "database">("overview");
   const [companies, setCompanies] = useState<CompanyItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [newsList, setNewsList] = useState<SystemNewsItem[]>([]);
   const [applications, setApplications] = useState<CompanyApplication[]>([]);
+  const [moduleRequests, setModuleRequests] = useState<any[]>([]);
+  const [appTypeTab, setAppTypeTab] = useState<"module_requests" | "company_apps">("module_requests");
   const [totalProjectsCount, setTotalProjectsCount] = useState<number>(0);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  
+  // Requisites state
+  const [paymentRequisites, setPaymentRequisites] = useState({
+    payeeName: "ИП Бобкин Иван Александрович",
+    inn: "770000000000",
+    account: "40802810000000000000",
+    bankName: "ПАО СБЕРБАНК",
+    bic: "044525225",
+    corrAccount: "30101810400000000225"
+  });
+  const [savingRequisites, setSavingRequisites] = useState(false);
   
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState("");
@@ -235,6 +254,28 @@ export const AppAdminView: React.FC = () => {
           setApplications(appData.applications);
         }
       }
+
+      // 4b. Load Module Payment Requests
+      try {
+        const modReqRes = await fetch("/api/module-payment-requests");
+        if (modReqRes.ok) {
+          const modReqData = await modReqRes.json();
+          if (modReqData.requests && Array.isArray(modReqData.requests)) {
+            setModuleRequests(modReqData.requests);
+          }
+        }
+      } catch (_) {}
+
+      // 4c. Load Payment Requisites
+      try {
+        const reqRes = await fetch("/api/system/payment-requisites");
+        if (reqRes.ok) {
+          const reqData = await reqRes.json();
+          if (reqData.requisites) {
+            setPaymentRequisites(prev => ({ ...prev, ...reqData.requisites }));
+          }
+        }
+      } catch (_) {}
 
       // 5. Load Admin System Settings if saved
       const setRes = await fetch("/api/db/doc/system/admin_settings");
@@ -499,6 +540,47 @@ export const AppAdminView: React.FC = () => {
     }
   };
 
+  // Approve / Reject Module Payment Request
+  const handleUpdateModuleRequestStatus = async (reqId: string, status: "approved" | "rejected") => {
+    try {
+      const res = await fetch(`/api/module-payment-requests/${reqId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status })
+      });
+      if (res.ok) {
+        setModuleRequests(prev => prev.map(m => m.id === reqId ? { ...m, status } : m));
+        showToast(status === "approved" ? "Заявка одобрена! Модули подключены для компании." : "Заявка отклонена");
+        loadSystemData();
+      } else {
+        showToast("Не удалось обновить статус заявки", "error");
+      }
+    } catch {
+      showToast("Ошибка сети при обновлении заявки", "error");
+    }
+  };
+
+  // Save IP / Payment Requisites
+  const handleSaveRequisites = async () => {
+    try {
+      setSavingRequisites(true);
+      const res = await fetch("/api/system/payment-requisites", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ requisites: paymentRequisites })
+      });
+      if (res.ok) {
+        showToast("Реквизиты ИП успешно сохранены!");
+      } else {
+        showToast("Ошибка при сохранении реквизитов", "error");
+      }
+    } catch {
+      showToast("Ошибка сети при сохранении реквизитов", "error");
+    } finally {
+      setSavingRequisites(false);
+    }
+  };
+
   // Save Admin System Notification Settings
   const handleSaveAdminSettings = async () => {
     setSavingSettings(true);
@@ -566,7 +648,7 @@ export const AppAdminView: React.FC = () => {
     const withBitrix = companies.filter(c => Boolean(c.bitrix24?.webhookUrl)).length;
     const withErp = companies.filter(c => Boolean(c.erpAllowed || c.erpEnabled)).length;
     const totalUsers = users.length;
-    const pendingApps = applications.filter(a => a.status === "pending").length;
+    const pendingApps = applications.filter(a => a.status === "pending").length + moduleRequests.filter(m => m.status === "pending").length;
 
     return {
       totalComps,
@@ -579,7 +661,7 @@ export const AppAdminView: React.FC = () => {
       pendingApps,
       totalProjects: totalProjectsCount
     };
-  }, [companies, users, applications, totalProjectsCount]);
+  }, [companies, users, applications, moduleRequests, totalProjectsCount]);
 
   return (
     <div className="min-h-screen bg-[#f8fafc] text-gray-900 pb-16">
@@ -703,6 +785,16 @@ export const AppAdminView: React.FC = () => {
           >
             <Mail className="w-4 h-4" />
             <span>E-mail рассылки</span>
+          </button>
+          <button
+            onClick={() => setActiveTab("requisites")}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
+              activeTab === "requisites" ? "bg-white text-blue-700 shadow-sm border border-gray-200" : "text-gray-600 hover:text-gray-900"
+            )}
+          >
+            <CreditCard className="w-4 h-4" />
+            <span>Реквизиты ИП</span>
           </button>
           <button
             onClick={() => setActiveTab("database")}
@@ -1084,104 +1176,318 @@ export const AppAdminView: React.FC = () => {
           </div>
         )}
 
-        {/* TAB 3: COMPANY APPLICATIONS */}
+        {/* TAB 3: APPLICATIONS & MODULE SUBSCRIPTIONS */}
         {activeTab === "applications" && (
           <div className="space-y-6 animate-in fade-in duration-200">
-            <div className="bg-white p-5 rounded-3xl border border-gray-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            {/* Header & Category Switcher */}
+            <div className="bg-white p-5 rounded-3xl border border-gray-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
-                <h2 className="text-base font-extrabold text-gray-900">Заявки от компаний</h2>
-                <p className="text-xs text-gray-500">Запросы на открытие доступа к ERP, подключение партнерских цехов и интеграции</p>
+                <h2 className="text-base font-extrabold text-gray-900">Заявки и запросы</h2>
+                <p className="text-xs text-gray-500">Запросы компаний на подключение модулей, оплату и расширение прав доступа</p>
               </div>
 
-              <div className="flex items-center gap-2">
+              {/* Module Requests vs Company Access Apps toggle */}
+              <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-2xl border border-gray-200">
                 <button
-                  onClick={() => setAppStatusFilter("all")}
-                  className={cn("px-3 py-1.5 rounded-xl text-xs font-bold transition-all", appStatusFilter === "all" ? "bg-blue-600 text-white font-extrabold" : "bg-gray-100 text-gray-700")}
+                  onClick={() => setAppTypeTab("module_requests")}
+                  className={cn(
+                    "px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
+                    appTypeTab === "module_requests" ? "bg-white text-indigo-700 shadow-sm font-extrabold" : "text-gray-600 hover:text-gray-900"
+                  )}
                 >
-                  Все ({applications.length})
+                  <CreditCard className="w-4 h-4" />
+                  <span>Подключение модулей</span>
+                  {moduleRequests.filter(m => m.status === 'pending').length > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black">
+                      {moduleRequests.filter(m => m.status === 'pending').length}
+                    </span>
+                  )}
                 </button>
                 <button
-                  onClick={() => setAppStatusFilter("pending")}
-                  className={cn("px-3 py-1.5 rounded-xl text-xs font-bold transition-all", appStatusFilter === "pending" ? "bg-amber-500 text-white font-extrabold" : "bg-gray-100 text-gray-700")}
+                  onClick={() => setAppTypeTab("company_apps")}
+                  className={cn(
+                    "px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer",
+                    appTypeTab === "company_apps" ? "bg-white text-indigo-700 shadow-sm font-extrabold" : "text-gray-600 hover:text-gray-900"
+                  )}
                 >
-                  Новые ({applications.filter(a => a.status === 'pending').length})
-                </button>
-                <button
-                  onClick={() => setAppStatusFilter("approved")}
-                  className={cn("px-3 py-1.5 rounded-xl text-xs font-bold transition-all", appStatusFilter === "approved" ? "bg-emerald-600 text-white font-extrabold" : "bg-gray-100 text-gray-700")}
-                >
-                  Одобренные ({applications.filter(a => a.status === 'approved').length})
+                  <Building2 className="w-4 h-4" />
+                  <span>Доступ компаний</span>
+                  {applications.filter(a => a.status === 'pending').length > 0 && (
+                    <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-black">
+                      {applications.filter(a => a.status === 'pending').length}
+                    </span>
+                  )}
                 </button>
               </div>
             </div>
 
-            {filteredApplications.length === 0 ? (
-              <div className="bg-white rounded-3xl border border-gray-200 p-12 text-center text-gray-400 space-y-3">
-                <Inbox className="w-12 h-12 mx-auto text-gray-300" />
-                <h3 className="text-base font-bold text-gray-700">Заявок нет</h3>
-                <p className="text-xs">В выбранной категории отсутствуют входящие заявки</p>
-              </div>
-            ) : (
+            {/* SECTION 1: MODULE PAYMENT REQUESTS */}
+            {appTypeTab === "module_requests" && (
               <div className="space-y-4">
-                {filteredApplications.map((app) => (
-                  <div key={app.id} className="bg-white rounded-3xl border border-gray-200/80 p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-5">
-                    <div className="space-y-2 flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className={cn(
-                          "px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider",
-                          app.status === "pending" ? "bg-amber-100 text-amber-800 border border-amber-200" : app.status === "approved" ? "bg-emerald-100 text-emerald-800 border border-emerald-200" : "bg-red-100 text-red-800 border border-red-200"
-                        )}>
-                          {app.status === "pending" ? "На рассмотрении" : app.status === "approved" ? "Одобрена ✓" : "Отклонена"}
-                        </span>
-                        <span className="text-xs font-bold text-gray-400">
-                          {new Date(app.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}
-                        </span>
-                      </div>
-
-                      <h3 className="text-base font-extrabold text-gray-900">{app.title}</h3>
-                      {app.message && (
-                        <p className="text-xs text-gray-600 bg-gray-50 p-3 rounded-xl border border-gray-100">{app.message}</p>
-                      )}
-
-                      <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 pt-1">
-                        <span>Компания: <strong className="text-gray-800">{app.companyName} ({app.companyId})</strong></span>
-                        {app.contactName && <span>Контакт: <strong className="text-gray-800">{app.contactName}</strong></span>}
-                        {app.contactPhone && <span>Тел: <strong className="text-gray-800">{app.contactPhone}</strong></span>}
-                        {app.contactEmail && <span>Email: <strong className="text-gray-800">{app.contactEmail}</strong></span>}
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0 border-t md:border-t-0 pt-3 md:pt-0">
-                      {app.status === "pending" ? (
-                        <>
-                          <button
-                            onClick={() => handleUpdateApplicationStatus(app, "approved")}
-                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
-                          >
-                            <Check className="w-4 h-4" />
-                            <span>Одобрить доступ</span>
-                          </button>
-                          <button
-                            onClick={() => handleUpdateApplicationStatus(app, "rejected")}
-                            className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
-                          >
-                            Отклонить
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          onClick={() => handleDeleteApplication(app.id)}
-                          className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
-                          title="Удалить заявку"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
+                {moduleRequests.length === 0 ? (
+                  <div className="bg-white rounded-3xl border border-gray-200 p-12 text-center text-gray-400 space-y-3">
+                    <CreditCard className="w-12 h-12 mx-auto text-gray-300" />
+                    <h3 className="text-base font-bold text-gray-700">Заявок на модули нет</h3>
+                    <p className="text-xs">Запросы на подключение платных модулей (ERP, Склад, Снабжение) будут появляться здесь</p>
                   </div>
-                ))}
+                ) : (
+                  moduleRequests.map((modReq) => {
+                    const reqModules: string[] = Array.isArray(modReq.modules) ? modReq.modules : [modReq.modules].filter(Boolean);
+                    const periodText = modReq.period === 'year' || modReq.months === 12 ? '12 месяцев (Годовой тариф -20%)' : modReq.period === 'half_year' || modReq.months === 6 ? '6 месяцев (-15%)' : '1 месяц';
+
+                    return (
+                      <div key={modReq.id} className="bg-white rounded-3xl border border-gray-200/80 p-6 shadow-xs space-y-4">
+                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-gray-100 pb-4">
+                          <div className="space-y-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className={cn(
+                                "px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider",
+                                modReq.status === "pending" ? "bg-amber-100 text-amber-800 border border-amber-200" : modReq.status === "approved" ? "bg-emerald-100 text-emerald-800 border border-emerald-200" : "bg-red-100 text-red-800 border border-red-200"
+                              )}>
+                                {modReq.status === "pending" ? "Ожидает подтверждения" : modReq.status === "approved" ? "Одобрена ✓ Модули подключены" : "Отклонена"}
+                              </span>
+                              <span className="text-xs font-bold text-gray-400">
+                                {modReq.createdAt ? new Date(modReq.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}
+                              </span>
+                            </div>
+                            <h3 className="text-base font-extrabold text-gray-900">
+                              Компания: <span className="text-indigo-600">{modReq.companyName || 'Без названия'}</span>
+                              <span className="text-xs text-gray-400 font-mono ml-2">({modReq.companyId})</span>
+                            </h3>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            {modReq.status === "pending" ? (
+                              <>
+                                <button
+                                  onClick={() => handleUpdateModuleRequestStatus(modReq.id, "approved")}
+                                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-extrabold transition-all shadow-md shadow-emerald-500/20 flex items-center gap-2 cursor-pointer active:scale-95"
+                                >
+                                  <Check className="w-4 h-4" />
+                                  <span>Одобрить и подключить модули</span>
+                                </button>
+                                <button
+                                  onClick={() => handleUpdateModuleRequestStatus(modReq.id, "rejected")}
+                                  className="px-4 py-2.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                                >
+                                  Отклонить
+                                </button>
+                              </>
+                            ) : (
+                              <div className="text-xs font-bold text-emerald-600 bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 flex items-center gap-1.5">
+                                <CheckCircle2 className="w-4 h-4" />
+                                <span>Модули активированы</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Request Summary details */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                          <div className="bg-gray-50 p-3.5 rounded-2xl border border-gray-100 space-y-1.5">
+                            <span className="text-gray-400 font-bold block">Запрашиваемые модули:</span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {reqModules.map((m) => (
+                                <span key={m} className="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-lg font-bold border border-indigo-100">
+                                  {m === 'erp' ? 'Производство (ERP)' : m === 'procurement' ? 'Снабжение' : m === 'warehouse' ? 'Склад' : m === 'manager_salaries' ? 'Зарплаты менеджеров' : m}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+
+                          <div className="bg-gray-50 p-3.5 rounded-2xl border border-gray-100 space-y-1">
+                            <span className="text-gray-400 font-bold block">Срок подписки:</span>
+                            <span className="font-extrabold text-gray-800">{periodText}</span>
+                          </div>
+
+                          <div className="bg-gray-50 p-3.5 rounded-2xl border border-gray-100 space-y-1">
+                            <span className="text-gray-400 font-bold block">Итоговая сумма заявки:</span>
+                            <span className="text-base font-black text-emerald-600">
+                              {modReq.totalAmount ? `${Number(modReq.totalAmount).toLocaleString('ru-RU')} ₽` : '—'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             )}
+
+            {/* SECTION 2: COMPANY ACCESS APPLICATIONS */}
+            {appTypeTab === "company_apps" && (
+              <div className="space-y-4">
+                {filteredApplications.length === 0 ? (
+                  <div className="bg-white rounded-3xl border border-gray-200 p-12 text-center text-gray-400 space-y-3">
+                    <Inbox className="w-12 h-12 mx-auto text-gray-300" />
+                    <h3 className="text-base font-bold text-gray-700">Заявок нет</h3>
+                    <p className="text-xs">В выбранной категории отсутствуют входящие заявки</p>
+                  </div>
+                ) : (
+                  filteredApplications.map((app) => (
+                    <div key={app.id} className="bg-white rounded-3xl border border-gray-200/80 p-6 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-5">
+                      <div className="space-y-2 flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={cn(
+                            "px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider",
+                            app.status === "pending" ? "bg-amber-100 text-amber-800 border border-amber-200" : app.status === "approved" ? "bg-emerald-100 text-emerald-800 border border-emerald-200" : "bg-red-100 text-red-800 border border-red-200"
+                          )}>
+                            {app.status === "pending" ? "На рассмотрении" : app.status === "approved" ? "Одобрена ✓" : "Отклонена"}
+                          </span>
+                          <span className="text-xs font-bold text-gray-400">
+                            {new Date(app.createdAt).toLocaleDateString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" })}
+                          </span>
+                        </div>
+
+                        <h3 className="text-base font-extrabold text-gray-900">{app.title}</h3>
+                        {app.message && (
+                          <p className="text-xs text-gray-600 bg-gray-50 p-3 rounded-xl border border-gray-100">{app.message}</p>
+                        )}
+
+                        <div className="flex flex-wrap items-center gap-4 text-xs text-gray-500 pt-1">
+                          <span>Компания: <strong className="text-gray-800">{app.companyName} ({app.companyId})</strong></span>
+                          {app.contactName && <span>Контакт: <strong className="text-gray-800">{app.contactName}</strong></span>}
+                          {app.contactPhone && <span>Тел: <strong className="text-gray-800">{app.contactPhone}</strong></span>}
+                          {app.contactEmail && <span>Email: <strong className="text-gray-800">{app.contactEmail}</strong></span>}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0 border-t md:border-t-0 pt-3 md:pt-0">
+                        {app.status === "pending" ? (
+                          <>
+                            <button
+                              onClick={() => handleUpdateApplicationStatus(app, "approved")}
+                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Check className="w-4 h-4" />
+                              <span>Одобрить доступ</span>
+                            </button>
+                            <button
+                              onClick={() => handleUpdateApplicationStatus(app, "rejected")}
+                              className="px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+                            >
+                              Отклонить
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => handleDeleteApplication(app.id)}
+                            className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-xl transition-all cursor-pointer"
+                            title="Удалить заявку"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB: REQUISITES FOR IP & PAYMENTS */}
+        {activeTab === "requisites" && (
+          <div className="space-y-6 animate-in fade-in duration-200 max-w-4xl">
+            <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-xs space-y-6">
+              <div className="flex items-center gap-3 border-b border-gray-100 pb-4">
+                <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl">
+                  <CreditCard className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-base font-black text-gray-900">Реквизиты ИП и Банковского счета</h2>
+                  <p className="text-xs text-gray-500">Укажите данные вашего ИП для приема оплаты за модули и генерации QR-кодов СБП</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 text-xs">
+                <div className="sm:col-span-2">
+                  <label className="block font-extrabold text-gray-700 mb-1.5">
+                    Наименование получателя (ИП / Организация) *
+                  </label>
+                  <input
+                    type="text"
+                    value={paymentRequisites.payeeName}
+                    onChange={(e) => setPaymentRequisites({ ...paymentRequisites, payeeName: e.target.value })}
+                    placeholder="Например: ИП Бобкин Иван Александрович"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-500 font-semibold"
+                  />
+                  <p className="text-[11px] text-gray-400 mt-1">Отображается в счетах и реквизитах платежа</p>
+                </div>
+
+                <div>
+                  <label className="block font-extrabold text-gray-700 mb-1.5">ИНН получателя *</label>
+                  <input
+                    type="text"
+                    value={paymentRequisites.inn}
+                    onChange={(e) => setPaymentRequisites({ ...paymentRequisites, inn: e.target.value })}
+                    placeholder="12 или 10 цифр ИНН"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-500 font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-extrabold text-gray-700 mb-1.5">БИК банка *</label>
+                  <input
+                    type="text"
+                    value={paymentRequisites.bic}
+                    onChange={(e) => setPaymentRequisites({ ...paymentRequisites, bic: e.target.value })}
+                    placeholder="9 цифр БИК"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-500 font-semibold"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-extrabold text-gray-700 mb-1.5">Расчетный счет (Р/С) *</label>
+                  <input
+                    type="text"
+                    value={paymentRequisites.account}
+                    onChange={(e) => setPaymentRequisites({ ...paymentRequisites, account: e.target.value })}
+                    placeholder="20 цифр расчетного счета"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-500 font-semibold font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-extrabold text-gray-700 mb-1.5">Корреспондентский счет (К/С) *</label>
+                  <input
+                    type="text"
+                    value={paymentRequisites.corrAccount}
+                    onChange={(e) => setPaymentRequisites({ ...paymentRequisites, corrAccount: e.target.value })}
+                    placeholder="20 цифр корр. счета"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-500 font-semibold font-mono"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block font-extrabold text-gray-700 mb-1.5">Наименование банка *</label>
+                  <input
+                    type="text"
+                    value={paymentRequisites.bankName}
+                    onChange={(e) => setPaymentRequisites({ ...paymentRequisites, bankName: e.target.value })}
+                    placeholder="Например: ПАО СБЕРБАНК"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:border-blue-500 font-semibold"
+                  />
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-gray-100 flex items-center justify-between">
+                <div className="flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 px-3 py-2 rounded-xl border border-emerald-200 font-bold">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>Реквизиты синхронизируются с формой оплаты модулей</span>
+                </div>
+
+                <button
+                  onClick={handleSaveRequisites}
+                  disabled={savingRequisites}
+                  className="px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-extrabold transition-all shadow-md shadow-blue-500/20 flex items-center gap-2 cursor-pointer active:scale-95 disabled:opacity-50"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>{savingRequisites ? "Сохранение..." : "Сохранить реквизиты ИП"}</span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
 
