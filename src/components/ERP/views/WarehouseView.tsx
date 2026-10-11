@@ -242,7 +242,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
         category: res.category || 'Деловые обрезки',
         unit: unit,
         quantity: qty,
-        reservedQty: res.status === 'reserved' ? qty : 0,
+        reservedQty: (res.status as string) === 'reserved' ? qty : 0,
         availableQty: res.status === 'available' ? qty : 0,
         minThreshold: 0,
         storageCell: res.storageCell || 'Стеллаж остатков',
@@ -1072,11 +1072,11 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                   </span>
                 </div>
                 <div className="text-xs text-gray-600">
-                  Изделие: <strong>{ord.productName || 'Мебельное изделие'}</strong>
+                  Изделие: <strong>{ord.projectName || (ord as any).productName || 'Мебельное изделие'}</strong>
                 </div>
                 <div className="p-2.5 bg-white rounded-xl border border-gray-200 text-xs space-y-1">
                   <div className="font-bold text-gray-700">Зарезервировано складом:</div>
-                  <div className="text-gray-600">• ЛДСП {ord.materialColor || 'Основной цвет'} — 4 листа (Стеллаж А-02)</div>
+                  <div className="text-gray-600">• ЛДСП {(ord as any).materialColor || 'Основной цвет'} — 4 листа (Стеллаж А-02)</div>
                   <div className="text-gray-600">• Кромка ПВХ 19х1мм — 25 м.п. (Стеллаж В-01)</div>
                   <div className="text-gray-600">• Петли Blum с доводчиком — 12 шт (Ячейка Б-05)</div>
                 </div>
@@ -1407,11 +1407,10 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
       {/* INVENTORY AUDIT MODAL */}
       {showInventoryModal && (
         <InventoryModal
-          isOpen={showInventoryModal}
           onClose={() => setShowInventoryModal(false)}
           residuals={residuals}
           currentUser={currentUser}
-          onSaveInventory={(results) => {
+          onApplyInventory={() => {
             setShowInventoryModal(false);
           }}
         />

@@ -1,4 +1,5 @@
 import { BazisImportModal } from "./BazisImportModal";
+import { OrderBazisSpecificationModal } from "./OrderBazisSpecificationModal";
 import { ProcurementSettingsModal, ProcurementSettingsData } from "./ProcurementSettingsModal";
 import { CreateSupplyRequestModal, SupplyRequestData } from "./CreateSupplyRequestModal";
 import { SupplyRequestsView } from "./SupplyRequestsView";
@@ -786,9 +787,15 @@ export const ProcurementView = ({
                         {/* Bazis Import & Procurement Settings Buttons */}
                         <div className="flex items-center gap-2">
                             <button
-                                onClick={() => setShowBazisModal(true)}
+                                onClick={() => {
+                                    if (orders.length > 0) {
+                                        setSelectedOrderForBazis(orders[0]);
+                                    } else {
+                                        setShowBazisModal(true);
+                                    }
+                                }}
                                 className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-2xl text-xs shadow-sm transition-all flex items-center gap-1.5 cursor-pointer"
-                                title="Загрузить спецификацию XLSM из Базис Мебельщик"
+                                title="Прикрепить и открыть спецификацию XLSM из Базис Мебельщик"
                             >
                                 <FileSpreadsheet className="w-4 h-4" />
                                 <span>Базис (XLSM)</span>
@@ -1007,16 +1014,30 @@ export const ProcurementView = ({
                                                                          {order.name}
                                                                      </span>
                                                                   </div>
-                                                                  <div className="flex items-center gap-3">
+                                                                  <div className="flex items-center gap-1.5 flex-wrap">
                                                                      <a 
                                                                          href={companyData.bitrix24?.webhookUrl ? `${companyData.bitrix24.webhookUrl.split('/rest/')[0]}/crm/deal/details/${order.b24DealId}/` : '#'} 
                                                                          target="_blank" 
                                                                          rel="noreferrer"
-                                                                         className="flex items-center gap-1.5 px-3 py-1 bg-white border border-gray-100 text-gray-400 rounded-lg text-[9px] font-black uppercase hover:bg-blue-600 hover:text-white hover:border-blue-600 hover:shadow-lg hover:shadow-blue-200 transition-all"
+                                                                         className="flex items-center gap-1.5 px-2.5 py-1 bg-white border border-gray-200 text-gray-500 rounded-lg text-[9px] font-black uppercase hover:bg-blue-600 hover:text-white hover:border-blue-600 transition-all shrink-0"
                                                                      >
                                                                          B24
                                                                          <ExternalLink className="w-2.5 h-2.5" />
                                                                      </a>
+
+                                                                     <button
+                                                                         onClick={() => setSelectedOrderForBazis(order)}
+                                                                         className={cn(
+                                                                             "flex items-center gap-1 px-2.5 py-1 rounded-lg text-[9px] font-black uppercase transition-all shadow-2xs cursor-pointer border shrink-0",
+                                                                             order.bazisData
+                                                                                 ? "bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"
+                                                                                 : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-emerald-600 hover:text-white hover:border-emerald-600"
+                                                                         )}
+                                                                         title={order.bazisData ? `Спецификация Базис: ${order.bazisData.fileName} (${order.bazisData.totalItemsCount || 0} поз.)` : "Прикрепить и открыть спецификацию Базис (XLSM)"}
+                                                                     >
+                                                                         <FileSpreadsheet className="w-3 h-3 text-emerald-600 shrink-0" />
+                                                                         <span>Базис {order.bazisData?.totalItemsCount ? `(${order.bazisData.totalItemsCount})` : '(XLSM)'}</span>
+                                                                     </button>
                                                                   </div>
                                                                   
                                                                   <div className="mt-8 flex items-start justify-center gap-8 w-full">
@@ -1774,6 +1795,42 @@ export const ProcurementView = ({
                         }
                         setShowBazisModal(false);
                         setSelectedOrderForBazis(null);
+                    }}
+                />
+            )}
+
+            {/* Order Bazis Specification Modal */}
+            {selectedOrderForBazis && (
+                <OrderBazisSpecificationModal
+                    order={selectedOrderForBazis}
+                    categories={procurementSettingsData.customCategories}
+                    warehouseItems={[]}
+                    suppliers={suppliers}
+                    onClose={() => setSelectedOrderForBazis(null)}
+                    onSaveBazisData={async (orderId, newBazisData, updatedProcurementStatus) => {
+                        setOrders(prev => prev.map(o => {
+                            if (o.id === orderId) {
+                                return {
+                                    ...o,
+                                    bazisData: newBazisData,
+                                    procurementStatus: updatedProcurementStatus || o.procurementStatus
+                                };
+                            }
+                            return o;
+                        }));
+
+                        try {
+                            const updatePayload: any = {
+                                bazisData: newBazisData || null,
+                                updatedAt: new Date().toISOString()
+                            };
+                            if (updatedProcurementStatus) {
+                                updatePayload.procurementStatus = updatedProcurementStatus;
+                            }
+                            await updateDoc(doc(db, 'companies', companyData.id, 'projectSets', orderId), updatePayload);
+                        } catch (err) {
+                            console.error("Error updating order Bazis data:", err);
+                        }
                     }}
                 />
             )}

@@ -42201,7 +42201,7 @@ export default function App() {
                     </button>
                   )}
 
-                  {(companyData?.warehouseEnabled || companyData?.activeModules?.warehouse || userRole === "admin" || userRole === "supervisor" || userRole === "owner" || !userRole) && (
+                  {(companyData?.warehouseEnabled || companyData?.activeModules?.warehouse || (userRole as string) === "admin" || (userRole as string) === "supervisor" || (userRole as string) === "owner" || !userRole) && (
                     <button
                       onClick={() => setActiveTab("warehouse")}
                       className={cn(

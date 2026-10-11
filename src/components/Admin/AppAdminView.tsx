@@ -590,7 +590,7 @@ export const AppAdminView: React.FC = () => {
       const requestPayload = {
         companyId: proposalCompanyId,
         companyName,
-        contactPhone: targetCompany?.phone || targetCompany?.contactPhone || "",
+        contactPhone: targetCompany?.phone || (targetCompany as any)?.contactPhone || "",
         modules: proposalModules,
         period: proposalPeriod,
         totalAmount: proposalPrice,

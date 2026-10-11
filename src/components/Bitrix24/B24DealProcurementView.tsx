@@ -14,10 +14,12 @@ import {
   TrendingUp, 
   Truck,
   Building2,
-  FileText
+  FileText,
+  FileSpreadsheet
 } from 'lucide-react';
 import { cn } from '../../lib/utils';
 import { Supplier } from '../../types';
+import { OrderBazisSpecificationModal } from '../Procurement/OrderBazisSpecificationModal';
 
 export const CATEGORIES = [
   "Фасады заказные",
@@ -77,6 +79,7 @@ export const B24DealProcurementView: React.FC<B24DealProcurementViewProps> = ({
   const [orderData, setOrderData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [showBazisModal, setShowBazisModal] = useState(false);
   const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
     [CATEGORIES[0]]: true,
     [CATEGORIES[1]]: true,
@@ -399,6 +402,20 @@ export const B24DealProcurementView: React.FC<B24DealProcurementViewProps> = ({
 
           <div className="flex items-center gap-2.5">
             <button
+              onClick={() => setShowBazisModal(true)}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2.5 rounded-xl font-extrabold text-xs uppercase tracking-wider transition-all cursor-pointer border shadow-xs",
+                orderData?.bazisData
+                  ? "bg-emerald-50 text-emerald-700 border-emerald-300 hover:bg-emerald-100"
+                  : "bg-emerald-600 hover:bg-emerald-700 text-white border-transparent shadow-md"
+              )}
+              title="Прикрепить и просмотреть спецификацию Базис (XLSM) для этой сделки"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-emerald-300" />
+              <span>Базис {orderData?.bazisData?.totalItemsCount ? `(${orderData.bazisData.totalItemsCount})` : '(XLSM)'}</span>
+            </button>
+
+            <button
               onClick={syncWithBitrix24}
               disabled={isSyncing}
               className={cn(
@@ -643,6 +660,45 @@ export const B24DealProcurementView: React.FC<B24DealProcurementViewProps> = ({
           );
         })}
       </div>
+
+      {/* Order Bazis Specification Modal */}
+      {showBazisModal && (
+        <OrderBazisSpecificationModal
+          order={orderData || { id: orderId, b24DealId: dealId, name: dealTitle }}
+          categories={[
+            { id: '1', name: 'Фасады заказные', keywords: ['фасад', 'мдф', 'эмаль', 'шпон'] },
+            { id: '2', name: 'Фасады пильные', keywords: ['пильный', 'лдсп фасад'] },
+            { id: '3', name: 'ЛДСП/Кромка/ХДФ', keywords: ['лдсп', 'кромка', 'хдф', 'плита'] },
+            { id: '4', name: 'Столешницы и стеновые', keywords: ['столешница', 'стеновая', 'фартук', 'кедр', 'слотекс'] },
+            { id: '5', name: 'Фурнитура', keywords: ['петля', 'направляющие', 'боярд', 'blum', 'подъемник', 'ручка'] },
+          ]}
+          warehouseItems={[]}
+          suppliers={suppliers}
+          onClose={() => setShowBazisModal(false)}
+          onSaveBazisData={async (targetOrderId, newBazisData, updatedProcurementStatus) => {
+            setOrderData((prev: any) => ({
+              ...(prev || {}),
+              bazisData: newBazisData,
+              procurementStatus: updatedProcurementStatus || prev?.procurementStatus
+            }));
+
+            try {
+              const docRef = doc(db, 'companies', companyData.id, 'projectSets', orderId);
+              const updatePayload: any = {
+                bazisData: newBazisData || null,
+                updatedAt: new Date().toISOString()
+              };
+              if (updatedProcurementStatus) {
+                updatePayload.procurementStatus = updatedProcurementStatus;
+              }
+              await setDoc(docRef, updatePayload, { merge: true });
+            } catch (err) {
+              console.error("Error saving Bazis specification in B24 view:", err);
+            }
+            setShowBazisModal(false);
+          }}
+        />
+      )}
     </div>
   );
 };
