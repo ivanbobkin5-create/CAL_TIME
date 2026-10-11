@@ -33,7 +33,8 @@ import {
   PackageCheck,
   Sparkles,
   Wrench,
-  ShieldCheck
+  ShieldCheck,
+  Boxes
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -60,6 +61,7 @@ import { ERPEmployeesView } from './views/ERPEmployeesView';
 import { ERPSettingsView } from './views/ERPSettingsView';
 import { ERPArchiveView } from './views/ERPArchiveView';
 import { ERPMaterialResidualsView } from './views/ERPMaterialResidualsView';
+import { WarehouseView } from './views/WarehouseView';
 import { ERPInstallationView } from './views/ERPInstallationView';
 import { ERPInstallerMobileView } from './views/ERPInstallerMobileView';
 import { ERPLoginView } from './views/ERPLoginView';
@@ -2119,7 +2121,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
     { id: 'dashboard', label: 'Дашборд', icon: LayoutDashboard },
     { id: 'planning', label: 'Планирование', icon: Calendar, badge: orders.filter(o => !o.isDeleted && o.status === 'planned').length },
     { id: 'schedule', label: 'График работы', icon: CalendarDays },
-    { id: 'residuals', label: 'Остатки материалов', icon: Layers },
+    { id: 'residuals', label: 'Склад', icon: Boxes },
     { id: 'production', label: 'Производство', icon: Factory, badge: orders.filter(o => !o.isDeleted && (o.isReadyForProduction || o.status === 'in_progress' || (o.currentStage && o.currentStage !== 'queue') || !!o.plannedCuttingDate || (o.stagePlannedDates && Object.keys(o.stagePlannedDates).length > 0)) && o.status !== 'completed' && o.status !== 'shipped').length },
     { id: 'installation', label: 'Монтаж и сборка', icon: Wrench, badge: installationTasks.filter(t => t.status !== 'completed' && t.status !== 'cancelled').length },
     { id: 'archive', label: 'Архив заказов', icon: Archive, badge: orders.filter(o => !o.isDeleted && (o.status === 'completed' || o.status === 'shipped')).length },
@@ -2533,7 +2535,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
               )}
 
               {activeSection === 'residuals' && (
-                <ERPMaterialResidualsView
+                <WarehouseView
                   residuals={residuals}
                   onAddResidual={handleAddResidual}
                   onUpdateResidual={handleUpdateResidual}
@@ -2546,6 +2548,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
                   }}
                   employees={employees}
                   orders={orders}
+                  companyId={company?.id || aliasOrId}
                   companyName={company?.name}
                   catalogMaterials={catalogMaterials}
                   catalogProducts={catalogProducts}

@@ -141,6 +141,8 @@ import { SuppliersSettings } from "./components/Admin/SuppliersSettings";
 import { ProcurementView } from "./components/Procurement/ProcurementView";
 import { ArrivalsView } from "./components/Procurement/ArrivalsView";
 import { ProcurementPlanView } from "./components/Procurement/ProcurementPlanView";
+import { WarehouseView } from "./components/ERP/views/WarehouseView";
+import { MaterialResidual } from "./components/ERP/types";
 import { ProjectsView } from "./components/Projects/ProjectsView";
 import { PartnerOrdersView } from "./components/Projects/PartnerOrdersView";
 import { ProjectSpecificationView } from "./components/Projects/ProjectSpecificationView";
@@ -259,6 +261,7 @@ import {
   AlertOctagon,
   Printer,
   RussianRuble,
+  Boxes
 } from "lucide-react";
 
 // --- START OF OFFLINE CACHE AND SYNC ENGINE ---
@@ -36413,8 +36416,57 @@ export default function App() {
     | "partner_orders"
     | "b3d_test"
     | "b24_dashboard"
+    | "warehouse"
   >("calculator");
   const [isReadyMadeExpanded, setIsReadyMadeExpanded] = useState(false);
+
+  // Warehouse Material Residuals state in main app
+  const [residuals, setResiduals] = useState<MaterialResidual[]>([]);
+
+  useEffect(() => {
+    const compId = companyData?.id || 'default';
+    fetch(`/api/erp/${compId}/residuals`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.residuals && Array.isArray(data.residuals)) {
+          setResiduals(data.residuals);
+        }
+      }).catch(() => {});
+  }, [companyData?.id]);
+
+  const handleAddResidual = async (newItem: MaterialResidual) => {
+    setResiduals(prev => [newItem, ...prev]);
+    const compId = companyData?.id || 'default';
+    try {
+      await fetch(`/api/erp/${compId}/residuals`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newItem)
+      });
+    } catch (err) {}
+  };
+
+  const handleUpdateResidual = async (updatedItem: MaterialResidual) => {
+    setResiduals(prev => prev.map(r => r.id === updatedItem.id ? updatedItem : r));
+    const compId = companyData?.id || 'default';
+    try {
+      await fetch(`/api/erp/${compId}/residuals`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedItem)
+      });
+    } catch (err) {}
+  };
+
+  const handleDeleteResidual = async (residualId: string) => {
+    setResiduals(prev => prev.filter(r => r.id !== residualId));
+    const compId = companyData?.id || 'default';
+    try {
+      await fetch(`/api/erp/${compId}/residuals/${residualId}`, {
+        method: 'DELETE'
+      });
+    } catch (err) {}
+  };
   const [selectedReadyMadeCategory, setSelectedReadyMadeCategory] = useState<string | null>(null);
   useEffect(() => {
     if (userData?.isProcurementManager && activeTab !== "procurement_plan" && activeTab !== "procurement" && activeTab !== "profile" && activeTab !== "arrivals") {
@@ -42148,6 +42200,24 @@ export default function App() {
                       )}
                     </button>
                   )}
+
+                  {(companyData?.warehouseEnabled || companyData?.activeModules?.warehouse || userRole === "admin" || userRole === "supervisor" || userRole === "owner" || !userRole) && (
+                    <button
+                      onClick={() => setActiveTab("warehouse")}
+                      className={cn(
+                        "w-full flex items-center rounded-lg transition-all mb-1",
+                        isSidebarOpen ? "gap-2.5 px-2.5 py-1.5" : "justify-center py-1.5",
+                        activeTab === "warehouse"
+                          ? "bg-blue-600 text-white shadow-md shadow-blue-200"
+                          : "text-gray-600 hover:bg-gray-100",
+                      )}
+                    >
+                      <Boxes className="w-4 h-4 flex-shrink-0 text-amber-500" />
+                      {isSidebarOpen && (
+                        <span className="text-[13px] font-medium">Склад</span>
+                      )}
+                    </button>
+                  )}
                 </>
               )}
               
@@ -43208,6 +43278,27 @@ export default function App() {
                 getDoc={getDoc}
                 updateDoc={updateDoc}
                 companyData={companyData}
+            />
+          )}
+
+          {activeTab === "warehouse" && (
+            <WarehouseView
+              residuals={residuals}
+              onAddResidual={handleAddResidual}
+              onUpdateResidual={handleUpdateResidual}
+              onDeleteResidual={handleDeleteResidual}
+              currentUser={{
+                id: userData?.uid || 'user',
+                name: userData?.displayName || userData?.name || 'Сотрудник склада',
+                employeeName: userData?.displayName || userData?.name || 'Сотрудник склада',
+                role: userRole || 'admin'
+              }}
+              employees={companyEmployees}
+              orders={procurementOrders}
+              companyId={companyData?.id || 'default'}
+              companyName={companyData?.name}
+              catalogMaterials={catalogMaterials}
+              catalogProducts={catalogProducts}
             />
           )}
 

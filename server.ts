@@ -5144,6 +5144,101 @@ function transliterate(str: string): string {
     }
   });
 
+  // Warehouse Items API
+  app.get("/api/companies/:companyId/warehouse-items", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+        where: { collection: `companies/${companyId}/warehouse_items` }
+      }));
+      const items = docs.map(d => {
+        try { return JSON.parse(d.data); } catch (e) { return null; }
+      }).filter(Boolean);
+      res.json({ success: true, items });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/companies/:companyId/warehouse-items", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const item = req.body;
+      if (!item || !item.id) {
+        return res.status(400).json({ error: "Missing item id" });
+      }
+      const docPath = `companies/${companyId}/warehouse_items/${item.id}`;
+      const dataStr = JSON.stringify(item);
+      localStore.setDoc(docPath, `companies/${companyId}/warehouse_items`, item.id, dataStr, false, false);
+      await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+        where: { path: docPath },
+        create: {
+          path: docPath,
+          collection: `companies/${companyId}/warehouse_items`,
+          docId: item.id,
+          data: dataStr
+        },
+        update: { data: dataStr }
+      }));
+      res.json({ success: true, item });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.delete("/api/companies/:companyId/warehouse-items/:itemId", async (req, res) => {
+    try {
+      const { companyId, itemId } = req.params;
+      const docPath = `companies/${companyId}/warehouse_items/${itemId}`;
+      await dbQueryWithRetry(() => prisma.dbDocument.delete({ where: { path: docPath } }).catch(() => null));
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  // Warehouse Movements API (Arrivals, write-offs, transfers)
+  app.get("/api/companies/:companyId/warehouse-movements", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+        where: { collection: `companies/${companyId}/warehouse_movements` }
+      }));
+      const movements = docs.map(d => {
+        try { return JSON.parse(d.data); } catch (e) { return null; }
+      }).filter(Boolean);
+      res.json({ success: true, movements });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/companies/:companyId/warehouse-movements", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const movement = req.body;
+      if (!movement || !movement.id) {
+        return res.status(400).json({ error: "Missing movement id" });
+      }
+      const docPath = `companies/${companyId}/warehouse_movements/${movement.id}`;
+      const dataStr = JSON.stringify(movement);
+      localStore.setDoc(docPath, `companies/${companyId}/warehouse_movements`, movement.id, dataStr, false, false);
+      await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+        where: { path: docPath },
+        create: {
+          path: docPath,
+          collection: `companies/${companyId}/warehouse_movements`,
+          docId: movement.id,
+          data: dataStr
+        },
+        update: { data: dataStr }
+      }));
+      res.json({ success: true, movement });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   app.get("/api/companies/:companyId/supply-requests", async (req, res) => {
     try {
       const { companyId } = req.params;
@@ -5683,7 +5778,7 @@ function transliterate(str: string): string {
     }
   });
 
-  // --- Payment Requisites (ИП Бобкин) & Module Subscriptions ---
+  // --- Payment Requisites & Module Subscriptions ---
   app.get("/api/system/payment-requisites", async (req, res) => {
     try {
       const docPath = "system/payment_requisites";
@@ -5695,12 +5790,28 @@ function transliterate(str: string): string {
         bic: "044525225",
         corrAccount: "30101810400000000225"
       };
-      try {
-        const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
-        if (doc?.data) {
-          requisites = JSON.parse(doc.data);
-        }
-      } catch (_) {}
+
+      // Check localStore first
+      const localDoc = localStore.getDoc(docPath);
+      if (localDoc && localDoc.data) {
+        try {
+          const parsed = typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data;
+          requisites = { ...requisites, ...parsed };
+        } catch (_) {}
+      }
+
+      // Check DB if available
+      if (isPostgresAvailable) {
+        try {
+          const doc = await dbQueryWithRetry(() => prisma.dbDocument.findUnique({ where: { path: docPath } }));
+          if (doc?.data) {
+            const parsed = JSON.parse(doc.data);
+            requisites = { ...requisites, ...parsed };
+            localStore.setDoc(docPath, "system", "payment_requisites", doc.data, false, false);
+          }
+        } catch (_) {}
+      }
+
       res.json({ success: true, requisites });
     } catch (e: any) {
       res.status(500).json({ error: String(e) });
@@ -5713,13 +5824,15 @@ function transliterate(str: string): string {
       const docPath = "system/payment_requisites";
       const dataStr = JSON.stringify(requisites || {});
       localStore.setDoc(docPath, "system", "payment_requisites", dataStr, false, false);
-      try {
-        await dbQueryWithRetry(() => prisma.dbDocument.upsert({
-          where: { path: docPath },
-          create: { path: docPath, collection: "system", docId: "payment_requisites", data: dataStr },
-          update: { data: dataStr }
-        }));
-      } catch (_) {}
+      if (isPostgresAvailable) {
+        try {
+          await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+            where: { path: docPath },
+            create: { path: docPath, collection: "system", docId: "payment_requisites", data: dataStr },
+            update: { data: dataStr }
+          }));
+        } catch (_) {}
+      }
       invalidateCache(docPath);
       res.json({ success: true, requisites });
     } catch (e: any) {
