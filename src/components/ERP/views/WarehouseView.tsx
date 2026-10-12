@@ -25,12 +25,14 @@ import {
   Sparkles,
   Barcode,
   Building2,
-  ListFilter
+  ListFilter,
+  DollarSign,
+  MinusCircle
 } from 'lucide-react';
 import { MaterialResidual, ERPEmployee, ProductionOrder } from '../types';
 import { ERPMaterialResidualsView } from './ERPMaterialResidualsView';
 import { InventoryModal } from '../../Procurement/InventoryModal';
-import { ImportCalculatorCatalogModal } from '../components/ImportCalculatorCatalogModal';
+import { ImportCalculatorCatalogModal, detectWarehouseCategory } from '../components/ImportCalculatorCatalogModal';
 
 export interface WarehouseItem {
   id: string;
@@ -127,44 +129,21 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
   const [showAddItemModal, setShowAddItemModal] = useState(false);
   const [editingItem, setEditingItem] = useState<WarehouseItem | null>(null);
   const [showArrivalModal, setShowArrivalModal] = useState(false);
+  const [showWriteOffModal, setShowWriteOffModal] = useState(false);
   const [showInventoryModal, setShowInventoryModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showCalculatorImportModal, setShowCalculatorImportModal] = useState(false);
-
-  // Count items from calculator not yet on warehouse
-  const missingCalcCount = useMemo(() => {
-    const existingNames = new Set(warehouseItems.map(w => w.name.toLowerCase().trim()));
-    let count = 0;
-
-    (catalogProducts || []).forEach(p => {
-      const name = (p.name || p.title || '').trim().toLowerCase();
-      if (name && !existingNames.has(name)) count++;
-    });
-
-    Object.entries(catalogMaterials || {}).forEach(([brand, decors]) => {
-      if (Array.isArray(decors)) {
-        decors.forEach(decor => {
-          if (typeof decor === 'string') {
-            const fullName = `${brand} ${decor.trim()}`.toLowerCase();
-            if (!existingNames.has(fullName)) count++;
-          }
-        });
-      }
-    });
-
-    return count;
-  }, [catalogProducts, catalogMaterials, warehouseItems]);
 
   // New item form state
   const [formSku, setFormSku] = useState('');
   const [formName, setFormName] = useState('');
   const [formCategory, setFormCategory] = useState('ЛДСП');
   const [formUnit, setFormUnit] = useState('шт');
-  const [formQuantity, setFormQuantity] = useState('10');
-  const [formMinThreshold, setFormMinThreshold] = useState('5');
+  const [formQuantity, setFormQuantity] = useState('0');
+  const [formMinThreshold, setFormMinThreshold] = useState('0');
   const [formPrice, setFormPrice] = useState('0');
   const [formSupplier, setFormSupplier] = useState('');
-  const [formStorageCell, setFormStorageCell] = useState('Стеллаж A-1');
+  const [formStorageCell, setFormStorageCell] = useState('');
   const [formNotes, setFormNotes] = useState('');
 
   // Arrival form state
@@ -174,6 +153,13 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
   const [arrivalInvoice, setArrivalInvoice] = useState('');
   const [arrivalCell, setArrivalCell] = useState('');
   const [arrivalNotes, setArrivalNotes] = useState('');
+
+  // Write-off form state
+  const [writeOffItemId, setWriteOffItemId] = useState('');
+  const [writeOffQty, setWriteOffQty] = useState('1');
+  const [writeOffReason, setWriteOffReason] = useState('В производство');
+  const [writeOffOrderNumber, setWriteOffOrderNumber] = useState('');
+  const [writeOffNotes, setWriteOffNotes] = useState('');
 
   // Warehouse settings
   const [settings, setSettings] = useState({
@@ -223,11 +209,121 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
     fetchWarehouseData();
   }, [companyId]);
 
+  // Automated bidirectional sync between catalog products/materials and warehouse items
+  useEffect(() => {
+    if ((!catalogProducts || catalogProducts.length === 0) && (!catalogMaterials || Object.keys(catalogMaterials).length === 0)) return;
+
+    setWarehouseItems(prev => {
+      const existingNameSet = new Set(prev.map(w => w.name.toLowerCase().trim()));
+      const existingSkuSet = new Set(prev.map(w => (w.sku || '').toLowerCase().trim()).filter(Boolean));
+      const newItems: WarehouseItem[] = [];
+
+      // 1. Catalog Products
+      (catalogProducts || []).forEach((p: any, idx: number) => {
+        const name = (p.name || p.title || '').trim();
+        if (!name) return;
+        const rawSku = (p.sku || p.article || p.code || (Array.isArray(p.accountingSkus) ? p.accountingSkus[0] : '') || '').trim();
+        const category = detectWarehouseCategory(name, p.category || p.customCategory);
+
+        if (!existingNameSet.has(name.toLowerCase()) && (!rawSku || !existingSkuSet.has(rawSku.toLowerCase()))) {
+          const newItem: WarehouseItem = {
+            id: `wh-item-auto-${p.id || idx}-${Date.now()}`,
+            sku: rawSku || '',
+            name,
+            category,
+            unit: p.unit || (category === 'ЛДСП' || category === 'МДФ' ? 'лист' : category === 'Кромка' ? 'м.п.' : 'шт'),
+            quantity: 0,
+            reservedQty: 0,
+            availableQty: 0,
+            minThreshold: 0,
+            price: Number(p.purchasePrice || p.price || p.cost) || 0,
+            supplier: p.supplier || p.brand || p.manufacturer || '',
+            storageCell: '',
+            notes: '',
+            isResidual: false,
+            updatedAt: new Date().toISOString(),
+            updatedBy: 'Система (Авто-синхронизация)'
+          };
+          newItems.push(newItem);
+          existingNameSet.add(name.toLowerCase());
+          if (rawSku) existingSkuSet.add(rawSku.toLowerCase());
+        }
+      });
+
+      // 2. Catalog Materials
+      Object.entries(catalogMaterials || {}).forEach(([brand, decors]) => {
+        if (!Array.isArray(decors)) return;
+        decors.forEach((decor: any) => {
+          if (!decor || typeof decor !== 'string') return;
+          const cleanDecor = decor.trim();
+          const fullName = `${brand} ${cleanDecor}`;
+          if (!existingNameSet.has(fullName.toLowerCase())) {
+            const newItem: WarehouseItem = {
+              id: `wh-item-auto-mat-${brand}_${cleanDecor.replace(/\s+/g, '_')}-${Date.now()}`,
+              sku: '',
+              name: fullName,
+              category: fullName.toLowerCase().includes('кромка') ? 'Кромка' : 'ЛДСП',
+              unit: fullName.toLowerCase().includes('кромка') ? 'м.п.' : 'лист',
+              quantity: 0,
+              reservedQty: 0,
+              availableQty: 0,
+              minThreshold: 0,
+              price: 0,
+              supplier: brand,
+              storageCell: '',
+              notes: '',
+              isResidual: false,
+              updatedAt: new Date().toISOString(),
+              updatedBy: 'Система (Авто-синхронизация)'
+            };
+            newItems.push(newItem);
+            existingNameSet.add(fullName.toLowerCase());
+          }
+        });
+      });
+
+      if (newItems.length > 0) {
+        fetch(`/api/companies/${companyId}/warehouse-items/bulk`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: newItems })
+        }).catch(() => {});
+
+        return [...newItems, ...prev];
+      }
+
+      return prev;
+    });
+  }, [catalogProducts, catalogMaterials, companyId]);
+
+  // Count items from calculator not yet on warehouse
+  const missingCalcCount = useMemo(() => {
+    const existingNames = new Set(warehouseItems.map(w => w.name.toLowerCase().trim()));
+    let count = 0;
+
+    (catalogProducts || []).forEach(p => {
+      const name = (p.name || p.title || '').trim().toLowerCase();
+      if (name && !existingNames.has(name)) count++;
+    });
+
+    Object.entries(catalogMaterials || {}).forEach(([brand, decors]) => {
+      if (Array.isArray(decors)) {
+        decors.forEach(decor => {
+          if (typeof decor === 'string') {
+            const fullName = `${brand} ${decor.trim()}`.toLowerCase();
+            if (!existingNames.has(fullName)) count++;
+          }
+        });
+      }
+    });
+
+    return count;
+  }, [catalogProducts, catalogMaterials, warehouseItems]);
+
   // Combine custom warehouse items AND active material residuals
   const combinedStockList = useMemo(() => {
     const list: WarehouseItem[] = [...warehouseItems];
 
-    // Convert active material residuals into WarehouseItems with explicit "[Примечание: Остаток]"
     const activeResiduals = residuals.filter(r => r.status !== 'disposed' && r.status !== 'used');
     
     activeResiduals.forEach(res => {
@@ -257,13 +353,9 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
         }
       }
 
-      const residualNote = res.notes 
-        ? `Примечание: Остаток (${res.notes})` 
-        : `Примечание: Остаток`;
-
       list.push({
         id: `residual-item-${res.id}`,
-        sku: `RES-${res.id.substring(res.id.length - 6).toUpperCase()}`,
+        sku: '',
         name: `${res.materialName || res.category} ${displayDimensions}`.trim(),
         category: res.category || 'Деловые обрезки',
         unit: unit,
@@ -272,7 +364,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
         availableQty: res.status === 'available' ? qty : 0,
         minThreshold: 0,
         storageCell: res.storageCell || 'Стеллаж остатков',
-        notes: residualNote,
+        notes: res.notes ? `Остаток: ${res.notes}` : 'Остаток',
         isResidual: true,
         residualId: res.id,
         updatedAt: res.addedAt,
@@ -283,20 +375,17 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
     return list;
   }, [warehouseItems, catalogMaterials, residuals]);
 
-  // Filtered stock list based on user selection
+  // Filtered stock list
   const filteredStock = useMemo(() => {
     return combinedStockList.filter(item => {
-      // Category filter
       if (selectedCategory !== 'Все категории' && item.category !== selectedCategory) {
         return false;
       }
 
-      // Type filter
       if (typeFilter === 'regular' && item.isResidual) return false;
       if (typeFilter === 'residuals' && !item.isResidual) return false;
       if (typeFilter === 'low_stock' && item.quantity > (item.minThreshold || 0)) return false;
 
-      // Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         return (
@@ -312,13 +401,15 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
     });
   }, [combinedStockList, selectedCategory, typeFilter, searchQuery]);
 
-  // Statistics calculation
+  // Statistics & Valuation calculation
   const stats = useMemo(() => {
     const totalItemsCount = combinedStockList.length;
     const regularItems = combinedStockList.filter(i => !i.isResidual);
     const residualItems = combinedStockList.filter(i => i.isResidual);
     const lowStockCount = regularItems.filter(i => i.quantity <= (i.minThreshold || 0)).length;
     
+    const totalStockValuation = regularItems.reduce((sum, item) => sum + (item.quantity * (item.price || 0)), 0);
+
     const totalResidualAreaM2 = residuals
       .filter(r => r.type === 'offcut' && r.status === 'available')
       .reduce((acc, r) => acc + (r.areaM2 || 0), 0);
@@ -332,6 +423,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
       regularCount: regularItems.length,
       residualCount: residualItems.length,
       lowStockCount,
+      totalStockValuation: Math.round(totalStockValuation),
       totalResidualAreaM2: Number(totalResidualAreaM2.toFixed(1)),
       totalResidualEdgesMeters: Number(totalResidualEdgesMeters.toFixed(1))
     };
@@ -348,7 +440,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
 
     const newItem: WarehouseItem = {
       id: editingItem ? editingItem.id : `wh-item-${Date.now()}`,
-      sku: formSku.trim() || `SKU-${Math.floor(1000 + Math.random() * 9000)}`,
+      sku: formSku.trim() || '',
       name: formName.trim(),
       category: formCategory,
       unit: formUnit,
@@ -358,8 +450,8 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
       minThreshold: minThr,
       price: priceVal,
       supplier: formSupplier.trim(),
-      storageCell: formStorageCell.trim() || 'Стеллаж A-1',
-      notes: formNotes.trim() || 'Основной склад',
+      storageCell: formStorageCell.trim(),
+      notes: formNotes.trim(),
       isResidual: false,
       updatedAt: new Date().toISOString(),
       updatedBy: currentUser?.name || 'Кладовщик'
@@ -373,7 +465,6 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
       return [newItem, ...prev];
     });
 
-    // Save to backend
     try {
       await fetch(`/api/companies/${companyId}/warehouse-items`, {
         method: 'POST',
@@ -394,50 +485,15 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
     setFormName('');
     setFormCategory('ЛДСП');
     setFormUnit('шт');
-    setFormQuantity('10');
-    setFormMinThreshold('5');
+    setFormQuantity('0');
+    setFormMinThreshold('0');
     setFormPrice('0');
     setFormSupplier('');
-    setFormStorageCell('Стеллаж A-1');
+    setFormStorageCell('');
     setFormNotes('');
   };
 
-  // Quick quantity adjustment
-  const handleAdjustQuantity = async (item: WarehouseItem, delta: number) => {
-    if (item.isResidual && item.residualId) {
-      // It's a residual, update the residual item
-      const res = residuals.find(r => r.id === item.residualId);
-      if (res) {
-        onUpdateResidual({
-          ...res,
-          quantity: Math.max(0, (res.quantity || 1) + delta)
-        });
-      }
-      return;
-    }
-
-    const newQty = Math.max(0, item.quantity + delta);
-    const updated = {
-      ...item,
-      quantity: newQty,
-      availableQty: Math.max(0, newQty - (item.reservedQty || 0)),
-      updatedAt: new Date().toISOString()
-    };
-
-    setWarehouseItems(prev => prev.map(i => i.id === item.id ? updated : i));
-
-    try {
-      await fetch(`/api/companies/${companyId}/warehouse-items`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updated)
-      });
-    } catch (err) {
-      console.error('Error updating quantity:', err);
-    }
-  };
-
-  // Process manual arrival
+  // Process arrival document
   const handleProcessArrival = async (e: React.FormEvent) => {
     e.preventDefault();
     const item = combinedStockList.find(i => i.id === arrivalItemId);
@@ -445,8 +501,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
 
     const qty = Number(arrivalQty) || 1;
     
-    if (item.isResidual) {
-      // Residual arrival
+    if (item.isResidual && item.residualId) {
       const res = residuals.find(r => r.id === item.residualId);
       if (res) {
         onUpdateResidual({
@@ -456,7 +511,6 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
         });
       }
     } else {
-      // Regular warehouse item
       const newQty = item.quantity + qty;
       const updatedItem = {
         ...item,
@@ -479,7 +533,6 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
       }
     }
 
-    // Record movement log
     const newMovement: WarehouseMovement = {
       id: `mov-${Date.now()}`,
       date: new Date().toISOString(),
@@ -511,6 +564,75 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
     setArrivalNotes('');
   };
 
+  // Process write-off document
+  const handleProcessWriteOff = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const item = combinedStockList.find(i => i.id === writeOffItemId);
+    if (!item) return;
+
+    const qty = Number(writeOffQty) || 1;
+    if (qty <= 0) return;
+
+    if (item.isResidual && item.residualId) {
+      const res = residuals.find(r => r.id === item.residualId);
+      if (res) {
+        const newQty = Math.max(0, (res.quantity || 1) - qty);
+        onUpdateResidual({
+          ...res,
+          quantity: newQty,
+          status: newQty === 0 ? 'used' : res.status
+        });
+      }
+    } else {
+      const newQty = Math.max(0, item.quantity - qty);
+      const updatedItem = {
+        ...item,
+        quantity: newQty,
+        availableQty: Math.max(0, newQty - (item.reservedQty || 0))
+      };
+
+      setWarehouseItems(prev => prev.map(i => i.id === item.id ? updatedItem : i));
+
+      try {
+        await fetch(`/api/companies/${companyId}/warehouse-items`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updatedItem)
+        });
+      } catch (err) {}
+    }
+
+    const newMovement: WarehouseMovement = {
+      id: `mov-${Date.now()}`,
+      date: new Date().toISOString(),
+      type: 'write_off',
+      itemId: item.id,
+      itemName: item.name,
+      category: item.category,
+      quantity: qty,
+      unit: item.unit,
+      fromLocation: item.storageCell || 'Склад',
+      performedBy: currentUser?.name || 'Кладовщик',
+      notes: `Причина: ${writeOffReason}. ${writeOffOrderNumber ? `Заказ: №${writeOffOrderNumber}. ` : ''}${writeOffNotes}`.trim()
+    };
+
+    setMovements(prev => [newMovement, ...prev]);
+
+    try {
+      await fetch(`/api/companies/${companyId}/warehouse-movements`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newMovement)
+      });
+    } catch (err) {}
+
+    setShowWriteOffModal(false);
+    setWriteOffItemId('');
+    setWriteOffQty('1');
+    setWriteOffOrderNumber('');
+    setWriteOffNotes('');
+  };
+
   // Delete item handler
   const handleDeleteItem = async (item: WarehouseItem) => {
     if (!confirm(`Удалить позицию "${item.name}" со склада?`)) return;
@@ -529,7 +651,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Compact Header Bar */}
+      {/* Header Bar */}
       <div className="bg-white rounded-2xl p-4 sm:p-5 border border-gray-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 flex-shrink-0">
@@ -545,7 +667,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
               )}
             </div>
             <p className="text-xs text-gray-500 mt-0.5">
-              Единая база материалов, фурнитуры, готовых изделий и деловых остатков
+              Единый учет материалов, фурнитуры и деловых остатков
             </p>
           </div>
         </div>
@@ -555,7 +677,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
           <button
             onClick={() => setShowCalculatorImportModal(true)}
             className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 font-extrabold rounded-xl text-xs sm:text-sm shadow-xs transition-all flex items-center gap-1.5 cursor-pointer relative"
-            title="Синхронизировать номенклатуру материалов и фурнитуры, созданную в Мебельном калькуляторе"
+            title="Импорт номенклатуры из Мебельного калькулятора"
           >
             <Boxes className="w-4 h-4 text-slate-900" />
             <span>Импорт из Калькулятора</span>
@@ -574,14 +696,29 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
             }}
             className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-semibold rounded-xl text-xs sm:text-sm shadow-xs transition-all flex items-center gap-1.5"
           >
-            <Plus className="w-4 h-4" /> Добавить на склад
+            <Plus className="w-4 h-4" /> Добавить позицию
           </button>
+
           <button
-            onClick={() => setShowArrivalModal(true)}
+            onClick={() => {
+              setArrivalItemId('');
+              setShowArrivalModal(true);
+            }}
             className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold rounded-xl text-xs sm:text-sm shadow-xs transition-all flex items-center gap-1.5"
           >
             <Truck className="w-4 h-4" /> Приход ТМЦ
           </button>
+
+          <button
+            onClick={() => {
+              setWriteOffItemId('');
+              setShowWriteOffModal(true);
+            }}
+            className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-semibold rounded-xl text-xs sm:text-sm shadow-xs transition-all flex items-center gap-1.5"
+          >
+            <MinusCircle className="w-4 h-4" /> Списание ТМЦ
+          </button>
+
           <button
             onClick={() => setShowInventoryModal(true)}
             className="px-3.5 py-2 bg-white hover:bg-gray-50 text-gray-700 font-semibold rounded-xl text-xs sm:text-sm border border-gray-300 transition-all flex items-center gap-1.5"
@@ -591,51 +728,38 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
         </div>
       </div>
 
-      {/* Calculator Sync Notification Banner */}
-      {missingCalcCount > 0 && (
-        <div className="bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border border-amber-200/90 rounded-2xl p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-800 border border-amber-400/40 flex items-center justify-center font-bold text-sm shrink-0">
-              <Sparkles className="w-5 h-5 text-amber-600" />
-            </div>
-            <div>
-              <div className="font-extrabold text-xs sm:text-sm text-amber-950">
-                Найдено {missingCalcCount} позиций номенклатуры из Мебельного калькулятора
-              </div>
-              <p className="text-[11px] sm:text-xs text-amber-850/80 mt-0.5 font-medium">
-                Материалы, фурнитура, пильные фасады и декоры компании, отсутствующие в складских остатках ТМЦ
-              </p>
-            </div>
-          </div>
-
-          <button
-            onClick={() => setShowCalculatorImportModal(true)}
-            className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-black rounded-xl text-xs shadow-sm transition-all shrink-0 flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
-          >
-            <span>Импортировать номенклатуру (+{missingCalcCount})</span>
-            <Plus className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
-
-      {/* Compact Mini Stats Strip */}
+      {/* Stats & Valuation Bar */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white rounded-xl p-3 border border-gray-200/80 shadow-2xs flex items-center justify-between">
           <div>
-            <div className="text-[11px] font-medium text-gray-500">Всего позиций</div>
+            <div className="text-[11px] font-medium text-gray-500">Всего наименований</div>
             <div className="text-base font-bold text-gray-900 mt-0.5">
-              {stats.totalItemsCount} <span className="text-xs font-normal text-gray-500">наим.</span>
+              {stats.totalItemsCount} <span className="text-xs font-normal text-gray-500">поз.</span>
             </div>
           </div>
-          <div className="text-[10px] text-right text-gray-400">
+          <div className="text-[10px] text-right text-gray-400 font-mono">
             {stats.regularCount} осн.<br/>{stats.residualCount} обрез.
           </div>
         </div>
 
         <div className="bg-white rounded-xl p-3 border border-gray-200/80 shadow-2xs flex items-center justify-between">
           <div>
+            <div className="text-[11px] font-medium text-blue-700 flex items-center gap-1">
+              <DollarSign className="w-3.5 h-3.5 text-blue-500" /> Стоимость запасов
+            </div>
+            <div className="text-base font-bold text-blue-900 mt-0.5">
+              {stats.totalStockValuation.toLocaleString('ru-RU')} <span className="text-xs font-normal text-blue-700">₽</span>
+            </div>
+          </div>
+          <div className="text-[10px] text-right text-blue-600 font-medium">
+            Учетная стоимость<br/>на складе
+          </div>
+        </div>
+
+        <div className="bg-white rounded-xl p-3 border border-gray-200/80 shadow-2xs flex items-center justify-between">
+          <div>
             <div className="text-[11px] font-medium text-amber-700 flex items-center gap-1">
-              <Sparkles className="w-3 h-3 text-amber-500" /> Обрезки и остатки
+              <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Обрезки и остатки
             </div>
             <div className="text-base font-bold text-amber-900 mt-0.5">
               {stats.totalResidualAreaM2} <span className="text-xs font-normal text-amber-700">м²</span>
@@ -649,28 +773,14 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
         <div className="bg-white rounded-xl p-3 border border-gray-200/80 shadow-2xs flex items-center justify-between">
           <div>
             <div className="text-[11px] font-medium text-rose-700 flex items-center gap-1">
-              <AlertTriangle className="w-3 h-3 text-rose-500" /> Мало на складе
+              <AlertTriangle className="w-3.5 h-3.5 text-rose-500" /> Позиции в дефиците
             </div>
             <div className="text-base font-bold text-rose-900 mt-0.5">
               {stats.lowStockCount} <span className="text-xs font-normal text-rose-700">поз.</span>
             </div>
           </div>
           <div className="text-[10px] text-right text-rose-600 font-medium">
-            Требуется<br/>закупка
-          </div>
-        </div>
-
-        <div className="bg-white rounded-xl p-3 border border-gray-200/80 shadow-2xs flex items-center justify-between">
-          <div>
-            <div className="text-[11px] font-medium text-emerald-700 flex items-center gap-1">
-              <CheckCircle2 className="w-3 h-3 text-emerald-500" /> Адресные ячейки
-            </div>
-            <div className="text-base font-bold text-emerald-900 mt-0.5">
-              Активно <span className="text-xs font-normal text-emerald-700">хранение</span>
-            </div>
-          </div>
-          <div className="text-[10px] text-right text-emerald-600 font-medium">
-            Стеллажи<br/>А, Б, В, Г
+            Ниже мин.<br/>порога
           </div>
         </div>
       </div>
@@ -685,7 +795,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
               : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
           }`}
         >
-          <Package className="w-4 h-4" /> Общий склад (Товары и материалы)
+          <Package className="w-4 h-4" /> Общий склад ТМЦ
         </button>
 
         <button
@@ -696,7 +806,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
               : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
           }`}
         >
-          <Layers className="w-4 h-4 text-amber-500" /> Остатки материалов (Деловые обрезки)
+          <Layers className="w-4 h-4 text-amber-500" /> Деловые обрезки и остатки
           {stats.residualCount > 0 && (
             <span className="ml-1 px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded-full text-[10px] font-black">
               {stats.residualCount}
@@ -712,7 +822,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
               : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
           }`}
         >
-          <Truck className="w-4 h-4" /> Приходы и движение ТМЦ
+          <Truck className="w-4 h-4" /> Журнал операций и списаний
         </button>
 
         <button
@@ -759,7 +869,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                   type="text"
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Поиск по названию, декору, артикулу, ячейке, примечанию..."
+                  placeholder="Поиск по артикулу, наименованию, категории, ячейке..."
                   className="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs sm:text-sm focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 outline-none"
                 />
                 {searchQuery && (
@@ -823,7 +933,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                     : 'bg-amber-50 text-amber-800 border border-amber-200/70 hover:bg-amber-100'
                 }`}
               >
-                <Tag className="w-3.5 h-3.5" /> [Примечание: Остаток] ({stats.residualCount})
+                <Tag className="w-3.5 h-3.5" /> Деловые остатки ({stats.residualCount})
               </button>
 
               <button
@@ -845,21 +955,23 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-gray-50/80 border-b border-gray-200/80 text-[11px] font-black uppercase text-gray-500 tracking-wider">
-                    <th className="py-3 px-4">Артикул / SKU</th>
-                    <th className="py-3 px-4">Наименование позиций</th>
+                    <th className="py-3 px-4">Артикул</th>
+                    <th className="py-3 px-4">Наименование ТМЦ</th>
                     <th className="py-3 px-4">Категория</th>
-                    <th className="py-3 px-4 text-center">Наличие (Всего)</th>
+                    <th className="py-3 px-4 text-right">Закупка (₽)</th>
+                    <th className="py-3 px-4 text-center">Остаток</th>
                     <th className="py-3 px-4 text-center">В резерве</th>
                     <th className="py-3 px-4 text-center">Свободно</th>
+                    <th className="py-3 px-4 text-right">Сумма (₽)</th>
                     <th className="py-3 px-4">Ячейка / Адрес</th>
-                    <th className="py-3 px-4">Примечание / Статус</th>
+                    <th className="py-3 px-4">Примечание</th>
                     <th className="py-3 px-4 text-right">Действия</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100 text-xs font-medium text-gray-700">
                   {filteredStock.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="py-12 text-center text-gray-400">
+                      <td colSpan={11} className="py-12 text-center text-gray-400">
                         <Box className="w-10 h-10 mx-auto text-gray-300 mb-2" />
                         По вашему запросу не найдено ни одной позиции на складе.
                       </td>
@@ -867,6 +979,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                   ) : (
                     filteredStock.map((item) => {
                       const isLow = !item.isResidual && item.quantity <= (item.minThreshold || 0);
+                      const itemTotalValue = item.quantity * (item.price || 0);
 
                       return (
                         <tr 
@@ -903,6 +1016,11 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                             </span>
                           </td>
 
+                          {/* Purchase Price */}
+                          <td className="py-3 px-4 text-right font-mono text-gray-600">
+                            {item.price && item.price > 0 ? `${item.price.toLocaleString('ru-RU')} ₽` : '—'}
+                          </td>
+
                           {/* Total Quantity */}
                           <td className="py-3 px-4 text-center font-black text-sm text-gray-900">
                             {item.quantity} <span className="text-[10px] font-normal text-gray-500">{item.unit}</span>
@@ -930,49 +1048,66 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                             </span>
                           </td>
 
-                          {/* Storage Cell */}
-                          <td className="py-3 px-4">
-                            <span className="inline-flex items-center gap-1 text-[11px] font-bold text-gray-600 bg-gray-100 px-2 py-0.5 rounded-md">
-                              <MapPin className="w-3 h-3 text-blue-500" />
-                              {item.storageCell || 'Основной склад'}
-                            </span>
+                          {/* Total Inventory Value */}
+                          <td className="py-3 px-4 text-right font-bold text-gray-900 font-mono">
+                            {itemTotalValue > 0 ? `${Math.round(itemTotalValue).toLocaleString('ru-RU')} ₽` : '—'}
                           </td>
 
-                          {/* Note / Badge Badge Requirement */}
+                          {/* Storage Cell */}
+                          <td className="py-3 px-4">
+                            {item.storageCell ? (
+                              <span className="inline-flex items-center gap-1 text-[11px] font-bold text-gray-600 bg-gray-100 px-2 py-0.5 rounded-md">
+                                <MapPin className="w-3 h-3 text-blue-500" />
+                                {item.storageCell}
+                              </span>
+                            ) : (
+                              <span className="text-gray-400 text-[11px]">—</span>
+                            )}
+                          </td>
+
+                          {/* Note / Status */}
                           <td className="py-3 px-4">
                             {item.isResidual ? (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-[11px] font-black shadow-xs">
+                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-[11px] font-black">
                                 <Sparkles className="w-3 h-3 text-amber-600 flex-shrink-0" />
-                                {item.notes || 'Примечание: Остаток'}
+                                {item.notes || 'Остаток'}
                               </span>
                             ) : isLow ? (
                               <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-rose-100 text-rose-800 border border-rose-200 rounded-md text-[11px] font-bold">
-                                <AlertTriangle className="w-3 h-3 text-rose-600" /> Ниже порога ({item.minThreshold})
+                                <AlertTriangle className="w-3 h-3 text-rose-600" /> Порог ({item.minThreshold})
                               </span>
                             ) : (
                               <span className="text-gray-500 text-[11px]">
-                                {item.notes || 'Основной фонд'}
+                                {item.notes || '—'}
                               </span>
                             )}
                           </td>
 
                           {/* Actions */}
                           <td className="py-3 px-4 text-right">
-                            <div className="flex items-center justify-end gap-1">
+                            <div className="flex items-center justify-end gap-1.5">
                               <button
-                                onClick={() => handleAdjustQuantity(item, 1)}
-                                className="w-6 h-6 rounded-md bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs flex items-center justify-center transition-all"
-                                title="Увеличить остаток (+1)"
+                                onClick={() => {
+                                  setArrivalItemId(item.id);
+                                  setShowArrivalModal(true);
+                                }}
+                                className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-lg text-[11px] transition-all flex items-center gap-0.5"
+                                title="Провести приход товара"
                               >
-                                +
+                                <Truck className="w-3 h-3" /> Приход
                               </button>
+
                               <button
-                                onClick={() => handleAdjustQuantity(item, -1)}
-                                className="w-6 h-6 rounded-md bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs flex items-center justify-center transition-all"
-                                title="Уменьшить остаток (-1)"
+                                onClick={() => {
+                                  setWriteOffItemId(item.id);
+                                  setShowWriteOffModal(true);
+                                }}
+                                className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-lg text-[11px] transition-all flex items-center gap-0.5"
+                                title="Списать с актом списания"
                               >
-                                -
+                                <MinusCircle className="w-3 h-3" /> Списать
                               </button>
+
                               <button
                                 onClick={() => {
                                   if (!item.isResidual) {
@@ -991,10 +1126,11 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                                   }
                                 }}
                                 className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
-                                title="Редактировать"
+                                title="Редактировать позицию"
                               >
                                 <Edit className="w-3.5 h-3.5" />
                               </button>
+
                               <button
                                 onClick={() => handleDeleteItem(item)}
                                 className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
@@ -1015,7 +1151,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
         </div>
       )}
 
-      {/* TAB 2: DEDICATED MATERIAL RESIDUALS (DELEVOYE OBREZKI) */}
+      {/* TAB 2: DEDICATED MATERIAL RESIDUALS */}
       {activeSubTab === 'residuals' && (
         <div className="bg-white rounded-2xl p-4 sm:p-6 border border-gray-200/80 shadow-xs">
           <div className="mb-4 pb-3 border-b border-gray-100 flex items-center justify-between">
@@ -1024,7 +1160,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                 <Layers className="w-5 h-5 text-amber-500" /> Остатки материалов и деловые обрезки
               </h2>
               <p className="text-xs text-gray-500 mt-0.5">
-                Специализированный учет обрезков ЛДСП/МДФ, остатков кромки в метрах, профилей и столешниц с привязкой к заказам и печатью термоэтикеток.
+                Специализированный учет обрезков ЛДСП/МДФ, остатков кромки в метрах, профилей и столешниц с привязкой к заказам
               </p>
             </div>
           </div>
@@ -1049,15 +1185,23 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
         <div className="bg-white rounded-2xl p-6 border border-gray-200/80 shadow-xs space-y-4">
           <div className="flex items-center justify-between pb-4 border-b border-gray-100">
             <div>
-              <h3 className="text-lg font-black text-gray-900">Журнал движения ТМЦ и приходов</h3>
-              <p className="text-xs text-gray-500">История поступлений, межскладских перемещений и списаний в производство</p>
+              <h3 className="text-lg font-black text-gray-900">Журнал складских операций и актов списания</h3>
+              <p className="text-xs text-gray-500">Официальная история приходов, списаний в производство, брака и перемещений</p>
             </div>
-            <button
-              onClick={() => setShowArrivalModal(true)}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 transition-all shadow-md shadow-emerald-600/20"
-            >
-              <Truck className="w-4 h-4" /> Провести приход
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowArrivalModal(true)}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 transition-all shadow-md shadow-emerald-600/20"
+              >
+                <Truck className="w-4 h-4" /> Провести приход
+              </button>
+              <button
+                onClick={() => setShowWriteOffModal(true)}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs flex items-center gap-2 transition-all shadow-md shadow-rose-600/20"
+              >
+                <MinusCircle className="w-4 h-4" /> Провести списание
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -1070,7 +1214,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                   <th className="py-3 px-4 text-center">Количество</th>
                   <th className="py-3 px-4">Куда / Откуда</th>
                   <th className="py-3 px-4">Сотрудник</th>
-                  <th className="py-3 px-4">Примечание</th>
+                  <th className="py-3 px-4">Примечание / Основание</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100 text-xs font-medium text-gray-700">
@@ -1091,11 +1235,11 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                       <td className="py-3 px-4">
                         {mov.type === 'arrival' ? (
                           <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md font-bold text-[11px] inline-flex items-center gap-1">
-                            <ArrowDownRight className="w-3 h-3 text-emerald-600" /> Приход
+                            <ArrowDownRight className="w-3 h-3 text-emerald-600" /> Приход ТМЦ
                           </span>
                         ) : mov.type === 'write_off' ? (
                           <span className="px-2 py-0.5 bg-rose-100 text-rose-800 rounded-md font-bold text-[11px] inline-flex items-center gap-1">
-                            <ArrowUpRight className="w-3 h-3 text-rose-600" /> Списание
+                            <ArrowUpRight className="w-3 h-3 text-rose-600" /> Списание ТМЦ
                           </span>
                         ) : (
                           <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-md font-bold text-[11px]">
@@ -1143,14 +1287,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                 </div>
                 <div className="p-2.5 bg-white rounded-xl border border-gray-200 text-xs space-y-1">
                   <div className="font-bold text-gray-700">Зарезервировано складом:</div>
-                  <div className="text-gray-600">• ЛДСП {(ord as any).materialColor || 'Основной цвет'} — 4 листа (Стеллаж А-02)</div>
-                  <div className="text-gray-600">• Кромка ПВХ 19х1мм — 25 м.п. (Стеллаж В-01)</div>
-                  <div className="text-gray-600">• Петли Blum с доводчиком — 12 шт (Ячейка Б-05)</div>
-                </div>
-                <div className="flex items-center justify-end gap-2 pt-1">
-                  <button className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-xs font-bold transition-all">
-                    Списать в раскрой
-                  </button>
+                  <div className="text-gray-600">• Позиции заказа забронированы на складе под производство</div>
                 </div>
               </div>
             ))}
@@ -1158,7 +1295,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
         </div>
       )}
 
-      {/* TAB 5: LOCATIONS / ADRESNOYE KHRANENIYE */}
+      {/* TAB 5: LOCATIONS */}
       {activeSubTab === 'locations' && (
         <div className="bg-white rounded-2xl p-6 border border-gray-200/80 shadow-xs space-y-6">
           <div className="pb-4 border-b border-gray-100">
@@ -1171,28 +1308,24 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
               <div className="text-xs text-blue-400 font-bold uppercase tracking-wider">Зона A</div>
               <div className="font-black text-base">Стеллаж плитных материалов</div>
               <p className="text-xs text-slate-300">Полные листы ЛДСП, МДФ, ХДФ, Фанера</p>
-              <div className="pt-2 text-xs font-bold text-emerald-400">Свободно 12 ячеек из 20</div>
             </div>
 
             <div className="p-4 bg-amber-900/90 text-white rounded-2xl space-y-2">
               <div className="text-xs text-amber-300 font-bold uppercase tracking-wider">Зона Б</div>
               <div className="font-black text-base">Стойка деловых обрезков</div>
               <p className="text-xs text-amber-100">Деловая подрезка ЛДСП и МДФ с термоэтикетками</p>
-              <div className="pt-2 text-xs font-bold text-amber-300">Занято 18 обрезков</div>
             </div>
 
             <div className="p-4 bg-blue-900 text-white rounded-2xl space-y-2">
               <div className="text-xs text-blue-300 font-bold uppercase tracking-wider">Зона В</div>
               <div className="font-black text-base">Стеллаж фурнитуры и ящиков</div>
               <p className="text-xs text-blue-100">Петли, направляющие Blum/Hettich/Boyard</p>
-              <div className="pt-2 text-xs font-bold text-blue-200">24 кассетные ячейки</div>
             </div>
 
             <div className="p-4 bg-emerald-900 text-white rounded-2xl space-y-2">
               <div className="text-xs text-emerald-300 font-bold uppercase tracking-wider">Зона Г</div>
               <div className="font-black text-base">Стойка кромки и профилей</div>
               <p className="text-xs text-emerald-100">Рулоны кромки ПВХ, профили GOLA и подсветка</p>
-              <div className="pt-2 text-xs font-bold text-emerald-300">В наличии 42 бобины</div>
             </div>
           </div>
         </div>
@@ -1217,13 +1350,13 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
             <form onSubmit={handleSaveItem} className="space-y-3 text-xs font-medium text-gray-700">
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block mb-1 font-bold text-gray-700">Артикул / SKU</label>
+                  <label className="block mb-1 font-bold text-gray-700">Артикул</label>
                   <input
                     type="text"
                     value={formSku}
                     onChange={(e) => setFormSku(e.target.value)}
-                    placeholder="MAT-001"
-                    className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20"
+                    placeholder="Например: 101-002 или Blum 71B3550"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 font-mono"
                   />
                 </div>
 
@@ -1249,7 +1382,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                   value={formName}
                   onChange={(e) => setFormName(e.target.value)}
                   placeholder="например: Петля Blum Clip Top 110° с доводчиком"
-                  className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 font-bold text-gray-900"
                 />
               </div>
 
@@ -1310,7 +1443,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                     type="text"
                     value={formStorageCell}
                     onChange={(e) => setFormStorageCell(e.target.value)}
-                    placeholder="Стеллаж А-01"
+                    placeholder="например: Стеллаж А-01"
                     className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20"
                   />
                 </div>
@@ -1333,7 +1466,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                   rows={2}
                   value={formNotes}
                   onChange={(e) => setFormNotes(e.target.value)}
-                  placeholder="Дополнительные особенности или примечания..."
+                  placeholder="Дополнительные примечания..."
                   className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20"
                 />
               </div>
@@ -1386,7 +1519,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                   <option value="">-- Выберите позицию --</option>
                   {combinedStockList.map(item => (
                     <option key={item.id} value={item.id}>
-                      {item.name} (Сейчас: {item.quantity} {item.unit}) {item.isResidual ? '[Остаток]' : ''}
+                      {item.sku ? `[${item.sku}] ` : ''}{item.name} (Остаток: {item.quantity} {item.unit})
                     </option>
                   ))}
                 </select>
@@ -1464,6 +1597,112 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                   className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs shadow-md shadow-emerald-600/20"
                 >
                   Принять на склад
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* WRITE-OFF MODAL */}
+      {showWriteOffModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl relative space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <h3 className="font-black text-gray-900 text-base flex items-center gap-2">
+                <MinusCircle className="w-5 h-5 text-rose-600" /> Акт списания ТМЦ со склада
+              </h3>
+              <button 
+                onClick={() => setShowWriteOffModal(false)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleProcessWriteOff} className="space-y-3 text-xs font-medium text-gray-700">
+              <div>
+                <label className="block mb-1 font-bold text-gray-700">Выберите позицию склада *</label>
+                <select
+                  required
+                  value={writeOffItemId}
+                  onChange={(e) => setWriteOffItemId(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-rose-500/20 font-bold"
+                >
+                  <option value="">-- Выберите позицию --</option>
+                  {combinedStockList.map(item => (
+                    <option key={item.id} value={item.id}>
+                      {item.sku ? `[${item.sku}] ` : ''}{item.name} (Доступно: {item.quantity} {item.unit})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block mb-1 font-bold text-gray-700">Списываемое кол-во *</label>
+                  <input
+                    type="number"
+                    required
+                    step="any"
+                    min="0.1"
+                    value={writeOffQty}
+                    onChange={(e) => setWriteOffQty(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-rose-500/20 font-black text-sm text-rose-600"
+                  />
+                </div>
+
+                <div>
+                  <label className="block mb-1 font-bold text-gray-700">Причина списания *</label>
+                  <select
+                    value={writeOffReason}
+                    onChange={(e) => setWriteOffReason(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-rose-500/20 font-bold"
+                  >
+                    <option value="В производство">В производство (Заказ)</option>
+                    <option value="Технологический брак">Технологический брак</option>
+                    <option value="Порча / Дефект">Порча / Механический дефект</option>
+                    <option value="Расход на образцы">Расход на образцы / Шоурум</option>
+                    <option value="Инвентаризационная недостача">Инвентаризационная недостача</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block mb-1 font-bold text-gray-700">№ Заказа / Основание</label>
+                <input
+                  type="text"
+                  value={writeOffOrderNumber}
+                  onChange={(e) => setWriteOffOrderNumber(e.target.value)}
+                  placeholder="например: Заказ №1042 или Акт-05"
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-rose-500/20"
+                />
+              </div>
+
+              <div>
+                <label className="block mb-1 font-bold text-gray-700">Комментарий кладовщика</label>
+                <textarea
+                  rows={2}
+                  value={writeOffNotes}
+                  onChange={(e) => setWriteOffNotes(e.target.value)}
+                  placeholder="Подробности списания..."
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-rose-500/20"
+                />
+              </div>
+
+              <div className="pt-3 flex items-center justify-end gap-2 border-t border-gray-100">
+                <button
+                  type="button"
+                  onClick={() => setShowWriteOffModal(false)}
+                  className="px-4 py-2 bg-gray-100 text-gray-700 rounded-xl font-bold text-xs"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold text-xs shadow-md shadow-rose-600/20"
+                >
+                  Провести списание
                 </button>
               </div>
             </form>
