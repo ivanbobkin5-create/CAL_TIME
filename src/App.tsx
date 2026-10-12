@@ -42223,7 +42223,7 @@ export default function App() {
                           : "text-gray-600 hover:bg-gray-100",
                       )}
                     >
-                      <Boxes className="w-4 h-4 flex-shrink-0 text-amber-500" />
+                      <Boxes className="w-4 h-4 flex-shrink-0 opacity-80" />
                       {isSidebarOpen && (
                         <span className="text-[13px] font-medium">Склад</span>
                       )}

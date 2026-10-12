@@ -154,14 +154,24 @@
     
     <script>
       window.addEventListener('error', function(e) {
-        if (!document.getElementById('root').innerHTML) {
-          document.body.innerHTML += '<div style="color:red;padding:20px;font-size:16px;"><b>Global Error:</b> ' + e.message + '<br>Line: ' + e.lineno + '</div>';
+        // Игнорируем замаскированные кросс-доменные ошибки браузера ("Script error."), ошибки расширений и системный шум
+        if (!e || !e.message || e.message === 'Script error.' || e.message === 'Script error' || e.lineno === 0) {
+          return;
         }
+        if (typeof e.message === 'string' && (
+          e.message.includes('ResizeObserver') || 
+          e.message.includes('extension')
+        )) {
+          return;
+        }
+        console.error('Unhandled window error:', e);
       });
       window.addEventListener('unhandledrejection', function(e) {
-        if (!document.getElementById('root').innerHTML) {
-          document.body.innerHTML += '<div style="color:red;padding:20px;font-size:16px;"><b>Unhandled Rejection:</b> ' + (e.reason && e.reason.message ? e.reason.message : e.reason) + '</div>';
+        var reason = e.reason && e.reason.message ? e.reason.message : String(e.reason || '');
+        if (!reason || reason === 'Script error.' || reason.includes('ResizeObserver')) {
+          return;
         }
+        console.error('Unhandled promise rejection:', e.reason);
       });
     </script>
   </head>

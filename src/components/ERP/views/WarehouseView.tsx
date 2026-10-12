@@ -22,12 +22,14 @@ import {
   Boxes, 
   Tag, 
   X, 
-  Sparkles,
-  Barcode,
-  Building2,
-  ListFilter,
-  DollarSign,
-  MinusCircle
+  Barcode, 
+  Building2, 
+  ListFilter, 
+  RussianRuble, 
+  MinusCircle, 
+  Check, 
+  ExternalLink,
+  ChevronRight
 } from 'lucide-react';
 import { MaterialResidual, ERPEmployee, ProductionOrder } from '../types';
 import { ERPMaterialResidualsView } from './ERPMaterialResidualsView';
@@ -48,6 +50,7 @@ export interface WarehouseItem {
   supplier?: string;
   storageCell?: string;
   notes?: string;
+  showInCalculator?: boolean;
   isResidual?: boolean;
   residualId?: string;
   updatedAt?: string;
@@ -84,18 +87,19 @@ interface WarehouseViewProps {
   onDeleteResidual: (id: string) => void;
 }
 
-const DEFAULT_CATEGORIES = [
+const CALCULATOR_CATEGORIES = [
   'Все категории',
   'ЛДСП',
   'МДФ',
+  'Фасады',
   'Кромка',
   'Фурнитура',
   'Столешницы',
   'Метизы и крепеж',
   'Химия и клей',
   'Профили и цоколи',
-  'Инструменты',
   'Упаковка',
+  'Инструменты',
   'Другое'
 ];
 
@@ -133,6 +137,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
   const [showInventoryModal, setShowInventoryModal] = useState(false);
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showCalculatorImportModal, setShowCalculatorImportModal] = useState(false);
+  const [reservedDetailItem, setReservedDetailItem] = useState<WarehouseItem | null>(null);
 
   // New item form state
   const [formSku, setFormSku] = useState('');
@@ -145,6 +150,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
   const [formSupplier, setFormSupplier] = useState('');
   const [formStorageCell, setFormStorageCell] = useState('');
   const [formNotes, setFormNotes] = useState('');
+  const [formShowInCalculator, setFormShowInCalculator] = useState(true);
 
   // Arrival form state
   const [arrivalItemId, setArrivalItemId] = useState('');
@@ -160,6 +166,10 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
   const [writeOffReason, setWriteOffReason] = useState('В производство');
   const [writeOffOrderNumber, setWriteOffOrderNumber] = useState('');
   const [writeOffNotes, setWriteOffNotes] = useState('');
+
+  // Item picker states inside modals
+  const [pickerSearchQuery, setPickerSearchQuery] = useState('');
+  const [pickerCategory, setPickerCategory] = useState('Все категории');
 
   // Warehouse settings
   const [settings, setSettings] = useState({
@@ -209,7 +219,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
     fetchWarehouseData();
   }, [companyId]);
 
-  // Automated bidirectional sync between catalog products/materials and warehouse items
+  // Automated background sync between catalog products/materials and warehouse items
   useEffect(() => {
     if ((!catalogProducts || catalogProducts.length === 0) && (!catalogMaterials || Object.keys(catalogMaterials).length === 0)) return;
 
@@ -240,6 +250,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
             supplier: p.supplier || p.brand || p.manufacturer || '',
             storageCell: '',
             notes: '',
+            showInCalculator: true,
             isResidual: false,
             updatedAt: new Date().toISOString(),
             updatedBy: 'Система (Авто-синхронизация)'
@@ -272,6 +283,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
               supplier: brand,
               storageCell: '',
               notes: '',
+              showInCalculator: true,
               isResidual: false,
               updatedAt: new Date().toISOString(),
               updatedBy: 'Система (Авто-синхронизация)'
@@ -429,6 +441,21 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
     };
   }, [combinedStockList, residuals]);
 
+  // Find reserving orders for a specific item
+  const getReservingOrdersForItem = (item: WarehouseItem) => {
+    if (!item || !orders) return [];
+    const nameLower = item.name.toLowerCase().trim();
+    
+    return orders.filter(ord => {
+      if (ord.isDeleted || ord.status === 'completed' || ord.status === 'shipped') return false;
+      
+      const matchName = (ord.projectName || (ord as any).productName || '').toLowerCase().includes(nameLower) ||
+        ((ord as any).materialColor || '').toLowerCase().includes(nameLower);
+
+      return matchName || ((ord as any).hardwareData && String((ord as any).hardwareData).toLowerCase().includes(nameLower));
+    });
+  };
+
   // Handlers for adding custom warehouse item
   const handleSaveItem = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -452,6 +479,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
       supplier: formSupplier.trim(),
       storageCell: formStorageCell.trim(),
       notes: formNotes.trim(),
+      showInCalculator: formShowInCalculator,
       isResidual: false,
       updatedAt: new Date().toISOString(),
       updatedBy: currentUser?.name || 'Кладовщик'
@@ -491,6 +519,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
     setFormSupplier('');
     setFormStorageCell('');
     setFormNotes('');
+    setFormShowInCalculator(true);
   };
 
   // Process arrival document
@@ -649,12 +678,29 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
     }
   };
 
+  // Filter items for item pickers inside Arrival/Write-off modals
+  const filteredPickerItems = useMemo(() => {
+    return combinedStockList.filter(item => {
+      if (pickerCategory !== 'Все категории' && item.category !== pickerCategory) return false;
+      if (pickerSearchQuery.trim()) {
+        const q = pickerSearchQuery.toLowerCase();
+        return (
+          item.name.toLowerCase().includes(q) ||
+          (item.sku && item.sku.toLowerCase().includes(q)) ||
+          item.category.toLowerCase().includes(q) ||
+          (item.storageCell && item.storageCell.toLowerCase().includes(q))
+        );
+      }
+      return true;
+    });
+  }, [combinedStockList, pickerCategory, pickerSearchQuery]);
+
   return (
-    <div className="space-y-6 pb-12">
+    <div className="px-3 sm:px-6 py-4 max-w-full space-y-5 mx-auto pb-12">
       {/* Header Bar */}
-      <div className="bg-white rounded-2xl p-4 sm:p-5 border border-gray-200/80 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white rounded-2xl p-4 sm:p-5 border border-gray-200/90 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-600 flex-shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-700 flex-shrink-0">
             <Boxes className="w-5 h-5" />
           </div>
           <div>
@@ -676,13 +722,13 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
         <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setShowCalculatorImportModal(true)}
-            className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 active:bg-amber-700 text-slate-950 font-extrabold rounded-xl text-xs sm:text-sm shadow-xs transition-all flex items-center gap-1.5 cursor-pointer relative"
+            className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs sm:text-sm shadow-xs transition-all flex items-center gap-1.5 cursor-pointer relative"
             title="Импорт номенклатуры из Мебельного калькулятора"
           >
-            <Boxes className="w-4 h-4 text-slate-900" />
-            <span>Импорт из Калькулятора</span>
+            <Boxes className="w-4 h-4 text-amber-300" />
+            <span>Синхронизация Калькулятора</span>
             {missingCalcCount > 0 && (
-              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-slate-950 text-amber-300 ml-0.5">
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-slate-950 ml-0.5">
                 +{missingCalcCount}
               </span>
             )}
@@ -702,6 +748,8 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
           <button
             onClick={() => {
               setArrivalItemId('');
+              setPickerSearchQuery('');
+              setPickerCategory('Все категории');
               setShowArrivalModal(true);
             }}
             className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-semibold rounded-xl text-xs sm:text-sm shadow-xs transition-all flex items-center gap-1.5"
@@ -712,6 +760,8 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
           <button
             onClick={() => {
               setWriteOffItemId('');
+              setPickerSearchQuery('');
+              setPickerCategory('Все категории');
               setShowWriteOffModal(true);
             }}
             className="px-3.5 py-2 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-semibold rounded-xl text-xs sm:text-sm shadow-xs transition-all flex items-center gap-1.5"
@@ -730,7 +780,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
 
       {/* Stats & Valuation Bar */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <div className="bg-white rounded-xl p-3 border border-gray-200/80 shadow-2xs flex items-center justify-between">
+        <div className="bg-white rounded-2xl p-3.5 border border-gray-200/90 shadow-2xs flex items-center justify-between">
           <div>
             <div className="text-[11px] font-medium text-gray-500">Всего наименований</div>
             <div className="text-base font-bold text-gray-900 mt-0.5">
@@ -742,10 +792,10 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
           </div>
         </div>
 
-        <div className="bg-white rounded-xl p-3 border border-gray-200/80 shadow-2xs flex items-center justify-between">
+        <div className="bg-white rounded-2xl p-3.5 border border-gray-200/90 shadow-2xs flex items-center justify-between">
           <div>
             <div className="text-[11px] font-medium text-blue-700 flex items-center gap-1">
-              <DollarSign className="w-3.5 h-3.5 text-blue-500" /> Стоимость запасов
+              <RussianRuble className="w-3.5 h-3.5 text-blue-600" /> Стоимость запасов
             </div>
             <div className="text-base font-bold text-blue-900 mt-0.5">
               {stats.totalStockValuation.toLocaleString('ru-RU')} <span className="text-xs font-normal text-blue-700">₽</span>
@@ -756,21 +806,21 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
           </div>
         </div>
 
-        <div className="bg-white rounded-xl p-3 border border-gray-200/80 shadow-2xs flex items-center justify-between">
+        <div className="bg-white rounded-2xl p-3.5 border border-gray-200/90 shadow-2xs flex items-center justify-between">
           <div>
-            <div className="text-[11px] font-medium text-amber-700 flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" /> Обрезки и остатки
+            <div className="text-[11px] font-medium text-amber-800 flex items-center gap-1">
+              <Layers className="w-3.5 h-3.5 text-amber-600" /> Обрезки и остатки
             </div>
             <div className="text-base font-bold text-amber-900 mt-0.5">
-              {stats.totalResidualAreaM2} <span className="text-xs font-normal text-amber-700">м²</span>
+              {stats.totalResidualAreaM2} <span className="text-xs font-normal text-amber-800">м²</span>
             </div>
           </div>
-          <div className="text-[10px] text-right text-amber-600 font-medium">
+          <div className="text-[10px] text-right text-amber-700 font-medium">
             + {stats.totalResidualEdgesMeters} м.п.<br/>кромки
           </div>
         </div>
 
-        <div className="bg-white rounded-xl p-3 border border-gray-200/80 shadow-2xs flex items-center justify-between">
+        <div className="bg-white rounded-2xl p-3.5 border border-gray-200/90 shadow-2xs flex items-center justify-between">
           <div>
             <div className="text-[11px] font-medium text-rose-700 flex items-center gap-1">
               <AlertTriangle className="w-3.5 h-3.5 text-rose-500" /> Позиции в дефиците
@@ -786,7 +836,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
       </div>
 
       {/* Navigation Sub-Tabs */}
-      <div className="bg-white p-2 rounded-2xl border border-gray-200/80 shadow-xs flex items-center gap-1 overflow-x-auto no-scrollbar">
+      <div className="bg-white p-2 rounded-2xl border border-gray-200/90 shadow-xs flex items-center gap-1 overflow-x-auto no-scrollbar">
         <button
           onClick={() => setActiveSubTab('main_stock')}
           className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap flex items-center gap-2 ${
@@ -860,7 +910,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
       {activeSubTab === 'main_stock' && (
         <div className="space-y-4">
           {/* Filters & Control Bar */}
-          <div className="bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs space-y-3">
+          <div className="bg-white p-4 rounded-2xl border border-gray-200/90 shadow-xs space-y-3">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
               {/* Search Bar */}
               <div className="relative flex-1">
@@ -881,31 +931,34 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                   </button>
                 )}
               </div>
+            </div>
 
-              {/* Category Filter */}
-              <div className="flex items-center gap-2">
-                <Filter className="w-4 h-4 text-gray-400 flex-shrink-0" />
-                <select
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
-                  className="bg-gray-50 border border-gray-200 rounded-xl px-3 py-2 text-xs sm:text-sm font-medium text-gray-700 outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500"
+            {/* Calculator Category Filter Pills */}
+            <div className="flex items-center gap-1 overflow-x-auto pb-1 no-scrollbar pt-1 border-t border-gray-100">
+              {CALCULATOR_CATEGORIES.map(cat => (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap ${
+                    selectedCategory === cat
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
                 >
-                  {DEFAULT_CATEGORIES.map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </select>
-              </div>
+                  {cat}
+                </button>
+              ))}
             </div>
 
             {/* Quick Type Filter Pills */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar pt-1 border-t border-gray-100">
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar pt-1">
               <span className="text-xs font-bold text-gray-400 mr-1 flex items-center gap-1">
-                <ListFilter className="w-3.5 h-3.5" /> Фильтр типа:
+                <ListFilter className="w-3.5 h-3.5" /> Вид:
               </span>
               
               <button
                 onClick={() => setTypeFilter('all')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${
                   typeFilter === 'all'
                     ? 'bg-slate-900 text-white'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -916,7 +969,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
 
               <button
                 onClick={() => setTypeFilter('regular')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all ${
                   typeFilter === 'regular'
                     ? 'bg-blue-600 text-white'
                     : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
@@ -927,34 +980,34 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
 
               <button
                 onClick={() => setTypeFilter('residuals')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1 ${
                   typeFilter === 'residuals'
-                    ? 'bg-amber-500 text-white shadow-sm'
+                    ? 'bg-amber-500 text-white shadow-xs'
                     : 'bg-amber-50 text-amber-800 border border-amber-200/70 hover:bg-amber-100'
                 }`}
               >
-                <Tag className="w-3.5 h-3.5" /> Деловые остатки ({stats.residualCount})
+                <Tag className="w-3 h-3" /> Деловые остатки ({stats.residualCount})
               </button>
 
               <button
                 onClick={() => setTypeFilter('low_stock')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all flex items-center gap-1 ${
                   typeFilter === 'low_stock'
                     ? 'bg-rose-600 text-white'
                     : 'bg-rose-50 text-rose-700 border border-rose-200/70 hover:bg-rose-100'
                 }`}
               >
-                <AlertTriangle className="w-3.5 h-3.5" /> Ниже минимума ({stats.lowStockCount})
+                <AlertTriangle className="w-3 h-3" /> Ниже минимума ({stats.lowStockCount})
               </button>
             </div>
           </div>
 
           {/* Main Table */}
-          <div className="bg-white rounded-2xl border border-gray-200/80 shadow-xs overflow-hidden">
+          <div className="bg-white rounded-2xl border border-gray-200/90 shadow-xs overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
-                  <tr className="bg-gray-50/80 border-b border-gray-200/80 text-[11px] font-black uppercase text-gray-500 tracking-wider">
+                  <tr className="bg-gray-50/80 border-b border-gray-200/90 text-[11px] font-black uppercase text-gray-500 tracking-wider">
                     <th className="py-3 px-4">Артикул</th>
                     <th className="py-3 px-4">Наименование ТМЦ</th>
                     <th className="py-3 px-4">Категория</th>
@@ -993,20 +1046,9 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                             {item.sku || '—'}
                           </td>
 
-                          {/* Item Name */}
+                          {/* Item Name (Clean string) */}
                           <td className="py-3 px-4 font-bold text-gray-900">
-                            <div className="flex items-center gap-2">
-                              {item.isResidual ? (
-                                <span className="p-1 bg-amber-100 text-amber-800 rounded-md flex-shrink-0" title="Деловой обрезок / остаток">
-                                  <Layers className="w-3.5 h-3.5" />
-                                </span>
-                              ) : (
-                                <span className="p-1 bg-slate-100 text-slate-700 rounded-md flex-shrink-0">
-                                  <Box className="w-3.5 h-3.5" />
-                                </span>
-                              )}
-                              <span>{item.name}</span>
-                            </div>
+                            {item.name}
                           </td>
 
                           {/* Category */}
@@ -1026,12 +1068,17 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                             {item.quantity} <span className="text-[10px] font-normal text-gray-500">{item.unit}</span>
                           </td>
 
-                          {/* Reserved Qty */}
+                          {/* Reserved Qty - CLICKABLE IF > 0 */}
                           <td className="py-3 px-4 text-center">
                             {item.reservedQty && item.reservedQty > 0 ? (
-                              <span className="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-md font-bold text-[11px]">
-                                {item.reservedQty} {item.unit}
-                              </span>
+                              <button
+                                onClick={() => setReservedDetailItem(item)}
+                                className="px-2 py-0.5 bg-blue-100 hover:bg-blue-200 text-blue-800 border border-blue-300 rounded-md font-bold text-[11px] transition-all cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                                title="Нажмите, чтобы посмотреть заказы в резерве"
+                              >
+                                <span>{item.reservedQty} {item.unit}</span>
+                                <ChevronRight className="w-3 h-3 text-blue-600" />
+                              </button>
                             ) : (
                               <span className="text-gray-400">—</span>
                             )}
@@ -1068,8 +1115,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                           {/* Note / Status */}
                           <td className="py-3 px-4">
                             {item.isResidual ? (
-                              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-[11px] font-black">
-                                <Sparkles className="w-3 h-3 text-amber-600 flex-shrink-0" />
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-[11px] font-black">
                                 {item.notes || 'Остаток'}
                               </span>
                             ) : isLow ? (
@@ -1091,7 +1137,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                                   setArrivalItemId(item.id);
                                   setShowArrivalModal(true);
                                 }}
-                                className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-lg text-[11px] transition-all flex items-center gap-0.5"
+                                className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold rounded-lg text-[11px] transition-all flex items-center gap-0.5 cursor-pointer"
                                 title="Провести приход товара"
                               >
                                 <Truck className="w-3 h-3" /> Приход
@@ -1102,7 +1148,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                                   setWriteOffItemId(item.id);
                                   setShowWriteOffModal(true);
                                 }}
-                                className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-lg text-[11px] transition-all flex items-center gap-0.5"
+                                className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold rounded-lg text-[11px] transition-all flex items-center gap-0.5 cursor-pointer"
                                 title="Списать с актом списания"
                               >
                                 <MinusCircle className="w-3 h-3" /> Списать
@@ -1122,10 +1168,11 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                                     setFormSupplier(item.supplier || '');
                                     setFormStorageCell(item.storageCell || '');
                                     setFormNotes(item.notes || '');
+                                    setFormShowInCalculator(item.showInCalculator !== false);
                                     setShowAddItemModal(true);
                                   }
                                 }}
-                                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
+                                className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all cursor-pointer"
                                 title="Редактировать позицию"
                               >
                                 <Edit className="w-3.5 h-3.5" />
@@ -1133,7 +1180,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
 
                               <button
                                 onClick={() => handleDeleteItem(item)}
-                                className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all"
+                                className="p-1.5 text-gray-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-all cursor-pointer"
                                 title="Удалить позицию"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -1153,7 +1200,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
 
       {/* TAB 2: DEDICATED MATERIAL RESIDUALS */}
       {activeSubTab === 'residuals' && (
-        <div className="bg-white rounded-2xl p-4 sm:p-6 border border-gray-200/80 shadow-xs">
+        <div className="bg-white rounded-2xl p-4 sm:p-6 border border-gray-200/90 shadow-xs">
           <div className="mb-4 pb-3 border-b border-gray-100 flex items-center justify-between">
             <div>
               <h2 className="text-lg font-black text-gray-900 flex items-center gap-2">
@@ -1182,7 +1229,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
 
       {/* TAB 3: MOVEMENTS & ARRIVALS */}
       {activeSubTab === 'movements' && (
-        <div className="bg-white rounded-2xl p-6 border border-gray-200/80 shadow-xs space-y-4">
+        <div className="bg-white rounded-2xl p-6 border border-gray-200/90 shadow-xs space-y-4">
           <div className="flex items-center justify-between pb-4 border-b border-gray-100">
             <div>
               <h3 className="text-lg font-black text-gray-900">Журнал складских операций и актов списания</h3>
@@ -1207,7 +1254,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-gray-50/80 border-b border-gray-200/80 text-[11px] font-black uppercase text-gray-500 tracking-wider">
+                <tr className="bg-gray-50/80 border-b border-gray-200/90 text-[11px] font-black uppercase text-gray-500 tracking-wider">
                   <th className="py-3 px-4">Дата и время</th>
                   <th className="py-3 px-4">Тип операции</th>
                   <th className="py-3 px-4">Наименование ТМЦ</th>
@@ -1265,7 +1312,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
 
       {/* TAB 4: RESERVATIONS UNDER ORDERS */}
       {activeSubTab === 'reservations' && (
-        <div className="bg-white rounded-2xl p-6 border border-gray-200/80 shadow-xs space-y-4">
+        <div className="bg-white rounded-2xl p-6 border border-gray-200/90 shadow-xs space-y-4">
           <div className="pb-4 border-b border-gray-100">
             <h3 className="text-lg font-black text-gray-900">Резервы материалов под заказы клиентов</h3>
             <p className="text-xs text-gray-500">Зарезервированные листы, кромка и фурнитура по заказам из Калькулятора и ERP</p>
@@ -1297,7 +1344,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
 
       {/* TAB 5: LOCATIONS */}
       {activeSubTab === 'locations' && (
-        <div className="bg-white rounded-2xl p-6 border border-gray-200/80 shadow-xs space-y-6">
+        <div className="bg-white rounded-2xl p-6 border border-gray-200/90 shadow-xs space-y-6">
           <div className="pb-4 border-b border-gray-100">
             <h3 className="text-lg font-black text-gray-900">Адресное хранение склада (Зоны и Стеллажи)</h3>
             <p className="text-xs text-gray-500">Структура стеллажей, ячеек и стоек для оперативного поиска фурнитуры и обрезков</p>
@@ -1331,6 +1378,71 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
         </div>
       )}
 
+      {/* DETAIL MODAL: RESERVATION ORDERS DETAIL */}
+      {reservedDetailItem && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl relative space-y-4 my-8 animate-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <div>
+                <h3 className="font-black text-gray-900 text-base flex items-center gap-2">
+                  <Lock className="w-5 h-5 text-blue-600" /> Заказы в резерве
+                </h3>
+                <p className="text-xs text-gray-500 mt-0.5 font-bold">
+                  {reservedDetailItem.name} {reservedDetailItem.sku ? `(Арт: ${reservedDetailItem.sku})` : ''}
+                </p>
+              </div>
+              <button 
+                onClick={() => setReservedDetailItem(null)}
+                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="p-3 bg-blue-50 rounded-2xl border border-blue-200 flex items-center justify-between">
+                <span className="text-xs font-bold text-blue-900">Всего в резерве:</span>
+                <span className="text-sm font-black text-blue-800">
+                  {reservedDetailItem.reservedQty} {reservedDetailItem.unit}
+                </span>
+              </div>
+
+              {getReservingOrdersForItem(reservedDetailItem).length === 0 ? (
+                <div className="py-8 text-center text-gray-400 text-xs">
+                  <Lock className="w-8 h-8 mx-auto text-gray-300 mb-2" />
+                  Позиция зарезервирована вручную или привязана к текущим производственным картам.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
+                  {getReservingOrdersForItem(reservedDetailItem).map(ord => (
+                    <div key={ord.id} className="p-3 bg-gray-50 rounded-xl border border-gray-200/90 flex items-center justify-between text-xs">
+                      <div>
+                        <div className="font-extrabold text-gray-900">Заказ №{ord.orderNumber || ord.id}</div>
+                        <div className="text-gray-500">{ord.clientName || 'Клиент'} • {ord.projectName || (ord as any).productName || 'Изделие'}</div>
+                      </div>
+                      <div className="text-right">
+                        <span className="px-2 py-0.5 bg-blue-100 text-blue-800 font-black rounded-md">
+                          {ord.quantity || 1} {reservedDetailItem.unit}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="pt-3 flex justify-end border-t border-gray-100">
+              <button
+                onClick={() => setReservedDetailItem(null)}
+                className="px-5 py-2 bg-slate-900 text-white rounded-xl font-bold text-xs shadow-xs"
+              >
+                Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ADD/EDIT ITEM MODAL */}
       {showAddItemModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto">
@@ -1341,7 +1453,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
               </h3>
               <button 
                 onClick={() => setShowAddItemModal(false)}
-                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg"
+                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1365,9 +1477,9 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                   <select
                     value={formCategory}
                     onChange={(e) => setFormCategory(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 font-bold"
                   >
-                    {DEFAULT_CATEGORIES.filter(c => c !== 'Все категории').map(cat => (
+                    {CALCULATOR_CATEGORIES.filter(c => c !== 'Все категории').map(cat => (
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
                   </select>
@@ -1460,6 +1572,23 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                 />
               </div>
 
+              <div className="p-3 bg-blue-50/80 rounded-xl border border-blue-200/80 space-y-1.5">
+                <label className="flex items-center gap-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formShowInCalculator}
+                    onChange={(e) => setFormShowInCalculator(e.target.checked)}
+                    className="w-4 h-4 text-blue-600 rounded border-gray-300"
+                  />
+                  <span className="font-extrabold text-blue-950 text-xs">
+                    Отображать в Мебельном калькуляторе
+                  </span>
+                </label>
+                <p className="text-[11px] text-blue-800/80 leading-tight">
+                  При отметке данная позиция/категория будет также доступна в каталоге подбора материалов Калькулятора.
+                </p>
+              </div>
+
               <div>
                 <label className="block mb-1 font-bold text-gray-700">Примечание</label>
                 <textarea
@@ -1481,7 +1610,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-xs shadow-md shadow-blue-600/20"
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-xs shadow-md shadow-blue-600/20 cursor-pointer"
                 >
                   {editingItem ? 'Сохранить изменения' : 'Добавить на склад'}
                 </button>
@@ -1491,38 +1620,79 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
         </div>
       )}
 
-      {/* ARRIVAL MODAL */}
+      {/* ARRIVAL MODAL WITH INTERACTIVE ITEM PICKER */}
       {showArrivalModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl relative space-y-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl relative space-y-4 my-8">
             <div className="flex items-center justify-between pb-3 border-b border-gray-100">
               <h3 className="font-black text-gray-900 text-base flex items-center gap-2">
                 <Truck className="w-5 h-5 text-emerald-600" /> Оформление прихода ТМЦ
               </h3>
               <button 
                 onClick={() => setShowArrivalModal(false)}
-                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg"
+                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleProcessArrival} className="space-y-3 text-xs font-medium text-gray-700">
+              {/* Item Search & Selection Box */}
               <div>
                 <label className="block mb-1 font-bold text-gray-700">Выберите позицию склада *</label>
-                <select
-                  required
-                  value={arrivalItemId}
-                  onChange={(e) => setArrivalItemId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 font-bold"
-                >
-                  <option value="">-- Выберите позицию --</option>
-                  {combinedStockList.map(item => (
-                    <option key={item.id} value={item.id}>
-                      {item.sku ? `[${item.sku}] ` : ''}{item.name} (Остаток: {item.quantity} {item.unit})
-                    </option>
-                  ))}
-                </select>
+                
+                {/* Search & Category Filter bar */}
+                <div className="space-y-2 p-3 bg-gray-50 rounded-2xl border border-gray-200">
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="text"
+                        value={pickerSearchQuery}
+                        onChange={(e) => setPickerSearchQuery(e.target.value)}
+                        placeholder="Поиск по артикулу или названию..."
+                        className="w-full pl-8 pr-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs outline-none focus:ring-1 focus:ring-blue-500"
+                      />
+                    </div>
+                    <select
+                      value={pickerCategory}
+                      onChange={(e) => setPickerCategory(e.target.value)}
+                      className="bg-white border border-gray-200 rounded-lg px-2 py-1.5 text-xs font-bold"
+                    >
+                      {CALCULATOR_CATEGORIES.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Scrollable list of matching items */}
+                  <div className="max-h-40 overflow-y-auto divide-y divide-gray-100 bg-white rounded-xl border border-gray-200/80">
+                    {filteredPickerItems.length === 0 ? (
+                      <div className="p-3 text-center text-gray-400 text-xs">Ничего не найдено</div>
+                    ) : (
+                      filteredPickerItems.map(item => (
+                        <div
+                          key={item.id}
+                          onClick={() => setArrivalItemId(item.id)}
+                          className={`p-2.5 flex items-center justify-between cursor-pointer transition-colors ${
+                            arrivalItemId === item.id ? 'bg-emerald-50 border-l-4 border-emerald-600' : 'hover:bg-gray-50'
+                          }`}
+                        >
+                          <div>
+                            <div className="font-extrabold text-gray-900 text-xs flex items-center gap-1.5">
+                              {item.sku && <span className="font-mono text-[10px] text-gray-500 bg-gray-100 px-1 py-0.2 rounded">{item.sku}</span>}
+                              <span>{item.name}</span>
+                            </div>
+                            <div className="text-[10px] text-gray-500">{item.category} • Ячейка: {item.storageCell || 'Основной склад'}</div>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-black text-xs text-gray-900">{item.quantity} {item.unit}</span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1594,7 +1764,8 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs shadow-md shadow-emerald-600/20"
+                  disabled={!arrivalItemId}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-bold text-xs shadow-md shadow-emerald-600/20 disabled:opacity-50 cursor-pointer"
                 >
                   Принять на склад
                 </button>
@@ -1604,38 +1775,79 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
         </div>
       )}
 
-      {/* WRITE-OFF MODAL */}
+      {/* WRITE-OFF MODAL WITH INTERACTIVE ITEM PICKER */}
       {showWriteOffModal && (
         <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl relative space-y-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl relative space-y-4 my-8">
             <div className="flex items-center justify-between pb-3 border-b border-gray-100">
               <h3 className="font-black text-gray-900 text-base flex items-center gap-2">
                 <MinusCircle className="w-5 h-5 text-rose-600" /> Акт списания ТМЦ со склада
               </h3>
               <button 
                 onClick={() => setShowWriteOffModal(false)}
-                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg"
+                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleProcessWriteOff} className="space-y-3 text-xs font-medium text-gray-700">
+              {/* Item Search & Selection Box */}
               <div>
                 <label className="block mb-1 font-bold text-gray-700">Выберите позицию склада *</label>
-                <select
-                  required
-                  value={writeOffItemId}
-                  onChange={(e) => setWriteOffItemId(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-rose-500/20 font-bold"
-                >
-                  <option value="">-- Выберите позицию --</option>
-                  {combinedStockList.map(item => (
-                    <option key={item.id} value={item.id}>
-                      {item.sku ? `[${item.sku}] ` : ''}{item.name} (Доступно: {item.quantity} {item.unit})
-                    </option>
-                  ))}
-                </select>
+                
+                {/* Search & Category Filter bar */}
+                <div className="space-y-2 p-3 bg-gray-50 rounded-2xl border border-gray-200">
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                      <input
+                        type="text"
+                        value={pickerSearchQuery}
+                        onChange={(e) => setPickerSearchQuery(e.target.value)}
+                        placeholder="Поиск по артикулу или названию..."
+                        className="w-full pl-8 pr-3 py-1.5 bg-white border border-gray-200 rounded-lg text-xs outline-none focus:ring-1 focus:ring-rose-500"
+                      />
+                    </div>
+                    <select
+                      value={pickerCategory}
+                      onChange={(e) => setPickerCategory(e.target.value)}
+                      className="bg-white border border-gray-200 rounded-lg px-2 py-1.5 text-xs font-bold"
+                    >
+                      {CALCULATOR_CATEGORIES.map(cat => (
+                        <option key={cat} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Scrollable list of matching items */}
+                  <div className="max-h-40 overflow-y-auto divide-y divide-gray-100 bg-white rounded-xl border border-gray-200/80">
+                    {filteredPickerItems.length === 0 ? (
+                      <div className="p-3 text-center text-gray-400 text-xs">Ничего не найдено</div>
+                    ) : (
+                      filteredPickerItems.map(item => (
+                        <div
+                          key={item.id}
+                          onClick={() => setWriteOffItemId(item.id)}
+                          className={`p-2.5 flex items-center justify-between cursor-pointer transition-colors ${
+                            writeOffItemId === item.id ? 'bg-rose-50 border-l-4 border-rose-600' : 'hover:bg-gray-50'
+                          }`}
+                        >
+                          <div>
+                            <div className="font-extrabold text-gray-900 text-xs flex items-center gap-1.5">
+                              {item.sku && <span className="font-mono text-[10px] text-gray-500 bg-gray-100 px-1 py-0.2 rounded">{item.sku}</span>}
+                              <span>{item.name}</span>
+                            </div>
+                            <div className="text-[10px] text-gray-500">{item.category} • Ячейка: {item.storageCell || 'Основной склад'}</div>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-black text-xs text-gray-900">{item.quantity} {item.unit}</span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -1700,7 +1912,8 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold text-xs shadow-md shadow-rose-600/20"
+                  disabled={!writeOffItemId}
+                  className="px-5 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded-xl font-bold text-xs shadow-md shadow-rose-600/20 disabled:opacity-50 cursor-pointer"
                 >
                   Провести списание
                 </button>
@@ -1732,7 +1945,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
               </h3>
               <button 
                 onClick={() => setShowSettingsModal(false)}
-                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg"
+                className="p-1 text-gray-400 hover:text-gray-600 rounded-lg cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -1776,7 +1989,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                   }).catch(() => {});
                   setShowSettingsModal(false);
                 }}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-xs shadow-md shadow-blue-600/20"
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-xs shadow-md shadow-blue-600/20 cursor-pointer"
               >
                 Сохранить настройки
               </button>
