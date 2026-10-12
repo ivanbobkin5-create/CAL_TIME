@@ -268,31 +268,73 @@ export const SupplyRequestsView: React.FC<SupplyRequestsViewProps> = ({
                   Состав заявки по поставщикам
                 </h4>
 
-                {selectedRequest.supplierSplits.map((split) => (
-                  <div key={split.supplierId} className="border border-slate-200 rounded-2xl overflow-hidden bg-white p-4 space-y-3">
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                      <div className="font-extrabold text-slate-900 text-xs flex items-center gap-2">
-                        <Building2 className="w-4 h-4 text-indigo-600" />
-                        <span>{split.supplierName}</span>
-                      </div>
-                      <span className="text-xs font-bold text-slate-500">{split.items.length} поз.</span>
-                    </div>
+                {selectedRequest.supplierSplits.map((split) => {
+                  const itemGroups: Record<string, {
+                    productName: string;
+                    article?: string;
+                    categoryName: string;
+                    totalToPurchaseQty: number;
+                    orders: Array<{ orderName: string; toPurchaseQty: number }>;
+                  }> = {};
 
-                    <div className="space-y-2 divide-y divide-slate-100">
-                      {split.items.map((item) => (
-                        <div key={item.id} className="pt-2 flex items-center justify-between gap-4 text-xs">
-                          <div>
-                            <span className="font-extrabold text-slate-900">{item.productName}</span>
-                            <span className="block text-[11px] text-slate-500">Заказ: {item.orderName} | Категория: {item.categoryName}</span>
-                          </div>
-                          <div className="font-black text-slate-800">
-                            К закупке: {item.toPurchaseQty} шт.
-                          </div>
+                  split.items.forEach((item: any) => {
+                    const key = `${item.article || ''}:::${(item.productName || '').toLowerCase().trim()}`;
+                    if (!itemGroups[key]) {
+                      itemGroups[key] = {
+                        productName: item.productName,
+                        article: item.article,
+                        categoryName: item.categoryName,
+                        totalToPurchaseQty: 0,
+                        orders: []
+                      };
+                    }
+                    const qtyVal = Number(item.toPurchaseQty || item.requestedQty || 1);
+                    itemGroups[key].totalToPurchaseQty += qtyVal;
+                    itemGroups[key].orders.push({
+                      orderName: item.orderName,
+                      toPurchaseQty: qtyVal
+                    });
+                  });
+
+                  const groupList = Object.values(itemGroups);
+
+                  return (
+                    <div key={split.supplierId} className="border border-slate-200 rounded-2xl overflow-hidden bg-white p-4 space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                        <div className="font-extrabold text-slate-900 text-xs flex items-center gap-2">
+                          <Building2 className="w-4 h-4 text-indigo-600" />
+                          <span>{split.supplierName}</span>
                         </div>
-                      ))}
+                        <span className="text-xs font-bold text-slate-500">{groupList.length} наименований ({split.items.length} поз.)</span>
+                      </div>
+
+                      <div className="space-y-3 divide-y divide-slate-100">
+                        {groupList.map((grp, gIdx) => (
+                          <div key={gIdx} className="pt-2 flex flex-col gap-1 text-xs">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <span className="font-extrabold text-slate-900 text-sm">{grp.productName}</span>
+                                {grp.article && <span className="ml-2 font-mono text-[10px] text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded font-bold">{grp.article}</span>}
+                              </div>
+                              <div className="font-black text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg shrink-0">
+                                Сумма: {grp.totalToPurchaseQty} шт.
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap gap-1.5 text-[11px] text-slate-500">
+                              <span className="font-bold text-slate-600">Заказы:</span>
+                              {grp.orders.map((ord, oIdx) => (
+                                <span key={oIdx} className="bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded text-slate-800">
+                                  {ord.orderName}: <strong className="text-indigo-600">{ord.toPurchaseQty} шт.</strong>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
             </div>

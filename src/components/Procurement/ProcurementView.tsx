@@ -1182,14 +1182,22 @@ export const ProcurementView = ({
                                                                         </div>
 
                                                                         <div className="flex flex-col min-w-0">
-                                                                            <div className={cn("font-mono text-lg font-black tracking-tighter leading-none mb-1 truncate",
-                                                                                isOverBudget ? "text-rose-600" : "text-gray-900"
-                                                                            )}>
-                                                                                {Math.floor(actualAmount).toLocaleString()} <span className="text-gray-300 text-[10px] ml-0.5">₽</span>
-                                                                            </div>
-                                                                            <div className="text-[10px] font-medium text-gray-400 truncate">
-                                                                                из {Math.floor(budgetAmount).toLocaleString()} ₽
-                                                                            </div>
+                                                                            {(budgetAmount === 0 && actualAmount === 0) || mainStatus === 'Нет в проекте' ? (
+                                                                                <div className="text-xs font-bold text-gray-400 py-1">
+                                                                                    Закупка не требуется
+                                                                                </div>
+                                                                            ) : (
+                                                                                <>
+                                                                                    <div className={cn("font-mono text-lg font-black tracking-tighter leading-none mb-1 truncate",
+                                                                                        isOverBudget ? "text-rose-600" : "text-gray-900"
+                                                                                    )}>
+                                                                                        {Math.floor(actualAmount).toLocaleString()} <span className="text-gray-300 text-[10px] ml-0.5">₽</span>
+                                                                                    </div>
+                                                                                    <div className="text-[10px] font-medium text-gray-400 truncate">
+                                                                                        из {Math.floor(budgetAmount).toLocaleString()} ₽
+                                                                                    </div>
+                                                                                </>
+                                                                            )}
                                                                             
                                                                             <div className="h-4 mt-2">
                                                                                 {items.length > 0 ? (

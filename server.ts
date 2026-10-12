@@ -195,7 +195,9 @@ function safeDeepMerge(target: any, source: any): any {
     const srcVal = source[key];
     const tgtVal = target[key];
 
-    if (isObject(srcVal) && isObject(tgtVal)) {
+    if ((key === "coefficients" || key === "standardCoefficients" || key === "salonCoefficients" || key === "brandCoefficients") && srcVal !== undefined) {
+      output[key] = srcVal;
+    } else if (isObject(srcVal) && isObject(tgtVal)) {
       output[key] = safeDeepMerge(tgtVal, srcVal);
     } else if (srcVal !== undefined) {
       if (srcVal === "" && typeof tgtVal === "string" && tgtVal.trim().length > 0 && (key.toLowerCase().includes("webhook") || key.toLowerCase().includes("stage") || key.toLowerCase().includes("token") || key.toLowerCase().includes("secret"))) {
@@ -5361,6 +5363,59 @@ function transliterate(str: string): string {
     }
   });
 
+  // Dedicated Warehouse Inventory Documents API (Drafts, In Progress, Completed)
+  app.get("/api/companies/:companyId/warehouse-inventories", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+        where: { collection: `companies/${companyId}/warehouse_inventories` }
+      }));
+      const inventories = docs.map(d => {
+        try { return JSON.parse(d.data); } catch (e) { return null; }
+      }).filter(Boolean);
+      res.json({ success: true, inventories });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/companies/:companyId/warehouse-inventories", async (req, res) => {
+    try {
+      const { companyId } = req.params;
+      const inventory = req.body;
+      if (!inventory || !inventory.id) {
+        return res.status(400).json({ error: "Missing inventory id" });
+      }
+      const docPath = `companies/${companyId}/warehouse_inventories/${inventory.id}`;
+      const dataStr = JSON.stringify(inventory);
+      localStore.setDoc(docPath, `companies/${companyId}/warehouse_inventories`, inventory.id, dataStr, false, false);
+      await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+        where: { path: docPath },
+        create: {
+          path: docPath,
+          collection: `companies/${companyId}/warehouse_inventories`,
+          docId: inventory.id,
+          data: dataStr
+        },
+        update: { data: dataStr }
+      }));
+      res.json({ success: true, inventory });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.delete("/api/companies/:companyId/warehouse-inventories/:inventoryId", async (req, res) => {
+    try {
+      const { companyId, inventoryId } = req.params;
+      const docPath = `companies/${companyId}/warehouse_inventories/${inventoryId}`;
+      await dbQueryWithRetry(() => prisma.dbDocument.delete({ where: { path: docPath } }).catch(() => null));
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   // --- Dedicated ERP Settings Persistence Endpoints ---
   app.get("/api/erp/:companyId/settings", async (req, res) => {
     try {
@@ -7181,8 +7236,13 @@ function transliterate(str: string): string {
     });
     app.use(vite.middlewares);
   } else {
-    // Check if dist exists for better error reporting in logs
-    app.use(express.static(distPath, { index: false }));
+    // Enable long-term browser caching for immutable build assets
+    app.use('/assets', express.static(path.join(distPath, 'assets'), {
+      maxAge: '1y',
+      immutable: true,
+      index: false
+    }));
+    app.use(express.static(distPath, { maxAge: '1d', index: false }));
     
     app.all('*', (req, res) => {
       // API 404s

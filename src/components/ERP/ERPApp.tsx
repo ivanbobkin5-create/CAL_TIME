@@ -2576,6 +2576,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
                   }}
                   employees={employees}
                   orders={orders}
+                  suppliers={company?.suppliers || (settings as any)?.suppliers || []}
                   companyId={company?.id || aliasOrId}
                   companyName={company?.name}
                   catalogMaterials={catalogMaterials}
