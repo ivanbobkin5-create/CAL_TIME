@@ -7007,13 +7007,13 @@ function transliterate(str: string): string {
 
       const idVariants = new Set<string>();
       if (orderId) {
-        const s = String(orderId).trim();
-        idVariants.add(s);
-        if (s.startsWith("b24_deal_")) {
-          idVariants.add(s.replace(/^b24_deal_/, ""));
-        } else if (/^\d+$/.test(s)) {
-          idVariants.add(`b24_deal_${s}`);
-        }
+        const idVariants = new Set<string>();
+      const s = String(orderId).trim();
+      idVariants.add(s);
+      if (s.startsWith("b24_deal_")) {
+        idVariants.add(s.replace(/^b24_deal_/, ""));
+      } else if (/^\d+$/.test(s)) {
+        idVariants.add(`b24_deal_${s}`);
       }
       if (dealId) {
         const d = String(dealId).trim();
@@ -7022,39 +7022,101 @@ function transliterate(str: string): string {
         idVariants.add(d.replace(/^b24_deal_/, ""));
       }
 
-      // Check if any variant corresponds to a project document that contains bitrix24DealId
-      for (const v of Array.from(idVariants)) {
-        try {
-          const projs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
-            where: { docId: v }
-          }));
-          for (const p of projs) {
+      // Check all related docs in localStore and Postgres (sets, partner_sets, projects, partner_projects)
+      const inspectDocs = async (key: string) => {
+        const foundData: any[] = [];
+        // 1. Check localStore
+        for (const [path, doc] of localStore.entries()) {
+          if (path.endsWith(`/${key}`) || path.includes(`/${key}/`)) {
             try {
-              const pData = JSON.parse(p.data);
-              if (pData.bitrix24DealId) {
-                idVariants.add(String(pData.bitrix24DealId));
-                idVariants.add(`b24_deal_${pData.bitrix24DealId}`);
-              }
-              if (pData.b24DealId) {
-                idVariants.add(String(pData.b24DealId));
-                idVariants.add(`b24_deal_${pData.b24DealId}`);
-              }
+              foundData.push(typeof doc.data === 'string' ? JSON.parse(doc.data) : doc.data);
             } catch (_) {}
           }
-        } catch (_) {}
+        }
+        // 2. Check Postgres if available
+        if (isPostgresAvailable) {
+          try {
+            const dbDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+              where: {
+                OR: [
+                  { docId: key },
+                  { path: { contains: key } }
+                ]
+              }
+            }));
+            for (const d of dbDocs) {
+              try {
+                foundData.push(typeof d.data === 'string' ? JSON.parse(d.data) : d.data);
+              } catch (_) {}
+            }
+          } catch (_) {}
+        }
+        return foundData;
+      };
+
+      const initialKeys = Array.from(idVariants);
+      for (const k of initialKeys) {
+        const dataList = await inspectDocs(k);
+        for (const item of dataList) {
+          if (!item) continue;
+          if (item.bitrix24DealId) {
+            idVariants.add(String(item.bitrix24DealId));
+            idVariants.add(`b24_deal_${item.bitrix24DealId}`);
+          }
+          if (item.b24DealId) {
+            idVariants.add(String(item.b24DealId));
+            idVariants.add(`b24_deal_${item.b24DealId}`);
+          }
+          if (item.setId) {
+            idVariants.add(String(item.setId));
+          }
+          if (item.data?.setId) {
+            idVariants.add(String(item.data.setId));
+          }
+          if (item.sourceProjectId) {
+            idVariants.add(String(item.sourceProjectId));
+          }
+          if (Array.isArray(item.projectIds)) {
+            item.projectIds.forEach((pid: string) => idVariants.add(String(pid)));
+          }
+          if (Array.isArray(item.subProjects)) {
+            item.subProjects.forEach((sp: any) => sp.id && idVariants.add(String(sp.id)));
+          }
+          if (item.contractNumber) {
+            idVariants.add(String(item.contractNumber));
+          }
+        }
       }
 
       const collections = Array.from(idVariants).map(v => `b2b_order_chats/${v}/messages`);
-      const messagesDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
-        where: { collection: { in: collections } }
-      }));
-
       const messageMap = new Map<string, any>();
-      for (const d of messagesDocs) {
+
+      // 1. Read from localStore
+      for (const coll of collections) {
+        const localList = localStore.getCollection(coll);
+        for (const d of localList) {
+          try {
+            const msg = typeof d.data === 'string' ? JSON.parse(d.data) : d.data;
+            if (msg && msg.id && !messageMap.has(msg.id)) {
+              messageMap.set(msg.id, msg);
+            }
+          } catch (_) {}
+        }
+      }
+
+      // 2. Read from Prisma
+      if (isPostgresAvailable) {
         try {
-          const msg = JSON.parse(d.data);
-          if (msg && msg.id && !messageMap.has(msg.id)) {
-            messageMap.set(msg.id, msg);
+          const messagesDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+            where: { collection: { in: collections } }
+          }));
+          for (const d of messagesDocs) {
+            try {
+              const msg = JSON.parse(d.data);
+              if (msg && msg.id && !messageMap.has(msg.id)) {
+                messageMap.set(msg.id, msg);
+              }
+            } catch (_) {}
           }
         } catch (_) {}
       }
@@ -7105,7 +7167,7 @@ function transliterate(str: string): string {
         createdAt: new Date().toISOString()
       };
 
-      // Collect all alias identifiers so both portals and website see the exact same history
+      // Collect all alias identifiers in the cluster so both sides see every message
       const idVariants = new Set<string>();
       const s = String(orderId).trim();
       idVariants.add(s);
@@ -7122,20 +7184,44 @@ function transliterate(str: string): string {
         idVariants.add(d.replace(/^b24_deal_/, ""));
       }
 
-      // Save to all alias collections in DB
+      // Also inspect related docs from localStore and DB
+      for (const [path, doc] of localStore.entries()) {
+        if (path.endsWith(`/${s}`) || path.includes(`/${s}/`)) {
+          try {
+            const item = typeof doc.data === 'string' ? JSON.parse(doc.data) : doc.data;
+            if (item) {
+              if (item.bitrix24DealId) idVariants.add(String(item.bitrix24DealId));
+              if (item.b24DealId) idVariants.add(String(item.b24DealId));
+              if (item.setId) idVariants.add(String(item.setId));
+              if (item.data?.setId) idVariants.add(String(item.data.setId));
+              if (item.sourceProjectId) idVariants.add(String(item.sourceProjectId));
+              if (Array.isArray(item.projectIds)) item.projectIds.forEach((pid: string) => idVariants.add(String(pid)));
+            }
+          } catch (_) {}
+        }
+      }
+
+      // Save to all alias collections in both localStore and DB
+      const msgJson = JSON.stringify(messageDoc);
       for (const v of idVariants) {
-        await dbQueryWithRetry(() => prisma.dbDocument.upsert({
-          where: { path: `b2b_order_chats/${v}/messages/${messageId}` },
-          create: {
-            path: `b2b_order_chats/${v}/messages/${messageId}`,
-            collection: `b2b_order_chats/${v}/messages`,
-            docId: messageId,
-            data: JSON.stringify(messageDoc)
-          },
-          update: {
-            data: JSON.stringify(messageDoc)
-          }
-        })).catch(() => {});
+        const coll = `b2b_order_chats/${v}/messages`;
+        const itemPath = `${coll}/${messageId}`;
+        localStore.setDoc(itemPath, coll, messageId, msgJson, true, false);
+
+        if (isPostgresAvailable) {
+          dbQueryWithRetry(() => prisma.dbDocument.upsert({
+            where: { path: itemPath },
+            create: {
+              path: itemPath,
+              collection: coll,
+              docId: messageId,
+              data: msgJson
+            },
+            update: {
+              data: msgJson
+            }
+          })).catch(() => {});
+        }
       }
 
       // 2. Dispatch cross-portal notification to the other party's Bitrix24 portal

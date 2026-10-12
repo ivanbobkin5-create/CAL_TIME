@@ -177,25 +177,25 @@
   </head>
   <body>
     <div id="root">
-      <div style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background: radial-gradient(circle at 50% 40%, #1e293b 0%, #0f172a 65%, #020617 100%); color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; position: relative; overflow: hidden; margin: 0; padding: 20px; box-sizing: border-box;">
+      <div style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background: radial-gradient(circle at 50% 30%, #f0f7ff 0%, #e0f2fe 45%, #f8fafc 100%); color: #0f172a; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased; position: relative; overflow: hidden; margin: 0; padding: 20px; box-sizing: border-box;">
         
         <!-- Background Ambient Glow -->
-        <div style="position: absolute; width: 340px; height: 340px; background: radial-gradient(circle, rgba(37,99,235,0.22) 0%, rgba(99,102,241,0.1) 50%, rgba(0,0,0,0) 80%); filter: blur(50px); animation: mp-pulse 3.5s ease-in-out infinite alternate; pointer-events: none; border-radius: 50%;"></div>
+        <div style="position: absolute; width: 420px; height: 420px; background: radial-gradient(circle, rgba(56, 189, 248, 0.28) 0%, rgba(99, 102, 241, 0.12) 50%, rgba(255, 255, 255, 0) 75%); filter: blur(55px); animation: mp-pulse 3.5s ease-in-out infinite alternate; pointer-events: none; border-radius: 50%;"></div>
 
-        <!-- Glassmorphic Splash Card -->
-        <div style="position: relative; z-index: 10; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 42px 36px 36px; background: rgba(15, 23, 42, 0.75); border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 28px; backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); box-shadow: 0 30px 60px -15px rgba(0, 0, 0, 0.6), inset 0 1px 1px rgba(255, 255, 255, 0.15); max-width: 380px; width: 100%; box-sizing: border-box;">
+        <!-- Glassmorphic Splash Card (Light Blue & Whitish) -->
+        <div style="position: relative; z-index: 10; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 42px 36px 36px; background: rgba(255, 255, 255, 0.92); border: 1px solid rgba(224, 242, 254, 0.95); border-radius: 28px; backdrop-filter: blur(28px); -webkit-backdrop-filter: blur(28px); box-shadow: 0 25px 50px -12px rgba(14, 165, 233, 0.18), 0 10px 25px -5px rgba(15, 23, 42, 0.06), inset 0 1px 1px rgba(255, 255, 255, 1); max-width: 380px; width: 100%; box-sizing: border-box;">
 
           <!-- Animated Spinner Logo Container -->
           <div style="position: relative; width: 68px; height: 68px; margin-bottom: 22px; display: flex; align-items: center; justify-content: center;">
             <!-- Outer Glow Track -->
-            <div style="position: absolute; inset: 0; border-radius: 50%; border: 3px solid rgba(59, 130, 246, 0.15);"></div>
+            <div style="position: absolute; inset: 0; border-radius: 50%; border: 3px solid rgba(2, 132, 199, 0.15); background: rgba(240, 249, 255, 0.7);"></div>
             <!-- Primary Fast Ring -->
-            <div style="position: absolute; inset: 0; border-radius: 50%; border: 3px solid transparent; border-top-color: #3b82f6; border-right-color: #60a5fa; animation: mp-spin 0.85s cubic-bezier(0.5, 0.1, 0.5, 0.9) infinite; filter: drop-shadow(0 0 10px rgba(59, 130, 246, 0.7));"></div>
+            <div style="position: absolute; inset: 0; border-radius: 50%; border: 3px solid transparent; border-top-color: #0284c7; border-right-color: #38bdf8; animation: mp-spin 0.85s cubic-bezier(0.5, 0.1, 0.5, 0.9) infinite; filter: drop-shadow(0 0 8px rgba(14, 165, 233, 0.5));"></div>
             <!-- Secondary Reverse Ring -->
-            <div style="position: absolute; inset: 8px; border-radius: 50%; border: 2px solid transparent; border-bottom-color: #c084fc; border-left-color: #818cf8; animation: mp-spin-reverse 1.3s linear infinite; opacity: 0.85;"></div>
+            <div style="position: absolute; inset: 8px; border-radius: 50%; border: 2px solid transparent; border-bottom-color: #2563eb; border-left-color: #60a5fa; animation: mp-spin-reverse 1.3s linear infinite; opacity: 0.85;"></div>
             
             <!-- Central Layers/Cabinet Icon -->
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#60a5fa" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 0 8px rgba(96, 165, 250, 0.8));">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#0284c7" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 0 6px rgba(14, 165, 233, 0.4));">
               <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
               <polyline points="2 17 12 22 22 17"></polyline>
               <polyline points="2 12 12 17 22 12"></polyline>
@@ -203,22 +203,22 @@
           </div>
 
           <!-- Main Brand Title -->
-          <div style="font-size: 26px; font-weight: 900; letter-spacing: -0.7px; background: linear-gradient(135deg, #ffffff 10%, #93c5fd 55%, #c084fc 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 6px;">
+          <div style="font-size: 26px; font-weight: 900; letter-spacing: -0.7px; background: linear-gradient(135deg, #0f172a 0%, #1e40af 50%, #0284c7 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; margin-bottom: 8px;">
             Mebel-Plan.ru
           </div>
 
           <!-- Tagline Pill -->
-          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; color: #38bdf8; background: rgba(56, 189, 248, 0.1); border: 1px solid rgba(56, 189, 248, 0.22); border-radius: 20px; padding: 4px 14px; margin-bottom: 24px;">
-            Экосистема управления мебелью
+          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.1px; color: #0284c7; background: #e0f2fe; border: 1px solid #bae6fd; border-radius: 20px; padding: 4px 14px; margin-bottom: 22px;">
+            ЭКОСИСТЕМА УПРАВЛЕНИЯ МЕБЕЛЬЮ
           </div>
 
           <!-- Progress Shimmer Bar -->
-          <div style="width: 100%; height: 5px; background: rgba(255, 255, 255, 0.08); border-radius: 10px; overflow: hidden; position: relative; margin-bottom: 14px;">
-            <div style="position: absolute; top: 0; bottom: 0; left: 0; background: linear-gradient(90deg, #3b82f6, #a855f7, #38bdf8); border-radius: 10px; animation: mp-progress 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;"></div>
+          <div style="width: 100%; height: 5px; background: #e2e8f0; border-radius: 10px; overflow: hidden; position: relative; margin-bottom: 14px;">
+            <div style="position: absolute; top: 0; bottom: 0; left: 0; background: linear-gradient(90deg, #0284c7, #2563eb, #38bdf8); border-radius: 10px; animation: mp-progress 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;"></div>
           </div>
 
           <!-- Status Indicator -->
-          <div style="font-size: 12px; color: #94a3b8; font-weight: 500; letter-spacing: 0.2px; animation: mp-fade 1.4s ease-in-out infinite alternate;">
+          <div style="font-size: 12px; color: #64748b; font-weight: 600; letter-spacing: 0.2px; animation: mp-fade 1.4s ease-in-out infinite alternate;">
             Загрузка системы...
           </div>
         </div>
@@ -226,9 +226,9 @@
         <style>
           @keyframes mp-spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
           @keyframes mp-spin-reverse { 0% { transform: rotate(360deg); } 100% { transform: rotate(0deg); } }
-          @keyframes mp-pulse { 0% { transform: scale(0.92); opacity: 0.6; } 100% { transform: scale(1.12); opacity: 0.95; } }
+          @keyframes mp-pulse { 0% { transform: scale(0.92); opacity: 0.5; } 100% { transform: scale(1.12); opacity: 0.85; } }
           @keyframes mp-progress { 0% { left: -40%; width: 30%; } 50% { left: 25%; width: 55%; } 100% { left: 100%; width: 30%; } }
-          @keyframes mp-fade { 0% { opacity: 0.55; } 100% { opacity: 1; } }
+          @keyframes mp-fade { 0% { opacity: 0.6; } 100% { opacity: 1; } }
         </style>
 
       </div>
