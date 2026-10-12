@@ -626,12 +626,23 @@ const serializeEssentialCompany = (c: any) => {
     const essential = {
       id: String(c.id || ""),
       name: String(c.name || ""),
-      type: String(c.type || ""),
+      type: String(c.type || c.companyType || ""),
+      companyType: String(c.companyType || c.type || ""),
       city: String(c.city || ""),
       ownerUid: String(c.ownerUid || ""),
       procurementAllowed: c.procurementAllowed,
       procurementEnabled: c.procurementEnabled,
+      erpAllowed: c.erpAllowed,
+      erpEnabled: c.erpEnabled,
       productionFormat: c.productionFormat,
+      bitrix24: c.bitrix24 || undefined,
+      modules: c.modules || undefined,
+      activeModules: c.activeModules || undefined,
+      erpConfig: c.erpConfig || undefined,
+      erpSettings: c.erpSettings || undefined,
+      accountingMappingConfig: c.accountingMappingConfig || undefined,
+      bitrix24WebhookUrl: c.bitrix24WebhookUrl || c.bitrix24?.webhookUrl || undefined,
+      manufacturerId: c.manufacturerId || undefined
     };
     return JSON.stringify(essential);
   } catch (_) {
@@ -35951,7 +35962,7 @@ export default function App() {
                       companyType: normalizedType,
                       productionFormat: normalizedType === "Мебельное производство" ? "own" : "contract"
                     };
-                    setCompanyData(fullCompData);
+                    setCompanyData(prev => ({ ...(prev || {}), ...fullCompData }));
                     setUserData(prev => ({ ...prev, companyId: effectiveCompanyId, role: 'admin', isOwner: true }));
                     safeAuthStorageSet('auth_company', serializeEssentialCompany(fullCompData));
                     try {

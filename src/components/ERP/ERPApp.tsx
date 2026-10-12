@@ -1292,7 +1292,23 @@ export const ERPApp: React.FC<ERPAppProps> = ({
       if (res.ok) {
         const data = await res.json();
         if (data.orders) {
-          setOrders(data.orders);
+          setOrders(prev => {
+            return data.orders.map((srvOrder: ProductionOrder) => {
+              const localOrder = prev.find(o => o.id === srvOrder.id);
+              if (!localOrder) return srvOrder;
+              return {
+                ...srvOrder,
+                birkaData: srvOrder.birkaData || localOrder.birkaData,
+                hardwareData: srvOrder.hardwareData || localOrder.hardwareData,
+                assemblyFileData: srvOrder.assemblyFileData || localOrder.assemblyFileData,
+                additionalWorks: srvOrder.additionalWorks || localOrder.additionalWorks,
+                stagePlannedDates: {
+                  ...(localOrder.stagePlannedDates || {}),
+                  ...(srvOrder.stagePlannedDates || {})
+                }
+              };
+            });
+          });
           saveLocalOrdersCache(company.id, data.orders);
           setOrderSource(data.orderSource || 'projects');
           syncInstallationTasksFromOrders(data.orders);
@@ -1476,7 +1492,19 @@ export const ERPApp: React.FC<ERPAppProps> = ({
 
   const handleUpdateOrder = async (updated: ProductionOrder, immediateSync = false) => {
     setOrders(prev => {
-      const nextList = prev.map(o => o.id === updated.id ? updated : o);
+      const existing = prev.find(o => o.id === updated.id);
+      const mergedOrder = existing ? {
+        ...existing,
+        ...updated,
+        stagePlannedDates: {
+          ...(existing.stagePlannedDates || {}),
+          ...(updated.stagePlannedDates || {})
+        },
+        birkaData: updated.birkaData || existing.birkaData,
+        hardwareData: updated.hardwareData || existing.hardwareData,
+        assemblyFileData: updated.assemblyFileData || existing.assemblyFileData
+      } : updated;
+      const nextList = prev.map(o => o.id === updated.id ? mergedOrder : o);
       if (company?.id) {
         saveLocalOrdersCache(company.id, nextList);
       }

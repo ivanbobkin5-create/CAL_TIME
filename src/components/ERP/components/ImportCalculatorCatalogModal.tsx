@@ -493,6 +493,38 @@ export const ImportCalculatorCatalogModal: React.FC<ImportCalculatorCatalogModal
             Закрыть
           </button>
 
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                const newSet = new Set<string>();
+                candidateItems.forEach(i => {
+                  if (!i.isAlreadyInWarehouse) newSet.add(i.id);
+                });
+                setSelectedIds(newSet);
+              }}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition-all cursor-pointer"
+            >
+              Выбрать новые ({newItemsCount})
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedIds(new Set(candidateItems.map(i => i.id)));
+              }}
+              className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-xl text-xs transition-all cursor-pointer"
+            >
+              Выбрать ВСЕ ({candidateItems.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedIds(new Set())}
+              className="px-2.5 py-1.5 text-slate-400 hover:text-slate-600 text-xs font-semibold cursor-pointer"
+            >
+              Снять выбор
+            </button>
+          </div>
+
           <div className="flex items-center gap-3">
             <span className="text-xs text-slate-500 font-bold">
               Выбрано для добавления: <strong>{selectedIds.size}</strong> поз.

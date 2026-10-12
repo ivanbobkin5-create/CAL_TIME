@@ -56,7 +56,7 @@ interface ERPPlanningViewProps {
   settings?: ERPCompanySettings;
   currentEmployee?: ERPEmployee;
   currentUser?: { id?: string; name?: string };
-  onUpdateOrder: (order: ProductionOrder) => void;
+  onUpdateOrder: (order: ProductionOrder, immediateSync?: boolean) => void;
   onSelectOrder: (order: ProductionOrder) => void;
 }
 
@@ -736,7 +736,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
       plannedAt: hasAnyPlannedDate ? (order.plannedAt || nowIso) : order.plannedAt
     };
 
-    onUpdateOrder(updatedOrder);
+    onUpdateOrder(updatedOrder, true);
 
     // Check if adding this task causes stage capacity overload on this date
     if (dateStr && settings?.warnStageCapacityOverloadInPlanning !== false) {
@@ -821,7 +821,10 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
 
       const { updatedOrder, analysis } = applyOrderRequirementsAnalysis(rawUpdated, settings);
 
-      onUpdateOrder(updatedOrder);
+      onUpdateOrder(updatedOrder, true);
+      if (viewingBirkaModalOrder?.id === updatedOrder.id) {
+        setViewingBirkaModalOrder(updatedOrder);
+      }
 
       if (analysis.hasExcludedStages) {
         setRequirementsNoticeModal({
@@ -868,7 +871,10 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
 
       const { updatedOrder, analysis } = applyOrderRequirementsAnalysis(rawUpdated, settings);
 
-      onUpdateOrder(updatedOrder);
+      onUpdateOrder(updatedOrder, true);
+      if (viewingHardwareModalOrder?.id === updatedOrder.id) {
+        setViewingHardwareModalOrder(updatedOrder);
+      }
 
       if (analysis.hasExcludedStages) {
         setRequirementsNoticeModal({
@@ -920,7 +926,10 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
         }
       };
 
-      onUpdateOrder(updatedOrder);
+      onUpdateOrder(updatedOrder, true);
+      if (viewingAssemblyModalOrder?.id === updatedOrder.id) {
+        setViewingAssemblyModalOrder(updatedOrder);
+      }
       alert(`Файл Сборка "${file.name}" успешно прикреплен к заказу ${order.orderNumber}`);
     } catch (err: any) {
       alert(err.message || 'Ошибка прикрепления файла Сборка');
@@ -981,7 +990,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
         }
       };
 
-      onUpdateOrder(updatedOrder);
+      onUpdateOrder(updatedOrder, true);
       alert(`✅ Успешно прикреплено ${extractedFiles.length} программ ЧПУ (G-код) к заказу №${order.orderNumber}!`);
     } catch (err: any) {
       alert(err.message || 'Ошибка загрузки программ ЧПУ');
@@ -1002,7 +1011,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
       status: 'in_progress',
       currentStage: firstProdStage
     };
-    onUpdateOrder(updatedOrder);
+    onUpdateOrder(updatedOrder, true);
     setLaunchedModalOrder({ order: updatedOrder, plannedDate });
   };
 
@@ -1015,7 +1024,7 @@ export const ERPPlanningView: React.FC<ERPPlanningViewProps> = ({
         ...worksUpdate
       }
     };
-    onUpdateOrder(updatedOrder);
+    onUpdateOrder(updatedOrder, true);
   };
 
   const activeOrders = useMemo(() => orders.filter(o => !o.isDeleted), [orders]);
