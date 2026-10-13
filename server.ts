@@ -7007,13 +7007,13 @@ function transliterate(str: string): string {
 
       const idVariants = new Set<string>();
       if (orderId) {
-        const idVariants = new Set<string>();
-      const s = String(orderId).trim();
-      idVariants.add(s);
-      if (s.startsWith("b24_deal_")) {
-        idVariants.add(s.replace(/^b24_deal_/, ""));
-      } else if (/^\d+$/.test(s)) {
-        idVariants.add(`b24_deal_${s}`);
+        const s = String(orderId).trim();
+        idVariants.add(s);
+        if (s.startsWith("b24_deal_")) {
+          idVariants.add(s.replace(/^b24_deal_/, ""));
+        } else if (/^\d+$/.test(s)) {
+          idVariants.add(`b24_deal_${s}`);
+        }
       }
       if (dealId) {
         const d = String(dealId).trim();
