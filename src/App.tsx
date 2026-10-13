@@ -34750,9 +34750,20 @@ export default function App() {
   const initialAuth = useMemo(() => getInitialAuthState(), []);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => initialAuth.isAuth);
   
-  const [authMode, setAuthMode] = useState<"login" | "register" | "landing">(
-    "landing",
-  );
+  const [authMode, setAuthMode] = useState<"login" | "register" | "landing" | "app">(() => {
+    if (typeof window !== "undefined") {
+      const p = window.location.pathname;
+      const s = window.location.search;
+      const h = window.location.hash;
+      if (p === "/admin" || s.includes("admin=true") || h === "#admin") {
+        return "app";
+      }
+      if (sessionStorage.getItem("mebel_in_app") === "true") {
+        return "app";
+      }
+    }
+    return "landing";
+  });
   const [userRole, setUserRole] = useState<
     "admin" | "supervisor" | "manager" | "worker" | null
   >(() => initialAuth.role as any);
@@ -36028,10 +36039,12 @@ export default function App() {
                   console.warn("Could not refresh employee data:", eErr);
                 }
                 
-                // Preload catalog and settings asynchronously in background without blocking UI
-                preloadAllData(effectiveCompanyId, savedUid, { ...docData, ...compData }).catch(err => {
-                  console.warn("Background preload error:", err);
-                });
+                // Preload catalog and settings only if in active app session (never on landing page)
+                if (typeof window !== "undefined" && (sessionStorage.getItem("mebel_in_app") === "true" || window.location.search.includes("DOMAIN") || window.location.pathname === "/admin")) {
+                  preloadAllData(effectiveCompanyId, savedUid, { ...docData, ...compData }).catch(err => {
+                    console.warn("Background preload error:", err);
+                  });
+                }
               }
               
               const isSuper = isUserSuperAdmin(docData) || isSuperAdminEmail(savedEmail) || isSuperAdminEmail(docData.email);
@@ -36238,7 +36251,9 @@ export default function App() {
            }
          }
          
+         sessionStorage.setItem("mebel_in_app", "true");
          setIsAuthenticated(true);
+         setAuthMode("app");
       } else {
          throw new Error(loadErrorMessage);
       }
@@ -36373,7 +36388,9 @@ export default function App() {
       safeAuthStorageSet('auth_user', serializeEssentialUser(usrData));
       safeAuthStorageSet('auth_company', serializeEssentialCompany(compData));
       setUserRole("admin");
+      sessionStorage.setItem("mebel_in_app", "true");
       setIsAuthenticated(true);
+      setAuthMode("app");
       showAlert("Успех", "Регистрация прошла успешно.");
     } catch (error) {
       console.error("Register error:", error);
@@ -36399,7 +36416,9 @@ export default function App() {
       });
       await idbCache.clear();
       auth.currentUser = null;
+      sessionStorage.removeItem("mebel_in_app");
       setIsAuthenticated(false);
+      setAuthMode("landing");
       setUserData(null);
       setCompanyData(null);
       setIsAppAdmin(false);
@@ -41710,8 +41729,8 @@ export default function App() {
     return <PublicLandingView aliasOrId={aliasOrId} initialSubPath={subPath} />;
   }
 
-  // Only show splash screen if actually authenticated and loading session data, never block unauthenticated landing visitors
-  if (isLoading && (isAuthenticated || !!localStorage.getItem('auth_uid'))) {
+  // Only show splash screen during active app session loading, never on landing page
+  if (isLoading && authMode !== "landing") {
     return (
       <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-gradient-to-br from-sky-50 via-blue-50/50 to-white text-slate-900 overflow-hidden select-none">
         {/* Background Ambient Glows */}
@@ -41906,29 +41925,40 @@ export default function App() {
     return <B24PartnerCompanyWidget b24Context={b24Context} companyData={companyData} />;
   }
 
-  if (!isAuthenticated && !b24Context.isBitrix24) {
-    if (authMode === "landing") {
-      return (
-        <>
-          <LandingPage
-            onLogin={() => setAuthMode("login")}
-            onRegister={() => setAuthMode("register")}
-          />
-      {/* Admin shortcut hidden per user request */}
-
-          {showAdminLogin && !isAdminAuthenticated && (
-            <AdminLoginForm onLogin={(pass) => {
-              if (pass === "Admin123!") { 
-                setIsAdminAuthenticated(true);
-                setShowAdminLogin(false);
+  if (authMode === "landing" && !b24Context.isBitrix24) {
+    return (
+      <>
+        <LandingPage
+          onLogin={() => {
+            if (isAuthenticated && userData?.uid) {
+              sessionStorage.setItem("mebel_in_app", "true");
+              setAuthMode("app");
+              if (!isPreloaded && companyData?.id) {
+                preloadAllData(companyData.id, userData.uid, userData).catch(() => {});
               }
-            }} />
-          )}
+            } else {
+              setAuthMode("login");
+            }
+          }}
+          onRegister={() => setAuthMode("register")}
+        />
+        {/* Admin shortcut hidden per user request */}
 
-          {isAdminAuthenticated && <AdminProductsApprovalView />}
-        </>
-      );
-    }
+        {showAdminLogin && !isAdminAuthenticated && (
+          <AdminLoginForm onLogin={(pass) => {
+            if (pass === "Admin123!") { 
+              setIsAdminAuthenticated(true);
+              setShowAdminLogin(false);
+            }
+          }} />
+        )}
+
+        {isAdminAuthenticated && <AdminProductsApprovalView />}
+      </>
+    );
+  }
+
+  if ((authMode === "login" || authMode === "register" || !isAuthenticated) && !b24Context.isBitrix24) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
         <div className="w-full max-w-md">
@@ -41944,21 +41974,21 @@ export default function App() {
             </span>
           </div>
 
-          {authMode === "login" ? (
-            <LoginForm
-              onLogin={handleLogin}
-              onGoToRegister={() => setAuthMode("register")}
-            />
-          ) : (
+          {authMode === "register" ? (
             <RegistrationForm
               onRegister={handleRegister}
               onGoToLogin={() => setAuthMode("login")}
+            />
+          ) : (
+            <LoginForm
+              onLogin={handleLogin}
+              onGoToRegister={() => setAuthMode("register")}
             />
           )}
 
           <button
             onClick={() => setAuthMode("landing")}
-            className="mt-8 w-full text-center text-sm font-bold text-gray-400 hover:text-blue-600 transition-colors"
+            className="mt-8 w-full text-center text-sm font-bold text-gray-400 hover:text-blue-600 transition-colors cursor-pointer"
           >
             ← Вернуться на главную
           </button>
