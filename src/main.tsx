@@ -1,6 +1,6 @@
 import {StrictMode, Component, ErrorInfo, ReactNode} from 'react';
 import {createRoot} from 'react-dom/client';
-import App from './App.tsx';
+import RootApp from './RootApp.tsx';
 import './index.css';
 
 const appVersion = "1.0.1";
@@ -54,7 +54,7 @@ class ErrorBoundary extends Component<{children: ReactNode}, {hasError: boolean,
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
-      <App />
+      <RootApp />
     </ErrorBoundary>
   </StrictMode>,
 );
