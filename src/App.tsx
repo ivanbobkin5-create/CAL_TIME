@@ -261,8 +261,7 @@ import {
   AlertOctagon,
   Printer,
   RussianRuble,
-  Boxes,
-  Cpu
+  Boxes
 } from "lucide-react";
 
 // --- START OF OFFLINE CACHE AND SYNC ENGINE ---
@@ -627,23 +626,12 @@ const serializeEssentialCompany = (c: any) => {
     const essential = {
       id: String(c.id || ""),
       name: String(c.name || ""),
-      type: String(c.type || c.companyType || ""),
-      companyType: String(c.companyType || c.type || ""),
+      type: String(c.type || ""),
       city: String(c.city || ""),
       ownerUid: String(c.ownerUid || ""),
       procurementAllowed: c.procurementAllowed,
       procurementEnabled: c.procurementEnabled,
-      erpAllowed: c.erpAllowed,
-      erpEnabled: c.erpEnabled,
       productionFormat: c.productionFormat,
-      bitrix24: c.bitrix24 || undefined,
-      modules: c.modules || undefined,
-      activeModules: c.activeModules || undefined,
-      erpConfig: c.erpConfig || undefined,
-      erpSettings: c.erpSettings || undefined,
-      accountingMappingConfig: c.accountingMappingConfig || undefined,
-      bitrix24WebhookUrl: c.bitrix24WebhookUrl || c.bitrix24?.webhookUrl || undefined,
-      manufacturerId: c.manufacturerId || undefined
     };
     return JSON.stringify(essential);
   } catch (_) {
@@ -14498,8 +14486,6 @@ const CoefficientsTableSection = ({
     categories.map((c) => c.id).join(","),
     salonsInTable.map((s) => s.id).join(","),
     (ownProductionConfig.brandCoefficients || []).map((b) => b.id).join(","),
-    JSON.stringify(coefficients),
-    JSON.stringify(ownProductionConfig),
   ]);
 
   const handleCellChange = (key: string, rawVal: string) => {
@@ -35564,9 +35550,7 @@ export default function App() {
             if (key.includes('categories')) {
               const loadedCats = mergeCategories(data.categories, undefined, companyData?.readyMadeConfig?.categories);
               setProductCategories(loadedCats);
-              if (data.coefficients && typeof data.coefficients === 'object' && Object.keys(data.coefficients).length > 0) {
-                setCoefficients((prev: any) => ({ ...prev, products: { ...(prev?.products || {}), ...data.coefficients } }));
-              }
+              setCoefficients((prev: any) => ({ ...prev, products: data.coefficients || {} }));
             }
             if (key.includes('products') && Array.isArray(data)) {
               try {
@@ -35730,9 +35714,7 @@ export default function App() {
         const readyCats = genData?.readyMadeConfig?.categories || companyData?.readyMadeConfig?.categories;
         const loadedCats = mergeCategories(catData.categories, undefined, readyCats);
         setProductCategories(loadedCats);
-        if (catData.coefficients && typeof catData.coefficients === 'object' && Object.keys(catData.coefficients).length > 0) {
-          setCoefficients((prev: any) => ({ ...prev, products: { ...(prev?.products || {}), ...catData.coefficients } }));
-        }
+        setCoefficients((prev: any) => ({ ...prev, products: catData.coefficients || {} }));
       }
 
       // Load manufacturer products if applicable
@@ -35969,7 +35951,7 @@ export default function App() {
                       companyType: normalizedType,
                       productionFormat: normalizedType === "Мебельное производство" ? "own" : "contract"
                     };
-                    setCompanyData(prev => ({ ...(prev || {}), ...fullCompData }));
+                    setCompanyData(fullCompData);
                     setUserData(prev => ({ ...prev, companyId: effectiveCompanyId, role: 'admin', isOwner: true }));
                     safeAuthStorageSet('auth_company', serializeEssentialCompany(fullCompData));
                     try {
@@ -40929,48 +40911,6 @@ export default function App() {
       ];
 
       await Promise.all(savePromises);
-      
-      const freshGenDoc = {
-        coefficients: overrides?.coefficients || coefficients,
-        calcMode,
-        trimming,
-        sawKerf,
-        cutterDiameter,
-        hardwareKitPrice,
-        assemblyPercentage,
-        assemblyPercentages,
-        minAssemblyPrice,
-        turnkeyAssemblyEnabled,
-        extraAssemblyServices,
-        assemblyIncludes,
-        deliveryTariffs,
-        mapLink,
-        productCategories,
-        defaultCuttingType,
-        companyInfo,
-        catalogMaterials,
-        catalogServices,
-        customEdgeMapping,
-        specificationConfig,
-        landingPage: companyData.landingPage || null,
-        readyMadeConfig: companyData?.readyMadeConfig || null,
-        erpConfig: currentErpConfig,
-        erpSettings: currentErpConfig,
-      };
-      const freshProdDoc = {
-        ...contractConfig,
-        ...(overrides?.ownProductionConfig || ownProductionConfig),
-      };
-
-      await safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyData.id}/settings/general`, JSON.stringify(freshGenDoc));
-      await safeSetLocalStorage(`meb_cache:/api/db/doc/companies/${companyData.id}/settings/production`, JSON.stringify(freshProdDoc));
-      if (typeof idbCache !== "undefined" && idbCache?.set) {
-        try {
-          await idbCache.set(`meb_cache:/api/db/doc/companies/${companyData.id}/settings/general`, JSON.stringify(freshGenDoc));
-          await idbCache.set(`meb_cache:/api/db/doc/companies/${companyData.id}/settings/production`, JSON.stringify(freshProdDoc));
-        } catch (_) {}
-      }
-
       touchSettingsLocal();
       lastTypedSpecificationConfigRef.current = Date.now();
 
@@ -41679,85 +41619,71 @@ export default function App() {
 
   if (isLoading || isCheckingDomain) {
     return (
-      <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-slate-950 text-white overflow-hidden select-none">
-        {/* Background Grid & Glows */}
-        <div className="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:24px_24px] opacity-40" />
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-600/15 rounded-full blur-[120px] pointer-events-none" />
-        <div className="absolute -top-32 -right-32 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-32 -left-32 w-96 h-96 bg-emerald-600/15 rounded-full blur-3xl pointer-events-none" />
-
-        <div className="relative z-10 flex flex-col items-center max-w-lg w-full px-6">
-          {/* Animated Neon Rings & Logo */}
-          <div className="relative mb-8">
-            <motion.div 
-              animate={{ rotate: 360 }}
-              transition={{ duration: 16, repeat: Infinity, ease: "linear" }}
-              className="w-28 h-28 rounded-3xl border border-dashed border-blue-500/40 flex items-center justify-center"
+      <div className="min-h-screen flex flex-col items-center justify-center bg-white overflow-hidden">
+        <motion.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="relative flex flex-col items-center"
+        >
+          {/* Logo Animation */}
+          <div className="relative w-24 h-24 mb-8">
+            <motion.div
+              animate={{
+                rotate: 360,
+                borderRadius: ["30%", "50%", "30%"],
+              }}
+              transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+              className="absolute inset-0 bg-gradient-to-tr from-indigo-600 to-blue-400 opacity-20 blur-xl"
             />
-            <motion.div 
+            <motion.div
               animate={{ rotate: -360 }}
-              transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
-              className="absolute inset-2 rounded-2xl border border-indigo-400/50"
+              transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+              className="absolute inset-0 border-4 border-indigo-600/30 border-t-indigo-600 rounded-[2rem]"
             />
             <div className="absolute inset-0 flex items-center justify-center">
-              <motion.div 
-                animate={{ scale: [1, 1.05, 1] }}
-                transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-xl shadow-blue-500/30 border border-blue-400/50"
-              >
-                <Layers className="w-8 h-8 text-white drop-shadow" />
-              </motion.div>
+              <Database className="w-10 h-10 text-indigo-600" />
             </div>
           </div>
 
-          {/* Titles */}
-          <motion.div 
+          <motion.h1
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.3 }}
-            className="text-center mb-8"
+            transition={{ delay: 0.2 }}
+            className="text-2xl font-black text-gray-900 mb-2 tracking-tight"
           >
-            <div className="text-[11px] font-black tracking-widest text-blue-400 uppercase mb-1.5 flex items-center justify-center gap-2">
-              <Cpu className="w-3.5 h-3.5" /> Mebel-Plan Platform
-            </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white mb-2">
-              Система управления <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-300">производством</span>
-            </h1>
-            <p className="text-xs text-slate-400 font-mono">
-              Мебельный калькулятор • Склад • Снабжение • Цеха
-            </p>
-          </motion.div>
+            Мебельный <span className="text-indigo-600">калькулятор</span>
+          </motion.h1>
 
-          {/* Progress Card */}
-          <div className="w-full bg-slate-900/90 border border-slate-800 rounded-2xl p-5 backdrop-blur-xl shadow-2xl space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 overflow-hidden">
-                <Activity className="w-4 h-4 text-blue-400 animate-pulse shrink-0" />
-                <span className="text-xs font-bold text-slate-200 truncate animate-pulse">
-                  {preloadStatus || "Инициализация системы..."}
-                </span>
-              </div>
-              <span className="font-mono font-black text-sm text-blue-400 shrink-0 ml-3">
-                {preloadProgress}%
-              </span>
-            </div>
-
-            <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden p-0.5 border border-slate-800">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.4 }}
+            className="flex flex-col items-center gap-1"
+          >
+            <div className="w-64 bg-gray-100 h-2 rounded-full mt-6 overflow-hidden">
               <motion.div 
-                className="h-full bg-gradient-to-r from-blue-600 via-indigo-500 to-emerald-400 rounded-full transition-all duration-150"
-                style={{ width: `${preloadProgress}%` }}
+                className="bg-indigo-600 h-full rounded-full"
+                initial={{ width: "0%" }}
+                animate={{ width: `${preloadProgress}%` }}
+                transition={{ duration: 0.2 }}
               />
             </div>
+            <p className="text-sm font-semibold text-indigo-600 mt-3 tracking-wide text-center">
+              {preloadProgress}%
+            </p>
+            <p className="text-xs font-bold text-gray-500 uppercase tracking-[0.15em] text-center max-w-xs mt-1 animate-pulse">
+              {preloadStatus}
+            </p>
+            <p className="text-[10px] text-gray-400 font-medium tracking-wide mt-2 text-center">
+              Кэшируем для работы оффлайн
+            </p>
+          </motion.div>
+        </motion.div>
 
-            <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono pt-1 border-t border-slate-800/60">
-              <span>Кэширование оффлайн</span>
-              <span>Безопасное соединение</span>
-            </div>
-          </div>
-        </div>
-
-        <div className="absolute bottom-6 text-[11px] text-slate-500 font-mono text-center">
-          Mebel-Plan © {new Date().getFullYear()} • Все права защищены
+        {/* Decorative background elements */}
+        <div className="absolute top-0 left-0 w-full h-full pointer-events-none overflow-hidden opacity-40">
+          <div className="absolute -top-[10%] -left-[10%] w-[40%] h-[40%] bg-indigo-50 rounded-full blur-[120px]" />
+          <div className="absolute -bottom-[10%] -right-[10%] w-[40%] h-[40%] bg-blue-50 rounded-full blur-[120px]" />
         </div>
       </div>
     );
@@ -42286,7 +42212,7 @@ export default function App() {
                           : "text-gray-600 hover:bg-gray-100",
                       )}
                     >
-                      <Boxes className="w-4 h-4 flex-shrink-0 opacity-80" />
+                      <Boxes className="w-4 h-4 flex-shrink-0 text-amber-500" />
                       {isSidebarOpen && (
                         <span className="text-[13px] font-medium">Склад</span>
                       )}

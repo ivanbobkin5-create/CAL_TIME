@@ -154,42 +154,19 @@
     
     <script>
       window.addEventListener('error', function(e) {
-        // Игнорируем замаскированные кросс-доменные ошибки браузера ("Script error."), ошибки расширений и системный шум
-        if (!e || !e.message || e.message === 'Script error.' || e.message === 'Script error' || e.lineno === 0) {
-          return;
+        if (!document.getElementById('root').innerHTML) {
+          document.body.innerHTML += '<div style="color:red;padding:20px;font-size:16px;"><b>Global Error:</b> ' + e.message + '<br>Line: ' + e.lineno + '</div>';
         }
-        if (typeof e.message === 'string' && (
-          e.message.includes('ResizeObserver') || 
-          e.message.includes('extension')
-        )) {
-          return;
-        }
-        console.error('Unhandled window error:', e);
       });
       window.addEventListener('unhandledrejection', function(e) {
-        var reason = e.reason && e.reason.message ? e.reason.message : String(e.reason || '');
-        if (!reason || reason === 'Script error.' || reason.includes('ResizeObserver')) {
-          return;
+        if (!document.getElementById('root').innerHTML) {
+          document.body.innerHTML += '<div style="color:red;padding:20px;font-size:16px;"><b>Unhandled Rejection:</b> ' + (e.reason && e.reason.message ? e.reason.message : e.reason) + '</div>';
         }
-        console.error('Unhandled promise rejection:', e.reason);
       });
     </script>
   </head>
   <body>
-    <div id="root">
-      <div style="min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; background-color: #0f172a; color: #ffffff; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; -webkit-font-smoothing: antialiased;">
-        <div style="text-align: center; padding: 20px;">
-          <div style="position: relative; width: 56px; height: 56px; margin: 0 auto 20px;">
-            <div style="box-sizing: border-box; display: block; position: absolute; width: 56px; height: 56px; border: 4px solid #2563eb; border-radius: 50%; animation: mp-spinner 1s cubic-bezier(0.5, 0, 0.5, 1) infinite; border-color: #2563eb transparent transparent transparent;"></div>
-          </div>
-          <style>
-            @keyframes mp-spinner { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-          </style>
-          <div style="font-size: 22px; font-weight: 700; letter-spacing: -0.5px; color: #f8fafc; margin-bottom: 6px;">Mebel-Plan.ru</div>
-          <div style="font-size: 13px; color: #94a3b8; font-weight: 400;">Загрузка системы...</div>
-        </div>
-      </div>
-    </div>
+    <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

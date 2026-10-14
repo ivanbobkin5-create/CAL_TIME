@@ -1188,7 +1188,7 @@ export const ProcurementView = ({
                                                                                 {Math.floor(actualAmount).toLocaleString()} <span className="text-gray-300 text-[10px] ml-0.5">₽</span>
                                                                             </div>
                                                                             <div className="text-[10px] font-medium text-gray-400 truncate">
-                                                                                {budgetAmount === 0 && actualAmount === 0 && items.length === 0 ? "Закупка не требуется" : `из ${Math.floor(budgetAmount).toLocaleString()} ₽`}
+                                                                                из {Math.floor(budgetAmount).toLocaleString()} ₽
                                                                             </div>
                                                                             
                                                                             <div className="h-4 mt-2">

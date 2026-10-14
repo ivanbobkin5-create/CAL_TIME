@@ -103,7 +103,7 @@ export const ImportCalculatorCatalogModal: React.FC<ImportCalculatorCatalogModal
       if (!name) return;
 
       const rawSku = p.sku || p.article || p.code || (Array.isArray(p.accountingSkus) ? p.accountingSkus[0] : '') || '';
-      const sku = rawSku ? String(rawSku).trim() : '';
+      const sku = rawSku ? String(rawSku).trim() : `CALC-${p.id || idx}`;
       const category = detectWarehouseCategory(name, p.category || p.customCategory);
       const price = Number(p.purchasePrice || p.price || p.cost) || 0;
       const unit = p.unit || (category === 'ЛДСП' || category === 'МДФ' ? 'лист' : category === 'Кромка' ? 'м.п.' : 'шт');
@@ -138,7 +138,7 @@ export const ImportCalculatorCatalogModal: React.FC<ImportCalculatorCatalogModal
         
         const category = detectWarehouseCategory(fullName);
         const unit = category === 'ЛДСП' || category === 'МДФ' ? 'лист' : category === 'Кромка' ? 'м.п.' : 'шт';
-        const sku = '';
+        const sku = `MAT-${brand.substring(0, 3).toUpperCase()}-${cleanDecor.replace(/\s+/g, '').substring(0, 8).toUpperCase()}`;
 
         const isAlready = existingNameSet.has(fullName.toLowerCase());
         const existingMatch = existingWarehouseItems.find(w => w.name.toLowerCase() === fullName.toLowerCase());
@@ -227,18 +227,18 @@ export const ImportCalculatorCatalogModal: React.FC<ImportCalculatorCatalogModal
     try {
       const newWarehouseItems: WarehouseItem[] = itemsToImport.map(item => ({
         id: `wh-item-calc-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-        sku: item.sku || '',
+        sku: item.sku,
         name: item.name,
         category: item.category,
         unit: item.unit,
-        quantity: 0,
+        quantity: 10, // Initial default stock
         reservedQty: 0,
-        availableQty: 0,
-        minThreshold: 0,
+        availableQty: 10,
+        minThreshold: 5,
         price: item.price,
         supplier: item.supplier,
-        storageCell: '',
-        notes: '',
+        storageCell: 'Стеллаж A-1',
+        notes: 'Импортировано из Мебельного калькулятора',
         isResidual: false,
         updatedAt: new Date().toISOString(),
         updatedBy: currentUser?.name || 'Администратор'

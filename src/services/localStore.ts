@@ -43,9 +43,7 @@ function safeDeepMerge(target: any, source: any): any {
     const srcVal = source[key];
     const tgtVal = target[key];
 
-    if ((key === "coefficients" || key === "standardCoefficients" || key === "salonCoefficients" || key === "brandCoefficients") && srcVal !== undefined) {
-      output[key] = srcVal;
-    } else if (isObject(srcVal) && isObject(tgtVal)) {
+    if (isObject(srcVal) && isObject(tgtVal)) {
       output[key] = safeDeepMerge(tgtVal, srcVal);
     } else if (srcVal !== undefined) {
       if (srcVal === "" && typeof tgtVal === "string" && tgtVal.trim().length > 0 && (key.toLowerCase().includes("webhook") || key.toLowerCase().includes("stage") || key.toLowerCase().includes("token") || key.toLowerCase().includes("secret"))) {
