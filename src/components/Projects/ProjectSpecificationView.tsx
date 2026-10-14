@@ -26,6 +26,13 @@ async function updateDoc(docRef: any, data: any) {
     body: JSON.stringify({ data })
   });
 }
+async function setDoc(docRef: any, data: any) {
+  await fetch(`/api/db/doc/${docRef.path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data })
+  });
+}
 async function addDoc(colRef: any, data: any) {
   const id = Math.random().toString(36).substr(2, 9);
   const path = `${colRef.path}/${id}`;
@@ -268,7 +275,7 @@ export const ProjectSpecificationView = ({
       // 2. Create project in production company with exact same ID
       const transferredData = {
         ...project,
-        name: `${project.name} (от ${project.companyName || 'Салона'})`,
+        name: `${project.name} (от ${(project as any).companyName || 'Салона'})`,
         createdAt: timestamp,
         createdBy: project.id,
         createdByName: 'Система (Перенос)',
@@ -278,7 +285,7 @@ export const ProjectSpecificationView = ({
         sourceCompanyId: companyId,
         sourceProjectId: project.id,
         originalSalonId: companyId,
-        originalSalonName: project.companyName || 'Салон-партнер',
+        originalSalonName: (project as any).companyName || 'Салон-партнер',
         targetManufacturerId: manufacturerId,
         sketches: sketches,
         specification: project.data
@@ -296,11 +303,11 @@ export const ProjectSpecificationView = ({
         projectIds: [project.id],
         status: 'pending',
         originalSalonId: companyId,
-        originalSalonName: project.companyName || 'Салон-партнер',
+        originalSalonName: (project as any).companyName || 'Салон-партнер',
         targetManufacturerId: manufacturerId,
         isPartnerOrder: true,
         createdAt: timestamp,
-        totalPrice: project.totalPrice || project.data?.totalPrice || 0
+        totalPrice: (project as any).totalPrice || project.data?.totalPrice || 0
       };
       await setDoc(doc(db, 'companies', manufacturerId, 'partner_sets', setId), partnerSetData);
       await setDoc(doc(db, 'companies', manufacturerId, 'sets', setId), partnerSetData);
@@ -313,13 +320,13 @@ export const ProjectSpecificationView = ({
           body: JSON.stringify({
             id: setId,
             orderNumber: partnerSetData.contractNumber,
-            clientName: project.clientName || 'Заказчик',
+            clientName: (project as any).clientName || 'Заказчик',
             projectName: project.name,
             salonName: partnerSetData.originalSalonName,
             originalSalonId: companyId,
             sourceSetId: setId,
             createdAt: timestamp.substring(0, 10),
-            deadlineDate: project.deadlineDate || new Date(Date.now() + 10 * 86400000).toISOString().substring(0, 10),
+            deadlineDate: (project as any).deadlineDate || new Date(Date.now() + 10 * 86400000).toISOString().substring(0, 10),
             currentStage: 'queue',
             priority: 'high',
             status: 'in_progress',

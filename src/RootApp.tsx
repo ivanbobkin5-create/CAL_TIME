@@ -10,50 +10,57 @@ const App = lazy(() => import('./App'));
 function getInitialView(): 'landing' | 'login' | 'register' | 'app' {
   if (typeof window === 'undefined') return 'landing';
 
-  // 1. Bitrix24 embedded mode
   const s = window.location.search || '';
+  const p = window.location.pathname || '/';
+  const h = window.location.hash || '';
+
+  // 1. Bitrix24 embedded mode explicitly
   const hasB24Params = s.includes('DOMAIN=') || s.includes('member_id=') || s.includes('PLACEMENT=') || s.includes('AUTH_ID=');
   if (hasB24Params) return 'app';
 
-  // 2. Direct Admin / App routes
-  const p = window.location.pathname || '/';
-  const h = window.location.hash || '';
+  // 2. Direct explicit Admin or App routes
   if (p === '/admin' || p.startsWith('/admin/') || s.includes('admin=true') || h === '#admin' || p === '/app') {
     return 'app';
   }
 
-  // 3. User explicitly logged in or in active app session
-  if (sessionStorage.getItem('mebel_in_app') === 'true' || localStorage.getItem('auth_uid')) {
-    return 'app';
-  }
-
-  // 4. Custom company direct slug route
-  const segments = p.split('/').filter(Boolean);
-  const reservedSystemRoutes = [
-    '', 'login', 'register', 'admin', 'dashboard', 'api', 'assets', 'static', 'favicon.ico', 'c',
-    'calculator', 'projects', 'products', 'services', 'service-section', 'price', 'production', 
-    'employees', 'settings', 'promotions', 'specification', 'profile', 'procurement', 
-    'procurement_plan', 'arrivals', 'summary', 'checkout_current', 'ready_made',
-    'moduli', 'kuhni', 'fasady', 'stoleshnicy', 'petli', 'posudosushiteli', 'catalog', 'all', 'vse'
-  ];
-  if (segments.length > 0 && !reservedSystemRoutes.includes(segments[0].toLowerCase())) {
-    return 'app';
-  }
-
-  // 5. Auth routes
+  // 3. Auth routes
   if (p === '/login') return 'login';
   if (p === '/register') return 'register';
 
+  // Default: Always show Landing Page directly on home route /
   return 'landing';
 }
 
 function LoadingSpinner() {
+  const [showTimeout, setShowTimeout] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowTimeout(true);
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
-      <div className="flex items-center gap-3">
+    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4 text-center">
+      <div className="flex items-center gap-3 mb-4">
         <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
         <span className="text-white font-medium text-base">Загрузка личного кабинета...</span>
       </div>
+      {showTimeout && (
+        <div className="mt-4 animate-fadeIn">
+          <p className="text-slate-400 text-sm mb-3">Загрузка занимает больше времени, чем обычно.</p>
+          <button
+            onClick={() => {
+              sessionStorage.removeItem('mebel_in_app');
+              window.location.href = '/';
+            }}
+            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-sm font-medium transition-colors border border-slate-700"
+          >
+            ← Вернуться на главную страницу
+          </button>
+        </div>
+      )}
     </div>
   );
 }

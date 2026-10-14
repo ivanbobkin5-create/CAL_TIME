@@ -7026,7 +7026,7 @@ function transliterate(str: string): string {
       const inspectDocs = async (key: string) => {
         const foundData: any[] = [];
         // 1. Check localStore
-        for (const [path, doc] of localStore.entries()) {
+        for (const [path, doc] of (localStore as any).entries()) {
           if (path.endsWith(`/${key}`) || path.includes(`/${key}/`)) {
             try {
               foundData.push(typeof doc.data === 'string' ? JSON.parse(doc.data) : doc.data);
@@ -7185,7 +7185,7 @@ function transliterate(str: string): string {
       }
 
       // Also inspect related docs from localStore and DB
-      for (const [path, doc] of localStore.entries()) {
+      for (const [path, doc] of (localStore as any).entries()) {
         if (path.endsWith(`/${s}`) || path.includes(`/${s}/`)) {
           try {
             const item = typeof doc.data === 'string' ? JSON.parse(doc.data) : doc.data;

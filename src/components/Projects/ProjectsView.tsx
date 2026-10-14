@@ -1698,7 +1698,7 @@ export const ProjectsView = ({
                                           setSelectedOrderForChat({
                                             id: set.id,
                                             name: set.name || `Заказ №${set.contractNumber || set.id.slice(0, 6)}`,
-                                            partnerCompanyId: set.isPartnerOrder ? set.originalSalonId : (targetManufacturerId || set.targetManufacturerId || set.manufacturerId || manufacturerId),
+                                            partnerCompanyId: set.isPartnerOrder ? set.originalSalonId : (set.targetManufacturerId || set.manufacturerId || (set as any).sourceCompanyId || ''),
                                             partnerCompanyName: set.isPartnerOrder ? (set.originalSalonName || "Салон-партнер") : "Производство",
                                             partnerDealId: set.bitrix24DealId || null
                                           });
@@ -1836,7 +1836,7 @@ export const ProjectsView = ({
                                             setSelectedOrderForChat({
                                               id: set.id,
                                               name: set.name || `Заказ №${set.contractNumber || set.id.slice(0, 6)}`,
-                                              partnerCompanyId: set.isPartnerOrder ? set.originalSalonId : (targetManufacturerId || set.targetManufacturerId || set.manufacturerId || manufacturerId),
+                                              partnerCompanyId: set.isPartnerOrder ? set.originalSalonId : (set.targetManufacturerId || set.manufacturerId || (set as any).sourceCompanyId || ''),
                                               partnerCompanyName: set.isPartnerOrder ? (set.originalSalonName || "Салон-партнер") : "Производство",
                                               partnerDealId: set.bitrix24DealId || null
                                             });
@@ -2187,19 +2187,19 @@ export const ProjectsView = ({
                                 <AlertTriangle className="w-4 h-4 text-rose-500" /> Вернуть на доработку
                               </button>
                             )}
-                            {(project.status === "production_transferred" || project.status === "accepted" || project.status === "accepted_with_revisions" || project.isPartnerOrder || project.originalSalonId) && (
+                            {((project as any).status === "production_transferred" || (project as any).status === "accepted" || (project as any).status === "accepted_with_revisions" || (project as any).isPartnerOrder || (project as any).originalSalonId) && (
                               <button onClick={(e) => {
                                 e.stopPropagation();
                                 setOpenMenuId(null);
                                 setSelectedOrderForChat({
                                   id: project.id,
                                   name: project.name || `Проект #${project.id.slice(0, 6)}`,
-                                  partnerCompanyId: project.isPartnerOrder ? project.originalSalonId : (targetManufacturerId || project.targetManufacturerId || project.manufacturerId || manufacturerId),
-                                  partnerCompanyName: project.isPartnerOrder ? (project.originalSalonName || "Салон-партнер") : "Производство",
-                                  partnerDealId: project.bitrix24DealId || null
+                                  partnerCompanyId: (project as any).isPartnerOrder ? (project as any).originalSalonId : ((project as any).targetManufacturerId || (project as any).manufacturerId || ''),
+                                  partnerCompanyName: (project as any).isPartnerOrder ? ((project as any).originalSalonName || "Салон-партнер") : "Производство",
+                                  partnerDealId: (project as any).bitrix24DealId || null
                                 });
                               }} className="w-full text-left px-4 py-2 hover:bg-blue-50 text-xs font-semibold text-blue-600 flex items-center gap-2">
-                                <MessageSquare className="w-4 h-4 text-blue-500" /> Чат {project.isPartnerOrder ? "с салоном" : "с производством"}
+                                <MessageSquare className="w-4 h-4 text-blue-500" /> Чат {(project as any).isPartnerOrder ? "с салоном" : "с производством"}
                               </button>
                             )}
                             {project.status === "sent" && (

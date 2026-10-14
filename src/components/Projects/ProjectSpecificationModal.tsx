@@ -184,7 +184,7 @@ export const ProjectSpecificationModal = ({
       // 2. Create project in production company with exact same ID
       const transferredData = {
         ...project,
-        name: `${project.name} (от ${project.companyName || 'Салона'})`,
+        name: `${project.name} (от ${(project as any).companyName || 'Салона'})`,
         createdAt: timestamp,
         createdBy: project.id,
         createdByName: 'Система (Перенос)',
@@ -194,7 +194,7 @@ export const ProjectSpecificationModal = ({
         sourceCompanyId: companyId,
         sourceProjectId: project.id,
         originalSalonId: companyId,
-        originalSalonName: project.companyName || 'Салон-партнер',
+        originalSalonName: (project as any).companyName || 'Салон-партнер',
         targetManufacturerId: manufacturerId,
         sketches: sketches,
         specification: project.data
@@ -212,11 +212,11 @@ export const ProjectSpecificationModal = ({
         projectIds: [project.id],
         status: 'pending',
         originalSalonId: companyId,
-        originalSalonName: project.companyName || 'Салон-партнер',
+        originalSalonName: (project as any).companyName || 'Салон-партнер',
         targetManufacturerId: manufacturerId,
         isPartnerOrder: true,
         createdAt: timestamp,
-        totalPrice: project.totalPrice || project.data?.totalPrice || 0
+        totalPrice: (project as any).totalPrice || project.data?.totalPrice || 0
       };
       await setDoc(doc(db, 'companies', manufacturerId, 'partner_sets', setId), partnerSetData);
       await setDoc(doc(db, 'companies', manufacturerId, 'sets', setId), partnerSetData);
@@ -229,13 +229,13 @@ export const ProjectSpecificationModal = ({
           body: JSON.stringify({
             id: setId,
             orderNumber: partnerSetData.contractNumber,
-            clientName: project.clientName || 'Заказчик',
+            clientName: (project as any).clientName || 'Заказчик',
             projectName: project.name,
             salonName: partnerSetData.originalSalonName,
             originalSalonId: companyId,
             sourceSetId: setId,
             createdAt: timestamp.substring(0, 10),
-            deadlineDate: project.deadlineDate || new Date(Date.now() + 10 * 86400000).toISOString().substring(0, 10),
+            deadlineDate: (project as any).deadlineDate || new Date(Date.now() + 10 * 86400000).toISOString().substring(0, 10),
             currentStage: 'queue',
             priority: 'high',
             status: 'in_progress',
