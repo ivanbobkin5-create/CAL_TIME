@@ -1622,16 +1622,9 @@ const BRAND_TO_TYPE: Record<string, string> = {
   Uvadrev: "ЛДСП",
   AGT: "МДФ",
   "AGT SUPRAMATT": "МДФ",
-  "AGT SUPRAMATT PUR": "МДФ",
   Evosoft: "МДФ",
-  "EVOSOFT PUR": "МДФ",
   Evogloss: "МДФ",
   Arkopa: "МДФ",
-  "Cleaf TSS": "МДФ",
-  Cleaf: "МДФ",
-  FENIX: "МДФ",
-  "EGGER PerfectSense": "МДФ",
-  PerfectSense: "МДФ",
   ХДФ: "ХДФ",
   ДВП: "ХДФ",
 };
@@ -5368,9 +5361,6 @@ const PriceView = ({
                               await Promise.all(
                                 chunk.map(async (item) => {
                                   const pId = `edge_egger_${Math.random().toString(36).substr(2, 9)}`;
-                                  const thickLabel = item.thickness === "2.0" ? "2" : item.thickness;
-                                  const heightLabel = item.thickness === "1.5" ? "36" : "19";
-                                  const edgeName = `Кромка ${thickLabel}/${heightLabel} ${item.decor}, Egger`;
                                   const productData = {
                                     id: pId,
                                     category: "Кромочные материалы",
@@ -5379,7 +5369,7 @@ const PriceView = ({
                                     thickness: item.thickness,
                                     brand: "Egger",
                                     price: item.thickness === "0.4" ? 50 : (item.thickness === "1.0" ? 80 : 100), // reasonable base prices
-                                    name: edgeName,
+                                    name: `Кромка Egger ${item.decor} ${item.thickness}мм`,
                                     compatibility: "Egger",
                                     updatedAt: new Date().toISOString(),
                                     status: 'approved'
@@ -11463,24 +11453,11 @@ const SummaryView = ({
             const finalNormThick = thickness === "1" || thickness === "1.0" ? "1.0" : thickness === "2" || thickness === "2.0" ? "2.0" : thickness;
             const finalEdgePriceKey = group.priceKey || `edgePrice_${group.decor}_${finalNormThick}`;
 
-            const normThickVal = parseFloat(String(thickness).replace('мм', '').trim()) || 0.4;
-            const parentBoardThick = parseFloat(String(group.thickness || 16)) || 16;
-            let edgeHeight = "19";
-            if (parentBoardThick >= 38) {
-              edgeHeight = "43";
-            } else if (parentBoardThick >= 32 || normThickVal === 1.5) {
-              edgeHeight = "36";
-            } else if (parentBoardThick >= 22) {
-              edgeHeight = "28";
-            }
-            const formattedThickLabel = normThickVal === 2.0 ? "2" : normThickVal === 1.0 ? "1.0" : String(thickness).replace('мм', '').trim();
-            const edgeHeightLabel = `${formattedThickLabel}/${edgeHeight}`;
-
             rows.push({
               type: "edge",
               name: String(thickness).includes("Склейка")
                 ? "Кромка (Склейка)"
-                : `Кромка ${edgeHeightLabel} ${group.decor !== "Не указан" && group.decor !== "Не выбран" ? group.decor : ""}`,
+                : `Кромка ${group.decor !== "Не указан" && group.decor !== "Не выбран" ? group.decor + " " : ""}${thickness} мм`,
               sub: group.decor,
               decor: group.decor,
               qty: displayQty,
@@ -34750,20 +34727,9 @@ export default function App() {
   const initialAuth = useMemo(() => getInitialAuthState(), []);
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => initialAuth.isAuth);
   
-  const [authMode, setAuthMode] = useState<"login" | "register" | "landing" | "app">(() => {
-    if (typeof window !== "undefined") {
-      const p = window.location.pathname;
-      const s = window.location.search;
-      const h = window.location.hash;
-      if (p === "/admin" || s.includes("admin=true") || h === "#admin") {
-        return "app";
-      }
-      if (sessionStorage.getItem("mebel_in_app") === "true") {
-        return "app";
-      }
-    }
-    return "landing";
-  });
+  const [authMode, setAuthMode] = useState<"login" | "register" | "landing">(
+    "landing",
+  );
   const [userRole, setUserRole] = useState<
     "admin" | "supervisor" | "manager" | "worker" | null
   >(() => initialAuth.role as any);
@@ -34907,7 +34873,10 @@ export default function App() {
   const [isEndingSessions, setIsEndingSessions] = useState(false);
   const [sessionId] = useState(() => Math.random().toString(36).substr(2, 9));
   const [hostMappedAlias, setHostMappedAlias] = useState<{ companySlug: string, storefrontAlias: string } | null>(null);
-  const [isCheckingDomain, setIsCheckingDomain] = useState(false);
+  const [isCheckingDomain, setIsCheckingDomain] = useState(() => {
+    const hostname = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
+    return hostname !== 'localhost' && hostname !== '127.0.0.1' && !hostname.includes('.run.app') && !hostname.includes('mebel-plan.ru');
+  });
 
   useEffect(() => {
     const syncInterval = setInterval(triggerSync, 60000);
@@ -34916,26 +34885,15 @@ export default function App() {
 
   useEffect(() => {
     const checkCustomDomain = async () => {
-      const hostname = typeof window !== 'undefined' ? window.location.hostname.toLowerCase() : 'localhost';
-      if (
-        hostname === 'localhost' ||
-        hostname === '127.0.0.1' ||
-        hostname.includes('.run.app') ||
-        hostname.includes('mebel-plan.ru') ||
-        hostname.includes('google') ||
-        hostname.includes('aistudio') ||
-        hostname.includes('cloudworkstations') ||
-        hostname.includes('web.app') ||
-        hostname.includes('firebaseapp')
-      ) {
-        return;
-      }
+      if (!isCheckingDomain) return;
+      const hostname = window.location.hostname;
       
+      const domainTimeout = setTimeout(() => {
+        setIsCheckingDomain(false);
+      }, 3500);
+
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 800);
-        const res = await fetch(`/api/public/lookup-by-host?host=${hostname}`, { signal: controller.signal });
-        clearTimeout(timeoutId);
+        const res = await fetch(`/api/public/lookup-by-host?host=${hostname}`);
         if (res.ok) {
           const data = await res.json();
           if (data.companySlug) {
@@ -34943,11 +34901,14 @@ export default function App() {
           }
         }
       } catch (e) {
-        // Silently ignore custom domain lookup failure
+        console.error("Custom domain lookup failed", e);
+      } finally {
+        clearTimeout(domainTimeout);
+        setIsCheckingDomain(false);
       }
     };
     checkCustomDomain();
-  }, []);
+  }, [isCheckingDomain]);
 
   const [isSavingConfig, setIsSavingConfig] = useState(false);
 
@@ -36039,12 +36000,10 @@ export default function App() {
                   console.warn("Could not refresh employee data:", eErr);
                 }
                 
-                // Preload catalog and settings only if in active app session (never on landing page)
-                if (typeof window !== "undefined" && (sessionStorage.getItem("mebel_in_app") === "true" || window.location.search.includes("DOMAIN") || window.location.pathname === "/admin")) {
-                  preloadAllData(effectiveCompanyId, savedUid, { ...docData, ...compData }).catch(err => {
-                    console.warn("Background preload error:", err);
-                  });
-                }
+                // Preload catalog and settings asynchronously in background without blocking UI
+                preloadAllData(effectiveCompanyId, savedUid, { ...docData, ...compData }).catch(err => {
+                  console.warn("Background preload error:", err);
+                });
               }
               
               const isSuper = isUserSuperAdmin(docData) || isSuperAdminEmail(savedEmail) || isSuperAdminEmail(docData.email);
@@ -36251,9 +36210,7 @@ export default function App() {
            }
          }
          
-         sessionStorage.setItem("mebel_in_app", "true");
          setIsAuthenticated(true);
-         setAuthMode("app");
       } else {
          throw new Error(loadErrorMessage);
       }
@@ -36388,9 +36345,7 @@ export default function App() {
       safeAuthStorageSet('auth_user', serializeEssentialUser(usrData));
       safeAuthStorageSet('auth_company', serializeEssentialCompany(compData));
       setUserRole("admin");
-      sessionStorage.setItem("mebel_in_app", "true");
       setIsAuthenticated(true);
-      setAuthMode("app");
       showAlert("Успех", "Регистрация прошла успешно.");
     } catch (error) {
       console.error("Register error:", error);
@@ -36416,9 +36371,7 @@ export default function App() {
       });
       await idbCache.clear();
       auth.currentUser = null;
-      sessionStorage.removeItem("mebel_in_app");
       setIsAuthenticated(false);
-      setAuthMode("landing");
       setUserData(null);
       setCompanyData(null);
       setIsAppAdmin(false);
@@ -40402,11 +40355,6 @@ export default function App() {
     );
 
     const pId = existing?.id || Math.random().toString(36).substr(2, 9);
-    const numThick = parseFloat(thickness) || 0.4;
-    const formattedThickStr = numThick === 2.0 ? "2" : numThick === 1.0 ? "1.0" : thickness;
-    const heightStr = numThick === 1.5 ? "36" : "19";
-    const edgeName = `Кромка ${formattedThickStr}/${heightStr} ${decor}, ${edgeBrand}`;
-
     const productData = {
       id: pId,
       category: "Кромочные материалы",
@@ -40414,7 +40362,7 @@ export default function App() {
       thickness: thickness,
       brand: edgeBrand,
       price: price,
-      name: edgeName,
+      name: `Кромка ${decor} ${thickness}мм`,
       compatibility: brandLdsp,
       updatedAt: new Date().toISOString(),
       status: 'approved'
@@ -41729,86 +41677,86 @@ export default function App() {
     return <PublicLandingView aliasOrId={aliasOrId} initialSubPath={subPath} />;
   }
 
-  // Only show splash screen during active app session loading, never on landing page
-  if (isLoading && authMode !== "landing") {
+  if (isLoading || isCheckingDomain) {
     return (
-      <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-gradient-to-br from-sky-50 via-blue-50/50 to-white text-slate-900 overflow-hidden select-none">
-        {/* Background Ambient Glows */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[550px] h-[550px] bg-sky-200/40 rounded-full blur-[100px] pointer-events-none" />
-        <div className="absolute -top-32 -right-32 w-96 h-96 bg-blue-200/30 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute -bottom-32 -left-32 w-96 h-96 bg-indigo-100/40 rounded-full blur-3xl pointer-events-none" />
+      <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-slate-950 text-white overflow-hidden select-none">
+        {/* Background Grid & Glows */}
+        <div className="absolute inset-0 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:24px_24px] opacity-40" />
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-blue-600/15 rounded-full blur-[120px] pointer-events-none" />
+        <div className="absolute -top-32 -right-32 w-96 h-96 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-32 -left-32 w-96 h-96 bg-emerald-600/15 rounded-full blur-3xl pointer-events-none" />
 
-        <div className="relative z-10 flex flex-col items-center max-w-md w-full px-6">
-          {/* Animated Blue Rings & Logo */}
-          <div className="relative mb-6">
+        <div className="relative z-10 flex flex-col items-center max-w-lg w-full px-6">
+          {/* Animated Neon Rings & Logo */}
+          <div className="relative mb-8">
             <motion.div 
               animate={{ rotate: 360 }}
               transition={{ duration: 16, repeat: Infinity, ease: "linear" }}
-              className="w-24 h-24 rounded-3xl border border-dashed border-sky-300 flex items-center justify-center bg-white/60 shadow-lg shadow-sky-100"
+              className="w-28 h-28 rounded-3xl border border-dashed border-blue-500/40 flex items-center justify-center"
             />
             <motion.div 
               animate={{ rotate: -360 }}
               transition={{ duration: 10, repeat: Infinity, ease: "linear" }}
-              className="absolute inset-2 rounded-2xl border border-blue-400/50"
+              className="absolute inset-2 rounded-2xl border border-indigo-400/50"
             />
             <div className="absolute inset-0 flex items-center justify-center">
               <motion.div 
                 animate={{ scale: [1, 1.05, 1] }}
                 transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-                className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 to-sky-500 flex items-center justify-center shadow-lg shadow-blue-500/25 border border-sky-200"
+                className="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-xl shadow-blue-500/30 border border-blue-400/50"
               >
-                <Layers className="w-7 h-7 text-white drop-shadow" />
+                <Layers className="w-8 h-8 text-white drop-shadow" />
               </motion.div>
             </div>
           </div>
 
-          {/* Brand & Titles */}
+          {/* Titles */}
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3 }}
-            className="text-center mb-6"
+            className="text-center mb-8"
           >
-            <div className="text-[11px] font-bold tracking-widest text-sky-600 uppercase mb-1 flex items-center justify-center gap-1.5">
-              <Cpu className="w-3.5 h-3.5" /> Mebel-Plan.ru
+            <div className="text-[11px] font-black tracking-widest text-blue-400 uppercase mb-1.5 flex items-center justify-center gap-2">
+              <Cpu className="w-3.5 h-3.5" /> Mebel-Plan Platform
             </div>
-            <h1 className="text-2xl font-black tracking-tight text-slate-900 mb-1">
-              Система управления <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-600 to-sky-500">производством</span>
+            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white mb-2">
+              Система управления <span className="text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-300">производством</span>
             </h1>
-            <p className="text-xs text-slate-500">
-              Мебельный калькулятор • Склад • Снабжение • Заказы
+            <p className="text-xs text-slate-400 font-mono">
+              Мебельный калькулятор • Склад • Снабжение • Цеха
             </p>
           </motion.div>
 
-          {/* Progress Card (Light Whitish Frosted Glass) */}
-          <div className="w-full bg-white/90 border border-sky-100 rounded-2xl p-5 backdrop-blur-xl shadow-xl shadow-sky-500/10 space-y-3">
+          {/* Progress Card */}
+          <div className="w-full bg-slate-900/90 border border-slate-800 rounded-2xl p-5 backdrop-blur-xl shadow-2xl space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 overflow-hidden">
-                <Activity className="w-4 h-4 text-blue-600 animate-pulse shrink-0" />
-                <span className="text-xs font-bold text-slate-700 truncate">
+                <Activity className="w-4 h-4 text-blue-400 animate-pulse shrink-0" />
+                <span className="text-xs font-bold text-slate-200 truncate animate-pulse">
                   {preloadStatus || "Инициализация системы..."}
                 </span>
               </div>
-              <span className="font-mono font-black text-sm text-blue-600 shrink-0 ml-3">
+              <span className="font-mono font-black text-sm text-blue-400 shrink-0 ml-3">
                 {preloadProgress}%
               </span>
             </div>
 
-            <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden p-0.5 border border-slate-200">
+            <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden p-0.5 border border-slate-800">
               <motion.div 
-                className="h-full bg-gradient-to-r from-blue-600 via-sky-500 to-indigo-500 rounded-full transition-all duration-150"
+                className="h-full bg-gradient-to-r from-blue-600 via-indigo-500 to-emerald-400 rounded-full transition-all duration-150"
                 style={{ width: `${preloadProgress}%` }}
               />
             </div>
 
-            <div className="flex items-center justify-between text-[10px] text-slate-400 font-medium pt-1 border-t border-slate-100">
-              <span>Кэширование данных</span>
+            <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono pt-1 border-t border-slate-800/60">
+              <span>Кэширование оффлайн</span>
               <span>Безопасное соединение</span>
             </div>
           </div>
         </div>
 
-        <div className="absolute bottom-6 text-[11px] text-slate-400 font-medium text-center">
+        <div className="absolute bottom-6 text-[11px] text-slate-500 font-mono text-center">
           Mebel-Plan © {new Date().getFullYear()} • Все права защищены
         </div>
       </div>
@@ -41925,40 +41873,29 @@ export default function App() {
     return <B24PartnerCompanyWidget b24Context={b24Context} companyData={companyData} />;
   }
 
-  if (authMode === "landing" && !b24Context.isBitrix24) {
-    return (
-      <>
-        <LandingPage
-          onLogin={() => {
-            if (isAuthenticated && userData?.uid) {
-              sessionStorage.setItem("mebel_in_app", "true");
-              setAuthMode("app");
-              if (!isPreloaded && companyData?.id) {
-                preloadAllData(companyData.id, userData.uid, userData).catch(() => {});
+  if (!isAuthenticated && !b24Context.isBitrix24) {
+    if (authMode === "landing") {
+      return (
+        <>
+          <LandingPage
+            onLogin={() => setAuthMode("login")}
+            onRegister={() => setAuthMode("register")}
+          />
+      {/* Admin shortcut hidden per user request */}
+
+          {showAdminLogin && !isAdminAuthenticated && (
+            <AdminLoginForm onLogin={(pass) => {
+              if (pass === "Admin123!") { 
+                setIsAdminAuthenticated(true);
+                setShowAdminLogin(false);
               }
-            } else {
-              setAuthMode("login");
-            }
-          }}
-          onRegister={() => setAuthMode("register")}
-        />
-        {/* Admin shortcut hidden per user request */}
+            }} />
+          )}
 
-        {showAdminLogin && !isAdminAuthenticated && (
-          <AdminLoginForm onLogin={(pass) => {
-            if (pass === "Admin123!") { 
-              setIsAdminAuthenticated(true);
-              setShowAdminLogin(false);
-            }
-          }} />
-        )}
-
-        {isAdminAuthenticated && <AdminProductsApprovalView />}
-      </>
-    );
-  }
-
-  if ((authMode === "login" || authMode === "register" || !isAuthenticated) && !b24Context.isBitrix24) {
+          {isAdminAuthenticated && <AdminProductsApprovalView />}
+        </>
+      );
+    }
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
         <div className="w-full max-w-md">
@@ -41974,21 +41911,21 @@ export default function App() {
             </span>
           </div>
 
-          {authMode === "register" ? (
-            <RegistrationForm
-              onRegister={handleRegister}
-              onGoToLogin={() => setAuthMode("login")}
-            />
-          ) : (
+          {authMode === "login" ? (
             <LoginForm
               onLogin={handleLogin}
               onGoToRegister={() => setAuthMode("register")}
+            />
+          ) : (
+            <RegistrationForm
+              onRegister={handleRegister}
+              onGoToLogin={() => setAuthMode("login")}
             />
           )}
 
           <button
             onClick={() => setAuthMode("landing")}
-            className="mt-8 w-full text-center text-sm font-bold text-gray-400 hover:text-blue-600 transition-colors cursor-pointer"
+            className="mt-8 w-full text-center text-sm font-bold text-gray-400 hover:text-blue-600 transition-colors"
           >
             ← Вернуться на главную
           </button>
@@ -42320,7 +42257,7 @@ export default function App() {
                     )}
                   </button>
 
-                  {(userRole === "admin" || isAppAdmin || companyData?.productionFormat === "own" || companyData?.isManufacturer || companyData?.type === "Мебельное производство" || companyData?.type === "Производство" || companyData?.type === "Фабрика" || companyData?.type === "Цех" || companyData?.companyType === "Мебельное производство" || companyData?.companyType === "Производство" || (typeof companyData?.type === 'string' && companyData.type.toLowerCase().includes('производст')) || (typeof companyData?.companyType === 'string' && companyData.companyType.toLowerCase().includes('производст'))) && (
+                  {(userRole === "admin" || companyData?.type === "Мебельное производство" || companyData?.type === "Производство" || companyData?.companyType === "Мебельное производство" || companyData?.companyType === "Производство" || (typeof companyData?.type === 'string' && companyData.type.toLowerCase().includes('производст')) || (typeof companyData?.companyType === 'string' && companyData.companyType.toLowerCase().includes('производст'))) && (
                     <button
                       onClick={() => setActiveTab("partner_orders")}
                       className={cn(
@@ -43839,7 +43776,7 @@ export default function App() {
                  });
                }}
               companyType={companyData?.type}
-              manufacturerId={companyData?.manufacturerId || contractConfig?.productionId}
+              manufacturerId={companyData?.manufacturerId}
               showConfirm={showConfirm}
               showAlert={showAlert}
             />
@@ -44197,7 +44134,7 @@ export default function App() {
               }}
               userRole={userRole || "worker"}
               companyId={companyData?.id || ""}
-              manufacturerId={companyData?.manufacturerId || contractConfig?.productionId}
+              manufacturerId={companyData?.manufacturerId}
               upsertEdgeToPriceList={upsertEdgeToPriceList}
               currentCoefficients={currentCoefficients}
             />

@@ -173,76 +173,25 @@ export const ProjectSpecificationModal = ({
     setIsSubmitting(true);
     setError(null);
     try {
-      const timestamp = new Date().toISOString();
       // 1. Update status in source company
       await updateDoc(doc(db, 'companies', companyId, 'projects', project.id), {
-        status: 'production_transferred',
-        transferredAt: timestamp,
-        targetManufacturerId: manufacturerId
+        status: 'transferred',
+        transferredAt: serverTimestamp()
       });
 
-      // 2. Create project in production company with exact same ID
-      const transferredData = {
-        ...project,
-        name: `${project.name} (от ${(project as any).companyName || 'Салона'})`,
-        createdAt: timestamp,
-        createdBy: project.id,
+      // 2. Create project in production company
+      await addDoc(collection(db, 'companies', manufacturerId, 'projects'), {
+        name: `${project.name} (от ${project.companyId || 'Салона'})`,
+        createdAt: new Date().toISOString(),
+        createdBy: project.id, // Reference to source
         createdByName: 'Система (Перенос)',
         data: project.data,
-        status: 'pending',
-        isPartnerOrder: true,
+        status: 'draft',
         sourceCompanyId: companyId,
         sourceProjectId: project.id,
-        originalSalonId: companyId,
-        originalSalonName: (project as any).companyName || 'Салон-партнер',
-        targetManufacturerId: manufacturerId,
         sketches: sketches,
         specification: project.data
-      };
-
-      await setDoc(doc(db, 'companies', manufacturerId, 'projects', project.id), transferredData);
-      await setDoc(doc(db, 'companies', manufacturerId, 'partner_projects', project.id), transferredData);
-
-      // Also create a partner set so it displays in "Заказы партнеров" and "Проекты"
-      const setId = project.data?.setId || `set_${project.id}`;
-      const partnerSetData = {
-        id: setId,
-        name: project.name,
-        contractNumber: (project as any).contractNumber || project.data?.contractNumber || project.id.slice(0, 6),
-        projectIds: [project.id],
-        status: 'pending',
-        originalSalonId: companyId,
-        originalSalonName: (project as any).companyName || 'Салон-партнер',
-        targetManufacturerId: manufacturerId,
-        isPartnerOrder: true,
-        createdAt: timestamp,
-        totalPrice: (project as any).totalPrice || project.data?.totalPrice || 0
-      };
-      await setDoc(doc(db, 'companies', manufacturerId, 'partner_sets', setId), partnerSetData);
-      await setDoc(doc(db, 'companies', manufacturerId, 'sets', setId), partnerSetData);
-
-      // 3. Register in manufacturer's ERP orders queue
-      try {
-        await fetch(`/api/companies/${manufacturerId}/erp_orders/${setId}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: setId,
-            orderNumber: partnerSetData.contractNumber,
-            clientName: (project as any).clientName || 'Заказчик',
-            projectName: project.name,
-            salonName: partnerSetData.originalSalonName,
-            originalSalonId: companyId,
-            sourceSetId: setId,
-            createdAt: timestamp.substring(0, 10),
-            deadlineDate: (project as any).deadlineDate || new Date(Date.now() + 10 * 86400000).toISOString().substring(0, 10),
-            currentStage: 'queue',
-            priority: 'high',
-            status: 'in_progress',
-            priceTotal: partnerSetData.totalPrice
-          })
-        });
-      } catch (_) {}
+      });
 
       onClose();
     } catch (err) {

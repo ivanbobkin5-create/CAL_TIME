@@ -31,21 +31,10 @@ import {
   ExternalLink,
   ChevronRight
 } from 'lucide-react';
-import { cn } from '../../../lib/utils';
 import { MaterialResidual, ERPEmployee, ProductionOrder } from '../types';
 import { ERPMaterialResidualsView } from './ERPMaterialResidualsView';
 import { InventoryModal } from '../../Procurement/InventoryModal';
 import { ImportCalculatorCatalogModal, detectWarehouseCategory } from '../components/ImportCalculatorCatalogModal';
-import { WarehouseInventoryAuditView } from './WarehouseInventoryAuditView';
-
-export const AVAILABLE_LDSP_BRANDS = ['Egger', 'Lamarty', 'Nordeco', 'Kronospan', 'Uvadrev'];
-export const AVAILABLE_MDF_BRANDS = ['AGT', 'Evogloss', 'Evosoft', 'FENIX', 'Cleaf TSS', 'EGGER PerfectSense'];
-export const AVAILABLE_EDGE_BRANDS = ['Egger', 'Rehau', 'Galoplast', 'Kantenwelt', 'Evosoft'];
-export const DEFAULT_ACTIVE_BRANDS = [
-  'Egger', 'Lamarty', 'Nordeco', 'Kronospan', 'Uvadrev',
-  'AGT', 'Evogloss', 'Evosoft', 'FENIX', 'Cleaf TSS', 'EGGER PerfectSense',
-  'Rehau', 'Galoplast', 'Kantenwelt'
-];
 
 export interface WarehouseItem {
   id: string;
@@ -71,7 +60,7 @@ export interface WarehouseItem {
 export interface WarehouseMovement {
   id: string;
   date: string;
-  type: 'arrival' | 'write_off' | 'transfer' | 'adjustment' | 'order_reservation' | 'inventory_surplus' | 'inventory_shortage';
+  type: 'arrival' | 'write_off' | 'transfer' | 'adjustment';
   itemId: string;
   itemName: string;
   category?: string;
@@ -188,12 +177,8 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
   const [settings, setSettings] = useState({
     autoDeductOnDispatch: true,
     allowBackorder: true,
-    inventoryAllowedEmployeeIds: [] as string[],
-    activeBrands: DEFAULT_ACTIVE_BRANDS as string[],
-    filterStockByActiveBrands: true
+    inventoryAllowedEmployeeIds: [] as string[]
   });
-
-  const [filterOnlyCompanyBrands, setFilterOnlyCompanyBrands] = useState(true);
 
   // Fetch items and movements from backend
   const fetchWarehouseData = async () => {
@@ -222,13 +207,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
       if (setRes.ok) {
         const data = await setRes.json();
         if (data.settings) {
-          setSettings(prev => ({
-            ...prev,
-            ...data.settings,
-            activeBrands: Array.isArray(data.settings.activeBrands) && data.settings.activeBrands.length > 0
-              ? data.settings.activeBrands
-              : prev.activeBrands
-          }));
+          setSettings(data.settings);
         }
       }
     } catch (err) {
@@ -410,22 +389,8 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
     return list;
   }, [warehouseItems, catalogMaterials, residuals]);
 
-  // Helper to extract item brand
-  const getItemBrand = (item: WarehouseItem): string => {
-    if (item.supplier) return item.supplier.trim();
-    const lower = item.name.toLowerCase();
-    for (const b of DEFAULT_ACTIVE_BRANDS) {
-      if (lower.includes(b.toLowerCase())) return b;
-    }
-    return '';
-  };
-
   // Filtered stock list
   const filteredStock = useMemo(() => {
-    const activeBrands = (settings.activeBrands && settings.activeBrands.length > 0)
-      ? settings.activeBrands
-      : DEFAULT_ACTIVE_BRANDS;
-
     return combinedStockList.filter(item => {
       if (selectedCategory !== 'Все категории' && item.category !== selectedCategory) {
         return false;
@@ -434,14 +399,6 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
       if (typeFilter === 'regular' && item.isResidual) return false;
       if (typeFilter === 'residuals' && !item.isResidual) return false;
       if (typeFilter === 'low_stock' && item.quantity > (item.minThreshold || 0)) return false;
-
-      // Brand filter: if active, hide 0-quantity items of unselected brands (e.g. Nordeco for company Romashka)
-      if (filterOnlyCompanyBrands && (item.category === 'ЛДСП' || item.category === 'МДФ' || item.category === 'Кромка' || item.category === 'Кромочные материалы')) {
-        const itemBrand = getItemBrand(item);
-        if (itemBrand && !activeBrands.includes(itemBrand) && item.quantity === 0) {
-          return false;
-        }
-      }
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -456,7 +413,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
 
       return true;
     });
-  }, [combinedStockList, selectedCategory, typeFilter, searchQuery, filterOnlyCompanyBrands, settings.activeBrands]);
+  }, [combinedStockList, selectedCategory, typeFilter, searchQuery]);
 
   // Statistics & Valuation calculation
   const stats = useMemo(() => {
@@ -815,10 +772,10 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveSubTab('inventory')}
-            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-semibold rounded-xl text-xs sm:text-sm shadow-xs transition-all flex items-center gap-1.5 cursor-pointer"
+            onClick={() => setShowInventoryModal(true)}
+            className="px-3.5 py-2 bg-white hover:bg-gray-50 text-gray-700 font-semibold rounded-xl text-xs sm:text-sm border border-gray-300 transition-all flex items-center gap-1.5"
           >
-            <ClipboardList className="w-4 h-4 text-white" /> Инвентаризация
+            <ClipboardList className="w-4 h-4 text-gray-500" /> Инвентаризация
           </button>
         </div>
       </div>
@@ -943,17 +900,6 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
         </button>
 
         <button
-          onClick={() => setActiveSubTab('inventory')}
-          className={`px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all whitespace-nowrap flex items-center gap-2 ${
-            activeSubTab === 'inventory'
-              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-200'
-              : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
-          }`}
-        >
-          <ClipboardList className="w-4 h-4 text-indigo-400" /> Инвентаризация
-        </button>
-
-        <button
           onClick={() => setShowSettingsModal(true)}
           className="ml-auto px-3 py-2.5 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all"
           title="Настройки склада"
@@ -1055,26 +1001,6 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
               >
                 <AlertTriangle className="w-3 h-3" /> Ниже минимума ({stats.lowStockCount})
               </button>
-
-              <div className="ml-auto flex items-center gap-2 pl-2">
-                <label className="flex items-center gap-1.5 cursor-pointer text-[11px] font-bold text-gray-700 bg-blue-50/80 hover:bg-blue-100/80 px-2.5 py-1 rounded-lg border border-blue-200 transition-all">
-                  <input
-                    type="checkbox"
-                    checked={filterOnlyCompanyBrands}
-                    onChange={(e) => setFilterOnlyCompanyBrands(e.target.checked)}
-                    className="w-3.5 h-3.5 text-blue-600 rounded"
-                  />
-                  <span>Бренды компании ({settings.activeBrands?.length || DEFAULT_ACTIVE_BRANDS.length})</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setShowSettingsModal(true)}
-                  className="text-[11px] font-bold text-blue-600 hover:text-blue-800 underline cursor-pointer"
-                  title="Настроить бренды материалов, используемые компанией"
-                >
-                  Настроить
-                </button>
-              </div>
             </div>
           </div>
 
@@ -1452,55 +1378,6 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
             </div>
           </div>
         </div>
-      )}
-
-      {/* TAB 6: INVENTORY AUDIT (ПОЛНОЦЕННАЯ ИНВЕНТАРИЗАЦИЯ СКЛАДА) */}
-      {activeSubTab === 'inventory' && (
-        <WarehouseInventoryAuditView
-          companyId={companyId}
-          companyName={companyName}
-          warehouseItems={combinedStockList}
-          movements={movements}
-          currentUser={currentUser}
-          activeBrands={settings.activeBrands || DEFAULT_ACTIVE_BRANDS}
-          onApplyInventory={async (adjustedItems, movementsToAdd) => {
-            // Update in-memory warehouse items
-            setWarehouseItems(prev => {
-              const map = new Map(prev.map(i => [i.id, i]));
-              adjustedItems.forEach(adj => map.set(adj.id, adj));
-              return Array.from(map.values());
-            });
-
-            // Persist adjusted items to backend
-            try {
-              await fetch(`/api/companies/${companyId}/warehouse-items/bulk`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ items: adjustedItems })
-              });
-            } catch (err) {
-              console.error('Error persisting inventory adjustments:', err);
-            }
-
-            // Persist movements to backend
-            if (movementsToAdd.length > 0) {
-              setMovements(prev => [...movementsToAdd, ...prev]);
-              try {
-                await Promise.all(
-                  movementsToAdd.map(m =>
-                    fetch(`/api/companies/${companyId}/warehouse-movements`, {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify(m)
-                    })
-                  )
-                );
-              } catch (err) {
-                console.error('Error persisting inventory movements:', err);
-              }
-            }
-          }}
-        />
       )}
 
       {/* DETAIL MODAL: RESERVATION ORDERS DETAIL */}
@@ -2088,11 +1965,11 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
 
       {/* SETTINGS MODAL */}
       {showSettingsModal && (
-        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 shadow-2xl relative space-y-5 my-8 max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl relative space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-gray-100">
               <h3 className="font-black text-gray-900 text-base flex items-center gap-2">
-                <Settings className="w-5 h-5 text-slate-700" /> Настройки модуля Склад и Бренды
+                <Settings className="w-5 h-5 text-slate-700" /> Настройки модуля Склад
               </h3>
               <button 
                 onClick={() => setShowSettingsModal(false)}
@@ -2102,12 +1979,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
               </button>
             </div>
 
-            {/* Section 1: General Warehouse Controls */}
-            <div className="space-y-3 text-xs font-medium text-gray-700">
-              <div className="font-bold text-gray-900 uppercase tracking-wider text-[11px]">
-                1. Складские правила и списания
-              </div>
-
+            <div className="space-y-4 text-xs font-medium text-gray-700">
               <label className="flex items-center gap-3 cursor-pointer p-3 bg-gray-50 rounded-xl border border-gray-200">
                 <input
                   type="checkbox"
@@ -2135,175 +2007,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
               </label>
             </div>
 
-            {/* Section 2: Company Sheet Materials & Brands */}
-            <div className="space-y-4 pt-2 border-t border-gray-100">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <div className="font-bold text-gray-900 uppercase tracking-wider text-[11px]">
-                    2. Используемые бренды и листовые материалы компании
-                  </div>
-                  <p className="text-[11px] text-gray-500">
-                    Отметьте материалы, с которыми работает компания. Позиции отключенных брендов (например, Nordeco) не будут захламлять склад нулевыми остатками.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSettings(prev => ({
-                        ...prev,
-                        activeBrands: [...DEFAULT_ACTIVE_BRANDS]
-                      }));
-                    }}
-                    className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-lg text-[11px] cursor-pointer"
-                  >
-                    Все
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSettings(prev => ({
-                        ...prev,
-                        activeBrands: ['Egger', 'Lamarty', 'AGT', 'Rehau']
-                      }));
-                    }}
-                    className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-lg text-[11px] cursor-pointer"
-                  >
-                    Популярные
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSettings(prev => ({
-                        ...prev,
-                        activeBrands: []
-                      }));
-                    }}
-                    className="px-2.5 py-1 text-gray-400 hover:text-gray-600 rounded-lg text-[11px] cursor-pointer"
-                  >
-                    Очистить
-                  </button>
-                </div>
-              </div>
-
-              {/* Sub-group 1: LDSP Brands */}
-              <div className="p-3 bg-gray-50/80 rounded-2xl border border-gray-200/80 space-y-2">
-                <div className="text-[11px] font-black text-gray-700 uppercase tracking-wide flex items-center justify-between">
-                  <span>Плиты ЛДСП</span>
-                  <span className="text-[10px] text-gray-400 font-normal">толщины 10, 16, 25 мм</span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {AVAILABLE_LDSP_BRANDS.map(brand => {
-                    const isChecked = (settings.activeBrands || []).includes(brand);
-                    return (
-                      <label
-                        key={brand}
-                        className={cn(
-                          "flex items-center gap-2 p-2 rounded-xl border text-xs font-bold transition-all cursor-pointer",
-                          isChecked ? "bg-white border-blue-400 text-blue-900 shadow-2xs" : "bg-gray-100/60 border-gray-200 text-gray-500 hover:bg-gray-100"
-                        )}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={(e) => {
-                            const cur = settings.activeBrands || [];
-                            const next = e.target.checked
-                              ? [...cur, brand]
-                              : cur.filter(b => b !== brand);
-                            setSettings({ ...settings, activeBrands: next });
-                          }}
-                          className="w-4 h-4 text-blue-600 rounded"
-                        />
-                        <span>{brand}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Sub-group 2: MDF Brands */}
-              <div className="p-3 bg-gray-50/80 rounded-2xl border border-gray-200/80 space-y-2">
-                <div className="text-[11px] font-black text-gray-700 uppercase tracking-wide flex items-center justify-between">
-                  <span>Фасадные плиты МДФ</span>
-                  <span className="text-[10px] text-gray-400 font-normal">толщины 18 мм</span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {AVAILABLE_MDF_BRANDS.map(brand => {
-                    const isChecked = (settings.activeBrands || []).includes(brand);
-                    return (
-                      <label
-                        key={brand}
-                        className={cn(
-                          "flex items-center gap-2 p-2 rounded-xl border text-xs font-bold transition-all cursor-pointer",
-                          isChecked ? "bg-white border-indigo-400 text-indigo-900 shadow-2xs" : "bg-gray-100/60 border-gray-200 text-gray-500 hover:bg-gray-100"
-                        )}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={(e) => {
-                            const cur = settings.activeBrands || [];
-                            const next = e.target.checked
-                              ? [...cur, brand]
-                              : cur.filter(b => b !== brand);
-                            setSettings({ ...settings, activeBrands: next });
-                          }}
-                          className="w-4 h-4 text-indigo-600 rounded"
-                        />
-                        <span>{brand}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Sub-group 3: Edge Brands */}
-              <div className="p-3 bg-gray-50/80 rounded-2xl border border-gray-200/80 space-y-2">
-                <div className="text-[11px] font-black text-gray-700 uppercase tracking-wide flex items-center justify-between">
-                  <span>Кромочные материалы</span>
-                  <span className="text-[10px] text-gray-400 font-normal">высоты 19, 22, 28, 36, 43 мм</span>
-                </div>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {AVAILABLE_EDGE_BRANDS.map(brand => {
-                    const isChecked = (settings.activeBrands || []).includes(brand);
-                    return (
-                      <label
-                        key={brand}
-                        className={cn(
-                          "flex items-center gap-2 p-2 rounded-xl border text-xs font-bold transition-all cursor-pointer",
-                          isChecked ? "bg-white border-emerald-400 text-emerald-900 shadow-2xs" : "bg-gray-100/60 border-gray-200 text-gray-500 hover:bg-gray-100"
-                        )}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={(e) => {
-                            const cur = settings.activeBrands || [];
-                            const next = e.target.checked
-                              ? [...cur, brand]
-                              : cur.filter(b => b !== brand);
-                            setSettings({ ...settings, activeBrands: next });
-                          }}
-                          className="w-4 h-4 text-emerald-600 rounded"
-                        />
-                        <span>{brand}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-3 flex justify-end gap-2 border-t border-gray-100">
-              <button
-                type="button"
-                onClick={() => setShowSettingsModal(false)}
-                className="px-4 py-2 rounded-xl text-xs font-bold text-gray-600 hover:bg-gray-100 cursor-pointer"
-              >
-                Отмена
-              </button>
+            <div className="pt-3 flex justify-end border-t border-gray-100">
               <button
                 onClick={() => {
                   fetch(`/api/companies/${companyId}/warehouse-settings`, {
@@ -2313,7 +2017,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                   }).catch(() => {});
                   setShowSettingsModal(false);
                 }}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-md shadow-blue-600/20 cursor-pointer"
+                className="px-5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl font-bold text-xs shadow-md shadow-blue-600/20 cursor-pointer"
               >
                 Сохранить настройки
               </button>
@@ -2329,7 +2033,6 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
           catalogProducts={catalogProducts}
           catalogMaterials={catalogMaterials}
           existingWarehouseItems={warehouseItems}
-          activeBrands={settings.activeBrands || DEFAULT_ACTIVE_BRANDS}
           currentUser={currentUser}
           onClose={() => setShowCalculatorImportModal(false)}
           onImportComplete={(imported) => {

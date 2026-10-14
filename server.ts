@@ -212,7 +212,7 @@ function safeDeepMerge(target: any, source: any): any {
 
 async function startServer() {
   const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  const PORT = 3000;
 
   app.use(cors());
   app.use(compression() as any);
@@ -5363,59 +5363,6 @@ function transliterate(str: string): string {
     }
   });
 
-  // Dedicated Warehouse Inventory Documents API (Drafts, In Progress, Completed)
-  app.get("/api/companies/:companyId/warehouse-inventories", async (req, res) => {
-    try {
-      const { companyId } = req.params;
-      const docs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
-        where: { collection: `companies/${companyId}/warehouse_inventories` }
-      }));
-      const inventories = docs.map(d => {
-        try { return JSON.parse(d.data); } catch (e) { return null; }
-      }).filter(Boolean);
-      res.json({ success: true, inventories });
-    } catch (e: any) {
-      res.status(500).json({ error: String(e) });
-    }
-  });
-
-  app.post("/api/companies/:companyId/warehouse-inventories", async (req, res) => {
-    try {
-      const { companyId } = req.params;
-      const inventory = req.body;
-      if (!inventory || !inventory.id) {
-        return res.status(400).json({ error: "Missing inventory id" });
-      }
-      const docPath = `companies/${companyId}/warehouse_inventories/${inventory.id}`;
-      const dataStr = JSON.stringify(inventory);
-      localStore.setDoc(docPath, `companies/${companyId}/warehouse_inventories`, inventory.id, dataStr, false, false);
-      await dbQueryWithRetry(() => prisma.dbDocument.upsert({
-        where: { path: docPath },
-        create: {
-          path: docPath,
-          collection: `companies/${companyId}/warehouse_inventories`,
-          docId: inventory.id,
-          data: dataStr
-        },
-        update: { data: dataStr }
-      }));
-      res.json({ success: true, inventory });
-    } catch (e: any) {
-      res.status(500).json({ error: String(e) });
-    }
-  });
-
-  app.delete("/api/companies/:companyId/warehouse-inventories/:inventoryId", async (req, res) => {
-    try {
-      const { companyId, inventoryId } = req.params;
-      const docPath = `companies/${companyId}/warehouse_inventories/${inventoryId}`;
-      await dbQueryWithRetry(() => prisma.dbDocument.delete({ where: { path: docPath } }).catch(() => null));
-      res.json({ success: true });
-    } catch (e: any) {
-      res.status(500).json({ error: String(e) });
-    }
-  });
-
   // --- Dedicated ERP Settings Persistence Endpoints ---
   app.get("/api/erp/:companyId/settings", async (req, res) => {
     try {
@@ -7022,101 +6969,39 @@ function transliterate(str: string): string {
         idVariants.add(d.replace(/^b24_deal_/, ""));
       }
 
-      // Check all related docs in localStore and Postgres (sets, partner_sets, projects, partner_projects)
-      const inspectDocs = async (key: string) => {
-        const foundData: any[] = [];
-        // 1. Check localStore
-        for (const [path, doc] of (localStore as any).entries()) {
-          if (path.endsWith(`/${key}`) || path.includes(`/${key}/`)) {
+      // Check if any variant corresponds to a project document that contains bitrix24DealId
+      for (const v of Array.from(idVariants)) {
+        try {
+          const projs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+            where: { docId: v }
+          }));
+          for (const p of projs) {
             try {
-              foundData.push(typeof doc.data === 'string' ? JSON.parse(doc.data) : doc.data);
+              const pData = JSON.parse(p.data);
+              if (pData.bitrix24DealId) {
+                idVariants.add(String(pData.bitrix24DealId));
+                idVariants.add(`b24_deal_${pData.bitrix24DealId}`);
+              }
+              if (pData.b24DealId) {
+                idVariants.add(String(pData.b24DealId));
+                idVariants.add(`b24_deal_${pData.b24DealId}`);
+              }
             } catch (_) {}
           }
-        }
-        // 2. Check Postgres if available
-        if (isPostgresAvailable) {
-          try {
-            const dbDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
-              where: {
-                OR: [
-                  { docId: key },
-                  { path: { contains: key } }
-                ]
-              }
-            }));
-            for (const d of dbDocs) {
-              try {
-                foundData.push(typeof d.data === 'string' ? JSON.parse(d.data) : d.data);
-              } catch (_) {}
-            }
-          } catch (_) {}
-        }
-        return foundData;
-      };
-
-      const initialKeys = Array.from(idVariants);
-      for (const k of initialKeys) {
-        const dataList = await inspectDocs(k);
-        for (const item of dataList) {
-          if (!item) continue;
-          if (item.bitrix24DealId) {
-            idVariants.add(String(item.bitrix24DealId));
-            idVariants.add(`b24_deal_${item.bitrix24DealId}`);
-          }
-          if (item.b24DealId) {
-            idVariants.add(String(item.b24DealId));
-            idVariants.add(`b24_deal_${item.b24DealId}`);
-          }
-          if (item.setId) {
-            idVariants.add(String(item.setId));
-          }
-          if (item.data?.setId) {
-            idVariants.add(String(item.data.setId));
-          }
-          if (item.sourceProjectId) {
-            idVariants.add(String(item.sourceProjectId));
-          }
-          if (Array.isArray(item.projectIds)) {
-            item.projectIds.forEach((pid: string) => idVariants.add(String(pid)));
-          }
-          if (Array.isArray(item.subProjects)) {
-            item.subProjects.forEach((sp: any) => sp.id && idVariants.add(String(sp.id)));
-          }
-          if (item.contractNumber) {
-            idVariants.add(String(item.contractNumber));
-          }
-        }
+        } catch (_) {}
       }
 
       const collections = Array.from(idVariants).map(v => `b2b_order_chats/${v}/messages`);
+      const messagesDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
+        where: { collection: { in: collections } }
+      }));
+
       const messageMap = new Map<string, any>();
-
-      // 1. Read from localStore
-      for (const coll of collections) {
-        const localList = localStore.getCollection(coll);
-        for (const d of localList) {
-          try {
-            const msg = typeof d.data === 'string' ? JSON.parse(d.data) : d.data;
-            if (msg && msg.id && !messageMap.has(msg.id)) {
-              messageMap.set(msg.id, msg);
-            }
-          } catch (_) {}
-        }
-      }
-
-      // 2. Read from Prisma
-      if (isPostgresAvailable) {
+      for (const d of messagesDocs) {
         try {
-          const messagesDocs = await dbQueryWithRetry(() => prisma.dbDocument.findMany({
-            where: { collection: { in: collections } }
-          }));
-          for (const d of messagesDocs) {
-            try {
-              const msg = JSON.parse(d.data);
-              if (msg && msg.id && !messageMap.has(msg.id)) {
-                messageMap.set(msg.id, msg);
-              }
-            } catch (_) {}
+          const msg = JSON.parse(d.data);
+          if (msg && msg.id && !messageMap.has(msg.id)) {
+            messageMap.set(msg.id, msg);
           }
         } catch (_) {}
       }
@@ -7167,7 +7052,7 @@ function transliterate(str: string): string {
         createdAt: new Date().toISOString()
       };
 
-      // Collect all alias identifiers in the cluster so both sides see every message
+      // Collect all alias identifiers so both portals and website see the exact same history
       const idVariants = new Set<string>();
       const s = String(orderId).trim();
       idVariants.add(s);
@@ -7184,44 +7069,20 @@ function transliterate(str: string): string {
         idVariants.add(d.replace(/^b24_deal_/, ""));
       }
 
-      // Also inspect related docs from localStore and DB
-      for (const [path, doc] of (localStore as any).entries()) {
-        if (path.endsWith(`/${s}`) || path.includes(`/${s}/`)) {
-          try {
-            const item = typeof doc.data === 'string' ? JSON.parse(doc.data) : doc.data;
-            if (item) {
-              if (item.bitrix24DealId) idVariants.add(String(item.bitrix24DealId));
-              if (item.b24DealId) idVariants.add(String(item.b24DealId));
-              if (item.setId) idVariants.add(String(item.setId));
-              if (item.data?.setId) idVariants.add(String(item.data.setId));
-              if (item.sourceProjectId) idVariants.add(String(item.sourceProjectId));
-              if (Array.isArray(item.projectIds)) item.projectIds.forEach((pid: string) => idVariants.add(String(pid)));
-            }
-          } catch (_) {}
-        }
-      }
-
-      // Save to all alias collections in both localStore and DB
-      const msgJson = JSON.stringify(messageDoc);
+      // Save to all alias collections in DB
       for (const v of idVariants) {
-        const coll = `b2b_order_chats/${v}/messages`;
-        const itemPath = `${coll}/${messageId}`;
-        localStore.setDoc(itemPath, coll, messageId, msgJson, true, false);
-
-        if (isPostgresAvailable) {
-          dbQueryWithRetry(() => prisma.dbDocument.upsert({
-            where: { path: itemPath },
-            create: {
-              path: itemPath,
-              collection: coll,
-              docId: messageId,
-              data: msgJson
-            },
-            update: {
-              data: msgJson
-            }
-          })).catch(() => {});
-        }
+        await dbQueryWithRetry(() => prisma.dbDocument.upsert({
+          where: { path: `b2b_order_chats/${v}/messages/${messageId}` },
+          create: {
+            path: `b2b_order_chats/${v}/messages/${messageId}`,
+            collection: `b2b_order_chats/${v}/messages`,
+            docId: messageId,
+            data: JSON.stringify(messageDoc)
+          },
+          update: {
+            data: JSON.stringify(messageDoc)
+          }
+        })).catch(() => {});
       }
 
       // 2. Dispatch cross-portal notification to the other party's Bitrix24 portal
@@ -7306,9 +7167,8 @@ function transliterate(str: string): string {
     }
   });
 
+  const isDev = process.env.NODE_ENV !== "production";
   const distPath = path.join(process.cwd(), 'dist');
-  const hasDist = fs.existsSync(path.join(distPath, 'index.html'));
-  const isDev = process.env.NODE_ENV === "development" || (!hasDist && process.env.NODE_ENV !== "production");
 
   console.log(`--- [STARTUP] Mode: ${isDev ? 'DEVELOPMENT' : 'PRODUCTION'} ---`);
   console.log(`--- [SMTP ENV] Host: ${process.env.SMTP_HOST || 'EMPTY'}, Port: ${process.env.SMTP_PORT || 'EMPTY'}, User: ${process.env.SMTP_USER || 'EMPTY'} ---`);

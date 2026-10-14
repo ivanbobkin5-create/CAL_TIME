@@ -16,20 +16,12 @@ import {
 } from 'lucide-react';
 import { WarehouseItem } from '../views/WarehouseView';
 import { cn } from '../../../lib/utils';
-import { 
-  formatLdspTitle, 
-  formatMdfTitle, 
-  formatEdgeTitle, 
-  BRAND_SHEET_SPECS, 
-  BRAND_TO_MATERIAL_TYPE 
-} from '../../../utils/materialNaming';
 
 interface ImportCalculatorCatalogModalProps {
   companyId: string;
   catalogProducts?: any[];
   catalogMaterials?: Record<string, string[]>;
   existingWarehouseItems: WarehouseItem[];
-  activeBrands?: string[];
   onClose: () => void;
   onImportComplete: (importedItems: WarehouseItem[]) => void;
   currentUser?: any;
@@ -74,7 +66,6 @@ export const ImportCalculatorCatalogModal: React.FC<ImportCalculatorCatalogModal
   catalogProducts = [],
   catalogMaterials = {},
   existingWarehouseItems = [],
-  activeBrands = [],
   onClose,
   onImportComplete,
   currentUser
@@ -83,7 +74,6 @@ export const ImportCalculatorCatalogModal: React.FC<ImportCalculatorCatalogModal
   const [selectedCategory, setSelectedCategory] = useState('Все категории');
   const [statusFilter, setStatusFilter] = useState<'new_only' | 'all' | 'existing'>('new_only');
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [filterActiveBrandsOnly, setFilterActiveBrandsOnly] = useState(true);
 
   // Extract all catalog items from catalogProducts & catalogMaterials
   const candidateItems = useMemo(() => {
@@ -109,43 +99,15 @@ export const ImportCalculatorCatalogModal: React.FC<ImportCalculatorCatalogModal
 
     // 1. Process catalogProducts
     catalogProducts.forEach((p, idx) => {
-      let name = (p.name || p.title || `Товар #${p.id || idx}`).trim();
+      const name = (p.name || p.title || `Товар #${p.id || idx}`).trim();
       if (!name) return;
 
       const rawSku = p.sku || p.article || p.code || (Array.isArray(p.accountingSkus) ? p.accountingSkus[0] : '') || '';
       const sku = rawSku ? String(rawSku).trim() : '';
       const category = detectWarehouseCategory(name, p.category || p.customCategory);
-      const supplier = p.supplier || p.brand || p.manufacturer || '';
-
-      // Check active brands filter
-      if (filterActiveBrandsOnly && activeBrands && activeBrands.length > 0 && supplier) {
-        if (!activeBrands.includes(supplier)) return;
-      }
-
-      // If product has brand and decor, format according to standard
-      if (category === 'ЛДСП' && p.brand && p.decor) {
-        name = formatLdspTitle({
-          brand: p.brand,
-          decor: p.decor,
-          thickness: p.thickness || 16
-        });
-      } else if (category === 'МДФ' && p.brand && p.decor) {
-        name = formatMdfTitle({
-          brand: p.brand,
-          decor: p.decor,
-          thickness: p.thickness || 18
-        });
-      } else if (category === 'Кромка' && p.brand && p.decor) {
-        name = formatEdgeTitle({
-          brand: p.brand,
-          decor: p.decor,
-          thickness: p.thickness || '0.4',
-          height: p.height
-        });
-      }
-
       const price = Number(p.purchasePrice || p.price || p.cost) || 0;
       const unit = p.unit || (category === 'ЛДСП' || category === 'МДФ' ? 'лист' : category === 'Кромка' ? 'м.п.' : 'шт');
+      const supplier = p.supplier || p.brand || p.manufacturer || '';
 
       const isAlready = existingNameSet.has(name.toLowerCase()) || (rawSku && existingSkuSet.has(rawSku.toLowerCase()));
       const existingMatch = existingWarehouseItems.find(
@@ -166,158 +128,38 @@ export const ImportCalculatorCatalogModal: React.FC<ImportCalculatorCatalogModal
       });
     });
 
-    // 2. Process catalogMaterials (brands and decors with exact standard naming)
+    // 2. Process catalogMaterials (brands and decors)
     Object.entries(catalogMaterials).forEach(([brand, decors]) => {
       if (!Array.isArray(decors)) return;
-
-      // Filter by company active brands if toggle is on
-      if (filterActiveBrandsOnly && activeBrands && activeBrands.length > 0) {
-        if (!activeBrands.includes(brand)) return;
-      }
-
-      const brandType = BRAND_TO_MATERIAL_TYPE[brand] || (brand.includes('AGT') || brand.includes('Evosoft') || brand.includes('FENIX') ? 'МДФ' : 'ЛДСП');
-      const spec = BRAND_SHEET_SPECS[brand];
-
       decors.forEach((decor, dIdx) => {
         if (!decor || typeof decor !== 'string') return;
         const cleanDecor = decor.trim();
+        const fullName = `${brand} ${cleanDecor}`;
+        
+        const category = detectWarehouseCategory(fullName);
+        const unit = category === 'ЛДСП' || category === 'МДФ' ? 'лист' : category === 'Кромка' ? 'м.п.' : 'шт';
+        const sku = '';
 
-        if (brandType === 'ЛДСП') {
-          // Generate available thicknesses for this LDSP brand (e.g. 16mm default, and 10mm, 25mm for Egger)
-          const thicknesses = spec?.availableThicknesses || [16];
-          thicknesses.forEach(thick => {
-            const formattedName = formatLdspTitle({
-              brand,
-              decor: cleanDecor,
-              thickness: thick
-            });
+        const isAlready = existingNameSet.has(fullName.toLowerCase());
+        const existingMatch = existingWarehouseItems.find(w => w.name.toLowerCase() === fullName.toLowerCase());
 
-            const isAlready = existingNameSet.has(formattedName.toLowerCase());
-            const existingMatch = existingWarehouseItems.find(w => w.name.toLowerCase() === formattedName.toLowerCase());
-
-            list.push({
-              id: `calc_mat_${brand}_${dIdx}_th${thick}`,
-              sku: '',
-              name: formattedName,
-              category: 'ЛДСП',
-              unit: 'лист',
-              price: 0,
-              supplier: brand,
-              isAlreadyInWarehouse: isAlready,
-              existingWarehouseItem: existingMatch,
-              source: 'material'
-            });
-          });
-
-          // Also generate matching edges for this LDSP decor (e.g. 0.4/19, 2/19, and 1.5/36 for Egger/Rehau)
-          const edgeHeights = [
-            { thick: '0.4', height: '19' },
-            { thick: '2', height: '19' }
-          ];
-          if (brand === 'Egger') {
-            edgeHeights.push({ thick: '1.5', height: '36' });
-          }
-
-          edgeHeights.forEach(eh => {
-            const edgeName = formatEdgeTitle({
-              brand,
-              decor: cleanDecor,
-              thickness: eh.thick,
-              height: eh.height
-            });
-            const isEdgeAlready = existingNameSet.has(edgeName.toLowerCase());
-            const existingEdgeMatch = existingWarehouseItems.find(w => w.name.toLowerCase() === edgeName.toLowerCase());
-
-            list.push({
-              id: `calc_mat_edge_${brand}_${dIdx}_${eh.thick}_${eh.height}`,
-              sku: '',
-              name: edgeName,
-              category: 'Кромка',
-              unit: 'м.п.',
-              price: 0,
-              supplier: brand,
-              isAlreadyInWarehouse: isEdgeAlready,
-              existingWarehouseItem: existingEdgeMatch,
-              source: 'material'
-            });
-          });
-
-        } else if (brandType === 'МДФ') {
-          // Format MDF sheet
-          const mdfName = formatMdfTitle({
-            brand,
-            decor: cleanDecor,
-            thickness: spec?.defaultThickness || 18
-          });
-
-          const isAlready = existingNameSet.has(mdfName.toLowerCase());
-          const existingMatch = existingWarehouseItems.find(w => w.name.toLowerCase() === mdfName.toLowerCase());
-
-          list.push({
-            id: `calc_mat_mdf_${brand}_${dIdx}`,
-            sku: '',
-            name: mdfName,
-            category: 'МДФ',
-            unit: 'лист',
-            price: 0,
-            supplier: brand,
-            isAlreadyInWarehouse: isAlready,
-            existingWarehouseItem: existingMatch,
-            source: 'material'
-          });
-
-          // Matching edge for MDF (height 22mm for 18mm board)
-          const edgeName = formatEdgeTitle({
-            brand,
-            decor: cleanDecor,
-            thickness: '1',
-            height: '22'
-          });
-          const isEdgeAlready = existingNameSet.has(edgeName.toLowerCase());
-          const existingEdgeMatch = existingWarehouseItems.find(w => w.name.toLowerCase() === edgeName.toLowerCase());
-
-          list.push({
-            id: `calc_mat_mdf_edge_${brand}_${dIdx}`,
-            sku: '',
-            name: edgeName,
-            category: 'Кромка',
-            unit: 'м.п.',
-            price: 0,
-            supplier: brand,
-            isAlreadyInWarehouse: isEdgeAlready,
-            existingWarehouseItem: existingEdgeMatch,
-            source: 'material'
-          });
-
-        } else {
-          // Other generic materials or edges
-          const category = detectWarehouseCategory(cleanDecor);
-          const unit = category === 'Кромка' ? 'м.п.' : 'шт';
-          const name = category === 'Кромка'
-            ? formatEdgeTitle({ brand, decor: cleanDecor, thickness: '0.4', height: '19' })
-            : `${brand} ${cleanDecor}`;
-
-          const isAlready = existingNameSet.has(name.toLowerCase());
-          const existingMatch = existingWarehouseItems.find(w => w.name.toLowerCase() === name.toLowerCase());
-
-          list.push({
-            id: `calc_mat_${brand}_${dIdx}`,
-            sku: '',
-            name,
-            category,
-            unit,
-            price: 0,
-            supplier: brand,
-            isAlreadyInWarehouse: isAlready,
-            existingWarehouseItem: existingMatch,
-            source: 'material'
-          });
-        }
+        list.push({
+          id: `calc_mat_${brand}_${dIdx}`,
+          sku,
+          name: fullName,
+          category,
+          unit,
+          price: 0,
+          supplier: brand,
+          isAlreadyInWarehouse: isAlready,
+          existingWarehouseItem: existingMatch,
+          source: 'material'
+        });
       });
     });
 
     return list;
-  }, [catalogProducts, catalogMaterials, existingWarehouseItems, filterActiveBrandsOnly, activeBrands]);
+  }, [catalogProducts, catalogMaterials, existingWarehouseItems]);
 
   // Selected item IDs
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => {

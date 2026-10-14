@@ -26,9 +26,7 @@ import {
   X,
   Check,
   AlertTriangle,
-  MessageSquare,
 } from "lucide-react";
-import { B2BOrderChatModal } from "../Bitrix24/B2BOrderChatModal";
 // TimeWeb DB Setup
 const db = {};
 const handleDbError = (e: any, op: any, path: string) => console.warn("Database error:", op, path, e);
@@ -278,7 +276,6 @@ export const ProjectsView = ({
   const [selectedMonth, setSelectedMonth] = useState<string>("all");
   const [sortBy, setSortBy] = useState<"date-desc" | "date-asc" | "price-desc" | "price-asc">("date-desc");
   const [isCreatingSet, setIsCreatingSet] = useState(false);
-  const [selectedOrderForChat, setSelectedOrderForChat] = useState<any | null>(null);
 
   const handleTransfer = async (e: React.MouseEvent, project: Project) => {
     e.stopPropagation();
@@ -955,66 +952,34 @@ export const ProjectsView = ({
         });
       }
 
-      // 2. Create the exact copies in the partner manufacturer's space (both partner collections and main sets/projects)
+      // 2. Create the exact copies in the partner manufacturer's space
       const partnerSetRef = doc(db, "companies", targetManufacturerId, "partner_sets", set.id);
-      const mfgSetRef = doc(db, "companies", targetManufacturerId, "sets", set.id);
       const partnerSetData = {
         ...set,
         status: "pending",
         originalSalonId: companyId,
         originalSalonName: companyData?.name || "Салон-партнер",
-        targetManufacturerId,
         createdAt: timestamp,
       };
       batch.set(partnerSetRef, partnerSetData);
-      batch.set(mfgSetRef, { ...partnerSetData, isPartnerOrder: true });
 
       for (const sp of subProjs) {
         const partnerProjRef = doc(db, "companies", targetManufacturerId, "partner_projects", sp.id);
-        const mfgProjRef = doc(db, "companies", targetManufacturerId, "projects", sp.id);
         const partnerProjData = {
           ...sp,
           status: "pending",
           originalSalonId: companyId,
           originalSalonName: companyData?.name || "Салон-партнер",
-          targetManufacturerId,
           createdAt: timestamp,
         };
         batch.set(partnerProjRef, partnerProjData);
-        batch.set(mfgProjRef, { ...partnerProjData, isPartnerOrder: true });
       }
 
       await batch.commit();
 
-      // 3. Automatically register into target manufacturer's ERP orders queue
-      try {
-        const erpOrderId = `set_${set.id}`;
-        await fetch(`/api/companies/${targetManufacturerId}/erp_orders/${erpOrderId}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            id: erpOrderId,
-            orderNumber: set.contractNumber || set.id.slice(0, 6),
-            clientName: set.clientName || companyData?.name || "Салон-партнер",
-            projectName: set.name || `Заказ от ${companyData?.name || "партнера"}`,
-            salonName: companyData?.name || "Салон-партнер",
-            originalSalonId: companyId,
-            sourceSetId: set.id,
-            createdAt: timestamp.substring(0, 10),
-            deadlineDate: set.deadlineDate || new Date(Date.now() + 10 * 86400000).toISOString().substring(0, 10),
-            currentStage: 'queue',
-            priority: 'high',
-            status: 'in_progress',
-            priceTotal: set.totalPrice || 0,
-            subProjectsCount: subProjs.length
-          })
-        });
-      } catch (_) {}
-
       // Optimistic local state updates
-      setLocalSets(prev => prev.map(s => s.id === set.id ? { ...s, status: "production_transferred", targetManufacturerId } : s));
+      setLocalSets(prev => prev.map(s => s.id === set.id ? { ...s, status: "production_transferred" } : s));
       const subProjIds = new Set(subProjs.map(p => p.id));
-      setLocalProjects(prev => prev.map(p => subProjIds.has(p.id) ? { ...p, status: "production_transferred", targetManufacturerId } : p));
       setLocalProjects(prev => prev.map(p => subProjIds.has(p.id) ? { ...p, status: "production_transferred" } : p));
 
       if (showAlert) showAlert("Успешно", "Заказ успешно передан в производство партнера!");
@@ -1691,24 +1656,6 @@ export const ProjectsView = ({
                                         Принят производством
                                       </span>
                                     )}
-                                    {(setStatus === "production_transferred" || setStatus === "accepted" || setStatus === "accepted_with_revisions" || set.isPartnerOrder || set.originalSalonId) && (
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setSelectedOrderForChat({
-                                            id: set.id,
-                                            name: set.name || `Заказ №${set.contractNumber || set.id.slice(0, 6)}`,
-                                            partnerCompanyId: set.isPartnerOrder ? set.originalSalonId : (set.targetManufacturerId || set.manufacturerId || (set as any).sourceCompanyId || ''),
-                                            partnerCompanyName: set.isPartnerOrder ? (set.originalSalonName || "Салон-партнер") : "Производство",
-                                            partnerDealId: set.bitrix24DealId || null
-                                          });
-                                        }}
-                                        className="px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-                                      >
-                                        <MessageSquare className="w-3 h-3 text-blue-600" />
-                                        <span>Чат {set.isPartnerOrder ? "с салоном" : "с производством"}</span>
-                                      </button>
-                                    )}
                                   </div>
                                   <div className="flex items-center gap-3 text-[11px] text-gray-500 flex-wrap">
                                     <span className="flex items-center gap-1">
@@ -1825,26 +1772,6 @@ export const ProjectsView = ({
                                         >
                                           <AlertTriangle className="w-4 h-4 text-rose-500" />
                                           Вернуть на доработку
-                                        </button>
-                                      )}
-
-                                      {(setStatus === "production_transferred" || setStatus === "accepted" || setStatus === "accepted_with_revisions" || set.isPartnerOrder || set.originalSalonId) && (
-                                        <button
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setOpenMenuId(null);
-                                            setSelectedOrderForChat({
-                                              id: set.id,
-                                              name: set.name || `Заказ №${set.contractNumber || set.id.slice(0, 6)}`,
-                                              partnerCompanyId: set.isPartnerOrder ? set.originalSalonId : (set.targetManufacturerId || set.manufacturerId || (set as any).sourceCompanyId || ''),
-                                              partnerCompanyName: set.isPartnerOrder ? (set.originalSalonName || "Салон-партнер") : "Производство",
-                                              partnerDealId: set.bitrix24DealId || null
-                                            });
-                                          }}
-                                          className="w-full text-left px-4 py-2.5 text-xs font-semibold text-blue-600 hover:bg-blue-50 flex items-center gap-2"
-                                        >
-                                          <MessageSquare className="w-4 h-4 text-blue-500" />
-                                          Чат {set.isPartnerOrder ? "с салоном" : "с производством"}
                                         </button>
                                       )}
 
@@ -2185,21 +2112,6 @@ export const ProjectsView = ({
                             {(userRole === "admin" || userRole === "supervisor") && (project.status === "sent" || project.status === "production_transferred") && (
                               <button onClick={(e) => { e.stopPropagation(); setReturnOrderModal({ item: project, isSet: false }); setOpenMenuId(null); }} className="w-full text-left px-4 py-2 hover:bg-rose-50 text-xs font-semibold text-rose-600 flex items-center gap-2">
                                 <AlertTriangle className="w-4 h-4 text-rose-500" /> Вернуть на доработку
-                              </button>
-                            )}
-                            {((project as any).status === "production_transferred" || (project as any).status === "accepted" || (project as any).status === "accepted_with_revisions" || (project as any).isPartnerOrder || (project as any).originalSalonId) && (
-                              <button onClick={(e) => {
-                                e.stopPropagation();
-                                setOpenMenuId(null);
-                                setSelectedOrderForChat({
-                                  id: project.id,
-                                  name: project.name || `Проект #${project.id.slice(0, 6)}`,
-                                  partnerCompanyId: (project as any).isPartnerOrder ? (project as any).originalSalonId : ((project as any).targetManufacturerId || (project as any).manufacturerId || ''),
-                                  partnerCompanyName: (project as any).isPartnerOrder ? ((project as any).originalSalonName || "Салон-партнер") : "Производство",
-                                  partnerDealId: (project as any).bitrix24DealId || null
-                                });
-                              }} className="w-full text-left px-4 py-2 hover:bg-blue-50 text-xs font-semibold text-blue-600 flex items-center gap-2">
-                                <MessageSquare className="w-4 h-4 text-blue-500" /> Чат {(project as any).isPartnerOrder ? "с салоном" : "с производством"}
                               </button>
                             )}
                             {project.status === "sent" && (
@@ -2659,21 +2571,6 @@ export const ProjectsView = ({
             </div>
           </div>
         </div>
-      )}
-
-      {selectedOrderForChat && (
-        <B2BOrderChatModal
-          orderId={selectedOrderForChat.id}
-          orderName={selectedOrderForChat.name}
-          currentCompanyId={companyId}
-          currentCompanyName={companyData?.name || "Моя компания"}
-          currentCompanyType={companyType || "Салон"}
-          partnerCompanyId={selectedOrderForChat.partnerCompanyId}
-          partnerCompanyName={selectedOrderForChat.partnerCompanyName}
-          partnerDealId={selectedOrderForChat.partnerDealId}
-          onClose={() => setSelectedOrderForChat(null)}
-          showAlert={showAlert}
-        />
       )}
     </div>
   );
