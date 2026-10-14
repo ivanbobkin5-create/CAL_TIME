@@ -1,19 +1,19 @@
-import React, { useState, useEffect } from 'react';
-import App from './App';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { LandingPage } from './components/Landing/LandingPage';
 import { LoginForm } from './components/Auth/LoginForm';
 import { RegistrationForm, RegistrationData } from './components/Auth/RegistrationForm';
 import { Calculator } from 'lucide-react';
 
+// Lazy-load the heavy App module so the site initial entry (Landing Page / Auth) loads instantly
+const App = lazy(() => import('./App'));
+
 function getInitialView(): 'landing' | 'login' | 'register' | 'app' {
   if (typeof window === 'undefined') return 'landing';
 
-  // 1. Bitrix24 embedded mode (check for explicit Bitrix24 URL params)
+  // 1. Bitrix24 embedded mode
   const s = window.location.search || '';
   const hasB24Params = s.includes('DOMAIN=') || s.includes('member_id=') || s.includes('PLACEMENT=') || s.includes('AUTH_ID=');
-  if (hasB24Params) {
-    return 'app';
-  }
+  if (hasB24Params) return 'app';
 
   // 2. Direct Admin / App routes
   const p = window.location.pathname || '/';
@@ -27,7 +27,7 @@ function getInitialView(): 'landing' | 'login' | 'register' | 'app' {
     return 'app';
   }
 
-  // 4. Custom company direct slug route (e.g. /mebelfaktura)
+  // 4. Custom company direct slug route
   const segments = p.split('/').filter(Boolean);
   const reservedSystemRoutes = [
     '', 'login', 'register', 'admin', 'dashboard', 'api', 'assets', 'static', 'favicon.ico', 'c',
@@ -40,18 +40,27 @@ function getInitialView(): 'landing' | 'login' | 'register' | 'app' {
     return 'app';
   }
 
-  // 5. Deep-links to auth
+  // 5. Auth routes
   if (p === '/login') return 'login';
   if (p === '/register') return 'register';
 
-  // Default: Landing Page
   return 'landing';
+}
+
+function LoadingSpinner() {
+  return (
+    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
+      <div className="flex items-center gap-3">
+        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+        <span className="text-white font-medium text-base">Загрузка личного кабинета...</span>
+      </div>
+    </div>
+  );
 }
 
 export default function RootApp() {
   const [view, setView] = useState<'landing' | 'login' | 'register' | 'app'>(getInitialView);
 
-  // Handle browser back/forward or hash changes
   useEffect(() => {
     const handlePopState = () => {
       setView(getInitialView());
@@ -178,7 +187,6 @@ export default function RootApp() {
     handleEnterApp();
   };
 
-  // 1. Landing Page
   if (view === 'landing') {
     return (
       <LandingPage
@@ -188,7 +196,6 @@ export default function RootApp() {
     );
   }
 
-  // 2. Login View
   if (view === 'login') {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
@@ -217,7 +224,6 @@ export default function RootApp() {
     );
   }
 
-  // 3. Register View
   if (view === 'register') {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
@@ -246,6 +252,9 @@ export default function RootApp() {
     );
   }
 
-  // 4. App Workspace (Instant direct render, no preloader!)
-  return <App />;
+  return (
+    <Suspense fallback={<LoadingSpinner />}>
+      <App />
+    </Suspense>
+  );
 }
