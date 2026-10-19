@@ -1,7 +1,23 @@
-import {StrictMode, Component, ErrorInfo, ReactNode} from 'react';
+import React, { StrictMode, Component, ErrorInfo, ReactNode } from 'react';
+import * as ReactNS from 'react';
 import {createRoot} from 'react-dom/client';
 import RootApp from './RootApp.tsx';
 import './index.css';
+
+// Polyfill React.forwardRef for older or bundled vendor libraries running on React 19
+try {
+  const r: any = React || ReactNS;
+  if (r) {
+    if (!r.forwardRef && ReactNS.forwardRef) r.forwardRef = ReactNS.forwardRef;
+    if (!r.memo && ReactNS.memo) r.memo = ReactNS.memo;
+    if (!r.useCallback && ReactNS.useCallback) r.useCallback = ReactNS.useCallback;
+    if (!r.useEffect && ReactNS.useEffect) r.useEffect = ReactNS.useEffect;
+    if (!r.useState && ReactNS.useState) r.useState = ReactNS.useState;
+    if (!r.useRef && ReactNS.useRef) r.useRef = ReactNS.useRef;
+    if (!r.useMemo && ReactNS.useMemo) r.useMemo = ReactNS.useMemo;
+    (window as any).React = r;
+  }
+} catch (e) {}
 
 const appVersion = "1.0.1";
 console.log("App version: ", appVersion);
