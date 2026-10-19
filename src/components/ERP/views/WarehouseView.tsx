@@ -164,6 +164,34 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
   const [formStorageCell, setFormStorageCell] = useState('');
   const [formNotes, setFormNotes] = useState('');
   const [formShowInCalculator, setFormShowInCalculator] = useState(true);
+  const [materialSuggestions, setMaterialSuggestions] = useState<any[]>([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+
+  const handleNameChange = (val: string) => {
+    setFormName(val);
+    if (val.trim().length >= 2) {
+      setIsLoadingSuggestions(true);
+      fetch(`/api/materials/reference?q=${encodeURIComponent(val.trim())}&limit=8`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.materials && Array.isArray(data.materials)) {
+            setMaterialSuggestions(data.materials);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setIsLoadingSuggestions(false));
+    } else {
+      setMaterialSuggestions([]);
+    }
+  };
+
+  const handleSelectMaterialSuggestion = (mat: any) => {
+    setFormName(mat.name);
+    if (mat.category) setFormCategory(mat.category);
+    if (mat.unit) setFormUnit(mat.unit);
+    if (mat.brand) setFormSupplier(mat.brand);
+    setMaterialSuggestions([]);
+  };
 
   // Arrival form state
   const [arrivalItemId, setArrivalItemId] = useState('');
@@ -242,94 +270,11 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
     fetchWarehouseData();
   }, [companyId]);
 
-  // Automated background sync between catalog products/materials and warehouse items
+  // Automatically cleanup old dummy items with 0 quantity from previous auto-sync
   useEffect(() => {
-    if ((!catalogProducts || catalogProducts.length === 0) && (!catalogMaterials || Object.keys(catalogMaterials).length === 0)) return;
-
-    setWarehouseItems(prev => {
-      const existingNameSet = new Set(prev.map(w => w.name.toLowerCase().trim()));
-      const existingSkuSet = new Set(prev.map(w => (w.sku || '').toLowerCase().trim()).filter(Boolean));
-      const newItems: WarehouseItem[] = [];
-
-      // 1. Catalog Products
-      (catalogProducts || []).forEach((p: any, idx: number) => {
-        const name = (p.name || p.title || '').trim();
-        if (!name) return;
-        const rawSku = (p.sku || p.article || p.code || (Array.isArray(p.accountingSkus) ? p.accountingSkus[0] : '') || '').trim();
-        const category = detectWarehouseCategory(name, p.category || p.customCategory);
-
-        if (!existingNameSet.has(name.toLowerCase()) && (!rawSku || !existingSkuSet.has(rawSku.toLowerCase()))) {
-          const newItem: WarehouseItem = {
-            id: `wh-item-auto-${p.id || idx}-${Date.now()}`,
-            sku: rawSku || '',
-            name,
-            category,
-            unit: p.unit || (category === 'ЛДСП' || category === 'МДФ' ? 'лист' : category === 'Кромка' ? 'м.п.' : 'шт'),
-            quantity: 0,
-            reservedQty: 0,
-            availableQty: 0,
-            minThreshold: 0,
-            price: Number(p.purchasePrice || p.price || p.cost) || 0,
-            supplier: p.supplier || p.brand || p.manufacturer || '',
-            storageCell: '',
-            notes: '',
-            showInCalculator: true,
-            isResidual: false,
-            updatedAt: new Date().toISOString(),
-            updatedBy: 'Система (Авто-синхронизация)'
-          };
-          newItems.push(newItem);
-          existingNameSet.add(name.toLowerCase());
-          if (rawSku) existingSkuSet.add(rawSku.toLowerCase());
-        }
-      });
-
-      // 2. Catalog Materials
-      Object.entries(catalogMaterials || {}).forEach(([brand, decors]) => {
-        if (!Array.isArray(decors)) return;
-        decors.forEach((decor: any) => {
-          if (!decor || typeof decor !== 'string') return;
-          const cleanDecor = decor.trim();
-          const fullName = `${brand} ${cleanDecor}`;
-          if (!existingNameSet.has(fullName.toLowerCase())) {
-            const newItem: WarehouseItem = {
-              id: `wh-item-auto-mat-${brand}_${cleanDecor.replace(/\s+/g, '_')}-${Date.now()}`,
-              sku: '',
-              name: fullName,
-              category: fullName.toLowerCase().includes('кромка') ? 'Кромка' : 'ЛДСП',
-              unit: fullName.toLowerCase().includes('кромка') ? 'м.п.' : 'лист',
-              quantity: 0,
-              reservedQty: 0,
-              availableQty: 0,
-              minThreshold: 0,
-              price: 0,
-              supplier: brand,
-              storageCell: '',
-              notes: '',
-              showInCalculator: true,
-              isResidual: false,
-              updatedAt: new Date().toISOString(),
-              updatedBy: 'Система (Авто-синхронизация)'
-            };
-            newItems.push(newItem);
-            existingNameSet.add(fullName.toLowerCase());
-          }
-        });
-      });
-
-      if (newItems.length > 0) {
-        fetch(`/api/companies/${companyId}/warehouse-items/bulk`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ items: newItems })
-        }).catch(() => {});
-
-        return [...newItems, ...prev];
-      }
-
-      return prev;
-    });
-  }, [catalogProducts, catalogMaterials, companyId]);
+    if (!companyId) return;
+    fetch(`/api/companies/${companyId}/warehouse-items/cleanup-empty`, { method: 'POST' }).catch(() => {});
+  }, [companyId]);
 
   // Count items from calculator not yet on warehouse
   const missingCalcCount = useMemo(() => {
@@ -1100,9 +1045,26 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                 <tbody className="divide-y divide-gray-100 text-xs font-medium text-gray-700">
                   {filteredStock.length === 0 ? (
                     <tr>
-                      <td colSpan={11} className="py-12 text-center text-gray-400">
-                        <Box className="w-10 h-10 mx-auto text-gray-300 mb-2" />
-                        По вашему запросу не найдено ни одной позиции на складе.
+                      <td colSpan={11} className="py-12 text-center">
+                        <div className="max-w-md mx-auto p-6 bg-slate-50 border border-slate-200 rounded-2xl text-center space-y-3">
+                          <Box className="w-10 h-10 mx-auto text-slate-400" />
+                          <div className="font-extrabold text-slate-800 text-sm">
+                            {searchQuery ? `Материал «${searchQuery}» отсутствует на складе` : 'На складе компании пока нет материалов'}
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            Текущий физический остаток в наличии: <strong className="text-rose-600 font-bold">0 шт.</strong>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormName(searchQuery);
+                              setShowAddItemModal(true);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm cursor-pointer"
+                          >
+                            <Plus className="w-4 h-4" /> Оприходовать этот материал на склад
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ) : (
@@ -1611,16 +1573,45 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
                 </div>
               </div>
 
-              <div>
-                <label className="block mb-1 font-bold text-gray-700">Наименование позиции *</label>
+              <div className="relative">
+                <div className="flex items-center justify-between mb-1">
+                  <label className="font-bold text-gray-700">Наименование позиции *</label>
+                  <span className="text-[10px] text-blue-600 font-semibold">Общий справочник плит и кромок</span>
+                </div>
                 <input
                   type="text"
                   required
                   value={formName}
-                  onChange={(e) => setFormName(e.target.value)}
-                  placeholder="например: Петля Blum Clip Top 110° с доводчиком"
+                  onChange={(e) => handleNameChange(e.target.value)}
+                  placeholder="Начните вводить декор, бренд или название (Egger, Дуб галифакс, W980...)"
                   className="w-full px-3 py-2 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500/20 font-bold text-gray-900"
                 />
+
+                {/* Autocomplete suggestions from shared materials reference */}
+                {materialSuggestions.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 max-h-56 overflow-y-auto divide-y divide-slate-100">
+                    <div className="p-2 bg-slate-50 text-[10px] uppercase font-bold text-slate-500 tracking-wider">
+                      Найдено в общем справочнике материалов:
+                    </div>
+                    {materialSuggestions.map((mat) => (
+                      <div
+                        key={mat.id}
+                        onClick={() => handleSelectMaterialSuggestion(mat)}
+                        className="p-2.5 hover:bg-blue-50 cursor-pointer flex items-center justify-between transition-colors"
+                      >
+                        <div>
+                          <div className="font-bold text-slate-900 text-xs">{mat.name}</div>
+                          <div className="text-[10px] text-slate-500">
+                            {mat.brand} • {mat.category} • {mat.standardSize || '2800х2070 мм'}
+                          </div>
+                        </div>
+                        <span className="text-[10px] font-bold px-2 py-0.5 bg-blue-100 text-blue-800 rounded-md">
+                          Выбрать
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-3 gap-3">

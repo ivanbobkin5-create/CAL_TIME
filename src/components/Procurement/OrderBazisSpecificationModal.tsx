@@ -692,16 +692,51 @@ export const OrderBazisSpecificationModal: React.FC<OrderBazisSpecificationModal
                               </span>
                             </td>
                             <td className="p-3">
-                              {item.matchedWarehouseItemName ? (
-                                <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200">
-                                  <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
-                                  <span className="truncate">{item.matchedWarehouseItemName}</span>
-                                </span>
-                              ) : (
-                                <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-2.5 py-1 rounded-xl border border-amber-200 inline-block">
-                                  Нет в остатках
-                                </span>
-                              )}
+                              {(() => {
+                                const matchedW = warehouseItems.find(w => 
+                                  w.id === item.matchedWarehouseItemId ||
+                                  (item.article && (w.article || (w as any).sku || '').toLowerCase() === item.article.toLowerCase()) ||
+                                  w.name.toLowerCase() === item.name.toLowerCase()
+                                );
+                                const stock = matchedW ? ((matchedW as any).availableQty ?? (matchedW as any).quantity ?? matchedW.stock ?? 0) : 0;
+                                const reserved = matchedW ? ((matchedW as any).reservedQty || 0) : 0;
+                                const deficit = Math.max(0, item.quantity - stock);
+
+                                if (!matchedW || (stock === 0 && reserved === 0)) {
+                                  return (
+                                    <div className="space-y-1">
+                                      <span className="text-[10px] font-bold text-rose-700 bg-rose-50 px-2 py-0.5 rounded-lg border border-rose-200 inline-block">
+                                        Остаток: 0 {item.unit}
+                                      </span>
+                                      <div className="text-[10px] text-rose-600 font-extrabold">
+                                        К закупке: {item.quantity} {item.unit}
+                                      </div>
+                                    </div>
+                                  );
+                                }
+
+                                return (
+                                  <div className="space-y-1">
+                                    <div className="flex flex-wrap items-center gap-1.5">
+                                      <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200">
+                                        Свободно: {stock} {item.unit}
+                                      </span>
+                                      {reserved > 0 && (
+                                        <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-lg border border-amber-200" title="В резерве под другие заказы">
+                                          Резерв: {reserved}
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="text-[10px] font-bold">
+                                      {deficit > 0 ? (
+                                        <span className="text-amber-700 font-extrabold">Не хватает: {deficit} {item.unit}</span>
+                                      ) : (
+                                        <span className="text-emerald-600 font-extrabold">Покрыто складом (0 к заказу)</span>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                             </td>
                           </tr>
                         );
