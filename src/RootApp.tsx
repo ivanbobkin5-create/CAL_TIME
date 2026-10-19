@@ -3,16 +3,23 @@ import { LandingPage } from './components/Landing/LandingPage';
 import { LoginForm } from './components/Auth/LoginForm';
 import { RegistrationForm, RegistrationData } from './components/Auth/RegistrationForm';
 import { Calculator } from 'lucide-react';
+import { LegalDocumentsView } from './components/Legal/LegalDocumentsView';
 
 // Lazy-load the heavy App module so the site initial entry (Landing Page / Auth) loads instantly
 const App = lazy(() => import('./App'));
 
-function getInitialView(): 'landing' | 'login' | 'register' | 'app' {
+function getInitialView(): 'landing' | 'login' | 'register' | 'app' | 'legal' {
   if (typeof window === 'undefined') return 'landing';
 
   const s = window.location.search || '';
   const p = window.location.pathname || '/';
   const h = window.location.hash || '';
+
+  // Legal routes
+  if (p === '/privacy' || p === '/privacy-policy' || p === '/politika' || 
+      p === '/terms' || p === '/license' || p === '/eula' || p === '/oferta') {
+    return 'legal';
+  }
 
   // 1. Bitrix24 embedded mode explicitly
   const hasB24Params = s.includes('DOMAIN=') || s.includes('member_id=') || s.includes('PLACEMENT=') || s.includes('AUTH_ID=');
@@ -66,7 +73,7 @@ function LoadingSpinner() {
 }
 
 export default function RootApp() {
-  const [view, setView] = useState<'landing' | 'login' | 'register' | 'app'>(getInitialView);
+  const [view, setView] = useState<'landing' | 'login' | 'register' | 'app' | 'legal'>(getInitialView);
 
   useEffect(() => {
     const handlePopState = () => {
@@ -256,6 +263,20 @@ export default function RootApp() {
           </button>
         </div>
       </div>
+    );
+  }
+
+  if (view === 'legal') {
+    const p = window.location.pathname || '/';
+    const initialDoc = (p === '/privacy' || p === '/privacy-policy' || p === '/politika') ? 'privacy' : 'terms';
+    return (
+      <LegalDocumentsView
+        initialDoc={initialDoc}
+        onBack={() => {
+          window.history.pushState(null, '', '/');
+          setView('landing');
+        }}
+      />
     );
   }
 
