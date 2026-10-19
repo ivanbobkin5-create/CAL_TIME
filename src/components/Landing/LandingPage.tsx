@@ -45,7 +45,7 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-200">
                 <svg viewBox="0 0 100 100" className="w-6 h-6">
-                  <path d="M25 25h50v50H25z" fill="none" stroke="white" stroke-width="8"/>
+                  <path d="M25 25h50v50H25z" fill="none" stroke="white" strokeWidth="8"/>
                   <rect x="35" y="35" width="12" height="30" fill="white"/>
                   <rect x="53" y="35" width="12" height="18" fill="white"/>
                 </svg>
@@ -137,7 +137,7 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
             <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 hover:shadow-xl transition-all group">
               <div className="w-14 h-14 bg-blue-50 rounded-2xl flex items-center justify-center mb-6 overflow-hidden">
                 <svg viewBox="0 0 100 100" className="w-8 h-8">
-                  <path d="M25 25h50v50H25z" fill="none" stroke="#2563eb" stroke-width="8"/>
+                  <path d="M25 25h50v50H25z" fill="none" stroke="#2563eb" strokeWidth="8"/>
                   <rect x="35" y="35" width="12" height="30" fill="#2563eb"/>
                   <rect x="53" y="35" width="12" height="18" fill="#2563eb"/>
                 </svg>
@@ -707,7 +707,7 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
           <div className="flex items-center justify-center gap-3 mb-6">
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
               <svg viewBox="0 0 100 100" className="w-5 h-5">
-                <path d="M25 25h50v50H25z" fill="none" stroke="white" stroke-width="8"/>
+                <path d="M25 25h50v50H25z" fill="none" stroke="white" strokeWidth="8"/>
                 <rect x="35" y="35" width="12" height="30" fill="white"/>
                 <rect x="53" y="35" width="12" height="18" fill="white"/>
               </svg>

@@ -51,7 +51,7 @@ export const LegalDocumentsView: React.FC<LegalDocumentsViewProps> = ({
     };
 
     try {
-      const html2pdfModule = await import('html2pdf.js');
+      const html2pdfModule: any = await import('html2pdf.js');
       const html2pdf = html2pdfModule.default || html2pdfModule;
       await html2pdf().set(opt).from(element).save();
     } catch (err) {

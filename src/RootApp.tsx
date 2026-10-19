@@ -5,8 +5,30 @@ import { RegistrationForm, RegistrationData } from './components/Auth/Registrati
 import { Calculator } from 'lucide-react';
 import { LegalDocumentsView } from './components/Legal/LegalDocumentsView';
 
-// Lazy-load the heavy App module so the site initial entry (Landing Page / Auth) loads instantly
-const App = lazy(() => import('./App'));
+// Lazy-load the heavy App module with automatic retry so transient dev/network hiccups never fail
+const loadAppModule = async (): Promise<{ default: React.ComponentType<any> }> => {
+  const maxRetries = 4;
+  let lastError: any;
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      if (attempt === 0) {
+        return await import('./App');
+      }
+      // Wait briefly before retrying (e.g. while Vite finishes transforming App.tsx)
+      await new Promise((r) => setTimeout(r, 700 * attempt));
+      try {
+        return await import('./App');
+      } catch {
+        return await import(/* @vite-ignore */ `./App.tsx?t=${Date.now()}`);
+      }
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError;
+};
+
+const App = lazy(loadAppModule);
 
 function getInitialView(): 'landing' | 'login' | 'register' | 'app' | 'legal' {
   if (typeof window === 'undefined') return 'landing';
@@ -80,7 +102,13 @@ export default function RootApp() {
       setView(getInitialView());
     };
     window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
+    const preloadTimer = setTimeout(() => {
+      loadAppModule().catch(() => {});
+    }, 300);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      clearTimeout(preloadTimer);
+    };
   }, []);
 
   const handleEnterApp = () => {

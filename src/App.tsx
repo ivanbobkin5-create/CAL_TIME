@@ -37065,6 +37065,19 @@ export default function App() {
     fileName: string;
   } | null>(null);
 
+  const [pro100UnnamedModalData, setPro100UnnamedModalData] = useState<{
+    rawData: any[][];
+    fileName: string;
+    groups: {
+      key: string;
+      color: string;
+      thickness: number;
+      totalQty: number;
+      rows: { height: number; width: number; thickness: number; qty: number }[];
+    }[];
+    decisions: Record<string, "ЛДСП" | "МДФ" | "exclude">;
+  } | null>(null);
+
   const [bazisImportOptions, setBazisImportOptions] = useState<{
     importCarcass: boolean;
     importFacades: boolean;
@@ -37725,6 +37738,32 @@ export default function App() {
         return true;
       }
     }
+    // Also detect headerless Pro100 lista_formatek format:
+    // [name, height, edge1, width, edge2, thickness, qty, color/material]
+    const isEdgeCell = (v: any) => {
+      const s = String(v ?? "").trim().toLowerCase();
+      return s === "" || s === "=" || s === "==" || s === "-" || s === "—" || s === "–" || s === "." || s === ":" || s === "1" || s === "2" || s === "4";
+    };
+    let pro100RowMatches = 0;
+    for (let i = 0; i < Math.min(data.length, 15); i++) {
+      const row = data[i];
+      if (!Array.isArray(row) || row.length < 6) continue;
+      const h = parseFloat(String(row[1] ?? "").replace(",", "."));
+      const w = parseFloat(String(row[3] ?? "").replace(",", "."));
+      const t = parseFloat(String(row[5] ?? "").replace(",", "."));
+      const q = parseInt(String(row[6] ?? "1").trim(), 10);
+      if (
+        !isNaN(h) && h > 0 && h < 10000 &&
+        !isNaN(w) && w > 0 && w < 10000 &&
+        !isNaN(t) && t > 0 && t <= 100 &&
+        !isNaN(q) && q > 0 && q < 10000 &&
+        isEdgeCell(row[2]) &&
+        isEdgeCell(row[4])
+      ) {
+        pro100RowMatches++;
+      }
+    }
+    if (pro100RowMatches >= 1) return true;
     return false;
   };
 
@@ -39047,16 +39086,27 @@ export default function App() {
     });
   };
 
-  const parsePro100Report = (rawData: any[][], fileName: string) => {
+  const parsePro100Report = (
+    rawData: any[][],
+    fileName: string,
+    unnamedDecisions?: Record<string, "ЛДСП" | "МДФ" | "exclude">,
+  ) => {
     let headerRowIdx = -1;
     for (let i = 0; i < Math.min(rawData.length, 10); i++) {
       const row = rawData[i];
-      const hasSignificantKeywords = row.some((cell) =>
-        /название|имя|name|height|высота|width|ширина|длина|длинна|толщина|thickness|кол-во|количество|qty|цвет|color|материал|material|кромка|edge/i.test(
-          cell,
+      if (!Array.isArray(row)) continue;
+      const c1 = parseFloat(String(row[1] ?? "").replace(",", "."));
+      const c3 = parseFloat(String(row[3] ?? "").replace(",", "."));
+      const c5 = parseFloat(String(row[5] ?? "").replace(",", "."));
+      const looksLikeDataRow = !isNaN(c1) && c1 > 0 && !isNaN(c3) && c3 > 0 && !isNaN(c5) && c5 > 0;
+      if (looksLikeDataRow) continue;
+
+      const keywordMatches = row.filter((cell) =>
+        /название|наименование|имя|name|height|высота|width|ширина|длина|длинна|толщина|thickness|кол-во|количество|qty|цвет|color|материал|material|кромка|edge/i.test(
+          String(cell || ""),
         ),
-      );
-      if (hasSignificantKeywords) {
+      ).length;
+      if (keywordMatches >= 2) {
         headerRowIdx = i;
         break;
       }
@@ -39076,7 +39126,7 @@ export default function App() {
     if (headerRow) {
       headerRow.forEach((cell, idx) => {
         const h = (cell || "").toString().toLowerCase().trim();
-        if (/название|имя|^имя|^name$/i.test(h)) { if (nameIdx === -1) nameIdx = idx; }
+        if (/название|наименование|имя|^имя|^name$/i.test(h)) { if (nameIdx === -1) nameIdx = idx; }
         else if (/высота|height/i.test(h)) heightIdx = idx;
         else if (/ширина|длина|width|length/i.test(h) && h !== "высота") widthIdx = idx;
         else if (/толщина|thickness/i.test(h)) thickIdx = idx;
@@ -39101,16 +39151,84 @@ export default function App() {
       edgeCols.push(4);
     }
 
-    const parsedDetails = rawData
-      .slice(headerRowIdx + 1)
-      .map((row) => {
-        if (row.length < 3) return null;
-        const name = (row[nameIdx] && row[nameIdx].toString().trim() !== "") ? row[nameIdx].toString() : "NEEDS_NAME_TYPE_SELECTION";
+    const dataRows = rawData.slice(headerRowIdx + 1);
+
+    if (!unnamedDecisions) {
+      const unnamedGroupsMap: Record<
+        string,
+        {
+          key: string;
+          color: string;
+          thickness: number;
+          totalQty: number;
+          rows: { height: number; width: number; thickness: number; qty: number }[];
+        }
+      > = {};
+
+      dataRows.forEach((row) => {
+        if (!Array.isArray(row) || row.length < 3) return;
+        const rawName = row[nameIdx] !== undefined && row[nameIdx] !== null ? row[nameIdx].toString().trim() : "";
         const height = parseFloat((row[heightIdx]?.toString() || "0").replace(",", "."));
         const width = parseFloat((row[widthIdx]?.toString() || "0").replace(",", "."));
         const thickness = parseFloat((row[thickIdx]?.toString() || "0").replace(",", "."));
-        const qty = parseInt(row[qtyIdx] || "1");
-        const color = (row[colorIdx] || (materialIdx !== -1 ? row[materialIdx] : "Default")).toString();
+        if ((isNaN(height) || height <= 0) && (isNaN(width) || width <= 0)) return;
+        const qty = parseInt(row[qtyIdx] || "1", 10) || 1;
+        const rawColor = (row[colorIdx] || (materialIdx !== -1 ? row[materialIdx] : "") || "").toString().trim();
+        const color = rawColor || "Default";
+        const lColor = color.toLowerCase();
+        const lMaterial = materialIdx !== -1 && row[materialIdx] ? row[materialIdx].toString().toLowerCase() : "";
+        if (rawName.toLowerCase().includes("модуль") || lColor.includes("модуль") || lMaterial.includes("модуль")) return;
+
+        if (!rawName) {
+          const groupKey = `${color}___${thickness}`;
+          if (!unnamedGroupsMap[groupKey]) {
+            unnamedGroupsMap[groupKey] = {
+              key: groupKey,
+              color: rawColor || "Без указания материала",
+              thickness,
+              totalQty: 0,
+              rows: [],
+            };
+          }
+          unnamedGroupsMap[groupKey].totalQty += qty;
+          unnamedGroupsMap[groupKey].rows.push({ height, width, thickness, qty });
+        }
+      });
+
+      const unnamedGroups = Object.values(unnamedGroupsMap);
+      if (unnamedGroups.length > 0) {
+        setPro100UnnamedModalData({
+          rawData,
+          fileName,
+          groups: unnamedGroups,
+          decisions: {},
+        });
+        setActiveTab("calculator");
+        return;
+      }
+    }
+
+    const parsedDetails = dataRows
+      .map((row) => {
+        if (!Array.isArray(row) || row.length < 3) return null;
+        const rawName = row[nameIdx] !== undefined && row[nameIdx] !== null ? row[nameIdx].toString().trim() : "";
+        const height = parseFloat((row[heightIdx]?.toString() || "0").replace(",", "."));
+        const width = parseFloat((row[widthIdx]?.toString() || "0").replace(",", "."));
+        const thickness = parseFloat((row[thickIdx]?.toString() || "0").replace(",", "."));
+        if ((isNaN(height) || height <= 0) && (isNaN(width) || width <= 0)) return null;
+        const qty = parseInt(row[qtyIdx] || "1", 10) || 1;
+        const rawColor = (row[colorIdx] || (materialIdx !== -1 ? row[materialIdx] : "") || "").toString().trim();
+        const color = rawColor || "Default";
+
+        let name = rawName;
+        let forcedType: Detail["type"] | null = null;
+        if (!rawName) {
+          const groupKey = `${color}___${thickness}`;
+          const decision = unnamedDecisions?.[groupKey];
+          if (decision === "exclude") return null;
+          forcedType = decision || "ЛДСП";
+          name = forcedType;
+        }
 
         const isOneEdge = (s: any) => {
           if (s === undefined || s === null) return false;
@@ -39173,40 +39291,38 @@ export default function App() {
 
         const edgeLength = ((edgeSides.top ? width : 0) + (edgeSides.bottom ? width : 0) + (edgeSides.left ? height : 0) + (edgeSides.right ? height : 0)) / 1000;
         const area = (height * width) / 1000000;
-        let type: Detail["type"] | null = null;
+        let type: Detail["type"] | null = forcedType;
         const lName = name.toLowerCase();
         const lColor = color.toLowerCase();
-        const lMaterial = (materialIdx !== -1 && row[materialIdx] ? row[materialIdx].toLowerCase() : "");
+        const lMaterial = (materialIdx !== -1 && row[materialIdx] ? row[materialIdx].toString().toLowerCase() : "");
 
-        // Helper to check for material keywords
-        const checkKeywords = (keywords: string[]) => 
-          keywords.some(k => lName.includes(k) || lColor.includes(k) || lMaterial.includes(k));
+        if (!type) {
+          // Helper to check for material keywords
+          const checkKeywords = (keywords: string[]) => 
+            keywords.some(k => lName.includes(k) || lColor.includes(k) || lMaterial.includes(k));
 
-        if (thickness < 10 || checkKeywords(["хдф", "двп"])) {
-          type = "ХДФ";
-        } else if (checkKeywords(["фасад"])) {
-          type = "Фасад";
-        } else if (checkKeywords(["мдф"])) {
-          type = "МДФ";
-        } else if (checkKeywords(["столешница", "worktop"])) {
-          type = "Столешница";
-        } else if (checkKeywords(["стеновая", "backsplash"])) {
-          type = "Стеновая панель";
-        } else if (checkKeywords(["лдсп"])) {
-          type = "ЛДСП";
-        }
-
-        // Only default to ЛДСП if name is provided. 
-        // If name is missing and type is still null, we keep it null to indicate 'unknown'
-        if (!type && name !== "NEEDS_NAME_TYPE_SELECTION") {
-          type = "ЛДСП";
+          if (thickness < 10 || checkKeywords(["хдф", "двп"])) {
+            type = "ХДФ";
+          } else if (checkKeywords(["фасад"])) {
+            type = "Фасад";
+          } else if (checkKeywords(["мдф"])) {
+            type = "МДФ";
+          } else if (checkKeywords(["столешница", "worktop"])) {
+            type = "Столешница";
+          } else if (checkKeywords(["стеновая", "backsplash"])) {
+            type = "Стеновая панель";
+          } else if (checkKeywords(["лдсп"])) {
+            type = "ЛДСП";
+          } else {
+            type = "ЛДСП";
+          }
         }
 
         if (lName.includes("модуль") || lColor.includes("модуль") || lMaterial.includes("модуль")) return null;
 
         return {
           id: Math.random().toString(36).substring(2, 9),
-          type: type || "ЛДСП", // Default only at final assignment if still null
+          type: type || "ЛДСП",
           name,
           height,
           edgeProc: "",
@@ -39223,6 +39339,10 @@ export default function App() {
       .filter((d) => d !== null) as Detail[];
 
     if (parsedDetails.length === 0) {
+      if (unnamedDecisions && Object.values(unnamedDecisions).every((v) => v === "exclude")) {
+        showAlert("Импорт завершен", "Все выбранные позиции без наименования были исключены из расчета.");
+        return;
+      }
       showAlert(
         "Ошибка",
         "Не удалось найти данные в файле. Проверьте структуру колонок.",
@@ -39250,7 +39370,9 @@ export default function App() {
                 ? "ДВП/ХДФ"
                 : d.type === "ЛДСП"
                   ? "ЛДСП"
-                  : d.name,
+                  : d.type === "МДФ"
+                    ? "МДФ"
+                    : d.name,
           color: d.color,
           thickness: d.thickness,
           area: 0,
@@ -39340,6 +39462,13 @@ export default function App() {
 
         rawData.forEach((row) => {
           if (!row || !Array.isArray(row) || row.length === 0) return;
+
+          const rawNameCheck = row[nameIdx] !== undefined && row[nameIdx] !== null ? row[nameIdx].toString().trim() : "";
+          if (!rawNameCheck && unnamedDecisions) {
+            const rawColorCheck = (row[colorIdx] || (materialIdx !== -1 ? row[materialIdx] : "") || "").toString().trim() || "Default";
+            const thickCheck = parseFloat((row[thickIdx]?.toString() || "0").replace(",", "."));
+            if (unnamedDecisions[`${rawColorCheck}___${thickCheck}`] === "exclude") return;
+          }
 
           let matchedProduct: any = null;
           let foundSku = "";
@@ -45215,6 +45344,202 @@ export default function App() {
                     Применить импорт
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {pro100UnnamedModalData && (
+          <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 flex flex-col max-h-[90vh]">
+              <div className="p-6 border-b border-gray-100 flex items-center justify-between shrink-0">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+                    <AlertCircle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-gray-900">
+                      Найдены позиции без наименования (Pro100)
+                    </h3>
+                    <p className="text-xs text-gray-500 font-medium truncate max-w-sm">
+                      {pro100UnnamedModalData.fileName}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setPro100UnnamedModalData(null)}
+                  className="p-1.5 text-gray-400 hover:text-gray-600 rounded-lg hover:bg-gray-100 transition-colors cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-6 overflow-y-auto space-y-4">
+                <p className="text-xs text-gray-600 font-medium leading-relaxed">
+                  В загруженном списке из Pro100 обнаружены позиции, у которых не указано наименование. Как системе определить найденный материал?
+                </p>
+
+                {pro100UnnamedModalData.groups.length > 1 && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 p-3 bg-gray-50 rounded-2xl border border-gray-200">
+                    <span className="text-xs font-bold text-gray-700">Задать для всех сразу:</span>
+                    <div className="flex items-center gap-1.5">
+                      {(["ЛДСП", "МДФ", "exclude"] as const).map((opt) => (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => {
+                            const nextDecisions: Record<string, "ЛДСП" | "МДФ" | "exclude"> = {};
+                            pro100UnnamedModalData.groups.forEach((g) => {
+                              nextDecisions[g.key] = opt;
+                            });
+                            setPro100UnnamedModalData((prev) =>
+                              prev ? { ...prev, decisions: nextDecisions } : null
+                            );
+                          }}
+                          className="px-2.5 py-1 text-[11px] font-bold rounded-lg border border-gray-200 bg-white text-gray-700 hover:bg-gray-100 transition-colors cursor-pointer"
+                        >
+                          {opt === "exclude" ? "Исключить все" : `Все как ${opt}`}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-3">
+                  {pro100UnnamedModalData.groups.map((group) => {
+                    const selected = pro100UnnamedModalData.decisions[group.key];
+                    return (
+                      <div
+                        key={group.key}
+                        className="p-4 rounded-2xl border border-gray-200 bg-gray-50/60 space-y-3"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <div className="text-xs font-bold text-gray-900 break-all">
+                              Материал: {group.color}
+                            </div>
+                            <div className="text-[11px] text-gray-500 mt-0.5">
+                              Толщина: <span className="font-semibold text-gray-700">{group.thickness} мм</span> • Позиций без имени:{" "}
+                              <span className="font-semibold text-gray-700">
+                                {group.rows.length} стр. ({group.totalQty} шт.)
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto pr-1">
+                          {group.rows.map((r, rIdx) => (
+                            <span
+                              key={rIdx}
+                              className="inline-flex items-center px-2 py-0.5 rounded-md bg-white border border-gray-200 text-[11px] text-gray-600 font-medium"
+                            >
+                              {r.height} × {r.width} мм — {r.qty} шт.
+                            </span>
+                          ))}
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPro100UnnamedModalData((prev) =>
+                                prev
+                                  ? {
+                                      ...prev,
+                                      decisions: { ...prev.decisions, [group.key]: "ЛДСП" },
+                                    }
+                                  : null
+                              )
+                            }
+                            className={cn(
+                              "px-3 py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center",
+                              selected === "ЛДСП"
+                                ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-100"
+                                : "bg-white text-gray-700 border-gray-200 hover:border-blue-300 hover:bg-blue-50/40"
+                            )}
+                          >
+                            ЛДСП
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPro100UnnamedModalData((prev) =>
+                                prev
+                                  ? {
+                                      ...prev,
+                                      decisions: { ...prev.decisions, [group.key]: "МДФ" },
+                                    }
+                                  : null
+                              )
+                            }
+                            className={cn(
+                              "px-3 py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center",
+                              selected === "МДФ"
+                                ? "bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-100"
+                                : "bg-white text-gray-700 border-gray-200 hover:border-indigo-300 hover:bg-indigo-50/40"
+                            )}
+                          >
+                            МДФ
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setPro100UnnamedModalData((prev) =>
+                                prev
+                                  ? {
+                                      ...prev,
+                                      decisions: { ...prev.decisions, [group.key]: "exclude" },
+                                    }
+                                  : null
+                              )
+                            }
+                            className={cn(
+                              "px-3 py-2.5 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center",
+                              selected === "exclude"
+                                ? "bg-red-600 text-white border-red-600 shadow-md shadow-red-100"
+                                : "bg-white text-gray-700 border-gray-200 hover:border-red-300 hover:bg-red-50/40"
+                            )}
+                          >
+                            Исключить из расчета
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="p-6 pt-3 border-t border-gray-100 flex items-center justify-end gap-3 shrink-0 bg-white">
+                <button
+                  type="button"
+                  onClick={() => setPro100UnnamedModalData(null)}
+                  className="px-4 py-2.5 text-xs font-bold text-gray-600 hover:bg-gray-100 rounded-xl transition-all cursor-pointer"
+                >
+                  Отмена
+                </button>
+                <button
+                  type="button"
+                  disabled={pro100UnnamedModalData.groups.some(
+                    (g) => !pro100UnnamedModalData.decisions[g.key]
+                  )}
+                  onClick={() => {
+                    const { rawData, fileName, decisions } = pro100UnnamedModalData;
+                    setPro100UnnamedModalData(null);
+                    parsePro100Report(rawData, fileName, decisions);
+                  }}
+                  className={cn(
+                    "px-6 py-2.5 text-xs font-bold rounded-xl transition-all",
+                    pro100UnnamedModalData.groups.some(
+                      (g) => !pro100UnnamedModalData.decisions[g.key]
+                    )
+                      ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                      : "bg-blue-600 text-white hover:bg-blue-700 shadow-lg shadow-blue-200 cursor-pointer"
+                  )}
+                >
+                  Применить и рассчитать
+                </button>
               </div>
             </div>
           </div>
