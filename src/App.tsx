@@ -39105,7 +39105,7 @@ export default function App() {
       .slice(headerRowIdx + 1)
       .map((row) => {
         if (row.length < 3) return null;
-        const name = (row[nameIdx] || "Без имени").toString();
+        const name = (row[nameIdx] && row[nameIdx].toString().trim() !== "") ? row[nameIdx].toString() : "NEEDS_NAME_TYPE_SELECTION";
         const height = parseFloat((row[heightIdx]?.toString() || "0").replace(",", "."));
         const width = parseFloat((row[widthIdx]?.toString() || "0").replace(",", "."));
         const thickness = parseFloat((row[thickIdx]?.toString() || "0").replace(",", "."));
@@ -39173,22 +39173,32 @@ export default function App() {
 
         const edgeLength = ((edgeSides.top ? width : 0) + (edgeSides.bottom ? width : 0) + (edgeSides.left ? height : 0) + (edgeSides.right ? height : 0)) / 1000;
         const area = (height * width) / 1000000;
-        let type: Detail["type"] = "ЛДСП";
+        let type: Detail["type"] | null = null;
         const lName = name.toLowerCase();
         const lColor = color.toLowerCase();
         const lMaterial = (materialIdx !== -1 && row[materialIdx] ? row[materialIdx].toLowerCase() : "");
 
-        if (thickness < 10 || lName.includes("хдф") || lName.includes("двп") || lColor.includes("хдф") || lColor.includes("двп")) {
+        // Helper to check for material keywords
+        const checkKeywords = (keywords: string[]) => 
+          keywords.some(k => lName.includes(k) || lColor.includes(k) || lMaterial.includes(k));
+
+        if (thickness < 10 || checkKeywords(["хдф", "двп"])) {
           type = "ХДФ";
-        } else if (lName.includes("фасад") || lColor.includes("фасад") || lMaterial.includes("фасад")) {
+        } else if (checkKeywords(["фасад"])) {
           type = "Фасад";
-        } else if (lName.includes("мдф") || lColor.includes("мдф") || lMaterial.includes("мдф")) {
+        } else if (checkKeywords(["мдф"])) {
           type = "МДФ";
-        } else if (lName.includes("столешница") || lName.includes("worktop") || lColor.includes("столешница") || lMaterial.includes("столешница")) {
+        } else if (checkKeywords(["столешница", "worktop"])) {
           type = "Столешница";
-        } else if (lName.includes("стеновая") || lName.includes("backsplash") || lColor.includes("стеновая") || lMaterial.includes("стеновая")) {
+        } else if (checkKeywords(["стеновая", "backsplash"])) {
           type = "Стеновая панель";
-        } else if (lName.includes("лдсп") || lColor.includes("лдсп") || lMaterial.includes("лдсп")) {
+        } else if (checkKeywords(["лдсп"])) {
+          type = "ЛДСП";
+        }
+
+        // Only default to ЛДСП if name is provided. 
+        // If name is missing and type is still null, we keep it null to indicate 'unknown'
+        if (!type && name !== "NEEDS_NAME_TYPE_SELECTION") {
           type = "ЛДСП";
         }
 
@@ -39196,7 +39206,7 @@ export default function App() {
 
         return {
           id: Math.random().toString(36).substring(2, 9),
-          type,
+          type: type || "ЛДСП", // Default only at final assignment if still null
           name,
           height,
           edgeProc: "",

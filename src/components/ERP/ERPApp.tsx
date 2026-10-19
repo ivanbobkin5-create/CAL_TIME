@@ -793,7 +793,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
           isMebelFakturaOwner;
 
         if (belongsToCompany) {
-          setAuthUser(parsedUser);
+          setAuthUser((prev: any) => ({ ...prev, ...parsedUser }));
           try {
             localStorage.setItem(`erp_session_${comp.id || aliasOrId}`, JSON.stringify({
               user: parsedUser,
@@ -2078,7 +2078,7 @@ export const ERPApp: React.FC<ERPAppProps> = ({
         company={company} 
         aliasOrId={aliasOrId} 
         onSuccessLogin={(userData) => {
-          setAuthUser(userData);
+          setAuthUser((prev: any) => ({ ...prev, ...userData }));
           setIsLoading(true);
           loadAllERPData(userData);
         }} 

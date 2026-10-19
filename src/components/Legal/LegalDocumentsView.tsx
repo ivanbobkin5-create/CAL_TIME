@@ -194,11 +194,7 @@ export const LegalDocumentsView: React.FC<LegalDocumentsViewProps> = ({
 исключительного права Лицензиара на ПО, при условии надлежащего выполнения
 Пользователем условий настоящего Соглашения.</h3>
 <h3 className="text-base font-bold text-slate-900 border-b border-slate-200 pb-1 mt-6 mb-3">1.4. Лицензиар предоставляет Пользователю право
-использования ПО на территории следующих стран Российская Федерация, Украина,
-Республика Беларусь, Республика Казахстан, Киргизская Республика, Республика
-Узбекистан, Туркменистан, Республика Таджикистан, Литовская Республика,
-Латвийская Республика, Эстонская Республика, Республика Молдова, Грузия,
-Республика Армения, Республика Азербайджан на условиях и в порядке,
+использования ПО на территории Российской Федерации на условиях и в порядке,
 предусмотренных действующим законодательством Российской Федерации и настоящим
 Соглашением.</h3>
 <h3 className="text-base font-bold text-slate-900 border-b border-slate-200 pb-1 mt-6 mb-3">2. Авторские права</h3>
@@ -367,22 +363,7 @@ export const LegalDocumentsView: React.FC<LegalDocumentsViewProps> = ({
                 </div>
               </div>
             </div>
-
-            <div className="mt-8 pt-4 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-6 text-xs text-slate-700">
-              <div>
-                <div className="font-bold text-slate-900 mb-8">Индивидуальный предприниматель:</div>
-                <div className="border-t border-slate-400 pt-1 w-64 flex justify-between">
-                  <span>/ Бобкин И. Н. /</span>
-                  <span className="text-slate-400 text-[10px]">(подпись, М.П.)</span>
-                </div>
-              </div>
-
-              <div className="text-right text-[11px] text-slate-400 italic">
-                Документ составлен на основе эталонного шаблона 1С-Битрикс Маркетплейс для mebel-plan.ru.
-              </div>
-            </div>
           </div>
-
         </div>
       </main>
     </div>
