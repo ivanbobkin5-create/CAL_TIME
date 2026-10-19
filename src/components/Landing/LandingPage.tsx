@@ -29,12 +29,76 @@ import {
   Clock,
   PackageCheck,
   Zap,
-  ExternalLink
+  ExternalLink,
+  Mail,
+  MessageSquare,
+  Presentation,
+  X,
+  User,
+  Send,
+  Loader2
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
 export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRegister: () => void }) => {
   const [activeErpTab, setActiveErpTab] = useState<'shopfloor' | 'installer' | 'bitrix' | 'storage'>('shopfloor');
+  const [feedbackModalType, setFeedbackModalType] = useState<'contact_developer' | 'request_demo' | null>(null);
+  const [feedbackName, setFeedbackName] = useState('');
+  const [feedbackEmail, setFeedbackEmail] = useState('');
+  const [feedbackPhone, setFeedbackPhone] = useState('');
+  const [feedbackMessage, setFeedbackMessage] = useState('');
+  const [feedbackConsent, setFeedbackConsent] = useState(false);
+  const [feedbackSubmitting, setFeedbackSubmitting] = useState(false);
+  const [feedbackSuccess, setFeedbackSuccess] = useState(false);
+  const [feedbackError, setFeedbackError] = useState('');
+
+  const openFeedbackModal = (type: 'contact_developer' | 'request_demo') => {
+    setFeedbackModalType(type);
+    setFeedbackSuccess(false);
+    setFeedbackError('');
+  };
+
+  const handleFeedbackSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!feedbackName.trim() || !feedbackEmail.trim() || !feedbackPhone.trim()) {
+      setFeedbackError('Пожалуйста, заполните имя, e-mail и телефон.');
+      return;
+    }
+    if (!feedbackConsent) {
+      setFeedbackError('Необходимо подтвердить согласие на обработку персональных данных.');
+      return;
+    }
+    setFeedbackSubmitting(true);
+    setFeedbackError('');
+    try {
+      const res = await fetch('/api/landing/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: feedbackModalType,
+          name: feedbackName.trim(),
+          email: feedbackEmail.trim(),
+          phone: feedbackPhone.trim(),
+          message: feedbackMessage.trim(),
+          consent: feedbackConsent,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data.error || 'Ошибка при отправке заявки');
+      }
+      setFeedbackSuccess(true);
+      setFeedbackName('');
+      setFeedbackEmail('');
+      setFeedbackPhone('');
+      setFeedbackMessage('');
+      setFeedbackConsent(false);
+    } catch (err: any) {
+      setFeedbackError(err?.message || 'Не удалось отправить сообщение. Попробуйте позже.');
+    } finally {
+      setFeedbackSubmitting(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-white">
@@ -689,12 +753,22 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
               <div className="relative z-10">
                 <h3 className="text-3xl font-bold mb-6">Готовы оптимизировать свой бизнес?</h3>
                 <p className="text-blue-100 mb-8 text-lg">Присоединяйтесь к сотням профессионалов, которые уже используют экосистему Мебельный Калькулятор + ERP для роста своего бизнеса.</p>
-                <button 
-                  onClick={onRegister}
-                  className="px-8 py-4 bg-white text-blue-600 font-black rounded-2xl hover:bg-blue-50 transition-all shadow-lg cursor-pointer"
-                >
-                  Попробовать бесплатно
-                </button>
+                <div className="flex flex-wrap items-center gap-3">
+                  <button 
+                    onClick={onRegister}
+                    className="px-8 py-4 bg-white text-blue-600 font-black rounded-2xl hover:bg-blue-50 transition-all shadow-lg cursor-pointer"
+                  >
+                    Попробовать бесплатно
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => openFeedbackModal('request_demo')}
+                    className="px-6 py-4 bg-blue-700/60 hover:bg-blue-700 text-white font-bold rounded-2xl border border-white/25 transition-all cursor-pointer flex items-center gap-2 text-sm"
+                  >
+                    <Presentation className="w-4 h-4" />
+                    Запросить демонстрацию
+                  </button>
+                </div>
               </div>
             </div>
           </div>
@@ -702,7 +776,7 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
       </section>
 
       {/* Footer */}
-      <footer className="py-12 border-t border-gray-100">
+      <footer className="py-12 border-t border-gray-100 bg-slate-50/40">
         <div className="max-w-7xl mx-auto px-4 text-center">
           <div className="flex items-center justify-center gap-3 mb-6">
             <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
@@ -714,6 +788,27 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
             </div>
             <span className="text-lg font-black text-gray-900 tracking-tight">Мебель План</span>
           </div>
+
+          {/* Feedback Action Buttons / Links */}
+          <div className="flex flex-wrap items-center justify-center gap-3 mb-6">
+            <button
+              type="button"
+              onClick={() => openFeedbackModal('contact_developer')}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 hover:border-blue-300 hover:bg-blue-50/50 text-slate-700 hover:text-blue-600 text-xs font-bold shadow-xs transition-all cursor-pointer"
+            >
+              <MessageSquare className="w-3.5 h-3.5 text-blue-600" />
+              Связаться с разработчиком
+            </button>
+            <button
+              type="button"
+              onClick={() => openFeedbackModal('request_demo')}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/50 text-slate-700 hover:text-indigo-600 text-xs font-bold shadow-xs transition-all cursor-pointer"
+            >
+              <Presentation className="w-3.5 h-3.5 text-indigo-600" />
+              Запросить демонстрацию
+            </button>
+          </div>
+
           <div className="flex flex-wrap items-center justify-center gap-6 mb-6 text-xs text-slate-500 font-semibold">
             <a href="/terms" target="_blank" rel="noreferrer" className="hover:text-blue-600 transition-colors">
               Лицензионное соглашение (Оферта)
@@ -726,6 +821,227 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
           <p className="text-gray-400 text-sm">© 2026 Мебель План. Все права защищены.</p>
         </div>
       </footer>
+
+      {/* Feedback & Demo Request Modal */}
+      {feedbackModalType && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs"
+          onClick={() => setFeedbackModalType(null)}
+        >
+          <div
+            className="bg-white w-full max-w-md rounded-3xl shadow-2xl border border-slate-100 overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-6 pt-6 pb-4 border-b border-slate-100 flex items-start justify-between gap-4">
+              <div>
+                <h3 className="text-lg font-extrabold text-slate-900">
+                  {feedbackModalType === 'request_demo'
+                    ? 'Запросить демонстрацию'
+                    : 'Связаться с разработчиком'}
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  {feedbackModalType === 'request_demo'
+                    ? 'Оставьте контакты — мы проведем презентацию возможностей системы под ваши задачи'
+                    : 'Напишите нам по вопросам внедрения, доработок или сотрудничества'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFeedbackModalType(null)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Mode Switcher */}
+            <div className="px-6 pt-4">
+              <div className="grid grid-cols-2 gap-1.5 p-1 bg-slate-100 rounded-xl">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFeedbackModalType('contact_developer');
+                    setFeedbackError('');
+                    setFeedbackSuccess(false);
+                  }}
+                  className={`py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    feedbackModalType === 'contact_developer'
+                      ? 'bg-white text-blue-600 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Связаться с разработчиком
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFeedbackModalType('request_demo');
+                    setFeedbackError('');
+                    setFeedbackSuccess(false);
+                  }}
+                  className={`py-2 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    feedbackModalType === 'request_demo'
+                      ? 'bg-white text-indigo-600 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  Запросить демонстрацию
+                </button>
+              </div>
+            </div>
+
+            {feedbackSuccess ? (
+              <div className="p-6 text-center space-y-4">
+                <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto">
+                  <CheckCircle2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h4 className="text-base font-bold text-slate-900">Заявка отправлена!</h4>
+                  <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                    Ваше обращение отправлено на <span className="font-semibold text-slate-700">support@mebel-plan.ru</span>. Мы свяжемся с вами в ближайшее время.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFeedbackModalType(null)}
+                  className="w-full py-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all cursor-pointer"
+                >
+                  Закрыть окно
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleFeedbackSubmit} className="p-6 space-y-4">
+                {feedbackError && (
+                  <div className="p-3 rounded-xl bg-red-50 border border-red-100 text-xs font-semibold text-red-600">
+                    {feedbackError}
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Ваше имя <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      required
+                      value={feedbackName}
+                      onChange={(e) => setFeedbackName(e.target.value)}
+                      placeholder="Иван Иванов"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    E-mail <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="email"
+                      required
+                      value={feedbackEmail}
+                      onChange={(e) => setFeedbackEmail(e.target.value)}
+                      placeholder="name@company.ru"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Телефон <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <Phone className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="tel"
+                      required
+                      value={feedbackPhone}
+                      onChange={(e) => setFeedbackPhone(e.target.value)}
+                      placeholder="+7 (999) 000-00-00"
+                      className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 transition-all"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Комментарий (необязательно)
+                  </label>
+                  <textarea
+                    rows={2}
+                    value={feedbackMessage}
+                    onChange={(e) => setFeedbackMessage(e.target.value)}
+                    placeholder={
+                      feedbackModalType === 'request_demo'
+                        ? 'Укажите удобное время или интересующие модули...'
+                        : 'Опишите ваш вопрос или предложение...'
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/15 transition-all resize-none"
+                  />
+                </div>
+
+                <label className="flex items-start gap-2.5 pt-1 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    required
+                    checked={feedbackConsent}
+                    onChange={(e) => setFeedbackConsent(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                  />
+                  <span className="text-[11px] text-slate-500 leading-relaxed">
+                    Я даю согласие на обработку моих персональных данных в соответствии с{' '}
+                    <a
+                      href="/privacy"
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-blue-600 hover:underline font-semibold"
+                    >
+                      Политикой конфиденциальности
+                    </a>
+                  </span>
+                </label>
+
+                <div className="pt-2 flex items-center justify-end gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setFeedbackModalType(null)}
+                    className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                  >
+                    Отмена
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={feedbackSubmitting || !feedbackConsent}
+                    className={`px-5 py-2.5 rounded-xl text-xs font-bold text-white flex items-center gap-2 transition-all ${
+                      feedbackSubmitting || !feedbackConsent
+                        ? 'bg-slate-300 cursor-not-allowed'
+                        : 'bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-200 cursor-pointer'
+                    }`}
+                  >
+                    {feedbackSubmitting ? (
+                      <>
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Отправка...
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-3.5 h-3.5" />
+                        Отправить
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

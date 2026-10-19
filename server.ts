@@ -2489,6 +2489,84 @@ function transliterate(str: string): string {
     }
   });
 
+  app.post("/api/landing/feedback", async (req, res) => {
+    try {
+      const { type, name, email, phone, message, consent } = req.body || {};
+      const cleanName = String(name || "").trim();
+      const cleanEmail = String(email || "").trim();
+      const cleanPhone = String(phone || "").trim();
+      const cleanMessage = String(message || "").trim();
+
+      if (!cleanName || !cleanEmail || !cleanPhone) {
+        return res.status(400).json({ error: "Пожалуйста, заполните имя, e-mail и телефон." });
+      }
+      if (!consent) {
+        return res.status(400).json({ error: "Необходимо согласие на обработку персональных данных." });
+      }
+
+      const isDemo = type === "request_demo";
+      const typeLabel = isDemo ? "Запросить демонстрацию" : "Связаться с разработчиком";
+      const reqId = `feedback_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const createdAt = new Date().toISOString();
+
+      const payload = {
+        id: reqId,
+        type: isDemo ? "request_demo" : "contact_developer",
+        typeLabel,
+        name: cleanName,
+        email: cleanEmail,
+        phone: cleanPhone,
+        message: cleanMessage,
+        consent: true,
+        targetEmail: "support@mebel-plan.ru",
+        createdAt,
+        status: "new",
+      };
+
+      const docPath = `landing_feedback_requests/${reqId}`;
+      localStore.setDoc(docPath, "landing_feedback_requests", reqId, JSON.stringify(payload), false, true);
+      if (isPostgresAvailable) {
+        prisma.dbDocument.upsert({
+          where: { path: docPath },
+          create: {
+            path: docPath,
+            collection: "landing_feedback_requests",
+            docId: reqId,
+            data: JSON.stringify(payload),
+          },
+          update: {
+            data: JSON.stringify(payload),
+          },
+        }).catch(() => {});
+      }
+
+      const subject = isDemo
+        ? `🚀 Запрос демонстрации «Мебель План» — ${cleanName}`
+        : `💬 Обращение к разработчику «Мебель План» — ${cleanName}`;
+
+      const emailBody = [
+        `Поступило новое обращение с главной страницы «Мебель План»:`,
+        ``,
+        `Тема обращения: ${typeLabel}`,
+        `Имя: ${cleanName}`,
+        `E-mail: ${cleanEmail}`,
+        `Телефон: ${cleanPhone}`,
+        cleanMessage ? `Комментарий: ${cleanMessage}` : null,
+        `Согласие на обработку ПДн: Подтверждено`,
+        `Дата отправки: ${new Date().toLocaleString("ru-RU", { timeZone: "Europe/Moscow" })} (МСК)`,
+      ]
+        .filter(Boolean)
+        .join("\n");
+
+      await sendEmail("support@mebel-plan.ru", subject, emailBody);
+
+      res.json({ success: true, id: reqId });
+    } catch (e: any) {
+      console.error("Error in POST /api/landing/feedback:", e);
+      res.status(500).json({ error: "Не удалось отправить сообщение. Попробуйте позже." });
+    }
+  });
+
   app.patch("/api/system/applications/:id", async (req, res) => {
     try {
       const { id } = req.params;
