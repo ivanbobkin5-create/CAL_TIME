@@ -122,7 +122,7 @@ interface AdminSettings {
 }
 
 export const AppAdminView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<"overview" | "companies" | "applications" | "news" | "users" | "notifications" | "requisites" | "database">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "companies" | "applications" | "news" | "socials" | "users" | "notifications" | "requisites" | "database">("overview");
   const [companies, setCompanies] = useState<CompanyItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [newsList, setNewsList] = useState<SystemNewsItem[]>([]);
@@ -197,6 +197,41 @@ export const AppAdminView: React.FC = () => {
     systemBannerActive: false
   });
   const [savingSettings, setSavingSettings] = useState(false);
+
+  // Social Cross-Posting (Telegram + VK) State
+  const [socialConfig, setSocialConfig] = useState({
+    telegramEnabled: true,
+    telegramBotToken: "",
+    telegramChatId: "",
+    telegramChannelTitle: "",
+    vkEnabled: true,
+    vkAccessToken: "",
+    vkGroupId: "",
+    vkGroupName: "",
+    defaultCtaText: "Открыть Мебель План",
+    defaultCtaUrl: "https://mebel-plan.ru",
+    defaultHashtags: "#мебельплан #мебельноепроизводство #раскрой #erp"
+  });
+  const [socialPosts, setSocialPosts] = useState<any[]>([]);
+  const [savingSocialConfig, setSavingSocialConfig] = useState(false);
+  const [testingTelegram, setTestingTelegram] = useState(false);
+  const [testingVk, setTestingVk] = useState(false);
+  const [showSocialGuide, setShowSocialGuide] = useState(false);
+  const [socialPostForm, setSocialPostForm] = useState({
+    title: "",
+    content: "",
+    imageUrl: "",
+    ctaText: "Попробовать Мебель План",
+    ctaUrl: "https://mebel-plan.ru",
+    hashtags: "#мебельплан #мебельноепроизводство #раскрой #erp",
+    targetTelegram: true,
+    targetVk: true,
+    targetInternalNews: true,
+    internalNewsType: "info" as SystemNewsItem["type"],
+    internalIsBanner: false
+  });
+  const [publishingSocialPost, setPublishingSocialPost] = useState(false);
+  const [lastPublishReport, setLastPublishReport] = useState<Record<string, { ok: boolean; message: string }> | null>(null);
 
   // Load All System Data
   const loadSystemData = async () => {
@@ -295,6 +330,26 @@ export const AppAdminView: React.FC = () => {
           setAdminSettings(prev => ({ ...prev, ...setData }));
         }
       }
+
+      // 5b. Load Social Autopost Config & Post History
+      try {
+        const socRes = await fetch("/api/system/social-config");
+        if (socRes.ok) {
+          const socData = await socRes.json();
+          if (socData.config) {
+            setSocialConfig(prev => ({ ...prev, ...socData.config }));
+            setSocialPostForm(prev => ({
+              ...prev,
+              ctaText: socData.config.defaultCtaText || prev.ctaText,
+              ctaUrl: socData.config.defaultCtaUrl || prev.ctaUrl,
+              hashtags: socData.config.defaultHashtags || prev.hashtags
+            }));
+          }
+          if (Array.isArray(socData.posts)) {
+            setSocialPosts(socData.posts);
+          }
+        }
+      } catch (_) {}
 
       // 6. Count Projects across companies for stats
       let totalProjects = 0;
@@ -503,6 +558,173 @@ export const AppAdminView: React.FC = () => {
       }
     } catch {
       showToast("Ошибка при удалении новости", "error");
+    }
+  };
+
+  // Save Social Config (Telegram + VK)
+  const handleSaveSocialConfig = async () => {
+    setSavingSocialConfig(true);
+    try {
+      const res = await fetch("/api/system/social-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(socialConfig)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.config) setSocialConfig(prev => ({ ...prev, ...data.config }));
+        showToast("Настройки Telegram и ВКонтакте сохранены!");
+      } else {
+        showToast("Не удалось сохранить настройки соцсетей", "error");
+      }
+    } catch {
+      showToast("Ошибка сети при сохранении настроек соцсетей", "error");
+    } finally {
+      setSavingSocialConfig(false);
+    }
+  };
+
+  // Test Telegram or VK connection
+  const handleTestSocialConnection = async (platform: "telegram" | "vk") => {
+    if (platform === "telegram") setTestingTelegram(true);
+    else setTestingVk(true);
+    try {
+      const res = await fetch("/api/system/social-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          platform,
+          telegramBotToken: socialConfig.telegramBotToken,
+          telegramChatId: socialConfig.telegramChatId,
+          vkAccessToken: socialConfig.vkAccessToken,
+          vkGroupId: socialConfig.vkGroupId
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (platform === "telegram" && data.title) {
+          const nextCfg = { ...socialConfig, telegramChannelTitle: data.title };
+          setSocialConfig(nextCfg);
+          await fetch("/api/system/social-config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(nextCfg)
+          });
+        }
+        if (platform === "vk" && data.groupName) {
+          const nextCfg = { ...socialConfig, vkGroupName: data.groupName };
+          setSocialConfig(nextCfg);
+          await fetch("/api/system/social-config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(nextCfg)
+          });
+        }
+        showToast(data.message || "Подключение успешно проверено!");
+      } else {
+        showToast(data.error || "Ошибка проверки подключения", "error");
+      }
+    } catch {
+      showToast("Ошибка соединения при проверке", "error");
+    } finally {
+      if (platform === "telegram") setTestingTelegram(false);
+      else setTestingVk(false);
+    }
+  };
+
+  // Handle local image file selection for Social Post
+  const handleSocialImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        setSocialPostForm(prev => ({ ...prev, imageUrl: reader.result as string }));
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Publish simultaneously to selected Social Networks
+  const handlePublishSocialPost = async () => {
+    if (!socialPostForm.content.trim()) {
+      showToast("Введите текст записи для публикации", "error");
+      return;
+    }
+    if (!socialPostForm.targetTelegram && !socialPostForm.targetVk && !socialPostForm.targetInternalNews) {
+      showToast("Выберите хотя бы одну площадку для публикации (Telegram, ВК или Платформа)", "error");
+      return;
+    }
+
+    setPublishingSocialPost(true);
+    setLastPublishReport(null);
+    try {
+      // Save current tokens first so server has the latest ones
+      await fetch("/api/system/social-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(socialConfig)
+      });
+
+      const res = await fetch("/api/system/social-post", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: socialPostForm.title.trim(),
+          content: socialPostForm.content.trim(),
+          imageUrl: socialPostForm.imageUrl.trim(),
+          ctaText: socialPostForm.ctaText.trim(),
+          ctaUrl: socialPostForm.ctaUrl.trim(),
+          hashtags: socialPostForm.hashtags.trim(),
+          targets: {
+            telegram: socialPostForm.targetTelegram,
+            vk: socialPostForm.targetVk,
+            internalNews: socialPostForm.targetInternalNews
+          },
+          internalNewsType: socialPostForm.internalNewsType,
+          internalIsBanner: socialPostForm.internalIsBanner
+        })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        if (data.post) {
+          setSocialPosts(prev => [data.post, ...prev]);
+        }
+        if (data.newsItem) {
+          setNewsList(prev => [data.newsItem, ...prev]);
+        }
+        if (data.results) {
+          setLastPublishReport(data.results);
+          const allOk = Object.values(data.results).every((r: any) => r.ok);
+          const anyOk = Object.values(data.results).some((r: any) => r.ok);
+          if (allOk) {
+            showToast("Запись успешно опубликована во все выбранные соцсети!");
+          } else if (anyOk) {
+            showToast("Запись опубликована частично — проверьте статусы площадок ниже", "error");
+          } else {
+            showToast("Не удалось опубликовать запись — проверьте токены доступа", "error");
+          }
+        }
+      } else {
+        showToast(data.error || "Ошибка при публикации", "error");
+      }
+    } catch {
+      showToast("Ошибка сети при отправке публикации", "error");
+    } finally {
+      setPublishingSocialPost(false);
+    }
+  };
+
+  const handleDeleteSocialPostHistory = async (id: string) => {
+    try {
+      const res = await fetch(`/api/system/social-post/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        setSocialPosts(prev => prev.filter(p => p.id !== id));
+        showToast("Запись удалена из журнала");
+      }
+    } catch {
+      showToast("Не удалось удалить запись", "error");
     }
   };
 
@@ -834,7 +1056,19 @@ export const AppAdminView: React.FC = () => {
             )}
           >
             <Bell className="w-4 h-4" />
-            <span>Новости и оповещения ({newsList.length})</span>
+            <span>Новости ({newsList.length})</span>
+          </button>
+          <button
+            onClick={() => setActiveTab("socials")}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
+              activeTab === "socials"
+                ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm"
+                : "text-blue-700 bg-blue-50/80 hover:bg-blue-100/80"
+            )}
+          >
+            <Send className="w-4 h-4" />
+            <span>Мультипостинг (TG + ВК)</span>
           </button>
           <button
             onClick={() => setActiveTab("users")}
@@ -1684,6 +1918,561 @@ export const AppAdminView: React.FC = () => {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* TAB 4B: SOCIAL NETWORKS CROSS-POSTING (TELEGRAM + VK + INTERNAL NEWS) */}
+        {activeTab === "socials" && (
+          <div className="space-y-6 animate-in fade-in duration-200">
+            {/* Top Banner & Guide Toggle */}
+            <div className="bg-white p-6 rounded-3xl border border-gray-200/80 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-base font-extrabold text-gray-900">
+                    Мультипостинг в Telegram-канал, группу ВКонтакте и «Мебель План»
+                  </h2>
+                </div>
+                <p className="text-xs text-gray-500 mt-1">
+                  Настройте токены вашей группы ВК и бота Telegram один раз и публикуйте новости, акции и кейсы одновременно во все соцсети в 1 клик
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowSocialGuide(prev => !prev)}
+                className="px-4 py-2.5 rounded-2xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer shrink-0 border border-blue-200"
+              >
+                <HelpCircle className="w-4 h-4" />
+                <span>{showSocialGuide ? "Скрыть инструкцию по подключению" : "Как подключить Telegram и ВК?"}</span>
+              </button>
+            </div>
+
+            {/* Step-by-step Connection Instructions */}
+            {showSocialGuide && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 bg-slate-900 text-white p-6 rounded-3xl border border-slate-800 shadow-xl">
+                <div className="space-y-3">
+                  <div className="text-xs font-black uppercase tracking-wider text-sky-400 flex items-center gap-2">
+                    <Send className="w-4 h-4" />
+                    Как подключить Telegram-канал за 1 минуту
+                  </div>
+                  <ol className="text-xs text-slate-300 space-y-2 list-decimal pl-4 leading-relaxed">
+                    <li>
+                      Откройте в Telegram официального бота <strong className="text-white">@BotFather</strong> и отправьте команду <code className="text-sky-300">/newbot</code>. Скопируйте выданный <strong>Bot Token</strong> (например, <code className="text-slate-400">7123456:AAH...</code>).
+                    </li>
+                    <li>
+                      Зайдите в настройки вашего Telegram-канала → <strong>Администраторы</strong> → <strong>Добавить администратора</strong> → найдите вашего бота и включите ему право <strong>«Публикация сообщений»</strong>.
+                    </li>
+                    <li>
+                      В поле <strong>ID или @username канала</strong> укажите публичную ссылку канала через <code className="text-sky-300">@</code> (например, <code className="text-sky-300">@mebel_plan</code>) или приватный ID вида <code className="text-sky-300">-1001234567890</code> и нажмите «Проверить».
+                    </li>
+                  </ol>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="text-xs font-black uppercase tracking-wider text-blue-400 flex items-center gap-2">
+                    <Globe className="w-4 h-4" />
+                    Как подключить группу ВКонтакте
+                  </div>
+                  <ol className="text-xs text-slate-300 space-y-2 list-decimal pl-4 leading-relaxed">
+                    <li>
+                      Откройте ваше сообщество ВК → <strong>Управление</strong> → в адресной строке или разделе «Основная информация» скопируйте <strong>числовой ID сообщества</strong> (например, <code className="text-blue-300">218493012</code>, без минуса и букв <code className="text-slate-400">club</code>).
+                    </li>
+                    <li>
+                      Получите <strong>Access Token (Ключ доступа)</strong> администратора с правами <code className="text-blue-300">wall, photos, groups, offline</code> (например, через приложение VK Admin или сервисы получения токена для автопостинга).
+                    </li>
+                    <li>
+                      Вставьте числовой ID группы и токен в блок ВКонтакте ниже, нажмите <strong>«Проверить ВК»</strong> и сохраните настройки. Записи будут публиковаться от имени сообщества (<code className="text-blue-300">from_group=1</code>).
+                    </li>
+                  </ol>
+                </div>
+              </div>
+            )}
+
+            {/* Connection Settings Cards (Telegram & VK) */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Telegram Config Card */}
+              <div className="bg-white rounded-3xl border border-gray-200/80 p-6 shadow-xs space-y-4">
+                <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-sky-50 text-sky-600 flex items-center justify-center font-bold">
+                      <Send className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-extrabold text-gray-900">Канал или группа Telegram</h3>
+                      <p className="text-[11px] text-gray-500">
+                        {socialConfig.telegramChannelTitle
+                          ? `Подключено: ${socialConfig.telegramChannelTitle}`
+                          : "Публикация через Telegram Bot API с HTML-разметкой и кнопками"}
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className={cn(
+                      "text-[11px] font-bold",
+                      socialConfig.telegramBotToken && socialConfig.telegramChatId
+                        ? "text-emerald-600"
+                        : "text-gray-400"
+                    )}
+                  >
+                    {socialConfig.telegramBotToken && socialConfig.telegramChatId ? "Настроено" : "Не заполнено"}
+                  </span>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">
+                      Токен Telegram-бота (Bot Token от @BotFather):
+                    </label>
+                    <input
+                      type="password"
+                      value={socialConfig.telegramBotToken}
+                      onChange={(e) => setSocialConfig({ ...socialConfig, telegramBotToken: e.target.value })}
+                      placeholder="1234567890:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 border border-gray-200 font-mono text-xs focus:outline-none focus:border-sky-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">
+                      @username канала или Chat ID (например, @mebel_plan или -100...):
+                    </label>
+                    <input
+                      type="text"
+                      value={socialConfig.telegramChatId}
+                      onChange={(e) => setSocialConfig({ ...socialConfig, telegramChatId: e.target.value })}
+                      placeholder="@mebel_plan"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 border border-gray-200 font-mono text-xs focus:outline-none focus:border-sky-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2 flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleTestSocialConnection("telegram")}
+                    disabled={testingTelegram}
+                    className="px-4 py-2 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-700 font-bold text-xs transition-all cursor-pointer border border-sky-200"
+                  >
+                    {testingTelegram ? "Проверка..." : "Проверить подключение Telegram"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveSocialConfig}
+                    disabled={savingSocialConfig}
+                    className="px-4 py-2 rounded-xl bg-gray-900 hover:bg-gray-800 text-white font-bold text-xs transition-all cursor-pointer"
+                  >
+                    Сохранить
+                  </button>
+                </div>
+              </div>
+
+              {/* VK Config Card */}
+              <div className="bg-white rounded-3xl border border-gray-200/80 p-6 shadow-xs space-y-4">
+                <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center font-black text-sm">
+                      VK
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-extrabold text-gray-900">Сообщество / Группа ВКонтакте</h3>
+                      <p className="text-[11px] text-gray-500">
+                        {socialConfig.vkGroupName
+                          ? `Подключено: ${socialConfig.vkGroupName}`
+                          : "Публикация записей и фото на стену группы (wall.post)"}
+                      </p>
+                    </div>
+                  </div>
+                  <span
+                    className={cn(
+                      "text-[11px] font-bold",
+                      socialConfig.vkAccessToken && socialConfig.vkGroupId
+                        ? "text-emerald-600"
+                        : "text-gray-400"
+                    )}
+                  >
+                    {socialConfig.vkAccessToken && socialConfig.vkGroupId ? "Настроено" : "Не заполнено"}
+                  </span>
+                </div>
+
+                <div className="space-y-3 text-xs">
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">
+                      Числовой ID группы ВКонтакте (без минуса и club):
+                    </label>
+                    <input
+                      type="text"
+                      value={socialConfig.vkGroupId}
+                      onChange={(e) => setSocialConfig({ ...socialConfig, vkGroupId: e.target.value })}
+                      placeholder="Например: 215849302"
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 border border-gray-200 font-mono text-xs focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">
+                      Ключ доступа (VK Access Token с правами wall, photos, groups):
+                    </label>
+                    <input
+                      type="password"
+                      value={socialConfig.vkAccessToken}
+                      onChange={(e) => setSocialConfig({ ...socialConfig, vkAccessToken: e.target.value })}
+                      placeholder="vk1.a.xxxxxx..."
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 border border-gray-200 font-mono text-xs focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2 flex items-center justify-between gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleTestSocialConnection("vk")}
+                    disabled={testingVk}
+                    className="px-4 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-xs transition-all cursor-pointer border border-blue-200"
+                  >
+                    {testingVk ? "Проверка..." : "Проверить подключение ВК"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveSocialConfig}
+                    disabled={savingSocialConfig}
+                    className="px-4 py-2 rounded-xl bg-gray-900 hover:bg-gray-800 text-white font-bold text-xs transition-all cursor-pointer"
+                  >
+                    Сохранить
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* COMPOSER + LIVE PREVIEW */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* Left 7 cols: Post Composer */}
+              <div className="lg:col-span-7 bg-white rounded-3xl border border-gray-200/80 p-6 sm:p-8 shadow-xs space-y-5">
+                <div className="flex items-center justify-between border-b border-gray-100 pb-4">
+                  <div>
+                    <h3 className="text-base font-extrabold text-gray-900">Новая публикация (Кросспостинг)</h3>
+                    <p className="text-xs text-gray-500">Создайте запись и выберите площадки для одновременной отправки</p>
+                  </div>
+                </div>
+
+                {/* Target checkboxes */}
+                <div>
+                  <label className="block text-xs font-extrabold text-gray-700 mb-2">
+                    Куда опубликовать одновременно:
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    <label
+                      className={cn(
+                        "p-3.5 rounded-2xl border text-xs font-bold flex items-center gap-2.5 cursor-pointer transition-all select-none",
+                        socialPostForm.targetTelegram
+                          ? "bg-sky-50/90 border-sky-300 text-sky-900"
+                          : "bg-gray-50 border-gray-200 text-gray-500"
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={socialPostForm.targetTelegram}
+                        onChange={(e) => setSocialPostForm({ ...socialPostForm, targetTelegram: e.target.checked })}
+                        className="w-4 h-4 rounded text-sky-600"
+                      />
+                      <Send className="w-4 h-4 text-sky-600 shrink-0" />
+                      <span>Telegram-канал</span>
+                    </label>
+
+                    <label
+                      className={cn(
+                        "p-3.5 rounded-2xl border text-xs font-bold flex items-center gap-2.5 cursor-pointer transition-all select-none",
+                        socialPostForm.targetVk
+                          ? "bg-blue-50/90 border-blue-300 text-blue-900"
+                          : "bg-gray-50 border-gray-200 text-gray-500"
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={socialPostForm.targetVk}
+                        onChange={(e) => setSocialPostForm({ ...socialPostForm, targetVk: e.target.checked })}
+                        className="w-4 h-4 rounded text-blue-600"
+                      />
+                      <Globe className="w-4 h-4 text-blue-600 shrink-0" />
+                      <span>Группа ВКонтакте</span>
+                    </label>
+
+                    <label
+                      className={cn(
+                        "p-3.5 rounded-2xl border text-xs font-bold flex items-center gap-2.5 cursor-pointer transition-all select-none",
+                        socialPostForm.targetInternalNews
+                          ? "bg-indigo-50/90 border-indigo-300 text-indigo-900"
+                          : "bg-gray-50 border-gray-200 text-gray-500"
+                      )}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={socialPostForm.targetInternalNews}
+                        onChange={(e) => setSocialPostForm({ ...socialPostForm, targetInternalNews: e.target.checked })}
+                        className="w-4 h-4 rounded text-indigo-600"
+                      />
+                      <Bell className="w-4 h-4 text-indigo-600 shrink-0" />
+                      <span>Лента «Мебель План»</span>
+                    </label>
+                  </div>
+                </div>
+
+                {/* Title & Content */}
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                      Заголовок поста (выделяется жирным в Telegram и первой строкой в ВК):
+                    </label>
+                    <input
+                      type="text"
+                      value={socialPostForm.title}
+                      onChange={(e) => setSocialPostForm({ ...socialPostForm, title: e.target.value })}
+                      placeholder="Например: Автоматический импорт из Pro100 и Базис-Мебельщик за 10 секунд!"
+                      className="w-full px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-xs font-bold focus:outline-none focus:border-blue-600"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                      Основной текст записи *:
+                    </label>
+                    <textarea
+                      rows={5}
+                      value={socialPostForm.content}
+                      onChange={(e) => setSocialPostForm({ ...socialPostForm, content: e.target.value })}
+                      placeholder="Напишите текст новости, обновления или полезного кейса для мебельщиков..."
+                      className="w-full px-4 py-3 rounded-xl bg-gray-50 border border-gray-200 text-xs font-medium leading-relaxed focus:outline-none focus:border-blue-600"
+                    />
+                  </div>
+
+                  {/* Image attachment (URL or file upload) */}
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                      Изображение к посту (ссылка на картинку или загрузка с компьютера):
+                    </label>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        type="text"
+                        value={socialPostForm.imageUrl.startsWith("data:") ? "Загружено изображение с компьютера" : socialPostForm.imageUrl}
+                        onChange={(e) => setSocialPostForm({ ...socialPostForm, imageUrl: e.target.value })}
+                        placeholder="https://example.com/banner.jpg"
+                        className="flex-1 px-4 py-2.5 rounded-xl bg-gray-50 border border-gray-200 text-xs font-mono focus:outline-none focus:border-blue-600"
+                      />
+                      <label className="px-4 py-2.5 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-bold cursor-pointer transition-all shrink-0 text-center">
+                        Выбрать файл...
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleSocialImageUpload}
+                          className="hidden"
+                        />
+                      </label>
+                      {socialPostForm.imageUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setSocialPostForm({ ...socialPostForm, imageUrl: "" })}
+                          className="px-3 py-2.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 text-xs font-bold cursor-pointer"
+                        >
+                          Очистить
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* CTA Button & Hashtags */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">
+                        Текст кнопки-ссылки (Inline-кнопка в TG):
+                      </label>
+                      <input
+                        type="text"
+                        value={socialPostForm.ctaText}
+                        onChange={(e) => setSocialPostForm({ ...socialPostForm, ctaText: e.target.value })}
+                        placeholder="Попробовать бесплатно"
+                        className="w-full px-3.5 py-2 rounded-xl bg-gray-50 border border-gray-200 text-xs font-semibold"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 mb-1">
+                        URL ссылки (прикрепляется к посту):
+                      </label>
+                      <input
+                        type="text"
+                        value={socialPostForm.ctaUrl}
+                        onChange={(e) => setSocialPostForm({ ...socialPostForm, ctaUrl: e.target.value })}
+                        placeholder="https://mebel-plan.ru"
+                        className="w-full px-3.5 py-2 rounded-xl bg-gray-50 border border-gray-200 text-xs font-mono"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 mb-1">
+                      Хэштеги (добавляются внизу поста):
+                    </label>
+                    <input
+                      type="text"
+                      value={socialPostForm.hashtags}
+                      onChange={(e) => setSocialPostForm({ ...socialPostForm, hashtags: e.target.value })}
+                      placeholder="#мебельплан #мебельноепроизводство #раскрой #базисмебельщик #pro100"
+                      className="w-full px-3.5 py-2 rounded-xl bg-gray-50 border border-gray-200 text-xs text-blue-700 font-semibold"
+                    />
+                  </div>
+                </div>
+
+                {/* Publish Result Report Banner */}
+                {lastPublishReport && (
+                  <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                    <div className="text-xs font-extrabold text-slate-800">Результат отправки по площадкам:</div>
+                    <div className="space-y-1.5 text-xs">
+                      {Object.entries(lastPublishReport).map(([net, info]) => (
+                        <div key={net} className="flex items-center justify-between">
+                          <span className="font-bold text-slate-700">
+                            {net === "telegram" ? "Telegram" : net === "vk" ? "ВКонтакте" : "Лента Мебель План"}:
+                          </span>
+                          <span className={cn("font-semibold", info.ok ? "text-emerald-600" : "text-red-600")}>
+                            {info.message}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="pt-2 flex items-center justify-end">
+                  <button
+                    type="button"
+                    onClick={handlePublishSocialPost}
+                    disabled={publishingSocialPost}
+                    className="w-full sm:w-auto px-8 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-black shadow-lg shadow-blue-500/20 flex items-center justify-center gap-2 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    <Send className="w-4 h-4" />
+                    <span>
+                      {publishingSocialPost
+                        ? "Отправка во все выбранные соцсети..."
+                        : "Опубликовать одновременно в выбранные сети"}
+                    </span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Right 5 cols: Live Preview for Telegram & VK */}
+              <div className="lg:col-span-5 space-y-4">
+                <div className="bg-slate-900 text-white rounded-3xl p-6 border border-slate-800 shadow-xl space-y-4">
+                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                    <span className="text-xs font-black uppercase tracking-wider text-sky-400 flex items-center gap-1.5">
+                      <Eye className="w-4 h-4" />
+                      Предпросмотр публикации
+                    </span>
+                    <span className="text-[11px] text-slate-400 font-mono">Telegram & VK</span>
+                  </div>
+
+                  {/* Simulated Telegram / VK Bubble */}
+                  <div className="bg-slate-950 rounded-2xl overflow-hidden border border-slate-800">
+                    {socialPostForm.imageUrl && (
+                      <div className="w-full h-44 bg-slate-900 overflow-hidden border-b border-slate-800">
+                        <img
+                          src={socialPostForm.imageUrl}
+                          alt="Post preview"
+                          className="w-full h-full object-cover"
+                        />
+                      </div>
+                    )}
+                    <div className="p-4 space-y-2.5 text-xs">
+                      <div className="font-extrabold text-sky-400 text-[11px]">
+                        {socialConfig.telegramChannelTitle || socialConfig.vkGroupName || "Мебель План • Официальный канал"}
+                      </div>
+                      {socialPostForm.title && (
+                        <div className="font-bold text-white text-sm leading-snug">
+                          {socialPostForm.title}
+                        </div>
+                      )}
+                      <div className="text-slate-300 whitespace-pre-wrap leading-relaxed">
+                        {socialPostForm.content || "Здесь появится текст вашей записи для Telegram и группы ВКонтакте..."}
+                      </div>
+                      {socialPostForm.hashtags && (
+                        <div className="text-sky-400 text-[11px] font-medium pt-1">
+                          {socialPostForm.hashtags}
+                        </div>
+                      )}
+                    </div>
+
+                    {socialPostForm.ctaUrl && (
+                      <div className="px-4 pb-4">
+                        <div className="w-full py-2 rounded-xl bg-slate-800/90 text-sky-300 text-center text-xs font-bold border border-slate-700">
+                          {socialPostForm.ctaText || "Подробнее"} ↗
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* History of Cross-Posted Entries */}
+                <div className="bg-white rounded-3xl border border-gray-200/80 p-6 shadow-xs space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-sm font-extrabold text-gray-900">
+                      История мультипостинга ({socialPosts.length})
+                    </h4>
+                  </div>
+
+                  {socialPosts.length === 0 ? (
+                    <div className="text-center py-6 text-xs text-gray-400">
+                      Отправленных через мультипостинг записей пока нет
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                      {socialPosts.map((post) => (
+                        <div
+                          key={post.id}
+                          className="p-3.5 rounded-2xl bg-gray-50 border border-gray-200/80 space-y-2 text-xs"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <div className="font-bold text-gray-900 line-clamp-1">
+                              {post.title || post.content}
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteSocialPostHistory(post.id)}
+                              className="text-gray-400 hover:text-red-600 cursor-pointer shrink-0"
+                              title="Удалить из истории"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                          <p className="text-gray-600 line-clamp-2 text-[11px]">{post.content}</p>
+                          <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-gray-200/60 text-[10px]">
+                            <div className="flex flex-wrap items-center gap-2">
+                              {post.results?.telegram && (
+                                <span className={post.results.telegram.ok ? "text-emerald-700 font-bold" : "text-red-600 font-bold"}>
+                                  TG: {post.results.telegram.ok ? "Опубликовано" : "Ошибка"}
+                                </span>
+                              )}
+                              {post.results?.vk && (
+                                <span className={post.results.vk.ok ? "text-blue-700 font-bold" : "text-red-600 font-bold"}>
+                                  VK: {post.results.vk.ok ? "Опубликовано" : "Ошибка"}
+                                </span>
+                              )}
+                              {post.results?.internalNews && (
+                                <span className="text-indigo-700 font-bold">
+                                  Платформа: Да
+                                </span>
+                              )}
+                            </div>
+                            <span className="text-gray-400">
+                              {new Date(post.createdAt).toLocaleDateString("ru-RU", {
+                                day: "numeric",
+                                month: "short",
+                                hour: "2-digit",
+                                minute: "2-digit"
+                              })}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

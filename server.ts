@@ -2401,6 +2401,549 @@ function transliterate(str: string): string {
     }
   });
 
+  // --- SOCIAL NETWORKS CROSS-POSTING API (TELEGRAM + VK + INTERNAL NEWS) ---
+  const escapeTelegramHtml = (str: string) =>
+    String(str || "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+
+  const getSocialConfigFromStore = async (): Promise<any> => {
+    const docPath = "system/social_autopost_config";
+    const localDoc = localStore.getDoc(docPath);
+    if (localDoc && localDoc.data) {
+      return typeof localDoc.data === "string" ? JSON.parse(localDoc.data) : localDoc.data;
+    }
+    if (isPostgresAvailable) {
+      try {
+        const dbDoc = await dbQueryWithRetry(() =>
+          prisma.dbDocument.findUnique({ where: { path: docPath } })
+        );
+        if (dbDoc && dbDoc.data) {
+          const parsed = typeof dbDoc.data === "string" ? JSON.parse(dbDoc.data) : dbDoc.data;
+          localStore.setDoc(docPath, "system", "social_autopost_config", dbDoc.data, false, false);
+          return parsed;
+        }
+      } catch (_) {}
+    }
+    return {
+      telegramEnabled: false,
+      telegramBotToken: "",
+      telegramChatId: "",
+      telegramChannelTitle: "",
+      vkEnabled: false,
+      vkAccessToken: "",
+      vkGroupId: "",
+      vkGroupName: "",
+      defaultCtaText: "Открыть Мебель План",
+      defaultCtaUrl: "https://mebel-plan.ru",
+      defaultHashtags: "#мебельплан #мебельноепроизводство #раскрой #erp"
+    };
+  };
+
+  app.get("/api/system/social-config", async (req, res) => {
+    try {
+      const config = await getSocialConfigFromStore();
+      let posts: any[] = [];
+      const localPosts = localStore.getCollection("system_social_posts");
+      if (localPosts.length > 0) {
+        posts = localPosts.map(d => ({
+          id: d.docId || d.id,
+          ...(typeof d.data === "string" ? JSON.parse(d.data) : d.data)
+        }));
+      } else if (isPostgresAvailable) {
+        try {
+          const docs = await dbQueryWithRetry(() =>
+            prisma.dbDocument.findMany({ where: { collection: "system_social_posts" } })
+          );
+          posts = docs.map(d => {
+            const parsed = typeof d.data === "string" ? JSON.parse(d.data) : d.data;
+            localStore.setDoc(d.path, d.collection, d.docId, d.data, false, false);
+            return { id: d.docId, ...parsed };
+          });
+        } catch (_) {}
+      }
+      posts.sort((a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime());
+      res.json({ success: true, config, posts });
+    } catch (e: any) {
+      console.error("Error in GET /api/system/social-config:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/system/social-config", async (req, res) => {
+    try {
+      const current = await getSocialConfigFromStore();
+      const updated = {
+        ...current,
+        ...req.body,
+        updatedAt: new Date().toISOString()
+      };
+      const docPath = "system/social_autopost_config";
+      localStore.setDoc(docPath, "system", "social_autopost_config", JSON.stringify(updated), false, true);
+      if (isPostgresAvailable) {
+        prisma.dbDocument.upsert({
+          where: { path: docPath },
+          create: {
+            path: docPath,
+            collection: "system",
+            docId: "social_autopost_config",
+            data: JSON.stringify(updated)
+          },
+          update: {
+            data: JSON.stringify(updated)
+          }
+        }).catch(() => {});
+      }
+      res.json({ success: true, config: updated });
+    } catch (e: any) {
+      console.error("Error in POST /api/system/social-config:", e);
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
+  app.post("/api/system/social-test", async (req, res) => {
+    try {
+      const { platform, telegramBotToken, telegramChatId, vkAccessToken, vkGroupId } = req.body;
+      if (platform === "telegram") {
+        const token = String(telegramBotToken || "").trim();
+        const chatId = String(telegramChatId || "").trim();
+        if (!token || !chatId) {
+          return res.status(400).json({ error: "Укажите Bot Token и ID/@username канала Telegram" });
+        }
+        const tgRes = await fetch(
+          `https://api.telegram.org/bot${token}/getChat?chat_id=${encodeURIComponent(chatId)}`
+        );
+        const tgData: any = await tgRes.json();
+        if (!tgData.ok) {
+          return res.status(400).json({
+            error: `Telegram API: ${tgData.description || "Не удалось найти канал или бот не добавлен в администраторы"}`
+          });
+        }
+        const title = tgData.result?.title || tgData.result?.username || chatId;
+        return res.json({
+          success: true,
+          title,
+          message: `Канал/группа «${title}» успешно подключена!`
+        });
+      }
+
+      if (platform === "vk") {
+        const token = String(vkAccessToken || "").trim();
+        const cleanGroupId = String(vkGroupId || "").replace(/[^0-9]/g, "");
+        if (!token || !cleanGroupId) {
+          return res.status(400).json({ error: "Укажите числовой ID группы ВК и Ключ доступа (Access Token)" });
+        }
+        const vkRes = await fetch(
+          `https://api.vk.com/method/groups.getById?group_id=${encodeURIComponent(cleanGroupId)}&v=5.199&access_token=${encodeURIComponent(token)}`
+        );
+        const vkData: any = await vkRes.json();
+        if (vkData.error) {
+          return res.status(400).json({
+            error: `VK API: ${vkData.error.error_msg || "Ошибка проверки токена или ID группы"}`
+          });
+        }
+        const groupObj = vkData.response?.groups?.[0] || vkData.response?.[0];
+        const groupName = groupObj?.name || `Группа #${cleanGroupId}`;
+        return res.json({
+          success: true,
+          groupName,
+          message: `Сообщество ВК «${groupName}» успешно подключено!`
+        });
+      }
+
+      return res.status(400).json({ error: "Неизвестная платформа" });
+    } catch (e: any) {
+      console.error("Error in POST /api/system/social-test:", e);
+      res.status(500).json({ error: e?.message || String(e) });
+    }
+  });
+
+  app.post("/api/system/social-post", async (req, res) => {
+    try {
+      const {
+        title,
+        content,
+        imageUrl,
+        ctaText,
+        ctaUrl,
+        hashtags,
+        targets,
+        internalNewsType = "info",
+        internalIsBanner = false
+      } = req.body;
+
+      if (!content || !String(content).trim()) {
+        return res.status(400).json({ error: "Введите текст публикации" });
+      }
+
+      const config = await getSocialConfigFromStore();
+      const results: Record<string, { ok: boolean; message: string; externalId?: string }> = {};
+
+      // 1. Publish to Telegram
+      if (targets?.telegram) {
+        const token = String(config.telegramBotToken || "").trim();
+        const chatId = String(config.telegramChatId || "").trim();
+        if (!token || !chatId) {
+          results.telegram = {
+            ok: false,
+            message: "Не заполнены Bot Token или ID канала Telegram в настройках"
+          };
+        } else {
+          try {
+            const parts: string[] = [];
+            if (title && String(title).trim()) {
+              parts.push(`<b>${escapeTelegramHtml(String(title).trim())}</b>`);
+            }
+            parts.push(escapeTelegramHtml(String(content).trim()));
+            if (hashtags && String(hashtags).trim()) {
+              parts.push(escapeTelegramHtml(String(hashtags).trim()));
+            }
+            const fullHtmlText = parts.join("\n\n");
+
+            const replyMarkup =
+              ctaUrl && String(ctaUrl).trim()
+                ? {
+                    inline_keyboard: [
+                      [
+                        {
+                          text: String(ctaText || "Подробнее").trim(),
+                          url: String(ctaUrl).trim()
+                        }
+                      ]
+                    ]
+                  }
+                : undefined;
+
+            let tgResultData: any = null;
+
+            if (imageUrl && String(imageUrl).trim()) {
+              const trimmedImg = String(imageUrl).trim();
+              if (trimmedImg.startsWith("data:image/")) {
+                // Convert base64 to Blob and upload via sendPhoto
+                const match = trimmedImg.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+                if (match) {
+                  const mimeType = match[1];
+                  const base64Data = match[2];
+                  const buffer = Buffer.from(base64Data, "base64");
+                  const blob = new Blob([buffer], { type: mimeType });
+                  const form = new FormData();
+                  form.append("chat_id", chatId);
+                  form.append("photo", blob, "post_image.jpg");
+                  if (fullHtmlText.length <= 1020) {
+                    form.append("caption", fullHtmlText);
+                    form.append("parse_mode", "HTML");
+                    if (replyMarkup) {
+                      form.append("reply_markup", JSON.stringify(replyMarkup));
+                    }
+                  }
+                  const photoRes = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+                    method: "POST",
+                    body: form
+                  });
+                  tgResultData = await photoRes.json();
+
+                  // If text was longer than caption limit, send follow-up message
+                  if (tgResultData?.ok && fullHtmlText.length > 1020) {
+                    const msgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({
+                        chat_id: chatId,
+                        text: fullHtmlText,
+                        parse_mode: "HTML",
+                        reply_markup: replyMarkup
+                      })
+                    });
+                    tgResultData = await msgRes.json();
+                  }
+                }
+              } else {
+                // HTTP URL photo
+                const photoRes = await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    chat_id: chatId,
+                    photo: trimmedImg,
+                    caption: fullHtmlText.length <= 1020 ? fullHtmlText : undefined,
+                    parse_mode: "HTML",
+                    reply_markup: fullHtmlText.length <= 1020 ? replyMarkup : undefined
+                  })
+                });
+                tgResultData = await photoRes.json();
+
+                if (!tgResultData?.ok || fullHtmlText.length > 1020) {
+                  const msgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                      chat_id: chatId,
+                      text: fullHtmlText,
+                      parse_mode: "HTML",
+                      reply_markup: replyMarkup
+                    })
+                  });
+                  tgResultData = await msgRes.json();
+                }
+              }
+            } else {
+              const msgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  chat_id: chatId,
+                  text: fullHtmlText,
+                  parse_mode: "HTML",
+                  disable_web_page_preview: false,
+                  reply_markup: replyMarkup
+                })
+              });
+              tgResultData = await msgRes.json();
+            }
+
+            if (tgResultData?.ok) {
+              results.telegram = {
+                ok: true,
+                message: "Опубликовано в Telegram",
+                externalId: String(tgResultData.result?.message_id || "")
+              };
+            } else {
+              results.telegram = {
+                ok: false,
+                message: `Ошибка Telegram: ${tgResultData?.description || "Не удалось отправить"}`
+              };
+            }
+          } catch (tgErr: any) {
+            results.telegram = {
+              ok: false,
+              message: `Ошибка сети Telegram: ${tgErr?.message || String(tgErr)}`
+            };
+          }
+        }
+      }
+
+      // 2. Publish to VK Group (wall.post)
+      if (targets?.vk) {
+        const token = String(config.vkAccessToken || "").trim();
+        const cleanGroupId = String(config.vkGroupId || "").replace(/[^0-9]/g, "");
+        if (!token || !cleanGroupId) {
+          results.vk = {
+            ok: false,
+            message: "Не заполнены ID группы ВК или Access Token в настройках"
+          };
+        } else {
+          try {
+            const vkParts: string[] = [];
+            if (title && String(title).trim()) {
+              vkParts.push(String(title).trim());
+            }
+            vkParts.push(String(content).trim());
+            if (ctaUrl && String(ctaUrl).trim()) {
+              vkParts.push(`${ctaText ? String(ctaText).trim() : "Подробнее"}: ${String(ctaUrl).trim()}`);
+            }
+            if (hashtags && String(hashtags).trim()) {
+              vkParts.push(String(hashtags).trim());
+            }
+            const vkMessage = vkParts.join("\n\n");
+
+            const attachmentsList: string[] = [];
+
+            // Try uploading wall photo if imageUrl is provided and token has photo permissions
+            if (imageUrl && String(imageUrl).trim()) {
+              try {
+                const srvRes = await fetch(
+                  `https://api.vk.com/method/photos.getWallUploadServer?group_id=${cleanGroupId}&v=5.199&access_token=${encodeURIComponent(token)}`
+                );
+                const srvData: any = await srvRes.json();
+                const uploadUrl = srvData?.response?.upload_url;
+                if (uploadUrl) {
+                  let imgBlob: Blob | null = null;
+                  const trimmedImg = String(imageUrl).trim();
+                  if (trimmedImg.startsWith("data:image/")) {
+                    const match = trimmedImg.match(/^data:(image\/[a-zA-Z0-9+.-]+);base64,(.+)$/);
+                    if (match) {
+                      imgBlob = new Blob([Buffer.from(match[2], "base64")], { type: match[1] });
+                    }
+                  } else {
+                    const fetchedImg = await fetch(trimmedImg);
+                    if (fetchedImg.ok) {
+                      const arrBuf = await fetchedImg.arrayBuffer();
+                      imgBlob = new Blob([arrBuf], { type: fetchedImg.headers.get("content-type") || "image/jpeg" });
+                    }
+                  }
+
+                  if (imgBlob) {
+                    const upForm = new FormData();
+                    upForm.append("photo", imgBlob, "wall_photo.jpg");
+                    const upRes = await fetch(uploadUrl, { method: "POST", body: upForm });
+                    const upData: any = await upRes.json();
+                    if (upData?.photo && upData?.server && upData?.hash) {
+                      const saveParams = new URLSearchParams({
+                        group_id: cleanGroupId,
+                        photo: String(upData.photo),
+                        server: String(upData.server),
+                        hash: String(upData.hash),
+                        v: "5.199",
+                        access_token: token
+                      });
+                      const saveRes = await fetch(`https://api.vk.com/method/photos.saveWallPhoto`, {
+                        method: "POST",
+                        body: saveParams
+                      });
+                      const saveData: any = await saveRes.json();
+                      const savedPhoto = saveData?.response?.[0];
+                      if (savedPhoto && savedPhoto.owner_id && savedPhoto.id) {
+                        attachmentsList.push(`photo${savedPhoto.owner_id}_${savedPhoto.id}`);
+                      }
+                    }
+                  }
+                }
+              } catch (_) {
+                // Ignore photo upload error and still post text/link
+              }
+            }
+
+            if (ctaUrl && String(ctaUrl).trim()) {
+              attachmentsList.push(String(ctaUrl).trim());
+            }
+
+            const postParams = new URLSearchParams({
+              owner_id: `-${cleanGroupId}`,
+              from_group: "1",
+              message: vkMessage,
+              v: "5.199",
+              access_token: token
+            });
+            if (attachmentsList.length > 0) {
+              postParams.set("attachments", attachmentsList.join(","));
+            }
+
+            const vkPostRes = await fetch("https://api.vk.com/method/wall.post", {
+              method: "POST",
+              body: postParams
+            });
+            const vkPostData: any = await vkPostRes.json();
+
+            if (vkPostData?.response?.post_id) {
+              results.vk = {
+                ok: true,
+                message: `Опубликовано в ВК (post_id: ${vkPostData.response.post_id})`,
+                externalId: String(vkPostData.response.post_id)
+              };
+            } else {
+              results.vk = {
+                ok: false,
+                message: `Ошибка ВК: ${vkPostData?.error?.error_msg || "Не удалось опубликовать запись"}`
+              };
+            }
+          } catch (vkErr: any) {
+            results.vk = {
+              ok: false,
+              message: `Ошибка сети ВК: ${vkErr?.message || String(vkErr)}`
+            };
+          }
+        }
+      }
+
+      // 3. Publish to Internal Platform News (system_news)
+      let createdInternalNews: any = null;
+      if (targets?.internalNews) {
+        const newsId = `news_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        const newsDocPath = `system_news/${newsId}`;
+        const newsPayload = {
+          id: newsId,
+          title: String(title || "Новость Мебель План").trim(),
+          content: String(content).trim(),
+          type: internalNewsType || "info",
+          targetAudience: "all",
+          isBanner: !!internalIsBanner,
+          isActive: true,
+          authorName: "Администрация Мебель План",
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        localStore.setDoc(newsDocPath, "system_news", newsId, JSON.stringify(newsPayload), false, true);
+        if (isPostgresAvailable) {
+          prisma.dbDocument.upsert({
+            where: { path: newsDocPath },
+            create: {
+              path: newsDocPath,
+              collection: "system_news",
+              docId: newsId,
+              data: JSON.stringify(newsPayload)
+            },
+            update: {
+              data: JSON.stringify(newsPayload)
+            }
+          }).catch(() => {});
+        }
+        createdInternalNews = newsPayload;
+        results.internalNews = {
+          ok: true,
+          message: "Опубликовано в ленте «Мебель План»",
+          externalId: newsId
+        };
+      }
+
+      // Save record in system_social_posts
+      const postId = `socpost_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const postDocPath = `system_social_posts/${postId}`;
+      const postRecord = {
+        id: postId,
+        title: String(title || "").trim(),
+        content: String(content).trim(),
+        imageUrl: imageUrl || "",
+        ctaText: ctaText || "",
+        ctaUrl: ctaUrl || "",
+        hashtags: hashtags || "",
+        targets,
+        results,
+        createdAt: new Date().toISOString()
+      };
+
+      localStore.setDoc(postDocPath, "system_social_posts", postId, JSON.stringify(postRecord), false, true);
+      if (isPostgresAvailable) {
+        prisma.dbDocument.upsert({
+          where: { path: postDocPath },
+          create: {
+            path: postDocPath,
+            collection: "system_social_posts",
+            docId: postId,
+            data: JSON.stringify(postRecord)
+          },
+          update: {
+            data: JSON.stringify(postRecord)
+          }
+        }).catch(() => {});
+      }
+
+      res.json({
+        success: true,
+        post: postRecord,
+        newsItem: createdInternalNews,
+        results
+      });
+    } catch (e: any) {
+      console.error("Error in POST /api/system/social-post:", e);
+      res.status(500).json({ error: e?.message || String(e) });
+    }
+  });
+
+  app.delete("/api/system/social-post/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const docPath = `system_social_posts/${id}`;
+      localStore.deleteDoc(docPath);
+      if (isPostgresAvailable) {
+        prisma.dbDocument.deleteMany({ where: { path: docPath } }).catch(() => {});
+      }
+      res.json({ success: true });
+    } catch (e: any) {
+      res.status(500).json({ error: String(e) });
+    }
+  });
+
   // --- COMPANY APPLICATIONS API ---
   app.get("/api/system/applications", async (req, res) => {
     try {
