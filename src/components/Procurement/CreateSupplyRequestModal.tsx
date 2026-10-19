@@ -403,43 +403,93 @@ export const CreateSupplyRequestModal: React.FC<CreateSupplyRequestModalProps> =
                 <span>Заявка будет разбита на <strong>{supplierSplits.length} поставщиков</strong></span>
               </div>
 
-              {supplierSplits.map((split) => (
-                <div key={split.supplierId} className="border border-slate-200 rounded-2xl overflow-hidden bg-white space-y-3 p-4">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <div className="flex items-center gap-2 font-extrabold text-sm text-slate-900">
-                      <Building2 className="w-4 h-4 text-indigo-600" />
-                      <span>{split.supplierName}</span>
-                    </div>
-                    <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-700">
-                      {split.items.length} позиций
-                    </span>
-                  </div>
+              {supplierSplits.map((split) => {
+                // Group identical items within split by name and article
+                const itemGroups: Record<string, {
+                  productName: string;
+                  article?: string;
+                  totalToPurchaseQty: number;
+                  totalRequestedQty: number;
+                  orders: Array<{ id: string; orderName: string; toPurchaseQty: number; qty: number; supplierId?: string }>;
+                }> = {};
 
-                  <div className="space-y-2 divide-y divide-slate-100">
-                    {split.items.map((item) => (
-                      <div key={item.id} className="pt-2 flex items-center justify-between gap-4 text-xs">
-                        <div className="space-y-0.5">
-                          <div className="font-bold text-slate-900">{item.productName}</div>
-                          <div className="text-[11px] text-slate-500">Заказ: {item.orderName} | К закупке: {item.toPurchaseQty} шт.</div>
-                        </div>
+                split.items.forEach(item => {
+                  const key = `${item.article || ''}:::${item.productName.toLowerCase().trim()}`;
+                  if (!itemGroups[key]) {
+                    itemGroups[key] = {
+                      productName: item.productName,
+                      article: item.article,
+                      totalToPurchaseQty: 0,
+                      totalRequestedQty: 0,
+                      orders: []
+                    };
+                  }
+                  itemGroups[key].totalToPurchaseQty += (item.toPurchaseQty || 0);
+                  itemGroups[key].totalRequestedQty += (item.requestedQty || 0);
+                  itemGroups[key].orders.push({
+                    id: item.id,
+                    orderName: item.orderName,
+                    toPurchaseQty: item.toPurchaseQty,
+                    qty: item.requestedQty,
+                    supplierId: item.selectedSupplierId
+                  });
+                });
 
-                        {/* Supplier Selector in case of multiple suppliers */}
-                        {suppliers.length > 1 && (
-                          <select
-                            value={item.selectedSupplierId}
-                            onChange={(e) => handleSupplierChoice(item.id, e.target.value)}
-                            className="px-3 py-1 bg-slate-100 border border-slate-300 rounded-xl text-xs font-bold focus:outline-hidden focus:border-indigo-600"
-                          >
-                            {suppliers.map(s => (
-                              <option key={s.id} value={s.id}>{s.name}</option>
-                            ))}
-                          </select>
-                        )}
+                const groupList = Object.values(itemGroups);
+
+                return (
+                  <div key={split.supplierId} className="border border-slate-200 rounded-2xl overflow-hidden bg-white space-y-3 p-4">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                      <div className="flex items-center gap-2 font-extrabold text-sm text-slate-900">
+                        <Building2 className="w-4 h-4 text-indigo-600" />
+                        <span>{split.supplierName}</span>
                       </div>
-                    ))}
+                      <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-700">
+                        {groupList.length} наименований ({split.items.length} по заказам)
+                      </span>
+                    </div>
+
+                    <div className="space-y-3 divide-y divide-slate-100">
+                      {groupList.map((grp, gIdx) => (
+                        <div key={gIdx} className="pt-2.5 space-y-1.5 text-xs">
+                          <div className="flex items-start justify-between gap-4">
+                            <div>
+                              <div className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+                                {grp.article && (
+                                  <span className="px-1.5 py-0.5 bg-slate-100 font-mono text-[10px] font-bold text-slate-600 rounded">
+                                    {grp.article}
+                                  </span>
+                                )}
+                                <span>{grp.productName}</span>
+                              </div>
+                            </div>
+                            <div className="text-right shrink-0">
+                              <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 font-black rounded-lg text-xs">
+                                Всего: {grp.totalToPurchaseQty > 0 ? grp.totalToPurchaseQty : grp.totalRequestedQty} шт.
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Order breakdown */}
+                          <div className="p-2 bg-slate-50 rounded-xl border border-slate-200/80 text-[11px] text-slate-600 space-y-1">
+                            <div className="font-bold text-slate-700 text-[10px] uppercase tracking-wider">
+                              Распределение по заказам ({grp.orders.length}):
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              {grp.orders.map((ord, oIdx) => (
+                                <div key={oIdx} className="bg-white px-2 py-0.5 rounded border border-slate-200 font-medium flex items-center gap-1.5">
+                                  <span className="font-bold text-slate-900">{ord.orderName}:</span>
+                                  <span className="font-black text-indigo-600">{ord.toPurchaseQty > 0 ? ord.toPurchaseQty : ord.qty} шт.</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 

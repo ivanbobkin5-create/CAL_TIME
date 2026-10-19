@@ -165,6 +165,7 @@ import {
   B24DealProcurementView
 } from "./components/Bitrix24";
 import { B3DTestView } from "./components/B3DTest/B3DTestView";
+import { LegalDocumentsView } from "./components/Legal/LegalDocumentsView";
 import {
   Menu,
   FlaskConical,
@@ -41549,6 +41550,14 @@ export default function App() {
 
   // Detect public customer landing page or public package digital passport
   const currentPath = window.location.pathname;
+
+  // Legal documents pages
+  if (currentPath === "/privacy" || currentPath === "/privacy-policy" || currentPath === "/politika") {
+    return <LegalDocumentsView initialDoc="privacy" />;
+  }
+  if (currentPath === "/terms" || currentPath === "/license" || currentPath === "/eula" || currentPath === "/oferta") {
+    return <LegalDocumentsView initialDoc="terms" />;
+  }
 
   // Public Package Passport for Installers (No login required)
   if (currentPath.startsWith("/p/") || currentPath.startsWith("/package/") || currentPath.startsWith("/pkg/")) {

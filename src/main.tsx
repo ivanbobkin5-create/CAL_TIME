@@ -1,6 +1,6 @@
 import {StrictMode, Component, ErrorInfo, ReactNode} from 'react';
 import {createRoot} from 'react-dom/client';
-import App from './App.tsx';
+import RootApp from './RootApp.tsx';
 import './index.css';
 
 const appVersion = "1.0.1";
@@ -54,22 +54,17 @@ class ErrorBoundary extends Component<{children: ReactNode}, {hasError: boolean,
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
-      <App />
+      <RootApp />
     </ErrorBoundary>
   </StrictMode>,
 );
 
-// Register and automatically update the PWA Service Worker
+// Unregister service worker to prevent stale offline grey screen caching
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .then((reg) => {
-        // Automatically check for new deployment
-        reg.update();
-      })
-      .catch((err) => {
-        console.warn('Service Worker registration failed:', err);
-      });
-  });
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    for (const registration of registrations) {
+      registration.unregister();
+    }
+  }).catch(() => {});
 }
 

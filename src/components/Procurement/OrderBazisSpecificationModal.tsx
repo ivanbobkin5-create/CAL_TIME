@@ -207,8 +207,11 @@ export const OrderBazisSpecificationModal: React.FC<OrderBazisSpecificationModal
             const parsedPrice = parseFloat(String(rawPrice).replace(',', '.')) || 0;
 
             if (!nameVal && !artVal) continue;
-            // Exclude summary rows
-            if (/^(итого|всего|страница|page|подпись|составил|проверил|лист|заказчик|руководитель)\b/i.test(nameVal || artVal)) {
+            // Ignore rows where quantity <= 0 (technical headers / column names / empty counts)
+            if (parsedQty <= 0) continue;
+
+            // Exclude summary and technical column headers
+            if (/^(итого|всего|страница|page|подпись|составил|проверил|лист|заказчик|руководитель|наименование|название|номенклатура|значение|обозначение|тип|параметр|кол-во|количество|ед\.?\s*изм\.?|цена|сумма|артикул)\b/i.test(nameVal || artVal)) {
               continue;
             }
 
@@ -218,17 +221,24 @@ export const OrderBazisSpecificationModal: React.FC<OrderBazisSpecificationModal
             const categoryName = detectCategoryName(itemName, catVal);
             const targetCatObj = categories.find(c => c.name === categoryName) || categories[0];
 
-            // Match with warehouse
-            const exactWarehouseMatch = warehouseItems.find(w => 
-              (artVal && w.article && w.article.toLowerCase() === artVal.toLowerCase()) ||
-              w.name.toLowerCase() === itemName.toLowerCase()
-            );
+            // Match with warehouse catalog by Article/SKU or Name
+            const targetArtLower = artVal.toLowerCase().trim();
+            const targetNameLower = itemName.toLowerCase().trim();
+
+            const exactWarehouseMatch = warehouseItems.find(w => {
+              const wArt = (w.article || (w as any).sku || '').toLowerCase().trim();
+              const wName = (w.name || '').toLowerCase().trim();
+
+              if (targetArtLower && wArt && targetArtLower === wArt) return true;
+              if (targetNameLower && wName && (wName === targetNameLower || wName.includes(targetNameLower) || targetNameLower.includes(wName))) return true;
+              return false;
+            });
 
             extractedItems.push({
               id: `spec_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
               article: artVal,
               name: itemName,
-              quantity: parsedQty || 1,
+              quantity: parsedQty,
               unit: unitVal || 'шт',
               rawCategory: catVal || 'Базис-Спецификация',
               matchedCategoryId: targetCatObj?.id,
@@ -236,7 +246,7 @@ export const OrderBazisSpecificationModal: React.FC<OrderBazisSpecificationModal
               matchedWarehouseItemId: exactWarehouseMatch?.id,
               matchedWarehouseItemName: exactWarehouseMatch?.name,
               price: parsedPrice || 0,
-              totalAmount: (parsedQty || 1) * (parsedPrice || 0),
+              totalAmount: parsedQty * (parsedPrice || 0),
               status: exactWarehouseMatch ? 'matched' : 'unmatched',
               procurementStatus: 'Не заказано'
             });

@@ -123,6 +123,13 @@ export const ProductCardModal: React.FC<ProductCardModalProps> = ({
               </div>
             </div>
 
+            <div className="p-3.5 rounded-2xl bg-blue-50/70 border border-blue-200/80">
+              <div className="text-[10px] font-bold text-blue-700 uppercase">Поставщик</div>
+              <div className="text-xs font-extrabold text-blue-950 mt-0.5 truncate">
+                {product.supplier || product.supplierName || product.vendor || brand || 'Не указан'}
+              </div>
+            </div>
+
             {warehouseLocation && (
               <div className="col-span-2 p-3.5 rounded-2xl bg-cyan-50/80 border border-cyan-200 text-cyan-950 flex items-center justify-between">
                 <div className="flex items-center gap-2">

@@ -704,6 +704,17 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
             <span className="text-lg font-black text-gray-900 tracking-tight hidden sm:inline">Мебельный <span className="text-blue-600">калькулятор</span></span>
             <span className="text-lg font-black text-gray-900 tracking-tight sm:hidden">Калькулятор</span>
           </div>
+          <div className="flex flex-wrap items-center justify-center gap-6 mb-6 text-xs text-slate-500 font-semibold">
+            <a href="/terms" target="_blank" rel="noreferrer" className="hover:text-blue-600 transition-colors">
+              Лицензионное соглашение (Оферта)
+            </a>
+            <span>•</span>
+            <a href="/privacy" target="_blank" rel="noreferrer" className="hover:text-blue-600 transition-colors">
+              Политика конфиденциальности
+            </a>
+            <span>•</span>
+            <span className="text-slate-400">ИП Бобкин И. Н. (ИНН: 510999506050, ОГРНИП: 326784700378458)</span>
+          </div>
           <p className="text-gray-400 text-sm">© 2026 Мебельный калькулятор & ERP Мебельное производство. Все права защищены.</p>
         </div>
       </footer>
