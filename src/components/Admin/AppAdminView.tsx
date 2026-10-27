@@ -956,7 +956,7 @@ export const AppAdminView: React.FC = () => {
   }, [companies, users, applications, moduleRequests, totalProjectsCount]);
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] text-gray-900 flex flex-col md:flex-row">
+    <div className="min-h-screen bg-[#f8fafc] text-gray-900 pb-12">
       {/* Toast Alert */}
       {statusMessage && (
         <div className="fixed bottom-6 right-6 z-50 animate-in fade-in slide-in-from-bottom-5">
@@ -970,225 +970,171 @@ export const AppAdminView: React.FC = () => {
         </div>
       )}
 
-      {/* Full Left Sidebar Navigation Menu */}
-      <aside className="w-full md:w-64 lg:w-72 bg-white border-r border-gray-200/80 shrink-0 flex flex-col justify-between md:min-h-screen md:sticky md:top-0 md:h-screen z-30 shadow-xs">
-        <div className="p-4 space-y-5 overflow-y-auto">
-          {/* Admin Header / Title */}
-          <div className="flex items-center gap-3 px-2 py-1 border-b border-gray-100 pb-4">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-md shadow-blue-500/20 text-white font-black text-lg shrink-0">
-              <ShieldCheck className="w-5 h-5" />
+      {/* Main Top Header */}
+      <header className="bg-white border-b border-gray-200/80 px-4 sm:px-8 py-4 sticky top-0 z-30 shadow-2xs">
+        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center shadow-md shadow-blue-500/20 text-white font-black text-xl shrink-0">
+              <ShieldCheck className="w-6 h-6" />
             </div>
-            <div className="min-w-0">
-              <h1 className="text-sm font-black text-gray-900 tracking-tight truncate">
-                Панель Суперадмина
-              </h1>
-              <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-blue-100 text-blue-800 border border-blue-200 inline-block mt-0.5">
-                Global Control
-              </span>
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-black text-gray-900 tracking-tight">Панель Суперадминистратора</h1>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider bg-blue-100 text-blue-800 border border-blue-200">
+                  Global Control
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 flex items-center gap-1.5 mt-0.5">
+                <span>Главный аккаунт:</span>
+                <span className="font-semibold text-gray-800 bg-gray-100 px-1.5 py-0.5 rounded font-mono">lk.ivanbobkin@gmail.com</span>
+              </p>
             </div>
           </div>
 
-          {/* Navigation Items */}
-          <div className="space-y-1">
-            <div className="text-[10px] font-black uppercase tracking-wider text-gray-400 px-3 mb-2">
-              Разделы кабинета
+          <div className="flex items-center gap-3">
+            <button
+              onClick={loadSystemData}
+              disabled={refreshing}
+              className="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 disabled:opacity-50"
+            >
+              <RefreshCw className={cn("w-4 h-4", refreshing && "animate-spin text-blue-600")} />
+              <span>Обновить данные</span>
+            </button>
+            <div className="h-6 w-px bg-gray-200" />
+            <div className="flex items-center gap-2 bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded-xl border border-emerald-200 text-xs font-bold">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Сервер активен</span>
             </div>
-
-            <nav className="space-y-1">
-              <button
-                onClick={() => setActiveTab("overview")}
-                className={cn(
-                  "w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer text-left",
-                  activeTab === "overview"
-                    ? "bg-blue-600 text-white shadow-md shadow-blue-500/20 font-extrabold"
-                    : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-                )}
-              >
-                <div className="flex items-center gap-2.5">
-                  <BarChart3 className="w-4 h-4" />
-                  <span>Обзор</span>
-                </div>
-              </button>
-
-              <button
-                onClick={() => setActiveTab("companies")}
-                className={cn(
-                  "w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer text-left",
-                  activeTab === "companies"
-                    ? "bg-blue-600 text-white shadow-md shadow-blue-500/20 font-extrabold"
-                    : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-                )}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Building2 className="w-4 h-4" />
-                  <span>Компании</span>
-                </div>
-                <span className={cn(
-                  "px-2 py-0.5 rounded-full text-[10px] font-black",
-                  activeTab === "companies" ? "bg-white/20 text-white" : "bg-gray-100 text-gray-600"
-                )}>
-                  {companies.length}
-                </span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab("applications")}
-                className={cn(
-                  "w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer text-left",
-                  activeTab === "applications"
-                    ? "bg-blue-600 text-white shadow-md shadow-blue-500/20 font-extrabold"
-                    : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-                )}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Inbox className="w-4 h-4" />
-                  <span>Заявки</span>
-                </div>
-                {stats.pendingApps > 0 ? (
-                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-red-500 text-white animate-pulse">
-                    {stats.pendingApps}
-                  </span>
-                ) : (
-                  <span className={cn(
-                    "px-2 py-0.5 rounded-full text-[10px] font-black",
-                    activeTab === "applications" ? "bg-white/20 text-white" : "bg-gray-100 text-gray-600"
-                  )}>
-                    {applications.length + moduleRequests.length}
-                  </span>
-                )}
-              </button>
-
-              <button
-                onClick={() => setActiveTab("news")}
-                className={cn(
-                  "w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer text-left",
-                  activeTab === "news"
-                    ? "bg-blue-600 text-white shadow-md shadow-blue-500/20 font-extrabold"
-                    : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-                )}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Bell className="w-4 h-4" />
-                  <span>Новости</span>
-                </div>
-                <span className={cn(
-                  "px-2 py-0.5 rounded-full text-[10px] font-black",
-                  activeTab === "news" ? "bg-white/20 text-white" : "bg-gray-100 text-gray-600"
-                )}>
-                  {newsList.length}
-                </span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab("socials")}
-                className={cn(
-                  "w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer text-left",
-                  activeTab === "socials"
-                    ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md font-extrabold"
-                    : "text-blue-700 bg-blue-50/60 hover:bg-blue-100/80"
-                )}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Send className="w-4 h-4" />
-                  <span>Мультипостинг (TG+ВК)</span>
-                </div>
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
-              </button>
-
-              <button
-                onClick={() => setActiveTab("users")}
-                className={cn(
-                  "w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer text-left",
-                  activeTab === "users"
-                    ? "bg-blue-600 text-white shadow-md shadow-blue-500/20 font-extrabold"
-                    : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-                )}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Users className="w-4 h-4" />
-                  <span>Пользователи</span>
-                </div>
-                <span className={cn(
-                  "px-2 py-0.5 rounded-full text-[10px] font-black",
-                  activeTab === "users" ? "bg-white/20 text-white" : "bg-gray-100 text-gray-600"
-                )}>
-                  {users.length}
-                </span>
-              </button>
-
-              <button
-                onClick={() => setActiveTab("notifications")}
-                className={cn(
-                  "w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer text-left",
-                  activeTab === "notifications"
-                    ? "bg-blue-600 text-white shadow-md shadow-blue-500/20 font-extrabold"
-                    : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-                )}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Mail className="w-4 h-4" />
-                  <span>E-mail рассылки</span>
-                </div>
-              </button>
-
-              <button
-                onClick={() => setActiveTab("requisites")}
-                className={cn(
-                  "w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer text-left",
-                  activeTab === "requisites"
-                    ? "bg-blue-600 text-white shadow-md shadow-blue-500/20 font-extrabold"
-                    : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-                )}
-              >
-                <div className="flex items-center gap-2.5">
-                  <CreditCard className="w-4 h-4" />
-                  <span>Реквизиты ИП</span>
-                </div>
-              </button>
-
-              <button
-                onClick={() => setActiveTab("database")}
-                className={cn(
-                  "w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold transition-all cursor-pointer text-left",
-                  activeTab === "database"
-                    ? "bg-blue-600 text-white shadow-md shadow-blue-500/20 font-extrabold"
-                    : "text-gray-700 hover:bg-gray-100 hover:text-gray-900"
-                )}
-              >
-                <div className="flex items-center gap-2.5">
-                  <Database className="w-4 h-4" />
-                  <span>База данных</span>
-                </div>
-              </button>
-            </nav>
           </div>
         </div>
-
-        {/* Sidebar Footer */}
-        <div className="p-4 border-t border-gray-100 bg-gray-50/50 space-y-3">
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold text-gray-500">Сервер</span>
-            <div className="flex items-center gap-1.5 bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full text-[10px] font-extrabold">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Активен</span>
-            </div>
-          </div>
-          <button
-            onClick={loadSystemData}
-            disabled={refreshing}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-white hover:bg-gray-100 border border-gray-200 text-gray-700 rounded-xl text-xs font-bold transition-all cursor-pointer active:scale-95 disabled:opacity-50"
-          >
-            <RefreshCw className={cn("w-3.5 h-3.5", refreshing && "animate-spin text-blue-600")} />
-            <span>Обновить данные</span>
-          </button>
-          <div className="text-[10px] font-mono text-gray-400 truncate text-center pt-1">
-            lk.ivanbobkin@gmail.com
-          </div>
-        </div>
-      </aside>
+      </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 min-w-0 p-6 lg:p-8 space-y-8">
+      <main className="max-w-7xl mx-auto px-4 sm:px-8 pt-6 space-y-6">
+        {/* Navigation Tabs Bar */}
+        <div className="flex items-center gap-1.5 p-1.5 bg-gray-200/70 rounded-2xl border border-gray-300/60 shadow-inner overflow-x-auto">
+          <button
+            onClick={() => setActiveTab("overview")}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
+              activeTab === "overview"
+                ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
+                : "text-gray-600 hover:text-gray-900"
+            )}
+          >
+            <BarChart3 className="w-4 h-4" />
+            <span>Обзор</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("companies")}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
+              activeTab === "companies"
+                ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
+                : "text-gray-600 hover:text-gray-900"
+            )}
+          >
+            <Building2 className="w-4 h-4" />
+            <span>Компании ({companies.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("applications")}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap relative",
+              activeTab === "applications"
+                ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
+                : "text-gray-600 hover:text-gray-900"
+            )}
+          >
+            <Inbox className="w-4 h-4" />
+            <span>Заявки</span>
+            {stats.pendingApps > 0 && (
+              <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-black animate-pulse">
+                {stats.pendingApps}
+              </span>
+            )}
+          </button>
+
+          <button
+            onClick={() => setActiveTab("news")}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
+              activeTab === "news"
+                ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
+                : "text-gray-600 hover:text-gray-900"
+            )}
+          >
+            <Bell className="w-4 h-4" />
+            <span>Новости ({newsList.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("socials")}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
+              activeTab === "socials"
+                ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm font-extrabold"
+                : "text-blue-700 bg-blue-50/80 hover:bg-blue-100/80"
+            )}
+          >
+            <Send className="w-4 h-4" />
+            <span>Мультипостинг (TG + ВК)</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("users")}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
+              activeTab === "users"
+                ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
+                : "text-gray-600 hover:text-gray-900"
+            )}
+          >
+            <Users className="w-4 h-4" />
+            <span>Пользователи ({users.length})</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("notifications")}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
+              activeTab === "notifications"
+                ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
+                : "text-gray-600 hover:text-gray-900"
+            )}
+          >
+            <Mail className="w-4 h-4" />
+            <span>E-mail рассылки</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("requisites")}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
+              activeTab === "requisites"
+                ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
+                : "text-gray-600 hover:text-gray-900"
+            )}
+          >
+            <CreditCard className="w-4 h-4" />
+            <span>Реквизиты ИП</span>
+          </button>
+
+          <button
+            onClick={() => setActiveTab("database")}
+            className={cn(
+              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
+              activeTab === "database"
+                ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
+                : "text-gray-600 hover:text-gray-900"
+            )}
+          >
+            <Database className="w-4 h-4" />
+            <span>База данных</span>
+          </button>
+        </div>
 
         {/* TAB 1: OVERVIEW & ANALYTICS */}
         {activeTab === "overview" && (
