@@ -1,0 +1,1463 @@
+declare global {
+  interface Window {
+    BX24?: any;
+  }
+}
+
+export interface Bitrix24Context {
+  isBitrix24: boolean;
+  domain?: string;
+  memberId?: string;
+  placement?: string;
+  placementOptions?: Record<string, any>;
+  dealId?: number | null;
+  userEmail?: string;
+  userName?: string;
+  userPhone?: string;
+}
+
+let bx24Context: Bitrix24Context = {
+  isBitrix24: false,
+};
+
+let lastResizedHeight = 0;
+
+/**
+ * Auto-resize the Bitrix24 iframe window to fit its inner content completely,
+ * eliminating internal vertical scrollbars so only the CRM page has a scrollbar.
+ */
+export const resizeBitrix24WindowToContent = (extraPadding = 35): number => {
+  if (typeof window === "undefined") return 0;
+  try {
+    const root = document.getElementById("root");
+    const main = document.querySelector("main");
+    const body = document.body;
+    const firstChild = root?.firstElementChild as HTMLElement | null;
+
+    let trueContentHeight = 0;
+
+    if (firstChild) {
+      const fcScroll = firstChild.scrollHeight;
+      const fcOffset = firstChild.offsetHeight;
+      const fcBounding = firstChild.getBoundingClientRect().height;
+      trueContentHeight = Math.max(fcScroll, fcOffset, fcBounding);
+    }
+
+    if (root) {
+      trueContentHeight = Math.max(trueContentHeight, root.scrollHeight);
+    }
+    if (main) {
+      trueContentHeight = Math.max(trueContentHeight, main.scrollHeight);
+    }
+
+    // Check maximum bottom coordinate of top-level rendered elements in root
+    if (root && root.children.length > 0) {
+      const children = Array.from(root.children);
+      for (const child of children) {
+        if (child instanceof HTMLElement) {
+          trueContentHeight = Math.max(trueContentHeight, child.offsetTop + child.offsetHeight);
+        }
+      }
+    }
+
+    const minHeight = 350;
+    const fullHeight = Math.max(trueContentHeight, minHeight);
+
+    if (fullHeight > 80) {
+      const targetHeight = Math.ceil(fullHeight) + extraPadding;
+      if (Math.abs(targetHeight - lastResizedHeight) < 25) {
+        return targetHeight;
+      }
+      lastResizedHeight = targetHeight;
+      const targetWidth = window.innerWidth || body?.clientWidth || 1200;
+
+      // BX24.resizeWindow sets iframe height without forcing parent window scroll reset
+      if ((window as any).BX24?.resizeWindow) {
+        try {
+          (window as any).BX24.resizeWindow(targetWidth, targetHeight);
+        } catch (_) {}
+      }
+      // Note: BX24.fitWindow() is deliberately omitted because calling fitWindow() resets the parent window scroll position to top
+      try {
+        window.parent?.postMessage({ type: "B24_RESIZE", height: targetHeight, width: targetWidth }, "*");
+      } catch (_) {}
+
+      return targetHeight;
+    }
+  } catch (err) {
+    console.warn("Could not resize Bitrix24 window:", err);
+  }
+  return 0;
+};
+
+export const initBitrix24 = (): Promise<Bitrix24Context> => {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined") {
+      bx24Context = { isBitrix24: false };
+      resolve(bx24Context);
+      return;
+    }
+
+    const serverCtx = (window as any).__B24_SERVER_CONTEXT__ || {};
+    const pathname = window.location.pathname || "";
+
+    // Infer placement from dedicated placement URLs if not explicitly provided
+    let pathPlacement = "";
+    if (pathname.includes("/api/bitrix24/placement/deal-tab")) {
+      pathPlacement = "CRM_DEAL_DETAIL_TAB";
+    } else if (pathname.includes("/api/bitrix24/placement/deal-activity")) {
+      pathPlacement = "CRM_DEAL_DETAIL_ACTIVITY";
+    } else if (pathname.includes("/api/bitrix24/placement/left-menu")) {
+      pathPlacement = "LEFT_MENU";
+    } else if (pathname.includes("/api/bitrix24/placement/company-tab") || pathname.includes("/api/bitrix24/placement/company-sidebar")) {
+      pathPlacement = "CRM_COMPANY_DETAIL_TAB";
+    }
+
+    // Read URL query params + server POST context fallback
+    let urlDomain: string | undefined = serverCtx.domain || undefined;
+    let urlPlacement = serverCtx.placement || pathPlacement || "";
+    let urlPlacementOptions: Record<string, any> = serverCtx.placementOptions || {};
+    let urlDealId: number | null = serverCtx.dealId ? Number(serverCtx.dealId) : null;
+    let isB24Url = Boolean(
+      serverCtx.isBitrix24 ||
+      pathPlacement ||
+      pathname === "/install" ||
+      pathname.startsWith("/api/bitrix24/")
+    );
+
+    try {
+      const searchParams = new URLSearchParams(window.location.search);
+      if (
+        searchParams.has("DOMAIN") ||
+        searchParams.has("member_id") ||
+        searchParams.has("PLACEMENT") ||
+        searchParams.has("AUTH_ID")
+      ) {
+        isB24Url = true;
+        urlDomain = searchParams.get("DOMAIN") || urlDomain;
+        urlPlacement = searchParams.get("PLACEMENT") || urlPlacement;
+        const rawOpts = searchParams.get("PLACEMENT_OPTIONS");
+        if (rawOpts) {
+          try {
+            urlPlacementOptions = JSON.parse(rawOpts);
+          } catch (_) {}
+        }
+      }
+      if (!urlDealId) {
+        if (urlPlacementOptions?.ID) {
+          urlDealId = parseInt(String(urlPlacementOptions.ID), 10) || null;
+        } else if (urlPlacementOptions?.entityTypeId === 2 && urlPlacementOptions?.entityId) {
+          urlDealId = parseInt(String(urlPlacementOptions.entityId), 10) || null;
+        } else if (urlPlacementOptions?.ENTITY_ID) {
+          urlDealId = parseInt(String(urlPlacementOptions.ENTITY_ID), 10) || null;
+        } else if (searchParams.get("deal_id")) {
+          urlDealId = parseInt(String(searchParams.get("deal_id")), 10) || null;
+        }
+      }
+    } catch (_) {}
+
+    const isActuallyInBitrix24 =
+      isB24Url || (typeof window !== "undefined" && window.parent !== window && Boolean(window.BX24));
+
+    if (!isActuallyInBitrix24 || !window.BX24) {
+      bx24Context = {
+        isBitrix24: isB24Url,
+        domain: urlDomain,
+        memberId: serverCtx.memberId,
+        placement: urlPlacement,
+        placementOptions: urlPlacementOptions,
+        dealId: urlDealId,
+      };
+      resolve(bx24Context);
+      return;
+    }
+
+    let isResolved = false;
+    const finishResolve = (ctx: Bitrix24Context) => {
+      if (isResolved) return;
+      isResolved = true;
+      resolve(ctx);
+    };
+
+    // Safety timeout: allow up to 6000ms for Bitrix24 iframe and user info initialization
+    const initTimer = setTimeout(() => {
+      finishResolve({
+        isBitrix24: isActuallyInBitrix24,
+        domain: urlDomain,
+        memberId: serverCtx.memberId,
+        placement: urlPlacement,
+        placementOptions: urlPlacementOptions,
+        dealId: urlDealId,
+      });
+    }, 6000);
+
+    try {
+      window.BX24.init(() => {
+        clearTimeout(initTimer);
+        let placement = urlPlacement;
+        let placementOptions: Record<string, any> = urlPlacementOptions;
+
+        try {
+          const info = window.BX24.placement?.info?.() || {};
+          if (info.placement && (info.placement !== "DEFAULT" || !placement)) {
+            placement = info.placement;
+          }
+          if (info.options && Object.keys(info.options).length > 0) {
+            placementOptions = info.options;
+          }
+        } catch (e) {
+          console.warn("Could not read placement info:", e);
+        }
+
+        // Detect Deal ID from CRM placement options
+        let dealId: number | null = urlDealId;
+        if (placementOptions?.ID && (!placement || placement.includes("DEAL") || placement === "DEFAULT")) {
+          dealId = parseInt(String(placementOptions.ID), 10) || dealId;
+        } else if (placementOptions?.entityTypeId === 2 && placementOptions?.entityId) {
+          dealId = parseInt(String(placementOptions.entityId), 10) || dealId;
+        } else if (placementOptions?.ENTITY_ID) {
+          dealId = parseInt(String(placementOptions.ENTITY_ID), 10) || dealId;
+        }
+
+        let domain: string | undefined = urlDomain;
+        try {
+          domain = window.BX24.getDomain?.() || urlDomain;
+        } catch (e) {}
+
+        bx24Context = {
+          isBitrix24: true,
+          domain,
+          memberId: serverCtx.memberId,
+          placement,
+          placementOptions,
+          dealId: dealId || null,
+        };
+
+        // Handle Bitrix24 Marketplace / Local App Installation & Automatic Placement Binding
+        const isInstallMode =
+          Boolean(serverCtx.isInstall) ||
+          pathname === "/install" ||
+          pathname === "/api/bitrix24/install" ||
+          (typeof window.BX24.isInstall === "function" && window.BX24.isInstall()) ||
+          window.location.search.includes("INSTALL=Y");
+
+        // Automatically ensure all CRM tabs are bound whenever opened in Bitrix24
+        const shouldAutoBindPlacements =
+          isInstallMode || !placement || placement === "DEFAULT" || placement === "LEFT_MENU";
+
+        if (shouldAutoBindPlacements) {
+          registerBitrix24Placement()
+            .catch((err) => console.warn("Auto placement registration notice:", err))
+            .finally(() => {
+              if (isInstallMode) {
+                try {
+                  if (typeof window.BX24?.installFinish === "function") {
+                    window.BX24.installFinish();
+                  }
+                } catch (e) {
+                  console.warn("installFinish call error:", e);
+                }
+              }
+            });
+        }
+
+        // Fetch current user info from Bitrix24 (with fallback to administrator list)
+        try {
+          if (typeof window.BX24.callMethod === "function") {
+            window.BX24.callMethod("user.current", {}, (res: any) => {
+              let foundEmail = "";
+              let foundName = "";
+              let foundPhone = "";
+
+              if (res && typeof res.data === "function") {
+                const uData = res.data();
+                if (uData) {
+                  foundEmail = (uData.EMAIL || uData.email || "").trim().toLowerCase();
+                  foundName = [uData.NAME, uData.LAST_NAME].filter(Boolean).join(" ") || uData.NAME || "";
+                  foundPhone = (uData.WORK_PHONE || uData.PERSONAL_PHONE || uData.PERSONAL_MOBILE || "").trim();
+                }
+              }
+
+              if (foundEmail && !foundEmail.includes("bitrix24.ru")) {
+                bx24Context.userEmail = foundEmail;
+                if (foundName) bx24Context.userName = foundName;
+                if (foundPhone) bx24Context.userPhone = foundPhone;
+                finishResolve(bx24Context);
+              } else {
+                // If user.current did not return real email, query portal administrators via user.get
+                try {
+                  window.BX24.callMethod("user.get", { ADMIN: "Y" }, (admRes: any) => {
+                    if (admRes && typeof admRes.data === "function") {
+                      const adminList = admRes.data();
+                      if (Array.isArray(adminList) && adminList.length > 0) {
+                        for (const adm of adminList) {
+                          const aEmail = (adm.EMAIL || adm.email || "").trim().toLowerCase();
+                          if (aEmail && !aEmail.includes("bitrix24.ru")) {
+                            foundEmail = aEmail;
+                            if (!foundName) foundName = [adm.NAME, adm.LAST_NAME].filter(Boolean).join(" ") || adm.NAME || "";
+                            if (!foundPhone) foundPhone = (adm.WORK_PHONE || adm.PERSONAL_PHONE || adm.PERSONAL_MOBILE || "").trim();
+                            break;
+                          }
+                        }
+                      }
+                    }
+                    if (foundEmail) bx24Context.userEmail = foundEmail;
+                    if (foundName) bx24Context.userName = foundName;
+                    if (foundPhone) bx24Context.userPhone = foundPhone;
+                    finishResolve(bx24Context);
+                  });
+                } catch (_) {
+                  finishResolve(bx24Context);
+                }
+              }
+            });
+          } else {
+            finishResolve(bx24Context);
+          }
+        } catch (_) {
+          finishResolve(bx24Context);
+        }
+
+        // Automatically adjust iframe height inside Bitrix24
+        try {
+          resizeBitrix24WindowToContent();
+        } catch (e) {}
+
+        console.log("Bitrix24 SDK Initialized:", bx24Context);
+      });
+    } catch (e) {
+      console.warn("Bitrix24 init error:", e);
+      bx24Context = {
+        isBitrix24: isB24Url,
+        domain: urlDomain,
+        memberId: serverCtx.memberId,
+        placement: urlPlacement,
+        placementOptions: urlPlacementOptions,
+        dealId: urlDealId,
+      };
+      resolve(bx24Context);
+    }
+  });
+};
+
+export const getBitrix24Context = (): Bitrix24Context => {
+  return bx24Context;
+};
+
+export const fetchBitrix24DealDetails = async (dealId: number): Promise<{ title: string | null; contactId: number | null; companyId: number | null }> => {
+  if (!window.BX24) return { title: null, contactId: null, companyId: null };
+  return new Promise((resolve) => {
+    try {
+      window.BX24.callMethod(
+        "crm.deal.get",
+        { id: dealId },
+        (res: any) => {
+          if (res.error()) {
+            console.warn("BX24 crm.deal.get error:", res.error());
+            resolve({ title: null, contactId: null, companyId: null });
+          } else {
+            const data = res.data() || {};
+            const contactId = data.CONTACT_ID ? parseInt(String(data.CONTACT_ID), 10) : null;
+            const companyId = data.COMPANY_ID ? parseInt(String(data.COMPANY_ID), 10) : null;
+            resolve({
+              title: data.TITLE || null,
+              contactId: contactId || null,
+              companyId: companyId || null,
+            });
+          }
+        }
+      );
+    } catch (e) {
+      resolve({ title: null, contactId: null, companyId: null });
+    }
+  });
+};
+
+export const openBitrix24Contact = (contactId?: number | null, companyId?: number | null, dealId?: number | null) => {
+  if (typeof window === "undefined") return;
+  
+  if (window.BX24?.openPath) {
+    if (contactId) {
+      window.BX24.openPath(`/crm/contact/details/${contactId}/`);
+    } else if (companyId) {
+      window.BX24.openPath(`/crm/company/details/${companyId}/`);
+    } else if (dealId) {
+      window.BX24.openPath(`/crm/deal/details/${dealId}/`);
+    } else {
+      window.BX24.openPath(`/crm/contact/`);
+    }
+  } else {
+    // Fallback if not inside BX24 frame
+    const domain = window.BX24?.getDomain?.() || "";
+    if (domain) {
+      const url = contactId 
+        ? `https://${domain}/crm/contact/details/${contactId}/` 
+        : (companyId ? `https://${domain}/crm/company/details/${companyId}/` : `https://${domain}/crm/deal/details/${dealId}/`);
+      window.open(url, "_blank");
+    }
+  }
+};
+
+export const fetchBitrix24DealTitle = async (dealId: number): Promise<string | null> => {
+  const details = await fetchBitrix24DealDetails(dealId);
+  return details.title;
+};
+
+export interface B24StageHistoryItem {
+  stageId: string;
+  stageName: string;
+  enteredAt: string;
+  durationFormatted: string;
+  isCurrent: boolean;
+}
+
+export interface B24DealStageInfo {
+  dealId: number | string;
+  stageId: string;
+  stageName: string;
+  currentStageDuration: string;
+  history: B24StageHistoryItem[];
+  allCategoryStages: { id: string; name: string; isCurrent: boolean }[];
+}
+
+export const fetchBitrix24DealStageInfo = async (dealId: number | string, webhookUrl?: string): Promise<B24DealStageInfo | null> => {
+  try {
+    let dealData: any = null;
+    let stagesMap: Record<string, string> = {};
+
+    if (typeof window !== "undefined" && window.BX24) {
+      dealData = await new Promise((resolve) => {
+        window.BX24.callMethod("crm.deal.get", { id: dealId }, (res: any) => {
+          if (!res.error()) resolve(res.data());
+          else resolve(null);
+        });
+      });
+    }
+
+    if (!dealData && webhookUrl) {
+      try {
+        const res = await fetch("/api/bitrix24/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ webhookUrl, method: "crm.deal.get", params: { id: dealId } })
+        });
+        if (res.ok) {
+          const json = await res.json();
+          dealData = json.result;
+        }
+      } catch (_) {}
+    }
+
+    if (!dealData) return null;
+
+    const categoryId = dealData.CATEGORY_ID || 0;
+    const currentStageId = dealData.STAGE_ID || "";
+    const dateCreate = dealData.DATE_CREATE ? new Date(dealData.DATE_CREATE) : new Date();
+    const dateModify = dealData.DATE_MODIFY ? new Date(dealData.DATE_MODIFY) : dateCreate;
+
+    if (typeof window !== "undefined" && window.BX24) {
+      const stagesRes: any = await new Promise((resolve) => {
+        window.BX24.callMethod("crm.dealcategory.stage.list", { id: categoryId }, (res: any) => {
+          if (!res.error()) resolve(res.data());
+          else resolve([]);
+        });
+      });
+      if (Array.isArray(stagesRes)) {
+        stagesRes.forEach((s: any) => {
+          stagesMap[s.STATUS_ID || s.ID] = s.NAME || s.TITLE;
+        });
+      }
+    }
+
+    if (Object.keys(stagesMap).length === 0 && webhookUrl) {
+      try {
+        const res = await fetch("/api/bitrix24/query", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ webhookUrl, method: "crm.dealcategory.stage.list", params: { id: categoryId } })
+        });
+        if (res.ok) {
+          const json = await res.json();
+          if (Array.isArray(json.result)) {
+            json.result.forEach((s: any) => {
+              stagesMap[s.STATUS_ID || s.ID] = s.NAME || s.TITLE;
+            });
+          }
+        }
+      } catch (_) {}
+    }
+
+    const knownStageNames: Record<string, string> = {
+      NEW: "Новая сделка",
+      PREPARATION: "Замер и ТЗ",
+      PREPAYMENT_INVOICE: "Расчет и Договор",
+      EXECUTECUTOR: "В производстве",
+      FINAL_INVOICE: "Контроль качества",
+      WON: "Сделка успешно завершена (Монтаж)",
+      LOSE: "Сделка проиграна",
+      ...stagesMap
+    };
+
+    const currentStageName = knownStageNames[currentStageId] || stagesMap[currentStageId] || currentStageId || "В работе";
+
+    const now = new Date();
+    const diffMs = Math.max(0, now.getTime() - dateModify.getTime());
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const diffHours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+    
+    let durationFormatted = "";
+    if (diffDays > 0) {
+      durationFormatted = `${diffDays} дн. ${diffHours} ч.`;
+    } else if (diffHours > 0) {
+      durationFormatted = `${diffHours} ч.`;
+    } else {
+      const diffMins = Math.max(1, Math.floor(diffMs / (1000 * 60)));
+      durationFormatted = `${diffMins} мин.`;
+    }
+
+    const allCategoryStages = Object.keys(knownStageNames).map(id => ({
+      id,
+      name: knownStageNames[id],
+      isCurrent: id === currentStageId
+    }));
+
+    return {
+      dealId,
+      stageId: currentStageId,
+      stageName: currentStageName,
+      currentStageDuration: durationFormatted,
+      history: [
+        {
+          stageId: "NEW",
+          stageName: knownStageNames["NEW"] || "Создание сделки",
+          enteredAt: dateCreate.toLocaleDateString("ru-RU") + " " + dateCreate.toLocaleTimeString("ru-RU", { hour: '2-digit', minute: '2-digit' }),
+          durationFormatted: "Пройден",
+          isCurrent: false
+        },
+        {
+          stageId: currentStageId,
+          stageName: currentStageName,
+          enteredAt: dateModify.toLocaleDateString("ru-RU") + " " + dateModify.toLocaleTimeString("ru-RU", { hour: '2-digit', minute: '2-digit' }),
+          durationFormatted,
+          isCurrent: true
+        }
+      ],
+      allCategoryStages
+    };
+  } catch (err) {
+    console.warn("fetchBitrix24DealStageInfo error:", err);
+    return null;
+  }
+};
+
+export const updateBitrix24DealTitle = async (dealId: number, title: string): Promise<boolean> => {
+  if (!window.BX24) return false;
+  return new Promise((resolve) => {
+    try {
+      window.BX24.callMethod(
+        "crm.deal.update",
+        {
+          id: dealId,
+          fields: { TITLE: title }
+        },
+        (res: any) => {
+          if (res.error()) {
+            console.warn("BX24 crm.deal.update title error:", res.error());
+            resolve(false);
+          } else {
+            resolve(true);
+          }
+        }
+      );
+    } catch (e) {
+      resolve(false);
+    }
+  });
+};
+
+export const createBitrix24DealForPartnerOrder = async ({
+  title,
+  opportunity,
+  salonName,
+  contractNumber,
+  details
+}: {
+  title: string;
+  opportunity: number;
+  salonName?: string;
+  contractNumber?: string;
+  details?: string;
+}): Promise<{ success: boolean; dealId?: number; message: string }> => {
+  if (typeof window === "undefined" || !window.BX24) {
+    return { success: false, message: "Окружение Битрикс24 не обнаружено." };
+  }
+
+  return new Promise((resolve) => {
+    try {
+      const commentText = `Заказ от партнера: ${salonName || 'Салон'}\nДоговор: ${contractNumber || 'Б/Н'}\nСумма производства: ${opportunity.toLocaleString()} руб.\n\n${details || ''}`;
+      window.BX24.callMethod(
+        "crm.deal.add",
+        {
+          fields: {
+            TITLE: title,
+            OPPORTUNITY: opportunity,
+            CURRENCY_ID: "RUB",
+            COMMENTS: commentText,
+          }
+        },
+        (res: any) => {
+          if (res.error()) {
+            resolve({ success: false, message: res.error().toString() });
+          } else {
+            const newDealId = res.data();
+            resolve({ success: true, dealId: newDealId, message: "Сделка успешно создана!" });
+          }
+        }
+      );
+    } catch (e: any) {
+      resolve({ success: false, message: e.message || String(e) });
+    }
+  });
+};
+
+export const sendToBitrix24Deal = async ({
+  dealId,
+  totalPrice,
+  projectName,
+  summaryRows = [],
+}: {
+  dealId?: number | null;
+  totalPrice: number;
+  projectName: string;
+  summaryRows?: any[];
+}): Promise<{ success: boolean; message: string }> => {
+  if (!window.BX24) {
+    return { success: false, message: "Окружение Битрикс24 не обнаружено." };
+  }
+
+  const targetDealId = dealId || bx24Context.dealId;
+  if (!targetDealId) {
+    return {
+      success: false,
+      message: "ID сделки не указан. Откройте приложение из карточки сделки в Битрикс24 или укажите ID сделки вручную.",
+    };
+  }
+
+  return new Promise((resolve) => {
+    try {
+      // 1. Update deal opportunity amount
+      window.BX24.callMethod(
+        "crm.deal.update",
+        {
+          id: targetDealId,
+          fields: {
+            OPPORTUNITY: totalPrice,
+          },
+        },
+        (resUpdate: any) => {
+          if (resUpdate.error()) {
+            console.error("BX24 crm.deal.update error:", resUpdate.error());
+          }
+
+          // 2. Prepare product rows for Bitrix24 CRM
+          const productRows = (summaryRows || []).map((row: any) => ({
+            PRODUCT_NAME: row.name || "Позиция расчета",
+            PRICE: row.price || 0,
+            QUANTITY: parseFloat(row.qty) || 1,
+            MEASURE_CODE: 796, // шт
+          }));
+
+          if (productRows.length > 0) {
+            window.BX24.callMethod(
+              "crm.deal.productrows.set",
+              {
+                id: targetDealId,
+                rows: productRows,
+              },
+              (resRows: any) => {
+                if (resRows.error()) {
+                  console.warn("BX24 crm.deal.productrows.set warning:", resRows.error());
+                }
+              }
+            );
+          }
+
+          // 3. Add timeline comment with full specification
+          let textComment = `📋 СПЕЦИФИКАЦИЯ К СДЕЛКЕ: ${projectName}\n`;
+          textComment += `─────────────────────────────────────────\n`;
+          textComment += `💰 Итоговая сумма заказа: ${totalPrice.toLocaleString("ru-RU")} ₽\n\n`;
+
+          if (summaryRows && summaryRows.length > 0) {
+            textComment += `СОСТАВ ПРОЕКТА И СМЕТА:\n`;
+            textComment += `─────────────────────────────────────────\n`;
+
+            summaryRows.forEach((row: any, idx: number) => {
+              const rowName = row.name || "Позиция спецификации";
+              const qty = row.qty !== undefined ? row.qty : 1;
+              const unit = row.unit || row.measure || "шт";
+              const price = row.price ? Math.round(row.price) : 0;
+              const rowTotal = row.total !== undefined ? Math.round(row.total) : Math.round(price * qty);
+
+              textComment += `${idx + 1}. ${rowName}\n`;
+              textComment += `   Количество: ${qty} ${unit} | Цена: ${price.toLocaleString("ru-RU")} ₽ | Сумма: ${rowTotal.toLocaleString("ru-RU")} ₽\n\n`;
+            });
+
+            textComment += `─────────────────────────────────────────\n`;
+            textComment += `ВСЕГО ПО СПЕЦИФИКАЦИИ: ${totalPrice.toLocaleString("ru-RU")} ₽\n`;
+          }
+
+          window.BX24.callMethod(
+            "crm.timeline.comment.add",
+            {
+              fields: {
+                ENTITY_ID: targetDealId,
+                ENTITY_TYPE: "deal",
+                COMMENT: textComment,
+              },
+            },
+            (resComment: any) => {
+              if (resComment.error()) {
+                console.warn("BX24 comment add error:", resComment.error());
+              }
+              resolve({
+                success: true,
+                message: `Расчет на сумму ${totalPrice.toLocaleString("ru-RU")} ₽ успешно сохранен в сделку Битрикс24 #${targetDealId}!`,
+              });
+            }
+          );
+        }
+      );
+    } catch (err: any) {
+      console.error("Error sending to Bitrix24:", err);
+      resolve({
+        success: false,
+        message: err.message || "Ошибка при передаче данных в Битрикс24",
+      });
+    }
+  });
+};
+
+export const registerBitrix24Placement = async (): Promise<{ success: boolean; message: string }> => {
+  if (!window.BX24) {
+    return { success: false, message: "Окружение Битрикс24 не найдено. Откройте приложение внутри Битрикс24." };
+  }
+
+  const appUrl = (typeof window !== "undefined" ? window.location.origin : "https://mebel-plan.ru").replace(/\/$/, "");
+
+  const desiredPlacements = [
+    {
+      PLACEMENT: "CRM_DEAL_DETAIL_TAB",
+      HANDLER: `${appUrl}/api/bitrix24/placement/deal-tab`,
+      FALLBACK_HANDLER: `${appUrl}/`,
+      TITLE: "Мебель План",
+      DESCRIPTION: "Расчет стоимости мебели, распила и спецификаций",
+      label: "Вкладка в сделке (CRM_DEAL_DETAIL_TAB)",
+    },
+    {
+      PLACEMENT: "CRM_DEAL_DETAIL_ACTIVITY",
+      HANDLER: `${appUrl}/api/bitrix24/placement/deal-activity`,
+      FALLBACK_HANDLER: `${appUrl}/`,
+      TITLE: "Мебель План (Виджет)",
+      DESCRIPTION: "Интерактивный виджет производства и расчета мебели",
+      label: "Дело в таймлайне сделки (CRM_DEAL_DETAIL_ACTIVITY)",
+    },
+    {
+      PLACEMENT: "CRM_COMPANY_DETAIL_TAB",
+      HANDLER: `${appUrl}/api/bitrix24/placement/company-tab`,
+      FALLBACK_HANDLER: `${appUrl}/`,
+      TITLE: "Мебель План (Партнер)",
+      DESCRIPTION: "Показатели и B2B заказы партнера",
+      label: "Вкладка в компании (CRM_COMPANY_DETAIL_TAB)",
+    },
+  ];
+
+  // 1. Bitrix24 automatically creates a Left Menu entry for every installed application.
+  // Unbind any custom LEFT_MENU placement to eliminate duplicate entries in the left menu.
+  try {
+    window.BX24.callMethod("placement.unbind", { PLACEMENT: "LEFT_MENU" }, () => {});
+  } catch (_) {}
+
+  const boundLabels: string[] = ["Пункт в левом меню (стандартный)"];
+  const failedItems: Array<{ code: string; reason: string }> = [];
+
+  const bindSingle = (placementCode: string, handlerUrl: string, title: string, description: string): Promise<{ ok: boolean; errText?: string }> => {
+    return new Promise((resolve) => {
+      try {
+        window.BX24.callMethod(
+          "placement.bind",
+          {
+            PLACEMENT: placementCode,
+            HANDLER: handlerUrl,
+            TITLE: title,
+            DESCRIPTION: description,
+          },
+          (res: any) => {
+            if (res && typeof res.error === "function" && res.error()) {
+              const errObj = res.error();
+              const errStr =
+                errObj?.ex?.error_description ||
+                errObj?.ex?.error ||
+                (typeof errObj?.toString === "function" ? errObj.toString() : String(errObj));
+              resolve({ ok: false, errText: errStr });
+            } else {
+              resolve({ ok: true });
+            }
+          }
+        );
+      } catch (e: any) {
+        resolve({ ok: false, errText: e?.message || String(e) });
+      }
+    });
+  };
+
+  for (const item of desiredPlacements) {
+    // Specifically query already registered handlers for THIS placement code
+    const existing = await new Promise<any[]>((resolve) => {
+      try {
+        window.BX24.callMethod("placement.get", { PLACEMENT: item.PLACEMENT }, (res: any) => {
+          if (res && typeof res.data === "function" && !res.error?.()) {
+            const d = res.data();
+            resolve(Array.isArray(d) ? d : []);
+          } else {
+            resolve([]);
+          }
+        });
+      } catch (_) {
+        resolve([]);
+      }
+    });
+
+    // If duplicate handlers exist, unbind extras to leave strictly ONE
+    if (existing.length > 1) {
+      for (let i = 1; i < existing.length; i++) {
+        if (existing[i]?.handler) {
+          try {
+            window.BX24.callMethod("placement.unbind", { PLACEMENT: item.PLACEMENT, HANDLER: existing[i].handler }, () => {});
+          } catch (_) {}
+        }
+      }
+    }
+
+    if (existing.length >= 1) {
+      // Already bound! Do not bind another copy
+      boundLabels.push(item.label);
+      continue;
+    }
+
+    let result = await bindSingle(item.PLACEMENT, item.HANDLER, item.TITLE, item.DESCRIPTION);
+    if (!result.ok && item.FALLBACK_HANDLER && item.FALLBACK_HANDLER !== item.HANDLER) {
+      result = await bindSingle(item.PLACEMENT, item.FALLBACK_HANDLER, item.TITLE, item.DESCRIPTION);
+    }
+
+    if (result.ok) {
+      boundLabels.push(item.label);
+    } else {
+      const errText = result.errText || "HTTP 400";
+      // If error says handler already bound, treat as success
+      if (errText.toLowerCase().includes("already") || errText.toLowerCase().includes("уже")) {
+        boundLabels.push(item.label);
+      } else {
+        console.warn(`[Bitrix24 placement.bind] ${item.PLACEMENT} не привязан:`, errText);
+        failedItems.push({ code: item.PLACEMENT, reason: errText });
+      }
+    }
+  }
+
+  if (boundLabels.length > 0 && failedItems.length === 0) {
+    return {
+      success: true,
+      message: `Все места встраивания (${boundLabels.map((l) => l.split(" (")[0]).join(", ")}) успешно зарегистрированы в Битрикс24!`,
+    };
+  }
+
+  if (boundLabels.length > 0 && failedItems.length > 0) {
+    return {
+      success: true,
+      message: `Зарегистрировано: ${boundLabels.map((l) => l.split(" (")[0]).join(", ")}. Не привязаны (${failedItems.map((f) => f.code).join(", ")}) — убедитесь, что эти коды добавлены в раздел «Места для встраивания» в настройках версии приложения в Кабинете Разработчика Битрикс24.`,
+    };
+  }
+
+  return {
+    success: false,
+    message: `Не удалось привязать места встраивания (${failedItems.map((f) => `${f.code}: ${f.reason}`).join("; ")}). Проверьте, что в Кабинете Разработчика Битрикс24 выбрано право «Встраивание приложений (placement)» и добавлены места: CRM_DEAL_DETAIL_TAB, CRM_DEAL_DETAIL_ACTIVITY, LEFT_MENU, CRM_COMPANY_DETAIL_TAB.`,
+  };
+};
+
+export const registerBitrix24ActivityWidget = async (): Promise<{ success: boolean; message: string }> => {
+  return registerBitrix24Placement();
+};
+
+// --- Уведомления в колокольчик и чат Битрикс24 (im.notify / im.message) ---
+
+export interface SendBitrix24NotificationParams {
+  companyId?: string;
+  dealId?: number | string | null;
+  userId?: number | string | null;
+  message: string;
+  type?: 'system' | 'personal' | 'chat';
+  tag?: string;
+}
+
+export const getBitrix24DealResponsible = async (dealId: number): Promise<{ id: number | null; name?: string }> => {
+  if (typeof window === "undefined" || !window.BX24) return { id: null };
+  return new Promise((resolve) => {
+    try {
+      window.BX24.callMethod("crm.deal.get", { id: dealId }, (res: any) => {
+        if (res.error()) {
+          resolve({ id: null });
+        } else {
+          const data = res.data() || {};
+          const assignedId = data.ASSIGNED_BY_ID ? parseInt(String(data.ASSIGNED_BY_ID), 10) : null;
+          resolve({ id: assignedId });
+        }
+      });
+    } catch (_) {
+      resolve({ id: null });
+    }
+  });
+};
+
+export const sendBitrix24BellNotification = async ({
+  companyId,
+  dealId,
+  userId,
+  message,
+  type = 'system',
+  tag
+}: SendBitrix24NotificationParams): Promise<{ success: boolean; message: string; recipientUserId?: number | string }> => {
+  // If running inside Bitrix24 iframe
+  if (typeof window !== "undefined" && window.BX24) {
+    let targetUserId = userId;
+
+    if (!targetUserId && dealId) {
+      const resp = await getBitrix24DealResponsible(Number(dealId));
+      if (resp.id) targetUserId = resp.id;
+    }
+
+    if (!targetUserId) {
+      targetUserId = bx24Context.placementOptions?.userId || null;
+    }
+
+    if (!targetUserId) {
+      // Fallback: request via backend proxy
+      try {
+        const res = await fetch("/api/bitrix24/notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ companyId, dealId, userId, message, type, tag })
+        });
+        const json = await res.json();
+        return json;
+      } catch (err: any) {
+        return { success: false, message: err.message || "Не удалось отправить уведомление" };
+      }
+    }
+
+    return new Promise((resolve) => {
+      try {
+        const method = type === 'chat' 
+          ? 'im.message.add' 
+          : (type === 'personal' ? 'im.notify.personal.add' : 'im.notify.system.add');
+
+        const params: any = type === 'chat' 
+          ? { DIALOG_ID: targetUserId, MESSAGE: message }
+          : {
+              USER_ID: targetUserId,
+              MESSAGE: message,
+              TAG: tag || `MEBEL_PLAN_${dealId || 'GENERAL'}_${Date.now()}`
+            };
+
+        window.BX24.callMethod(method, params, (res: any) => {
+          if (res.error()) {
+            console.warn(`BX24 ${method} error:`, res.error());
+            resolve({ success: false, message: res.error().toString() });
+          } else {
+            resolve({
+              success: true,
+              recipientUserId: targetUserId,
+              message: "Уведомление успешно доставлено в колокольчик Битрикс24!"
+            });
+          }
+        });
+      } catch (e: any) {
+        resolve({ success: false, message: e.message || String(e) });
+      }
+    });
+  }
+
+  // Outside Bitrix24 iframe: Call backend proxy with stored webhook
+  try {
+    const res = await fetch("/api/bitrix24/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ companyId, dealId, userId, message, type, tag })
+    });
+    const json = await res.json();
+    return json;
+  } catch (e: any) {
+    return { success: false, message: e.message || "Ошибка соединения с сервером" };
+  }
+};
+
+export const sendBitrix24ChatMessage = async (
+  dialogId: number | string,
+  message: string,
+  companyId?: string
+): Promise<{ success: boolean; message: string }> => {
+  return sendBitrix24BellNotification({
+    companyId,
+    userId: dialogId,
+    message,
+    type: 'chat'
+  });
+};
+
+// --- Прием фотоотчета монтажа в таймлайн Битрикс24 ---
+
+export interface PhotoReportPayload {
+  companyId?: string;
+  webhookUrl?: string;
+  dealId: number | string;
+  installerName: string;
+  installerPhone?: string;
+  status: 'completed' | 'with_remarks' | 'in_progress';
+  comment?: string;
+  checklist?: Record<string, boolean>;
+  photos?: Array<{ name: string; url?: string; base64?: string; category?: string }>;
+  notifyResponsible?: boolean;
+}
+
+export const submitBitrix24PhotoReport = async (
+  payload: PhotoReportPayload
+): Promise<{ success: boolean; message: string; reportId?: string; commentId?: number }> => {
+  try {
+    // 1. If inside BX24, we can post directly to timeline and notify manager
+    if (typeof window !== "undefined" && window.BX24) {
+      const nowStr = new Date().toLocaleString("ru-RU", { timeZone: "Europe/Moscow" });
+      const statusLabels: Record<string, string> = {
+        completed: "✅ Монтаж завершен успешно",
+        with_remarks: "⚠️ Монтаж завершен с замечаниями",
+        in_progress: "⏳ Монтаж в процессе (промежуточный отчет)"
+      };
+      const statusTitle = statusLabels[payload.status] || "📸 Фотоотчет монтажа";
+
+      let timelineText = `📸 ФОТООТЧЕТ МОНТАЖА МЕБЕЛИ\n`;
+      timelineText += `─────────────────────────────────────────\n`;
+      timelineText += `🏷️ Статус: ${statusTitle}\n`;
+      timelineText += `📅 Дата и время: ${nowStr} (МСК)\n`;
+      timelineText += `👷 Монтажник: ${payload.installerName || "Монтажная бригада"}${payload.installerPhone ? ` (${payload.installerPhone})` : ""}\n\n`;
+
+      if (payload.checklist && Object.keys(payload.checklist).length > 0) {
+        timelineText += `📋 ЧЕК-ЛИСТ ПРИЕМКИ:\n`;
+        const checklistTitles: Record<string, string> = {
+          level: "Уровень и геометрия конструкции",
+          hardware: "Регулировка петель, фасадов и доводчиков",
+          appliances: "Врезка и герметизация техники/мойки",
+          cleanliness: "Уборка рабочего места, снятие пленок",
+          actSigned: "Подписан акт приема-передачи клиентом"
+        };
+        for (const [k, v] of Object.entries(payload.checklist)) {
+          const title = checklistTitles[k] || k;
+          timelineText += `  ${v ? "✔" : "✖"} ${title}: ${v ? "Выполнено" : "Не выполнено"}\n`;
+        }
+        timelineText += `\n`;
+      }
+
+      if (payload.comment) {
+        timelineText += `📝 КОММЕНТАРИЙ МОНТАЖНИКА:\n${payload.comment}\n\n`;
+      }
+
+      if (payload.photos && payload.photos.length > 0) {
+        timelineText += `📷 ФОТОГРАФИИ ОБЪЕКТА (${payload.photos.length} шт.):\n`;
+        payload.photos.forEach((photo, idx) => {
+          const pName = photo.name || photo.category || `Фото ${idx + 1}`;
+          const pUrl = photo.url || `[Фото #${idx + 1} прикреплено к отчету]`;
+          timelineText += `  ${idx + 1}. ${pName}: ${pUrl}\n`;
+        });
+        timelineText += `\n`;
+      }
+
+      timelineText += `─────────────────────────────────────────\n`;
+      timelineText += `Отправлено через Мебель План • ERP & Монтаж`;
+
+      // Call crm.timeline.comment.add directly
+      await new Promise<void>((resolve) => {
+        window.BX24.callMethod(
+          "crm.timeline.comment.add",
+          {
+            fields: {
+              ENTITY_ID: payload.dealId,
+              ENTITY_TYPE: "deal",
+              COMMENT: timelineText
+            }
+          },
+          (res: any) => {
+            if (res.error()) {
+              console.warn("BX24 timeline comment error:", res.error());
+            }
+            resolve();
+          }
+        );
+      });
+
+      // Send bell notification to responsible manager
+      if (payload.notifyResponsible !== false) {
+        const resp = await getBitrix24DealResponsible(Number(payload.dealId));
+        if (resp.id) {
+          const bellMsg = `📸 [b]Фотоотчет монтажа по сделке #{payload.dealId}[/b]!\nМонтажник: [b]${payload.installerName}[/b].\nСтатус: ${statusTitle}.\nОтчет добавлен в таймлайн сделки!`;
+          await sendBitrix24BellNotification({
+            userId: resp.id,
+            dealId: payload.dealId,
+            message: bellMsg
+          });
+        }
+      }
+    }
+
+    // Always mirror to backend to persist records and support webhook sync
+    const res = await fetch("/api/bitrix24/timeline/photo-report", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    return data;
+  } catch (err: any) {
+    console.error("Error submitting photo report:", err);
+    return { success: false, message: err.message || "Ошибка отправки фотоотчета" };
+  }
+};
+
+// --- Прием рекламаций в таймлайн Битрикс24 ---
+
+export interface ReclamationPayload {
+  companyId?: string;
+  webhookUrl?: string;
+  dealId: number | string;
+  reclamationType: string;
+  partName: string;
+  priority: 'critical' | 'high' | 'normal';
+  department?: string;
+  applicantName?: string;
+  applicantPhone?: string;
+  description: string;
+  requiredAction?: string;
+  photos?: Array<{ name: string; url?: string; base64?: string }>;
+  createTask?: boolean;
+  notifyResponsible?: boolean;
+}
+
+export const submitBitrix24Reclamation = async (
+  payload: ReclamationPayload
+): Promise<{ success: boolean; message: string; reclamationId?: string; commentId?: number; taskId?: number }> => {
+  try {
+    // 1. If inside BX24, we can post directly to timeline, create task and notify
+    if (typeof window !== "undefined" && window.BX24) {
+      const nowStr = new Date().toLocaleString("ru-RU", { timeZone: "Europe/Moscow" });
+      const priorityBadges: Record<string, string> = {
+        critical: "🔴 КРИТИЧНО (СТОП МОНТАЖА)",
+        high: "🟡 ВЫСОКИЙ (ДО СДАЧИ ОБЪЕКТА)",
+        normal: "🟢 СТАНДАРТНЫЙ (ГАРАНТИЙНЫЙ СЛУЧАЙ)"
+      };
+      const priorityLabel = priorityBadges[payload.priority] || "⚠️ ВЫСОКИЙ";
+
+      let timelineText = `🚨 РЕКЛАМАЦИЯ / ПРЕТЕНЗИЯ ПО СДЕЛКЕ #${payload.dealId}\n`;
+      timelineText += `─────────────────────────────────────────\n`;
+      timelineText += `⚠️ Срочность: ${priorityLabel}\n`;
+      timelineText += `🛠️ Тип проблемы: ${payload.reclamationType}\n`;
+      if (payload.partName) timelineText += `📦 Элемент/Деталь: ${payload.partName}\n`;
+      if (payload.department) timelineText += `🏭 Виновный отдел/этап: ${payload.department}\n`;
+      timelineText += `👤 Заявитель: ${payload.applicantName || "Монтажник"}${payload.applicantPhone ? ` (${payload.applicantPhone})` : ""}\n`;
+      timelineText += `📅 Дата регистрации: ${nowStr} (МСК)\n\n`;
+
+      if (payload.description) {
+        timelineText += `📝 ОПИСАНИЕ ДЕФЕКТА:\n${payload.description}\n\n`;
+      }
+
+      if (payload.requiredAction) {
+        timelineText += `⚡ ТРЕБУЕМОЕ ДЕЙСТВИЕ:\n${payload.requiredAction}\n\n`;
+      }
+
+      if (payload.photos && payload.photos.length > 0) {
+        timelineText += `📷 ФОТОГРАФИИ ДЕФЕКТА (${payload.photos.length} шт.):\n`;
+        payload.photos.forEach((photo, idx) => {
+          const pName = photo.name || `Дефект #${idx + 1}`;
+          const pUrl = photo.url || `[Фото дефекта #${idx + 1}]`;
+          timelineText += `  ${idx + 1}. ${pName}: ${pUrl}\n`;
+        });
+        timelineText += `\n`;
+      }
+
+      timelineText += `─────────────────────────────────────────\n`;
+      timelineText += `Зафиксировано через Мебель План • Контроль качества`;
+
+      // Call crm.timeline.comment.add directly
+      await new Promise<void>((resolve) => {
+        window.BX24.callMethod(
+          "crm.timeline.comment.add",
+          {
+            fields: {
+              ENTITY_ID: payload.dealId,
+              ENTITY_TYPE: "deal",
+              COMMENT: timelineText
+            }
+          },
+          (res: any) => {
+            if (res.error()) {
+              console.warn("BX24 timeline comment error:", res.error());
+            }
+            resolve();
+          }
+        );
+      });
+
+      // Get responsible manager
+      const resp = await getBitrix24DealResponsible(Number(payload.dealId));
+
+      // Create Task in CRM if requested
+      if (payload.createTask !== false) {
+        try {
+          const deadline = new Date();
+          if (payload.priority === "critical") {
+            deadline.setHours(deadline.getHours() + 24);
+          } else {
+            deadline.setDate(deadline.getDate() + 3);
+          }
+
+          window.BX24.callMethod(
+            "tasks.task.add",
+            {
+              fields: {
+                TITLE: `🚨 Рекламация по сделке #${payload.dealId}: ${payload.partName || payload.reclamationType}`,
+                DESCRIPTION: `Срочность: ${priorityLabel}\nЗаявитель: ${payload.applicantName || "Монтажник"}\n\nОписание дефекта:\n${payload.description}\n\nТребуемое решение:\n${payload.requiredAction || "Устранить замечания"}\n\nСделка: #${payload.dealId}`,
+                RESPONSIBLE_ID: resp.id || undefined,
+                DEADLINE: deadline.toISOString(),
+                PRIORITY: payload.priority === "critical" ? 2 : 1,
+                UF_CRM_TASK: [`D_${payload.dealId}`]
+              }
+            },
+            (resTask: any) => {
+              if (resTask.error()) {
+                console.warn("BX24 tasks.task.add error:", resTask.error());
+              }
+            }
+          );
+        } catch (_) {}
+      }
+
+      // Send bell notification to manager
+      if (payload.notifyResponsible !== false && resp.id) {
+        const bellMsg = `🚨 [b]РЕКЛАМАЦИЯ по сделке #{payload.dealId}![/b]\nСрочность: ${priorityLabel}\nДеталь: [b]${payload.partName || payload.reclamationType}[/b]\nЗаявитель: ${payload.applicantName || "Монтажник"}.\nПроверьте таймлайн сделки!`;
+        await sendBitrix24BellNotification({
+          userId: resp.id,
+          dealId: payload.dealId,
+          message: bellMsg
+        });
+      }
+    }
+
+    // Always mirror to backend for persistence & history
+    const res = await fetch("/api/bitrix24/timeline/reclamation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    return data;
+  } catch (err: any) {
+    console.error("Error submitting reclamation:", err);
+    return { success: false, message: err.message || "Ошибка фиксации рекламации" };
+  }
+};
+
+// --- История таймлайна по сделке (фотоотчеты и рекламации) ---
+
+export const fetchBitrix24TimelineHistory = async (
+  companyId: string,
+  dealId?: number | string | null
+): Promise<{ photoReports: any[]; reclamations: any[] }> => {
+  try {
+    const url = `/api/bitrix24/timeline/history?companyId=${encodeURIComponent(companyId)}${dealId ? `&dealId=${encodeURIComponent(String(dealId))}` : ''}`;
+    const res = await fetch(url);
+    if (!res.ok) return { photoReports: [], reclamations: [] };
+    const data = await res.json();
+    return {
+      photoReports: data.photoReports || [],
+      reclamations: data.reclamations || []
+    };
+  } catch (err) {
+    console.error("Error fetching timeline history:", err);
+    return { photoReports: [], reclamations: [] };
+  }
+};
+
+// --- Прямое прикрепление сгенерированного PDF документа к Сделке Битрикс24 ---
+
+export const attachDocumentPdfToBitrix24Deal = async (payload: {
+  companyId?: string;
+  dealId: number | string;
+  docName: string;
+  pdfBase64: string;
+  commentText?: string;
+}): Promise<{ success: boolean; message: string }> => {
+  try {
+    const cleanBase64 = payload.pdfBase64.replace(/^data:application\/pdf;base64,/, "");
+    const safeFileName = `${(payload.docName || "Спецификация").replace(/[^a-zA-Z0-9А-Яа-я_\-.]/g, "_")}.pdf`;
+
+    if (typeof window !== "undefined" && window.BX24?.callMethod) {
+      await new Promise<void>((resolve) => {
+        window.BX24.callMethod(
+          "crm.timeline.comment.add",
+          {
+            fields: {
+              ENTITY_ID: payload.dealId,
+              ENTITY_TYPE: "deal",
+              COMMENT: payload.commentText || `📄 Сформирован документ "${payload.docName}"`,
+              FILES: [
+                {
+                  fileData: [
+                    safeFileName,
+                    cleanBase64
+                  ]
+                }
+              ]
+            }
+          },
+          (res: any) => {
+            if (res.error()) {
+              console.warn("BX24 attach PDF timeline error:", res.error());
+            }
+            resolve();
+          }
+        );
+      });
+    }
+
+    // Mirror to backend
+    const res = await fetch("/api/bitrix24/attach-pdf", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+
+    if (res.ok) {
+      return { success: true, message: "Документ PDF успешно прикреплен к карточке сделки в Битрикс24!" };
+    }
+
+    return { success: true, message: "PDF сформирован!" };
+  } catch (err: any) {
+    console.error("Error attaching PDF to Bitrix24 deal:", err);
+    return { success: false, message: err.message || "Ошибка отправки PDF в Битрикс24" };
+  }
+};
+
+// --- Выгрузка состава заказа во вкладку «Товары» сделки Битрикс24 ---
+
+export const syncDealProductRows = async (payload: {
+  companyId?: string;
+  dealId: number | string;
+  projectName: string;
+  items?: Array<{ name: string; price: number; quantity?: number }>;
+  totalPrice?: number;
+  deliveryPrice?: number;
+  assemblyPrice?: number;
+}): Promise<{ success: boolean; message: string }> => {
+  try {
+    const rows: Array<{ PRODUCT_NAME: string; PRICE: number; QUANTITY: number }> = [];
+
+    if (payload.items && payload.items.length > 0) {
+      payload.items.forEach(item => {
+        rows.push({
+          PRODUCT_NAME: item.name || payload.projectName || "Мебельное изделие",
+          PRICE: Math.round(item.price || 0),
+          QUANTITY: item.quantity || 1
+        });
+      });
+    } else {
+      rows.push({
+        PRODUCT_NAME: payload.projectName || "Изготовление мебели по проекту",
+        PRICE: Math.round(payload.totalPrice || 0),
+        QUANTITY: 1
+      });
+    }
+
+    if (payload.deliveryPrice && payload.deliveryPrice > 0) {
+      rows.push({
+        PRODUCT_NAME: "Доставка мебели на объект",
+        PRICE: Math.round(payload.deliveryPrice),
+        QUANTITY: 1
+      });
+    }
+
+    if (payload.assemblyPrice && payload.assemblyPrice > 0) {
+      rows.push({
+        PRODUCT_NAME: "Сборка и монтаж мебели",
+        PRICE: Math.round(payload.assemblyPrice),
+        QUANTITY: 1
+      });
+    }
+
+    if (typeof window !== "undefined" && window.BX24?.callMethod) {
+      await new Promise<void>((resolve) => {
+        window.BX24.callMethod(
+          "crm.deal.productrows.set",
+          {
+            id: payload.dealId,
+            rows
+          },
+          (res: any) => {
+            if (res.error()) {
+              console.warn("BX24 sync product rows error:", res.error());
+            }
+            resolve();
+          }
+        );
+      });
+    }
+
+    // Mirror to server endpoint
+    const res = await fetch("/api/bitrix24/sync-deal-products", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...payload, rows })
+    });
+
+    return await res.json();
+  } catch (err: any) {
+    console.warn("syncDealProductRows failed:", err);
+    return { success: false, message: err.message };
+  }
+};
+
+/**
+ * Updates the red counter badge on Bitrix24 Left Menu placements (e.g., new partner orders badge)
+ */
+export const updateBitrixLeftMenuCounter = (count: number) => {
+  if (typeof window === "undefined" || !window.BX24) return;
+  const numVal = Math.max(0, count || 0);
+
+  try {
+    if (typeof window.BX24.callMethod === "function") {
+      window.BX24.callMethod("placement.setCounter", {
+        PLACEMENT: "LEFT_MENU",
+        VALUE: numVal,
+      });
+      window.BX24.callMethod("user.counters.set", {
+        COUNTER: "partner_orders",
+        VALUE: numVal,
+      });
+      window.BX24.callMethod("user.option.set", {
+        option: "counter_partner_orders",
+        value: numVal,
+      });
+    }
+    if (window.BX24.placement && typeof window.BX24.placement.setCounter === "function") {
+      window.BX24.placement.setCounter(numVal);
+    }
+  } catch (err) {
+    console.warn("Could not set Bitrix24 left menu counter badge:", err);
+  }
+};
+

@@ -1,0 +1,21 @@
+13693:    | "projects"
+13708:    projects: any[];
+14556:        doc(db, "companies", companyData.id, "projects", projectId),
+14594:        `companies/${companyData.id}/projects`,
+14665:      // Verify all projects have data before saving
+14694:      // Update individual projects status
+14698:            doc(db, "companies", companyData.id, "projects", pId),
+14710:            doc(db, "companies", companyData.id, "projects", pId),
+14727:      setPrintSetData({ projects: activeProjects, data: setData }); 
+14736:         // Refresh to projects tab
+14737:         setActiveTab("projects");
+16299:                onClick={() => setActiveTab("projects")}
+16303:                  activeTab === "projects"
+16743:                projects={[activeProject]}
+16765:          {activeTab === "projects" ? (
+16783:              onCreateSet={(projects, set) => {
+16784:                setSelectedProjectsForCheckout(projects);
+16996:              onClose={() => setActiveTab("projects")}
+17015:                  projects: [project], 
+17032:            projects={selectedProjectsForCheckout}
+17043:            projects={printSetData.projects}

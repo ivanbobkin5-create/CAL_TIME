@@ -1,0 +1,2 @@
+14663:      const setDocRef = doc(db, "companies", companyData.id, "sets", setId);
+14743:        `companies/${companyData.id}/sets`,

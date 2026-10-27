@@ -1,0 +1,81 @@
+contentscript.js:14068 MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 close listeners added. Use emitter.setMaxListeners() to increase limit
+n @ contentscript.js:14068
+contentscript.js:14068 MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 end listeners added. Use emitter.setMaxListeners() to increase limit
+n @ contentscript.js:14068
+contentscript.js:14095 ObjectMultiplex - orphaned data for stream "app-init-liveness"
+warn @ contentscript.js:14095
+contentscript.js:14095 ObjectMultiplex - orphaned data for stream "app-init-liveness"
+warn @ contentscript.js:14095
+contentscript.js:14095 ObjectMultiplex - orphaned data for stream "background-liveness"
+warn @ contentscript.js:14095
+contentscript.js:14095 ObjectMultiplex - orphaned data for stream "background-liveness"
+warn @ contentscript.js:14095
+resize_observer.js:20 BX.ResizeObserver is deprecated. Use window.ResizeObserver instead.
+(анонимно) @ resize_observer.js:20
+contentscript.js:14068 MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 close listeners added. Use emitter.setMaxListeners() to increase limit
+n @ contentscript.js:14068
+contentscript.js:14068 MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 end listeners added. Use emitter.setMaxListeners() to increase limit
+n @ contentscript.js:14068
+contentscript.js:14095 ObjectMultiplex - orphaned data for stream "app-init-liveness"
+warn @ contentscript.js:14095
+contentscript.js:14095 ObjectMultiplex - orphaned data for stream "app-init-liveness"
+warn @ contentscript.js:14095
+contentscript.js:14095 ObjectMultiplex - orphaned data for stream "background-liveness"
+warn @ contentscript.js:14095
+contentscript.js:14095 ObjectMultiplex - orphaned data for stream "background-liveness"
+warn @ contentscript.js:14095
+market-icon-tasks.svg:1  Failed to load resource: the server responded with a status of 404 ()
+contentscript.js:14068 MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 close listeners added. Use emitter.setMaxListeners() to increase limit
+n @ contentscript.js:14068
+contentscript.js:14068 MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 end listeners added. Use emitter.setMaxListeners() to increase limit
+n @ contentscript.js:14068
+contentscript.js:14095 ObjectMultiplex - orphaned data for stream "app-init-liveness"
+warn @ contentscript.js:14095
+contentscript.js:14095 ObjectMultiplex - orphaned data for stream "app-init-liveness"
+warn @ contentscript.js:14095
+contentscript.js:14095 ObjectMultiplex - orphaned data for stream "background-liveness"
+warn @ contentscript.js:14095
+contentscript.js:14095 ObjectMultiplex - orphaned data for stream "background-liveness"
+warn @ contentscript.js:14095
+market-icon-tasks.svg:1  Failed to load resource: the server responded with a status of 404 ()
+contentscript.js:14068 MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 close listeners added. Use emitter.setMaxListeners() to increase limit
+n @ contentscript.js:14068
+contentscript.js:14068 MaxListenersExceededWarning: Possible EventEmitter memory leak detected. 11 end listeners added. Use emitter.setMaxListeners() to increase limit
+n @ contentscript.js:14068
+contentscript.js:14095 ObjectMultiplex - orphaned data for stream "app-init-liveness"
+warn @ contentscript.js:14095
+contentscript.js:14095 ObjectMultiplex - orphaned data for stream "app-init-liveness"
+warn @ contentscript.js:14095
+contentscript.js:14095 ObjectMultiplex - orphaned data for stream "background-liveness"
+warn @ contentscript.js:14095
+contentscript.js:14095 ObjectMultiplex - orphaned data for stream "background-liveness"
+warn @ contentscript.js:14095
+index-DAQOmnfr.js:34 App version:  1.0.1
+App-Di_jjOm2.js:14 Bitrix24 SDK Initialized: Object
+App-Di_jjOm2.js:6522 DEBUG: saveGeneralSettings started. silent: true
+App-Di_jjOm2.js:6518 Loaded own products: Array(15)
+App-Di_jjOm2.js:6518 Loaded own products: Array(667)
+App-Di_jjOm2.js:6509 Direct online write fetch failed or timed out, falling back to offline sync queue: AbortError: signal is aborted without reason
+    at App-Di_jjOm2.js:6509:34849
+vS @ App-Di_jjOm2.js:6509
+App-Di_jjOm2.js:6509 Direct online write fetch failed or timed out, falling back to offline sync queue: AbortError: signal is aborted without reason
+    at App-Di_jjOm2.js:6509:34849
+vS @ App-Di_jjOm2.js:6509
+/rest/placement.bind.json:1  Failed to load resource: the server responded with a status of 400 ()
+/rest/placement.bind.json:1  Failed to load resource: the server responded with a status of 400 ()
+/rest/placement.bind.json:1  Failed to load resource: the server responded with a status of 400 ()
+/rest/placement.bind.json:1  Failed to load resource: the server responded with a status of 400 ()
+/rest/placement.bind.json:1  Failed to load resource: the server responded with a status of 400 ()
+App-Di_jjOm2.js:6522 DEBUG: saveGeneralSettings started. silent: true
+App-Di_jjOm2.js:6522 DEBUG: saveGeneralSettings started. silent: true
+App-Di_jjOm2.js:6518 Loaded own products: (667) [{…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, {…}, …]
+App-Di_jjOm2.js:6522 DEBUG: saveGeneralSettings started. silent: true
+App-Di_jjOm2.js:6522 DEBUG: saveGeneralSettings started. silent: true
+App-Di_jjOm2.js:6522 DEBUG: saveGeneralSettings started. silent: true
+App-Di_jjOm2.js:6522 DEBUG: saveGeneralSettings started. silent: true
+App-Di_jjOm2.js:6522 DEBUG: saveGeneralSettings started. silent: true
+App-Di_jjOm2.js:6522 DEBUG: saveGeneralSettings started. silent: true
+App-Di_jjOm2.js:6522 DEBUG: saveGeneralSettings started. silent: true
+App-Di_jjOm2.js:6522 DEBUG: saveGeneralSettings started. silent: true
+App-Di_jjOm2.js:6522 DEBUG: saveGeneralSettings started. silent: true
+App-Di_jjOm2.js:6522 DEBUG: saveGeneralSettings started. silent: true

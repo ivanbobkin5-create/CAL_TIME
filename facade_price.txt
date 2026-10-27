@@ -1,0 +1,3 @@
+          if (facadeSettings.thicknessPrices) {
+            Object.entries(facadeSettings.thicknessPrices).forEach(
+          itemCost = calculatedArea * rawPrice * facadeCoef;

@@ -1,0 +1,330 @@
+--- [API 404] No route for: /api/.env ---
+--- [API 404] No route for: /api/graphql ---
+--- [API 404] No route for: /api/..;/.env ---
+--- [API 404] No route for: /api/uploads/%2e%2e%2f%2e%2e%2f%2e%2e%2f%2e%2e%2f%2e%2e%2fproc/self/environ ---
+--- [API 404] No route for: /api/.env/public/.env ---
+--- [API 404] No route for: /api/w/admins/jobs_u/get_log_file/../../../../proc/self/environ ---
+--- [API 404] No route for: /api/attachments/img/avatar/..%2F..%2F..%2F..%2F..%2Fproc%2Fself%2Fenviron ---
+--- [API 404] No route for: /api/w/default/jobs_u/get_log_file/../../../../proc/self/environ ---
+--- [API 404] No route for: /api/uploads/%2e%2e%2f%2e%2e%2f%2e%2e%2f%2e%2e%2f.env ---
+--- [API 404] No route for: /api/w/starter/jobs_u/get_log_file/../../../../proc/self/environ ---
+--- [API 404] No route for: /api/attachments/img/avatar/..%2F..%2F..%2F..%2F..%2F.env ---
+--- [API 404] No route for: /api/console/api_server ---
+--- [API 404] No route for: /api/uploads/%2e%2e%2f%2e%2e%2f.env ---
+--- [API 404] No route for: /api/console/api_server ---
+--- [API 404] No route for: /api/uploads/%2e%2e%2f%2e%2e%2f%2e%2e%2f.env ---
+--- [API 404] No route for: /api/uploads/%2e%2e%2f%2e%2e%2f%2e%2e%2fproc/self/environ ---
+--- [API 404] No route for: /api/fs/read ---
+--- [API 404] No route for: /api/fs/read ---
+--- [API 404] No route for: /api/system/fileView ---
+--- [API 404] No route for: /api/system/fileView ---
+--- [API 404] No route for: /api/.env ---
+--- [API 404] No route for: /api/v1/.env ---
+--- [API 404] No route for: /api/ ---
+--- [API 404] No route for: /api/route ---
+--- [API 404] No route for: /api/auth ---
+--- [SMTP ATTEMPT] Sending to support@mebel-plan.ru via smtp.timeweb.ru:465 ---
+--- [SMTP CONFIG] User: noreply@mebel-plan.ru, From: "Мебельный калькулятор" <noreply@mebel-plan.ru> ---
+--- [SMTP CONFIG USED] Host: smtp.timeweb.ru, Port: 465, Secure: true, User: noreply@mebel-plan.ru, From: "Мебельный калькулятор" <noreply@mebel-plan.ru> ---
+[2026-10-22 22:16:23] DEBUG Creating transport: nodemailer (8.0.11; +https://nodemailer.com/; SMTP/8.0.11[client:8.0.11])
+[2026-10-22 22:16:23] DEBUG Sending mail using SMTP/8.0.11[client:8.0.11]
+[2026-10-22 22:16:23] DEBUG [2bKTL9PToy4] Resolved smtp.timeweb.ru as 176.57.223.7 [cache miss]
+[2026-10-22 22:16:23] INFO  [2bKTL9PToy4] Secure connection established to 176.57.223.7:465
+[2026-10-22 22:16:23] DEBUG [2bKTL9PToy4] C: EHLO [127.0.0.1]
+[2026-10-22 22:16:23] DEBUG [2bKTL9PToy4] S: 220 smtp.timeweb.ru ESMTP
+[2026-10-22 22:16:26] DEBUG [2bKTL9PToy4] S: 250-DSN
+[2026-10-22 22:16:26] DEBUG [2bKTL9PToy4] S: 250-CHUNKING
+[2026-10-22 22:16:26] DEBUG [2bKTL9PToy4] S: 250-smtp.timeweb.ru Hello [127.0.0.1] [80.76.60.146]
+[2026-10-22 22:16:26] DEBUG [2bKTL9PToy4] S: 250-8BITMIME
+[2026-10-22 22:16:26] DEBUG [2bKTL9PToy4] S: 250-PIPECONNECT
+[2026-10-22 22:16:26] DEBUG [2bKTL9PToy4] S: 250 HELP
+[2026-10-22 22:16:26] DEBUG [2bKTL9PToy4] S: 250-PIPELINING
+[2026-10-22 22:16:26] DEBUG [2bKTL9PToy4] S: 250-SIZE 52428800
+[2026-10-22 22:16:26] DEBUG [2bKTL9PToy4] S: 250-SMTPUTF8
+[2026-10-22 22:16:26] DEBUG [2bKTL9PToy4] S: 250-AUTH PLAIN LOGIN
+[2026-10-22 22:16:26] DEBUG [2bKTL9PToy4] C: AUTH PLAIN AG5vcmVwbHlAbWViZWwtcGxhbi5ydQAvKiBzZWNyZXQgKi8=
+[2026-10-22 22:16:26] DEBUG [2bKTL9PToy4] SMTP handshake finished
+[2026-10-22 22:16:26] DEBUG [2bKTL9PToy4] S: 235 Authentication succeeded
+[2026-10-22 22:16:26] INFO  [2bKTL9PToy4] User "noreply@mebel-plan.ru" authenticated
+[2026-10-22 22:16:26] INFO  Sending message <fbb8b507-67db-dde4-9f9a-b19858994920@mebel-plan.ru> to <support@mebel-plan.ru>
+[2026-10-22 22:16:26] DEBUG [2bKTL9PToy4] C: MAIL FROM:<noreply@mebel-plan.ru>
+[2026-10-22 22:16:26] DEBUG [2bKTL9PToy4] C: RCPT TO:<support@mebel-plan.ru>
+[2026-10-22 22:16:26] DEBUG [2bKTL9PToy4] S: 250 OK
+[2026-10-22 22:16:26] DEBUG [2bKTL9PToy4] C: DATA
+[2026-10-22 22:16:26] DEBUG [2bKTL9PToy4] S: 250 Accepted
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] S: 354 Enter message, ending with "." on a line by itself
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] To: support@mebel-plan.ru
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4]  =?UTF-8?B?0YPQu9GP0YLQvtGA?= <noreply@mebel-plan.ru>
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] From: =?UTF-8?B?0JzQtdCx0LXQu9GM0L3Ri9C5INC60LDQu9GM0Lo=?=
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] sNCy0L3QvtC5INGB0YLRgNCw0L3QuNGG0YsgwqvQnNC10LHQtdC70Ywg0J/Qu9Cw0L3CuzoK0KLQ
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] uTogcXdkcXdkCtCh0L7Qs9C70LDRgdC40LUg0L3QsCDQvtCx0YDQsNCx0L7RgtC60YMg0J/QlNC9
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] MIME-Version: 1.0
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] .
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4]  boundary="--_NmP-b35d9a06dfb8d514-Part_1"
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4]  =?UTF-8?B?0LvQsNC9wrsg4oCUINCY0LLQsNC9?=
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] 0YLRgNCw0YbQuNGOCtCY0LzRjzog0JjQstCw0L0KRS1tYWlsOiBpdmFuYm9ia2luNzc3QHlhbmRl
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] Content-Type: text/html; charset=utf-8
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] eC5ydQrQotC10LvQtdGE0L7QvTogKzc5OTk5MjA3MDUwMDAK0JrQvtC80LzQtdC90YLQsNGA0LjQ
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] sNCy0L3QvtC5INGB0YLRgNCw0L3QuNGG0YsgwqvQnNC10LHQtdC70Ywg0J/Qu9Cw0L3Cuzo8YnI+
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] vdGB0YLRgNCw0YbQuNGOPGJyPtCY0LzRjzog0JjQstCw0L08YnI+RS1tYWlsOiBpdmFuYm9ia2lu
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] 0L7RgtC/0YDQsNCy0LrQuDogMjMuMTAuMjAyNiwgMDE6MTY6MjMgKNCc0KHQmik=
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] Message-ID: <fbb8b507-67db-dde4-9f9a-b19858994920@mebel-plan.ru>
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] OiDQn9C+0LTRgtCy0LXRgNC20LTQtdC90L4K0JTQsNGC0LAg0L7RgtC/0YDQsNCy0LrQuDogMjMu
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] Content-Transfer-Encoding: base64
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] 0J/QvtGB0YLRg9C/0LjQu9C+INC90L7QstC+0LUg0L7QsdGA0LDRidC10L3QuNC1INGBINCz0LvQ
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] ----_NmP-b35d9a06dfb8d514-Part_1
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] Subject: =?UTF-8?B?8J+agCDQl9Cw0L/RgNC+0YEg0LTQtdC80L7QvdGB?=
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] 0J/QvtGB0YLRg9C/0LjQu9C+INC90L7QstC+0LUg0L7QsdGA0LDRidC10L3QuNC1INGBINCz0LvQ
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] MTAuMjAyNiwgMDE6MTY6MjMgKNCc0KHQmik=
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] tdC80LAg0L7QsdGA0LDRidC10L3QuNGPOiDQl9Cw0L/RgNC+0YHQuNGC0Ywg0LTQtdC80L7QvdGB
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] 
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] Nzc3QHlhbmRleC5ydTxicj7QotC10LvQtdGE0L7QvTogKzc5OTk5MjA3MDUwMDA8YnI+0JrQvtC8
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4]  =?UTF-8?B?0YLRgNCw0YbQuNC4IMKr0JzQtdCx0LXQu9GMINCf?=
+[2026-10-22 22:16:29] INFO  [2bKTL9PToy4] <1969 bytes encoded mime message (source size 1966 bytes)>
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] ----_NmP-b35d9a06dfb8d514-Part_1
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] Content-Type: multipart/alternative;
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] Content-Transfer-Encoding: base64
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] ----_NmP-b35d9a06dfb8d514-Part_1--
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] 
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] 0KLQtdC80LAg0L7QsdGA0LDRidC10L3QuNGPOiDQl9Cw0L/RgNC+0YHQuNGC0Ywg0LTQtdC80L7Q
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] 
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] Date: Thu, 22 Oct 2026 22:16:23 +0000
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] 0LzQtdC90YLQsNGA0LjQuTogcXdkcXdkPGJyPtCh0L7Qs9C70LDRgdC40LUg0L3QsCDQvtCx0YDQ
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] sNCx0L7RgtC60YMg0J/QlNC9OiDQn9C+0LTRgtCy0LXRgNC20LTQtdC90L48YnI+0JTQsNGC0LAg
+[2026-10-22 22:16:29] DEBUG [2bKTL9PToy4] Content-Type: text/plain; charset=utf-8
+[2026-10-22 22:16:32] DEBUG [2bKTL9PToy4] S: 250 OK id=1xK15G-0000000087v-47Vd
+--- [EMAIL SUCCESS] MessageId: <fbb8b507-67db-dde4-9f9a-b19858994920@mebel-plan.ru> ---
+[2026-10-22 22:16:32] DEBUG [2bKTL9PToy4] Closing connection to the server using "end"
+--- [SMTP CONFIG] User: noreply@mebel-plan.ru, From: "Мебельный калькулятор" <noreply@mebel-plan.ru> ---
+--- [SMTP ATTEMPT] Sending to support@mebel-plan.ru via smtp.timeweb.ru:465 ---
+[2026-10-22 22:17:19] DEBUG Sending mail using SMTP/8.0.11[client:8.0.11]
+[2026-10-22 22:17:19] DEBUG Creating transport: nodemailer (8.0.11; +https://nodemailer.com/; SMTP/8.0.11[client:8.0.11])
+--- [SMTP CONFIG USED] Host: smtp.timeweb.ru, Port: 465, Secure: true, User: noreply@mebel-plan.ru, From: "Мебельный калькулятор" <noreply@mebel-plan.ru> ---
+[2026-10-22 22:17:19] DEBUG [O0u9USA3n7A] Resolved smtp.timeweb.ru as 176.57.223.7 [cache hit]
+[2026-10-22 22:17:19] INFO  [O0u9USA3n7A] Secure connection established to 176.57.223.7:465
+[2026-10-22 22:17:19] DEBUG [O0u9USA3n7A] C: EHLO [127.0.0.1]
+[2026-10-22 22:17:19] DEBUG [O0u9USA3n7A] S: 220 smtp.timeweb.ru ESMTP
+[2026-10-22 22:17:19] DEBUG [O0u9USA3n7A] S: 250-smtp.timeweb.ru Hello [127.0.0.1] [80.76.60.146]
+[2026-10-22 22:17:19] DEBUG [O0u9USA3n7A] S: 250-SIZE 52428800
+[2026-10-22 22:17:19] DEBUG [O0u9USA3n7A] S: 250-DSN
+[2026-10-22 22:17:19] DEBUG [O0u9USA3n7A] S: 250-SMTPUTF8
+[2026-10-22 22:17:19] DEBUG [O0u9USA3n7A] C: AUTH PLAIN AG5vcmVwbHlAbWViZWwtcGxhbi5ydQAvKiBzZWNyZXQgKi8=
+[2026-10-22 22:17:19] DEBUG [O0u9USA3n7A] S: 250-PIPECONNECT
+[2026-10-22 22:17:19] DEBUG [O0u9USA3n7A] S: 250-CHUNKING
+[2026-10-22 22:17:19] DEBUG [O0u9USA3n7A] SMTP handshake finished
+[2026-10-22 22:17:19] DEBUG [O0u9USA3n7A] S: 250 HELP
+[2026-10-22 22:17:19] DEBUG [O0u9USA3n7A] S: 250-AUTH PLAIN LOGIN
+[2026-10-22 22:17:19] DEBUG [O0u9USA3n7A] S: 250-PIPELINING
+[2026-10-22 22:17:19] DEBUG [O0u9USA3n7A] S: 250-8BITMIME
+[2026-10-22 22:17:19] DEBUG [O0u9USA3n7A] S: 235 Authentication succeeded
+[2026-10-22 22:17:19] INFO  [O0u9USA3n7A] User "noreply@mebel-plan.ru" authenticated
+[2026-10-22 22:17:19] INFO  Sending message <b54bc75c-67bd-b2ad-f7af-d7be6b6a19d1@mebel-plan.ru> to <support@mebel-plan.ru>
+[2026-10-22 22:17:19] DEBUG [O0u9USA3n7A] C: MAIL FROM:<noreply@mebel-plan.ru>
+[2026-10-22 22:17:19] DEBUG [O0u9USA3n7A] C: RCPT TO:<support@mebel-plan.ru>
+[2026-10-22 22:17:19] DEBUG [O0u9USA3n7A] S: 250 OK
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] C: DATA
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] S: 250 Accepted
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] S: 354 Enter message, ending with "." on a line by itself
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] 
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] Content-Type: text/html; charset=utf-8
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] Content-Type: multipart/alternative;
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] 0YLQsNGA0LjQuTogd3FkcXdkPGJyPtCh0L7Qs9C70LDRgdC40LUg0L3QsCDQvtCx0YDQsNCx0L7R
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] 0J/QvtGB0YLRg9C/0LjQu9C+INC90L7QstC+0LUg0L7QsdGA0LDRidC10L3QuNC1INGBINCz0LvQ
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] gtC60YMg0J/QlNC9OiDQn9C+0LTRgtCy0LXRgNC20LTQtdC90L48YnI+0JTQsNGC0LAg0L7RgtC/
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] ----_NmP-958addb2d7c0b70b-Part_1--
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] CtCi0LXQu9C10YTQvtC9OiArNzk5OTkyMDcwNTAK0JrQvtC80LzQtdC90YLQsNGA0LjQuTogd3Fk
+[2026-10-22 22:17:22] INFO  [O0u9USA3n7A] <1982 bytes encoded mime message (source size 1979 bytes)>
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] Content-Type: text/plain; charset=utf-8
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] Subject: =?UTF-8?B?8J+SrCDQntCx0YDQsNGJ0LXQvdC40LUg0Log0YA=?=
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] Content-Transfer-Encoding: base64
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] From: =?UTF-8?B?0JzQtdCx0LXQu9GM0L3Ri9C5INC60LDQu9GM0Lo=?=
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] MIME-Version: 1.0
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] cXdkCtCh0L7Qs9C70LDRgdC40LUg0L3QsCDQvtCx0YDQsNCx0L7RgtC60YMg0J/QlNC9OiDQn9C+
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A]  boundary="--_NmP-958addb2d7c0b70b-Part_1"
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] 0YDQsNCy0LrQuDogMjMuMTAuMjAyNiwgMDE6MTc6MTkgKNCc0KHQmik=
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] sNCy0L3QvtC5INGB0YLRgNCw0L3QuNGG0YsgwqvQnNC10LHQtdC70Ywg0J/Qu9Cw0L3Cuzo8YnI+
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] 
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] 0YDQsNCx0L7RgtGH0LjQutC+0Lw8YnI+0JjQvNGPOiDQn9C10YLRgDxicj5FLW1haWw6IGl2YW5A
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] ----_NmP-958addb2d7c0b70b-Part_1
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] 
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] 0J/QvtGB0YLRg9C/0LjQu9C+INC90L7QstC+0LUg0L7QsdGA0LDRidC10L3QuNC1INGBINCz0LvQ
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] To: support@mebel-plan.ru
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] Date: Thu, 22 Oct 2026 22:17:19 +0000
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] 0KLQtdC80LAg0L7QsdGA0LDRidC10L3QuNGPOiDQodCy0Y/Qt9Cw0YLRjNGB0Y8g0YEg0YDQsNC3
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] 0LTRgtCy0LXRgNC20LTQtdC90L4K0JTQsNGC0LAg0L7RgtC/0YDQsNCy0LrQuDogMjMuMTAuMjAy
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] Content-Transfer-Encoding: base64
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A]  =?UTF-8?B?0YPQu9GP0YLQvtGA?= <noreply@mebel-plan.ru>
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] eWFuZGV4LnJ1PGJyPtCi0LXQu9C10YTQvtC9OiArNzk5OTkyMDcwNTA8YnI+0JrQvtC80LzQtdC9
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] Message-ID: <b54bc75c-67bd-b2ad-f7af-d7be6b6a19d1@mebel-plan.ru>
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] ----_NmP-958addb2d7c0b70b-Part_1
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A]  =?UTF-8?B?0LHQtdC70Ywg0J/Qu9Cw0L3CuyDigJQg0J/QtdGC?= =?UTF-8?B?0YA=?=
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] NiwgMDE6MTc6MTkgKNCc0KHQmik=
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A]  =?UTF-8?B?0LDQt9GA0LDQsdC+0YLRh9C40LrRgyDCq9Cc0LU=?=
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] .
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] sNCy0L3QvtC5INGB0YLRgNCw0L3QuNGG0YsgwqvQnNC10LHQtdC70Ywg0J/Qu9Cw0L3CuzoK0KLQ
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] sNCx0L7RgtGH0LjQutC+0LwK0JjQvNGPOiDQn9C10YLRgApFLW1haWw6IGl2YW5AeWFuZGV4LnJ1
+[2026-10-22 22:17:22] DEBUG [O0u9USA3n7A] tdC80LAg0L7QsdGA0LDRidC10L3QuNGPOiDQodCy0Y/Qt9Cw0YLRjNGB0Y8g0YEg0YDQsNC30YDQ
+[2026-10-22 22:17:23] DEBUG [O0u9USA3n7A] Closing connection to the server using "end"
+[2026-10-22 22:17:23] DEBUG [O0u9USA3n7A] S: 250 OK id=1xK16A-000000008iD-3Osy
+--- [EMAIL SUCCESS] MessageId: <b54bc75c-67bd-b2ad-f7af-d7be6b6a19d1@mebel-plan.ru> ---
+--- [API 404] No route for: /api/.env ---
+--- [API 404] No route for: /api/graphql ---
+--- [API 404] No route for: /api/v1/.env ---
+--- [API 404] No route for: /api/ ---
+--- [API 404] No route for: /api/.env/public/.env ---
+--- [API 404] No route for: /api/console/api_server ---
+--- [API 404] No route for: /api/console/api_server ---
+--- [API 404] No route for: /api/w/admins/jobs_u/get_log_file/../../../../proc/self/environ ---
+--- [API 404] No route for: /api/..;/.env ---
+--- [API 404] No route for: /api/fs/read ---
+--- [API 404] No route for: /api/w/starter/jobs_u/get_log_file/../../../../proc/self/environ ---
+--- [API 404] No route for: /api/w/default/jobs_u/get_log_file/../../../../proc/self/environ ---
+--- [API 404] No route for: /api/system/fileView ---
+--- [API 404] No route for: /api/system/fileView ---
+--- [API 404] No route for: /api/fs/read ---
+--- [API 404] No route for: /api/.env ---
+--- [API 404] No route for: /api/route ---
+--- [API 404] No route for: /api/auth ---
+--- [API 404] No route for: /api/v1/ ---
+--- [API 404] No route for: /api/config ---
+--- [API 404] No route for: /api/settings ---
+--- [API 404] No route for: /api/landing/feedback ---
+--- [API 404] No route for: /api/auth/forgot-password ---
+--- [API 404] No route for: /api/auth/reset-password ---
+--- [API 404] No route for: /api/auth/resend-verification ---
+--- [API 404] No route for: /api/auth/verify-email ---
+--- [API 404] No route for: /api/auth/login ---
+--- [API 404] No route for: /api/auth/register ---
+--- [SMTP ENV] Has Pass: true, From: "Мебельный калькулятор" <noreply@mebel-plan.ru> ---
+--- [SMTP ENV] Host: smtp.timeweb.ru, Port: 465, User: noreply@mebel-plan.ru ---
+--- [STARTUP] Mode: PRODUCTION ---
+--- [STARTUP] CWD: /app ---
+--- [STARTUP] Dist Path: /app/dist ---
+--- [DEBUG] Server successfully bound to 3000 ---
+--- [BOOTSTRAP ADMIN] Admin & Owner users ready in resilient local store ---
+--- [BOOTSTRAP PRELOAD] Cached 280 critical documents from PostgreSQL into localStore ---
+--- [STARTUP] Mode: PRODUCTION ---
+--- [STARTUP] Dist Path: /app/dist ---
+--- [SMTP ENV] Host: smtp.timeweb.ru, Port: 465, User: noreply@mebel-plan.ru ---
+--- [SMTP ENV] Has Pass: true, From: "Мебельный калькулятор" <noreply@mebel-plan.ru> ---
+--- [STARTUP] CWD: /app ---
+--- [DEBUG] Server successfully bound to 3000 ---
+--- [BOOTSTRAP ADMIN] Admin & Owner users ready in resilient local store ---
+--- [BOOTSTRAP PRELOAD] Cached 280 critical documents from PostgreSQL into localStore ---
+--- [API 404] No route for: /api/bitrix24/install ---
+--- [SERVER ERROR] Failed to send index.html: Request aborted ---
+--- [SERVER ERROR] Failed to send index.html: Request aborted ---
+--- [STARTUP] Mode: PRODUCTION ---
+--- [STARTUP] Dist Path: /app/dist ---
+--- [SMTP ENV] Host: smtp.timeweb.ru, Port: 465, User: noreply@mebel-plan.ru ---
+--- [SMTP ENV] Has Pass: true, From: "Мебельный калькулятор" <noreply@mebel-plan.ru> ---
+--- [STARTUP] CWD: /app ---
+--- [DEBUG] Server successfully bound to 3000 ---
+--- [BOOTSTRAP ADMIN] Admin & Owner users ready in resilient local store ---
+--- [BOOTSTRAP PRELOAD] Cached 280 critical documents from PostgreSQL into localStore ---
+--- [STARTUP] Mode: PRODUCTION ---
+--- [SMTP ENV] Has Pass: true, From: "Мебельный калькулятор" <noreply@mebel-plan.ru> ---
+--- [SMTP ENV] Host: smtp.timeweb.ru, Port: 465, User: noreply@mebel-plan.ru ---
+--- [STARTUP] Dist Path: /app/dist ---
+--- [STARTUP] CWD: /app ---
+--- [DEBUG] Server successfully bound to 3000 ---
+--- [BOOTSTRAP ADMIN] Admin & Owner users ready in resilient local store ---
+--- [BOOTSTRAP PRELOAD] Cached 280 critical documents from PostgreSQL into localStore ---
+--- [API 404] No route for: /api/bitrix24/install ---
+--- [STARTUP] Mode: PRODUCTION ---
+--- [STARTUP] Dist Path: /app/dist ---
+--- [SMTP ENV] Host: smtp.timeweb.ru, Port: 465, User: noreply@mebel-plan.ru ---
+--- [SMTP ENV] Has Pass: true, From: "Мебельный калькулятор" <noreply@mebel-plan.ru> ---
+--- [STARTUP] CWD: /app ---
+--- [DEBUG] Server successfully bound to 3000 ---
+--- [BOOTSTRAP ADMIN] Admin & Owner users ready in resilient local store ---
+--- [BOOTSTRAP PRELOAD] Cached 280 critical documents from PostgreSQL into localStore ---
+--- [API 404] No route for: /api/ ---
+--- [API 404] No route for: /api/ ---
+--- [API 404] No route for: /api/ ---
+--- [API 404] No route for: /api/ ---
+--- [API 404] No route for: /api/ ---
+--- [API 404] No route for: /api/ ---
+--- [API 404] No route for: /api/ ---
+--- [API 404] No route for: /api/ ---
+--- [STARTUP] Mode: PRODUCTION ---
+--- [STARTUP] Dist Path: /app/dist ---
+--- [SMTP ENV] Host: smtp.timeweb.ru, Port: 465, User: noreply@mebel-plan.ru ---
+--- [STARTUP] CWD: /app ---
+--- [SMTP ENV] Has Pass: true, From: "Мебельный калькулятор" <noreply@mebel-plan.ru> ---
+--- [DEBUG] Server successfully bound to 3000 ---
+--- [BOOTSTRAP ADMIN] Admin & Owner users ready in resilient local store ---
+--- [BOOTSTRAP PRELOAD] Cached 280 critical documents from PostgreSQL into localStore ---
+--- [B24 INSTALL DEBUG] Detected form-urlencoded body ---
+--- [B24 INSTALL DEBUG] Detected form-urlencoded body ---
+--- [STARTUP] Mode: PRODUCTION ---
+--- [STARTUP] Dist Path: /app/dist ---
+--- [STARTUP] CWD: /app ---
+--- [SMTP ENV] Has Pass: true, From: "Мебельный калькулятор" <noreply@mebel-plan.ru> ---
+--- [SMTP ENV] Host: smtp.timeweb.ru, Port: 465, User: noreply@mebel-plan.ru ---
+--- [DEBUG] Server successfully bound to 3000 ---
+--- [BOOTSTRAP ADMIN] Admin & Owner users ready in resilient local store ---
+--- [BOOTSTRAP PRELOAD] Cached 280 critical documents from PostgreSQL into localStore ---
+--- [B24 INSTALL DEBUG] Detected form-urlencoded body ---
+--- [B24 INSTALL DEBUG] Detected form-urlencoded body ---
+--- [STARTUP] Mode: PRODUCTION ---
+--- [SMTP ENV] Host: smtp.timeweb.ru, Port: 465, User: noreply@mebel-plan.ru ---
+--- [STARTUP] Dist Path: /app/dist ---
+--- [STARTUP] CWD: /app ---
+--- [SMTP ENV] Has Pass: true, From: "Мебельный калькулятор" <noreply@mebel-plan.ru> ---
+--- [DEBUG] Server successfully bound to 3000 ---
+--- [BOOTSTRAP ADMIN] Admin & Owner users ready in resilient local store ---
+--- [BOOTSTRAP PRELOAD] Cached 270 critical documents from PostgreSQL into localStore ---
+--- [B24 INSTALL DEBUG] Detected form-urlencoded body ---
+--- [B24 INSTALL DEBUG] Detected form-urlencoded body ---
+--- [B24 INSTALL DEBUG] Detected form-urlencoded body ---
+--- [STARTUP] CWD: /app ---
+--- [SMTP ENV] Host: smtp.timeweb.ru, Port: 465, User: noreply@mebel-plan.ru ---
+--- [SMTP ENV] Has Pass: true, From: "Мебельный калькулятор" <noreply@mebel-plan.ru> ---
+--- [STARTUP] Dist Path: /app/dist ---
+--- [STARTUP] Mode: PRODUCTION ---
+--- [DEBUG] Server successfully bound to 3000 ---
+--- [BOOTSTRAP ADMIN] Admin & Owner users ready in resilient local store ---
+--- [BOOTSTRAP PRELOAD] Cached 270 critical documents from PostgreSQL into localStore ---
+--- [B24 INSTALL DEBUG] Detected form-urlencoded body ---
+--- [STARTUP] Mode: PRODUCTION ---
+--- [STARTUP] CWD: /app ---
+--- [SMTP ENV] Host: smtp.timeweb.ru, Port: 465, User: noreply@mebel-plan.ru ---
+--- [SMTP ENV] Has Pass: true, From: "Мебельный калькулятор" <noreply@mebel-plan.ru> ---
+--- [STARTUP] Dist Path: /app/dist ---
+--- [DEBUG] Server successfully bound to 3000 ---
+--- [BOOTSTRAP ADMIN] Admin & Owner users ready in resilient local store ---
+--- [BOOTSTRAP PRELOAD] Cached 270 critical documents from PostgreSQL into localStore ---
+--- [B24 INSTALL DEBUG] Detected form-urlencoded body ---
+--- [B24 INSTALL DEBUG] Detected form-urlencoded body ---
+--- [STARTUP] Mode: PRODUCTION ---
+--- [SMTP ENV] Has Pass: true, From: "Мебельный калькулятор" <noreply@mebel-plan.ru> ---
+--- [STARTUP] CWD: /app ---
+--- [SMTP ENV] Host: smtp.timeweb.ru, Port: 465, User: noreply@mebel-plan.ru ---
+--- [STARTUP] Dist Path: /app/dist ---
+--- [DEBUG] Server successfully bound to 3000 ---
+--- [BOOTSTRAP ADMIN] Admin & Owner users ready in resilient local store ---
+--- [BOOTSTRAP PRELOAD] Cached 270 critical documents from PostgreSQL into localStore ---
+--- [B24 INSTALL DEBUG] Detected form-urlencoded body ---
+--- [B24 INSTALL DEBUG] Detected form-urlencoded body ---
+--- [STARTUP] Mode: PRODUCTION ---
+--- [STARTUP] Dist Path: /app/dist ---
+--- [STARTUP] CWD: /app ---
+--- [SMTP ENV] Host: smtp.timeweb.ru, Port: 465, User: noreply@mebel-plan.ru ---
+--- [SMTP ENV] Has Pass: true, From: "Мебельный калькулятор" <noreply@mebel-plan.ru> ---
+--- [DEBUG] Server successfully bound to 3000 ---
+--- [BOOTSTRAP ADMIN] Admin & Owner users ready in resilient local store ---
+--- [BOOTSTRAP PRELOAD] Cached 270 critical documents from PostgreSQL into localStore ---
+--- [B24 INSTALL DEBUG] Detected form-urlencoded body ---
+--- [B24 INSTALL DEBUG] Detected form-urlencoded body ---
+--- [B24 INSTALL DEBUG] Detected form-urlencoded body ---
+--- [B24 INSTALL DEBUG] Detected form-urlencoded body ---
+--- [STARTUP] Mode: PRODUCTION ---
+--- [SMTP ENV] Host: smtp.timeweb.ru, Port: 465, User: noreply@mebel-plan.ru ---
+--- [SMTP ENV] Has Pass: true, From: "Мебельный калькулятор" <noreply@mebel-plan.ru> ---
+--- [STARTUP] CWD: /app ---
+--- [STARTUP] Dist Path: /app/dist ---
+--- [DEBUG] Server successfully bound to 3000 ---
+--- [BOOTSTRAP ADMIN] Admin & Owner users ready in resilient local store ---
+--- [BOOTSTRAP PRELOAD] Cached 270 critical documents from PostgreSQL into localStore ---
+--- [B24 INSTALL DEBUG] Detected form-urlencoded body ---
