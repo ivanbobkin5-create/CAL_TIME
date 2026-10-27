@@ -182,6 +182,9 @@ import {
   Settings,
   LayoutDashboard,
   Database,
+  Inbox,
+  Mail,
+  CreditCard,
   ShoppingBag,
   Package,
   Plus,
@@ -35021,6 +35024,9 @@ export default function App() {
     }
     return false;
   });
+  const [adminActiveTab, setAdminActiveTab] = useState<
+    "overview" | "companies" | "applications" | "news" | "socials" | "users" | "notifications" | "requisites" | "database"
+  >("overview");
   const [showAdminLogin, setShowAdminLogin] = useState(false);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [isBlocked, setIsBlocked] = useState(false);
@@ -42315,6 +42321,22 @@ export default function App() {
   const effectiveIsAppAdmin = isAppAdmin || isUserSuperAdmin(userData) || isSuperAdminEmail(userData?.email) || isUserSuperAdmin(auth.currentUser);
 
   if (effectiveIsAppAdmin && showAdminPanel) {
+    const adminNavItems: {
+      id: "overview" | "companies" | "applications" | "news" | "socials" | "users" | "notifications" | "requisites" | "database";
+      label: string;
+      icon: React.ComponentType<{ className?: string }>;
+    }[] = [
+      { id: "overview", label: "Обзор", icon: BarChart3 },
+      { id: "companies", label: "Компании", icon: Building2 },
+      { id: "applications", label: "Заявки", icon: Inbox },
+      { id: "news", label: "Новости", icon: Bell },
+      { id: "socials", label: "Мультипостинг", icon: Send },
+      { id: "users", label: "Пользователи", icon: Users },
+      { id: "notifications", label: "E-mail рассылки", icon: Mail },
+      { id: "requisites", label: "Реквизиты ИП", icon: CreditCard },
+      { id: "database", label: "База данных", icon: Database },
+    ];
+
     return (
       <div className="flex min-h-screen bg-gray-50">
         <aside
@@ -42347,21 +42369,34 @@ export default function App() {
               </button>
             </div>
 
-            <nav className="flex-1 p-4 space-y-2">
-              <button
-                onClick={() => setActiveTab("calculator")}
-                className={cn(
-                  "w-full flex items-center gap-4 p-3 rounded-xl transition-all cursor-pointer",
-                  activeTab === "calculator"
-                    ? "bg-blue-600 text-white shadow-lg shadow-blue-200"
-                    : "text-gray-600 hover:bg-gray-100",
-                )}
-              >
-                <LayoutDashboard className="w-6 h-6 flex-shrink-0" />
-                {isSidebarOpen && (
-                  <span className="font-medium">Панель управления</span>
-                )}
-              </button>
+            <nav className="flex-1 p-3 space-y-1.5 overflow-y-auto">
+              {isSidebarOpen && (
+                <div className="px-3 py-1 text-[11px] font-black uppercase text-gray-400 tracking-wider">
+                  Кабинет Суперадмина
+                </div>
+              )}
+              {adminNavItems.map((item) => {
+                const IconComponent = item.icon;
+                const isActive = adminActiveTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setAdminActiveTab(item.id)}
+                    className={cn(
+                      "w-full flex items-center gap-3.5 p-3 rounded-xl transition-all cursor-pointer font-bold text-xs",
+                      isActive
+                        ? "bg-blue-600 text-white shadow-md shadow-blue-200 font-extrabold"
+                        : "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
+                    )}
+                    title={item.label}
+                  >
+                    <IconComponent className="w-5 h-5 flex-shrink-0" />
+                    {isSidebarOpen && (
+                      <span className="truncate flex-1 text-left">{item.label}</span>
+                    )}
+                  </button>
+                );
+              })}
             </nav>
 
             <div className="p-4 border-t border-gray-100 space-y-2">
@@ -42400,7 +42435,7 @@ export default function App() {
             isSidebarOpen ? "lg:ml-64" : "lg:ml-20",
           )}
         >
-          <AppAdminView />
+          <AppAdminView activeTab={adminActiveTab} onTabChange={setAdminActiveTab} hideTopNav={true} />
         </main>
       </div>
     );

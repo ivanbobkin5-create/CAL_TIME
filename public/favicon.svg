@@ -5,8 +5,8 @@
       font-family: 'Montserrat', -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', Roboto, sans-serif;
       font-weight: 900;
       fill: #FFFFFF;
-      font-size: 112px;
-      letter-spacing: 1px;
+      font-size: 130px;
+      letter-spacing: 2px;
     }
   </style>
   
@@ -14,14 +14,17 @@
   <rect width="1000" height="1000" rx="180" fill="#155DFC"/>
 
   <!-- Outer White Frame -->
-  <rect x="87" y="87" width="826" height="826" rx="133" fill="none" stroke="#FFFFFF" stroke-width="70"/>
+  <rect x="87" y="87" width="826" height="826" rx="133" fill="none" stroke="#FFFFFF" stroke-width="60"/>
 
   <!-- Left Cabinet Door (Tall) -->
-  <rect x="281" y="273" width="195" height="454" rx="22" fill="#FFFFFF"/>
+  <rect x="250" y="270" width="125" height="460" rx="20" fill="#FFFFFF"/>
+
+  <!-- Middle Cabinet Door (Short) -->
+  <rect x="410" y="270" width="125" height="280" rx="20" fill="#FFFFFF"/>
 
   <!-- Right Cabinet Door (Short) -->
-  <rect x="524" y="273" width="195" height="314" rx="22" fill="#FFFFFF"/>
+  <rect x="570" y="270" width="125" height="280" rx="20" fill="#FFFFFF"/>
 
-  <!-- Right Text MP -->
-  <text x="523" y="722" class="logo-mp">МП</text>
+  <!-- Text MP under Middle & Right Doors -->
+  <text x="410" y="705" class="logo-mp">МП</text>
 </svg>

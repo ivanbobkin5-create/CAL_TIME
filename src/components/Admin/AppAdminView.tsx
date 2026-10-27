@@ -121,8 +121,31 @@ interface AdminSettings {
   systemBannerActive: boolean;
 }
 
-export const AppAdminView: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<"overview" | "companies" | "applications" | "news" | "socials" | "users" | "notifications" | "requisites" | "database">("overview");
+export interface AppAdminViewProps {
+  activeTab?: "overview" | "companies" | "applications" | "news" | "socials" | "users" | "notifications" | "requisites" | "database";
+  onTabChange?: (tab: "overview" | "companies" | "applications" | "news" | "socials" | "users" | "notifications" | "requisites" | "database") => void;
+  hideTopNav?: boolean;
+}
+
+export const AppAdminView: React.FC<AppAdminViewProps> = ({
+  activeTab: externalActiveTab,
+  onTabChange,
+  hideTopNav = false,
+}) => {
+  const [internalActiveTab, setInternalActiveTab] = useState<
+    "overview" | "companies" | "applications" | "news" | "socials" | "users" | "notifications" | "requisites" | "database"
+  >("overview");
+
+  const activeTab = externalActiveTab || internalActiveTab;
+
+  const setActiveTab = (
+    tab: "overview" | "companies" | "applications" | "news" | "socials" | "users" | "notifications" | "requisites" | "database"
+  ) => {
+    setInternalActiveTab(tab);
+    if (onTabChange) {
+      onTabChange(tab);
+    }
+  };
   const [companies, setCompanies] = useState<CompanyItem[]>([]);
   const [users, setUsers] = useState<UserItem[]>([]);
   const [newsList, setNewsList] = useState<SystemNewsItem[]>([]);
@@ -1012,129 +1035,131 @@ export const AppAdminView: React.FC = () => {
       {/* Main Content Area */}
       <main className="max-w-7xl mx-auto px-4 sm:px-8 pt-6 space-y-6">
         {/* Navigation Tabs Bar */}
-        <div className="flex items-center gap-1.5 p-1.5 bg-gray-200/70 rounded-2xl border border-gray-300/60 shadow-inner overflow-x-auto">
-          <button
-            onClick={() => setActiveTab("overview")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
-              activeTab === "overview"
-                ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
-                : "text-gray-600 hover:text-gray-900"
-            )}
-          >
-            <BarChart3 className="w-4 h-4" />
-            <span>Обзор</span>
-          </button>
+        {!hideTopNav && (
+          <div className="flex items-center gap-1.5 p-1.5 bg-gray-200/70 rounded-2xl border border-gray-300/60 shadow-inner overflow-x-auto">
+            <button
+              onClick={() => setActiveTab("overview")}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
+                activeTab === "overview"
+                  ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
+                  : "text-gray-600 hover:text-gray-900"
+              )}
+            >
+              <BarChart3 className="w-4 h-4" />
+              <span>Обзор</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab("companies")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
-              activeTab === "companies"
-                ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
-                : "text-gray-600 hover:text-gray-900"
-            )}
-          >
-            <Building2 className="w-4 h-4" />
-            <span>Компании ({companies.length})</span>
-          </button>
+            <button
+              onClick={() => setActiveTab("companies")}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
+                activeTab === "companies"
+                  ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
+                  : "text-gray-600 hover:text-gray-900"
+              )}
+            >
+              <Building2 className="w-4 h-4" />
+              <span>Компании ({companies.length})</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab("applications")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap relative",
-              activeTab === "applications"
-                ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
-                : "text-gray-600 hover:text-gray-900"
-            )}
-          >
-            <Inbox className="w-4 h-4" />
-            <span>Заявки</span>
-            {stats.pendingApps > 0 && (
-              <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-black animate-pulse">
-                {stats.pendingApps}
-              </span>
-            )}
-          </button>
+            <button
+              onClick={() => setActiveTab("applications")}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap relative",
+                activeTab === "applications"
+                  ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
+                  : "text-gray-600 hover:text-gray-900"
+              )}
+            >
+              <Inbox className="w-4 h-4" />
+              <span>Заявки</span>
+              {stats.pendingApps > 0 && (
+                <span className="w-5 h-5 rounded-full bg-red-500 text-white text-[10px] flex items-center justify-center font-black animate-pulse">
+                  {stats.pendingApps}
+                </span>
+              )}
+            </button>
 
-          <button
-            onClick={() => setActiveTab("news")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
-              activeTab === "news"
-                ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
-                : "text-gray-600 hover:text-gray-900"
-            )}
-          >
-            <Bell className="w-4 h-4" />
-            <span>Новости ({newsList.length})</span>
-          </button>
+            <button
+              onClick={() => setActiveTab("news")}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
+                activeTab === "news"
+                  ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
+                  : "text-gray-600 hover:text-gray-900"
+              )}
+            >
+              <Bell className="w-4 h-4" />
+              <span>Новости ({newsList.length})</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab("socials")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
-              activeTab === "socials"
-                ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm font-extrabold"
-                : "text-blue-700 bg-blue-50/80 hover:bg-blue-100/80"
-            )}
-          >
-            <Send className="w-4 h-4" />
-            <span>Мультипостинг (TG + ВК)</span>
-          </button>
+            <button
+              onClick={() => setActiveTab("socials")}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
+                activeTab === "socials"
+                  ? "bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-sm font-extrabold"
+                  : "text-blue-700 bg-blue-50/80 hover:bg-blue-100/80"
+              )}
+            >
+              <Send className="w-4 h-4" />
+              <span>Мультипостинг (TG + ВК)</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab("users")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
-              activeTab === "users"
-                ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
-                : "text-gray-600 hover:text-gray-900"
-            )}
-          >
-            <Users className="w-4 h-4" />
-            <span>Пользователи ({users.length})</span>
-          </button>
+            <button
+              onClick={() => setActiveTab("users")}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
+                activeTab === "users"
+                  ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
+                  : "text-gray-600 hover:text-gray-900"
+              )}
+            >
+              <Users className="w-4 h-4" />
+              <span>Пользователи ({users.length})</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab("notifications")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
-              activeTab === "notifications"
-                ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
-                : "text-gray-600 hover:text-gray-900"
-            )}
-          >
-            <Mail className="w-4 h-4" />
-            <span>E-mail рассылки</span>
-          </button>
+            <button
+              onClick={() => setActiveTab("notifications")}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
+                activeTab === "notifications"
+                  ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
+                  : "text-gray-600 hover:text-gray-900"
+              )}
+            >
+              <Mail className="w-4 h-4" />
+              <span>E-mail рассылки</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab("requisites")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
-              activeTab === "requisites"
-                ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
-                : "text-gray-600 hover:text-gray-900"
-            )}
-          >
-            <CreditCard className="w-4 h-4" />
-            <span>Реквизиты ИП</span>
-          </button>
+            <button
+              onClick={() => setActiveTab("requisites")}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
+                activeTab === "requisites"
+                  ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
+                  : "text-gray-600 hover:text-gray-900"
+              )}
+            >
+              <CreditCard className="w-4 h-4" />
+              <span>Реквизиты ИП</span>
+            </button>
 
-          <button
-            onClick={() => setActiveTab("database")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
-              activeTab === "database"
-                ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
-                : "text-gray-600 hover:text-gray-900"
-            )}
-          >
-            <Database className="w-4 h-4" />
-            <span>База данных</span>
-          </button>
-        </div>
+            <button
+              onClick={() => setActiveTab("database")}
+              className={cn(
+                "flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer whitespace-nowrap",
+                activeTab === "database"
+                  ? "bg-white text-blue-700 shadow-sm border border-gray-200 font-extrabold"
+                  : "text-gray-600 hover:text-gray-900"
+              )}
+            >
+              <Database className="w-4 h-4" />
+              <span>База данных</span>
+            </button>
+          </div>
+        )}
 
         {/* TAB 1: OVERVIEW & ANALYTICS */}
         {activeTab === "overview" && (

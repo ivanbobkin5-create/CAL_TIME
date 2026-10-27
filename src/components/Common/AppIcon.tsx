@@ -19,24 +19,27 @@ export const AppIcon: React.FC<AppIconProps> = ({ className = "w-8 h-8", size, s
       <rect width="1000" height="1000" rx="180" fill="#155DFC" />
 
       {/* Outer White Frame */}
-      <rect x="87" y="87" width="826" height="826" rx="133" fill="none" stroke="#FFFFFF" strokeWidth="70" />
+      <rect x="87" y="87" width="826" height="826" rx="133" fill="none" stroke="#FFFFFF" strokeWidth="60" />
 
       {/* Left Cabinet Door (Tall) */}
-      <rect x="281" y="273" width="195" height="454" rx="22" fill="#FFFFFF" />
+      <rect x="250" y="270" width="125" height="460" rx="20" fill="#FFFFFF" />
+
+      {/* Middle Cabinet Door (Short) */}
+      <rect x="410" y="270" width="125" height="280" rx="20" fill="#FFFFFF" />
 
       {/* Right Cabinet Door (Short) */}
-      <rect x="524" y="273" width="195" height="314" rx="22" fill="#FFFFFF" />
+      <rect x="570" y="270" width="125" height="280" rx="20" fill="#FFFFFF" />
 
-      {/* Right Text MP */}
+      {/* Text MP under Middle & Right Doors */}
       {showText && (
         <text
-          x="523"
-          y="722"
+          x="410"
+          y="705"
           fill="#FFFFFF"
           fontFamily="'Montserrat', 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
           fontWeight="900"
-          fontSize="112"
-          letterSpacing="1"
+          fontSize="130"
+          letterSpacing="2"
         >
           МП
         </text>
