@@ -28,6 +28,7 @@ import { formatPhoneNumber } from "./lib/utils";
 import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { smartDecodeFile } from "./utils/fileEncodingDetector";
+import { isB3DFile, parseB3DFile, parseB3DFromZip, combineB3DResults } from "./utils/b3dReader";
 
 const switchLayout = (text: string) => {
   if (!text) return ["", "", ""];
@@ -6652,6 +6653,7 @@ const CalculatorView = ({
   handlePro100FileUpload,
   handleBazisFileUpload,
   handleHardwareFileUpload,
+  handleLoadSampleB3D,
   handleCuttingTypeChange,
   cuttingType,
   kerf,
@@ -6723,6 +6725,7 @@ const CalculatorView = ({
   handlePro100FileUpload?: (event: React.ChangeEvent<HTMLInputElement>) => void;
   handleBazisFileUpload?: (event: React.ChangeEvent<HTMLInputElement>) => void;
   handleHardwareFileUpload?: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  handleLoadSampleB3D?: () => void;
   handleCuttingTypeChange: (type: "nesting" | "saw") => void;
   cuttingType: "nesting" | "saw";
   kerf: number;
@@ -6952,27 +6955,45 @@ const CalculatorView = ({
               {/* Bazis dedicated button */}
               <div className="relative group">
                 <label className="block text-xs font-bold uppercase tracking-wider text-indigo-900 mb-1.5 flex flex-wrap items-center justify-between gap-1">
-                  <span className="truncate min-w-0">Отчеты Базис-Мебельщик</span>
-                  <span className="text-[10px] bg-indigo-100 text-indigo-800 font-black px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap">XLSX / CSV</span>
+                  <span className="truncate min-w-0">Базис-Мебельщик</span>
+                  <span className="text-[10px] bg-indigo-100 text-indigo-800 font-black px-1.5 py-0.5 rounded shrink-0 whitespace-nowrap">.B3D / .ZIP / XLSX / CSV</span>
                 </label>
                 <input
                   type="file"
                   multiple
-                  accept=".csv,.xls,.xlsx,.txt"
+                  accept=".b3d,.zip,.csv,.xls,.xlsx,.txt"
                   onChange={handleBazisFileUpload || handleFileUpload}
                   className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                 />
                 <div className="border-2 border-dashed border-indigo-200 group-hover:border-indigo-500 rounded-xl p-4 text-center transition-all bg-white group-hover:bg-indigo-50/40 shadow-xs cursor-pointer h-[110px] flex flex-col items-center justify-center">
                   <Layers className="w-6 h-6 text-indigo-500 mx-auto mb-1.5 group-hover:scale-110 transition-transform" />
                   <span className="text-xs font-bold text-gray-800 block">
-                    Загрузить отчеты Базис
+                    Загрузить Базис (.B3D / .ZIP / отчеты)
                   </span>
                   <span className="text-[10px] text-gray-400 block mt-0.5">
-                    Панели + фурнитура (1 или 2 файла)
+                    Файл модели .B3D, архив .ZIP или отчеты раскроя
                   </span>
                 </div>
               </div>
             </div>
+
+            {handleLoadSampleB3D && (
+              <div className="flex flex-wrap items-center justify-between gap-2 bg-indigo-50/70 border border-indigo-200/80 rounded-xl px-3.5 py-2 text-xs shadow-2xs">
+                <div className="flex items-center gap-2 text-indigo-950 font-medium">
+                  <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span>
+                    Расчет по модели Базис <strong>.B3D</strong> (или ZIP с проектами): раскрой, кромки и фурнитура
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleLoadSampleB3D}
+                  className="font-bold text-indigo-700 hover:text-indigo-900 bg-white hover:bg-indigo-50/50 px-2.5 py-1 rounded-lg border border-indigo-200 shadow-xs transition-colors shrink-0"
+                >
+                  Загрузить образец шкафа .B3D →
+                </button>
+              </div>
+            )}
 
             {handleHardwareFileUpload && (
               <div className="pt-2 border-t border-gray-200/60">
@@ -39297,7 +39318,9 @@ export default function App() {
     reader.readAsArrayBuffer(file);
   };
 
-  const readSingleFileData = async (file: File): Promise<{ rawData: any[][]; fileName: string } | null> => {
+  const readSingleFileData = async (file: File): Promise<{ rawData: any[][]; fileName: string; b3dHardwareItems?: any[] } | null> => {
+    const isZip = file.name.match(/\.zip$/i);
+    const isB3D = file.name.match(/\.b3d$/i);
     const isExcel = file.name.match(/\.xlsx?$/i) || file.type.includes("spreadsheet") || file.type.includes("excel");
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -39307,6 +39330,59 @@ export default function App() {
           resolve(null);
           return;
         }
+
+        // 1. Check for ZIP with B3D files inside
+        if (isZip) {
+          try {
+            const zipB3Ds = await parseB3DFromZip(buffer, file.name);
+            if (zipB3Ds.length > 0) {
+              const combined = combineB3DResults(zipB3Ds, file.name);
+              const b3dHw = (combined.hardware || []).map((h, idx) => ({
+                id: `b3d_hw_${idx + 1}`,
+                name: h.name,
+                rawPartName: h.name,
+                article: h.article || "",
+                qty: h.qty,
+                unit: h.unit || "шт",
+                price: 0,
+                checked: true,
+                isFastener: true,
+                categoryType: "furniture",
+              }));
+              resolve({ rawData: combined.rawData, fileName: file.name, b3dHardwareItems: b3dHw });
+              return;
+            }
+          } catch (err) {
+            console.warn("ZIP B3D extraction fallback:", err);
+          }
+        }
+
+        // 2. Check for direct B3D file
+        if (isB3D || isB3DFile(buffer)) {
+          try {
+            const b3dRes = parseB3DFile(buffer, file.name);
+            const b3dHw = (b3dRes.hardware || []).map((h, idx) => ({
+              id: `b3d_hw_${idx + 1}`,
+              name: h.name,
+              rawPartName: h.name,
+              article: h.article || "",
+              qty: h.qty,
+              unit: h.unit || "шт",
+              price: 0,
+              checked: true,
+              isFastener: true,
+              categoryType: "furniture",
+            }));
+            resolve({ rawData: b3dRes.rawData, fileName: file.name, b3dHardwareItems: b3dHw });
+            return;
+          } catch (err: any) {
+            console.error("B3D parse error:", err);
+            showAlert("Ошибка чтения .b3d", "Не удалось разобрать бинарный файл Базис .b3d: " + (err?.message || err));
+            resolve(null);
+            return;
+          }
+        }
+
         if (isExcel) {
           try {
             const workbook = XLSX.read(buffer, { type: "array" });
@@ -39927,8 +40003,13 @@ export default function App() {
           }) || [];
         }
 
-        if (otherFiles.length > 0) {
-          const allItems: any[] = [...(Array.isArray(panelsHardware) ? panelsHardware : [])];
+        const b3dExtra = [
+          ...((panelsFile as any).b3dHardwareItems || []),
+          ...otherFiles.flatMap((of) => (of as any).b3dHardwareItems || []),
+        ];
+
+        if (otherFiles.length > 0 || b3dExtra.length > 0) {
+          const allItems: any[] = [...(Array.isArray(panelsHardware) ? panelsHardware : []), ...b3dExtra];
 
           for (const ofile of otherFiles) {
             const extracted = extractBazisHardwareItems(ofile.rawData, ofile.fileName);
@@ -40019,11 +40100,121 @@ export default function App() {
     }
 
     const file = files[0];
+    const isZip = file.name.match(/\.zip$/i);
+    const isB3D = file.name.match(/\.b3d$/i);
     const isExcel = file.name.match(/\.xlsx?$/i) || file.type.includes("spreadsheet") || file.type.includes("excel");
 
     const reader = new FileReader();
     reader.onload = async (e) => {
       const buffer = e.target?.result as ArrayBuffer;
+
+      // 1. Check if ZIP archive contains .B3D models
+      if (isZip) {
+        try {
+          const zipB3Ds = await parseB3DFromZip(buffer, file.name);
+          if (zipB3Ds.length > 0) {
+            const b3dRes = combineB3DResults(zipB3Ds, file.name);
+            const discoveredHw = parseBazisPanelsReport(b3dRes.rawData, file.name, {
+              skipHardwareModal: b3dRes.hardware && b3dRes.hardware.length > 0,
+            }) || [];
+
+            const b3dHwItems = (b3dRes.hardware || []).map((h, idx) => ({
+              id: `b3d_hw_${idx + 1}`,
+              name: h.name,
+              rawPartName: h.name,
+              article: h.article || "",
+              qty: h.qty,
+              unit: h.unit || "шт",
+              price: 0,
+              checked: true,
+              isFastener: true,
+              categoryType: "furniture",
+            }));
+
+            const allHw = [...discoveredHw, ...b3dHwItems];
+            if (allHw.length > 0) {
+              const merged: any[] = [];
+              allHw.forEach((item) => {
+                const itName = String(item.name || "").toLowerCase().trim();
+                const existing = merged.find((m) => String(m.name || "").toLowerCase().trim() === itName);
+                if (existing) {
+                  existing.qty = (Number(existing.qty) || 0) + (Number(item.qty) || 1);
+                } else {
+                  merged.push({ ...item });
+                }
+              });
+
+              setBazisHardwareModalData({
+                isOpen: true,
+                fileName: file.name + ` (${zipB3Ds.map((r) => r.fileName).join(", ")})`,
+                items: merged,
+                sourceType: "b3d_model",
+              });
+            }
+
+            setActiveTab("calculator");
+            return;
+          }
+        } catch (err: any) {
+          console.warn("ZIP B3D processing error, falling back:", err);
+        }
+      }
+
+      // 2. Direct .b3d binary file
+      if (isB3D || isB3DFile(buffer)) {
+        try {
+          const b3dRes = parseB3DFile(buffer, file.name);
+          if (!b3dRes.panels || b3dRes.panels.length === 0) {
+            showAlert("Внимание", "В файле .b3d не обнаружено деталей для раскроя.");
+            return;
+          }
+
+          const discoveredHw = parseBazisPanelsReport(b3dRes.rawData, file.name, {
+            skipHardwareModal: b3dRes.hardware && b3dRes.hardware.length > 0,
+          }) || [];
+
+          const b3dHwItems = (b3dRes.hardware || []).map((h, idx) => ({
+            id: `b3d_hw_${idx + 1}`,
+            name: h.name,
+            rawPartName: h.name,
+            article: h.article || "",
+            qty: h.qty,
+            unit: h.unit || "шт",
+            price: 0,
+            checked: true,
+            isFastener: true,
+            categoryType: "furniture",
+          }));
+
+          const allHw = [...discoveredHw, ...b3dHwItems];
+          if (allHw.length > 0) {
+            const merged: any[] = [];
+            allHw.forEach((item) => {
+              const itName = String(item.name || "").toLowerCase().trim();
+              const existing = merged.find((m) => String(m.name || "").toLowerCase().trim() === itName);
+              if (existing) {
+                existing.qty = (Number(existing.qty) || 0) + (Number(item.qty) || 1);
+              } else {
+                merged.push({ ...item });
+              }
+            });
+
+            setBazisHardwareModalData({
+              isOpen: true,
+              fileName: file.name,
+              items: merged,
+              sourceType: "b3d_model",
+            });
+          }
+
+          setActiveTab("calculator");
+          return;
+        } catch (err: any) {
+          console.error("B3D parse error:", err);
+          showAlert("Ошибка обработки B3D", "Не удалось разобрать модель .b3d: " + (err?.message || err));
+          return;
+        }
+      }
 
       if (isExcel) {
         try {
@@ -40104,6 +40295,47 @@ export default function App() {
       }
     };
     reader.readAsArrayBuffer(file);
+  };
+
+  const handleLoadSampleB3D = async () => {
+    try {
+      const resp = await fetch("/assets/sample_bazis.b3d");
+      if (!resp.ok) throw new Error("Не удалось загрузить файл примера");
+      const buffer = await resp.arrayBuffer();
+      const b3dRes = parseB3DFile(buffer, "Шкаф_купе_демо.b3d");
+
+      const discoveredHw = parseBazisPanelsReport(b3dRes.rawData, "Шкаф_купе_демо.b3d", {
+        skipHardwareModal: b3dRes.hardware && b3dRes.hardware.length > 0,
+      }) || [];
+
+      const b3dHwItems = (b3dRes.hardware || []).map((h, idx) => ({
+        id: `b3d_hw_${idx + 1}`,
+        name: h.name,
+        rawPartName: h.name,
+        article: h.article || "",
+        qty: h.qty,
+        unit: h.unit || "шт",
+        price: 0,
+        checked: true,
+        isFastener: true,
+        categoryType: "furniture",
+      }));
+
+      const allHw = [...discoveredHw, ...b3dHwItems];
+      if (allHw.length > 0) {
+        setBazisHardwareModalData({
+          isOpen: true,
+          fileName: "Шкаф_купе_демо.b3d (Образец)",
+          items: allHw,
+          sourceType: "b3d_model",
+        });
+      }
+
+      setActiveTab("calculator");
+    } catch (err: any) {
+      console.error(err);
+      showAlert("Ошибка", "Не удалось загрузить пример: " + err.message);
+    }
   };
 
   const saveProject = async (
@@ -43698,6 +43930,7 @@ export default function App() {
               handlePro100FileUpload={handlePro100FileUpload}
               handleBazisFileUpload={handleBazisFileUpload}
               handleHardwareFileUpload={handleHardwareFileUpload}
+              handleLoadSampleB3D={handleLoadSampleB3D}
               handleCuttingTypeChange={handleCuttingTypeChange}
               cuttingType={cuttingType}
               kerf={kerf}
