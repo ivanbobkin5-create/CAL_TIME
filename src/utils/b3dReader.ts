@@ -339,6 +339,7 @@ export function parseB3DFile(buffer: ArrayBuffer | Uint8Array, fileName: string 
     w: number;
     l: number;
     edges: { L1?: string; L2?: string; W1?: string; W2?: string };
+    multiplier: number;
   }> = [];
 
   const rawFasteners: Array<{ name: string; article?: string }> = [];
@@ -353,10 +354,100 @@ export function parseB3DFile(buffer: ArrayBuffer | Uint8Array, fileName: string 
       const fastId = getNodeValue(node, 'FastID');
 
       if (contourVal instanceof Uint8Array && thick > 0) {
-        // Panel detected
+        // Exclude thin plastic, glass, acrylic, transparent artifacts (<= 2mm)
+        const nameL = name.toLowerCase();
+        const matL = mat.toLowerCase();
+        const isPlasticOrGlass =
+          matL.includes('пластмасс') ||
+          matL.includes('прозрачн') ||
+          matL.includes('стекло') ||
+          matL.includes('зеркало') ||
+          matL.includes('оргстекл') ||
+          matL.includes('пленк') ||
+          nameL.includes('пластмасс') ||
+          nameL.includes('прозрачн');
+
+        if (thick <= 2 || (isPlasticOrGlass && thick <= 3)) {
+          return;
+        }
+
         const bounds = parseContourBounds(contourVal);
         let w = bounds ? bounds.width : 0;
         let l = bounds ? bounds.length : 0;
+
+        const isHdf =
+          matL.includes('хдф') ||
+          matL.includes('двп') ||
+          matL.includes('лхдф') ||
+          matL.includes('оргалит') ||
+          nameL.includes('задняя стенка') ||
+          nameL.includes('дно ящика');
+        const isMdf =
+          (matL.includes('мдф') ||
+            matL.includes('mdf') ||
+            matL.includes('agt') ||
+            matL.includes('эмаль') ||
+            nameL.includes('фасад')) &&
+          !isHdf;
+
+        // Glued Panels (Склейки) logic
+        // Allowed base thicknesses:
+        // ДВП/ХДФ: 3, 4 mm
+        // ЛДСП: 10, 16, 18 mm
+        // МДФ: 8, 10, 16, 18, 19, 20, 22 mm
+        let actualThick = Math.round(thick);
+        let qtyMultiplier = 1;
+        let gluedNote = '';
+
+        if (actualThick === 32) {
+          actualThick = 16;
+          qtyMultiplier = 2;
+          gluedNote = ' (Склейка 2x16мм)';
+        } else if (actualThick === 36) {
+          actualThick = 18;
+          qtyMultiplier = 2;
+          gluedNote = ' (Склейка 2x18мм)';
+        } else if (actualThick === 38) {
+          actualThick = 19;
+          qtyMultiplier = 2;
+          gluedNote = ' (Склейка 2x19мм)';
+        } else if (actualThick === 40) {
+          actualThick = 20;
+          qtyMultiplier = 2;
+          gluedNote = ' (Склейка 2x20мм)';
+        } else if (actualThick === 44) {
+          actualThick = 22;
+          qtyMultiplier = 2;
+          gluedNote = ' (Склейка 2x22мм)';
+        } else if (actualThick === 20 && !isMdf) {
+          // For LDSP, 20mm is a glued panel of 2x10mm (whereas for MDF, 20mm is a standard single sheet)
+          actualThick = 10;
+          qtyMultiplier = 2;
+          gluedNote = ' (Склейка 2x10мм)';
+        }
+
+        // Material & Thickness Normalization
+        let cleanMat = mat;
+        if (isHdf || actualThick <= 5) {
+          actualThick = actualThick <= 3.5 ? 3 : 4;
+          if (!cleanMat) cleanMat = `ХДФ ${actualThick}мм`;
+        } else if (isMdf || actualThick === 8 || [19, 20, 22].includes(actualThick)) {
+          const validMdf = [8, 10, 16, 18, 19, 20, 22];
+          actualThick = validMdf.reduce((prev, curr) =>
+            Math.abs(curr - actualThick) < Math.abs(prev - actualThick) ? curr : prev
+          );
+          if (!cleanMat) cleanMat = `МДФ ${actualThick}мм`;
+          else if (actualThick === 8 && !/мдф|mdf/i.test(cleanMat)) {
+            cleanMat = `МДФ ${cleanMat}`;
+          }
+        } else {
+          // LDSP: 10, 16, 18 mm
+          const validLdsp = [10, 16, 18];
+          actualThick = validLdsp.reduce((prev, curr) =>
+            Math.abs(curr - actualThick) < Math.abs(prev - actualThick) ? curr : prev
+          );
+          if (!cleanMat) cleanMat = `ЛДСП ${actualThick}мм`;
+        }
 
         // Extract edge banding from Butts
         const edges: { L1?: string; L2?: string; W1?: string; W2?: string } = {};
@@ -379,12 +470,13 @@ export function parseB3DFile(buffer: ArrayBuffer | Uint8Array, fileName: string 
         }
 
         rawPanels.push({
-          name: name || 'Деталь',
-          mat: mat || 'ЛДСП 16мм',
-          thick: thick,
+          name: (name || 'Деталь') + gluedNote,
+          mat: cleanMat,
+          thick: actualThick,
           w: w,
           l: l,
           edges,
+          multiplier: qtyMultiplier,
         });
       } else if (fastId !== null || name.toLowerCase().includes('петл') || name.toLowerCase().includes('стяжк') || name.toLowerCase().includes('конфирмат') || name.toLowerCase().includes('опор') || name.toLowerCase().includes('ручк') || name.toLowerCase().includes('шкант')) {
         let fName = name;
@@ -415,6 +507,7 @@ export function parseB3DFile(buffer: ArrayBuffer | Uint8Array, fileName: string 
   const panelGroups: Record<string, B3DPanelItem> = {};
   for (const p of rawPanels) {
     const key = `${p.name}_${p.mat}_${p.thick}_${p.l}_${p.w}_${p.edges.L1 || ''}_${p.edges.L2 || ''}_${p.edges.W1 || ''}_${p.edges.W2 || ''}`;
+    const mult = p.multiplier || 1;
     if (!panelGroups[key]) {
       panelGroups[key] = {
         id: `b3d_${Object.keys(panelGroups).length + 1}`,
@@ -423,14 +516,14 @@ export function parseB3DFile(buffer: ArrayBuffer | Uint8Array, fileName: string 
         thickness: p.thick,
         length: p.l,
         width: p.w,
-        quantity: 1,
+        quantity: mult,
         edgeL1: p.edges.L1,
         edgeL2: p.edges.L2,
         edgeW1: p.edges.W1,
         edgeW2: p.edges.W2,
       };
     } else {
-      panelGroups[key].quantity += 1;
+      panelGroups[key].quantity += mult;
     }
   }
   const panels = Object.values(panelGroups);

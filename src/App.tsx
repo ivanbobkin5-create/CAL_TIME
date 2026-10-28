@@ -29,6 +29,7 @@ import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { smartDecodeFile } from "./utils/fileEncodingDetector";
 import { isB3DFile, parseB3DFile, parseB3DFromZip, combineB3DResults } from "./utils/b3dReader";
+import { isPro100BinaryFile, parsePro100BinaryFile, parsePro100FromZip, combinePro100Results } from "./utils/pro100Reader";
 
 const switchLayout = (text: string) => {
   if (!text) return ["", "", ""];
@@ -38274,6 +38275,9 @@ export default function App() {
       const rawPartClean = (rawPart && rawPart !== "-" && rawPart !== "—") ? rawPart : "";
       const displayName = (rawMatClean && rawMatClean.length >= rawPartClean.length) ? rawMatClean : (rawMatClean || rawPartClean || article);
 
+      // Filter out pure sheet materials (e.g. ЛДСП, МДФ, ХДФ, ДВП) from hardware items list
+      const isPureSheetMat = /^(лдсп|мдф|хдф|двп|фанера|дсп)(\s+|$|\d)/i.test(displayName.trim()) ||
+        /^(лдсп|мдф|хдф|двп|фанера|дсп)(\s+|$|\d)/i.test(rawMatClean.trim());
       const hasPolko = displayName.toLowerCase().includes("полкодержател") || rawPartClean.toLowerCase().includes("полкодержател");
       const isFast = hasPolko || isFastener(displayName) || isFastener(rawPartClean);
       const isWorktop = /столешниц|стеновая\s+панель|скинали|постформинг/i.test(displayName) || /столешниц|стеновая\s+панель|скинали|постформинг/i.test(rawPartClean);
@@ -38281,6 +38285,10 @@ export default function App() {
       const isProfile = /профил|лента|подсветк/i.test(displayName) || /профил|лента|подсветк/i.test(rawPartClean);
       const isHinge = /петл/i.test(displayName) || /петл/i.test(rawPartClean);
       const isSlide = /направляющ/i.test(displayName) || /направляющ/i.test(rawPartClean);
+
+      if (isPureSheetMat && !isFast && !isWorktop && !isPlinth && !isProfile && !isHinge && !isSlide) {
+        continue;
+      }
 
       const cat = isWorktop ? "Столешницы" : isPlinth ? "Цоколь" : isProfile ? "Профиль" : isHinge ? "Петли" : isSlide ? "Направляющие" : isFast ? "Метизы" : "Фурнитура";
 
@@ -38477,15 +38485,58 @@ export default function App() {
         isDetailForCutting = false;
       } else if (isHardwareOrAccessory(rawPartName) || isFastener(rawPartName) || isHardwareOrAccessory(rawMaterial) || isFastener(rawMaterial)) {
         isDetailForCutting = false;
-      } else if (length > 0 && width > 0 && (thickness > 0 || matL.includes("лдсп") || matL.includes("мдф") || matL.includes("хдф") || matL.includes("дсп") || matL.includes("двп"))) {
-        isDetailForCutting = true;
+      } else if (length >= 20 && width >= 20 && (thickness > 0 || matL.includes("лдсп") || matL.includes("мдф") || matL.includes("хдф") || matL.includes("дсп") || matL.includes("двп"))) {
+        // Discard non-sheet transparent plastic, acrylic, mirror, or glass
+        const isPlasticOrGlass = /пластмасс|прозрачн|оргстекл|акрил\s+прозрач|стекло|зеркал/i.test(matL) ||
+          /пластмасс|оргстекл/i.test(nameL);
+        if (isPlasticOrGlass) {
+          isDetailForCutting = false;
+        } else {
+          isDetailForCutting = true;
+        }
       } else {
         isDetailForCutting = false;
       }
 
       if (isDetailForCutting) {
+        let effectiveThickness = thickness || 16;
+        let effectiveQty = qty;
+        let isGluedPanel = false;
+
+        // Glued panels (склейки): 32 -> 2x16, 36 -> 2x18, 38 -> 2x19, 40 -> 2x20, 44 -> 2x22, 20 glued -> 2x10
+        if (effectiveThickness === 32) {
+          effectiveThickness = 16;
+          effectiveQty = qty * 2;
+          isGluedPanel = true;
+        } else if (effectiveThickness === 36) {
+          effectiveThickness = 18;
+          effectiveQty = qty * 2;
+          isGluedPanel = true;
+        } else if (effectiveThickness === 38) {
+          effectiveThickness = 19;
+          effectiveQty = qty * 2;
+          isGluedPanel = true;
+        } else if (effectiveThickness === 40) {
+          effectiveThickness = 20;
+          effectiveQty = qty * 2;
+          isGluedPanel = true;
+        } else if (effectiveThickness === 44) {
+          effectiveThickness = 22;
+          effectiveQty = qty * 2;
+          isGluedPanel = true;
+        } else if (effectiveThickness === 20 && (matL.includes("склейк") || nameL.includes("склейк"))) {
+          effectiveThickness = 10;
+          effectiveQty = qty * 2;
+          isGluedPanel = true;
+        }
+
+        // Discard thin plastic/veneer artifacts <= 2mm
+        if (effectiveThickness <= 2) {
+          continue;
+        }
+
         let catType: "ЛДСП" | "МДФ" | "ХДФ" | "Фасад" = "ЛДСП";
-        if (thickness <= 4 || matL.includes("хдф") || matL.includes("двп") || matL.includes("оргалит")) {
+        if (effectiveThickness <= 4 || matL.includes("хдф") || matL.includes("двп") || matL.includes("оргалит")) {
           catType = "ХДФ";
         } else if (matL.includes("фасад") || nameL.includes("фасад") || nameL.includes("дверь") || nameL.includes("фальшфасад") || matL.includes("эмаль") || matL.includes("пленка") || matL.includes("шпон") || matL.includes("акрил") || matL.includes("agt") || matL.includes("агт")) {
           catType = "Фасад";
@@ -38496,15 +38547,15 @@ export default function App() {
         }
 
         let decor = cleanMaterialDecorName(rawMaterial);
-        if (!decor) decor = rawMaterial || `${catType} ${thickness || 16} мм`;
+        if (!decor) decor = rawMaterial || `${catType} ${effectiveThickness} мм`;
 
-        const key = `${catType}|${decor}|${thickness || 16}`;
+        const key = `${catType}|${decor}|${effectiveThickness}`;
         if (!grouped[key]) {
           grouped[key] = {
             type: catType,
             name: catType === "ХДФ" ? "ДВП/ХДФ" : catType === "Фасад" ? "Фасады" : catType,
             color: decor,
-            thickness: thickness || 16,
+            thickness: effectiveThickness,
             area: 0,
             edgeLength: 0,
             details: [],
@@ -38522,25 +38573,27 @@ export default function App() {
         };
 
         const singleArea = (length * width) / 1000000;
-        const totalPartArea = singleArea * qty;
+        const totalPartArea = singleArea * effectiveQty;
         const singleEdgeLength = ((edgeSides.top ? width : 0) + (edgeSides.bottom ? width : 0) + (edgeSides.left ? length : 0) + (edgeSides.right ? length : 0)) / 1000;
-        const totalPartEdge = singleEdgeLength * qty;
+        const totalPartEdge = singleEdgeLength * effectiveQty;
 
         grouped[key].area += totalPartArea;
         grouped[key].edgeLength += totalPartEdge;
 
-        totalCutParts += qty;
+        totalCutParts += effectiveQty;
         totalCutArea += totalPartArea;
         totalEdgeMeters += totalPartEdge;
 
-        for (let q = 0; q < qty; q++) {
+        const partLabel = isGluedPanel ? `${rawPartName || rawMaterial || "Деталь"} (слой склейки)` : (rawPartName || rawMaterial || "Деталь");
+
+        for (let q = 0; q < effectiveQty; q++) {
           grouped[key].details.push({
             id: `bazis-detail-${Math.random().toString(36).substring(2, 9)}`,
             type: catType,
-            name: rawPartName || rawMaterial || "Деталь",
+            name: partLabel,
             height: length,
             width: width,
-            thickness: thickness || 16,
+            thickness: effectiveThickness,
             qty: 1,
             color: decor,
             area: singleArea,
@@ -39321,6 +39374,7 @@ export default function App() {
   const readSingleFileData = async (file: File): Promise<{ rawData: any[][]; fileName: string; b3dHardwareItems?: any[] } | null> => {
     const isZip = file.name.match(/\.zip$/i);
     const isB3D = file.name.match(/\.b3d$/i);
+    const isPro100 = file.name.match(/\.(sto|meb)$/i);
     const isExcel = file.name.match(/\.xlsx?$/i) || file.type.includes("spreadsheet") || file.type.includes("excel");
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -39331,7 +39385,7 @@ export default function App() {
           return;
         }
 
-        // 1. Check for ZIP with B3D files inside
+        // 1. Check for ZIP with B3D or PRO100 files inside
         if (isZip) {
           try {
             const zipB3Ds = await parseB3DFromZip(buffer, file.name);
@@ -39352,8 +39406,27 @@ export default function App() {
               resolve({ rawData: combined.rawData, fileName: file.name, b3dHardwareItems: b3dHw });
               return;
             }
+
+            const zipPro = await parsePro100FromZip(buffer, file.name);
+            if (zipPro.length > 0) {
+              const combined = combinePro100Results(zipPro, file.name);
+              const proHw = (combined.hardware || []).map((h, idx) => ({
+                id: `pro_hw_${idx + 1}`,
+                name: h.name,
+                rawPartName: h.name,
+                article: h.article || "",
+                qty: h.qty,
+                unit: h.unit || "шт",
+                price: 0,
+                checked: true,
+                isFastener: true,
+                categoryType: "furniture",
+              }));
+              resolve({ rawData: combined.rawData, fileName: file.name, b3dHardwareItems: proHw });
+              return;
+            }
           } catch (err) {
-            console.warn("ZIP B3D extraction fallback:", err);
+            console.warn("ZIP CAD extraction fallback:", err);
           }
         }
 
@@ -39378,6 +39451,32 @@ export default function App() {
           } catch (err: any) {
             console.error("B3D parse error:", err);
             showAlert("Ошибка чтения .b3d", "Не удалось разобрать бинарный файл Базис .b3d: " + (err?.message || err));
+            resolve(null);
+            return;
+          }
+        }
+
+        // 3. Check for direct PRO100 (.sto, .meb) file
+        if (isPro100 || isPro100BinaryFile(buffer, file.name)) {
+          try {
+            const proRes = parsePro100BinaryFile(buffer, file.name);
+            const proHw = (proRes.hardware || []).map((h, idx) => ({
+              id: `pro_hw_${idx + 1}`,
+              name: h.name,
+              rawPartName: h.name,
+              article: h.article || "",
+              qty: h.qty,
+              unit: h.unit || "шт",
+              price: 0,
+              checked: true,
+              isFastener: true,
+              categoryType: "furniture",
+            }));
+            resolve({ rawData: proRes.rawData, fileName: file.name, b3dHardwareItems: proHw });
+            return;
+          } catch (err: any) {
+            console.error("PRO100 parse error:", err);
+            showAlert("Ошибка чтения PRO100", "Не удалось разобрать файл PRO100 (.sto/.meb): " + (err?.message || err));
             resolve(null);
             return;
           }
@@ -40102,13 +40201,14 @@ export default function App() {
     const file = files[0];
     const isZip = file.name.match(/\.zip$/i);
     const isB3D = file.name.match(/\.b3d$/i);
+    const isPro100 = file.name.match(/\.(sto|meb)$/i);
     const isExcel = file.name.match(/\.xlsx?$/i) || file.type.includes("spreadsheet") || file.type.includes("excel");
 
     const reader = new FileReader();
     reader.onload = async (e) => {
       const buffer = e.target?.result as ArrayBuffer;
 
-      // 1. Check if ZIP archive contains .B3D models
+      // 1. Check if ZIP archive contains .B3D or PRO100 (.sto, .meb) models
       if (isZip) {
         try {
           const zipB3Ds = await parseB3DFromZip(buffer, file.name);
@@ -40155,8 +40255,53 @@ export default function App() {
             setActiveTab("calculator");
             return;
           }
+
+          const zipPro = await parsePro100FromZip(buffer, file.name);
+          if (zipPro.length > 0) {
+            const proRes = combinePro100Results(zipPro, file.name);
+            const discoveredHw = parseBazisPanelsReport(proRes.rawData, file.name, {
+              skipHardwareModal: proRes.hardware && proRes.hardware.length > 0,
+            }) || [];
+
+            const proHwItems = (proRes.hardware || []).map((h, idx) => ({
+              id: `pro_hw_${idx + 1}`,
+              name: h.name,
+              rawPartName: h.name,
+              article: h.article || "",
+              qty: h.qty,
+              unit: h.unit || "шт",
+              price: 0,
+              checked: true,
+              isFastener: true,
+              categoryType: "furniture",
+            }));
+
+            const allHw = [...discoveredHw, ...proHwItems];
+            if (allHw.length > 0) {
+              const merged: any[] = [];
+              allHw.forEach((item) => {
+                const itName = String(item.name || "").toLowerCase().trim();
+                const existing = merged.find((m) => String(m.name || "").toLowerCase().trim() === itName);
+                if (existing) {
+                  existing.qty = (Number(existing.qty) || 0) + (Number(item.qty) || 1);
+                } else {
+                  merged.push({ ...item });
+                }
+              });
+
+              setBazisHardwareModalData({
+                isOpen: true,
+                fileName: file.name + ` (${zipPro.map((r) => r.fileName).join(", ")})`,
+                items: merged,
+                sourceType: "pro100_model",
+              });
+            }
+
+            setActiveTab("calculator");
+            return;
+          }
         } catch (err: any) {
-          console.warn("ZIP B3D processing error, falling back:", err);
+          console.warn("ZIP CAD processing error, falling back:", err);
         }
       }
 
@@ -40212,6 +40357,62 @@ export default function App() {
         } catch (err: any) {
           console.error("B3D parse error:", err);
           showAlert("Ошибка обработки B3D", "Не удалось разобрать модель .b3d: " + (err?.message || err));
+          return;
+        }
+      }
+
+      // 3. Direct PRO100 (.sto, .meb) binary file
+      if (isPro100 || isPro100BinaryFile(buffer, file.name)) {
+        try {
+          const proRes = parsePro100BinaryFile(buffer, file.name);
+          if (!proRes.panels || proRes.panels.length === 0) {
+            showAlert("Внимание", "В файле PRO100 не обнаружено деталей для раскроя.");
+            return;
+          }
+
+          const discoveredHw = parseBazisPanelsReport(proRes.rawData, file.name, {
+            skipHardwareModal: proRes.hardware && proRes.hardware.length > 0,
+          }) || [];
+
+          const proHwItems = (proRes.hardware || []).map((h, idx) => ({
+            id: `pro_hw_${idx + 1}`,
+            name: h.name,
+            rawPartName: h.name,
+            article: h.article || "",
+            qty: h.qty,
+            unit: h.unit || "шт",
+            price: 0,
+            checked: true,
+            isFastener: true,
+            categoryType: "furniture",
+          }));
+
+          const allHw = [...discoveredHw, ...proHwItems];
+          if (allHw.length > 0) {
+            const merged: any[] = [];
+            allHw.forEach((item) => {
+              const itName = String(item.name || "").toLowerCase().trim();
+              const existing = merged.find((m) => String(m.name || "").toLowerCase().trim() === itName);
+              if (existing) {
+                existing.qty = (Number(existing.qty) || 0) + (Number(item.qty) || 1);
+              } else {
+                merged.push({ ...item });
+              }
+            });
+
+            setBazisHardwareModalData({
+              isOpen: true,
+              fileName: file.name,
+              items: merged,
+              sourceType: "pro100_model",
+            });
+          }
+
+          setActiveTab("calculator");
+          return;
+        } catch (err: any) {
+          console.error("PRO100 parse error:", err);
+          showAlert("Ошибка обработки PRO100", "Не удалось разобрать модель PRO100: " + (err?.message || err));
           return;
         }
       }

@@ -3,8 +3,8 @@ import "dotenv/config";
 import path from "path";
 import fs from "fs";
 import cors from "cors";
+import { createRequire } from "module";
 import { createServer as createViteServer } from "vite";
-import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 import nodemailer from "nodemailer";
 import jwt from "jsonwebtoken";
@@ -26,11 +26,27 @@ if (dbUrl) {
   }
 }
 
-const prisma = new PrismaClient(
-  adjustedDbUrl 
-    ? { datasources: { db: { url: adjustedDbUrl } } }
-    : undefined
-);
+let prisma: any;
+try {
+  const req = createRequire(import.meta.url);
+  const PrismaPkg = req("@prisma/client");
+  const PrismaClientCtor = PrismaPkg?.PrismaClient || PrismaPkg?.default?.PrismaClient;
+  if (!PrismaClientCtor) throw new Error("PrismaClient constructor not generated");
+  prisma = new PrismaClientCtor({
+    datasources: {
+      db: {
+        url: adjustedDbUrl || "postgresql://postgres:postgres@localhost:5432/postgres?connect_timeout=2"
+      }
+    }
+  });
+} catch (e) {
+  console.warn("--- [DATABASE] PrismaClient not initialized, using localStore fallback ---");
+  prisma = new Proxy({}, {
+    get: () => new Proxy({}, {
+      get: () => async () => { throw new Error("PrismaClient not available"); }
+    })
+  });
+}
 const JWT_SECRET = process.env.JWT_SECRET || "default_jwt_secret_change_me";
 
 // Circuit Breaker & Health State for remote PostgreSQL

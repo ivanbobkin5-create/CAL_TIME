@@ -1,10 +1,5 @@
 {
-  "name": "НОВЫЙ TIMEWEB Мебельный калькулятор",
-  "description": "",
-  "requestFramePermissions": [
-    "camera"
-  ],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
+  "name": "Мебельный калькулятор Зовите мебельщиков",
+  "description": "Калькулятор для обработки данных выгрузки из программы Pro100",
+  "requestFramePermissions": []
 }
