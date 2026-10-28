@@ -160,7 +160,7 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
                 {isLeftMenuOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
               </button>
               <a href="#" className="flex items-center gap-2.5 shrink-0">
-                <AppIcon className="w-10 h-10 rounded-xl shrink-0 shadow-lg shadow-blue-200" />
+                <AppIcon className="w-10 h-10 rounded-[22%] shrink-0 shadow-lg shadow-blue-200" />
                 <span className="text-xl font-black text-gray-900 tracking-tight hidden sm:inline whitespace-nowrap">
                   Мебель <span className="text-blue-600">План</span>
                 </span>
@@ -708,8 +708,8 @@ export const LandingPage = ({ onLogin, onRegister }: { onLogin: () => void, onRe
           
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="bg-white p-8 rounded-3xl shadow-xs border border-gray-100 hover:shadow-xl transition-all group">
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-6 overflow-hidden">
-                <AppIcon className="w-14 h-14 rounded-2xl shadow-xs" />
+              <div className="w-14 h-14 flex items-center justify-center mb-6">
+                <AppIcon className="w-14 h-14 rounded-[22%] shadow-xs" />
               </div>
               <h3 className="text-xl font-bold text-gray-900 mb-3">Точный расчет сметы и раскроя</h3>
               <p className="text-gray-500 leading-relaxed text-sm">

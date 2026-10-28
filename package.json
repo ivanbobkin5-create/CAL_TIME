@@ -1,6 +1,6 @@
 {
   "name": "prisma-app",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "scripts": {
     "dev": "tsx server.ts",
     "seed": "tsx seed.ts",

@@ -6977,23 +6977,6 @@ const CalculatorView = ({
               </div>
             </div>
 
-            {handleLoadSampleB3D && (
-              <div className="flex flex-wrap items-center justify-between gap-2 bg-indigo-50/70 border border-indigo-200/80 rounded-xl px-3.5 py-2 text-xs shadow-2xs">
-                <div className="flex items-center gap-2 text-indigo-950 font-medium">
-                  <Sparkles className="w-4 h-4 text-indigo-600 shrink-0" />
-                  <span>
-                    Расчет по модели Базис <strong>.B3D</strong> (или ZIP с проектами): раскрой, кромки и фурнитура
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleLoadSampleB3D}
-                  className="font-bold text-indigo-700 hover:text-indigo-900 bg-white hover:bg-indigo-50/50 px-2.5 py-1 rounded-lg border border-indigo-200 shadow-xs transition-colors shrink-0"
-                >
-                  Загрузить образец шкафа .B3D →
-                </button>
-              </div>
-            )}
 
             {handleHardwareFileUpload && (
               <div className="pt-2 border-t border-gray-200/60">
@@ -11120,6 +11103,7 @@ const SummaryView = ({
           }
 
           const matWorkKey = getMaterialWorkTypeKey(item, sheetConfigs[key]);
+          let materialSubText = item.color;
 
           if (effectiveCalcMode === "area") {
             const sheetGrossArea = sheetCount * sheetArea;
@@ -11128,7 +11112,9 @@ const SummaryView = ({
               0,
             );
             const totalArea = effectiveAreaBasis === "finished_parts" ? detailsNetArea : sheetGrossArea;
-            const workCostObj = ownProductionConfig?.areaWorkCosts?.[matWorkKey];
+            const roundedArea = Number(totalArea.toFixed(2));
+            const areaWorkCostsMap = configToUse?.areaWorkCosts || ownProductionConfig?.areaWorkCosts;
+            const workCostObj = areaWorkCostsMap?.[matWorkKey];
             let workCostPerM2 = 0;
             if (selectedSalonId && workCostObj?.salons?.[selectedSalonId] !== undefined) {
               workCostPerM2 = workCostObj.salons[selectedSalonId];
@@ -11140,10 +11126,12 @@ const SummaryView = ({
               workCostPerM2 = workCostObj?.retail ?? 0;
             }
 
-            itemCost = totalArea * (price + workCostPerM2);
-            qtyText = `${totalArea.toFixed(2)} м²`;
+            itemCost = sheetCount * price + roundedArea * workCostPerM2;
+            qtyText = `${sheetCount} л. (${roundedArea} м²)`;
+            materialSubText = `${item.color ? item.color + " • " : ""}Работа: ${roundedArea} м² × ${workCostPerM2.toLocaleString("ru-RU")} ₽/м²`;
           } else if (effectiveCalcMode === "sheet") {
-            const workCostObj = ownProductionConfig?.sheetWorkCosts?.[matWorkKey];
+            const sheetWorkCostsMap = configToUse?.sheetWorkCosts || ownProductionConfig?.sheetWorkCosts;
+            const workCostObj = sheetWorkCostsMap?.[matWorkKey];
             let workCostPerSheet = 0;
             if (selectedSalonId && workCostObj?.salons?.[selectedSalonId] !== undefined) {
               workCostPerSheet = workCostObj.salons[selectedSalonId];
@@ -11172,7 +11160,7 @@ const SummaryView = ({
               item.type === "ХДФ" && sheetConfigs[key]?.name && sheetConfigs[key].name !== "Default"
                 ? sheetConfigs[key].name
                 : item.name,
-            sub: item.color,
+            sub: materialSubText,
             decor: decor || "Не выбран",
             qty: qtyText,
             price: price,
@@ -11392,82 +11380,178 @@ const SummaryView = ({
           Object.values(edgeGroups).forEach((group) => {
             const edgeLenRounded = Math.ceil(group.totalLength);
             const brandStr = selectedDecor[group.key] || "";
-            const brandName =
-              Object.keys(catalogMaterials).find((b) => brandStr.startsWith(b)) ||
-              "";
             const thickness = group.thickness;
-
-            const detectedEdgeBrand = brandName
-              ? LDSP_TO_EDGE_BRANDS[brandName]?.find((eb) =>
-                  String(group.decor)
-                    .toLowerCase()
-                    .includes(String(eb).toLowerCase()),
-                )
-              : null;
-
-            const mKey = detectedEdgeBrand
-              ? `${brandName}:${detectedEdgeBrand}:${thickness}`
-              : `${brandName}:${thickness}`;
 
             const configToUse =
               productionFormat === "contract" && productionSettings?.production
                 ? productionSettings.production
                 : ownProductionConfig;
 
-            const multiplicity = configToUse.edgeMultiplicity?.[mKey] || 0;
+            const multMap: Record<string, number> = {
+              ...(ownProductionConfig?.edgeMultiplicity || {}),
+              ...(configToUse?.edgeMultiplicity || {}),
+            };
+
+            const normThickForMult =
+              thickness === "1" || thickness === "1.0"
+                ? "1.0"
+                : thickness === "2" || thickness === "2.0"
+                  ? "2.0"
+                  : String(thickness).replace(" мм", "").trim();
+            const altThickForMult =
+              normThickForMult === "1.0"
+                ? "1"
+                : normThickForMult === "2.0"
+                  ? "2"
+                  : normThickForMult;
+            const thickCandidates = Array.from(
+              new Set([normThickForMult, altThickForMult, String(thickness).trim()]),
+            );
+
+            const pipeBrand = typeof brandStr === "string" ? brandStr.split("|")[0]?.trim() : "";
+            const catBrand =
+              Object.keys(catalogMaterials || {}).find((b) =>
+                brandStr.toLowerCase().startsWith(b.toLowerCase()),
+              ) || "";
+            const sheetCfgBrand =
+              sheetConfigs[group.key]?.name && sheetConfigs[group.key]?.name !== "Default"
+                ? sheetConfigs[group.key].name
+                : "";
+            const knownBrands = Array.from(
+              new Set([
+                ...Object.keys(LDSP_TO_EDGE_BRANDS),
+                ...((configToUse?.ldspBrands || ownProductionConfig?.ldspBrands || []).map(
+                  (b: any) => b.brand,
+                )),
+              ].filter(Boolean)),
+            );
+            const matchedKnownBrand =
+              knownBrands.find(
+                (b) =>
+                  brandStr.toLowerCase().includes(b.toLowerCase()) ||
+                  (sheetCfgBrand && sheetCfgBrand.toLowerCase().includes(b.toLowerCase())) ||
+                  (results[group.key]?.name || "").toLowerCase().includes(b.toLowerCase()) ||
+                  (results[group.key]?.color || "").toLowerCase().includes(b.toLowerCase()),
+              ) || "";
+
+            const brandCandidates = Array.from(
+              new Set([pipeBrand, catBrand, sheetCfgBrand, matchedKnownBrand].filter(Boolean)),
+            );
+
+            let multiplicity = 0;
+            for (const bName of brandCandidates) {
+              if (multiplicity > 0) break;
+              const edgeBrandsForB = LDSP_TO_EDGE_BRANDS[bName] || [];
+              const detectedEB = edgeBrandsForB.find((eb) =>
+                String(group.decor).toLowerCase().includes(String(eb).toLowerCase()),
+              );
+
+              for (const tCand of thickCandidates) {
+                if (detectedEB && Number(multMap[`${bName}:${detectedEB}:${tCand}`]) > 0) {
+                  multiplicity = Number(multMap[`${bName}:${detectedEB}:${tCand}`]);
+                  break;
+                }
+                if (Number(multMap[`${bName}:${tCand}`]) > 0) {
+                  multiplicity = Number(multMap[`${bName}:${tCand}`]);
+                  break;
+                }
+                for (const eb of edgeBrandsForB) {
+                  if (Number(multMap[`${bName}:${eb}:${tCand}`]) > 0) {
+                    multiplicity = Number(multMap[`${bName}:${eb}:${tCand}`]);
+                    break;
+                  }
+                }
+                if (multiplicity > 0) break;
+
+                const matchingKey = Object.keys(multMap).find(
+                  (k) =>
+                    k.toLowerCase().startsWith(`${bName.toLowerCase()}:`) &&
+                    k.endsWith(`:${tCand}`) &&
+                    Number(multMap[k]) > 0,
+                );
+                if (matchingKey) {
+                  multiplicity = Number(multMap[matchingKey]);
+                  break;
+                }
+              }
+            }
+
+            if (multiplicity === 0) {
+              for (const tCand of thickCandidates) {
+                const anyKeyForThick = Object.keys(multMap).find(
+                  (k) => k.endsWith(`:${tCand}`) && Number(multMap[k]) > 0,
+                );
+                if (anyKeyForThick) {
+                  multiplicity = Number(multMap[anyKeyForThick]);
+                  break;
+                }
+              }
+            }
 
             let effectiveCalcMode = calcMode;
-            if (ownProductionConfig?.clientCalcModesEnabled && ownProductionConfig?.clientCalcModes) {
-              if (selectedSalonId && ownProductionConfig.clientCalcModes.custom?.[selectedSalonId]) {
-                effectiveCalcMode = ownProductionConfig.clientCalcModes.custom[selectedSalonId]!;
+            const activeClientCalcModes =
+              configToUse?.clientCalcModesEnabled && configToUse?.clientCalcModes
+                ? configToUse.clientCalcModes
+                : ownProductionConfig?.clientCalcModesEnabled && ownProductionConfig?.clientCalcModes
+                  ? ownProductionConfig.clientCalcModes
+                  : null;
+            if (activeClientCalcModes) {
+              if (selectedSalonId && activeClientCalcModes.custom?.[selectedSalonId]) {
+                effectiveCalcMode = activeClientCalcModes.custom[selectedSalonId]!;
               } else if (selectedSalonId || customerType === "wholesale") {
-                effectiveCalcMode = ownProductionConfig.clientCalcModes.salon || calcMode;
+                effectiveCalcMode = activeClientCalcModes.salon || calcMode;
               } else if (customerType === "designer") {
-                effectiveCalcMode = ownProductionConfig.clientCalcModes.designer || calcMode;
+                effectiveCalcMode = activeClientCalcModes.designer || calcMode;
               } else {
-                effectiveCalcMode = ownProductionConfig.clientCalcModes.retail || calcMode;
+                effectiveCalcMode = activeClientCalcModes.retail || calcMode;
               }
             }
 
             const parentMatItem = results[group.key];
             const matWorkKey = parentMatItem ? getMaterialWorkTypeKey(parentMatItem, sheetConfigs[group.key]) : "";
-            const workCostsObj = effectiveCalcMode === "area" ? ownProductionConfig?.areaWorkCosts : ownProductionConfig?.sheetWorkCosts;
+            const workCostsObj =
+              effectiveCalcMode === "area"
+                ? configToUse?.areaWorkCosts || ownProductionConfig?.areaWorkCosts
+                : configToUse?.sheetWorkCosts || ownProductionConfig?.sheetWorkCosts;
             const matWorkConfig = matWorkKey ? workCostsObj?.[matWorkKey] : undefined;
             const includeEdgeWork = matWorkConfig?.includeEdgeWork ?? true;
 
             let edgeWorkPrice = 0;
             if (effectiveCalcMode !== "coefficients" && !includeEdgeWork) {
               const normThick = String(thickness).replace(" мм", "").trim();
-              edgeWorkPrice = matWorkConfig?.edgeWorkPrices?.[normThick] || matWorkConfig?.edgeWorkPrices?.[String(parseFloat(normThick))] || 0;
+              edgeWorkPrice =
+                matWorkConfig?.edgeWorkPrices?.[normThick] ||
+                matWorkConfig?.edgeWorkPrices?.[String(parseFloat(normThick))] ||
+                0;
             }
 
-            const effectiveUnitPrice = group.price + edgeWorkPrice;
+            const buyLen =
+              multiplicity > 0 && edgeLenRounded > 0
+                ? Math.ceil(edgeLenRounded / multiplicity) * multiplicity
+                : edgeLenRounded;
+            const extraMeters = Math.max(0, buyLen - edgeLenRounded);
 
-            let eCost = edgeLenRounded * effectiveUnitPrice * (effectiveCalcMode === "coefficients" || edgeWorkPrice === 0 ? group.coef : 1);
-            let displayQty = `${edgeLenRounded} м`;
+            let eCost = 0;
+            if (effectiveCalcMode === "coefficients") {
+              eCost = buyLen * group.price * (group.coef || 1);
+            } else {
+              // In "area" or "sheet" mode:
+              // Material cost is buyLen * group.price (no coefficient markup).
+              // If edge work is NOT included in material work cost, add edgeWorkPrice per meter.
+              eCost = buyLen * group.price + edgeLenRounded * edgeWorkPrice;
+            }
 
-            if (multiplicity > 0) {
-              const buyLen =
-                Math.ceil(group.totalLength / multiplicity) * multiplicity;
-              if (buyLen > edgeLenRounded) {
-                if (effectiveCalcMode === "coefficients" || edgeWorkPrice === 0) {
-                  eCost =
-                    buyLen * effectiveUnitPrice +
-                    edgeLenRounded * effectiveUnitPrice * (group.coef - 1);
-                } else {
-                  eCost = buyLen * effectiveUnitPrice;
-                }
-                displayQty = `${buyLen} м`;
-              }
+            let displayQty = `${buyLen} м`;
+            let edgeSubText = group.decor;
+            if (extraMeters > 0) {
+              displayQty = `${buyLen} м (+${extraMeters} м, кратность покупки)`;
+              edgeSubText = `${group.decor} (+${extraMeters} м, кратность покупки ${multiplicity} м)`;
+            } else if (effectiveCalcMode !== "coefficients" && !includeEdgeWork && edgeWorkPrice > 0) {
+              edgeSubText = `${group.decor} (работа: ${edgeLenRounded} м × ${edgeWorkPrice} ₽/м)`;
             }
 
             if (group.price === 0) allDataEntered = false;
 
-            const showPurchasePrice =
-              userRole === "admin" || companyType === "Дизайнер";
-            
-            // Column "Price" should show the BASE price (per unit)
-            // Column "Total" shows unit * qty * coef
             const displayPrice = group.price;
 
             const finalNormThick = thickness === "1" || thickness === "1.0" ? "1.0" : thickness === "2" || thickness === "2.0" ? "2.0" : thickness;
@@ -11478,7 +11562,7 @@ const SummaryView = ({
               name: String(thickness).includes("Склейка")
                 ? "Кромка (Склейка)"
                 : `Кромка ${group.decor !== "Не указан" && group.decor !== "Не выбран" ? group.decor + " " : ""}${thickness} мм`,
-              sub: group.decor,
+              sub: edgeSubText,
               decor: group.decor,
               qty: displayQty,
               price: displayPrice,
@@ -11487,7 +11571,7 @@ const SummaryView = ({
               isEdge: true,
               key: group.key,
               priceKey: finalEdgePriceKey,
-              coef: group.coef,
+              coef: effectiveCalcMode === "coefficients" ? group.coef : 1,
               thickness: thickness,
             });
           });
@@ -12549,9 +12633,17 @@ const SummaryView = ({
 
   if (!results && addedProducts.length === 0 && addedServices.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-64 text-gray-400">
-        <Calculator className="w-12 h-12 mb-4" />
-        <p>Загрузите файл отчета из Pro100 для получения итогового расчета</p>
+      <div className="flex flex-col items-center justify-center h-64 text-gray-400 gap-3">
+        <Calculator className="w-12 h-12 mb-1" />
+        <p className="text-gray-500 font-medium">Загрузите отчеты или файлы проекта в Калькулятор</p>
+        <button
+          type="button"
+          onClick={() => setActiveTab("calculator")}
+          className="mt-1 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold rounded-xl shadow-sm transition-colors flex items-center gap-2 cursor-pointer"
+        >
+          <Calculator className="w-4 h-4" />
+          Перейти в Калькулятор
+        </button>
       </div>
     );
   }
@@ -37518,7 +37610,7 @@ export default function App() {
       categoryType: string;
       matchedProduct?: any;
     }>;
-    sourceType: "panels_report" | "hardware_report" | "combined_report";
+    sourceType: "panels_report" | "hardware_report" | "combined_report" | "b3d_model";
   } | null>(null);
 
   const [companyInfo, setCompanyInfoRaw] = useState<any>({
@@ -42121,7 +42213,18 @@ export default function App() {
         if (item.type === "ЛДСП" || item.type === "МДФ") {
           totalLdspSheets += sheetCount;
         }
-        if (calcMode === "area") {
+        let effectiveCalcMode = calcMode;
+        if (ownProductionConfig?.clientCalcModesEnabled && ownProductionConfig?.clientCalcModes) {
+          if (customerType === "wholesale") {
+            effectiveCalcMode = ownProductionConfig.clientCalcModes.salon || calcMode;
+          } else if (customerType === "designer") {
+            effectiveCalcMode = ownProductionConfig.clientCalcModes.designer || calcMode;
+          } else {
+            effectiveCalcMode = ownProductionConfig.clientCalcModes.retail || calcMode;
+          }
+        }
+        const matWorkKey = getMaterialWorkTypeKey(item, sheetConfigs[key]);
+        if (effectiveCalcMode === "area") {
           const sheetArea =
             ((sheetConfigs[key]?.width || 2800) *
               (sheetConfigs[key]?.height || 2070)) /
@@ -42133,7 +42236,27 @@ export default function App() {
           );
           const effectiveBasis = ownProductionConfig?.areaCalculationBasis || "material_volume";
           const totalArea = effectiveBasis === "finished_parts" ? detailsNetArea : sheetGrossArea;
-          itemFinalCost = totalArea * price * coef;
+          const roundedArea = Number(totalArea.toFixed(2));
+          const workCostObj = ownProductionConfig?.areaWorkCosts?.[matWorkKey];
+          const workCostPerM2 =
+            customerType === "wholesale"
+              ? (workCostObj?.salon ?? 0)
+              : customerType === "designer"
+                ? (workCostObj?.designer ?? 0)
+                : (workCostObj?.retail ?? 0);
+          itemFinalCost = sheetCount * price + roundedArea * workCostPerM2;
+        } else if (effectiveCalcMode === "sheet") {
+          const workCostObj = ownProductionConfig?.sheetWorkCosts?.[matWorkKey];
+          const workCostPerSheet =
+            customerType === "wholesale"
+              ? (workCostObj?.salon ?? 0)
+              : customerType === "designer"
+                ? (workCostObj?.designer ?? 0)
+                : (workCostObj?.retail ?? 0);
+          itemFinalCost =
+            workCostPerSheet > 0
+              ? sheetCount * (price + workCostPerSheet)
+              : sheetCount * price * (coef || 1);
         } else {
           itemFinalCost = sheetCount * price * coef;
         }
@@ -42938,21 +43061,23 @@ export default function App() {
                       <span className="text-[13px] font-medium">Акции</span>
                     )}
                   </button>
-                  <button
-                    onClick={() => setActiveTab("projects")}
-                    className={cn(
-                      "w-full flex items-center rounded-lg transition-all mb-1",
-                      isSidebarOpen ? "gap-2.5 px-2.5 py-1.5" : "justify-center py-1.5",
-                      activeTab === "projects"
-                        ? "bg-blue-600 text-white shadow-md shadow-blue-200"
-                        : "text-gray-600 hover:bg-gray-100",
-                    )}
-                  >
-                    <FolderOpen className="w-4 h-4 flex-shrink-0" />
-                    {isSidebarOpen && (
-                      <span className="text-[13px] font-medium">Проекты</span>
-                    )}
-                  </button>
+                  {(companyData?.warehouseEnabled || companyData?.activeModules?.warehouse || (userRole as string) === "admin" || (userRole as string) === "supervisor" || (userRole as string) === "owner" || !userRole) && (
+                    <button
+                      onClick={() => setActiveTab("warehouse")}
+                      className={cn(
+                        "w-full flex items-center rounded-lg transition-all mb-1",
+                        isSidebarOpen ? "gap-2.5 px-2.5 py-1.5" : "justify-center py-1.5",
+                        activeTab === "warehouse"
+                          ? "bg-blue-600 text-white shadow-md shadow-blue-200"
+                          : "text-gray-600 hover:bg-gray-100",
+                      )}
+                    >
+                      <Boxes className="w-4 h-4 flex-shrink-0" />
+                      {isSidebarOpen && (
+                        <span className="text-[13px] font-medium">Склад</span>
+                      )}
+                    </button>
+                  )}
 
                   {(userRole === "admin" || companyData?.type === "Мебельное производство" || companyData?.type === "Производство" || companyData?.companyType === "Мебельное производство" || companyData?.companyType === "Производство" || (typeof companyData?.type === 'string' && companyData.type.toLowerCase().includes('производст')) || (typeof companyData?.companyType === 'string' && companyData.companyType.toLowerCase().includes('производст'))) && (
                     <button
@@ -42972,23 +43097,21 @@ export default function App() {
                     </button>
                   )}
 
-                  {(companyData?.warehouseEnabled || companyData?.activeModules?.warehouse || (userRole as string) === "admin" || (userRole as string) === "supervisor" || (userRole as string) === "owner" || !userRole) && (
-                    <button
-                      onClick={() => setActiveTab("warehouse")}
-                      className={cn(
-                        "w-full flex items-center rounded-lg transition-all mb-1",
-                        isSidebarOpen ? "gap-2.5 px-2.5 py-1.5" : "justify-center py-1.5",
-                        activeTab === "warehouse"
-                          ? "bg-blue-600 text-white shadow-md shadow-blue-200"
-                          : "text-gray-600 hover:bg-gray-100",
-                      )}
-                    >
-                      <Boxes className="w-4 h-4 flex-shrink-0 text-amber-500" />
-                      {isSidebarOpen && (
-                        <span className="text-[13px] font-medium">Склад</span>
-                      )}
-                    </button>
-                  )}
+                  <button
+                    onClick={() => setActiveTab("projects")}
+                    className={cn(
+                      "w-full flex items-center rounded-lg transition-all mb-1",
+                      isSidebarOpen ? "gap-2.5 px-2.5 py-1.5" : "justify-center py-1.5",
+                      activeTab === "projects"
+                        ? "bg-blue-600 text-white shadow-md shadow-blue-200"
+                        : "text-gray-600 hover:bg-gray-100",
+                    )}
+                  >
+                    <FolderOpen className="w-4 h-4 flex-shrink-0" />
+                    {isSidebarOpen && (
+                      <span className="text-[13px] font-medium">Проекты</span>
+                    )}
+                  </button>
                 </>
               )}
               
@@ -43455,7 +43578,7 @@ export default function App() {
             <div className="bg-white text-[#333333] px-3.5 py-2.5 shadow-2xs border-b border-[#dfe5ec] flex items-center justify-between gap-3 sticky top-0 z-[100] select-none">
               {/* Left section: App branding + Deal ID + Name */}
               <div className="flex items-center gap-2.5 min-w-0 shrink-0">
-                <AppIcon className="w-8 h-8 rounded-xl shrink-0 shadow-xs" />
+                <AppIcon className="w-8 h-8 rounded-[22%] shrink-0 shadow-xs" />
                 <div className="min-w-0 flex flex-col justify-center">
                   <div className="flex items-center gap-1.5 leading-none">
                     <span className="text-xs font-black text-[#1058d0] tracking-tight shrink-0">Мебель План</span>
@@ -43736,7 +43859,7 @@ export default function App() {
           {b24Context?.isBitrix24 && !b24Context?.dealId && (
             <div className="bg-white text-[#333333] px-3.5 py-2.5 shadow-2xs border-b border-[#dfe5ec] flex flex-wrap items-center justify-between gap-3 sticky top-0 z-[100] select-none">
               <div className="flex items-center gap-2.5 min-w-0 shrink-0">
-                <AppIcon className="w-8 h-8 rounded-xl shrink-0 shadow-xs" />
+                <AppIcon className="w-8 h-8 rounded-[22%] shrink-0 shadow-xs" />
                 <div className="min-w-0 flex flex-col justify-center">
                   <div className="flex items-center gap-1.5 leading-none">
                     <span className="text-xs font-black text-[#1058d0] tracking-tight shrink-0">
