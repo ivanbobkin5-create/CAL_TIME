@@ -29,7 +29,6 @@ import Papa from "papaparse";
 import * as XLSX from "xlsx";
 import { smartDecodeFile } from "./utils/fileEncodingDetector";
 import { isB3DFile, parseB3DFile, parseB3DFromZip, combineB3DResults } from "./utils/b3dReader";
-import { isPro100BinaryFile, parsePro100BinaryFile, parsePro100FromZip, combinePro100Results } from "./utils/pro100Reader";
 
 const switchLayout = (text: string) => {
   if (!text) return ["", "", ""];
@@ -39374,7 +39373,6 @@ export default function App() {
   const readSingleFileData = async (file: File): Promise<{ rawData: any[][]; fileName: string; b3dHardwareItems?: any[] } | null> => {
     const isZip = file.name.match(/\.zip$/i);
     const isB3D = file.name.match(/\.b3d$/i);
-    const isPro100 = file.name.match(/\.(sto|meb)$/i);
     const isExcel = file.name.match(/\.xlsx?$/i) || file.type.includes("spreadsheet") || file.type.includes("excel");
     return new Promise((resolve) => {
       const reader = new FileReader();
@@ -39385,7 +39383,7 @@ export default function App() {
           return;
         }
 
-        // 1. Check for ZIP with B3D or PRO100 files inside
+        // 1. Check for ZIP with B3D files inside
         if (isZip) {
           try {
             const zipB3Ds = await parseB3DFromZip(buffer, file.name);
@@ -39406,27 +39404,8 @@ export default function App() {
               resolve({ rawData: combined.rawData, fileName: file.name, b3dHardwareItems: b3dHw });
               return;
             }
-
-            const zipPro = await parsePro100FromZip(buffer, file.name);
-            if (zipPro.length > 0) {
-              const combined = combinePro100Results(zipPro, file.name);
-              const proHw = (combined.hardware || []).map((h, idx) => ({
-                id: `pro_hw_${idx + 1}`,
-                name: h.name,
-                rawPartName: h.name,
-                article: h.article || "",
-                qty: h.qty,
-                unit: h.unit || "шт",
-                price: 0,
-                checked: true,
-                isFastener: true,
-                categoryType: "furniture",
-              }));
-              resolve({ rawData: combined.rawData, fileName: file.name, b3dHardwareItems: proHw });
-              return;
-            }
           } catch (err) {
-            console.warn("ZIP CAD extraction fallback:", err);
+            console.warn("ZIP B3D extraction fallback:", err);
           }
         }
 
@@ -39451,32 +39430,6 @@ export default function App() {
           } catch (err: any) {
             console.error("B3D parse error:", err);
             showAlert("Ошибка чтения .b3d", "Не удалось разобрать бинарный файл Базис .b3d: " + (err?.message || err));
-            resolve(null);
-            return;
-          }
-        }
-
-        // 3. Check for direct PRO100 (.sto, .meb) file
-        if (isPro100 || isPro100BinaryFile(buffer, file.name)) {
-          try {
-            const proRes = parsePro100BinaryFile(buffer, file.name);
-            const proHw = (proRes.hardware || []).map((h, idx) => ({
-              id: `pro_hw_${idx + 1}`,
-              name: h.name,
-              rawPartName: h.name,
-              article: h.article || "",
-              qty: h.qty,
-              unit: h.unit || "шт",
-              price: 0,
-              checked: true,
-              isFastener: true,
-              categoryType: "furniture",
-            }));
-            resolve({ rawData: proRes.rawData, fileName: file.name, b3dHardwareItems: proHw });
-            return;
-          } catch (err: any) {
-            console.error("PRO100 parse error:", err);
-            showAlert("Ошибка чтения PRO100", "Не удалось разобрать файл PRO100 (.sto/.meb): " + (err?.message || err));
             resolve(null);
             return;
           }
@@ -40201,14 +40154,13 @@ export default function App() {
     const file = files[0];
     const isZip = file.name.match(/\.zip$/i);
     const isB3D = file.name.match(/\.b3d$/i);
-    const isPro100 = file.name.match(/\.(sto|meb)$/i);
     const isExcel = file.name.match(/\.xlsx?$/i) || file.type.includes("spreadsheet") || file.type.includes("excel");
 
     const reader = new FileReader();
     reader.onload = async (e) => {
       const buffer = e.target?.result as ArrayBuffer;
 
-      // 1. Check if ZIP archive contains .B3D or PRO100 (.sto, .meb) models
+      // 1. Check if ZIP archive contains .B3D models
       if (isZip) {
         try {
           const zipB3Ds = await parseB3DFromZip(buffer, file.name);
@@ -40255,53 +40207,8 @@ export default function App() {
             setActiveTab("calculator");
             return;
           }
-
-          const zipPro = await parsePro100FromZip(buffer, file.name);
-          if (zipPro.length > 0) {
-            const proRes = combinePro100Results(zipPro, file.name);
-            const discoveredHw = parseBazisPanelsReport(proRes.rawData, file.name, {
-              skipHardwareModal: proRes.hardware && proRes.hardware.length > 0,
-            }) || [];
-
-            const proHwItems = (proRes.hardware || []).map((h, idx) => ({
-              id: `pro_hw_${idx + 1}`,
-              name: h.name,
-              rawPartName: h.name,
-              article: h.article || "",
-              qty: h.qty,
-              unit: h.unit || "шт",
-              price: 0,
-              checked: true,
-              isFastener: true,
-              categoryType: "furniture",
-            }));
-
-            const allHw = [...discoveredHw, ...proHwItems];
-            if (allHw.length > 0) {
-              const merged: any[] = [];
-              allHw.forEach((item) => {
-                const itName = String(item.name || "").toLowerCase().trim();
-                const existing = merged.find((m) => String(m.name || "").toLowerCase().trim() === itName);
-                if (existing) {
-                  existing.qty = (Number(existing.qty) || 0) + (Number(item.qty) || 1);
-                } else {
-                  merged.push({ ...item });
-                }
-              });
-
-              setBazisHardwareModalData({
-                isOpen: true,
-                fileName: file.name + ` (${zipPro.map((r) => r.fileName).join(", ")})`,
-                items: merged,
-                sourceType: "pro100_model",
-              });
-            }
-
-            setActiveTab("calculator");
-            return;
-          }
         } catch (err: any) {
-          console.warn("ZIP CAD processing error, falling back:", err);
+          console.warn("ZIP B3D processing error, falling back:", err);
         }
       }
 
@@ -40357,62 +40264,6 @@ export default function App() {
         } catch (err: any) {
           console.error("B3D parse error:", err);
           showAlert("Ошибка обработки B3D", "Не удалось разобрать модель .b3d: " + (err?.message || err));
-          return;
-        }
-      }
-
-      // 3. Direct PRO100 (.sto, .meb) binary file
-      if (isPro100 || isPro100BinaryFile(buffer, file.name)) {
-        try {
-          const proRes = parsePro100BinaryFile(buffer, file.name);
-          if (!proRes.panels || proRes.panels.length === 0) {
-            showAlert("Внимание", "В файле PRO100 не обнаружено деталей для раскроя.");
-            return;
-          }
-
-          const discoveredHw = parseBazisPanelsReport(proRes.rawData, file.name, {
-            skipHardwareModal: proRes.hardware && proRes.hardware.length > 0,
-          }) || [];
-
-          const proHwItems = (proRes.hardware || []).map((h, idx) => ({
-            id: `pro_hw_${idx + 1}`,
-            name: h.name,
-            rawPartName: h.name,
-            article: h.article || "",
-            qty: h.qty,
-            unit: h.unit || "шт",
-            price: 0,
-            checked: true,
-            isFastener: true,
-            categoryType: "furniture",
-          }));
-
-          const allHw = [...discoveredHw, ...proHwItems];
-          if (allHw.length > 0) {
-            const merged: any[] = [];
-            allHw.forEach((item) => {
-              const itName = String(item.name || "").toLowerCase().trim();
-              const existing = merged.find((m) => String(m.name || "").toLowerCase().trim() === itName);
-              if (existing) {
-                existing.qty = (Number(existing.qty) || 0) + (Number(item.qty) || 1);
-              } else {
-                merged.push({ ...item });
-              }
-            });
-
-            setBazisHardwareModalData({
-              isOpen: true,
-              fileName: file.name,
-              items: merged,
-              sourceType: "pro100_model",
-            });
-          }
-
-          setActiveTab("calculator");
-          return;
-        } catch (err: any) {
-          console.error("PRO100 parse error:", err);
-          showAlert("Ошибка обработки PRO100", "Не удалось разобрать модель PRO100: " + (err?.message || err));
           return;
         }
       }

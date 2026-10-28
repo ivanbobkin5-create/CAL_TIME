@@ -28,17 +28,15 @@ if (dbUrl) {
 
 let prisma: any;
 try {
-  const req = createRequire(import.meta.url);
+  const req = typeof require !== "undefined" ? require : createRequire(import.meta.url);
   const PrismaPkg = req("@prisma/client");
   const PrismaClientCtor = PrismaPkg?.PrismaClient || PrismaPkg?.default?.PrismaClient;
   if (!PrismaClientCtor) throw new Error("PrismaClient constructor not generated");
-  prisma = new PrismaClientCtor({
-    datasources: {
-      db: {
-        url: adjustedDbUrl || "postgresql://postgres:postgres@localhost:5432/postgres?connect_timeout=2"
-      }
-    }
-  });
+  prisma = new PrismaClientCtor(
+    adjustedDbUrl
+      ? { datasources: { db: { url: adjustedDbUrl } } }
+      : undefined
+  );
 } catch (e) {
   console.warn("--- [DATABASE] PrismaClient not initialized, using localStore fallback ---");
   prisma = new Proxy({}, {
