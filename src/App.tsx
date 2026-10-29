@@ -3636,10 +3636,15 @@ const packDetails = (
     return { ...d, width: w, height: h };
   });
 
-  // Sort by area descending for better packing
-  const sortedDetails = preprocessedDetails.sort(
-    (a, b) => b.width * b.height - a.width * a.height,
-  );
+  // Sort by area descending for better packing, tie-break by max dimension
+  const sortedDetails = [...preprocessedDetails].sort((a, b) => {
+    const areaA = a.width * a.height;
+    const areaB = b.width * b.height;
+    if (areaB !== areaA) return areaB - areaA;
+    const maxDimA = Math.max(a.width, a.height);
+    const maxDimB = Math.max(b.width, b.height);
+    return maxDimB - maxDimA;
+  });
 
   if (mode === "saw") {
     // Saw Center: Shelf packing with First Fit across sheets
@@ -3775,108 +3780,195 @@ const packDetails = (
       }
     }
   } else {
-    // Nesting: MaxRects-like First Fit across sheets
+    // Nesting: 2D Bin Packing using Maximal Rectangles (MaxRects) with Best Short Side Fit (BSSF)
     interface Rect {
       x: number;
       y: number;
       w: number;
       h: number;
     }
+
+    const pruneFreeList = (freeRects: Rect[]) => {
+      for (let i = 0; i < freeRects.length; i++) {
+        for (let j = i + 1; j < freeRects.length; j++) {
+          const a = freeRects[i];
+          const b = freeRects[j];
+          // If b is completely contained in a, prune b
+          if (b.x >= a.x && b.y >= a.y && b.x + b.w <= a.x + a.w && b.y + b.h <= a.y + a.h) {
+            freeRects.splice(j, 1);
+            j--;
+          } else if (a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h) {
+            // If a is completely contained in b, prune a
+            freeRects.splice(i, 1);
+            i--;
+            break;
+          }
+        }
+      }
+    };
+
+    const splitFreeRect = (freeRects: Rect[], placed: Rect): Rect[] => {
+      const newRects: Rect[] = [];
+      for (let i = 0; i < freeRects.length; i++) {
+        const r = freeRects[i];
+        // Check intersection with placed rectangle
+        if (
+          placed.x < r.x + r.w &&
+          placed.x + placed.w > r.x &&
+          placed.y < r.y + r.h &&
+          placed.y + placed.h > r.y
+        ) {
+          // Left portion
+          if (placed.x > r.x && placed.x < r.x + r.w) {
+            newRects.push({ x: r.x, y: r.y, w: placed.x - r.x, h: r.h });
+          }
+          // Right portion
+          if (placed.x + placed.w < r.x + r.w) {
+            newRects.push({
+              x: placed.x + placed.w,
+              y: r.y,
+              w: r.x + r.w - (placed.x + placed.w),
+              h: r.h,
+            });
+          }
+          // Top portion
+          if (placed.y > r.y && placed.y < r.y + r.h) {
+            newRects.push({ x: r.x, y: r.y, w: r.w, h: placed.y - r.y });
+          }
+          // Bottom portion (spans full width of r!)
+          if (placed.y + placed.h < r.y + r.h) {
+            newRects.push({
+              x: r.x,
+              y: placed.y + placed.h,
+              w: r.w,
+              h: r.y + r.h - (placed.y + placed.h),
+            });
+          }
+        } else {
+          newRects.push(r);
+        }
+      }
+      pruneFreeList(newRects);
+      return newRects;
+    };
+
     const sheetFreeRects: Rect[][] = [];
 
     for (const detail of sortedDetails) {
       let placed = false;
-      const hasWoodTexture = isTextureAligned || (
-        (detail.color && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|шимо|бодега|wood|oak|ash|walnut|pine|wenge|shimo/i.test(detail.color)) ||
-        (detail.name && /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|шимо|бодега|wood|oak|ash|walnut|pine|wenge|shimo/i.test(detail.name))
-      );
-      const physicallyMustRotate = (detail.width + kerf > sheetWidth || detail.height + kerf > sheetHeight) &&
-        (detail.height + kerf <= sheetWidth && detail.width + kerf <= sheetHeight);
-      const canRotateDetail = physicallyMustRotate || (detail.manuallyRotated ? false : (hasWoodTexture ? false : (allowRotation || detail.canRotate)));
+      const hasWoodTexture =
+        isTextureAligned ||
+        (detail.color &&
+          /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|шимо|бодега|wood|oak|ash|walnut|pine|wenge|shimo/i.test(
+            detail.color,
+          )) ||
+        (detail.name &&
+          /дуб|ясень|орех|сосна|дерево|венге|бук|текстур|шимо|бодега|wood|oak|ash|walnut|pine|wenge|shimo/i.test(
+            detail.name,
+          ));
+      const physicallyMustRotate =
+        (detail.width + kerf > sheetWidth || detail.height + kerf > sheetHeight) &&
+        detail.height + kerf <= sheetWidth &&
+        detail.width + kerf <= sheetHeight;
+      const canRotateDetail =
+        physicallyMustRotate ||
+        (detail.manuallyRotated
+          ? false
+          : hasWoodTexture
+            ? false
+            : allowRotation || detail.canRotate);
 
-      // 1. Try to fit in ANY free rectangle on ANY sheet
+      // 1. Try to fit in ANY free rectangle on existing sheets (First Fit across sheets with Best Short Side Fit)
       for (let sIdx = 0; sIdx < sheets.length; sIdx++) {
         const freeRects = sheetFreeRects[sIdx];
-        let bestRectIdx = -1;
-        let useRotated = false;
+        let bestRect: Rect | null = null;
+        let bestRotated = false;
+        let bestShortSide = Infinity;
+        let bestLongSide = Infinity;
 
-        // Find first rectangle that fits
         for (let i = 0; i < freeRects.length; i++) {
           const r = freeRects[i];
-          const normalFits = detail.width + kerf <= r.w && detail.height + kerf <= r.h;
-          if (normalFits) {
-            bestRectIdx = i;
-            useRotated = false;
-            break;
+
+          // Check normal orientation
+          if (detail.width + kerf <= r.w && detail.height + kerf <= r.h) {
+            const remW = r.w - (detail.width + kerf);
+            const remH = r.h - (detail.height + kerf);
+            const shortSide = Math.min(remW, remH);
+            const longSide = Math.max(remW, remH);
+            if (
+              shortSide < bestShortSide ||
+              (shortSide === bestShortSide && longSide < bestLongSide) ||
+              (shortSide === bestShortSide &&
+                longSide === bestLongSide &&
+                (r.y < (bestRect?.y ?? Infinity) ||
+                  (r.y === (bestRect?.y ?? Infinity) && r.x < (bestRect?.x ?? Infinity))))
+            ) {
+              bestShortSide = shortSide;
+              bestLongSide = longSide;
+              bestRect = r;
+              bestRotated = false;
+            }
           }
 
-          const rotatedFits = canRotateDetail && detail.height + kerf <= r.w && detail.width + kerf <= r.h;
-          if (rotatedFits) {
-            bestRectIdx = i;
-            useRotated = true;
-            break;
+          // Check rotated orientation
+          if (canRotateDetail && detail.height + kerf <= r.w && detail.width + kerf <= r.h) {
+            const remW = r.w - (detail.height + kerf);
+            const remH = r.h - (detail.width + kerf);
+            const shortSide = Math.min(remW, remH);
+            const longSide = Math.max(remW, remH);
+            if (
+              shortSide < bestShortSide ||
+              (shortSide === bestShortSide && longSide < bestLongSide) ||
+              (shortSide === bestShortSide &&
+                longSide === bestLongSide &&
+                (r.y < (bestRect?.y ?? Infinity) ||
+                  (r.y === (bestRect?.y ?? Infinity) && r.x < (bestRect?.x ?? Infinity))))
+            ) {
+              bestShortSide = shortSide;
+              bestLongSide = longSide;
+              bestRect = r;
+              bestRotated = true;
+            }
           }
         }
 
-        if (bestRectIdx !== -1) {
-          const r = freeRects.splice(bestRectIdx, 1)[0];
-          const w = useRotated ? detail.height : detail.width;
-          const h = useRotated ? detail.width : detail.height;
+        if (bestRect) {
+          const w = bestRotated ? detail.height : detail.width;
+          const h = bestRotated ? detail.width : detail.height;
 
           sheets[sIdx].push({
             ...detail,
             width: w,
             height: h,
-            packedX: r.x,
-            packedY: r.y,
+            packedX: bestRect.x,
+            packedY: bestRect.y,
             label: `${w}x${h}`,
-            rotated: useRotated,
+            rotated: bestRotated,
           });
 
-          // Split remaining space (Guillotine)
-          if (r.w - (w + kerf) > r.h - (h + kerf)) {
-            if (r.w - (w + kerf) > 0)
-              freeRects.push({
-                x: r.x + w + kerf,
-                y: r.y,
-                w: r.w - (w + kerf),
-                h: r.h,
-              });
-            if (r.h - (h + kerf) > 0)
-              freeRects.push({
-                x: r.x,
-                y: r.y + h + kerf,
-                w: w + kerf,
-                h: r.h - (h + kerf),
-              });
-          } else {
-            if (r.h - (h + kerf) > 0)
-              freeRects.push({
-                x: r.x,
-                y: r.y + h + kerf,
-                w: r.w,
-                h: r.h - (h + kerf),
-              });
-            if (r.w - (w + kerf) > 0)
-              freeRects.push({
-                x: r.x + w + kerf,
-                y: r.y,
-                w: r.w - (w + kerf),
-                h: h + kerf,
-              });
-          }
-          freeRects.sort((a, b) => a.w * a.h - b.w * b.h);
+          const occW = Math.min(w + kerf, sheetWidth - bestRect.x);
+          const occH = Math.min(h + kerf, sheetHeight - bestRect.y);
+          sheetFreeRects[sIdx] = splitFreeRect(sheetFreeRects[sIdx], {
+            x: bestRect.x,
+            y: bestRect.y,
+            w: occW,
+            h: occH,
+          });
           placed = true;
           break;
         }
       }
 
-      // 2. Create a NEW sheet if not placed
+      // 2. Create a NEW sheet if not placed on any existing sheet
       if (!placed) {
         const normalFitsSheet = detail.width + kerf <= sheetWidth && detail.height + kerf <= sheetHeight;
-        if (normalFitsSheet) {
-          const w = detail.width;
-          const h = detail.height;
+        const rotatedFitsSheet = canRotateDetail && detail.height + kerf <= sheetWidth && detail.width + kerf <= sheetHeight;
+
+        if (normalFitsSheet || rotatedFitsSheet) {
+          const useRotated = !normalFitsSheet ? true : false;
+          const w = useRotated ? detail.height : detail.width;
+          const h = useRotated ? detail.width : detail.height;
+
           sheets.push([
             {
               ...detail,
@@ -3885,96 +3977,16 @@ const packDetails = (
               packedX: 0,
               packedY: 0,
               label: `${w}x${h}`,
-              rotated: false,
+              rotated: useRotated,
             },
           ]);
 
-          const freeRects = [];
-          if (sheetWidth - (w + kerf) > sheetHeight - (h + kerf)) {
-            if (sheetWidth - (w + kerf) > 0)
-              freeRects.push({
-                x: w + kerf,
-                y: 0,
-                w: sheetWidth - (w + kerf),
-                h: sheetHeight,
-              });
-            if (sheetHeight - (h + kerf) > 0)
-              freeRects.push({
-                x: 0,
-                y: h + kerf,
-                w: w + kerf,
-                h: sheetHeight - (h + kerf),
-              });
-          } else {
-            if (sheetHeight - (h + kerf) > 0)
-              freeRects.push({
-                x: 0,
-                y: h + kerf,
-                w: sheetWidth,
-                h: sheetHeight - (h + kerf),
-              });
-            if (sheetWidth - (w + kerf) > 0)
-              freeRects.push({
-                x: w + kerf,
-                y: 0,
-                w: sheetWidth - (w + kerf),
-                h: h + kerf,
-              });
-          }
-          sheetFreeRects.push(freeRects);
+          let free: Rect[] = [{ x: 0, y: 0, w: sheetWidth, h: sheetHeight }];
+          const occW = Math.min(w + kerf, sheetWidth);
+          const occH = Math.min(h + kerf, sheetHeight);
+          free = splitFreeRect(free, { x: 0, y: 0, w: occW, h: occH });
+          sheetFreeRects.push(free);
           placed = true;
-        } else {
-          const rotatedFitsSheet = canRotateDetail && detail.height + kerf <= sheetWidth && detail.width + kerf <= sheetHeight;
-          if (rotatedFitsSheet) {
-            const w = detail.height;
-            const h = detail.width;
-            sheets.push([
-              {
-                ...detail,
-                width: w,
-                height: h,
-                packedX: 0,
-                packedY: 0,
-                label: `${w}x${h}`,
-                rotated: true,
-              },
-            ]);
-
-            const freeRects = [];
-            if (sheetWidth - (w + kerf) > sheetHeight - (h + kerf)) {
-              if (sheetWidth - (w + kerf) > 0)
-                freeRects.push({
-                  x: w + kerf,
-                  y: 0,
-                  w: sheetWidth - (w + kerf),
-                  h: sheetHeight,
-                });
-              if (sheetHeight - (h + kerf) > 0)
-                freeRects.push({
-                  x: 0,
-                  y: h + kerf,
-                  w: w + kerf,
-                  h: sheetHeight - (h + kerf),
-                });
-            } else {
-              if (sheetHeight - (h + kerf) > 0)
-                freeRects.push({
-                  x: 0,
-                  y: h + kerf,
-                  w: sheetWidth,
-                  h: sheetHeight - (h + kerf),
-                });
-              if (sheetWidth - (w + kerf) > 0)
-                freeRects.push({
-                  x: w + kerf,
-                  y: 0,
-                  w: sheetWidth - (w + kerf),
-                  h: h + kerf,
-                });
-            }
-            sheetFreeRects.push(freeRects);
-            placed = true;
-          }
         }
       }
     }
@@ -7341,6 +7353,33 @@ const CalculatorView = ({
       };
     }
 
+    // CASE D: Both are DVP / HDF (ДВП or ХДФ)
+    const isHdfDvp1 = ["ДВП", "ХДФ"].includes(item1.type) || (item1.type || "").includes("ДВП") || (item1.type || "").includes("ХДФ") || (item1.name || "").toLowerCase().includes("двп") || (item1.name || "").toLowerCase().includes("хдф");
+    const isHdfDvp2 = ["ДВП", "ХДФ"].includes(item2.type) || (item2.type || "").includes("ДВП") || (item2.type || "").includes("ХДФ") || (item2.name || "").toLowerCase().includes("двп") || (item2.name || "").toLowerCase().includes("хдф");
+
+    if (isHdfDvp1 && isHdfDvp2) {
+      if (brand1 && brand2 && brand1.toLowerCase() !== brand2.toLowerCase()) {
+        return { canMerge: false, mergeType: "none" as const };
+      }
+      return {
+        canMerge: true,
+        mergeType: "hdf_to_hdf" as const,
+        brandName: brand1 || brand2 || "ХДФ / ДВП",
+      };
+    }
+
+    // CASE E: Both are MDF or other identical non-facade sheet material types
+    if (item1.type && item2.type && item1.type === item2.type && item1.type !== "Фасад") {
+      if (brand1 && brand2 && brand1.toLowerCase() !== brand2.toLowerCase()) {
+        return { canMerge: false, mergeType: "none" as const };
+      }
+      return {
+        canMerge: true,
+        mergeType: "ldsp_to_ldsp" as const,
+        brandName: brand1 || brand2 || item1.type,
+      };
+    }
+
     return { canMerge: false, mergeType: "none" as const };
   };
 
@@ -7844,7 +7883,7 @@ const CalculatorView = ({
                                   if (lk === key) return false;
                                   if (mergedMaterials[lk] || mergedMaterials[key]) return false;
                                   const compat = checkMaterialMergeCompatibility(key, lk);
-                                  return compat.canMerge && compat.mergeType === "ldsp_to_ldsp";
+                                  return compat.canMerge && compat.mergeType !== "facade_to_facade" && compat.mergeType !== "facade_to_ldsp";
                                 }
                               )
                               .map((lk) => {
@@ -9090,7 +9129,7 @@ const CalculatorView = ({
                             <div>
                                <h3 className="font-bold text-gray-700">{item.name} ({selectedDecor[key] || item.color})</h3>
                                <p className="text-sm text-gray-500">
-                                 Объединено в общий раскрой с {targetItem?.type === "Фасад" ? "фасадом" : "ЛДСП корпуса"}{" "}
+                                 Объединено в общий раскрой с {targetItem?.type === "Фасад" ? "фасадом" : (targetItem?.type || "материалом")}{" "}
                                  <strong>«{selectedDecor[targetKey] || targetItem?.color || targetItem?.name || "другим материалом"}»</strong>
                                </p>
                             </div>
@@ -35722,12 +35761,7 @@ export default function App() {
           });
         } catch (_) {}
       } else {
-        const st = window.scrollY || document.documentElement.scrollTop || 0;
-        if (st > 0) {
-          setModalPaddingTop(Math.max(20, st + 80));
-        } else {
-          setModalPaddingTop(0);
-        }
+        setModalPaddingTop(0);
       }
     }
   }, []);
@@ -43261,22 +43295,22 @@ export default function App() {
           className="relative flex flex-col items-center"
         >
           {/* Logo Animation */}
-          <div className="relative w-24 h-24 mb-8">
+          <div className="relative w-28 h-28 mb-8 flex items-center justify-center">
             <motion.div
               animate={{
                 rotate: 360,
-                borderRadius: ["30%", "50%", "30%"],
+                borderRadius: ["35%", "50%", "35%"],
               }}
-              transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
-              className="absolute inset-0 bg-gradient-to-tr from-indigo-600 to-blue-400 opacity-20 blur-xl"
+              transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
+              className="absolute inset-0 bg-gradient-to-tr from-indigo-500/20 to-blue-500/20 blur-xl rounded-full"
             />
             <motion.div
               animate={{ rotate: -360 }}
-              transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
-              className="absolute inset-0 border-4 border-indigo-600/30 border-t-indigo-600 rounded-[2rem]"
+              transition={{ duration: 8, repeat: Infinity, ease: "linear" }}
+              className="absolute inset-0 border-2 border-indigo-500/20 border-t-indigo-600 rounded-[2.2rem]"
             />
-            <div className="absolute inset-0 flex items-center justify-center">
-              <AppIcon className="w-12 h-12 rounded-2xl shadow-md shadow-blue-200" />
+            <div className="relative z-10 flex items-center justify-center">
+              <AppIcon className="w-14 h-14 rounded-2xl shadow-lg shadow-blue-500/20" />
             </div>
           </div>
 
@@ -43460,10 +43494,8 @@ export default function App() {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
         <div className="w-full max-w-md">
-          <div className="flex items-center justify-center gap-2 mb-8">
-            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-200">
-              <Calculator className="text-white w-6 h-6" />
-            </div>
+          <div className="flex items-center justify-center gap-2.5 mb-8">
+            <AppIcon className="w-10 h-10 rounded-xl shadow-md shadow-blue-200 shrink-0" />
             <span className="text-xl font-black text-gray-900 tracking-tight hidden sm:inline">
               Мебельный <span className="text-blue-600">калькулятор</span>
             </span>
@@ -45793,6 +45825,23 @@ export default function App() {
                         body: JSON.stringify({ data: docUpdates })
                       });
                     } catch (_) {}
+
+                    if (companyData?.id && userData.uid) {
+                      try {
+                        await fetch(`/api/db/doc/companies/${companyData.id}/employees/${userData.uid}`, {
+                          method: 'PATCH',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            data: {
+                              name: docUpdates.name || docUpdates.displayName || userData?.displayName,
+                              photoURL: docUpdates.photoURL || docUpdates.avatarUrl || docUpdates.photo,
+                              avatarUrl: docUpdates.avatarUrl || docUpdates.photoURL,
+                              photo: docUpdates.photo || docUpdates.photoURL
+                            }
+                          })
+                        }).catch(() => {});
+                      } catch (_) {}
+                    }
 
                     const mergedUserData = {
                       ...userData,

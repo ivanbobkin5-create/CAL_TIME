@@ -144,6 +144,10 @@ class LocalStore {
     return doc;
   }
 
+  public getAllDocsMap(): Record<string, LocalDoc> {
+    return this.data.documents || {};
+  }
+
   public deleteDoc(docPath: string) {
     let changed = false;
     for (const key in this.data.documents) {

@@ -147,16 +147,12 @@ export const ManagerSalariesView: React.FC<ManagerSalariesViewProps> = ({
 
   // Extract sales managers list strictly from employees marked with isSalesManager === true
   const salesManagers = useMemo(() => {
-    const hasAnyExplicitFlag = companyEmployees.some(emp => emp?.isSalesManager === true);
     const seen = new Set<string>();
     const list = companyEmployees.filter(emp => {
       if (!emp) return false;
       if (emp.email?.toLowerCase() === 'lk.ivanbobkin@gmail.com') return false;
-      if (hasAnyExplicitFlag) {
-        if (emp.isSalesManager !== true) return false;
-      } else {
-        if (emp.isSalesManager !== true && !(emp.role || '').toLowerCase().includes('менеджер')) return false;
-      }
+      // Strictly require isSalesManager checkbox to be enabled
+      if (emp.isSalesManager !== true) return false;
       const key = (emp.id || emp.uid || emp.email || '').toLowerCase();
       if (!key || seen.has(key)) return false;
       seen.add(key);
@@ -1042,7 +1038,7 @@ export const ManagerSalariesView: React.FC<ManagerSalariesViewProps> = ({
 
                         {/* Base Salary */}
                         <td className="p-3 text-right font-medium text-slate-700">
-                          {calc.baseSalary.toLocaleString('ru-RU')} ₽
+                          {calc.baseSalary > 0 ? `${calc.baseSalary.toLocaleString('ru-RU')} ₽` : '—'}
                         </td>
 
                         {/* Deal Commission */}

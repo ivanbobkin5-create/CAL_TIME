@@ -263,16 +263,18 @@ export const ProcurementView = ({
             }
 
             const filtered = allOrders.filter((o: any) => {
-                // If it's a Bitrix24 deal
-                if (o.b24DealId) {
-                    if (o.b24Closed || o.isProcurementInactive) return false;
-                    const stage = o.b24DealStageId || o.b24StageId;
-                    if (isStageClosed(stage)) return false;
-                    if (finalStageId && stage === finalStageId) return false;
-                    if (!validStageIds.includes(stage)) return false;
-                    return true;
+                const stageRaw = String(o.b24DealStageId || o.b24StageId || '').trim();
+                const stageUpper = stageRaw.toUpperCase();
+                
+                if (o.b24Closed || o.isProcurementInactive) return false;
+                if (stageUpper && isStageClosed(stageUpper)) return false;
+
+                // When stages range is configured, strictly filter deals by stage
+                if (procurementStageId) {
+                    if (!stageRaw) return false;
+                    const normalizedValid = validStageIds.map(s => String(s).toUpperCase());
+                    if (!normalizedValid.includes(stageUpper)) return false;
                 }
-                // Custom sets in calculator
                 return true;
             });
 

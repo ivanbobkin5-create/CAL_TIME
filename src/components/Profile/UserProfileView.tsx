@@ -88,43 +88,12 @@ export const UserProfileView = ({ userData, onUpdateUser, onLogout }: UserProfil
   useEffect(() => {
     const fetchUserStats = async () => {
       try {
-        const res = await fetch(`/api/db/col/companies/${userData.companyId}/projects`);
+        const url = `/api/companies/${userData.companyId}/user-stats?uid=${encodeURIComponent(userData.uid || '')}&email=${encodeURIComponent(userData.email || '')}`;
+        const res = await fetch(url);
         if (res.ok) {
-          const allProjects = await res.json();
-          // Filter projects created by THIS user
-          const mine = allProjects
-            .map((p: any) => ({ id: p.id, ...p.data }))
-            .filter((p: any) => p.createdBy === userData.uid || p.createdBy === userData.email);
-            
-          setUserProjects(mine);
-          
-          if (mine.length > 0) {
-            const totalVolume = mine.reduce((acc: number, p: any) => acc + (p.totalPrice || 0), 0);
-            const totalHardware = mine.reduce((acc: number, p: any) => acc + (p.totalHardwareCost || 0), 0);
-            const sortedByPrice = [...mine].sort((a, b) => (b.totalPrice || 0) - (a.totalPrice || 0));
-            
-            // Type distribution
-            const typeCounts: Record<string, number> = {};
-            mine.forEach((p: any) => {
-              const type = p.type || 'Разное';
-              typeCounts[type] = (typeCounts[type] || 0) + 1;
-            });
-            
-            const typeData = Object.entries(typeCounts).map(([name, value]) => ({
-              name,
-              value,
-              share: ((value / mine.length) * 100).toFixed(1) + '%'
-            })).sort((a, b) => b.value - a.value);
-
-            setStats({
-              totalCount: mine.length,
-              totalVolume,
-              mostExpensive: sortedByPrice[0].totalPrice || 0,
-              mostExpensiveName: sortedByPrice[0].name,
-              avgPrice: Math.round(totalVolume / mine.length),
-              hardwareShare: totalVolume > 0 ? Math.round((totalHardware / totalVolume) * 100) : 0,
-              typeData
-            });
+          const data = await res.json();
+          if (data.stats) {
+            setStats(data.stats);
           }
         }
       } catch (e) {

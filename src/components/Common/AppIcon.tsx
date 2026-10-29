@@ -4,9 +4,15 @@ interface AppIconProps {
   className?: string;
   size?: number;
   showText?: boolean;
+  showInnerFrame?: boolean;
 }
 
-export const AppIcon: React.FC<AppIconProps> = ({ className = "w-8 h-8", size, showText = true }) => {
+export const AppIcon: React.FC<AppIconProps> = ({ 
+  className = "w-8 h-8", 
+  size, 
+  showText = true,
+  showInnerFrame = false 
+}) => {
   return (
     <svg
       viewBox="0 0 1000 1000"
@@ -15,11 +21,13 @@ export const AppIcon: React.FC<AppIconProps> = ({ className = "w-8 h-8", size, s
       height={size}
       xmlns="http://www.w3.org/2000/svg"
     >
-      {/* Outer Blue Background - rx=220 matches white frame rx=133 with offset=87 for perfect concentric rounding */}
+      {/* Outer Blue Background */}
       <rect width="1000" height="1000" rx="220" fill="#155DFC" />
 
-      {/* Outer White Frame */}
-      <rect x="87" y="87" width="826" height="826" rx="133" fill="none" stroke="#FFFFFF" strokeWidth="60" />
+      {/* Outer White Frame - optional */}
+      {showInnerFrame && (
+        <rect x="87" y="87" width="826" height="826" rx="133" fill="none" stroke="#FFFFFF" strokeWidth="60" />
+      )}
 
       {/* Left Cabinet Door (Tall) */}
       <rect x="250" y="270" width="125" height="460" rx="20" fill="#FFFFFF" />

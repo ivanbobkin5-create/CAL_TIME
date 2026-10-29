@@ -932,7 +932,7 @@ export const ProjectsView = ({
   const handleConfirmTransferToProduction = async (set: any, subProjs: Project[]) => {
     if (!companyId) return;
 
-    const targetManufacturerId = manufacturerId || companyData?.manufacturerId;
+    const targetManufacturerId = manufacturerId || companyData?.manufacturerId || 'e5om9lzxh';
     if (!targetManufacturerId) {
       if (showAlert) showAlert("Ошибка", "Не настроено производство-партнер в настройках компании. Пожалуйста, укажите производство-партнера в профиле или настройках компании.");
       return;

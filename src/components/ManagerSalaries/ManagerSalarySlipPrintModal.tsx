@@ -120,15 +120,17 @@ export const ManagerSalarySlipPrintModal: React.FC<ManagerSalarySlipPrintModalPr
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td className="border border-black px-3 py-1.5 font-bold">Гарантированный оклад</td>
-                <td className="border border-black px-3 py-1.5 text-gray-600">
-                  {calculation.policyUsed.hasBaseSalary ? 'По условиям схемы премирования' : 'Оклад не установлен'}
-                </td>
-                <td className="border border-black px-3 py-1.5 text-right font-bold">
-                  {calculation.baseSalary.toLocaleString('ru-RU')} ₽
-                </td>
-              </tr>
+              {calculation.baseSalary > 0 && (
+                <tr>
+                  <td className="border border-black px-3 py-1.5 font-bold">Гарантированный оклад</td>
+                  <td className="border border-black px-3 py-1.5 text-gray-600">
+                    {calculation.policyUsed.hasBaseSalary ? 'По условиям схемы премирования' : 'Оклад не установлен'}
+                  </td>
+                  <td className="border border-black px-3 py-1.5 text-right font-bold">
+                    {calculation.baseSalary.toLocaleString('ru-RU')} ₽
+                  </td>
+                </tr>
+              )}
               <tr>
                 <td className="border border-black px-3 py-1.5 font-bold">Комиссия со сделок (базовая)</td>
                 <td className="border border-black px-3 py-1.5 text-gray-600">

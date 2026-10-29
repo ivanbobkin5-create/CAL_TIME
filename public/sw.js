@@ -41,38 +41,49 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Strictly do NOT intercept or cache API endpoints or dev-server internal control planes
-  if (url.pathname.startsWith('/api') || url.pathname.includes('__aistudio_internal_')) {
+  // Strictly do NOT intercept or cache API endpoints, exports, or dev-server internal control planes
+  if (
+    url.pathname.startsWith('/api') || 
+    url.pathname.includes('__aistudio_internal_') ||
+    url.pathname.endsWith('.pdf') ||
+    url.pathname.endsWith('.zip') ||
+    url.pathname.endsWith('.xlsx') ||
+    url.pathname.endsWith('.csv')
+  ) {
     return;
   }
 
-  // Dynamic Cache with Network-First fallback logic for documents and assets.
-  // This ensures that online users always get the latest scripts immediately,
-  // while offline users get the cached assets correctly (index.html, CSS, JS, images).
+  // Dynamic Cache with Network-First fallback logic for documents and core UI static assets.
+  // We limit caching to essential UI static files (js, css, html, images, fonts) and trim cache size.
+  const isCacheableAsset = /\.(html|js|css|svg|png|jpg|jpeg|webp|ico|woff2?)$/i.test(url.pathname) ||
+    request.mode === 'navigate' ||
+    url.pathname === '/';
+
   event.respondWith(
     fetch(request)
       .then((response) => {
-        // If the fetch succeeded and it's a valid 200 status, cache a clone of the response
-        if (response.status === 200) {
+        // If the fetch succeeded and it's a valid 200 status for core UI assets, cache a clone of the response
+        if (response.status === 200 && isCacheableAsset) {
           const cacheResponse = response.clone();
           caches.open(CACHE_NAME).then((cache) => {
             cache.put(request, cacheResponse);
+            // Prune cache if it grows beyond 60 entries
+            cache.keys().then((keys) => {
+              if (keys.length > 60) {
+                cache.delete(keys[0]);
+              }
+            });
           });
         }
         return response;
       })
       .catch(() => {
         // Failed to fetch (Offline state / Network error)
-        // First try to match the request in our caches. We MUST use { ignoreSearch: true }
-        // because Vite/React bundler often appends cache-busting search params (?t= or ?v=) 
-        // which would cause a cache miss on offline page refreshes!
         return caches.match(request, { ignoreSearch: true }).then((cachedResponse) => {
           if (cachedResponse) {
             return cachedResponse;
           }
 
-          // If it is a navigation request (i.e., document requests or sub-routes with routers like /projects),
-          // fallback to index.html (the SPA root) to let client-side router handle the routing gracefully offline!
           if (request.mode === 'navigate' || (request.headers.get('accept') && request.headers.get('accept').includes('text/html'))) {
             return caches.match('/', { ignoreSearch: true }).then((homeResponse) => {
               if (homeResponse) return homeResponse;

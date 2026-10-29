@@ -868,145 +868,70 @@ export const PartnerCabinetView: React.FC<PartnerCabinetViewProps> = ({
         </div>
       )}
 
-      {/* MODE 2: PORTAL LOGIN & DIRECTORY (/partner) */}
+      {/* MODE 2: PORTAL LOGIN (/partner) */}
       {viewMode === 'portal_login' && (
-        <div className="max-w-6xl mx-auto w-full px-4 py-10 grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Left: Login Card */}
-          <div className="lg:col-span-5">
-            <div className="bg-white rounded-3xl shadow-lg border border-slate-200 overflow-hidden">
-              <div className="p-6 bg-slate-900 text-white">
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-400/20 text-amber-300 text-[11px] font-bold mb-2">
-                  <ShieldCheck className="w-3.5 h-3.5" />
-                  Закрытый контур партнеров
-                </div>
-                <h2 className="text-xl font-black">Вход в кабинет бренда / поставщика</h2>
-                <p className="text-xs text-slate-300 mt-1">
-                  Используйте корпоративный E-mail, на который было получено приглашение от администрации «Мебель План»
-                </p>
+        <div className="min-h-[85vh] flex items-center justify-center px-4 py-12 w-full">
+          <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden space-y-0 animate-fade-in">
+            {/* Header Banner */}
+            <div className="p-8 bg-slate-900 text-white text-center relative overflow-hidden">
+              <div className="absolute -right-8 -top-8 w-32 h-32 bg-blue-600/20 rounded-full blur-2xl pointer-events-none" />
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400/20 border border-amber-400/30 text-amber-300 text-xs font-black tracking-wide mb-3 uppercase">
+                <ShieldCheck className="w-4 h-4 text-amber-400" />
+                <span>B2B Портал партнеров</span>
               </div>
-
-              <form onSubmit={handlePartnerLogin} className="p-6 space-y-4">
-                {loginError && (
-                  <div className="p-3 rounded-xl bg-red-50 border border-red-100 text-xs font-semibold text-red-600">
-                    {loginError}
-                  </div>
-                )}
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">Корпоративный E-mail</label>
-                  <input
-                    type="email"
-                    required
-                    value={loginEmail}
-                    onChange={(e) => setLoginEmail(e.target.value)}
-                    placeholder="partner@brand.ru"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">Пароль</label>
-                  <input
-                    type="password"
-                    required
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    placeholder="••••••••"
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={loginLoading}
-                  className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-black shadow-lg shadow-blue-200 transition-all cursor-pointer"
-                >
-                  {loginLoading ? 'Вход...' : 'Войти в кабинет партнера'}
-                </button>
-              </form>
-            </div>
-          </div>
-
-          {/* Right: Official Brand Showcases Directory */}
-          <div className="lg:col-span-7 space-y-5">
-            <div>
-              <h3 className="text-lg font-black text-slate-900">
-                Официальные представительства и бренды в «Мебель План»
-              </h3>
-              <p className="text-xs text-slate-500 mt-1">
-                Прямые брендовые витрины (<span className="font-mono font-bold text-slate-700">mebel-plan.ru/бренд</span>) и мультибрендовые кабинеты официальных партнеров (<span className="font-mono font-bold text-slate-700">mebel-plan.ru/partner/...</span>)
+              <h2 className="text-2xl font-black tracking-tight text-white">Кабинет партнера</h2>
+              <p className="text-xs text-slate-300 mt-2 max-w-xs mx-auto leading-relaxed">
+                Единый вход для производителей, официальных дилеров и фабрик-поставщиков «Мебель План»
               </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {ecosystem.partners.map((partner) => {
-                const partnerSlugs = extractBrandSlugs(partner.brandSlugs);
-                const directBrand = partnerSlugs[0];
-                const prodCount = ecosystem.masterProducts.filter((m) => m.partnerId === partner.id).length;
-                return (
-                  <div
-                    key={partner.id}
-                    className="p-5 rounded-3xl bg-white border border-slate-200 hover:border-blue-300 shadow-xs transition-all flex flex-col justify-between gap-4"
-                  >
-                    <div className="space-y-2">
-                      <div className="flex items-start justify-between gap-2">
-                        <div>
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 text-[10px] font-extrabold">
-                            {partner.role === 'brand_representative' ? 'Представительство бренда' : 'Официальный дилер'}
-                          </span>
-                          <h4 className="text-base font-black text-slate-900 mt-1">{partner.companyName}</h4>
-                        </div>
-                      </div>
+            {/* Login Form */}
+            <form onSubmit={handlePartnerLogin} className="p-8 space-y-5 bg-white">
+              {loginError && (
+                <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-xs font-bold text-rose-700 flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full bg-rose-600 animate-pulse" />
+                  <span>{loginError}</span>
+                </div>
+              )}
 
-                      <p className="text-xs text-slate-500 line-clamp-2">{partner.description}</p>
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700">Корпоративный E-mail партнера</label>
+                <input
+                  type="email"
+                  required
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  placeholder="partner@factory.ru"
+                  className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-sm font-medium focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none transition-all bg-slate-50/50 focus:bg-white"
+                />
+              </div>
 
-                      <div className="flex flex-wrap gap-1.5 pt-1">
-                        {(partner.managedBrands || []).map((b) => (
-                          <span
-                            key={b}
-                            className="px-2.5 py-0.5 rounded-lg bg-slate-100 text-slate-800 text-[11px] font-bold"
-                          >
-                            {b}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700">Пароль доступа</label>
+                <input
+                  type="password"
+                  required
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="w-full px-4 py-3 rounded-2xl border border-slate-200 text-sm font-medium focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 outline-none transition-all bg-slate-50/50 focus:bg-white"
+                />
+              </div>
 
-                    <div className="pt-3 border-t border-slate-100 space-y-2">
-                      <div className="flex items-center justify-between text-[11px] text-slate-500">
-                        <span>Эталонных товаров: <strong className="text-slate-800">{prodCount}</strong></span>
-                        <span>Дилеров в РФ: <strong className="text-slate-800">{(partner.dealers || []).length}</strong></span>
-                      </div>
+              <button
+                type="submit"
+                disabled={loginLoading}
+                className="w-full py-3.5 rounded-2xl bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-sm font-black shadow-lg shadow-blue-500/25 transition-all cursor-pointer flex items-center justify-center gap-2"
+              >
+                {loginLoading ? 'Авторизация...' : 'Войти в кабинет партнера'}
+              </button>
 
-                      <div className="flex flex-wrap items-center gap-2 pt-1">
-                        {directBrand && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              window.history.pushState({}, '', `/${directBrand}`);
-                              loadData(directBrand);
-                            }}
-                            className="flex-1 px-3 py-2 rounded-xl bg-slate-900 hover:bg-blue-600 text-white text-[11px] font-bold transition-colors cursor-pointer text-center"
-                          >
-                            mebel-plan.ru/{directBrand}
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            window.history.pushState({}, '', `/partner/${partner.partnerSlug}`);
-                            loadData(partner.partnerSlug);
-                          }}
-                          className="flex-1 px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold transition-colors cursor-pointer text-center"
-                        >
-                          /partner/{partner.partnerSlug}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+              <div className="pt-4 border-t border-slate-100 text-center">
+                <p className="text-[11px] text-slate-500 leading-normal">
+                  Нет доступа к кабинету бренда? Обратитесь в коммерческий отдел «Мебель План» для получения приглашения.
+                </p>
+              </div>
+            </form>
           </div>
         </div>
       )}

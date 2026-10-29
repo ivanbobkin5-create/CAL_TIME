@@ -686,7 +686,7 @@ export const WarehouseView: React.FC<WarehouseViewProps> = ({
   }, [combinedStockList, pickerCategory, pickerSearchQuery]);
 
   return (
-    <div className="px-3 sm:px-6 py-4 max-w-full space-y-5 mx-auto pb-12">
+    <div className="w-full min-w-0 px-3 sm:px-6 py-4 space-y-5 mx-auto pb-12">
       {/* Header Bar */}
       <div className="bg-white rounded-2xl p-4 sm:p-5 border border-gray-200/90 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div className="flex items-center gap-3">

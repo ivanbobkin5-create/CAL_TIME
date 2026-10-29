@@ -3,6 +3,7 @@ import { LandingPage } from './components/Landing/LandingPage';
 import { LoginForm } from './components/Auth/LoginForm';
 import { RegistrationForm, RegistrationData } from './components/Auth/RegistrationForm';
 import { Calculator } from 'lucide-react';
+import { AppIcon } from './components/Common/AppIcon';
 import { LegalDocumentsView } from './components/Legal/LegalDocumentsView';
 
 // Lazy-load the heavy App module with automatic retry so transient dev/network hiccups never fail
@@ -243,10 +244,8 @@ export default function RootApp() {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
         <div className="w-full max-w-md">
-          <div className="flex items-center justify-center gap-2 mb-8">
-            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-200">
-              <Calculator className="text-white w-6 h-6" />
-            </div>
+          <div className="flex items-center justify-center gap-2.5 mb-8">
+            <AppIcon className="w-10 h-10 rounded-xl shadow-md shadow-blue-200 shrink-0" />
             <span className="text-xl font-black text-gray-900 tracking-tight">
               Мебельный <span className="text-blue-600">калькулятор</span>
             </span>
@@ -271,10 +270,8 @@ export default function RootApp() {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
         <div className="w-full max-w-md">
-          <div className="flex items-center justify-center gap-2 mb-8">
-            <div className="w-10 h-10 bg-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-blue-200">
-              <Calculator className="text-white w-6 h-6" />
-            </div>
+          <div className="flex items-center justify-center gap-2.5 mb-8">
+            <AppIcon className="w-10 h-10 rounded-xl shadow-md shadow-blue-200 shrink-0" />
             <span className="text-xl font-black text-gray-900 tracking-tight">
               Мебельный <span className="text-blue-600">калькулятор</span>
             </span>

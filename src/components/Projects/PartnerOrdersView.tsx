@@ -140,37 +140,88 @@ export const PartnerOrdersView = ({
 
     setIsLoading(true);
 
-    const qSets = query(
+    let partnerSetsList: any[] = [];
+    let mainSetsList: any[] = [];
+    let partnerProjsList: any[] = [];
+    let mainProjsList: any[] = [];
+
+    const mergeAndSetSets = () => {
+      const setsMap = new Map<string, any>();
+      partnerSetsList.forEach(s => setsMap.set(s.id, s));
+      mainSetsList.forEach(s => {
+        if (s.isPartnerOrder || s.originalSalonId || s.sourceCompanyId || s.status === 'production_transferred') {
+          if (!setsMap.has(s.id)) {
+            setsMap.set(s.id, s);
+          } else {
+            setsMap.set(s.id, { ...s, ...setsMap.get(s.id) });
+          }
+        }
+      });
+      const combined = Array.from(setsMap.values());
+      setSets(combined);
+      setIsLoading(false);
+
+      const unreadCount = combined.filter((s: any) => !s.status || s.status === 'pending' || s.status === 'new' || s.status === 'draft').length;
+      updateBitrixLeftMenuCounter(unreadCount);
+    };
+
+    const mergeAndSetProjects = () => {
+      const projsMap = new Map<string, any>();
+      partnerProjsList.forEach(p => projsMap.set(p.id, p));
+      mainProjsList.forEach(p => {
+        if (p.isPartnerOrder || p.originalSalonId || p.sourceCompanyId || p.status === 'production_transferred') {
+          if (!projsMap.has(p.id)) {
+            projsMap.set(p.id, p);
+          } else {
+            projsMap.set(p.id, { ...p, ...projsMap.get(p.id) });
+          }
+        }
+      });
+      setProjects(Array.from(projsMap.values()));
+    };
+
+    const qPartnerSets = query(
       collection(db, "companies", companyId, "partner_sets"),
       orderBy("createdAt", "desc")
     );
-    const qProjs = query(
+    const qMainSets = query(
+      collection(db, "companies", companyId, "sets"),
+      orderBy("createdAt", "desc")
+    );
+    const qPartnerProjs = query(
       collection(db, "companies", companyId, "partner_projects"),
       orderBy("createdAt", "desc")
     );
+    const qMainProjs = query(
+      collection(db, "companies", companyId, "projects"),
+      orderBy("createdAt", "desc")
+    );
 
-    const unsubscribeSets = onSnapshot(qSets, (snapshot) => {
-      const loadedSets = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setSets(loadedSets);
-      setIsLoading(false);
+    const unsub1 = onSnapshot(qPartnerSets, (snap) => {
+      partnerSetsList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      mergeAndSetSets();
+    }, () => setIsLoading(false));
 
-      const unreadCount = loadedSets.filter((s: any) => !s.status || s.status === 'pending' || s.status === 'new' || s.status === 'draft').length;
-      updateBitrixLeftMenuCounter(unreadCount);
-    }, (err) => {
-      console.error("Error loading partner sets:", err);
-      setIsLoading(false);
+    const unsub2 = onSnapshot(qMainSets, (snap) => {
+      mainSetsList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      mergeAndSetSets();
+    }, () => setIsLoading(false));
+
+    const unsub3 = onSnapshot(qPartnerProjs, (snap) => {
+      partnerProjsList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      mergeAndSetProjects();
     });
 
-    const unsubscribeProjs = onSnapshot(qProjs, (snapshot) => {
-      const loadedProjs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setProjects(loadedProjs);
-    }, (err) => {
-      console.error("Error loading partner projects:", err);
+    const unsub4 = onSnapshot(qMainProjs, (snap) => {
+      mainProjsList = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      mergeAndSetProjects();
     });
 
     return () => {
-      unsubscribeSets();
-      unsubscribeProjs();
+      unsub1();
+      unsub2();
+      unsub3();
+      unsub4();
     };
   }, [companyId]);
 
